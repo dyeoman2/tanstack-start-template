@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { ClientOnly } from '~/components/ClientOnly';
 import { authClient } from '~/features/auth/auth-client';
-import { checkEmailServiceConfiguredServerFn } from '~/features/auth/server/auth-checks';
+import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
 export const Route = createFileRoute('/forgot-password')({
   component: ForgotPasswordPage,

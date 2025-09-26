@@ -2,7 +2,7 @@ import { redirect } from '@tanstack/react-router';
 import { eq } from 'drizzle-orm';
 import * as schema from '~/db/schema';
 import { getDb } from '~/lib/server/db-config.server';
-import { auth } from './auth';
+import { auth } from './betterAuth';
 
 // Type definitions for user roles
 export type UserRole = 'user' | 'admin';
@@ -69,7 +69,7 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
 }
 
 /**
- * Require authentication - throws error if not authenticated
+ * Require authentication
  */
 export async function requireAuth(): Promise<AuthResult> {
   const user = await getCurrentUser();
@@ -82,7 +82,7 @@ export async function requireAuth(): Promise<AuthResult> {
 }
 
 /**
- * Require admin role - throws error if not admin
+ * Require admin role
  */
 export async function requireAdmin(): Promise<AuthResult> {
   const { user } = await requireAuth();

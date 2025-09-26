@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { SYSTEM_KEYS } from '~/lib/query-keys';
-import { checkEmailServiceConfiguredServerFn } from '../server/auth-checks';
+import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
 export function useEmailService() {
   return useQuery({

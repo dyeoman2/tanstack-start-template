@@ -4,7 +4,7 @@ import { z } from 'zod';
 import * as schema from '~/db/schema';
 import { getDb } from '~/lib/server/db-config.server';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { auth } from './auth';
+import { auth } from './betterAuth';
 
 // Zod schemas for user management
 

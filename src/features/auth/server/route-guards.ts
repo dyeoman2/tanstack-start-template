@@ -1,5 +1,6 @@
 import { type ParsedLocation, redirect } from '@tanstack/react-router';
-import { checkAdminServerFn, getCurrentUserServerFn } from '~/features/auth/server/auth-checks';
+import { createServerFn } from '@tanstack/react-start';
+import { requireAuth } from '~/features/auth/server/auth-guards';
 import type { RouterAuthContext } from '~/router';
 
 export async function ensureAuthenticatedContext({
@@ -14,23 +15,31 @@ export async function ensureAuthenticatedContext({
   );
   if (isPublicRoute) return { user: null, authenticated: false };
 
-  const fresh = await getCurrentUserServerFn();
-  if (!fresh.authenticated) {
-    throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
-  }
-  return fresh;
+  const { user } = await getCurrentUserServerFn();
+  return { user, authenticated: true };
 }
 
-export async function ensureAdminContext({
-  location,
-}: {
-  location: ParsedLocation;
-}): Promise<RouterAuthContext> {
-  const result = await checkAdminServerFn();
-  if (!result.authenticated || result.user?.role !== 'admin') {
+export async function ensureAdminContext(): Promise<RouterAuthContext> {
+  const { user } = await getCurrentUserServerFn();
+  if (user?.role !== 'admin') {
     throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
   }
-
-  const ctx: RouterAuthContext = { authenticated: true, user: result.user };
-  return ctx;
+  return { user, authenticated: true };
 }
+
+const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(async () => {
+  try {
+    const { user } = await requireAuth();
+    return {
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+      authenticated: true,
+    };
+  } catch (_error) {
+    throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
+  }
+});

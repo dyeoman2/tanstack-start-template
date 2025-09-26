@@ -1,9 +1,9 @@
-import { getEnv } from '~/lib/server/env.server';
 import {
   createBaseHtmlTemplate,
   createBaseTextTemplate,
   sendEmail,
-} from '~/lib/server/resend.server';
+} from '~/lib/server/email/resend.server';
+import { getEnv } from '~/lib/server/env.server';
 
 // Send password reset email
 export const sendResetPasswordEmail = async (params: {

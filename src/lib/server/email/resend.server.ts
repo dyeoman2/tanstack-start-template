@@ -1,3 +1,4 @@
+import { createServerFn } from '@tanstack/react-start';
 import { Resend } from 'resend';
 import { getEnv } from '~/lib/server/env.server';
 
@@ -81,3 +82,18 @@ ${content}
 
 © ${new Date().getFullYear()} ${businessName}. All rights reserved.
 `;
+
+// Check if email service is configured (used by forgot password page)
+export const checkEmailServiceConfiguredServerFn = createServerFn({
+  method: 'GET',
+}).handler(async () => {
+  const env = getEnv();
+  const isConfigured = !!env.RESEND_API_KEY;
+
+  return {
+    isConfigured,
+    message: isConfigured
+      ? null
+      : 'Email service is not configured. Password reset functionality is unavailable.',
+  };
+});
