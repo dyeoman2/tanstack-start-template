@@ -23,7 +23,7 @@ Add your Resend API key and optional email sender configuration to your `.env.lo
 RESEND_API_KEY=resend-api-key
 
 # Optional: Custom sender email address (defaults to onboarding@resend.dev)
-# RESEND_EMAIL_SENDER=noreply@yourdomain.com
+# RESEND_EMAIL_SENDER=
 ```
 
 ### 3. Domain Verification (Production)
@@ -140,7 +140,7 @@ Set the `RESEND_EMAIL_SENDER` environment variable in your `.env.local` file:
 
 ```bash
 # Custom sender email address
-RESEND_EMAIL_SENDER=noreply@yourdomain.com
+RESEND_EMAIL_SENDER=
 ```
 
 The application will automatically use this email address for all outgoing emails. If not set, it defaults to `onboarding@resend.dev`.
