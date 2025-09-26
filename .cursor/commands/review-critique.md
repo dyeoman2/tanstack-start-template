@@ -1,0 +1,1 @@
+someone created the REVIEW.MD file with reccomendations because i'm not sure if they're actually good reccomendations. please review the file, review our code and see if you think: 1. the reccommendation is a good one, if so, keep it. 2. if you disagree or have a nuanced take of a reccommendation, update the file with your reccommendation and explain.
