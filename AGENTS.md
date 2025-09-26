@@ -12,7 +12,7 @@ TanStack Start isn't just a framework—it's a philosophy. We believe that devel
 ## Project Architecture & TanStack Integration
 
 ### Core Stack Overview
-This is a TanStack Start Starter application built to give you a head start on your next project.
+This is a TanStack Start Template built to give you a head start on your next project.
 
 - **TanStack Start**: Full-stack framework with server functions and file-based routing
 - **TanStack Router**: Type-safe routing with aggressive preloading

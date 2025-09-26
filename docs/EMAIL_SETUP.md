@@ -1,6 +1,6 @@
 # Email Setup with Resend
 
-This document describes how to set up password reset emails using Resend in the TanStack Start Starter application.
+This document describes how to set up password reset emails using Resend in the TanStack Start application.
 
 ## Overview
 

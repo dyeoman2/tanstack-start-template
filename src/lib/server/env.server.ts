@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 export const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).optional(),
-  APP_NAME: z.string().min(1, 'APP_NAME is required').default('TanStack Start Starter'),
+  APP_NAME: z.string().min(1, 'APP_NAME is required').default('TanStack Start Template'),
   RESEND_API_KEY: z.string().min(1, 'RESEND_API_KEY is required for email functionality'),
   RESEND_EMAIL_SENDER: z.string().optional().default('onboarding@resend.dev'),
 });

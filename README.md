@@ -1,4 +1,4 @@
-# TanStack Start Starter Template
+# TanStack Start Template
 
 A starter template for TanStack Start.
 
@@ -185,7 +185,7 @@ pnpm run seed
 
 ## Contributing
 
-This is a TanStack Start starter template with authentication, admin dashboard, and modern React patterns. Perfect for building full-stack TypeScript applications.
+This is a TanStack Start template with authentication, admin dashboard, and modern React patterns. Perfect for building full-stack TypeScript applications.
 
 ## 📄 License
 

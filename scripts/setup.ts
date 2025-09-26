@@ -64,7 +64,7 @@ BETTER_AUTH_URL=${authUrl}
 NODE_ENV=development
 
 # Set business name
-APP_NAME="TanStack Start Starter"
+APP_NAME="TanStack Start Template"
 
 # ==========================================
 # OPTIONAL INTEGRATIONS

@@ -11,7 +11,7 @@
 [[template.environment]]
 name = "APP_NAME"
 required = true
-default = "TanStack Start Starter"
+default = "TanStack Start Template"
 description = "Name of the application"
 
 [[template.environment]]
