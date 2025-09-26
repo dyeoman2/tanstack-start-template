@@ -4,8 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_PATHS = "docs/EMAIL_SETUP.md,scripts/setup.ts"
-  SECRETS_SCAN_OMIT_KEYS = "RESEND_EMAIL_SENDER"
+  SECRETS_SCAN_OMIT_KEYS = "RESEND_EMAIL_SENDER,APP_NAME"
 
 [template]
   full = true
