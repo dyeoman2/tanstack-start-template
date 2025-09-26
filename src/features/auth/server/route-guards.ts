@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import type { RouterAuthContext } from '~/router';
 
-export async function ensureAuthenticatedContext({
+export async function routeAuthGuard({
   location,
 }: {
   location: ParsedLocation;
@@ -19,7 +19,7 @@ export async function ensureAuthenticatedContext({
   return { user, authenticated: true };
 }
 
-export async function ensureAdminContext(): Promise<RouterAuthContext> {
+export async function routeAdminGuard(): Promise<RouterAuthContext> {
   const { user } = await getCurrentUserServerFn();
   if (user?.role !== 'admin') {
     throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });

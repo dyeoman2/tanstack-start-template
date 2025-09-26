@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { useAdminDashboard } from '~/features/admin/hooks/useAdminDashboard';
-import { ensureAdminContext } from '~/features/auth/server/route-guards';
+import { routeAdminGuard } from '~/features/auth/server/route-guards';
 import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
 import { AdminCardsGrid } from '../../features/admin/components/AdminCardsGrid';
 import { AdminDashboardHeader } from '../../features/admin/components/AdminDashboardHeader';
@@ -10,7 +10,7 @@ import { TruncateDataModal } from '../../features/admin/components/TruncateDataM
 import { TruncateResultAlert } from '../../features/admin/components/TruncateResultAlert';
 
 export const Route = createFileRoute('/admin/')({
-  beforeLoad: ensureAdminContext,
+  beforeLoad: routeAdminGuard,
   loader: async () => {
     const [users, stats] = await Promise.all([getAllUsersServerFn(), getSystemStatsServerFn()]);
     return { users, stats };

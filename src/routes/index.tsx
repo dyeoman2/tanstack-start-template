@@ -1,13 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { ensureAuthenticatedContext } from '~/features/auth/server/route-guards';
+import { routeAuthGuard } from '~/features/auth/server/route-guards';
 import { Dashboard } from '~/features/dashboard/components/Dashboard';
 import { DashboardSkeleton } from '~/features/dashboard/components/DashboardSkeleton';
 import { getDashboardDataServerFn } from '~/features/dashboard/dashboard.server';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
 
 export const Route = createFileRoute('/')({
-  beforeLoad: ensureAuthenticatedContext,
+  beforeLoad: routeAuthGuard,
   component: DashboardComponent,
   errorComponent: DashboardErrorBoundary,
   pendingMs: 200,
