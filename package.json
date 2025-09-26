@@ -7,10 +7,10 @@
   "author": "Daniel Yeoman",
   "version": "1.0.0",
   "description": "TanStack Start template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI, Resend, Neon Postgres, and deployed to Netlify",
-  "homepage": "https://github.com/sudowealth/TBD",
+  "homepage": "https://github.com/dyeoman2/tanstack-start-template",
   "repository": {
     "type": "git",
-    "url": "https://github.com/sudowealth/TBD.git"
+    "url": "https://github.com/dyeoman2/tanstack-start-template.git"
   },
   "engines": {
     "node": ">=20"

@@ -4,7 +4,6 @@ A starter template for TanStack Start.
 
 ## Security
 
-- **Single-User Mode**: Secure personal deployments
 - **Role-Based Access**: Admin and user permissions
 - **Audit Logging**: Complete action tracking
 
@@ -18,7 +17,7 @@ A starter template for TanStack Start.
 
 ## 🚀 Setup Guide
 
-[![Use this template](https://img.shields.io/badge/Use%20this%20template-2ea44f?style=for-the-badge&logo=github)](https://github.com/sudowealth/TBD/generate)
+[![Use this template](https://img.shields.io/badge/Use%20this%20template-2ea44f?style=for-the-badge&logo=github)](https://github.com/dyeoman2/tanstack-start-template/generate)
 
 This creates a fresh copy of the codebase in your GitHub account.
 
