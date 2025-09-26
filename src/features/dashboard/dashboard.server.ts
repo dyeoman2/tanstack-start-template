@@ -21,11 +21,23 @@ export interface RecentActivity {
   timestamp: string;
 }
 
-export interface DashboardData {
-  stats?: DashboardStats;
-  activity?: RecentActivity[];
-  errors: string[];
-}
+// Discriminated union for safe DashboardData handling
+export type DashboardData =
+  | {
+      status: 'success';
+      stats: DashboardStats;
+      activity: RecentActivity[];
+    }
+  | {
+      status: 'partial';
+      stats?: DashboardStats;
+      activity?: RecentActivity[];
+      errors: string[];
+    }
+  | {
+      status: 'error';
+      errors: string[];
+    };
 
 // Single optimized server function that fetches all dashboard data in parallel
 // No auth check needed here - route loader already verified auth via authGuard
@@ -70,7 +82,8 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
       ]);
 
       const errors: string[] = [];
-      const data: DashboardData = { errors };
+      let stats: DashboardStats | undefined;
+      let activity: RecentActivity[] | undefined;
 
       // Process stats results
       if (statsResult.status === 'fulfilled') {
@@ -78,7 +91,7 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
         const totalUsers = Number(totalUsersResult[0]?.count ?? 0);
         const activeUsers = Number(activeUsersResult[0]?.count ?? 0);
         const recentSignups = Number(recentSignupsResult[0]?.count ?? 0);
-        data.stats = {
+        stats = {
           totalUsers,
           activeUsers,
           recentSignups,
@@ -90,7 +103,7 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
 
       // Process activity results
       if (activityResult.status === 'fulfilled') {
-        data.activity = activityResult.value.map((log) => ({
+        activity = activityResult.value.map((log) => ({
           id: log.id,
           type: mapAuditActionToActivityType(log.action),
           userEmail: log.userEmail,
@@ -101,9 +114,29 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
         errors.push(`Failed to load activity: ${formatSettledReason(activityResult.reason)}`);
       }
 
-      return data;
+      // Return discriminated union based on success/failure state
+      if (stats && activity && errors.length === 0) {
+        return {
+          status: 'success',
+          stats,
+          activity,
+        };
+      } else if (errors.length > 0) {
+        return {
+          status: 'partial',
+          stats,
+          activity,
+          errors,
+        };
+      } else {
+        return {
+          status: 'error',
+          errors,
+        };
+      }
     } catch (error) {
       return {
+        status: 'error',
         errors: [`Database error: ${error instanceof Error ? error.message : 'Unknown error'}`],
       };
     }

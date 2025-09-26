@@ -1,27 +1,11 @@
-import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
+import { QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { ClientOnly } from '~/components/ClientOnly';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ToastProvider } from '~/components/ui/toast';
+import { queryClient } from '~/lib/query-client';
 import { SYSTEM_KEYS } from '~/lib/query-keys';
 import { getEnvironmentInfoServerFn } from '~/lib/server/server-functions.server';
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes for better performance
-      retry: (failureCount, error) => {
-        // Don't retry on 4xx errors
-        if (error instanceof Error && 'status' in error && typeof error.status === 'number') {
-          if (error.status >= 400 && error.status < 500) {
-            return false;
-          }
-        }
-        return failureCount < 3;
-      },
-    },
-  },
-});
 
 function EnvironmentAwareProviders({ children }: { children: ReactNode }) {
   return (

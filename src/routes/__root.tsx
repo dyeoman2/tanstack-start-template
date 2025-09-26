@@ -2,9 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
 import { AppShell } from '~/components/AppShell';
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
-import { getCurrentUserServerFn } from '~/features/auth/server/auth-checks';
 import { seo } from '~/lib/seo';
-import type { RouterAuthContext } from '~/router';
 import appCss from '~/styles/app.css?url';
 
 export const Route = createRootRoute({
@@ -47,33 +45,6 @@ export const Route = createRootRoute({
     ],
     scripts: [],
   }),
-  // Auth check for protected routes only - provides RouterAuthContext to children
-  loader: async ({ location }): Promise<RouterAuthContext> => {
-    // For public routes, don't fetch auth
-    const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
-    const isPublicRoute = publicRoutes.some(
-      (route) => location.pathname === route || location.pathname.startsWith('/reset-password'),
-    );
-
-    if (isPublicRoute) {
-      return { user: null, authenticated: false };
-    }
-
-    // For protected routes, fetch auth data
-    try {
-      return await getCurrentUserServerFn();
-    } catch (_error) {
-      return { user: null, authenticated: false };
-    }
-  },
-  // Router context uses loader data
-  context: ({
-    context,
-    loaderData,
-  }: {
-    context: RouterAuthContext;
-    loaderData?: RouterAuthContext;
-  }) => (loaderData ?? context) as RouterAuthContext,
   errorComponent: DefaultCatchBoundary,
   notFoundComponent: () => <NotFound />,
   component: RootDocument,

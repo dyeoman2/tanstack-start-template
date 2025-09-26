@@ -3,20 +3,16 @@ import { checkAdminServerFn, getCurrentUserServerFn } from '~/features/auth/serv
 import type { RouterAuthContext } from '~/router';
 
 export async function ensureAuthenticatedContext({
-  context,
   location,
 }: {
-  context?: RouterAuthContext;
   location: ParsedLocation;
 }): Promise<RouterAuthContext> {
-  if (context?.authenticated) return context;
-
   // Exclude public routes from auth check
   const publicRoutes = ['/login', '/register', '/forgot-password', '/reset-password'];
   const isPublicRoute = publicRoutes.some(
     (route) => location.pathname === route || location.pathname.startsWith('/reset-password'),
   );
-  if (isPublicRoute) return context ?? { user: null, authenticated: false };
+  if (isPublicRoute) return { user: null, authenticated: false };
 
   const fresh = await getCurrentUserServerFn();
   if (!fresh.authenticated) {
@@ -26,17 +22,11 @@ export async function ensureAuthenticatedContext({
 }
 
 export async function ensureAdminContext({
-  context,
   location,
 }: {
-  context?: RouterAuthContext;
   location: ParsedLocation;
 }): Promise<RouterAuthContext> {
-  // Fast path: already hydrated and admin
-  if (context?.authenticated && context.user?.role === 'admin') return context;
-
-  // Definitive server check
-  const result = await checkAdminServerFn(); // recommend this throws typed errors
+  const result = await checkAdminServerFn();
   if (!result.authenticated || result.user?.role !== 'admin') {
     throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
   }

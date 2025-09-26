@@ -7,11 +7,15 @@ interface DashboardProps {
 }
 
 export function Dashboard({ data }: DashboardProps) {
-  const hasErrors = data.errors.length > 0;
+  // Extract data based on discriminated union status
+  const stats = data.status === 'success' || data.status === 'partial' ? data.stats : undefined;
+  const activity = data.status === 'success' || data.status === 'partial' ? data.activity : [];
+  const errors = data.status === 'error' || data.status === 'partial' ? data.errors : [];
+  const hasErrors = errors.length > 0;
 
   const activeUserPercentage =
-    data.stats && data.stats.totalUsers > 0
-      ? ((data.stats.activeUsers / data.stats.totalUsers) * 100).toFixed(1)
+    stats && stats.totalUsers > 0
+      ? ((stats.activeUsers / stats.totalUsers) * 100).toFixed(1)
       : null;
 
   return (
@@ -42,7 +46,7 @@ export function Dashboard({ data }: DashboardProps) {
               <h3 className="text-sm font-medium text-yellow-800">Some data failed to load</h3>
               <div className="mt-2 text-sm text-yellow-700">
                 <ul className="list-disc pl-5 space-y-1">
-                  {data.errors.map((error) => (
+                  {errors.map((error) => (
                     <li key={error}>{error}</li>
                   ))}
                 </ul>
@@ -54,31 +58,31 @@ export function Dashboard({ data }: DashboardProps) {
 
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-        {data.stats ? (
+        {stats ? (
           <MetricCard
             title="Total Users"
-            value={data.stats.totalUsers.toLocaleString()}
-            change={`+${data.stats.recentSignups}`}
+            value={stats.totalUsers.toLocaleString()}
+            change={`+${stats.recentSignups}`}
             changeType="positive"
           />
         ) : (
           <SkeletonCard title="Total Users" />
         )}
 
-        {data.stats ? (
+        {stats ? (
           <MetricCard
             title="Active Users"
-            value={data.stats.activeUsers.toLocaleString()}
+            value={stats.activeUsers.toLocaleString()}
             subtitle={activeUserPercentage ? `${activeUserPercentage}% of total` : 'No users yet'}
           />
         ) : (
           <SkeletonCard title="Active Users" />
         )}
 
-        {data.activity ? (
+        {activity ? (
           <MetricCard
             title="Recent Activity"
-            value={data.activity.length.toString()}
+            value={activity.length.toString()}
             subtitle="Last 24 hours"
           />
         ) : (
@@ -87,7 +91,7 @@ export function Dashboard({ data }: DashboardProps) {
       </div>
 
       {/* Recent Activity */}
-      <RecentActivity activities={data.activity || []} />
+      <RecentActivity activities={activity || []} />
     </div>
   );
 }

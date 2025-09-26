@@ -1,13 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
+import { ensureAuthenticatedContext } from '~/features/auth/server/route-guards';
 import { Dashboard } from '~/features/dashboard/components/Dashboard';
 import { DashboardSkeleton } from '~/features/dashboard/components/DashboardSkeleton';
-import {
-  type DashboardData,
-  getDashboardDataServerFn,
-} from '~/features/dashboard/dashboard.server';
+import { getDashboardDataServerFn } from '~/features/dashboard/dashboard.server';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
-import { ensureAuthenticatedContext } from '~/lib/route-guards';
 
 export const Route = createFileRoute('/')({
   beforeLoad: ensureAuthenticatedContext,
@@ -21,7 +18,7 @@ export const Route = createFileRoute('/')({
 });
 
 function DashboardComponent() {
-  const loaderData = Route.useLoaderData() as DashboardData;
+  const loaderData = Route.useLoaderData();
 
   // Use dedicated performance monitoring hook
   usePerformanceMonitoring('Dashboard');
