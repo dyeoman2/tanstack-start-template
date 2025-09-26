@@ -1,4 +1,8 @@
 import * as React from 'react';
+
+const isDevMode = import.meta.env.DEV;
+const debugFlag = String(import.meta.env.VITE_DEBUG ?? '').toLowerCase();
+const isPerformanceDebugEnabled = debugFlag === 'true' || debugFlag === '1';
 /**
  * Dedicated performance monitoring hook for development
  *
@@ -10,7 +14,7 @@ import * as React from 'react';
 export function usePerformanceMonitoring(routeName: string) {
   // Always call useEffect, but only run performance monitoring in development
   React.useEffect(() => {
-    if (process.env.NODE_ENV !== 'development' || process.env.DEBUG !== 'true') {
+    if (!isDevMode || !isPerformanceDebugEnabled) {
       return;
     }
 

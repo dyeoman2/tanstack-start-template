@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useLoaderData } from '@tanstack/react-router';
-import { useId, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { getAllUsersServerFn } from '~/features/dashboard/admin.server';
 import { ADMIN_KEYS } from '~/lib/query-keys';
 import { UserDeleteDialog } from './UserDeleteDialog';
@@ -12,6 +12,7 @@ type AdminUser = Awaited<ReturnType<typeof getAllUsersServerFn>>[number];
 export function UserManagement() {
   // Get initial data from loader
   const loaderData = useLoaderData({ from: '/admin/users' }) as AdminUser[];
+  const loaderFetchedAt = useMemo(() => Date.now(), []);
   const nameId = useId();
   const emailId = useId();
 
@@ -28,6 +29,9 @@ export function UserManagement() {
     queryKey: ADMIN_KEYS.USERS_ALL,
     queryFn: () => getAllUsersServerFn(),
     initialData: loaderData, // Use loader data as initial data
+    initialDataUpdatedAt: loaderFetchedAt,
+    staleTime: 60_000,
+    gcTime: 5 * 60_000,
   });
 
   const handleEditUser = (user: AdminUser) => {

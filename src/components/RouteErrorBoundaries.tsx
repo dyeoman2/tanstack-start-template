@@ -66,7 +66,7 @@ function RouteErrorBoundary({
           </div>
 
           {/* Development error details */}
-          {process.env.NODE_ENV === 'development' && (
+          {import.meta.env.DEV && (
             <details className="mt-4">
               <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
                 Error Details (Development)

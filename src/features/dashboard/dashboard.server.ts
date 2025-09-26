@@ -3,12 +3,14 @@ import { count, desc, eq, sql } from 'drizzle-orm';
 import * as schema from '~/db/schema';
 import { getDb } from '~/lib/server/db-config.server';
 
+type IsoDateString = string & { __brand: 'IsoDateString' };
+
 // Dashboard data interfaces with proper typing
 export interface DashboardStats {
   totalUsers: number;
   activeUsers: number;
   recentSignups: number;
-  lastUpdated: Date;
+  lastUpdated: IsoDateString;
 }
 
 export interface RecentActivity {
@@ -80,10 +82,10 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
           totalUsers,
           activeUsers,
           recentSignups,
-          lastUpdated: new Date(),
+          lastUpdated: new Date().toISOString() as IsoDateString,
         };
       } else {
-        errors.push(`Failed to load stats: ${statsResult.reason}`);
+        errors.push(`Failed to load stats: ${formatSettledReason(statsResult.reason)}`);
       }
 
       // Process activity results
@@ -96,7 +98,7 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
           timestamp: log.createdAt.toISOString(),
         }));
       } else {
-        errors.push(`Failed to load activity: ${activityResult.reason}`);
+        errors.push(`Failed to load activity: ${formatSettledReason(activityResult.reason)}`);
       }
 
       return data;
@@ -107,6 +109,24 @@ export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handle
     }
   },
 );
+
+function formatSettledReason(reason: unknown): string {
+  if (reason instanceof Error) return reason.message;
+  if (typeof reason === 'string') return reason;
+  if (reason && typeof reason === 'object') {
+    const { message } = reason as { message?: unknown };
+    if (typeof message === 'string') return message;
+    try {
+      const serialized = JSON.stringify(reason);
+      if (serialized && serialized !== '{}' && serialized !== '[]') {
+        return serialized;
+      }
+    } catch {
+      // noop - fall through to default return
+    }
+  }
+  return 'Unknown error';
+}
 
 // Helper functions for activity mapping
 function mapAuditActionToActivityType(action: string): RecentActivity['type'] {

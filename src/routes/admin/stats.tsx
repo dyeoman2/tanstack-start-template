@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { Users } from 'lucide-react';
+import { useMemo } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Button } from '~/components/ui/button';
@@ -19,6 +20,7 @@ export const Route = createFileRoute('/admin/stats')({
 function SystemStats() {
   // Get initial data from loader
   const loaderData = Route.useLoaderData();
+  const loaderFetchedAt = useMemo(() => Date.now(), []);
 
   const {
     data: stats,
@@ -28,6 +30,9 @@ function SystemStats() {
     queryKey: ADMIN_KEYS.STATS,
     queryFn: () => getSystemStatsServerFn(),
     initialData: loaderData, // Use loader data as initial data
+    initialDataUpdatedAt: loaderFetchedAt,
+    staleTime: 30_000,
+    gcTime: 5 * 60_000,
   });
 
   if (statsPending) {
