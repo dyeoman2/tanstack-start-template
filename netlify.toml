@@ -1,0 +1,39 @@
+[build]
+  command = "echo '🏗️ Starting build process...' && echo '🗄️ Setting up database schema...' && pnpm run db:push:prod && echo '✅ Database schema applied' && echo '🏗️ Building application...' && pnpm build && echo '🎉 Build completed successfully'"
+  publish = "dist/client"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[template]
+  full = true
+
+[[template.environment]]
+name = "APP_NAME"
+required = true
+default = "TanStack Start Starter"
+description = "Name of the application"
+
+[[template.environment]]
+name = "BETTER_AUTH_SECRET"
+required = true
+default = ""
+description = "Signs JWTs for authentication. Run 'openssl rand -base64 32' in your terminal to generate"
+
+[[template.environment]]
+name = "DB_ENCRYPTION_KEY"
+required = true
+default = ""
+description = "Encrypts sensitive fields before database storage. Run 'openssl rand -base64 32' in your terminal to generate"
+
+[[template.environment]]
+name = "RESEND_API_KEY"
+required = true
+default = ""
+description = "Resend API key for email notifications (optional)"
+
+[[template.environment]]
+name = "RESEND_EMAIL_SENDER"
+required = true
+default = "onboarding@resend.dev"
+description = "Sender email address for email notifications (defaults to onboarding@resend.dev)"

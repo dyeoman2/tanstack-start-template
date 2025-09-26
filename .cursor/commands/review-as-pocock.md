@@ -1,0 +1,1 @@
+Fix this TypeScript code as if you were Matt Pocock: eliminate unsafe patterns, preserve inference, and rewrite with modern type-safety best practices (satisfies, generics, discriminated unions, type predicates), showing patch-ready fixes with brief explanations.

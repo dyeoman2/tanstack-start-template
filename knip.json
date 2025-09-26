@@ -1,0 +1,39 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "entry": ["src/server.ts", "src/routes/**/*.tsx", "scripts/**/*.ts", "*.config.{ts,js,mjs}"],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/.output/**",
+    "**/drizzle/**",
+    "**/*.d.ts",
+    "src/routeTree.gen.ts",
+    "src/components/ui/**/*",
+    "src/lib/schemas.ts",
+    "src/lib/seeds/**/*",
+    "src/lib/auth-client.ts",
+    "src/lib/auth-utils.ts",
+    "src/features/auth/schemas.ts"
+  ],
+  "rules": {
+    "files": "error",
+    "dependencies": "warn",
+    "devDependencies": "warn",
+    "unlisted": "error",
+    "binaries": "error",
+    "unresolved": "error",
+    "exports": "warn",
+    "types": "warn",
+    "nsExports": "error",
+    "nsTypes": "warn",
+    "enumMembers": "error",
+    "classMembers": "error"
+  },
+  "ignoreDependencies": ["@netlify/neon", "tailwindcss", "tailwindcss-animate"],
+  "ignoreExportsUsedInFile": {
+    "interface": true,
+    "type": true
+  },
+  "ignoreMembers": ["useQuery.queryFn", "useMutation.mutationFn"]
+}

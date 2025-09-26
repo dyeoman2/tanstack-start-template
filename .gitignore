@@ -1,0 +1,36 @@
+node_modules
+package-lock.json
+yarn.lock
+
+.DS_Store
+.cache
+.env
+.env.*
+!.env.example
+.output
+.nitro
+/build/
+/api/
+/server/build
+/public/build# Sentry Config File
+.env.sentry-build-plugin
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+.tanstack
+.env.local
+
+127.0.0.1-key.pem
+127.0.0.1.pem
+
+# Logs
+*.log
+server.log
+
+# Build outputs
+dist/
+.netlify/
+
+# Additional build artifacts
+.output/

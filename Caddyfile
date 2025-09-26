@@ -1,0 +1,15 @@
+:443 {
+  tls ./127.0.0.1.pem ./127.0.0.1-key.pem
+  header {
+    # Security headers for local development
+    X-Frame-Options "DENY"
+    X-Content-Type-Options "nosniff"
+    Referrer-Policy "strict-origin-when-cross-origin"
+    Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=(), serial=()"
+
+    # Development CSP (permissive to support React, Vite, HMR, and inline scripts/styles used by auth UI)
+    # Mirrors src/middleware/security.ts development policy
+    Content-Security-Policy "default-src 'self' 'unsafe-inline' 'unsafe-eval'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http:; font-src 'self' https: data:; connect-src 'self' ws: wss: https: http:; frame-ancestors 'self'; base-uri 'self'"
+  }
+  reverse_proxy http://localhost:3000
+}
