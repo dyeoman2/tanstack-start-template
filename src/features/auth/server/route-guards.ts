@@ -19,7 +19,11 @@ export async function routeAuthGuard({
   return { user, authenticated: true };
 }
 
-export async function routeAdminGuard(): Promise<RouterAuthContext> {
+export async function routeAdminGuard({
+  location,
+}: {
+  location: ParsedLocation;
+}): Promise<RouterAuthContext> {
   const { user } = await getCurrentUserServerFn();
   if (user?.role !== 'admin') {
     throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
@@ -40,6 +44,6 @@ const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(async (
       authenticated: true,
     };
   } catch (_error) {
-    throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
+    throw redirect({ to: '/login' });
   }
 });
