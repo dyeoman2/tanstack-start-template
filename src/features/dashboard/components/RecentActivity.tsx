@@ -1,9 +1,11 @@
+type IsoDateString = string & { __brand: 'IsoDateString' };
+
 interface RecentActivityItem {
   id: string;
-  type: 'signup' | 'login' | 'purchase';
+  type: 'signup' | 'login' | 'purchase' | 'unknown';
   userEmail: string;
   description: string;
-  timestamp: string;
+  timestamp: IsoDateString;
 }
 
 interface RecentActivityProps {
@@ -32,10 +34,18 @@ export function RecentActivity({ activities }: RecentActivityProps) {
                       ? 'bg-blue-100 text-blue-800'
                       : activity.type === 'purchase'
                         ? 'bg-green-100 text-green-800'
-                        : 'bg-gray-100 text-gray-800'
+                        : activity.type === 'unknown'
+                          ? 'bg-yellow-100 text-yellow-800'
+                          : 'bg-gray-100 text-gray-800'
                   }`}
                 >
-                  {activity.type === 'signup' ? 'S' : activity.type === 'purchase' ? 'P' : 'L'}
+                  {activity.type === 'signup'
+                    ? 'S'
+                    : activity.type === 'purchase'
+                      ? 'P'
+                      : activity.type === 'unknown'
+                        ? '?'
+                        : 'L'}
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900">{activity.userEmail}</p>
