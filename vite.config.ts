@@ -1,43 +1,37 @@
 // Polyfills for Node.js built-ins
-import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill';
-import { NodeModulesPolyfillPlugin } from '@esbuild-plugins/node-modules-polyfill';
-import netlify from '@netlify/vite-plugin-tanstack-start';
-import tailwindcss from '@tailwindcss/vite';
-import { tanstackStart } from '@tanstack/react-start/plugin/vite';
-import react from '@vitejs/plugin-react';
-import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig } from 'vite';
-import tsConfigPaths from 'vite-tsconfig-paths';
+import netlify from "@netlify/vite-plugin-tanstack-start";
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import react from "@vitejs/plugin-react";
+import { visualizer } from "rollup-plugin-visualizer";
+import { defineConfig } from "vite";
+import tsConfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig((_env) => {
+export default defineConfig((env) => {
+  const isDev = env.mode === "development";
+
   return {
     server: {
       port: 3000,
-      host: '0.0.0.0',
-      allowedHosts: ['localhost', '127.0.0.1'],
-    },
-    define: {
-      global: 'globalThis',
-    },
-    optimizeDeps: {
-      esbuildOptions: {
-        plugins: [
-          NodeGlobalsPolyfillPlugin({
-            buffer: true,
-            process: true,
-          }),
-          NodeModulesPolyfillPlugin(),
-        ],
+      host: true,
+      watch: {
+        // This prevents routeTree writes from triggering full reloads
+        ignored: ["**/routeTree.gen.ts"],
       },
     },
+    define: {
+      global: "globalThis",
+    },
     plugins: [
-      tsConfigPaths({ projects: ['./tsconfig.json'] }),
+      tsConfigPaths({ projects: ["./tsconfig.json"] }),
       tailwindcss(),
+      // TanStack Router plugin (via Start) must run before React
       tanstackStart(),
-      netlify(),
       react(),
+      // Adapter after Start + React - only in production builds
+      ...(isDev ? [] : [netlify()]),
       visualizer({
-        filename: 'dist/stats.html',
+        filename: "dist/stats.html",
         open: false,
         gzipSize: true,
       }),
