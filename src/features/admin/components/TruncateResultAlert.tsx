@@ -20,7 +20,7 @@ export function TruncateResultAlert({ truncateResult }: TruncateResultAlertProps
 
   return (
     <Alert
-      className={`mb-6 ${truncateResult.success ? 'border-green-200 bg-green-50' : 'border-yellow-200 bg-yellow-50'}`}
+      className={`mb-6 ${truncateResult.success ? 'border-primary/20 bg-primary/5' : 'border-secondary bg-secondary/50'}`}
     >
       <AlertTriangle className="h-4 w-4" />
       <AlertTitle>{truncateResult.success ? 'Success' : 'Partial Success'}</AlertTitle>
@@ -37,7 +37,7 @@ export function TruncateResultAlert({ truncateResult }: TruncateResultAlertProps
                     , {truncateResult.failedTables} failed
                     {truncateResult.failedTableNames &&
                       truncateResult.failedTableNames.length > 0 && (
-                        <span className="block mt-1 text-xs text-gray-600">
+                        <span className="block mt-1 text-xs text-muted-foreground">
                           Failed tables: {truncateResult.failedTableNames.join(', ')}
                         </span>
                       )}

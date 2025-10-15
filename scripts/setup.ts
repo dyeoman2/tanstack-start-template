@@ -75,6 +75,19 @@ APP_NAME="TanStack Start Template"
 # RESEND_EMAIL_SENDER=onboarding@resend.dev
 
 # ==========================================
+# STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)
+# ==========================================
+
+# Defaults target the local MinIO instance (pnpm dev:storage)
+S3_ENDPOINT=http://localhost:9000
+S3_REGION=us-west-1
+S3_ACCESS_KEY_ID=minioadmin
+S3_SECRET_ACCESS_KEY=minioadmin
+S3_BUCKET_NAME=application-documents
+S3_FORCE_PATH_STYLE=true
+S3_PUBLIC_URL=http://localhost:9000
+
+# ==========================================
 # DATABASE (Configure for Local Development)
 # ==========================================
 

@@ -1,0 +1,2 @@
+# Allow build scripts for @tailwindcss/oxide (Tailwind CSS v4 optimization)
+enable-pre-post-scripts=@tailwindcss/oxide

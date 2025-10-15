@@ -1,14 +1,24 @@
 import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
-import type { AdminLoaderData, SystemStats, User } from '~/types/admin';
+
+// Inferred types from server functions
+export type User = Awaited<ReturnType<typeof getAllUsersServerFn>>['users'][number];
+export type SystemStats = Awaited<ReturnType<typeof getSystemStatsServerFn>>;
+export type AdminLoaderData =
+  | { status: 'success'; users: User[]; stats: SystemStats }
+  | { status: 'partial'; users?: User[]; stats?: SystemStats; errors: string[] }
+  | { status: 'error'; errors: string[] };
 
 export async function loadAdminData(): Promise<AdminLoaderData> {
   const [usersResult, statsResult] = await Promise.allSettled([
-    getAllUsersServerFn(),
+    getAllUsersServerFn({
+      data: { page: 1, pageSize: 50, sortBy: 'createdAt', sortOrder: 'desc' },
+    }),
     getSystemStatsServerFn(),
   ]);
 
   const errors: string[] = [];
-  const users = usersResult.status === 'fulfilled' ? usersResult.value : undefined;
+  const usersData = usersResult.status === 'fulfilled' ? usersResult.value : undefined;
+  const users = usersData?.users;
   const stats = statsResult.status === 'fulfilled' ? statsResult.value : undefined;
 
   if (usersResult.status === 'rejected') errors.push('Failed to load users');

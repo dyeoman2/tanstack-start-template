@@ -163,7 +163,7 @@ export function SimpleTooltip({ children, content, cursor }: SimpleTooltipProps)
         ref={setTriggerElement}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
-        className="inline-block bg-transparent p-0 m-0 border-0"
+        className="inline-block bg-card p-0 m-0 border-0"
         style={cursor ? { cursor } : undefined}
         onFocus={handleMouseEnter}
         onBlur={handleMouseLeave}

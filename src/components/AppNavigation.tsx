@@ -1,50 +1,26 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
+import { ThemeToggle } from '~/components/theme-toggle';
 import {
-  NavigationMenu,
-  NavigationMenuContent,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-  NavigationMenuTrigger,
-  navigationMenuTriggerStyle,
-} from '~/components/ui/navigation-menu';
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
+import { navigationMenuTriggerStyle } from '~/components/ui/navigation-menu';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { queryInvalidators } from '~/lib/query-keys';
 import { cn } from '~/lib/utils';
 
 /**
- * Admin Settings Link - Only renders for admin users
- */
-function AdminSettingsLink() {
-  const { isAdmin } = useAuth();
-
-  if (!isAdmin) {
-    return null;
-  }
-
-  return (
-    <li>
-      <NavigationMenuLink asChild>
-        <Link
-          to="/admin"
-          search={{ showTruncate: false }}
-          className="block text-sm leading-none px-2 py-1.5 rounded-sm hover:bg-accent text-red-600 hover:text-red-700"
-        >
-          Admin
-        </Link>
-      </NavigationMenuLink>
-    </li>
-  );
-}
-
-/**
  * Authentication Navigation - Sign in/out links
  */
 function AuthNavigation({ currentPath }: { currentPath: string }) {
-  const { isAuthenticated, isPending } = useAuth();
+  const { user, isAuthenticated, isPending, isAdmin } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const router = useRouter();
@@ -66,15 +42,50 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
 
   if (isAuthenticated || isPending) {
     return (
-      <div className="flex items-center space-x-4">
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="text-sm text-gray-500 hover:text-gray-700"
-        >
-          Sign out
-        </button>
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary hover:bg-secondary/80 transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            title="User menu"
+          >
+            {user?.name ? (
+              <span className="text-sm font-medium text-secondary-foreground">
+                {user.name.charAt(0).toUpperCase()}
+              </span>
+            ) : (
+              <User className="w-4 h-4 text-muted-foreground" />
+            )}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          {isAdmin && (
+            <DropdownMenuItem asChild>
+              <Link
+                to="/admin"
+                className="flex items-center gap-2 w-full cursor-pointer text-destructive hover:text-destructive focus:text-destructive"
+              >
+                <Shield className="w-4 h-4" />
+                Admin
+              </Link>
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuItem asChild>
+            <Link to="/profile" className="flex items-center gap-2 w-full cursor-pointer">
+              <User className="w-4 h-4" />
+              Profile
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={handleSignOut}
+            className="flex items-center gap-2 cursor-pointer text-destructive focus:text-destructive"
+          >
+            <LogOut className="w-4 h-4" />
+            Sign out
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
 
@@ -83,13 +94,13 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       <Link
         to="/login"
         search={{ reset: '', redirect: currentPath }}
-        className="text-sm text-gray-500 hover:text-gray-700"
+        className="text-sm text-muted-foreground hover:text-foreground"
       >
         Sign in
       </Link>
       <Link
         to="/register"
-        className="text-sm bg-indigo-600 text-white px-3 py-2 rounded-md hover:bg-indigo-700"
+        className="text-sm bg-primary text-primary-foreground px-3 py-2 rounded-md hover:bg-primary/90"
       >
         Sign up
       </Link>
@@ -104,44 +115,62 @@ export function AppNavigation() {
   const location = useLocation();
 
   return (
-    <nav className="bg-white shadow-sm border-b">
+    <nav className="bg-card shadow-sm border-b">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 overflow-visible">
-          {/* Mobile Navigation - Left side */}
+          {/* Mobile Logo - Left side */}
           <div className="flex items-center md:hidden">
-            <MobileNavigation />
+            <Link
+              to="/"
+              className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+            >
+              <img
+                src="/android-chrome-192x192.png"
+                alt="TanStack Start Template Logo"
+                className="w-8 h-8 rounded hover:opacity-80 transition-opacity"
+              />
+            </Link>
           </div>
 
           {/* Desktop Navigation - Hidden on mobile */}
-          <div className="hidden md:flex items-center space-x-1">
+          <div className="hidden md:flex items-center space-x-2">
+            {/* Logo */}
             <Link
               to="/"
-              className={cn(navigationMenuTriggerStyle(), 'no-underline')}
-              activeOptions={{ exact: true }}
+              className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
             >
-              Dashboard
+              <img
+                src="/android-chrome-192x192.png"
+                alt="TanStack Start Template Logo"
+                className="w-8 h-8 rounded hover:opacity-80 transition-opacity"
+              />
             </Link>
 
-            {/* Settings Dropdown */}
-            <div className="relative">
-              <NavigationMenu>
-                <NavigationMenuList>
-                  <NavigationMenuItem>
-                    <NavigationMenuTrigger>Settings</NavigationMenuTrigger>
-                    <NavigationMenuContent>
-                      <ul className="grid w-[200px] gap-3 p-4">
-                        <AdminSettingsLink />
-                      </ul>
-                    </NavigationMenuContent>
-                  </NavigationMenuItem>
-                </NavigationMenuList>
-              </NavigationMenu>
+            {/* Navigation Links */}
+            <div className="flex items-center space-x-1">
+              <Link
+                to="/"
+                className={cn(navigationMenuTriggerStyle(), 'no-underline')}
+                activeOptions={{ exact: true }}
+              >
+                Dashboard
+              </Link>
             </div>
           </div>
 
-          {/* Right side - Auth navigation */}
-          <div className="flex items-center space-x-4">
-            {/* Hide auth nav on mobile since it's in the mobile menu */}
+          {/* Right side - Mobile menu on mobile, Auth nav on desktop */}
+          <div className="flex items-center">
+            {/* Mobile Navigation - Right side */}
+            <div className="md:hidden">
+              <MobileNavigation />
+            </div>
+
+            {/* Theme Toggle */}
+            <div className="hidden md:block mr-2">
+              <ThemeToggle />
+            </div>
+
+            {/* Desktop Auth Navigation */}
             <div className="hidden md:block">
               <AuthNavigation currentPath={location.pathname} />
             </div>

@@ -31,8 +31,6 @@ function AdminDashboardIndex() {
     statsError,
     showTruncateModal,
     setShowTruncateModal,
-    confirmText,
-    setConfirmText,
     truncateResult,
     isTruncating,
     handleTruncateData,
@@ -87,8 +85,6 @@ function AdminDashboardIndex() {
         <TruncateDataModal
           isOpen={showTruncateModal}
           onClose={() => setShowTruncateModal(false)}
-          confirmText={confirmText}
-          onConfirmTextChange={setConfirmText}
           onConfirm={handleTruncateData}
           isTruncating={isTruncating}
         />

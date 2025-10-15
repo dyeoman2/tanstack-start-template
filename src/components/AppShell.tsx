@@ -1,9 +1,10 @@
 import { Outlet, useLocation } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { AppNavigation } from '~/components/AppNavigation';
-import { Providers } from '~/components/Providers';
+import { ClientOnly } from '~/components/ClientOnly';
+
 /**
- * Simple application shell component following TanStack Start best practices
+ * Application shell component following TanStack Start best practices
  * Handles the main app layout with navigation and content area
  */
 export function AppShell() {
@@ -15,14 +16,20 @@ export function AppShell() {
   );
 
   return (
-    <Providers>
-      <div className="min-h-screen bg-gray-50">
+    <>
+      <div className="min-h-screen bg-background">
         {!isAuthRoute && <AppNavigation />}
-        <main className={`max-w-7xl mx-auto py-6 sm:px-6 lg:px-8 ${isAuthRoute ? 'pt-12' : ''}`}>
+        <main
+          className={`max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 ${isAuthRoute ? 'pt-12' : ''}`}
+        >
           <Outlet />
         </main>
       </div>
-      {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
-    </Providers>
+      {import.meta.env.DEV && (
+        <ClientOnly>
+          <TanStackRouterDevtools position="bottom-right" />
+        </ClientOnly>
+      )}
+    </>
   );
 }

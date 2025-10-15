@@ -44,10 +44,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               min-w-80 p-4 rounded-md shadow-lg border-l-4 transition-all duration-300 ease-in-out
               ${
                 toast.type === 'success'
-                  ? 'bg-green-50 border-l-green-400 text-green-800'
+                  ? 'bg-primary/5 border-l-primary text-primary'
                   : toast.type === 'error'
-                    ? 'bg-red-50 border-l-red-400 text-red-800'
-                    : 'bg-blue-50 border-l-blue-400 text-blue-800'
+                    ? 'bg-destructive/10 border-l-destructive text-destructive'
+                    : 'bg-muted border-l-border text-muted-foreground'
               }
             `}
           >
@@ -56,7 +56,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                 <div className="shrink-0">
                   {toast.type === 'success' && (
                     <svg
-                      className="h-5 w-5 text-green-400"
+                      className="h-5 w-5 text-primary"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -72,7 +72,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   )}
                   {toast.type === 'error' && (
                     <svg
-                      className="h-5 w-5 text-red-400"
+                      className="h-5 w-5 text-destructive"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -88,7 +88,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                   )}
                   {toast.type === 'info' && (
                     <svg
-                      className="h-5 w-5 text-blue-400"
+                      className="h-5 w-5 text-muted-foreground"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -115,10 +115,10 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
                     inline-flex rounded-md p-1.5 hover:bg-black/20 focus:outline-none
                     ${
                       toast.type === 'success'
-                        ? 'text-green-500 hover:bg-green-100'
+                        ? 'text-primary hover:bg-primary/10'
                         : toast.type === 'error'
-                          ? 'text-red-500 hover:bg-red-100'
-                          : 'text-blue-500 hover:bg-blue-100'
+                          ? 'text-destructive hover:bg-destructive/10'
+                          : 'text-muted-foreground hover:bg-accent'
                     }
                   `}
                 >

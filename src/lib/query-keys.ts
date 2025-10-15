@@ -24,27 +24,8 @@
 const createKey = <T extends readonly unknown[]>(...parts: T) => parts;
 const createDynamicKey = <T extends readonly unknown[], P>(base: T, param: P) =>
   [...base, param] as const;
-
-// Query key constants for better tree-shaking
-export const ADMIN_KEYS = {
-  ALL: ['admin'] as const,
-  LISTS: ['admin', 'list'] as const,
-  DETAILS: ['admin', 'detail'] as const,
-  USERS_ALL: ['admin', 'users'] as const,
-  STATS: ['admin', 'stats'] as const,
-  SYSTEM_METRICS: ['admin', 'system', 'metrics'] as const,
-  AUDIT: ['admin', 'audit'] as const,
-} as const;
-
-export const SYSTEM_KEYS = {
-  ENVIRONMENT: ['system', 'environment'] as const,
-  EMAIL_SERVICE: ['system', 'email-service'] as const,
-  CONFIG: ['system', 'config'] as const,
-  HEALTH: ['system', 'health'] as const,
-} as const;
-
 // Domain-specific key factories
-const queryKeys = {
+export const queryKeys = {
   // Dashboard domain - simplified for basic starter
   dashboard: {
     // Base keys
@@ -63,6 +44,14 @@ const queryKeys = {
     // User management - simplified for starter
     users: {
       all: () => createKey('admin', 'users'),
+      list: (params?: {
+        page?: number;
+        pageSize?: number;
+        sortBy?: string;
+        sortOrder?: 'asc' | 'desc';
+        search?: string;
+        role?: 'all' | 'user' | 'admin';
+      }) => createDynamicKey(createKey('admin', 'users', 'list'), params ?? {}),
       detail: (userId: string) => createDynamicKey(queryKeys.admin.users.all(), userId),
     },
 
@@ -84,8 +73,32 @@ const queryKeys = {
     session: () => createKey('auth', 'session'),
     user: () => createKey('auth', 'user'),
     profile: (userId: string) => createDynamicKey(queryKeys.auth.user(), userId),
+    currentProfile: () => createKey('auth', 'profile', 'current'),
     permissions: (userId: string) =>
       createDynamicKey(queryKeys.auth.profile(userId), 'permissions'),
+  },
+
+  // Applications domain
+  applications: {
+    all: () => createKey('applications'),
+    list: (params?: {
+      page?: number;
+      pageSize?: number;
+      sortBy?: string;
+      sortOrder?: 'asc' | 'desc';
+    }) => createDynamicKey(createKey('applications', 'list'), params ?? {}),
+    detail: (id: string) => createDynamicKey(queryKeys.applications.all(), id),
+    agents: (applicationId: string) => createKey('applications', applicationId, 'agents'),
+    indemnification: (applicationId: string) =>
+      createKey('applications', applicationId, 'indemnification'),
+  },
+
+  // Application documents invalidation
+  applicationDocuments: {
+    all: () => createKey('application-documents'),
+    list: (filters?: { applicationId?: string }) =>
+      createDynamicKey(queryKeys.applicationDocuments.all(), filters ?? {}),
+    detail: (id: string) => createDynamicKey(queryKeys.applicationDocuments.all(), id),
   },
 
   // System domain
@@ -188,8 +201,102 @@ export const queryInvalidators = {
         queryClient.invalidateQueries({ queryKey: queryKeys.auth.user() });
       }
     },
+    profile: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.auth.currentProfile(), exact: true });
+    },
     permissions: (queryClient: import('@tanstack/react-query').QueryClient, userId: string) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.auth.permissions(userId), exact: true });
+    },
+  },
+
+  // Applications invalidation
+  applications: {
+    all: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.all() });
+    },
+    list: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      // Invalidate all applications list queries regardless of pagination/sort parameters
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.applications.list(),
+        exact: false,
+      });
+    },
+    detail: (queryClient: import('@tanstack/react-query').QueryClient, id: string) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.applications.detail(id), exact: true });
+    },
+    indemnification: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      applicationId: string,
+    ) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.applications.indemnification(applicationId),
+        exact: true,
+      });
+    },
+  },
+
+  applicationDocuments: {
+    all: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.applicationDocuments.all() });
+    },
+    list: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      filters?: { applicationId?: string },
+    ) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.applicationDocuments.list(filters ?? {}),
+        exact: true,
+      });
+    },
+    detail: (queryClient: import('@tanstack/react-query').QueryClient, id: string) => {
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.applicationDocuments.detail(id),
+        exact: true,
+      });
+    },
+  },
+
+  // Checklist invalidation - hierarchical and consistent with query keys
+  checklist: {
+    // Invalidate all checklist queries
+    all: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      queryClient.invalidateQueries({ queryKey: ['checklist'] });
+    },
+
+    // Invalidate all checklist queries for a specific application
+    application: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      applicationId: string,
+    ) => {
+      queryClient.invalidateQueries({
+        queryKey: ['checklist', applicationId],
+        exact: false, // Invalidate all area and showAll variations for this application
+      });
+    },
+
+    // Invalidate all checklist queries for a specific application and area
+    area: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      applicationId: string,
+      area: string,
+    ) => {
+      queryClient.invalidateQueries({
+        queryKey: ['checklist', applicationId, area],
+        exact: false, // Invalidate all showAll variations for this area
+      });
+    },
+
+    // Invalidate a specific checklist query (exact match)
+    detail: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      applicationId: string,
+      area: string,
+      showAll: boolean = false,
+    ) => {
+      queryClient.invalidateQueries({
+        queryKey: ['checklist', applicationId, area, showAll],
+        exact: true,
+      });
     },
   },
 
@@ -227,6 +334,24 @@ export const queryInvalidators = {
     afterDashboardActivity: (queryClient: import('@tanstack/react-query').QueryClient) => {
       queryInvalidators.dashboard.stats(queryClient);
       queryInvalidators.dashboard.activity(queryClient);
+    },
+
+    // After application creation
+    afterApplicationCreation: (queryClient: import('@tanstack/react-query').QueryClient) => {
+      queryInvalidators.applications.list(queryClient);
+    },
+
+    // After application update (including automatic permit imports)
+    afterApplicationUpdate: (
+      queryClient: import('@tanstack/react-query').QueryClient,
+      applicationId: string,
+    ) => {
+      queryInvalidators.applications.list(queryClient);
+      queryInvalidators.applications.detail(queryClient, applicationId);
+      // Invalidate checklist and documents for the updated application
+      queryInvalidators.checklist.area(queryClient, applicationId, 'zoning_prep');
+      queryInvalidators.checklist.area(queryClient, applicationId, 'post_clearance');
+      queryInvalidators.applicationDocuments.list(queryClient, { applicationId });
     },
 
     // Complete data refresh (use sparingly - expensive)

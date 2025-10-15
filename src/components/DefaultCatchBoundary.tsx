@@ -20,7 +20,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
             router.invalidate();
           }}
           className={
-            'px-2 py-1 bg-gray-600 dark:bg-gray-700 rounded text-white uppercase font-extrabold'
+            'px-2 py-1 bg-destructive text-destructive-foreground rounded uppercase font-extrabold'
           }
         >
           Try Again
@@ -29,7 +29,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
           <Link
             to="/"
             className={
-              'px-2 py-1 bg-gray-600 dark:bg-gray-700 rounded text-white uppercase font-extrabold'
+              'px-2 py-1 bg-destructive text-destructive-foreground rounded uppercase font-extrabold'
             }
           >
             Home
@@ -38,7 +38,7 @@ export function DefaultCatchBoundary({ error }: ErrorComponentProps) {
           <Link
             to="/"
             className={
-              'px-2 py-1 bg-gray-600 dark:bg-gray-700 rounded text-white uppercase font-extrabold'
+              'px-2 py-1 bg-destructive text-destructive-foreground rounded uppercase font-extrabold'
             }
             onClick={(e) => {
               e.preventDefault();

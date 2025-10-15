@@ -1,4 +1,5 @@
 import { redirect } from '@tanstack/react-router';
+import { getRequest } from '@tanstack/react-start/server';
 import { eq } from 'drizzle-orm';
 import * as schema from '~/db/schema';
 import { getDb } from '~/lib/server/db-config.server';
@@ -18,12 +19,11 @@ export interface AuthResult {
   user: AuthenticatedUser;
 }
 
-async function getRequest(): Promise<Request | undefined> {
+function getCurrentRequest(): Request | undefined {
   if (!import.meta.env.SSR) {
     throw new Error('Authentication utilities must run on the server');
   }
 
-  const { getRequest } = await import('@tanstack/react-start/server');
   return getRequest();
 }
 
@@ -33,7 +33,7 @@ async function getRequest(): Promise<Request | undefined> {
  */
 async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   try {
-    const request = await getRequest();
+    const request = getCurrentRequest();
     if (!request) {
       return null;
     }

@@ -7,11 +7,11 @@ interface AdminErrorBannerProps {
 
 export function AdminErrorBanner({ errors, isFullPage = false }: AdminErrorBannerProps) {
   const content = (
-    <div className="bg-red-50 border border-red-200 rounded-md p-4">
+    <div className="bg-destructive/10 border border-destructive rounded-md p-4">
       <div className="flex">
         <div className="flex-shrink-0">
           <svg
-            className="h-5 w-5 text-red-400"
+            className="h-5 w-5 text-destructive"
             viewBox="0 0 20 20"
             fill="currentColor"
             aria-hidden="true"
@@ -24,8 +24,8 @@ export function AdminErrorBanner({ errors, isFullPage = false }: AdminErrorBanne
           </svg>
         </div>
         <div className="ml-3">
-          <h3 className="text-sm font-medium text-red-800">Data Loading Error</h3>
-          <div className="mt-2 text-sm text-red-700">
+          <h3 className="text-sm font-medium text-destructive">Data Loading Error</h3>
+          <div className="mt-2 text-sm text-destructive">
             <ul className="list-disc pl-5 space-y-1">
               {errors.map((error) => (
                 <li key={error}>{error}</li>
@@ -53,11 +53,11 @@ export function AdminErrorBanner({ errors, isFullPage = false }: AdminErrorBanne
 
 export function AdminWarningBanner({ errors }: { errors: string[] }) {
   return (
-    <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-md p-4">
+    <div className="mb-6 bg-secondary/50 border border-secondary rounded-md p-4">
       <div className="flex">
         <div className="flex-shrink-0">
           <svg
-            className="h-5 w-5 text-yellow-400"
+            className="h-5 w-5 text-secondary-foreground"
             viewBox="0 0 20 20"
             fill="currentColor"
             aria-hidden="true"
@@ -70,8 +70,8 @@ export function AdminWarningBanner({ errors }: { errors: string[] }) {
           </svg>
         </div>
         <div className="ml-3">
-          <h3 className="text-sm font-medium text-yellow-800">Partial Data Warning</h3>
-          <div className="mt-2 text-sm text-yellow-700">
+          <h3 className="text-sm font-medium text-destructive">Partial Data Warning</h3>
+          <div className="mt-2 text-sm text-destructive">
             <p>Some data failed to load. The dashboard may show incomplete information:</p>
             <ul className="list-disc pl-5 mt-1 space-y-1">
               {errors.map((error) => (

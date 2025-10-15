@@ -5,7 +5,7 @@ import {
   getSystemStatsServerFn,
   truncateDataServerFn,
 } from '~/features/dashboard/admin.server';
-import { ADMIN_KEYS, queryInvalidators } from '~/lib/query-keys';
+import { queryInvalidators, queryKeys } from '~/lib/query-keys';
 
 type TruncateResult = {
   success: boolean;
@@ -21,19 +21,22 @@ type TruncateResult = {
  * Custom hook for admin dashboard data and operations
  * Properly handles loader data hydration and client-side queries
  */
-export function useAdminDashboard(initialUsers?: unknown[], initialStats?: unknown) {
+export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unknown) {
   const queryClient = useQueryClient();
 
   // Hydrate preloaded data from loader into React Query cache
   const usersQuery = useQuery({
-    queryKey: ADMIN_KEYS.USERS_ALL,
-    queryFn: () => getAllUsersServerFn(),
-    initialData: initialUsers,
+    queryKey: queryKeys.admin.users.list(),
+    queryFn: () =>
+      getAllUsersServerFn({
+        data: { page: 1, pageSize: 50, sortBy: 'createdAt', sortOrder: 'desc' },
+      }),
+    initialData: initialUsersData,
     staleTime: 5 * 60 * 1000, // 5 minutes for user data
   });
 
   const statsQuery = useQuery({
-    queryKey: ADMIN_KEYS.STATS,
+    queryKey: queryKeys.admin.stats(),
     queryFn: () => getSystemStatsServerFn(),
     initialData: initialStats,
     staleTime: 30 * 1000, // 30 seconds for stats
@@ -41,7 +44,6 @@ export function useAdminDashboard(initialUsers?: unknown[], initialStats?: unkno
 
   // Local state for UI interactions
   const [showTruncateModal, setShowTruncateModal] = useState(false);
-  const [confirmText, setConfirmText] = useState('');
   const [truncateResult, setTruncateResult] = useState<TruncateResult | null>(null);
 
   // Auto-dismiss truncate result after 10 seconds
@@ -69,7 +71,6 @@ export function useAdminDashboard(initialUsers?: unknown[], initialStats?: unkno
       }
 
       setShowTruncateModal(false);
-      setConfirmText('');
     },
     onError: (error) => {
       setTruncateResult({
@@ -80,11 +81,7 @@ export function useAdminDashboard(initialUsers?: unknown[], initialStats?: unkno
   });
 
   const handleTruncateData = async () => {
-    if (confirmText !== 'TRUNCATE_ALL_DATA') {
-      return;
-    }
-
-    truncateMutation.mutate({ data: { confirmText } });
+    truncateMutation.mutate({ data: { confirmText: 'TRUNCATE_ALL_DATA' } });
   };
 
   return {
@@ -99,8 +96,6 @@ export function useAdminDashboard(initialUsers?: unknown[], initialStats?: unkno
     // UI state
     showTruncateModal,
     setShowTruncateModal,
-    confirmText,
-    setConfirmText,
     truncateResult,
     isTruncating: truncateMutation.isPending,
 

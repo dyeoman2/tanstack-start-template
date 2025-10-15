@@ -3,6 +3,7 @@ import { Check, ChevronsUpDown, CircleSlash, Search } from 'lucide-react';
 import * as React from 'react';
 import { cn } from '~/lib/utils';
 import { Button } from './button';
+import { Kbd, KbdGroup } from './kbd';
 import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import { SimpleTooltip } from './simple-tooltip';
 
@@ -152,7 +153,7 @@ export function VirtualizedSelect({
           {selectedOption ? (
             <span className="truncate">{selectedOption.label}</span>
           ) : (
-            <span className="text-gray-500">{placeholder}</span>
+            <span className="text-muted-foreground">{placeholder}</span>
           )}
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
@@ -169,7 +170,7 @@ export function VirtualizedSelect({
             placeholder={searchPlaceholder}
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
-            className="flex h-10 w-full bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            className="flex h-10 w-full bg-card py-3 text-sm outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
           />
         </div>
 
@@ -244,7 +245,7 @@ export function VirtualizedSelect({
                           <SimpleTooltip
                             content={option.disabledReason || 'This option is unavailable'}
                           >
-                            <CircleSlash className="h-4 w-4 text-red-500 shrink-0 ml-2" />
+                            <CircleSlash className="h-4 w-4 text-destructive shrink-0 ml-2" />
                           </SimpleTooltip>
                         )}
                       </div>
@@ -255,6 +256,15 @@ export function VirtualizedSelect({
             </div>
           </div>
         )}
+
+        <div className="flex items-center justify-center border-t px-3 py-2 text-xs text-muted-foreground">
+          <KbdGroup>
+            <Kbd>↑</Kbd>
+            <Kbd>↓</Kbd>
+            <Kbd>Enter</Kbd>
+            <Kbd>Esc</Kbd>
+          </KbdGroup>
+        </div>
       </PopoverContent>
     </Popover>
   );

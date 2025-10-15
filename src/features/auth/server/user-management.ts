@@ -43,8 +43,6 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 
       // If this was the first user, update their role to admin
       if (isFirstUser) {
-        console.log('🔑 First user created, setting admin role for:', email);
-
         // Find the newly created user (prefer id returned by Better Auth when available)
         const newUserId = signUpResult?.user?.id;
         const newUser = newUserId
@@ -63,8 +61,6 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
               updatedAt: new Date(),
             })
             .where(eq(schema.user.id, newUser[0].id));
-
-          console.log('✅ Admin role assigned to first user');
         }
       }
 
@@ -74,6 +70,10 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
         message: isFirstUser
           ? 'Admin account created successfully!'
           : 'Account created successfully!',
+        userCredentials: {
+          email,
+          password,
+        },
       };
     } catch (error) {
       throw handleServerError(error, 'User signup');

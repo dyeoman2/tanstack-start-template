@@ -10,8 +10,8 @@ interface AdminCardProps {
 }
 
 export function AdminCard({ title, description, href, onClick, destructive }: AdminCardProps) {
-  const cardClasses = `block p-6 bg-white rounded-lg shadow hover:shadow-lg transition-shadow border cursor-pointer ${
-    destructive ? 'border-red-200 hover:border-red-300' : 'border-gray-200'
+  const cardClasses = `block p-6 bg-card rounded-lg shadow hover:shadow-lg transition-shadow border cursor-pointer ${
+    destructive ? 'border-destructive/30 hover:border-destructive/50' : 'border-border'
   }`;
 
   if (onClick) {
@@ -21,16 +21,16 @@ export function AdminCard({ title, description, href, onClick, destructive }: Ad
           <div>
             <h3
               className={`text-left text-lg leading-6 font-medium mb-2 ${
-                destructive ? 'text-red-900' : 'text-gray-900'
+                destructive ? 'text-destructive' : 'text-foreground'
               }`}
             >
               {title}
             </h3>
-            <p className={`text-sm ${destructive ? 'text-red-600' : 'text-gray-600'}`}>
+            <p className={`text-sm ${destructive ? 'text-destructive' : 'text-muted-foreground'}`}>
               {description}
             </p>
           </div>
-          {destructive && <Trash2 className="h-5 w-5 text-red-500 flex-shrink-0 ml-2" />}
+          {destructive && <Trash2 className="h-5 w-5 text-destructive flex-shrink-0 ml-2" />}
         </div>
       </button>
     );
@@ -38,8 +38,8 @@ export function AdminCard({ title, description, href, onClick, destructive }: Ad
 
   return (
     <Link to={href} className={cardClasses}>
-      <h3 className="text-left text-lg leading-6 font-medium text-gray-900 mb-2">{title}</h3>
-      <p className="text-gray-600">{description}</p>
+      <h3 className="text-left text-lg leading-6 font-medium text-foreground mb-2">{title}</h3>
+      <p className="text-muted-foreground">{description}</p>
     </Link>
   );
 }

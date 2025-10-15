@@ -34,3 +34,6 @@ dist/
 
 # Additional build artifacts
 .output/
+
+# Generated route tree (prevents reload loops)
+src/routeTree.gen.ts

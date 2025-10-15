@@ -79,10 +79,5 @@ If you didn't request this password reset, please ignore this email.
     text: createBaseTextTemplate(textContent, env.APP_NAME),
   };
 
-  try {
-    await sendEmail(emailData);
-  } catch (error) {
-    console.error('Password reset email error:', error);
-    throw error;
-  }
+  await sendEmail(emailData);
 };

@@ -21,7 +21,7 @@ export function AdminCardsGrid({ onTruncateClick }: AdminCardsGridProps) {
 
       <AdminCard
         title="Truncate Data"
-        description="Reset all financial data for testing"
+        description="Truncate data for testing"
         onClick={onTruncateClick}
         destructive
       />

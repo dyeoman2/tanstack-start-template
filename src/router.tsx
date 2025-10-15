@@ -17,7 +17,7 @@ export function getRouter() {
     defaultPreloadGcTime: 5 * 60_000, // 5 minutes
     defaultErrorComponent: DefaultCatchBoundary,
     defaultNotFoundComponent: () => <NotFound />,
-    scrollRestoration: true,
+    scrollRestoration: false, // Disabled due to $_TSR ordering bug in v1.132.47
     // Provide default auth context
     context: {
       user: null,

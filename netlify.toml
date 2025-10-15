@@ -3,8 +3,8 @@
   publish = "dist/client"
 
 [build.environment]
-  NODE_VERSION = "20"
-  SECRETS_SCAN_OMIT_KEYS = "RESEND_EMAIL_SENDER,APP_NAME"
+  NODE_VERSION = "24"
+  SECRETS_SCAN_OMIT_KEYS = "RESEND_EMAIL_SENDER,APP_NAME,BETTER_AUTH_URL,S3_REGION"
 
 [template]
   full = true
@@ -20,6 +20,12 @@ name = "BETTER_AUTH_SECRET"
 required = true
 default = ""
 description = "Signs JWTs for authentication. Run 'openssl rand -base64 32' in your terminal to generate"
+
+[[template.environment]]
+name = "BETTER_AUTH_URL"
+required = true
+default = "https://tanstack-start-template.netlify.app"
+description = "Base URL used by Better Auth callbacks"
 
 [[template.environment]]
 name = "DB_ENCRYPTION_KEY"

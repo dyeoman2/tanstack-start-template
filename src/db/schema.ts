@@ -1,4 +1,37 @@
-import { boolean, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+import { boolean, integer, pgEnum, pgTable, text, timestamp } from 'drizzle-orm/pg-core';
+
+// Enums
+export const projectTypeEnum = pgEnum('project_type', ['adu', 'jadu']);
+export const utilityTypeEnum = pgEnum('utility_type', ['municipal', 'onsite', 'none']);
+export const ownershipTypeEnum = pgEnum('ownership_type', ['personal', 'business']);
+export const agentTypeEnum = pgEnum('agent_type', ['individual', 'business']);
+export const checklistAreaEnum = pgEnum('checklist_area', [
+  'zoning_prep',
+  'building_permit',
+  'final_inspection',
+  'post_clearance',
+]);
+export const checklistItemStatusEnum = pgEnum('checklist_item_status', [
+  'not_started',
+  'pending',
+  'completed',
+  'changes_requested',
+  'waived',
+]);
+export const completionSourceEnum = pgEnum('completion_source', [
+  'none',
+  'document',
+  'manual',
+  'system',
+]);
+export const reviewStatusEnum = pgEnum('review_status', [
+  'queued',
+  'in_progress',
+  'approved',
+  'rejected',
+  'needs_clarification',
+  'error',
+]);
 
 export const user = pgTable('user', {
   id: text('id').primaryKey(),
@@ -6,6 +39,7 @@ export const user = pgTable('user', {
   emailVerified: boolean('emailVerified'),
   name: text('name'),
   image: text('image'),
+  phoneNumber: text('phoneNumber'),
   role: text('role').default('user'),
   // Account lockout fields
   failedLoginAttempts: integer('failedLoginAttempts').default(0).notNull(),

@@ -1,6 +1,6 @@
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
-import { eq, sql } from 'drizzle-orm';
+import { and, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '~/db/schema';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
@@ -102,12 +102,6 @@ export const truncateDataServerFn = createServerFn({ method: 'POST' })
     }
   });
 
-// Zod schemas for type safety
-const updateUserRoleSchema = z.object({
-  userId: z.string().min(1, 'User ID is required'),
-  role: z.enum(['user', 'admin']),
-});
-
 const updateUserProfileSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
   name: z
@@ -116,70 +110,123 @@ const updateUserProfileSchema = z.object({
     .min(1, 'Name is required')
     .max(100, 'Name must be less than 100 characters'),
   email: z.string().email('Invalid email format').min(1, 'Email is required'),
+  role: z.enum(['user', 'admin']),
 });
 
 // Get all users (admin only)
-export const getAllUsersServerFn = createServerFn({ method: 'GET' }).handler(async () => {
-  await requireAdmin();
-
-  const users = await getDb()
-    .select({
-      id: schema.user.id,
-      email: schema.user.email,
-      name: schema.user.name,
-      role: schema.user.role,
-      emailVerified: schema.user.emailVerified,
-      createdAt: schema.user.createdAt,
-      updatedAt: schema.user.updatedAt,
-    })
-    .from(schema.user)
-    .orderBy(schema.user.createdAt);
-
-  return users;
-});
-
-// Update user role (admin only)
-export const updateUserRoleServerFn = createServerFn({ method: 'POST' })
-  .inputValidator(updateUserRoleSchema)
+export const getAllUsersServerFn = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      page: z.number().min(1).default(1),
+      pageSize: z.number().min(1).max(100).default(10),
+      sortBy: z.enum(['name', 'email', 'role', 'emailVerified', 'createdAt']).default('role'),
+      sortOrder: z.enum(['asc', 'desc']).default('asc'),
+      secondarySortBy: z
+        .enum(['name', 'email', 'role', 'emailVerified', 'createdAt'])
+        .default('name'),
+      secondarySortOrder: z.enum(['asc', 'desc']).default('asc'),
+      search: z.string().trim().max(100).optional(),
+      role: z.enum(['all', 'user', 'admin']).default('all'),
+    }),
+  )
   .handler(async ({ data }) => {
-    const { userId, role } = data;
-
     await requireAdmin();
+    const db = getDb();
+    const { page, pageSize, sortBy, sortOrder, secondarySortBy, secondarySortOrder, role } = data;
+    const searchTerm = data.search?.trim();
 
-    // Verify user exists
-    const existingUser = await getDb()
-      .select({ id: schema.user.id })
-      .from(schema.user)
-      .where(eq(schema.user.id, userId))
-      .limit(1);
+    // Calculate offset for pagination
+    const offset = (page - 1) * pageSize;
 
-    if (existingUser.length === 0) {
-      throwServerError('User not found', 404);
-    }
+    // Build the order by clauses
+    const getOrderByColumn = (column: string) => {
+      switch (column) {
+        case 'name':
+          return schema.user.name;
+        case 'email':
+          return schema.user.email;
+        case 'role':
+          return schema.user.role;
+        case 'emailVerified':
+          return schema.user.emailVerified;
+        case 'createdAt':
+          return schema.user.createdAt;
+        default:
+          return schema.user.createdAt;
+      }
+    };
 
-    // Update role
-    await getDb()
-      .update(schema.user)
-      .set({
-        role,
-        updatedAt: new Date(),
+    const primaryOrderBy =
+      sortOrder === 'desc' ? desc(getOrderByColumn(sortBy)) : getOrderByColumn(sortBy);
+    const secondaryOrderBy =
+      secondarySortOrder === 'desc'
+        ? desc(getOrderByColumn(secondarySortBy))
+        : getOrderByColumn(secondarySortBy);
+
+    const orderByClause = [primaryOrderBy, secondaryOrderBy];
+
+    const sanitizedSearch = searchTerm?.replace(/[%_\\]/g, (char) => `\\${char}`);
+    const searchPattern = sanitizedSearch ? `%${sanitizedSearch}%` : undefined;
+    const searchCondition = searchPattern
+      ? or(ilike(schema.user.name, searchPattern), ilike(schema.user.email, searchPattern))
+      : undefined;
+    const roleCondition = role === 'all' ? undefined : eq(schema.user.role, role);
+    const combinedCondition =
+      searchCondition && roleCondition
+        ? and(searchCondition, roleCondition)
+        : (searchCondition ?? roleCondition);
+
+    // Get total count for pagination
+    const baseCountQuery = db.select({ count: sql<number>`count(*)` }).from(schema.user);
+    const countQuery = combinedCondition ? baseCountQuery.where(combinedCondition) : baseCountQuery;
+    const [{ count }] = await countQuery;
+
+    // Get paginated users
+    const baseUsersQuery = db
+      .select({
+        id: schema.user.id,
+        email: schema.user.email,
+        name: schema.user.name,
+        role: schema.user.role,
+        emailVerified: schema.user.emailVerified,
+        createdAt: schema.user.createdAt,
+        updatedAt: schema.user.updatedAt,
       })
-      .where(eq(schema.user.id, userId));
+      .from(schema.user);
 
-    return { success: true, message: `User role updated to ${role}` };
+    const filteredUsersQuery = combinedCondition
+      ? baseUsersQuery.where(combinedCondition)
+      : baseUsersQuery;
+
+    const users = await filteredUsersQuery
+      .orderBy(...orderByClause)
+      .limit(pageSize)
+      .offset(offset);
+
+    return {
+      users,
+      pagination: {
+        page,
+        pageSize,
+        total: count,
+        totalPages: Math.ceil(count / pageSize),
+      },
+    };
   });
+
+export type GetAllUsersServerFn = Awaited<ReturnType<typeof getAllUsersServerFn>>;
 
 // Update user profile (name and email) (admin only)
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateUserProfileSchema)
   .handler(async ({ data }) => {
-    const { userId, name, email } = data;
+    const { userId, name, email, role } = data;
 
     await requireAdmin();
 
     // Verify user exists
     const existingUser = await getDb()
-      .select({ id: schema.user.id, email: schema.user.email })
+      .select({ id: schema.user.id, email: schema.user.email, role: schema.user.role })
       .from(schema.user)
       .where(eq(schema.user.id, userId))
       .limit(1);
@@ -207,6 +254,7 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
       .set({
         name: name.trim(),
         email: email.toLowerCase().trim(),
+        role,
         updatedAt: new Date(),
       })
       .where(eq(schema.user.id, userId));
@@ -260,7 +308,11 @@ export const deleteUserServerFn = createServerFn({ method: 'POST' })
       }
     }
 
-    // Delete user (cascading deletes will handle associated data)
+    // Delete user and all associated data
+    // Cascade deletes will handle all related records:
+    // - sessions, auth accounts, audit logs
+    // - applications (via createdBy) -> application documents/agents/checklist items/reviews
+    // - application checklist items and document reviews (via completedBy/reviewedBy)
     await getDb().delete(schema.user).where(eq(schema.user.id, userId));
 
     return {

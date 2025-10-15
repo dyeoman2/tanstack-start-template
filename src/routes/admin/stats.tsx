@@ -7,7 +7,7 @@ import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { getSystemStatsServerFn } from '~/features/dashboard/admin.server';
-import { ADMIN_KEYS } from '~/lib/query-keys';
+import { queryKeys } from '~/lib/query-keys';
 
 export const Route = createFileRoute('/admin/stats')({
   component: SystemStats,
@@ -27,7 +27,7 @@ function SystemStats() {
     isPending: statsPending,
     refetch,
   } = useQuery({
-    queryKey: ADMIN_KEYS.STATS,
+    queryKey: queryKeys.admin.stats(),
     queryFn: () => getSystemStatsServerFn(),
     initialData: loaderData, // Use loader data as initial data
     initialDataUpdatedAt: loaderFetchedAt,

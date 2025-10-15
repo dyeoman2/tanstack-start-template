@@ -1,8 +1,13 @@
+import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
+import { Lock } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
-import { authClient, signIn } from '~/features/auth/auth-client';
+import { Button } from '~/components/ui/button';
+import { Field, FieldLabel } from '~/components/ui/field';
+import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
+import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/reset-password')({
@@ -18,18 +23,85 @@ function ResetPasswordPage() {
   const { user, isAuthenticated } = useAuth();
   const session = useMemo(() => ({ user: isAuthenticated ? user : null }), [user, isAuthenticated]);
   const router = useRouter();
-  const [email] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [validationErrors, setValidationErrors] = useState({
-    password: '',
-    confirmPassword: '',
-  });
   const newPasswordId = useId();
   const confirmPasswordId = useId();
+
+  const form = useForm({
+    defaultValues: {
+      password: '',
+      confirmPassword: '',
+    },
+    onSubmit: async ({ value }) => {
+      setError('');
+
+      // Validate form fields
+      const errors: string[] = [];
+
+      // Validate password
+      if (!value.password) {
+        errors.push('Password is required');
+      } else if (value.password.length < 8) {
+        errors.push('Password must be at least 8 characters long');
+      } else if (value.password.length > 128) {
+        errors.push('Password must be less than 128 characters');
+      } else if (!/(?=.*[a-z])/.test(value.password)) {
+        errors.push('Password must contain at least one lowercase letter');
+      } else if (!/(?=.*[A-Z])/.test(value.password)) {
+        errors.push('Password must contain at least one uppercase letter');
+      } else if (!/(?=.*\d)/.test(value.password)) {
+        errors.push('Password must contain at least one number');
+      } else if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(value.password)) {
+        errors.push('Password must contain at least one symbol');
+      }
+
+      // Validate password confirmation
+      if (!value.confirmPassword) {
+        errors.push('Please confirm your password');
+      } else if (value.confirmPassword !== value.password) {
+        errors.push('Passwords do not match');
+      }
+
+      // Show validation errors if any
+      if (errors.length > 0) {
+        setError(errors.join('. '));
+        return;
+      }
+
+      try {
+        // Reset the password using Better Auth client
+        await authClient.resetPassword({
+          token,
+          newPassword: value.password,
+        });
+
+        setSuccess(true);
+
+        // Better Auth should handle auto-signin with autoSignIn: true
+        // Invalidate router to refresh auth state
+        await router.invalidate();
+
+        // Navigate to home after showing success message
+        setTimeout(() => {
+          router.navigate({ to: '/' });
+        }, 2000);
+      } catch (error: unknown) {
+        if (
+          (error instanceof Error && error.message?.includes('Invalid token')) ||
+          (error instanceof Error && error.message?.includes('expired'))
+        ) {
+          setError(
+            'This password reset link has expired or is invalid. Please request a new password reset.',
+          );
+        } else if (error instanceof Error && error.message?.includes('Password')) {
+          setError('Password does not meet the requirements. Please check the password criteria.');
+        } else {
+          setError('Password reset failed. Please try again or request a new reset link.');
+        }
+      }
+    },
+  });
 
   useEffect(() => {
     if (!token) {
@@ -42,126 +114,20 @@ function ResetPasswordPage() {
   // Check if user is already logged in after password reset
   useEffect(() => {
     if (session?.user && success) {
-      console.log('✅ User is now logged in after password reset, redirecting to dashboard');
       setTimeout(() => {
         router.navigate({ to: '/' });
       }, 1000);
     }
   }, [session, success, router]);
 
-  const validatePassword = (password: string) => {
-    if (!password) return 'Password is required';
-    if (password.length < 8) return 'Password must be at least 8 characters long';
-    if (password.length > 128) return 'Password must be less than 128 characters';
-    if (!/(?=.*[a-z])/.test(password)) return 'Password must contain at least one lowercase letter';
-    if (!/(?=.*[A-Z])/.test(password)) return 'Password must contain at least one uppercase letter';
-    if (!/(?=.*\d)/.test(password)) return 'Password must contain at least one number';
-    if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(password))
-      return 'Password must contain at least one symbol';
-    return '';
-  };
-
-  const validateConfirmPassword = (confirmPassword: string, password: string) => {
-    if (!confirmPassword) return 'Please confirm your password';
-    if (confirmPassword !== password) return 'Passwords do not match';
-    return '';
-  };
-
-  const handlePasswordChange = (value: string) => {
-    setPassword(value);
-    setValidationErrors((prev) => ({
-      ...prev,
-      password: validatePassword(value),
-      confirmPassword: confirmPassword ? validateConfirmPassword(confirmPassword, value) : '',
-    }));
-  };
-
-  const handleConfirmPasswordChange = (value: string) => {
-    setConfirmPassword(value);
-    setValidationErrors((prev) => ({
-      ...prev,
-      confirmPassword: validateConfirmPassword(value, password),
-    }));
-  };
-
-  const isFormValid = () => {
-    const passwordError = validatePassword(password);
-    const confirmPasswordError = validateConfirmPassword(confirmPassword, password);
-
-    setValidationErrors({
-      password: passwordError,
-      confirmPassword: confirmPasswordError,
-    });
-
-    return !passwordError && !confirmPasswordError && token;
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-
-    if (!isFormValid()) {
-      return;
-    }
-
-    setIsLoading(true);
-
-    try {
-      // Reset the password using Better Auth
-      await authClient.resetPassword({
-        token,
-        newPassword: password,
-      });
-
-      setSuccess(true);
-
-      // Attempt auto-login with the provided email
-      try {
-        await signIn.email({
-          email: email,
-          password: password,
-        });
-
-        setTimeout(() => {
-          router.navigate({ to: '/' });
-        }, 1000);
-        return;
-      } catch (loginError) {
-        console.error('❌ Auto-login failed:', loginError);
-        // Fall back to manual login
-      }
-
-      // Fallback: redirect to login with success message
-      setTimeout(() => {
-        router.navigate({ to: '/login', search: { reset: 'success' } });
-      }, 1500);
-    } catch (error: unknown) {
-      console.error('Password reset error:', error);
-      setIsLoading(false);
-
-      if (
-        (error instanceof Error && error.message?.includes('Invalid token')) ||
-        (error instanceof Error && error.message?.includes('expired'))
-      ) {
-        setError(
-          'This password reset link has expired or is invalid. Please request a new password reset.',
-        );
-      } else if (error instanceof Error && error.message?.includes('Password')) {
-        setError('Password does not meet the requirements. Please check the password criteria.');
-      } else {
-        setError('Password reset failed. Please try again or request a new reset link.');
-      }
-    }
-  };
-
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100">
+            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-primary/10">
               <svg
-                className="h-6 w-6 text-green-600"
+                className="h-6 w-6 text-primary"
                 fill="none"
                 viewBox="0 0 24 24"
                 stroke="currentColor"
@@ -175,11 +141,12 @@ function ResetPasswordPage() {
                 />
               </svg>
             </div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
               Password Reset Successful
             </h2>
-            <p className="mt-2 text-center text-sm text-gray-600">
-              Your password has been successfully updated. Redirecting to login...
+            <p className="mt-2 text-center text-sm text-muted-foreground">
+              Your password has been successfully updated. You are now signed in and will be
+              redirected to your dashboard...
             </p>
           </div>
         </div>
@@ -188,96 +155,99 @@ function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Reset your password
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">Enter your new password below</p>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            Enter your new password below
+          </p>
         </div>
-        <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
+        <form
+          className="mt-8 space-y-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            form.handleSubmit();
+          }}
+        >
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
               {error}
             </div>
           )}
 
-          {/* Hidden email field - pre-filled but not visible to user */}
-          <input type="hidden" name="email" value={email} />
-
-          <div>
-            <label htmlFor={newPasswordId} className="sr-only">
-              New Password
-            </label>
-            <input
-              id={newPasswordId}
-              name="password"
-              type="password"
-              required
-              autoComplete="new-password"
-              className={`relative block w-full px-3 py-2 bg-white border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:z-10 sm:text-sm ${
-                validationErrors.password
-                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                  : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-              }`}
-              placeholder="New password"
-              value={password}
-              onChange={(e) => handlePasswordChange(e.target.value)}
-            />
-            {validationErrors.password && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.password}</p>
+          <form.Field name="password">
+            {(field) => (
+              <Field>
+                <FieldLabel className="sr-only">New Password</FieldLabel>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Lock />
+                  </InputGroupIcon>
+                  <InputGroupInput
+                    id={newPasswordId}
+                    name={field.name}
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    placeholder="New password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </InputGroup>
+                {field.state.meta.errors.length > 0 && (
+                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
+                )}
+                {!field.state.meta.errors.length && field.state.value && (
+                  <div className="text-xs text-muted-foreground">
+                    Password must contain: 8+ characters, uppercase, lowercase, number, and symbol
+                  </div>
+                )}
+              </Field>
             )}
-            {!validationErrors.password && password && (
-              <div className="mt-1 text-xs text-gray-500">
-                Password must contain: 8+ characters, uppercase, lowercase, and number
-              </div>
-            )}
-          </div>
+          </form.Field>
 
-          <div>
-            <label htmlFor={confirmPasswordId} className="sr-only">
-              Confirm New Password
-            </label>
-            <input
-              id={confirmPasswordId}
-              name="confirmPassword"
-              type="password"
-              required
-              autoComplete="new-password"
-              className={`relative block w-full px-3 py-2 bg-white border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:z-10 sm:text-sm ${
-                validationErrors.confirmPassword
-                  ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                  : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-              }`}
-              placeholder="Confirm new password"
-              value={confirmPassword}
-              onChange={(e) => handleConfirmPasswordChange(e.target.value)}
-            />
-            {validationErrors.confirmPassword && (
-              <p className="mt-1 text-sm text-red-600">{validationErrors.confirmPassword}</p>
+          <form.Field name="confirmPassword">
+            {(field) => (
+              <Field>
+                <FieldLabel className="sr-only">Confirm New Password</FieldLabel>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Lock />
+                  </InputGroupIcon>
+                  <InputGroupInput
+                    id={confirmPasswordId}
+                    name={field.name}
+                    type="password"
+                    required
+                    autoComplete="new-password"
+                    placeholder="Confirm new password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </InputGroup>
+                {field.state.meta.errors.length > 0 && (
+                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
+                )}
+              </Field>
             )}
-          </div>
+          </form.Field>
 
-          <div>
-            <button
-              type="submit"
-              disabled={
-                isLoading ||
-                !password ||
-                !confirmPassword ||
-                !!validationErrors.password ||
-                !!validationErrors.confirmPassword ||
-                !token
-              }
-              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Resetting password...' : 'Reset password'}
-            </button>
-          </div>
+          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+            {([canSubmit, isSubmitting]) => (
+              <Button type="submit" disabled={!canSubmit || !token} className="w-full">
+                {isSubmitting ? 'Resetting password...' : 'Reset password'}
+              </Button>
+            )}
+          </form.Subscribe>
 
           <div className="text-center">
-            <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            <Link to="/login" className="font-medium  hover:text-muted-foreground">
               Back to sign in
             </Link>
           </div>

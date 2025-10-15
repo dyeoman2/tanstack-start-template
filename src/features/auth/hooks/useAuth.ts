@@ -10,6 +10,7 @@ export function useAuth() {
       ? {
           ...session.user,
           role: (session.user as { role?: UserRole }).role || 'user',
+          phoneNumber: (session.user as { phoneNumber?: string }).phoneNumber || null,
         }
       : null,
     isAuthenticated: !!session?.user,

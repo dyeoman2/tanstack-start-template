@@ -1,15 +1,24 @@
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
+import { Lock, Mail } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
+import { Button } from '~/components/ui/button';
+import { Field, FieldLabel } from '~/components/ui/field';
+import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { signIn } from '~/features/auth/auth-client';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
+    email: z
+      .string()
+      .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
+      .optional(),
     reset: z.string().optional(),
     redirect: z
       .string()
@@ -19,12 +28,10 @@ export const Route = createFileRoute('/login')({
 });
 
 function LoginPage() {
-  const { reset } = Route.useSearch();
+  const { email: emailFromQuery, reset } = Route.useSearch();
   const navigate = useNavigate();
   const router = useRouter();
-
-  // For login page, assume user is not authenticated
-  const session = { user: null };
+  const { isAuthenticated } = useAuth();
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -33,11 +40,34 @@ function LoginPage() {
 
   const form = useForm({
     defaultValues: {
-      email: import.meta.env.DEV ? '' : '',
+      email: emailFromQuery || (import.meta.env.DEV ? '' : ''),
       password: import.meta.env.DEV ? '' : '',
     },
     onSubmit: async ({ value }) => {
       setError('');
+      setSuccessMessage('');
+
+      // Validate form fields
+      const errors: string[] = [];
+
+      // Validate email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!value.email) {
+        errors.push('Email is required');
+      } else if (!emailRegex.test(value.email)) {
+        errors.push('Please enter a valid email address');
+      }
+
+      // Validate password
+      if (!value.password) {
+        errors.push('Password is required');
+      }
+
+      // Show validation errors if any
+      if (errors.length > 0) {
+        setError(errors.join('. '));
+        return;
+      }
 
       try {
         const { data, error: signInError } = await signIn.email(
@@ -104,6 +134,9 @@ function LoginPage() {
     },
   });
 
+  // Get current email value for navigation links
+  const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
+
   useEffect(() => {
     if (reset === 'success') {
       setSuccessMessage('Password reset successful! Please sign in with your new password.');
@@ -113,17 +146,22 @@ function LoginPage() {
     }
   }, [reset, form]);
 
-  // Login page doesn't auto-redirect since session is always null
+  // Redirect if already logged in
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate({ to: '/' });
+    }
+  }, [isAuthenticated, navigate]);
 
-  if (session?.user) {
+  if (isAuthenticated) {
     return null;
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Sign in to your account
           </h2>
         </div>
@@ -136,118 +174,103 @@ function LoginPage() {
           }}
         >
           {successMessage && (
-            <div className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded">
+            <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded">
               {successMessage}
             </div>
           )}
           {error && (
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
               {error}
             </div>
           )}
-          <form.Field
-            name="email"
-            validators={{
-              onChange: ({ value }) => {
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!value) return 'Email is required';
-                if (!emailRegex.test(value)) return 'Please enter a valid email address';
-                return undefined;
-              },
-            }}
-          >
+          <form.Field name="email">
             {(field) => (
-              <div>
-                <label htmlFor={emailId} className="sr-only">
-                  Email address
-                </label>
-                <input
-                  id={emailId}
-                  name={field.name}
-                  type="email"
-                  required
-                  autoComplete="email"
-                  data-lpignore="true"
-                  className={`relative block w-full px-3 py-2 bg-white border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:z-10 sm:text-sm ${
-                    field.state.meta.errors.length > 0
-                      ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                  }`}
-                  placeholder="Email address"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                />
+              <Field>
+                <FieldLabel className="sr-only">Email address</FieldLabel>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Mail />
+                  </InputGroupIcon>
+                  <InputGroupInput
+                    id={emailId}
+                    name={field.name}
+                    type="email"
+                    required
+                    autoComplete="email"
+                    data-lpignore="true"
+                    placeholder="Email address"
+                    value={field.state.value}
+                    onChange={(e) => {
+                      field.handleChange(e.target.value);
+                      setCurrentEmail(e.target.value);
+                    }}
+                    onBlur={field.handleBlur}
+                  />
+                </InputGroup>
                 {field.state.meta.errors.length > 0 && (
-                  <p className="mt-1 text-sm text-red-600">{field.state.meta.errors[0]}</p>
+                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
                 )}
-              </div>
+              </Field>
             )}
           </form.Field>
-          <form.Field
-            name="password"
-            validators={{
-              onChange: ({ value }) => {
-                if (!value) return 'Password is required';
-                if (value.length < 8) return 'Password must be at least 8 characters long';
-                if (value.length > 128) return 'Password must be less than 128 characters';
-                return undefined;
-              },
-            }}
-          >
+          <form.Field name="password">
             {(field) => (
-              <div>
-                <label htmlFor={passwordId} className="sr-only">
-                  Password
-                </label>
-                <input
-                  id={passwordId}
-                  name={field.name}
-                  type="password"
-                  required
-                  autoComplete="current-password"
-                  data-lpignore="true"
-                  className={`relative block w-full px-3 py-2 bg-white border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:z-10 sm:text-sm ${
-                    field.state.meta.errors.length > 0
-                      ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                      : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                  }`}
-                  placeholder="Password"
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                />
+              <Field>
+                <FieldLabel className="sr-only">Password</FieldLabel>
+                <InputGroup>
+                  <InputGroupIcon>
+                    <Lock />
+                  </InputGroupIcon>
+                  <InputGroupInput
+                    id={passwordId}
+                    name={field.name}
+                    type="password"
+                    required
+                    autoComplete="current-password"
+                    data-lpignore="true"
+                    placeholder="Password"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
+                    onBlur={field.handleBlur}
+                  />
+                </InputGroup>
                 {field.state.meta.errors.length > 0 && (
-                  <p className="mt-1 text-sm text-red-600">{field.state.meta.errors[0]}</p>
+                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
                 )}
-              </div>
+              </Field>
             )}
           </form.Field>
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
             {([canSubmit, isSubmitting]) => (
-              <div>
-                <button
-                  type="submit"
-                  disabled={!canSubmit}
-                  className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSubmitting ? 'Signing in...' : 'Sign in'}
-                </button>
-              </div>
+              <Button type="submit" disabled={!canSubmit} className="w-full">
+                {isSubmitting ? 'Signing in...' : 'Sign in'}
+              </Button>
             )}
           </form.Subscribe>
           <div className="text-center space-y-2">
             <div>
               <Link
                 to="/forgot-password"
-                search={form.getFieldValue('email') ? { email: form.getFieldValue('email') } : {}}
-                className="font-medium text-indigo-600 hover:text-indigo-500"
+                search={
+                  currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)
+                    ? { email: currentEmail }
+                    : {}
+                }
+                className="font-medium  hover:text-muted-foreground"
               >
                 Forgot your password?
               </Link>
             </div>
             <div>
-              <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
+              <Link
+                to="/register"
+                search={
+                  currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)
+                    ? { email: currentEmail }
+                    : {}
+                }
+                className="font-medium  hover:text-muted-foreground"
+              >
                 Don't have an account? Sign up
               </Link>
             </div>

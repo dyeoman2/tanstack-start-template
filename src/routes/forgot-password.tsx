@@ -1,9 +1,13 @@
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link } from '@tanstack/react-router';
+import { Mail } from 'lucide-react';
 import { useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { ClientOnly } from '~/components/ClientOnly';
+import { Button } from '~/components/ui/button';
+import { Field, FieldLabel } from '~/components/ui/field';
+import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
 import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
@@ -40,6 +44,16 @@ function ForgotPasswordPage() {
       setError('');
       setSubmittedEmail(value.email);
 
+      // Validate email
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!value.email) {
+        setError('Email is required');
+        return;
+      } else if (!emailRegex.test(value.email)) {
+        setError('Please enter a valid email address');
+        return;
+      }
+
       try {
         await authClient.forgetPassword({
           email: value.email,
@@ -53,21 +67,32 @@ function ForgotPasswordPage() {
     },
   });
 
+  // Get current email value for navigation links
+  const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
+
   if (isSubmitted) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
-            <h2 className="mt-6 text-3xl font-extrabold text-gray-900">Check your email</h2>
-            <p className="mt-2 text-sm text-gray-600">
+            <h2 className="mt-6 text-3xl font-extrabold text-foreground">Check your email</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
               We've sent a password reset link to <strong>{submittedEmail}</strong>
             </p>
-            <p className="mt-4 text-sm text-gray-500">
+            <p className="mt-4 text-sm text-muted-foreground">
               Check your console in development mode to see the reset link.
             </p>
           </div>
           <div className="text-center">
-            <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+            <Link
+              to="/login"
+              search={
+                submittedEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(submittedEmail)
+                  ? { email: submittedEmail }
+                  : {}
+              }
+              className="font-medium  hover:text-muted-foreground"
+            >
               Back to sign in
             </Link>
           </div>
@@ -77,23 +102,23 @@ function ForgotPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Forgot your password?
           </h2>
-          <p className="mt-2 text-center text-sm text-gray-600">
+          <p className="mt-2 text-center text-sm text-muted-foreground">
             Enter your email address and we'll send you a link to reset your password.
           </p>
           {emailServiceStatus && !emailServiceStatus.isConfigured && (
-            <div className="mt-4 bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded">
-              <div className="font-medium mb-2">Email service not configured</div>
+            <div className="mt-4 bg-muted border border-border text-muted-foreground px-4 py-3 rounded">
+              <div className="font-medium mb-2 text-foreground">Email service not configured</div>
               <div className="text-sm space-y-2">
                 <p>
                   Password reset functionality requires the{' '}
-                  <code className="bg-yellow-200 px-1 rounded text-xs">RESEND_API_KEY</code>{' '}
-                  environment variable to be set.
+                  <code className="bg-muted px-1 rounded text-xs">RESEND_API_KEY</code> environment
+                  variable to be set.
                 </p>
                 <div className="space-y-1">
                   <p className="font-medium">To fix this:</p>
@@ -104,7 +129,7 @@ function ForgotPasswordPage() {
                         href="https://resend.com"
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="underline hover:text-yellow-800"
+                        className="underline hover:text-destructive"
                       >
                         resend.com
                       </a>{' '}
@@ -113,11 +138,11 @@ function ForgotPasswordPage() {
                     <li>Create a new API key</li>
                     <li>
                       Add{' '}
-                      <code className="bg-yellow-200 px-1 rounded text-xs">
+                      <code className="bg-muted px-1 rounded text-xs">
                         RESEND_API_KEY=your_api_key_here
                       </code>{' '}
-                      to your <code className="bg-yellow-200 px-1 rounded text-xs">.env.local</code>{' '}
-                      file (local development)
+                      to your <code className="bg-muted px-1 rounded text-xs">.env.local</code> file
+                      (local development)
                     </li>
                     <li>
                       For production: Add the same variable to your Netlify environment variables
@@ -131,10 +156,10 @@ function ForgotPasswordPage() {
         <ClientOnly
           fallback={
             <div className="mt-8 space-y-6 animate-pulse">
-              <div className="h-4 bg-gray-200 rounded w-3/4 mx-auto"></div>
+              <div className="h-4 bg-muted rounded w-3/4 mx-auto"></div>
               <div className="space-y-4">
-                <div className="h-10 bg-gray-200 rounded"></div>
-                <div className="h-10 bg-gray-200 rounded"></div>
+                <div className="h-10 bg-muted rounded"></div>
+                <div className="h-10 bg-muted rounded"></div>
               </div>
             </div>
           }
@@ -148,46 +173,37 @@ function ForgotPasswordPage() {
             }}
           >
             {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
+              <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
                 {error}
               </div>
             )}
-            <form.Field
-              name="email"
-              validators={{
-                onChange: ({ value }) => {
-                  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                  if (!value) return 'Email is required';
-                  if (!emailRegex.test(value)) return 'Please enter a valid email address';
-                  return undefined;
-                },
-              }}
-            >
+            <form.Field name="email">
               {(field) => (
-                <div>
-                  <label htmlFor={emailId} className="sr-only">
-                    Email address
-                  </label>
-                  <input
-                    id={emailId}
-                    name={field.name}
-                    type="email"
-                    required
-                    autoComplete="email"
-                    className={`relative block w-full px-3 py-2 bg-white border placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:z-10 sm:text-sm ${
-                      field.state.meta.errors.length > 0
-                        ? 'border-red-300 focus:ring-red-500 focus:border-red-500'
-                        : 'border-gray-300 focus:ring-indigo-500 focus:border-indigo-500'
-                    }`}
-                    placeholder="Email address"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
+                <Field>
+                  <FieldLabel className="sr-only">Email address</FieldLabel>
+                  <InputGroup>
+                    <InputGroupIcon>
+                      <Mail />
+                    </InputGroupIcon>
+                    <InputGroupInput
+                      id={emailId}
+                      name={field.name}
+                      type="email"
+                      required
+                      autoComplete="email"
+                      placeholder="Email address"
+                      value={field.state.value}
+                      onChange={(e) => {
+                        field.handleChange(e.target.value);
+                        setCurrentEmail(e.target.value);
+                      }}
+                      onBlur={field.handleBlur}
+                    />
+                  </InputGroup>
                   {field.state.meta.errors.length > 0 && (
-                    <p className="mt-1 text-sm text-red-600">{field.state.meta.errors[0]}</p>
+                    <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
                   )}
-                </div>
+                </Field>
               )}
             </form.Field>
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
@@ -196,20 +212,22 @@ function ForgotPasswordPage() {
                 const isDisabled = !canSubmit || !isEmailConfigured;
 
                 return (
-                  <div>
-                    <button
-                      type="submit"
-                      disabled={isDisabled}
-                      className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isSubmitting ? 'Sending...' : 'Send reset link'}
-                    </button>
-                  </div>
+                  <Button type="submit" disabled={isDisabled} className="w-full">
+                    {isSubmitting ? 'Sending...' : 'Send reset link'}
+                  </Button>
                 );
               }}
             </form.Subscribe>
             <div className="text-center">
-              <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+              <Link
+                to="/login"
+                search={
+                  currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)
+                    ? { email: currentEmail }
+                    : {}
+                }
+                className="font-medium  hover:text-muted-foreground"
+              >
                 Back to sign in
               </Link>
             </div>

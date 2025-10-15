@@ -1,49 +1,65 @@
-import * as React from 'react';
+import { cva, type VariantProps } from 'class-variance-authority';
+import type * as React from 'react';
 
 import { cn } from '~/lib/utils';
 
-interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
-  variant?: 'default' | 'destructive';
-}
-
-const Alert = React.forwardRef<HTMLDivElement, AlertProps>(
-  ({ className, variant = 'default', ...props }, ref) => {
-    const baseClasses =
-      'relative w-full rounded-lg border p-4 [&>svg~*]:pl-7 [&>svg+div]:translate-y-[-3px] [&>svg]:absolute [&>svg]:left-4 [&>svg]:top-4 [&>svg]:text-foreground';
-    const variantClasses =
-      variant === 'destructive'
-        ? 'border-destructive/50 text-destructive dark:border-destructive [&>svg]:text-destructive'
-        : 'bg-background text-foreground';
-
-    return (
-      <div
-        ref={ref}
-        role="alert"
-        className={cn(baseClasses, variantClasses, className)}
-        {...props}
-      />
-    );
+const alertVariants = cva(
+  'relative w-full rounded-lg border px-4 py-3 text-sm grid has-[>svg]:grid-cols-[calc(var(--spacing)*4)_1fr] grid-cols-[0_1fr] has-[>svg]:gap-x-3 gap-y-0.5 items-start [&>svg]:size-4 [&>svg]:translate-y-0.5 [&>svg]:text-current',
+  {
+    variants: {
+      variant: {
+        default: 'bg-card text-card-foreground',
+        success:
+          'border-emerald-200/70 bg-emerald-50 text-emerald-700 *:data-[slot=alert-description]:text-emerald-700/90 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-100 dark:*:data-[slot=alert-description]:text-emerald-100/80',
+        destructive:
+          'border-rose-200/70 bg-rose-50 text-rose-700 *:data-[slot=alert-description]:text-rose-700/90 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-100 dark:*:data-[slot=alert-description]:text-rose-100/80',
+        warning:
+          'border-amber-200/70 bg-amber-50 text-amber-700 *:data-[slot=alert-description]:text-amber-700/90 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-100 dark:*:data-[slot=alert-description]:text-amber-100/80',
+        info: 'border-sky-200/70 bg-sky-50 text-sky-700 *:data-[slot=alert-description]:text-sky-700/90 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-100 dark:*:data-[slot=alert-description]:text-sky-100/80',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+    },
   },
 );
-Alert.displayName = 'Alert';
 
-const AlertTitle = React.forwardRef<HTMLParagraphElement, React.HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => (
-    <h5
-      ref={ref}
-      className={cn('mb-1 font-medium leading-none tracking-tight', className)}
+function Alert({
+  className,
+  variant,
+  ...props
+}: React.ComponentProps<'div'> & VariantProps<typeof alertVariants>) {
+  return (
+    <div
+      data-slot="alert"
+      role="alert"
+      className={cn(alertVariants({ variant }), className)}
       {...props}
     />
-  ),
-);
-AlertTitle.displayName = 'AlertTitle';
+  );
+}
 
-const AlertDescription = React.forwardRef<
-  HTMLParagraphElement,
-  React.HTMLAttributes<HTMLParagraphElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('text-sm [&_p]:leading-relaxed', className)} {...props} />
-));
-AlertDescription.displayName = 'AlertDescription';
+function AlertTitle({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="alert-title"
+      className={cn('col-start-2 line-clamp-1 min-h-4 font-medium tracking-tight', className)}
+      {...props}
+    />
+  );
+}
+
+function AlertDescription({ className, ...props }: React.ComponentProps<'div'>) {
+  return (
+    <div
+      data-slot="alert-description"
+      className={cn(
+        'text-muted-foreground col-start-2 grid justify-items-start gap-1 text-sm [&_p]:leading-relaxed',
+        className,
+      )}
+      {...props}
+    />
+  );
+}
 
 export { Alert, AlertTitle, AlertDescription };

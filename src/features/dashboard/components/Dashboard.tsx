@@ -1,3 +1,4 @@
+import { PageHeader } from '~/components/PageHeader';
 import type { DashboardData } from '~/features/dashboard/dashboard.server';
 import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
@@ -13,24 +14,25 @@ export function Dashboard({ data }: DashboardProps) {
   const errors = data.status === 'error' || data.status === 'partial' ? data.errors : [];
   const hasErrors = errors.length > 0;
 
-  const activeUserPercentage =
-    stats && stats.totalUsers > 0
-      ? ((stats.activeUsers / stats.totalUsers) * 100).toFixed(1)
-      : null;
-
   return (
-    <div className="px-4 py-8 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Dashboard"
+        description={
+          <>
+            TanStack Start Template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI,
+            Resend, Neon Postgres, and deployed to Netlify.
+          </>
+        }
+      />
 
       {/* Error Alert */}
       {hasErrors && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+        <div className="bg-muted border border-border rounded-md p-4">
           <div className="flex">
             <div className="flex-shrink-0">
               <svg
-                className="h-5 w-5 text-yellow-400"
+                className="h-5 w-5 text-muted-foreground"
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 aria-hidden="true"
@@ -43,8 +45,10 @@ export function Dashboard({ data }: DashboardProps) {
               </svg>
             </div>
             <div className="ml-3">
-              <h3 className="text-sm font-medium text-yellow-800">Some data failed to load</h3>
-              <div className="mt-2 text-sm text-yellow-700">
+              <h3 className="text-sm font-medium text-secondary-foreground">
+                Some data failed to load
+              </h3>
+              <div className="mt-2 text-sm text-secondary-foreground">
                 <ul className="list-disc pl-5 space-y-1">
                   {errors.map((error) => (
                     <li key={error}>{error}</li>
@@ -59,34 +63,22 @@ export function Dashboard({ data }: DashboardProps) {
       {/* Metrics Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         {stats ? (
-          <MetricCard
-            title="Total Users"
-            value={stats.totalUsers.toLocaleString()}
-            change={`+${stats.recentSignups}`}
-            changeType="positive"
-          />
+          <MetricCard title="Total Users" value={stats.totalUsers.toLocaleString()} />
         ) : (
           <SkeletonCard title="Total Users" />
         )}
 
         {stats ? (
-          <MetricCard
-            title="Active Users"
-            value={stats.activeUsers.toLocaleString()}
-            subtitle={activeUserPercentage ? `${activeUserPercentage}% of total` : 'No users yet'}
-          />
+          <MetricCard title="Active Users" value={stats.activeUsers.toString()} />
         ) : (
           <SkeletonCard title="Active Users" />
         )}
 
-        {activity ? (
-          <MetricCard
-            title="Recent Activity"
-            value={activity.length.toString()}
-            subtitle="Last 24 hours"
-          />
+        {/* New User Button */}
+        {stats ? (
+          <MetricCard title="Recent Signups" value={stats.recentSignups.toString()} />
         ) : (
-          <SkeletonCard title="Recent Activity" />
+          <SkeletonCard title="Recent Signups" />
         )}
       </div>
 

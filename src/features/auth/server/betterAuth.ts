@@ -46,6 +46,7 @@ const authInstance = betterAuth({
   }),
   emailAndPassword: {
     enabled: true,
+    autoSignIn: true,
     sendResetPassword: sendResetPasswordEmail,
   },
   baseURL: getAuthBaseURL(),
@@ -61,12 +62,16 @@ const authInstance = betterAuth({
     ...(process.env.BETTER_AUTH_URL ? [process.env.BETTER_AUTH_URL] : []),
   ],
   user: {
-    // Include role field in user data that gets stored in session
+    // Include role and phoneNumber fields in user data that gets stored in session
     additionalFields: {
       role: {
         type: 'string',
         required: false,
         defaultValue: 'user', // Default to user, will be updated for first user
+      },
+      phoneNumber: {
+        type: 'string',
+        required: false,
       },
     },
   },

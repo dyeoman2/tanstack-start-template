@@ -2,6 +2,7 @@ import { createRootRoute, HeadContent, Scripts } from '@tanstack/react-router';
 import { AppShell } from '~/components/AppShell';
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
+import { Providers } from '~/components/Providers';
 import { seo } from '~/lib/seo';
 import appCss from '~/styles/app.css?url';
 
@@ -43,7 +44,6 @@ export const Route = createRootRoute({
       { rel: 'manifest', href: '/site.webmanifest', color: '#fffff' },
       { rel: 'icon', href: '/favicon.ico' },
     ],
-    scripts: [],
   }),
   errorComponent: DefaultCatchBoundary,
   notFoundComponent: () => <NotFound />,
@@ -53,12 +53,18 @@ export const Route = createRootRoute({
 // Root document component that renders the full HTML structure
 function RootDocument() {
   return (
-    <html lang="en">
+    <html
+      lang="en"
+      // Suppress hydration warnings for theme-related attributes
+      suppressHydrationWarning
+    >
       <head>
         <HeadContent />
       </head>
       <body>
-        <AppShell />
+        <Providers>
+          <AppShell />
+        </Providers>
         <Scripts />
       </body>
     </html>
