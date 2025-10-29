@@ -131,14 +131,6 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
 
       await requireAdmin();
 
-      // Get request for cookies and determine site URL
-      const request = getRequest();
-      const siteUrl =
-        import.meta.env.SITE_URL || import.meta.env.VITE_SITE_URL || 'http://localhost:3000';
-
-      // Forward cookies from the request for authentication
-      const cookieHeader = request?.headers.get('cookie') || '';
-
       // Check if email is being changed - need to verify it's not already taken
       // Get all users to check for email conflicts
       const { fetchQuery } = await setupFetchClient(createAuth, getCookie);

@@ -123,7 +123,6 @@ export const getAllUsers = query({
 
         // Check if there are more results
         // Better Auth uses continueCursor and isDone for pagination
-        // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
         const continueCursor = result?.continueCursor;
         const isDone = result?.isDone === true;
 
@@ -335,7 +334,6 @@ export const getSystemStats = query({
       });
 
       // Better Auth adapter.findMany returns users in result.page array
-      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
       allUsers = (result?.page ||
         result?.data ||
         (Array.isArray(result) ? result : [])) as BetterAuthUser[];

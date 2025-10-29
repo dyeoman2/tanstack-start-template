@@ -1,7 +1,6 @@
 import { useForm } from '@tanstack/react-form';
-import { useMutation } from '@tanstack/react-query';
 import { Mail, User as UserIcon } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '~/components/ui/button';
 import {
@@ -31,6 +30,9 @@ interface UserEditDialogProps {
 }
 
 export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const form = useForm({
     defaultValues: {
       name: user?.name || '',
@@ -40,13 +42,26 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
     onSubmit: async ({ value }) => {
       if (!user?.id) return;
 
-      // Update profile (name and email)
-      updateProfileMutation.mutate({
-        userId: user.id,
-        name: value.name.trim(),
-        email: value.email.trim().toLowerCase(),
-        role: value.role,
-      });
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      try {
+        await updateUserProfileServerFn({
+          data: {
+            userId: user.id,
+            name: value.name.trim(),
+            email: value.email.trim().toLowerCase(),
+            role: value.role,
+          },
+        });
+        // Convex queries update automatically - no cache invalidation needed!
+        onClose();
+      } catch (error) {
+        console.error('Failed to update user:', error);
+        setSubmitError(error instanceof Error ? error.message : 'Failed to update user');
+      } finally {
+        setIsSubmitting(false);
+      }
     },
   });
 
@@ -60,23 +75,6 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
       });
     }
   }, [user, form]);
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (variables: {
-      userId: string;
-      name: string;
-      email: string;
-      role: 'user' | 'admin';
-    }) => updateUserProfileServerFn({ data: variables }),
-    onSuccess: () => {
-      // Convex queries update automatically - no cache invalidation needed!
-      onClose();
-    },
-    onError: (error) => {
-      console.error('Failed to update user:', error);
-      // Error will be shown via form validation or toast if needed
-    },
-  });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -174,7 +172,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
                   <Select
                     value={field.state.value}
                     onValueChange={(value: 'user' | 'admin') => field.handleChange(value)}
-                    disabled={updateProfileMutation.isPending}
+                    disabled={isSubmitting}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select role" />
@@ -191,14 +189,19 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
               )}
             </form.Field>
           </div>
+          {submitError && (
+            <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
+              <p className="text-sm">{submitError}</p>
+            </div>
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </Button>
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
               {([canSubmit, _isSubmitting]) => (
-                <Button type="submit" disabled={!canSubmit || updateProfileMutation.isPending}>
-                  {updateProfileMutation.isPending ? 'Saving...' : 'Save changes'}
+                <Button type="submit" disabled={!canSubmit || isSubmitting}>
+                  {isSubmitting ? 'Saving...' : 'Save changes'}
                 </Button>
               )}
             </form.Subscribe>

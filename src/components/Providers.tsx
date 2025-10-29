@@ -1,12 +1,10 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
-import { QueryClientProvider } from '@tanstack/react-query';
 import { ConvexReactClient } from 'convex/react';
 import type { ReactNode } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { ToastProvider } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
-import { queryClient } from '~/lib/query-client';
 
 const convexUrl = import.meta.env.VITE_CONVEX_URL;
 if (!convexUrl) {
@@ -25,17 +23,14 @@ export function Providers({ children }: { children: ReactNode }) {
       showDetails={false}
     >
       <ConvexBetterAuthProvider client={convex} authClient={authClient}>
-        {/* Temporarily keep QueryClientProvider until Phase 5 when all components are migrated to Convex */}
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            <ToastProvider>{children}</ToastProvider>
-          </ThemeProvider>
-        </QueryClientProvider>
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="system"
+          enableSystem
+          disableTransitionOnChange
+        >
+          <ToastProvider>{children}</ToastProvider>
+        </ThemeProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>
   );

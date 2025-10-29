@@ -62,10 +62,11 @@ export const getDashboardData = query({
           id: 0,
         },
       });
-      
+
       // Better Auth adapter.findMany returns users in result.page array
-      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
-      allAuthUsers = (result?.page || result?.data || (Array.isArray(result) ? result : [])) as BetterAuthUser[];
+      allAuthUsers = (result?.page ||
+        result?.data ||
+        (Array.isArray(result) ? result : [])) as BetterAuthUser[];
     } catch (error) {
       console.error('Failed to query Better Auth users:', error);
       allAuthUsers = [];
