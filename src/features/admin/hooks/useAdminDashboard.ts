@@ -1,9 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-// Convex imports for truncate mutation
-import { useMutation as useConvexMutation } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
-import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
-import { queryInvalidators, queryKeys } from '~/lib/query-keys';
 import { api } from '../../../../convex/_generated/api';
 
 type TruncateResult = {
@@ -18,28 +14,22 @@ type TruncateResult = {
 
 /**
  * Custom hook for admin dashboard data and operations
- * Properly handles loader data hydration and client-side queries
+ * Uses Convex hooks directly for real-time updates
  */
-export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unknown) {
-  const queryClient = useQueryClient();
-
-  // Hydrate preloaded data from loader into React Query cache
-  const usersQuery = useQuery({
-    queryKey: queryKeys.admin.users.list(),
-    queryFn: () =>
-      getAllUsersServerFn({
-        data: { page: 1, pageSize: 50, sortBy: 'createdAt', sortOrder: 'desc' },
-      }),
-    initialData: initialUsersData,
-    staleTime: 5 * 60 * 1000, // 5 minutes for user data
+export function useAdminDashboard() {
+  // Use Convex queries directly - enables real-time updates automatically
+  const usersData = useQuery(api.admin.getAllUsers, {
+    page: 1,
+    pageSize: 50,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+    secondarySortBy: 'name',
+    secondarySortOrder: 'asc',
+    search: undefined,
+    role: 'all',
   });
 
-  const statsQuery = useQuery({
-    queryKey: queryKeys.admin.stats(),
-    queryFn: () => getSystemStatsServerFn(),
-    initialData: initialStats,
-    staleTime: 30 * 1000, // 30 seconds for stats
-  });
+  const statsData = useQuery(api.admin.getSystemStats);
 
   // Local state for UI interactions
   const [showTruncateModal, setShowTruncateModal] = useState(false);
@@ -56,21 +46,14 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
     }
   }, [truncateResult]);
 
-  // Truncate data mutation - migrated to Convex
-  const truncateMutation = useConvexMutation(api.admin.truncateData);
+  // Truncate data mutation - using Convex mutation directly
+  const truncateMutation = useMutation(api.admin.truncateData);
 
   const handleTruncateData = async () => {
     try {
       const result = await truncateMutation();
       setTruncateResult(result);
-
-      // Invalidate caches if requested by the operation
-      if (result.invalidateAllCaches) {
-        console.log('🔄 Invalidating relevant React Query caches after data truncation');
-        queryInvalidators.composites.completeRefresh(queryClient);
-        queryInvalidators.dashboard.all(queryClient);
-      }
-
+      // Convex automatically updates queries when data changes - no cache invalidation needed!
       setShowTruncateModal(false);
     } catch (error) {
       setTruncateResult({
@@ -82,18 +65,18 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
 
   return {
     // Data
-    users: usersQuery.data,
-    stats: statsQuery.data,
-    isLoadingUsers: usersQuery.isLoading,
-    isLoadingStats: statsQuery.isLoading,
-    usersError: usersQuery.error,
-    statsError: statsQuery.error,
+    users: usersData,
+    stats: statsData,
+    isLoadingUsers: usersData === undefined,
+    isLoadingStats: statsData === undefined,
+    usersError: null, // Convex handles errors via error boundaries
+    statsError: null, // Convex handles errors via error boundaries
 
     // UI state
     showTruncateModal,
     setShowTruncateModal,
     truncateResult,
-    isTruncating: false, // Convex mutations don't have pending state in the same way
+    isTruncating: false, // Convex mutations don't expose pending state in the same way
 
     // Actions
     handleTruncateData,

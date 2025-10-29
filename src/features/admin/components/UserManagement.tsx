@@ -1,10 +1,9 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
-import { getAllUsersServerFn } from '~/features/dashboard/admin.server';
-import { queryKeys } from '~/lib/query-keys';
+import { api } from '../../../../convex/_generated/api';
 import type { User as AdminUser } from '../server/admin-loader.server';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
@@ -28,7 +27,6 @@ export function UserManagement() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
-  const queryClient = useQueryClient();
 
   const adminUsersSearchParams = useMemo(
     () =>
@@ -48,18 +46,13 @@ export function UserManagement() {
     [roleFilter, search],
   );
 
-  const { data, isFetching, isPending } = useQuery({
-    queryKey: queryKeys.admin.users.list(adminUsersSearchParams),
-    queryFn: () => getAllUsersServerFn({ data: adminUsersSearchParams }),
-    staleTime: 60_000,
-    gcTime: 5 * 60_000,
-    placeholderData: (previousData) => previousData,
-  });
+  // Use Convex query directly - enables real-time updates automatically
+  const data = useQuery(api.admin.getAllUsers, adminUsersSearchParams);
 
   // Memoize data to prevent unnecessary re-renders
   const users = useMemo(() => data?.users ?? [], [data]);
   const pagination = data?.pagination;
-  const isLoading = isPending && !data;
+  const isLoading = data === undefined;
 
   const handleEditUser = (user: AdminUser) => {
     setSelectedUser(user);
@@ -136,7 +129,7 @@ export function UserManagement() {
             initialValue={searchTerm}
             onSearch={handleSearchChange}
             placeholder="Search by name or email"
-            isSearching={isFetching && !isLoading}
+            isSearching={false}
             className="min-w-[260px] sm:max-w-lg"
             ariaLabel="Search users by name or email"
           />
@@ -146,24 +139,18 @@ export function UserManagement() {
           pagination={pagination || { page: 1, pageSize: 10, total: 0, totalPages: 0 }}
           searchParams={adminUsersSearchParams}
           isLoading={isLoading}
-          isFetching={isFetching && !isLoading}
+          isFetching={false}
           onEditUser={handleEditUser}
           onDeleteUser={handleDeleteUser}
         />
       </div>
 
-      <UserEditDialog
-        open={showEditDialog}
-        user={selectedUser}
-        onClose={handleCloseDialogs}
-        queryClient={queryClient}
-      />
+      <UserEditDialog open={showEditDialog} user={selectedUser} onClose={handleCloseDialogs} />
 
       <UserDeleteDialog
         open={showDeleteDialog}
         userId={selectedUserId}
         onClose={handleCloseDialogs}
-        queryClient={queryClient}
       />
     </div>
   );

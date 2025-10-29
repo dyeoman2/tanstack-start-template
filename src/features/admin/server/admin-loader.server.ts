@@ -1,14 +1,14 @@
 import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
 
-// Define user interface explicitly since server functions currently return empty arrays
+// Define user interface explicitly - matches Convex query return type
 export interface User {
   id: string;
   email: string;
   name: string | null;
   role: 'user' | 'admin';
   emailVerified: boolean;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: number; // Unix timestamp from Convex
+  updatedAt: number; // Unix timestamp from Convex
 }
 
 // System stats interface

@@ -1,22 +1,19 @@
-import type { QueryClient } from '@tanstack/react-query';
 import { useMutation } from '@tanstack/react-query';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import { deleteUserServerFn } from '~/features/dashboard/admin.server';
-import { queryInvalidators } from '~/lib/query-keys';
 
 interface UserDeleteDialogProps {
   open: boolean;
   userId: string | null;
   onClose: () => void;
-  queryClient: QueryClient;
 }
 
-export function UserDeleteDialog({ open, userId, onClose, queryClient }: UserDeleteDialogProps) {
+export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProps) {
   const deleteUserMutation = useMutation({
     mutationFn: (variables: { userId: string; confirmation: string }) =>
       deleteUserServerFn({ data: variables }),
     onSuccess: () => {
-      queryInvalidators.composites.afterAdminUserOperation(queryClient);
+      // Convex queries update automatically - no cache invalidation needed!
       onClose();
     },
     onError: (error) => {

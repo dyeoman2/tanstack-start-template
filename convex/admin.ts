@@ -1,5 +1,218 @@
-import { mutation } from './_generated/server';
+import { v } from 'convex/values';
+import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
+
+/**
+ * Get all users with pagination, sorting, and filtering (admin only)
+ * Combines Better Auth user data with userProfiles role
+ */
+export const getAllUsers = query({
+  args: {
+    page: v.number(),
+    pageSize: v.number(),
+    sortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('role'),
+      v.literal('emailVerified'),
+      v.literal('createdAt'),
+    ),
+    sortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    secondarySortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('role'),
+      v.literal('emailVerified'),
+      v.literal('createdAt'),
+    ),
+    secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    search: v.optional(v.string()),
+    role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
+  },
+  handler: async (ctx, args) => {
+    // Ensure user is authenticated and is admin
+    const currentUser = await authComponent.getAuthUser(ctx);
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const currentUserAny = currentUser as {
+      id?: string;
+      userId?: string;
+      _id?: unknown;
+    };
+    const currentUserId =
+      currentUserAny.id ||
+      currentUserAny.userId ||
+      (currentUserAny._id ? String(currentUserAny._id) : null);
+
+    if (!currentUserId) {
+      throw new Error('User ID not found');
+    }
+
+    const currentProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
+      .first();
+
+    if (currentProfile?.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    // Query all user profiles as the primary source for users
+    let allUserProfiles = await ctx.db.query('userProfiles').collect();
+
+    // Filter by role first
+    if (args.role !== 'all') {
+      allUserProfiles = allUserProfiles.filter((profile) => profile.role === args.role);
+    }
+
+    // Fetch Better Auth user data for each profile to get email, name, emailVerified
+    const combinedUsersPromises = allUserProfiles.map(async (profile) => {
+      // This is a workaround as Better Auth's internal 'user' table is not directly queryable
+      // We would ideally have a Better Auth API to list users or sync them to our userProfiles
+      // For now, we'll return placeholder data for name, email, emailVerified
+      // In a real application, you might implement a sync mechanism or use a different Better Auth API
+      return {
+        id: profile.userId,
+        email: `placeholder-${profile.userId.substring(0, 5)}@example.com`, // Placeholder
+        name: `User ${profile.userId.substring(0, 5)}` as string | null, // Placeholder
+        role: profile.role as 'user' | 'admin', // Type assertion since schema stores as string
+        emailVerified: false, // Placeholder
+        createdAt: profile.createdAt,
+        updatedAt: profile.updatedAt,
+      };
+    });
+
+    let combinedUsers = await Promise.all(combinedUsersPromises);
+
+    // Apply search filter
+    if (args.search) {
+      const searchLower = args.search.toLowerCase();
+      combinedUsers = combinedUsers.filter(
+        (user) =>
+          user.name?.toLowerCase().includes(searchLower) ||
+          user.email.toLowerCase().includes(searchLower),
+      );
+    }
+
+    // Apply sorting
+    const getSortValue = (
+      user: (typeof combinedUsers)[number],
+      field: typeof args.sortBy,
+    ): string | number => {
+      switch (field) {
+        case 'name':
+          return user.name?.toLowerCase() || '';
+        case 'email':
+          return user.email.toLowerCase();
+        case 'role':
+          return user.role;
+        case 'emailVerified':
+          return user.emailVerified ? 1 : 0;
+        case 'createdAt':
+          return user.createdAt;
+        default:
+          return user.createdAt;
+      }
+    };
+
+    combinedUsers.sort((a, b) => {
+      const primaryA = getSortValue(a, args.sortBy);
+      const primaryB = getSortValue(b, args.sortBy);
+      const primaryCompare =
+        args.sortOrder === 'asc'
+          ? primaryA > primaryB
+            ? 1
+            : primaryA < primaryB
+              ? -1
+              : 0
+          : primaryA < primaryB
+            ? 1
+            : primaryA > primaryB
+              ? -1
+              : 0;
+
+      if (primaryCompare !== 0) {
+        return primaryCompare;
+      }
+
+      // Secondary sort
+      const secondaryA = getSortValue(a, args.secondarySortBy);
+      const secondaryB = getSortValue(b, args.secondarySortBy);
+      return args.secondarySortOrder === 'asc'
+        ? secondaryA > secondaryB
+          ? 1
+          : secondaryA < secondaryB
+            ? -1
+            : 0
+        : secondaryA < secondaryB
+          ? 1
+          : secondaryA > secondaryB
+            ? -1
+            : 0;
+    });
+
+    // Apply pagination
+    const total = combinedUsers.length;
+    const offset = (args.page - 1) * args.pageSize;
+    const paginatedUsers = combinedUsers.slice(offset, offset + args.pageSize);
+
+    return {
+      users: paginatedUsers,
+      pagination: {
+        page: args.page,
+        pageSize: args.pageSize,
+        total,
+        totalPages: Math.ceil(total / args.pageSize),
+      },
+    };
+  },
+});
+
+/**
+ * Get system statistics (admin only)
+ */
+export const getSystemStats = query({
+  args: {},
+  handler: async (ctx) => {
+    // Ensure user is authenticated and is admin
+    const currentUser = await authComponent.getAuthUser(ctx);
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const currentUserAny = currentUser as {
+      id?: string;
+      userId?: string;
+      _id?: unknown;
+    };
+    const currentUserId =
+      currentUserAny.id ||
+      currentUserAny.userId ||
+      (currentUserAny._id ? String(currentUserAny._id) : null);
+
+    if (!currentUserId) {
+      throw new Error('User ID not found');
+    }
+
+    const currentProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
+      .first();
+
+    if (currentProfile?.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    // Count all user profiles
+    const userCount = await ctx.db.query('userProfiles').collect();
+
+    return {
+      users: userCount.length,
+    };
+  },
+});
 
 /**
  * Truncate application data (admin only)

@@ -1,5 +1,4 @@
 import { useForm } from '@tanstack/react-form';
-import type { QueryClient } from '@tanstack/react-query';
 import { useMutation } from '@tanstack/react-query';
 import { Mail, User as UserIcon } from 'lucide-react';
 import { useEffect } from 'react';
@@ -23,17 +22,15 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { updateUserProfileServerFn } from '~/features/dashboard/admin.server';
-import { queryInvalidators } from '~/lib/query-keys';
 import type { User } from '../server/admin-loader.server';
 
 interface UserEditDialogProps {
   open: boolean;
   user: User | null;
   onClose: () => void;
-  queryClient: QueryClient;
 }
 
-export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDialogProps) {
+export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
   const form = useForm({
     defaultValues: {
       name: user?.name || '',
@@ -72,7 +69,7 @@ export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDia
       role: 'user' | 'admin';
     }) => updateUserProfileServerFn({ data: variables }),
     onSuccess: () => {
-      queryInvalidators.composites.afterAdminUserOperation(queryClient);
+      // Convex queries update automatically - no cache invalidation needed!
       onClose();
     },
   });
