@@ -64,14 +64,3 @@ export const handleServerError = (error: unknown, context?: string): ServerError
   // Handle unknown errors
   return new ServerError('An unexpected error occurred', 500, error);
 };
-
-/**
- * Utility for consistent error throwing in server functions
- */
-export const throwServerError = (
-  message: string,
-  code: number = 500,
-  originalError?: unknown,
-): never => {
-  throw new ServerError(message, code, originalError);
-};

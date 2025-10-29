@@ -1,5 +1,5 @@
 [build]
-  command = "echo '🏗️ Starting build process...' && echo '🗄️ Setting up database schema...' && pnpm run db:push:prod && echo '✅ Database schema applied' && echo '🏗️ Building application...' && pnpm build && echo '🎉 Build completed successfully'"
+  command = "echo '🏗️ Starting build process...' && echo '🏗️ Building application...' && pnpm build && echo '🎉 Build completed successfully'"
   publish = "dist/client"
 
 [build.environment]
@@ -26,12 +26,6 @@ name = "BETTER_AUTH_URL"
 required = true
 default = "https://tanstack-start-template.netlify.app"
 description = "Base URL used by Better Auth callbacks"
-
-[[template.environment]]
-name = "DB_ENCRYPTION_KEY"
-required = true
-default = ""
-description = "Encrypts sensitive fields before database storage. Run 'openssl rand -base64 32' in your terminal to generate"
 
 [[template.environment]]
 name = "RESEND_API_KEY"

@@ -499,3 +499,84 @@ export const truncateData = mutation({
     };
   },
 });
+
+/**
+ * Delete user (admin only)
+ * Deletes user from userProfiles and auditLogs
+ * Note: Better Auth user deletion should be handled via Better Auth HTTP API
+ */
+export const deleteUser = mutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Ensure user is authenticated and is admin
+    const currentUser = await authComponent.getAuthUser(ctx);
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const currentUserAny = currentUser as {
+      id?: string;
+      userId?: string;
+      _id?: unknown;
+    };
+    const currentUserId =
+      currentUserAny.id ||
+      currentUserAny.userId ||
+      (currentUserAny._id ? String(currentUserAny._id) : null);
+
+    if (!currentUserId) {
+      throw new Error('User ID not found');
+    }
+
+    const currentProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
+      .first();
+
+    if (currentProfile?.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    // Prevent deletion of self
+    if (args.userId === currentUserId) {
+      throw new Error('Cannot delete your own account');
+    }
+
+    // Get user profile to check role
+    const targetProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .first();
+
+    // Prevent deletion of the only admin user
+    if (targetProfile?.role === 'admin') {
+      const allProfiles = await ctx.db.query('userProfiles').collect();
+      const adminCount = allProfiles.filter((p) => p.role === 'admin').length;
+      if (adminCount <= 1) {
+        throw new Error('Cannot delete the only admin user. At least one admin must remain.');
+      }
+    }
+
+    // Delete user profile
+    if (targetProfile) {
+      await ctx.db.delete(targetProfile._id);
+    }
+
+    // Delete audit logs for this user
+    const auditLogs = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .collect();
+
+    for (const log of auditLogs) {
+      await ctx.db.delete(log._id);
+    }
+
+    // Note: Better Auth user deletion should be handled via Better Auth HTTP API
+    // This mutation only handles app-specific data cleanup
+
+    return { success: true };
+  },
+});

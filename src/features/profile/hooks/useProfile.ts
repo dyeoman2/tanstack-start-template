@@ -27,8 +27,7 @@ export function useProfile() {
 
 // Hook to update user profile - using server function for Better Auth HTTP API integration
 export function useUpdateProfile() {
-  // For now, return a mock mutation since profile updates are handled via server function
-  // TODO: Implement proper Convex mutation when profile updates are migrated
+  // Profile updates are handled via server function to integrate with Better Auth HTTP API
   return {
     mutateAsync: async (data: UpdateProfileData) => {
       const result = await updateUserProfileServerFn({ data });

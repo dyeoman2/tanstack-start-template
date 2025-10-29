@@ -13,36 +13,6 @@ const updateProfileSchema = z.object({
   phoneNumber: z.string().optional(),
 });
 
-// Get user profile - migrated to Convex
-export const getUserProfileServerFn = createServerFn({ method: 'GET' }).handler(async () => {
-  try {
-    // Verify user is authenticated
-    await requireAuth();
-
-    // Initialize Convex fetch client for server-side calls
-    const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
-
-    // Get current user profile from Convex
-    const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
-
-    return {
-      success: true,
-      profile: {
-        id: profile.id,
-        email: profile.email,
-        name: profile.name,
-        phoneNumber: profile.phoneNumber,
-        role: profile.role,
-        emailVerified: profile.emailVerified,
-        createdAt: new Date(profile.createdAt),
-        updatedAt: new Date(profile.updatedAt),
-      },
-    };
-  } catch (error) {
-    throw handleServerError(error, 'Get user profile');
-  }
-});
-
 // Update user profile - migrated to Convex + Better Auth HTTP API
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateProfileSchema)

@@ -5,7 +5,7 @@ import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
 
 export function Dashboard() {
-  // Use Convex query directly - migrated from loader
+  // Use Convex query directly for real-time updates
   const dashboardData = useQuery(api.dashboard.getDashboardData);
 
   // Handle loading state
@@ -25,8 +25,8 @@ export function Dashboard() {
           title="Dashboard"
           description={
             <>
-              TanStack Start Template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI,
-              Resend, Neon Postgres, and deployed to Netlify.
+              TanStack Start Template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI,
+              Resend, and deployed to Netlify.
             </>
           }
         />
@@ -65,8 +65,8 @@ export function Dashboard() {
         title="Dashboard"
         description={
           <>
-            TanStack Start Template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI,
-            Resend, Neon Postgres, and deployed to Netlify.
+            TanStack Start Template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI, Resend,
+            and deployed to Netlify.
           </>
         }
       />

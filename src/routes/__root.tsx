@@ -19,7 +19,7 @@ export const Route = createRootRoute({
       ...seo({
         title: 'TanStack Start Template',
         description:
-          'TanStack Start template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI, Resend, Neon Postgres, and deployed to Netlify',
+          'TanStack Start template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI, Resend, and deployed to Netlify',
       }),
     ],
     links: [

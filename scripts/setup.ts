@@ -2,7 +2,6 @@
 
 /**
  * Set up local development environment with secrets and configuration.
- * - DB_ENCRYPTION_KEY: 32 bytes for AES-256 encryption of sensitive data in the database
  * - BETTER_AUTH_SECRET: 32 bytes for session signing
  * - BETTER_AUTH_URL: Base URL for Better Auth
  * Run: npm run setup
@@ -15,10 +14,7 @@ import { generateSecret } from '../src/lib/server/crypto.server';
 async function main() {
   console.log('🔧 Setting up local development environment...\n');
 
-  const [encryptionKey, authSecret] = await Promise.all([
-    generateSecret(32), // DB_ENCRYPTION_KEY: 32 bytes for AES-256
-    generateSecret(32), // BETTER_AUTH_SECRET: 32 bytes for session signing
-  ]);
+  const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing
 
   // BETTER_AUTH_URL: Base URL for Better Auth
   const authUrl = 'http://localhost:3000';
@@ -30,7 +26,6 @@ async function main() {
     console.log('⚠️  .env.local already exists!');
     console.log('   To avoid overwriting existing configuration, here are your generated secrets:');
     console.log('────────────────────────────────────────────────');
-    console.log(`DB_ENCRYPTION_KEY=${encryptionKey}`);
     console.log(`BETTER_AUTH_SECRET=${authSecret}`);
     console.log(`BETTER_AUTH_URL=${authUrl}`);
     console.log('────────────────────────────────────────────────\n');
@@ -46,9 +41,6 @@ async function main() {
 # ==========================================
 # REQUIRED SECRETS (Generated Securely)
 # ==========================================
-
-# Encrypts sensitive fields before database storage
-DB_ENCRYPTION_KEY=${encryptionKey}
 
 # Signs JWTs for authentication
 BETTER_AUTH_SECRET=${authSecret}
@@ -104,18 +96,18 @@ S3_PUBLIC_URL=http://localhost:9000
   console.log(`   📁 Created: ${envPath}`);
   console.log('────────────────────────────────────────────────');
   console.log('🔑 Generated Secrets:');
-  console.log(`   DB_ENCRYPTION_KEY: ${encryptionKey.substring(0, 10)}...`);
   console.log(`   BETTER_AUTH_SECRET: ${authSecret.substring(0, 10)}...`);
   console.log(`   BETTER_AUTH_URL: ${authUrl}`);
   console.log('────────────────────────────────────────────────\n');
   console.log('🚀 Ready to develop!');
   console.log('   1. Review the generated .env.local file');
-  console.log('   2. Add any integrations (email)');
-  console.log('   3. Run: pnpm dev');
+  console.log('   2. Add any integrations (email, Convex)');
+  console.log('   3. Run: npx convex dev (to initialize Convex)');
+  console.log('   4. Run: pnpm dev');
   console.log('\n📌 Security Notes:');
   console.log('   • Never commit .env.local to version control');
   console.log('   • Back up these secrets if they guard real data');
-  console.log('   • Use the same DB_ENCRYPTION_KEY across environments for encrypted data');
+  console.log('   • Convex handles encryption at the platform level');
 }
 
 main().catch((error) => {
