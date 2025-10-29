@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { components } from './_generated/api';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 
@@ -59,32 +60,142 @@ export const getAllUsers = query({
       throw new Error('Admin access required');
     }
 
-    // Query all user profiles as the primary source for users
-    let allUserProfiles = await ctx.db.query('userProfiles').collect();
+    // Query Better Auth's user table directly
+    // Component tables might be: 'betterAuth_user', 'betterAuth_users', or accessed via component db
+    type BetterAuthUser = {
+      _id: string;
+      email: string;
+      name: string | null;
+      emailVerified: boolean;
+      phoneNumber?: string | null;
+      createdAt: string | number;
+      updatedAt: string | number;
+      _creationTime: number;
+    };
 
-    // Filter by role first
-    if (args.role !== 'all') {
-      allUserProfiles = allUserProfiles.filter((profile) => profile.role === args.role);
+    // Access Better Auth users via component's adapter.findMany query
+    // Component tables are accessed through the component's internal queries
+    let allAuthUsers: BetterAuthUser[] = [];
+    try {
+      // Use Better Auth component's findMany query to get all users
+      // This is the proper way to query component tables in Convex
+      // Query all users using component's findMany query with pagination
+      const batchSize = 1000; // Get all users in batches
+      let cursor: string | null = null;
+      let hasMore = true;
+
+      while (hasMore) {
+        // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+        const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+          model: 'user',
+          paginationOpts: {
+            cursor,
+            numItems: batchSize,
+            id: 0, // Not used, but required by the API
+          },
+        });
+
+        // Result format: { continueCursor: string, isDone: boolean, page: [...] }
+
+        // Better Auth adapter.findMany returns users in result.page array
+        // Format: { continueCursor: string, isDone: boolean, page: [...] }
+        let users: BetterAuthUser[] = [];
+        if (Array.isArray(result)) {
+          // Direct array response
+          users = result as BetterAuthUser[];
+        } else if (result?.page && Array.isArray(result.page)) {
+          // { page: [...] } format - this is the actual format used by Better Auth
+          users = result.page as BetterAuthUser[];
+        } else if (result?.data && Array.isArray(result.data)) {
+          // { data: [...] } format (fallback)
+          users = result.data as BetterAuthUser[];
+        } else if (result?.results && Array.isArray(result.results)) {
+          // { results: [...] } format (fallback)
+          users = result.results as BetterAuthUser[];
+        } else if (result?.items && Array.isArray(result.items)) {
+          // { items: [...] } format (fallback)
+          users = result.items as BetterAuthUser[];
+        }
+
+        if (users.length > 0) {
+          allAuthUsers.push(...users);
+        }
+
+        // Check if there are more results
+        // Better Auth uses continueCursor and isDone for pagination
+        // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+        const continueCursor = result?.continueCursor;
+        const isDone = result?.isDone === true;
+
+        // Parse continueCursor - it's a JSON string like "[]" when done
+        let nextCursor: string | null = null;
+        if (continueCursor && continueCursor !== '[]' && !isDone) {
+          try {
+            const parsed = JSON.parse(continueCursor);
+            if (parsed && parsed.length > 0) {
+              nextCursor = continueCursor;
+            }
+          } catch {
+            // If it's not JSON, use it as-is if it's not empty
+            if (continueCursor && continueCursor.trim() !== '[]') {
+              nextCursor = continueCursor;
+            }
+          }
+        }
+
+        hasMore = !isDone && !!nextCursor && users.length === batchSize;
+        cursor = nextCursor;
+
+        // Safety check: if we got fewer than batchSize, we're done
+        if (users.length < batchSize) {
+          hasMore = false;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to query Better Auth users via component API:', error);
+      allAuthUsers = [];
     }
 
-    // Fetch Better Auth user data for each profile to get email, name, emailVerified
-    const combinedUsersPromises = allUserProfiles.map(async (profile) => {
-      // This is a workaround as Better Auth's internal 'user' table is not directly queryable
-      // We would ideally have a Better Auth API to list users or sync them to our userProfiles
-      // For now, we'll return placeholder data for name, email, emailVerified
-      // In a real application, you might implement a sync mechanism or use a different Better Auth API
+    // Get all userProfiles to join roles
+    const allUserProfiles = await ctx.db.query('userProfiles').collect();
+    const profilesByUserId = new Map(allUserProfiles.map((profile) => [profile.userId, profile]));
+
+    // Combine Better Auth user data with userProfiles roles
+    let combinedUsers = allAuthUsers.map((authUser) => {
+      // Extract user ID from Better Auth document
+      // Better Auth uses _id as the document ID, which is also the user.id
+      const userId = String(authUser._id);
+      const profile = profilesByUserId.get(userId);
+
+      // Convert Better Auth timestamps to Unix timestamps
+      const authCreatedAt =
+        typeof authUser.createdAt === 'string'
+          ? new Date(authUser.createdAt).getTime()
+          : typeof authUser.createdAt === 'number'
+            ? authUser.createdAt
+            : Date.now();
+      const authUpdatedAt =
+        typeof authUser.updatedAt === 'string'
+          ? new Date(authUser.updatedAt).getTime()
+          : typeof authUser.updatedAt === 'number'
+            ? authUser.updatedAt
+            : Date.now();
+
       return {
-        id: profile.userId,
-        email: `placeholder-${profile.userId.substring(0, 5)}@example.com`, // Placeholder
-        name: `User ${profile.userId.substring(0, 5)}` as string | null, // Placeholder
-        role: profile.role as 'user' | 'admin', // Type assertion since schema stores as string
-        emailVerified: false, // Placeholder
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt,
+        id: userId,
+        email: authUser.email,
+        name: authUser.name || null,
+        role: (profile?.role || 'user') as 'user' | 'admin',
+        emailVerified: authUser.emailVerified || false,
+        createdAt: profile ? profile.createdAt : authCreatedAt, // Use profile timestamp if available
+        updatedAt: profile ? profile.updatedAt : authUpdatedAt,
       };
     });
 
-    let combinedUsers = await Promise.all(combinedUsersPromises);
+    // Filter by role if needed
+    if (args.role !== 'all') {
+      combinedUsers = combinedUsers.filter((user) => user.role === args.role);
+    }
 
     // Apply search filter
     if (args.search) {
@@ -205,12 +316,119 @@ export const getSystemStats = query({
       throw new Error('Admin access required');
     }
 
-    // Count all user profiles
-    const userCount = await ctx.db.query('userProfiles').collect();
+    // Query Better Auth users directly via component's findMany query
+    type BetterAuthUser = {
+      _id: string;
+    };
+
+    let allUsers: BetterAuthUser[] = [];
+    try {
+      // Use Better Auth component's findMany query
+      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000, // Get all users for count
+          id: 0,
+        },
+      });
+
+      // Better Auth adapter.findMany returns users in result.page array
+      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+      allUsers = (result?.page ||
+        result?.data ||
+        (Array.isArray(result) ? result : [])) as BetterAuthUser[];
+    } catch (error) {
+      console.error('Failed to query Better Auth users:', error);
+      allUsers = [];
+    }
 
     return {
-      users: userCount.length,
+      users: allUsers.length,
     };
+  },
+});
+
+/**
+ * Update Better Auth user data (name, email) (admin only)
+ * Uses Better Auth component adapter's updateMany mutation
+ */
+export const updateBetterAuthUser = mutation({
+  args: {
+    userId: v.string(),
+    name: v.optional(v.string()),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Ensure user is authenticated and is admin
+    const currentUser = await authComponent.getAuthUser(ctx);
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const currentUserAny = currentUser as {
+      id?: string;
+      userId?: string;
+      _id?: unknown;
+    };
+    const currentUserId =
+      currentUserAny.id ||
+      currentUserAny.userId ||
+      (currentUserAny._id ? String(currentUserAny._id) : null);
+
+    if (!currentUserId) {
+      throw new Error('User ID not found');
+    }
+
+    const currentProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
+      .first();
+
+    if (currentProfile?.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    // Build update object - only include fields that are provided
+    const updateData: {
+      name?: string;
+      email?: string;
+      updatedAt: number;
+    } = {
+      updatedAt: Date.now(),
+    };
+
+    if (args.name !== undefined) {
+      updateData.name = args.name.trim();
+    }
+
+    if (args.email !== undefined) {
+      updateData.email = args.email.toLowerCase().trim();
+    }
+
+    // Use Better Auth component adapter's updateMany mutation
+    // This allows admin updates including email changes
+    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+      input: {
+        model: 'user',
+        update: updateData,
+        where: [
+          {
+            field: '_id',
+            operator: 'eq',
+            value: args.userId,
+          },
+        ],
+      },
+      paginationOpts: {
+        cursor: null,
+        numItems: 1, // Only updating one user
+        id: 0, // Not used but required
+      },
+    });
+
+    return { success: true };
   },
 });
 

@@ -1,36 +1,49 @@
 import { v } from 'convex/values';
+import { components } from './_generated/api';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 
 /**
  * Check if there are any users in the system (for determining first admin)
- * Note: Better Auth manages users in betterAuth.user table
- * We check userProfiles as a proxy - if profiles exist, users exist
- * If no profiles exist, we check if this is truly the first user by checking
- * if any Better Auth user exists (via signup attempt - if it fails with USER_ALREADY_EXISTS, users exist)
+ * Queries Better Auth's user table directly for accurate count
  */
 export const getUserCount = query({
   args: {},
   handler: async (ctx) => {
-    // Check user profiles first (more reliable for determining if we've set up any users)
-    const profiles = await ctx.db.query('userProfiles').collect();
+    // Query Better Auth users directly - try different access methods
+    type BetterAuthUser = {
+      _id: string;
+    };
 
-    // If profiles exist, users definitely exist
-    if (profiles.length > 0) {
-      return {
-        totalUsers: profiles.length,
-        isFirstUser: false,
-      };
+    // Use Better Auth component's findMany query to get all users
+    let allUsers: BetterAuthUser[] = [];
+    try {
+      // Query all users using component's findMany query
+      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000, // Get all users (assuming less than 1000 for user count)
+          id: 0,
+        },
+      });
+
+      // Better Auth adapter.findMany returns users in result.page array
+      allUsers = (result?.page ||
+        result?.data ||
+        (Array.isArray(result) ? result : [])) as BetterAuthUser[];
+    } catch (error) {
+      console.error('Failed to query Better Auth users:', error);
+      allUsers = [];
     }
 
-    // If no profiles exist, it could mean:
-    // 1. This is truly the first user
-    // 2. Users exist in Better Auth but haven't gotten profiles yet (edge case)
-    // For now, we'll assume first user if no profiles exist
-    // The signup flow will handle duplicate email errors from Better Auth
+    const totalUsers = allUsers.length;
+    const isFirstUser = totalUsers === 0;
+
     return {
-      totalUsers: 0,
-      isFirstUser: true,
+      totalUsers,
+      isFirstUser,
     };
   },
 });

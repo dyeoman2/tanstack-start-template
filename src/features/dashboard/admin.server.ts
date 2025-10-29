@@ -1,10 +1,11 @@
+import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
+import { getCookie, getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { handleServerError } from '~/lib/server/error-utils.server';
-
-// Note: Convex imports are handled by setupFetchClient, no direct imports needed
+import { api } from '../../../convex/_generated/api';
+import { createAuth } from '../../../convex/auth';
 
 // Zod schemas for validation
 const truncateDataSchema = z.object({
@@ -121,28 +122,91 @@ export const getAllUsersServerFn = createServerFn({ method: 'GET' })
     }
   });
 
-// Update user profile (name, email, role) (admin only) - using Better Auth HTTP API
+// Update user profile (name, email, role) (admin only) - using Better Auth HTTP API + Convex mutations
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateUserProfileSchema)
   .handler(async ({ data }) => {
     try {
-      const { userId: _userId, name: _name, email: _email, role: _role } = data;
+      const { userId, name, email, role } = data;
 
       await requireAdmin();
 
       // Get request for cookies and determine site URL
       const request = getRequest();
-      const _siteUrl =
+      const siteUrl =
         import.meta.env.SITE_URL || import.meta.env.VITE_SITE_URL || 'http://localhost:3000';
 
       // Forward cookies from the request for authentication
-      const _cookieHeader = request?.headers.get('cookie') || '';
+      const cookieHeader = request?.headers.get('cookie') || '';
 
-      // For admin user updates, we need to check email conflicts and update via Better Auth API
-      // TODO: Implement email conflict checking and Better Auth user updates
-      // For now, return a placeholder success
+      // Check if email is being changed - need to verify it's not already taken
+      // Get all users to check for email conflicts
+      const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+      const allUsersResult = await fetchQuery(api.admin.getAllUsers, {
+        page: 1,
+        pageSize: 1000, // Get all users to check email
+        sortBy: 'email',
+        sortOrder: 'asc',
+        secondarySortBy: 'email',
+        secondarySortOrder: 'asc',
+        search: undefined,
+        role: 'all',
+      });
 
-      return { success: true, message: 'User profile update not yet fully implemented' };
+      // Find user being updated
+      const userToUpdate = allUsersResult.users.find(
+        (u: { id: string; email: string }) => u.id === userId,
+      );
+      if (!userToUpdate) {
+        throw new Error('User not found');
+      }
+
+      // Check if email is already taken by another user
+      if (email !== userToUpdate.email) {
+        const emailExists = allUsersResult.users.some(
+          (u: { id: string; email: string }) =>
+            u.id !== userId && u.email.toLowerCase() === email.toLowerCase(),
+        );
+        if (emailExists) {
+          throw new Error('Email address is already in use by another user');
+        }
+      }
+
+      // Update name/email via Convex mutation using Better Auth component adapter
+      // The HTTP API doesn't allow email updates, so we use the component adapter directly
+      if (name !== userToUpdate.name || email !== userToUpdate.email) {
+        const { fetchMutation } = await setupFetchClient(createAuth, getCookie);
+
+        // Build update object - only include fields that changed
+        const updateData: {
+          name?: string;
+          email?: string;
+        } = {};
+
+        if (name !== userToUpdate.name) {
+          updateData.name = name.trim();
+        }
+
+        if (email !== userToUpdate.email) {
+          updateData.email = email.toLowerCase().trim();
+        }
+
+        await fetchMutation(api.admin.updateBetterAuthUser, {
+          userId,
+          ...updateData,
+        });
+      }
+
+      // Update role via Convex mutation (if changed)
+      if (role !== userToUpdate.role) {
+        const { fetchMutation } = await setupFetchClient(createAuth, getCookie);
+        await fetchMutation(api.users.setUserRole, {
+          userId,
+          role,
+        });
+      }
+
+      return { success: true, message: 'User profile updated successfully' };
     } catch (error) {
       throw handleServerError(error, 'Update user profile');
     }

@@ -72,6 +72,10 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
       // Convex queries update automatically - no cache invalidation needed!
       onClose();
     },
+    onError: (error) => {
+      console.error('Failed to update user:', error);
+      // Error will be shown via form validation or toast if needed
+    },
   });
 
   return (
