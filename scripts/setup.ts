@@ -88,18 +88,14 @@ S3_FORCE_PATH_STYLE=true
 S3_PUBLIC_URL=http://localhost:9000
 
 # ==========================================
-# DATABASE (Configure for Local Development)
+# CONVEX DATABASE (Auto-configured)
 # ==========================================
 
-# Option 1: Local PostgreSQL with Homebrew (Recommended)
-# Install PostgreSQL: brew install postgresql && brew services start postgresql && createdb tanstack_start_starter_dev
-# DATABASE_URL=postgresql://localhost:5432/tanstack_start_starter_dev
+# Convex URLs will be automatically set after running: npx convex dev
+# VITE_CONVEX_URL=your-convex-deployment-url
+# VITE_CONVEX_SITE_URL=https://your-app-domain.com
 
-# Option 2: Neon PostgreSQL with database branching
-# Create branch: neonctl branches create --project-id YOUR_PROJECT_ID --name local
-# NETLIFY_DATABASE_URL=postgresql://neondb_owner:your_password@ep-your-endpoint.neon.tech/neondb?sslmode=require
-
-# For production: Netlify will automatically set NETLIFY_DATABASE_URL when deploying
+# For production: Convex URLs are automatically configured by Netlify
 `;
 
   writeFileSync(envPath, envContent, 'utf8');

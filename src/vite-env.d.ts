@@ -6,8 +6,8 @@ interface ImportMetaEnv {
   readonly SSR: boolean;
   readonly MODE: string;
   readonly APP_NAME?: string;
-  readonly VITE_API_URL?: string;
-  readonly DATABASE_URL?: string;
+  readonly VITE_CONVEX_URL?: string;
+  readonly VITE_CONVEX_SITE_URL?: string;
   readonly BETTER_AUTH_SECRET?: string;
   readonly BETTER_AUTH_URL?: string;
 }
