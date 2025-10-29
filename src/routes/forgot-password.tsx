@@ -118,7 +118,7 @@ function ForgotPasswordPage() {
                 <p>
                   Password reset functionality requires the{' '}
                   <code className="bg-muted px-1 rounded text-xs">RESEND_API_KEY</code> environment
-                  variable to be set.
+                  variable to be set in your <strong>Convex</strong> environment.
                 </p>
                 <div className="space-y-1">
                   <p className="font-medium">To fix this:</p>
@@ -141,11 +141,14 @@ function ForgotPasswordPage() {
                       <code className="bg-muted px-1 rounded text-xs">
                         RESEND_API_KEY=your_api_key_here
                       </code>{' '}
-                      to your <code className="bg-muted px-1 rounded text-xs">.env.local</code> file
-                      (local development)
+                      to your Convex environment (use{' '}
+                      <code className="bg-muted px-1 rounded text-xs">npx convex env set</code> or
+                      Convex dashboard)
                     </li>
                     <li>
-                      For production: Add the same variable to your Netlify environment variables
+                      For local development: Set in Convex dashboard or via{' '}
+                      <code className="bg-muted px-1 rounded text-xs">.env.local</code> (if using
+                      Convex CLI)
                     </li>
                   </ol>
                 </div>

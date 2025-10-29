@@ -121,8 +121,6 @@ export const getAllUsersServerFn = createServerFn({ method: 'GET' })
     }
   });
 
-export type GetAllUsersServerFn = Awaited<ReturnType<typeof getAllUsersServerFn>>;
-
 // Update user profile (name, email, role) (admin only) - using Better Auth HTTP API
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateUserProfileSchema)

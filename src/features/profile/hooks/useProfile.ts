@@ -2,18 +2,6 @@ import { useQuery } from 'convex/react';
 import { updateUserProfileServerFn } from '~/features/profile/server/profile.server';
 import { api } from '../../../../convex/_generated/api';
 
-// Types
-export interface UserProfile {
-  id: string;
-  email: string;
-  name: string | null;
-  phoneNumber: string | null;
-  role: string;
-  emailVerified: boolean | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
-
 export interface UpdateProfileData {
   name: string;
   phoneNumber?: string;
