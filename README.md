@@ -9,7 +9,7 @@ A comprehensive, production-ready starter template for building modern full-stac
 - **File-based routing** with TanStack Router for intuitive page organization
 - **Server functions** for type-safe API endpoints and data fetching
 - **Progressive enhancement** - works without JavaScript, enhances with it
-- **Parallel data loading** with route loaders and React Query integration
+- **Parallel data loading** with route loaders and Convex real-time queries
 
 ### 🔐 **Authentication & Authorization**
 
@@ -41,7 +41,7 @@ A comprehensive, production-ready starter template for building modern full-stac
 - **Hot reloading** and fast development server
 - **Biome** for lightning-fast linting and formatting
 - **Performance monitoring** hooks for development insights
-- **Query key factories** for consistent cache management
+- **Automatic cache management** with Convex real-time subscriptions
 
 ### 📧 **Production Features**
 

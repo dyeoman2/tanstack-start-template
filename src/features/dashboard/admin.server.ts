@@ -23,7 +23,7 @@ const updateUserProfileSchema = z.object({
   role: z.enum(['user', 'admin']),
 });
 
-// Update user profile (name, email, role) (admin only) - using Better Auth HTTP API + Convex mutations
+// Update user profile (name, email, role) (admin only) via Better Auth HTTP API and Convex mutations
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateUserProfileSchema)
   .handler(async ({ data }) => {
@@ -105,7 +105,7 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
     }
   });
 
-// Delete user and all associated data (admin only) - using HTTP API workaround
+// Delete user and all associated data (admin only) via Convex mutations
 export const deleteUserServerFn = createServerFn({ method: 'POST' })
   .inputValidator(deleteUserSchema)
   .handler(async ({ data }) => {

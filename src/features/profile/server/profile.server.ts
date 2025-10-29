@@ -13,7 +13,7 @@ const updateProfileSchema = z.object({
   phoneNumber: z.string().optional(),
 });
 
-// Update user profile - migrated to Convex + Better Auth HTTP API
+// Update user profile via Better Auth HTTP API and Convex
 export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateProfileSchema)
   .handler(async ({ data }) => {
@@ -103,7 +103,7 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
         };
       } else {
         // Fallback: fetch from Convex if Better Auth didn't return user data
-        // Longer delay to ensure Better Auth update is committed to Convex
+        // Delay ensures Better Auth update is committed to Convex (eventual consistency)
         await new Promise((resolve) => setTimeout(resolve, 500));
         const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
         const fetchedProfile = await fetchQuery(api.users.getCurrentUserProfile, {});

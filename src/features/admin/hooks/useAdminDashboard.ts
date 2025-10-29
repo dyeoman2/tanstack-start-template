@@ -2,6 +2,10 @@ import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { api } from '../../../../convex/_generated/api';
 
+/**
+ * Result type from truncateData mutation
+ * Matches the return type from convex/admin.ts truncateData mutation
+ */
 type TruncateResult = {
   success: boolean;
   message: string;
@@ -34,6 +38,7 @@ export function useAdminDashboard() {
   // Local state for UI interactions
   const [showTruncateModal, setShowTruncateModal] = useState(false);
   const [truncateResult, setTruncateResult] = useState<TruncateResult | null>(null);
+  const [isTruncating, setIsTruncating] = useState(false);
 
   // Auto-dismiss truncate result after 10 seconds
   useEffect(() => {
@@ -50,6 +55,7 @@ export function useAdminDashboard() {
   const truncateMutation = useMutation(api.admin.truncateData);
 
   const handleTruncateData = async () => {
+    setIsTruncating(true);
     try {
       const result = await truncateMutation();
       setTruncateResult(result);
@@ -60,6 +66,8 @@ export function useAdminDashboard() {
         success: false,
         message: error instanceof Error ? error.message : 'Failed to truncate data',
       });
+    } finally {
+      setIsTruncating(false);
     }
   };
 
@@ -69,14 +77,15 @@ export function useAdminDashboard() {
     stats: statsData,
     isLoadingUsers: usersData === undefined,
     isLoadingStats: statsData === undefined,
-    usersError: null, // Convex handles errors via error boundaries
-    statsError: null, // Convex handles errors via error boundaries
+    // Note: Errors are handled by Convex error boundaries - components should wrap queries in error boundaries
+    usersError: null,
+    statsError: null,
 
     // UI state
     showTruncateModal,
     setShowTruncateModal,
     truncateResult,
-    isTruncating: false, // Convex mutations don't expose pending state in the same way
+    isTruncating, // Tracked manually via useState
 
     // Actions
     handleTruncateData,

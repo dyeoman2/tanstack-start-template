@@ -19,7 +19,6 @@
 - Keep imports static and synchronous inside server modules; no dynamic imports in server functions.
 - One server function, one responsibility. Compose higher-level flows by orchestrating smaller server functions.
 - Use Convex queries/mutations for data operations with automatic type generation.
-- Use shared query key factories and invalidators from `~/lib/query-keys` when reading or invalidating cache.
 - Reuse provided auth guards (`routeAuthGuard`, `routeAdminGuard`, `requireAuth`, `requireAdmin`)—do not reimplement session checks.
 - Keep UI components pure; business logic lives in hooks or server functions.
 - Never commit files with git unless explicitly requested by the user.
@@ -72,10 +71,11 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
 - Server guards: `requireAuth()`, `requireAdmin()` throw on failure.
 - Client auth: `useAuth()` hook from `~/features/auth/hooks/useAuth`.
 
-### React Query
-- Query keys from `~/lib/query-keys.ts` with factories and invalidators.
-- Hydrate with loader data: `useQuery({ initialData: Route.useLoaderData() })`.
-- Invalidate precisely using helpers like `queryInvalidators.admin.users.detail(queryClient, userId)`.
+### Convex Client Hooks
+- Use `useQuery(api.xxx)` from `convex/react` for real-time data fetching.
+- Use `useMutation(api.xxx)` for mutations with automatic cache updates.
+- No manual cache invalidation needed - Convex automatically updates queries when data changes.
+- Real-time subscriptions enable live data updates across all connected clients.
 
 ### Forms
 - Use `@tanstack/react-form` with Zod validation.
@@ -141,7 +141,7 @@ npx convex dashboard # Open Convex dashboard
 - ❌ Data waterfalls (loader + client fetch = multiple roundtrips)
 - ❌ Mixed concerns in server functions (db + email + analytics together)
 - ❌ `window.location.href` navigation (use `useRouter().navigate()`)
-- ❌ Broad query invalidation (`queryClient.invalidateQueries()`)
+- ❌ Manual cache invalidation (Convex handles this automatically)
 - ❌ Direct database access in client components (use Convex queries/mutations)
 
 ## Quick Checklist
@@ -149,7 +149,7 @@ npx convex dashboard # Open Convex dashboard
 - ✅ Server functions in `*.server.ts` with Zod validation
 - ✅ Route loaders fetch all data in parallel
 - ✅ Auth guards in `beforeLoad` and server functions
-- ✅ Query keys from `~/lib/query-keys.ts`
+- ✅ Convex queries/mutations for client-side data access
 - ✅ Components pure, logic in hooks
 - ✅ TypeScript strict mode, no `any`
 - ✅ Static imports, no dynamic imports in server

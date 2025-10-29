@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { updateUserProfileServerFn } from '~/features/dashboard/admin.server';
-import type { User } from '../server/admin-loader.server';
+import type { User } from '../types';
 
 interface UserEditDialogProps {
   open: boolean;

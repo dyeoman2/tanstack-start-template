@@ -10,7 +10,7 @@ import {
   formatTableDate,
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
-import type { User as AdminUser } from '../server/admin-loader.server';
+import type { User as AdminUser } from '../types';
 
 type UserRow = AdminUser;
 

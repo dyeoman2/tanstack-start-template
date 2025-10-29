@@ -7,7 +7,7 @@ export interface UpdateProfileData {
   phoneNumber?: string;
 }
 
-// Hook to get user profile - migrated to Convex
+// Hook to get user profile using Convex real-time query
 export function useProfile() {
   const profile = useQuery(api.users.getCurrentUserProfile);
 
