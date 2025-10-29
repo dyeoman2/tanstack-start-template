@@ -37,3 +37,6 @@ dist/
 
 # Generated route tree (prevents reload loops)
 src/routeTree.gen.ts
+
+# Convex generated files
+convex/_generated/

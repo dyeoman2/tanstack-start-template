@@ -22,6 +22,12 @@
       "assist": { "enabled": false }
     },
     {
+      "includes": ["convex/_generated/**"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
+    },
+    {
       "includes": ["drizzle/**"],
       "formatter": { "enabled": false },
       "linter": { "enabled": false }

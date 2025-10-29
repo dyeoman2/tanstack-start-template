@@ -1,8 +1,22 @@
 import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
 
-// Inferred types from server functions
-export type User = Awaited<ReturnType<typeof getAllUsersServerFn>>['users'][number];
-export type SystemStats = Awaited<ReturnType<typeof getSystemStatsServerFn>>;
+// Define user interface explicitly since server functions currently return empty arrays
+export interface User {
+  id: string;
+  email: string;
+  name: string | null;
+  role: 'user' | 'admin';
+  emailVerified: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// System stats interface
+export interface SystemStats {
+  users: number;
+}
+
+// Loader data types
 export type AdminLoaderData =
   | { status: 'success'; users: User[]; stats: SystemStats }
   | { status: 'partial'; users?: User[]; stats?: SystemStats; errors: string[] }

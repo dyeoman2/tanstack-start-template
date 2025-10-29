@@ -10,13 +10,18 @@ import {
   formatTableDate,
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
-import type { GetAllUsersServerFn } from '~/features/dashboard/admin.server';
+import type { User as AdminUser } from '../server/admin-loader.server';
 
-type UserRow = GetAllUsersServerFn['users'][number];
+type UserRow = AdminUser;
 
 interface UserTableProps {
   users: UserRow[];
-  pagination: GetAllUsersServerFn['pagination'];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
   searchParams: {
     page: number;
     pageSize: number;

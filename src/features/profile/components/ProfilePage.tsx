@@ -1,6 +1,6 @@
 import { useForm } from '@tanstack/react-form';
 import { Edit, Mail, Phone, User } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
@@ -57,13 +57,17 @@ export function ProfilePage() {
     },
   });
 
-  // Update form values when profile data loads
-  if (profile && !isEditing) {
-    form.reset({
-      name: profile.name || '',
-      phoneNumber: profile.phoneNumber || '',
-    });
-  }
+  // Update form values when profile data loads or when exiting edit mode
+  useEffect(() => {
+    if (profile && !isEditing) {
+      form.reset({
+        name: profile.name || '',
+        phoneNumber: profile.phoneNumber || '',
+      });
+    }
+    // Only reset when profile changes AND we're not editing
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, profile?.name, profile?.phoneNumber, isEditing, form.reset, profile]);
 
   if (isLoading) {
     return (
@@ -97,9 +101,7 @@ export function ProfilePage() {
         <div className="max-w-2xl mx-auto">
           <div className="bg-destructive/10 border border-destructive rounded-md p-6">
             <h3 className="text-lg font-medium text-destructive mb-2">Error Loading Profile</h3>
-            <p className="text-sm text-destructive">
-              {error?.message || 'Failed to load your profile information.'}
-            </p>
+            <p className="text-sm text-destructive">Failed to load your profile information.</p>
           </div>
         </div>
       </div>

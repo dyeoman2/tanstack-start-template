@@ -3,7 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
-import { type GetAllUsersServerFn, getAllUsersServerFn } from '~/features/dashboard/admin.server';
+import { getAllUsersServerFn } from '~/features/dashboard/admin.server';
 import { queryKeys } from '~/lib/query-keys';
 import type { User as AdminUser } from '../server/admin-loader.server';
 import { UserDeleteDialog } from './UserDeleteDialog';
@@ -24,9 +24,7 @@ export function UserManagement() {
   const searchTerm = search.search ?? '';
   const roleFilter = (search.role ?? 'all') as UserRoleFilterValue;
 
-  const [selectedUser, setSelectedUser] = useState<GetAllUsersServerFn['users'][number] | null>(
-    null,
-  );
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);

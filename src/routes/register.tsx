@@ -153,9 +153,12 @@ function RegisterPage() {
         }
       } catch (error: unknown) {
         // Handle specific error messages
+        // Only show "user exists" if we get the explicit error code from Better Auth
         if (
-          (error instanceof Error && error.message?.includes('User already exists')) ||
-          (error as { code?: string })?.code === 'USER_ALREADY_EXISTS'
+          (error as { code?: string })?.code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' ||
+          (error instanceof Error &&
+            error.message?.includes('User already exists') &&
+            (error as { code?: string })?.code !== 'FAILED_TO_CREATE_USER')
         ) {
           setError('An account with this email already exists. Please try logging in instead.');
         } else if (error instanceof Error && error.message?.includes('Invalid email')) {

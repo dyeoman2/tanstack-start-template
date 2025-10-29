@@ -1,4 +1,3 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
@@ -13,7 +12,6 @@ import {
 import { navigationMenuTriggerStyle } from '~/components/ui/navigation-menu';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
-import { queryInvalidators } from '~/lib/query-keys';
 import { cn } from '~/lib/utils';
 
 /**
@@ -22,14 +20,13 @@ import { cn } from '~/lib/utils';
 function AuthNavigation({ currentPath }: { currentPath: string }) {
   const { user, isAuthenticated, isPending, isAdmin } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const router = useRouter();
 
   const handleSignOut = async () => {
     try {
       await signOut();
-      queryInvalidators.auth.session(queryClient);
       // Invalidate the root route loader which caches auth state
+      // Convex handles auth state automatically, so no need for React Query invalidation
       await router.invalidate();
       navigate({ to: '/login', search: { reset: '', redirect: currentPath } });
     } catch (error) {

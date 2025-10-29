@@ -1,11 +1,10 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+// Convex imports for truncate mutation
+import { useMutation as useConvexMutation } from 'convex/react';
 import { useEffect, useState } from 'react';
-import {
-  getAllUsersServerFn,
-  getSystemStatsServerFn,
-  truncateDataServerFn,
-} from '~/features/dashboard/admin.server';
+import { getAllUsersServerFn, getSystemStatsServerFn } from '~/features/dashboard/admin.server';
 import { queryInvalidators, queryKeys } from '~/lib/query-keys';
+import { api } from '../../../../convex/_generated/api';
 
 type TruncateResult = {
   success: boolean;
@@ -57,10 +56,12 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
     }
   }, [truncateResult]);
 
-  // Truncate data mutation
-  const truncateMutation = useMutation({
-    mutationFn: truncateDataServerFn,
-    onSuccess: (result) => {
+  // Truncate data mutation - migrated to Convex
+  const truncateMutation = useConvexMutation(api.admin.truncateData);
+
+  const handleTruncateData = async () => {
+    try {
+      const result = await truncateMutation();
       setTruncateResult(result);
 
       // Invalidate caches if requested by the operation
@@ -71,17 +72,12 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
       }
 
       setShowTruncateModal(false);
-    },
-    onError: (error) => {
+    } catch (error) {
       setTruncateResult({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to truncate data',
       });
-    },
-  });
-
-  const handleTruncateData = async () => {
-    truncateMutation.mutate({ data: { confirmText: 'TRUNCATE_ALL_DATA' } });
+    }
   };
 
   return {
@@ -97,7 +93,7 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
     showTruncateModal,
     setShowTruncateModal,
     truncateResult,
-    isTruncating: truncateMutation.isPending,
+    isTruncating: false, // Convex mutations don't have pending state in the same way
 
     // Actions
     handleTruncateData,

@@ -1,18 +1,63 @@
+import { useQuery } from 'convex/react';
 import { PageHeader } from '~/components/PageHeader';
-import type { DashboardData } from '~/features/dashboard/dashboard.server';
+import { api } from '../../../../convex/_generated/api';
 import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
 
-interface DashboardProps {
-  data: DashboardData;
-}
+export function Dashboard() {
+  // Use Convex query directly - migrated from loader
+  const dashboardData = useQuery(api.dashboard.getDashboardData);
 
-export function Dashboard({ data }: DashboardProps) {
-  // Extract data based on discriminated union status
-  const stats = data.status === 'success' || data.status === 'partial' ? data.stats : undefined;
-  const activity = data.status === 'success' || data.status === 'partial' ? data.activity : [];
-  const errors = data.status === 'error' || data.status === 'partial' ? data.errors : [];
-  const hasErrors = errors.length > 0;
+  // Handle loading state
+  const isLoading = dashboardData === undefined;
+
+  // Handle error state (Convex queries throw on error)
+  const hasErrors = !isLoading && !dashboardData;
+
+  // Extract data
+  const stats = dashboardData?.stats;
+  const activity = dashboardData?.activity || [];
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Dashboard"
+          description={
+            <>
+              TanStack Start Template built with Better Auth, Drizzle, Tailwind CSS, Shadcn/UI,
+              Resend, Neon Postgres, and deployed to Netlify.
+            </>
+          }
+        />
+
+        {/* Loading Metrics Cards */}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
+          <SkeletonCard title="Total Users" />
+          <SkeletonCard title="Active Users" />
+          <SkeletonCard title="Recent Signups" />
+        </div>
+
+        {/* Loading Recent Activity */}
+        <div className="bg-card rounded-lg border border-border p-6">
+          <div className="animate-pulse">
+            <div className="h-6 bg-muted rounded w-48 mb-4"></div>
+            <div className="space-y-3">
+              {[1, 2, 3, 4, 5].map((item) => (
+                <div key={`skeleton-${item}`} className="flex items-center space-x-4">
+                  <div className="h-10 w-10 bg-muted rounded-full"></div>
+                  <div className="flex-1 space-y-2">
+                    <div className="h-4 bg-muted rounded w-3/4"></div>
+                    <div className="h-3 bg-muted rounded w-1/2"></div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -46,14 +91,10 @@ export function Dashboard({ data }: DashboardProps) {
             </div>
             <div className="ml-3">
               <h3 className="text-sm font-medium text-secondary-foreground">
-                Some data failed to load
+                Failed to load dashboard data
               </h3>
               <div className="mt-2 text-sm text-secondary-foreground">
-                <ul className="list-disc pl-5 space-y-1">
-                  {errors.map((error) => (
-                    <li key={error}>{error}</li>
-                  ))}
-                </ul>
+                Please try refreshing the page.
               </div>
             </div>
           </div>

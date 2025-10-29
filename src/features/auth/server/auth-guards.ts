@@ -1,9 +1,8 @@
+import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { redirect } from '@tanstack/react-router';
-import { getRequest } from '@tanstack/react-start/server';
-import { eq } from 'drizzle-orm';
-import * as schema from '~/db/schema';
-import { getDb } from '~/lib/server/db-config.server';
-import { auth } from './betterAuth';
+import { getCookie, getRequest } from '@tanstack/react-start/server';
+import { api } from '../../../../convex/_generated/api';
+import { createAuth } from '../../../../convex/auth';
 
 // Type definitions for user roles
 export type UserRole = 'user' | 'admin';
@@ -28,8 +27,11 @@ function getCurrentRequest(): Request | undefined {
 }
 
 /**
- * Get the current session and user information
+ * Get the current session and user information from Convex Better Auth
  * Returns null if not authenticated
+ *
+ * Note: This calls the Convex Better Auth HTTP handler to get the session,
+ * then fetches the role from the userProfiles table via Convex.
  */
 async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   try {
@@ -38,31 +40,56 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
       return null;
     }
 
-    const session = await auth.api.getSession({
-      headers: request.headers,
+    // Get the Convex site URL from environment
+    const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+    if (!convexSiteUrl) {
+      throw new Error('VITE_CONVEX_SITE_URL environment variable is required');
+    }
+
+    // Call Convex Better Auth HTTP handler to get session
+    // Forward the original request headers (including cookies) to Convex
+    const headers = new Headers(request.headers);
+    headers.set('accept-encoding', 'application/json');
+
+    const response = await fetch(`${convexSiteUrl}/api/auth/get-session`, {
+      method: 'GET',
+      headers,
+      redirect: 'manual',
     });
 
-    if (!session?.user?.id) {
+    if (!response.ok) {
       return null;
     }
 
-    // Fetch the user role from the database since it's not included in the session
-    const userRecord = await getDb()
-      .select({ role: schema.user.role })
-      .from(schema.user)
-      .where(eq(schema.user.id, session.user.id))
-      .limit(1);
+    const sessionData = await response.json();
 
-    if (userRecord.length === 0) {
+    if (!sessionData?.user?.id) {
       return null;
     }
 
-    return {
-      id: session.user.id,
-      email: session.user.email,
-      role: userRecord[0].role as UserRole,
-      name: session.user.name,
-    };
+    // Fetch role from userProfiles table via Convex
+    // Role is stored separately from Better Auth's user table
+    try {
+      const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+      const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
+
+      return {
+        id: sessionData.user.id,
+        email: sessionData.user.email,
+        role: (profile?.role === 'admin' ? 'admin' : 'user') as UserRole,
+        name: sessionData.user.name,
+      };
+    } catch (profileError) {
+      // If profile fetch fails, still return user but with default role
+      // This can happen if user hasn't been fully set up yet
+      console.warn('[Auth Guard] Failed to fetch user profile, using default role:', profileError);
+      return {
+        id: sessionData.user.id,
+        email: sessionData.user.email,
+        role: 'user',
+        name: sessionData.user.name,
+      };
+    }
   } catch {
     return null;
   }
