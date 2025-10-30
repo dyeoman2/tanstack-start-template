@@ -5,6 +5,10 @@
 [build.environment]
   NODE_VERSION = "24"
 
+# Deploy previews skip Convex deployment (use preview deployment instead)
+[context.deploy-preview]
+  command = "echo '🏗️ Building preview (skipping Convex deploy)...' && pnpm build && echo '🎉 Preview build completed successfully'"
+
 [template]
   full = true
 
