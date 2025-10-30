@@ -24,7 +24,10 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
       // Get request for cookies and determine site URL
       const request = getRequest();
       const siteUrl =
-        import.meta.env.SITE_URL || import.meta.env.VITE_SITE_URL || 'http://localhost:3000';
+        process.env.SITE_URL ||
+        import.meta.env.SITE_URL ||
+        import.meta.env.VITE_SITE_URL ||
+        'http://localhost:3000';
 
       // Forward cookies from the request for authentication
       const cookieHeader = request?.headers.get('cookie') || '';
