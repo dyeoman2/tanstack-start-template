@@ -1,12 +1,11 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
-import {
-  getAllUsersServerFn,
-  getSystemStatsServerFn,
-  truncateDataServerFn,
-} from '~/features/dashboard/admin.server';
-import { queryInvalidators, queryKeys } from '~/lib/query-keys';
+import { api } from '../../../../convex/_generated/api';
 
+/**
+ * Result type from truncateData mutation
+ * Matches the return type from convex/admin.ts truncateData mutation
+ */
 type TruncateResult = {
   success: boolean;
   message: string;
@@ -19,32 +18,27 @@ type TruncateResult = {
 
 /**
  * Custom hook for admin dashboard data and operations
- * Properly handles loader data hydration and client-side queries
+ * Uses Convex hooks directly for real-time updates
  */
-export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unknown) {
-  const queryClient = useQueryClient();
-
-  // Hydrate preloaded data from loader into React Query cache
-  const usersQuery = useQuery({
-    queryKey: queryKeys.admin.users.list(),
-    queryFn: () =>
-      getAllUsersServerFn({
-        data: { page: 1, pageSize: 50, sortBy: 'createdAt', sortOrder: 'desc' },
-      }),
-    initialData: initialUsersData,
-    staleTime: 5 * 60 * 1000, // 5 minutes for user data
+export function useAdminDashboard() {
+  // Use Convex queries directly - enables real-time updates automatically
+  const usersData = useQuery(api.admin.getAllUsers, {
+    page: 1,
+    pageSize: 50,
+    sortBy: 'createdAt',
+    sortOrder: 'desc',
+    secondarySortBy: 'name',
+    secondarySortOrder: 'asc',
+    search: undefined,
+    role: 'all',
   });
 
-  const statsQuery = useQuery({
-    queryKey: queryKeys.admin.stats(),
-    queryFn: () => getSystemStatsServerFn(),
-    initialData: initialStats,
-    staleTime: 30 * 1000, // 30 seconds for stats
-  });
+  const statsData = useQuery(api.admin.getSystemStats);
 
   // Local state for UI interactions
   const [showTruncateModal, setShowTruncateModal] = useState(false);
   const [truncateResult, setTruncateResult] = useState<TruncateResult | null>(null);
+  const [isTruncating, setIsTruncating] = useState(false);
 
   // Auto-dismiss truncate result after 10 seconds
   useEffect(() => {
@@ -57,47 +51,41 @@ export function useAdminDashboard(initialUsersData?: unknown, initialStats?: unk
     }
   }, [truncateResult]);
 
-  // Truncate data mutation
-  const truncateMutation = useMutation({
-    mutationFn: truncateDataServerFn,
-    onSuccess: (result) => {
+  // Truncate data mutation - using Convex mutation directly
+  const truncateMutation = useMutation(api.admin.truncateData);
+
+  const handleTruncateData = async () => {
+    setIsTruncating(true);
+    try {
+      const result = await truncateMutation();
       setTruncateResult(result);
-
-      // Invalidate caches if requested by the operation
-      if (result.invalidateAllCaches) {
-        console.log('🔄 Invalidating relevant React Query caches after data truncation');
-        queryInvalidators.composites.completeRefresh(queryClient);
-        queryInvalidators.dashboard.all(queryClient);
-      }
-
+      // Convex automatically updates queries when data changes - no cache invalidation needed!
       setShowTruncateModal(false);
-    },
-    onError: (error) => {
+    } catch (error) {
       setTruncateResult({
         success: false,
         message: error instanceof Error ? error.message : 'Failed to truncate data',
       });
-    },
-  });
-
-  const handleTruncateData = async () => {
-    truncateMutation.mutate({ data: { confirmText: 'TRUNCATE_ALL_DATA' } });
+    } finally {
+      setIsTruncating(false);
+    }
   };
 
   return {
     // Data
-    users: usersQuery.data,
-    stats: statsQuery.data,
-    isLoadingUsers: usersQuery.isLoading,
-    isLoadingStats: statsQuery.isLoading,
-    usersError: usersQuery.error,
-    statsError: statsQuery.error,
+    users: usersData,
+    stats: statsData,
+    isLoadingUsers: usersData === undefined,
+    isLoadingStats: statsData === undefined,
+    // Note: Errors are handled by Convex error boundaries - components should wrap queries in error boundaries
+    usersError: null,
+    statsError: null,
 
     // UI state
     showTruncateModal,
     setShowTruncateModal,
     truncateResult,
-    isTruncating: truncateMutation.isPending,
+    isTruncating, // Tracked manually via useState
 
     // Actions
     handleTruncateData,

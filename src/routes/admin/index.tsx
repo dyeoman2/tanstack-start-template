@@ -1,9 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { AdminErrorBanner, AdminWarningBanner } from '~/features/admin/components/AdminErrorBanner';
+import { AdminWarningBanner } from '~/features/admin/components/AdminErrorBanner';
 import { useAdminDashboard } from '~/features/admin/hooks/useAdminDashboard';
-import { loadAdminData } from '~/features/admin/server/admin-loader.server';
 import { routeAdminGuard } from '~/features/auth/server/route-guards';
 import { AdminCardsGrid } from '../../features/admin/components/AdminCardsGrid';
 import { AdminDashboardHeader } from '../../features/admin/components/AdminDashboardHeader';
@@ -12,18 +11,11 @@ import { TruncateResultAlert } from '../../features/admin/components/TruncateRes
 
 export const Route = createFileRoute('/admin/')({
   beforeLoad: routeAdminGuard,
-  loader: loadAdminData,
   component: AdminDashboardIndex,
   errorComponent: AdminErrorBoundary,
 });
 
 function AdminDashboardIndex() {
-  const loaderData = Route.useLoaderData();
-
-  // Extract initial data from loader result
-  const initialUsers = loaderData.status !== 'error' ? loaderData.users : undefined;
-  const initialStats = loaderData.status !== 'error' ? loaderData.stats : undefined;
-
   const {
     isLoadingUsers,
     isLoadingStats,
@@ -34,12 +26,7 @@ function AdminDashboardIndex() {
     truncateResult,
     isTruncating,
     handleTruncateData,
-  } = useAdminDashboard(initialUsers, initialStats);
-
-  // Handle complete failure - show error page
-  if (loaderData.status === 'error') {
-    return <AdminErrorBanner errors={loaderData.errors} isFullPage />;
-  }
+  } = useAdminDashboard();
 
   // Show loading state if both queries are loading
   if (isLoadingUsers && isLoadingStats) {
@@ -60,9 +47,8 @@ function AdminDashboardIndex() {
 
   // Collect all errors for warning banner
   const allErrors = [
-    ...(loaderData.status === 'partial' ? loaderData.errors : []),
-    ...(usersError ? [`Users: ${usersError.message}`] : []),
-    ...(statsError ? [`Stats: ${statsError.message}`] : []),
+    ...(usersError ? [`Users: ${usersError}`] : []),
+    ...(statsError ? [`Stats: ${statsError}`] : []),
   ];
 
   const hasErrors = allErrors.length > 0;

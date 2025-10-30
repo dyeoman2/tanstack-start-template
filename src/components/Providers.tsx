@@ -1,9 +1,19 @@
-import { QueryClientProvider } from '@tanstack/react-query';
+import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
+import { ConvexReactClient } from 'convex/react';
 import type { ReactNode } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { ToastProvider } from '~/components/ui/toast';
-import { queryClient } from '~/lib/query-client';
+import { authClient } from '~/features/auth/auth-client';
+
+const convexUrl = import.meta.env.VITE_CONVEX_URL;
+if (!convexUrl) {
+  throw new Error('VITE_CONVEX_URL environment variable is required');
+}
+
+const convex = new ConvexReactClient(convexUrl, {
+  expectAuth: true,
+});
 
 export function Providers({ children }: { children: ReactNode }) {
   return (
@@ -12,7 +22,7 @@ export function Providers({ children }: { children: ReactNode }) {
       description="An unexpected error occurred in the application. Please refresh the page to try again."
       showDetails={false}
     >
-      <QueryClientProvider client={queryClient}>
+      <ConvexBetterAuthProvider client={convex} authClient={authClient}>
         <ThemeProvider
           attribute="class"
           defaultTheme="system"
@@ -21,7 +31,7 @@ export function Providers({ children }: { children: ReactNode }) {
         >
           <ToastProvider>{children}</ToastProvider>
         </ThemeProvider>
-      </QueryClientProvider>
+      </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>
   );
 }

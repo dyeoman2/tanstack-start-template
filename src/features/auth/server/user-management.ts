@@ -1,13 +1,12 @@
+import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { eq, sql } from 'drizzle-orm';
+import { getCookie } from '@tanstack/react-start/server';
 import { z } from 'zod';
-import * as schema from '~/db/schema';
-import { getDb } from '~/lib/server/db-config.server';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { auth } from './betterAuth';
+import { api } from '../../../../convex/_generated/api';
+import { createAuth } from '../../../../convex/auth';
 
 // Zod schemas for user management
-
 const signUpWithFirstAdminSchema = z.object({
   email: z.string().email('Invalid email address'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
@@ -22,45 +21,104 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     const { email, password, name } = data;
 
-    const _db = getDb();
-
     try {
-      // Check if this would be the first user
-      const userCount = await getDb().select({ count: sql<number>`count(*)` }).from(schema.user);
+      // Initialize Convex fetch client for server-side calls
+      const { fetchQuery, fetchMutation } = await setupFetchClient(createAuth, getCookie);
 
-      const totalUsers = Number(userCount[0]?.count ?? 0);
-      const isFirstUser = totalUsers === 0;
+      // Check if this would be the first user (using Convex)
+      const userCountResult = await fetchQuery(api.users.getUserCount, {});
+      const isFirstUser = userCountResult.isFirstUser;
 
-      // Create user via Better Auth API to ensure password and related records are handled correctly
-      const signUpResult = await auth.api.signUpEmail({
-        body: {
+      // Get Convex site URL for Better Auth HTTP calls
+      const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+      if (!convexSiteUrl) {
+        throw new Error('VITE_CONVEX_SITE_URL environment variable is required');
+      }
+
+      // Create user via Convex Better Auth HTTP handler
+      const signUpResponse = await fetch(`${convexSiteUrl}/api/auth/sign-up/email`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           email,
           password,
           name,
           rememberMe: true,
-        },
+        }),
       });
 
-      // If this was the first user, update their role to admin
-      if (isFirstUser) {
-        // Find the newly created user (prefer id returned by Better Auth when available)
-        const newUserId = signUpResult?.user?.id;
-        const newUser = newUserId
-          ? [{ id: newUserId }]
-          : await getDb()
-              .select({ id: schema.user.id })
-              .from(schema.user)
-              .where(eq(schema.user.email, email))
-              .limit(1);
+      if (!signUpResponse.ok) {
+        let errorData: { message?: string; code?: string; details?: unknown } = {};
+        try {
+          const responseText = await signUpResponse.text();
+          console.log('[Signup] Convex Better Auth error response:', {
+            status: signUpResponse.status,
+            statusText: signUpResponse.statusText,
+            body: responseText,
+          });
 
-        if (newUser.length > 0) {
-          await getDb()
-            .update(schema.user)
-            .set({
-              role: 'admin',
-              updatedAt: new Date(),
-            })
-            .where(eq(schema.user.id, newUser[0].id));
+          try {
+            errorData = JSON.parse(responseText);
+          } catch {
+            errorData = {
+              message: responseText || signUpResponse.statusText || 'Failed to create user',
+            };
+          }
+        } catch {
+          // If response isn't JSON, use status text
+          errorData = { message: signUpResponse.statusText || 'Failed to create user' };
+        }
+
+        // Extract the actual error message from Better Auth response
+        // Better Auth returns errors in format: { code: "...", message: "..." }
+        // Check for specific error codes from Better Auth
+        let errorMessage = errorData.message || 'Failed to create user';
+
+        // Only map to "user exists" if Better Auth explicitly says so
+        if (errorData.code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL') {
+          errorMessage = 'User already exists. Please use a different email or sign in instead.';
+        } else if (errorData.code === 'FAILED_TO_CREATE_USER' && signUpResponse.status === 422) {
+          // FAILED_TO_CREATE_USER can have various causes - don't assume it's duplicate email
+          // Better Auth might return this for schema validation errors, missing fields, etc.
+          // Keep the original message or provide a generic one
+          errorMessage =
+            errorData.message ||
+            'Failed to create account. Please check your information and try again.';
+        }
+
+        // Preserve the original error from Better Auth
+        const error = new Error(errorMessage);
+        // @ts-expect-error - Adding status code to error for better error handling
+        error.statusCode = signUpResponse.status;
+        // @ts-expect-error - Adding error code if available
+        error.code = errorData.code;
+        throw error;
+      }
+
+      const signUpResult = await signUpResponse.json();
+
+      // Create user profile with role AFTER Better Auth user creation
+      // Better Auth manages user auth data in betterAuth.user table
+      // We store app-specific data (like role) in app.userProfiles table
+      if (signUpResult?.user?.id) {
+        const roleToSet = isFirstUser ? 'admin' : 'user';
+
+        // Small delay to ensure Better Auth user is committed to Convex database
+        await new Promise((resolve) => setTimeout(resolve, 100));
+
+        try {
+          // Store role in userProfiles table (app-specific data)
+          await fetchMutation(api.users.setUserRole, {
+            userId: signUpResult.user.id,
+            role: roleToSet,
+          });
+        } catch (roleError) {
+          // Log but don't fail signup if role update fails
+          // Role can be set manually later if needed
+          console.warn('[Signup] Failed to set user role after creation:', roleError);
+          // Continue with signup success - role update is non-critical
         }
       }
 
@@ -84,13 +142,12 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 export const checkIsFirstUserServerFn = createServerFn({
   method: 'GET',
 }).handler(async () => {
-  const _db = getDb();
+  // Initialize Convex fetch client for server-side calls
+  const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
 
-  const userCount = await getDb().select({ count: sql<number>`count(*)` }).from(schema.user);
-
-  const totalUsers = Number(userCount[0]?.count ?? 0);
+  const userCountResult = await fetchQuery(api.users.getUserCount, {});
   return {
-    isFirstUser: totalUsers === 0,
-    totalUsers,
+    isFirstUser: userCountResult.isFirstUser,
+    totalUsers: userCountResult.totalUsers,
   };
 });

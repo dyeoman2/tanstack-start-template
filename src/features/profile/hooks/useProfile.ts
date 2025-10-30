@@ -1,51 +1,38 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  getUserProfileServerFn,
-  updateUserProfileServerFn,
-} from '~/features/profile/server/profile.server';
-import { queryInvalidators, queryKeys } from '~/lib/query-keys';
-
-// Types
-export interface UserProfile {
-  id: string;
-  email: string;
-  name: string | null;
-  phoneNumber: string | null;
-  role: string;
-  emailVerified: boolean | null;
-  createdAt: Date;
-  updatedAt: Date;
-}
+import { useQuery } from 'convex/react';
+import { updateUserProfileServerFn } from '~/features/profile/server/profile.server';
+import { api } from '../../../../convex/_generated/api';
 
 export interface UpdateProfileData {
   name: string;
   phoneNumber?: string;
 }
 
-// Hook to get user profile
+// Hook to get user profile using Convex real-time query
 export function useProfile() {
-  return useQuery({
-    queryKey: queryKeys.auth.currentProfile(),
-    queryFn: async () => {
-      const result = await getUserProfileServerFn();
-      return result.profile as UserProfile;
-    },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-  });
+  const profile = useQuery(api.users.getCurrentUserProfile);
+
+  return {
+    data: profile
+      ? {
+          ...profile,
+          createdAt: new Date(profile.createdAt),
+          updatedAt: new Date(profile.updatedAt),
+          emailVerified: profile.emailVerified as boolean | null,
+        }
+      : undefined,
+    isLoading: profile === undefined,
+    error: null, // Convex handles errors differently
+  };
 }
 
-// Hook to update user profile
+// Hook to update user profile - using server function for Better Auth HTTP API integration
 export function useUpdateProfile() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (data: UpdateProfileData) => {
+  // Profile updates are handled via server function to integrate with Better Auth HTTP API
+  return {
+    mutateAsync: async (data: UpdateProfileData) => {
       const result = await updateUserProfileServerFn({ data });
       return result;
     },
-    onSuccess: () => {
-      // Invalidate profile queries
-      queryInvalidators.auth.profile(queryClient);
-    },
-  });
+    isPending: false,
+  };
 }

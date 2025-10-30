@@ -2,9 +2,8 @@
 
 /**
  * Set up local development environment with secrets and configuration.
- * - DB_ENCRYPTION_KEY: 32 bytes for AES-256 encryption of sensitive data in the database
- * - BETTER_AUTH_SECRET: 32 bytes for session signing
- * - BETTER_AUTH_URL: Base URL for Better Auth
+ * - BETTER_AUTH_SECRET: 32 bytes for session signing (also needed in Convex Dashboard)
+ * - BETTER_AUTH_URL: Base URL for Better Auth (also needed in Convex Dashboard)
  * Run: npm run setup
  */
 
@@ -15,10 +14,7 @@ import { generateSecret } from '../src/lib/server/crypto.server';
 async function main() {
   console.log('🔧 Setting up local development environment...\n');
 
-  const [encryptionKey, authSecret] = await Promise.all([
-    generateSecret(32), // DB_ENCRYPTION_KEY: 32 bytes for AES-256
-    generateSecret(32), // BETTER_AUTH_SECRET: 32 bytes for session signing
-  ]);
+  const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing
 
   // BETTER_AUTH_URL: Base URL for Better Auth
   const authUrl = 'http://localhost:3000';
@@ -30,7 +26,6 @@ async function main() {
     console.log('⚠️  .env.local already exists!');
     console.log('   To avoid overwriting existing configuration, here are your generated secrets:');
     console.log('────────────────────────────────────────────────');
-    console.log(`DB_ENCRYPTION_KEY=${encryptionKey}`);
     console.log(`BETTER_AUTH_SECRET=${authSecret}`);
     console.log(`BETTER_AUTH_URL=${authUrl}`);
     console.log('────────────────────────────────────────────────\n');
@@ -47,9 +42,6 @@ async function main() {
 # REQUIRED SECRETS (Generated Securely)
 # ==========================================
 
-# Encrypts sensitive fields before database storage
-DB_ENCRYPTION_KEY=${encryptionKey}
-
 # Signs JWTs for authentication
 BETTER_AUTH_SECRET=${authSecret}
 
@@ -63,16 +55,16 @@ BETTER_AUTH_URL=${authUrl}
 # Set development environment
 NODE_ENV=development
 
-# Set business name
-APP_NAME="TanStack Start Template"
-
 # ==========================================
-# OPTIONAL INTEGRATIONS
+# CONVEX DASHBOARD VARIABLES
 # ==========================================
-
-# Email notifications (optional - get from https://resend.com)
-# RESEND_API_KEY=your-resend-api-key
-# RESEND_EMAIL_SENDER=onboarding@resend.dev
+# These variables must also be set in your Convex Dashboard (Project Settings → Environment Variables):
+#
+# BETTER_AUTH_SECRET=<same-secret-as-above>
+# SITE_URL=http://localhost:3000
+# RESEND_API_KEY=<your-resend-api-key>          # Optional: for email functionality
+# RESEND_EMAIL_SENDER=<your-verified-email>      # Optional: for email functionality
+# APP_NAME="TanStack Start Template"             # Optional: for email templates
 
 # ==========================================
 # STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)
@@ -88,18 +80,23 @@ S3_FORCE_PATH_STYLE=true
 S3_PUBLIC_URL=http://localhost:9000
 
 # ==========================================
-# DATABASE (Configure for Local Development)
+# CONVEX DATABASE (Auto-configured)
 # ==========================================
 
-# Option 1: Local PostgreSQL with Homebrew (Recommended)
-# Install PostgreSQL: brew install postgresql && brew services start postgresql && createdb tanstack_start_starter_dev
-# DATABASE_URL=postgresql://localhost:5432/tanstack_start_starter_dev
+# Convex URLs will be automatically set after running: npx convex dev
+# VITE_CONVEX_URL=your-convex-deployment-url
+# VITE_CONVEX_SITE_URL=https://your-app-domain.com
 
-# Option 2: Neon PostgreSQL with database branching
-# Create branch: neonctl branches create --project-id YOUR_PROJECT_ID --name local
-# NETLIFY_DATABASE_URL=postgresql://neondb_owner:your_password@ep-your-endpoint.neon.tech/neondb?sslmode=require
+# For production: Convex URLs are automatically configured by Netlify
 
-# For production: Netlify will automatically set NETLIFY_DATABASE_URL when deploying
+# ==========================================
+# NEXT STEPS
+# ==========================================
+#
+# 1. Copy BETTER_AUTH_SECRET to your Convex Dashboard
+# 2. Add SITE_URL=http://localhost:3000 to Convex Dashboard
+# 3. Run: npx convex dev (initializes Convex project)
+# 4. Add email variables to Convex Dashboard if using email features
 `;
 
   writeFileSync(envPath, envContent, 'utf8');
@@ -108,18 +105,18 @@ S3_PUBLIC_URL=http://localhost:9000
   console.log(`   📁 Created: ${envPath}`);
   console.log('────────────────────────────────────────────────');
   console.log('🔑 Generated Secrets:');
-  console.log(`   DB_ENCRYPTION_KEY: ${encryptionKey.substring(0, 10)}...`);
   console.log(`   BETTER_AUTH_SECRET: ${authSecret.substring(0, 10)}...`);
   console.log(`   BETTER_AUTH_URL: ${authUrl}`);
   console.log('────────────────────────────────────────────────\n');
   console.log('🚀 Ready to develop!');
   console.log('   1. Review the generated .env.local file');
-  console.log('   2. Add any integrations (email)');
-  console.log('   3. Run: pnpm dev');
+  console.log('   2. Copy BETTER_AUTH_SECRET to Convex Dashboard → Environment Variables');
+  console.log('   3. Run: npx convex dev (to initialize Convex project)');
+  console.log('   4. Run: pnpm dev');
   console.log('\n📌 Security Notes:');
   console.log('   • Never commit .env.local to version control');
   console.log('   • Back up these secrets if they guard real data');
-  console.log('   • Use the same DB_ENCRYPTION_KEY across environments for encrypted data');
+  console.log('   • Convex handles encryption at the platform level');
 }
 
 main().catch((error) => {

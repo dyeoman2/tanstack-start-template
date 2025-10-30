@@ -9,7 +9,7 @@ A comprehensive, production-ready starter template for building modern full-stac
 - **File-based routing** with TanStack Router for intuitive page organization
 - **Server functions** for type-safe API endpoints and data fetching
 - **Progressive enhancement** - works without JavaScript, enhances with it
-- **Parallel data loading** with route loaders and React Query integration
+- **Parallel data loading** with route loaders and Convex real-time queries
 
 ### 🔐 **Authentication & Authorization**
 
@@ -29,11 +29,11 @@ A comprehensive, production-ready starter template for building modern full-stac
 
 ### 🗄️ **Database & Data Management**
 
-- **Drizzle ORM** for type-safe database operations
-- **PostgreSQL** with Neon (serverless, scalable)
-- **Database branching** for isolated development environments
-- **Automatic migrations** and schema management
-- **Seed data** for instant development setup
+- **Convex** for real-time, serverless database operations
+- **Type-safe queries and mutations** with automatic client generation
+- **Real-time subscriptions** for live data updates
+- **Automatic scaling** and global distribution
+- **Integrated authentication** with Better Auth
 
 ### 🚀 **Developer Experience**
 
@@ -41,7 +41,7 @@ A comprehensive, production-ready starter template for building modern full-stac
 - **Hot reloading** and fast development server
 - **Biome** for lightning-fast linting and formatting
 - **Performance monitoring** hooks for development insights
-- **Query key factories** for consistent cache management
+- **Automatic cache management** with Convex real-time subscriptions
 
 ### 📧 **Production Features**
 
@@ -64,166 +64,82 @@ A comprehensive, production-ready starter template for building modern full-stac
 
 This creates a fresh copy of the codebase in your GitHub account.
 
-### One-Click Deploy to Netlify (Production)
+### 🚀 Quick Start (Production)
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start)
 
 **What happens automatically:**
 
-- Connect your GitHub account
-- Select your new repository
-- Netlify creates a Neon PostgreSQL database
-- Generates required secrets (BETTER_AUTH_SECRET, DB_ENCRYPTION_KEY)
-- Builds and deploys your app
+- Connects to your GitHub repository
+- Builds and deploys your application
 - Sets up automatic deployments on every push
 
-**✅ FREE TIER** - No credit card required. Uses Netlify's free tier + Neon PostgreSQL.
+**Required Manual Setup (5 minutes):**
 
-That's it! Your app will be live at `https://your-app-name.netlify.app`
+#### 1. Set Up Convex Database
 
-### Local Setup (Development)
+```bash
+# Create your Convex project
+npx convex dev
+# Follow prompts to create project and get your deployment URL
+```
+
+#### 2. Configure Convex Environment Variables
+
+Go to [Convex Dashboard](https://dashboard.convex.dev) → Your Project → Settings → Environment Variables or via the CLI:
+```bash
+npx convex env set BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>
+npx convex env set SITE_URL=<your-netlify-url>
+npx convex env set RESEND_API_KEY=<your-resend-key>
+npx convex env set RESEND_EMAIL_SENDER=<verified-email>
+npx convex env set APP_NAME="TanStack Start Template"
+```
+
+#### 3. Configure Netlify Environment Variables
+
+In Netlify Dashboard → Site Settings → Environment Variables:
+
+```
+CONVEX_DEPLOY_KEY=<get-from-convex-dashboard-deploy-keys>
+```
+
+**✅ FREE TIER** - No credit card required!
+
+**🎉 Result:** Your app will be live with authentication, database, and real-time features!
+
+---
+
+### 🛠️ Local Development Setup
 
 #### Prerequisites
 
-- Node.js 22+
+- Node.js 24+
 - pnpm
-- [Neon CLI](https://neon.tech/docs/reference/neon-cli) (`neonctl`)
+- [Convex CLI](https://docs.convex.dev/quickstart) (`npx convex`)
 
-**Install neonctl:**
-
-```bash
-# Using npm
-npm install -g neonctl
-
-# Or using Homebrew (macOS/Linux)
-brew install neonctl
-
-# Or download directly from GitHub releases
-# https://github.com/neondatabase/neonctl/releases
-```
-
-**Verify installation:**
+#### Setup Steps
 
 ```bash
-neonctl --version
-```
-
-##### Installation & Setup
-
-```bash
-# Clone your repository
+# 1. Clone and install
 git clone <your-repo-url>
-cd tbd
-
-# Install dependencies
+cd tanstack-start-template
 pnpm install
 
-# Set up development environment
+# 2. Set up local environment (generates .env.local)
 pnpm run setup
 
-# Start development server
+# 3. Configure Convex Dashboard (same variables as production)
+# Copy BETTER_AUTH_SECRET from .env.local to Convex Dashboard
+# Add SITE_URL=http://localhost:3000 to Convex Dashboard
+
+# 4. Initialize Convex project
+npx convex dev
+
+# 5. Start development server
 pnpm dev
 ```
 
-#### Database Setup
-
-Choose one of the following database setup options:
-
-##### Option 1: Local PostgreSQL with Homebrew (Recommended for Local Development)
-
-For local development with a traditional PostgreSQL database using Homebrew:
-
-###### 1. Install PostgreSQL
-
-```bash
-# Install PostgreSQL using Homebrew
-brew install postgresql
-
-# Start PostgreSQL service
-brew services start postgresql
-
-# Create a database for the project
-createdb tanstack_start_starter_dev
-```
-
-###### 2. Configure Database Connection
-
-Add the local PostgreSQL connection string to your `.env.local`:
-
-```bash
-# Add to .env.local (created by pnpm run setup)
-# For local PostgreSQL development:
-DATABASE_URL=postgresql://localhost:5432/tanstack_start_starter_dev
-```
-
-###### 3. Push Schema and Seed Data
-
-```bash
-# Push database schema to your local PostgreSQL database
-pnpm run db:push
-
-# Seed with sample data
-pnpm run seed
-```
-
-###### 4. Database Management (Optional)
-
-```bash
-# Stop PostgreSQL service
-brew services stop postgresql
-
-# Start PostgreSQL service manually
-brew services start postgresql
-
-# Access PostgreSQL shell
-psql tanstack_start_starter_dev
-
-# View running services
-brew services list
-```
-
-##### Option 2: Neon PostgreSQL with Database Branching
-
-This project supports **Neon PostgreSQL** with database branching for cloud-based development.
-
-###### 1. Authenticate with Neon
-
-```bash
-# Login to your Neon account
-neonctl auth
-
-# List your projects
-neonctl projects list
-```
-
-###### 2. Create a Local Development Branch
-
-```bash
-# Get your project ID from the list above, then create a branch
-neonctl branches create --project-id YOUR_PROJECT_ID --name local
-```
-
-This creates an isolated database branch for development that won't affect your production data.
-
-###### 3. Configure Database Connection
-
-After creating the branch, you'll get a connection string. Add it to your `.env.local`:
-
-```bash
-# Add to .env.local (created by pnpm run setup)
-# For local development with your Neon branch:
-NETLIFY_DATABASE_URL=postgresql://neondb_owner:your_password@ep-your-endpoint.neon.tech/neondb?sslmode=require
-```
-
-###### 4. Push Schema and Seed Data
-
-```bash
-# Push database schema to your local branch
-pnpm run db:push
-
-# Seed with sample data
-pnpm run seed
-```
+**Your app will be available at `http://localhost:3000`**
 
 ## Contributing
 

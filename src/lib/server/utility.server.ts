@@ -1,21 +1,19 @@
+import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { sql } from 'drizzle-orm';
-import * as schema from '~/db/schema';
-import { getDb } from './db-config.server';
+import { api } from '../../../convex/_generated/api';
+import { createAuth } from '../../../convex/auth';
+
+// No auth cookies needed for unauthenticated endpoints
+const noAuthCookieGetter = () => undefined;
 
 // Health check endpoint for monitoring database and service readiness
 export const healthCheckServerFn = createServerFn({ method: 'GET' }).handler(async () => {
   const startTime = Date.now();
 
   try {
-    // Test database connectivity with a simple query
-    await getDb().execute(sql`SELECT 1 as health_check`);
-
-    // Check if critical tables exist by counting records in a key table
-    const userCount = await getDb()
-      .select({ count: sql<number>`count(*)` })
-      .from(schema.user)
-      .limit(1);
+    // Test Convex connectivity by checking user count
+    const { fetchQuery } = await setupFetchClient(createAuth, noAuthCookieGetter);
+    const userCountResult = await fetchQuery(api.users.getUserCount, {});
 
     const responseTime = Date.now() - startTime;
 
@@ -25,12 +23,12 @@ export const healthCheckServerFn = createServerFn({ method: 'GET' }).handler(asy
       responseTime: `${responseTime}ms`,
       database: {
         connected: true,
-        hasUsersTable: true,
-        userCount: Number(userCount[0]?.count ?? 0),
+        provider: 'convex',
+        userCount: userCountResult.totalUsers,
       },
       service: {
-        name: 'TBD',
-        version: '1.0.0-alpha.0',
+        name: 'TanStack Start Template',
+        version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
       },
     };
@@ -44,10 +42,11 @@ export const healthCheckServerFn = createServerFn({ method: 'GET' }).handler(asy
       error: error instanceof Error ? error.message : 'Unknown error',
       database: {
         connected: false,
+        provider: 'convex',
       },
       service: {
-        name: 'TBD',
-        version: '1.0.0-alpha.0',
+        name: 'TanStack Start Template',
+        version: '1.0.0',
         environment: process.env.NODE_ENV || 'development',
       },
     };

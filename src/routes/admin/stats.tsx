@@ -1,41 +1,21 @@
-import { useQuery } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Users } from 'lucide-react';
-import { useMemo } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
-import { getSystemStatsServerFn } from '~/features/dashboard/admin.server';
-import { queryKeys } from '~/lib/query-keys';
+import { api } from '../../../convex/_generated/api';
 
 export const Route = createFileRoute('/admin/stats')({
   component: SystemStats,
   errorComponent: AdminErrorBoundary,
-  loader: async () => {
-    return await getSystemStatsServerFn();
-  },
 });
 
 function SystemStats() {
-  // Get initial data from loader
-  const loaderData = Route.useLoaderData();
-  const loaderFetchedAt = useMemo(() => Date.now(), []);
+  // Use Convex query directly - enables real-time updates automatically
+  const stats = useQuery(api.admin.getSystemStats);
 
-  const {
-    data: stats,
-    isPending: statsPending,
-    refetch,
-  } = useQuery({
-    queryKey: queryKeys.admin.stats(),
-    queryFn: () => getSystemStatsServerFn(),
-    initialData: loaderData, // Use loader data as initial data
-    initialDataUpdatedAt: loaderFetchedAt,
-    staleTime: 30_000,
-    gcTime: 5 * 60_000,
-  });
-
-  if (statsPending) {
+  if (stats === undefined) {
     return <div>Loading...</div>;
   }
 
@@ -54,16 +34,11 @@ function SystemStats() {
       description="Failed to load system statistics. This might be due to a temporary data issue."
     >
       <div className="px-4 py-8">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">System Statistics</h1>
-            <p className="mt-2 text-sm text-gray-600">
-              Overview of system usage and performance metrics
-            </p>
-          </div>
-          <Button onClick={() => refetch()} variant="outline">
-            Refresh
-          </Button>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">System Statistics</h1>
+          <p className="mt-2 text-sm text-gray-600">
+            Overview of system usage and performance metrics (updates in real-time)
+          </p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">

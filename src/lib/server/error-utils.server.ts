@@ -49,22 +49,18 @@ export const handleServerError = (error: unknown, context?: string): ServerError
     return error;
   }
 
-  // Handle standard Error objects
+  // Handle standard Error objects with status codes
   if (error instanceof Error) {
-    return new ServerError(error.message || 'An unexpected error occurred', 500, error);
+    // Check if error has statusCode property (from fetch responses)
+    const statusCode = (error as { statusCode?: number }).statusCode;
+
+    return new ServerError(
+      error.message || 'An unexpected error occurred',
+      statusCode || 500,
+      error,
+    );
   }
 
   // Handle unknown errors
   return new ServerError('An unexpected error occurred', 500, error);
-};
-
-/**
- * Utility for consistent error throwing in server functions
- */
-export const throwServerError = (
-  message: string,
-  code: number = 500,
-  originalError?: unknown,
-): never => {
-  throw new ServerError(message, code, originalError);
 };

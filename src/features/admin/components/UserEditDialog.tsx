@@ -1,8 +1,6 @@
 import { useForm } from '@tanstack/react-form';
-import type { QueryClient } from '@tanstack/react-query';
-import { useMutation } from '@tanstack/react-query';
 import { Mail, User as UserIcon } from 'lucide-react';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 
 import { Button } from '~/components/ui/button';
 import {
@@ -22,18 +20,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { updateUserProfileServerFn } from '~/features/dashboard/admin.server';
-import { queryInvalidators } from '~/lib/query-keys';
-import type { User } from '../server/admin-loader.server';
+import { updateUserProfileServerFn } from '~/features/admin/server/admin.server';
+import type { User } from '../types';
 
 interface UserEditDialogProps {
   open: boolean;
   user: User | null;
   onClose: () => void;
-  queryClient: QueryClient;
 }
 
-export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDialogProps) {
+export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   const form = useForm({
     defaultValues: {
       name: user?.name || '',
@@ -43,13 +42,26 @@ export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDia
     onSubmit: async ({ value }) => {
       if (!user?.id) return;
 
-      // Update profile (name and email)
-      updateProfileMutation.mutate({
-        userId: user.id,
-        name: value.name.trim(),
-        email: value.email.trim().toLowerCase(),
-        role: value.role,
-      });
+      setIsSubmitting(true);
+      setSubmitError(null);
+
+      try {
+        await updateUserProfileServerFn({
+          data: {
+            userId: user.id,
+            name: value.name.trim(),
+            email: value.email.trim().toLowerCase(),
+            role: value.role,
+          },
+        });
+        // Convex queries update automatically - no cache invalidation needed!
+        onClose();
+      } catch (error) {
+        console.error('Failed to update user:', error);
+        setSubmitError(error instanceof Error ? error.message : 'Failed to update user');
+      } finally {
+        setIsSubmitting(false);
+      }
     },
   });
 
@@ -63,19 +75,6 @@ export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDia
       });
     }
   }, [user, form]);
-
-  const updateProfileMutation = useMutation({
-    mutationFn: (variables: {
-      userId: string;
-      name: string;
-      email: string;
-      role: 'user' | 'admin';
-    }) => updateUserProfileServerFn({ data: variables }),
-    onSuccess: () => {
-      queryInvalidators.composites.afterAdminUserOperation(queryClient);
-      onClose();
-    },
-  });
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
@@ -173,7 +172,7 @@ export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDia
                   <Select
                     value={field.state.value}
                     onValueChange={(value: 'user' | 'admin') => field.handleChange(value)}
-                    disabled={updateProfileMutation.isPending}
+                    disabled={isSubmitting}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder="Select role" />
@@ -190,14 +189,19 @@ export function UserEditDialog({ open, user, onClose, queryClient }: UserEditDia
               )}
             </form.Field>
           </div>
+          {submitError && (
+            <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
+              <p className="text-sm">{submitError}</p>
+            </div>
+          )}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={onClose} disabled={isSubmitting}>
               Cancel
             </Button>
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
               {([canSubmit, _isSubmitting]) => (
-                <Button type="submit" disabled={!canSubmit || updateProfileMutation.isPending}>
-                  {updateProfileMutation.isPending ? 'Saving...' : 'Save changes'}
+                <Button type="submit" disabled={!canSubmit || isSubmitting}>
+                  {isSubmitting ? 'Saving...' : 'Save changes'}
                 </Button>
               )}
             </form.Subscribe>

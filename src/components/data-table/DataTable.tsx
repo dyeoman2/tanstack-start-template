@@ -171,6 +171,6 @@ export function createSortableHeader<TColumnId extends string>(
 }
 
 // Utility function to format dates consistently
-export function formatTableDate(date: Date | string) {
+export function formatTableDate(date: Date | string | number) {
   return format(new Date(date), 'MMM d, yyyy');
 }

@@ -1,4 +1,3 @@
-import type { UseMutationResult } from '@tanstack/react-query';
 import { AlertTriangle, Upload } from 'lucide-react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
@@ -16,7 +15,9 @@ interface DocumentReviewFeedbackProps {
   documents: DocumentWithReview[];
   onUploadReplacement: () => void;
   onOverrideApprove: (doc: { id: string; filename: string }) => void;
-  overrideMutation: Pick<UseMutationResult, 'isPending'>;
+  overrideMutation: {
+    isPending: boolean;
+  };
 }
 
 /**

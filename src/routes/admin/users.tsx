@@ -2,9 +2,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { UserManagement } from '~/features/admin/components/UserManagement';
-import { getAllUsersServerFn } from '~/features/dashboard/admin.server';
 
-function UserTableSkeleton() {
+function _UserTableSkeleton() {
   return (
     <div className="mt-8">
       <div className="animate-pulse bg-gray-100 rounded-lg h-96" />
@@ -27,20 +26,4 @@ export const Route = createFileRoute('/admin/users')({
   validateSearch: usersSearchSchema,
   component: UserManagement,
   errorComponent: AdminErrorBoundary,
-  pendingMs: 200,
-  pendingComponent: UserTableSkeleton,
-  loader: async () => {
-    return await getAllUsersServerFn({
-      data: {
-        page: 1,
-        pageSize: 10,
-        sortBy: 'role',
-        sortOrder: 'asc',
-        secondarySortBy: 'role',
-        secondarySortOrder: 'asc',
-        search: '',
-        role: 'all',
-      },
-    });
-  },
 });

@@ -1,37 +1,38 @@
-import type { QueryClient } from '@tanstack/react-query';
-import { useMutation } from '@tanstack/react-query';
+import { useState } from 'react';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
-import { deleteUserServerFn } from '~/features/dashboard/admin.server';
-import { queryInvalidators } from '~/lib/query-keys';
+import { deleteUserServerFn } from '~/features/admin/server/admin.server';
 
 interface UserDeleteDialogProps {
   open: boolean;
   userId: string | null;
   onClose: () => void;
-  queryClient: QueryClient;
 }
 
-export function UserDeleteDialog({ open, userId, onClose, queryClient }: UserDeleteDialogProps) {
-  const deleteUserMutation = useMutation({
-    mutationFn: (variables: { userId: string; confirmation: string }) =>
-      deleteUserServerFn({ data: variables }),
-    onSuccess: () => {
-      queryInvalidators.composites.afterAdminUserOperation(queryClient);
-      onClose();
-    },
-    onError: (error) => {
-      // Error is handled in the UI through the mutation state
-      console.error('Delete user failed:', error);
-    },
-  });
+export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProps) {
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [error, setError] = useState<string | undefined>(undefined);
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!userId) return;
 
-    deleteUserMutation.mutate({
-      userId,
-      confirmation: 'DELETE_USER_DATA',
-    });
+    setIsDeleting(true);
+    setError(undefined);
+
+    try {
+      await deleteUserServerFn({
+        data: {
+          userId,
+          confirmation: 'DELETE_USER_DATA',
+        },
+      });
+      // Convex queries update automatically - no cache invalidation needed!
+      onClose();
+    } catch (err) {
+      console.error('Delete user failed:', err);
+      setError(err instanceof Error ? err.message : 'Failed to delete user');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -43,8 +44,8 @@ export function UserDeleteDialog({ open, userId, onClose, queryClient }: UserDel
       confirmationPhrase="DELETE_USER_DATA"
       confirmationPlaceholder="DELETE_USER_DATA"
       deleteText="Delete User"
-      isDeleting={deleteUserMutation.isPending}
-      error={deleteUserMutation.error?.message}
+      isDeleting={isDeleting}
+      error={error}
       onConfirm={handleConfirm}
       variant="danger"
     />
