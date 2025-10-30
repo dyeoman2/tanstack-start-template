@@ -4,6 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "24"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_CONVEX_SITE_URL"
 
 # Deploy previews skip Convex deployment (use preview deployment instead)
 [context.deploy-preview]

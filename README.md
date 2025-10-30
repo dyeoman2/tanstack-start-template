@@ -100,7 +100,10 @@ npx convex env set APP_NAME="TanStack Start Template"
 In Netlify Dashboard → Site Settings → Environment Variables:
 
 ```
-CONVEX_DEPLOY_KEY=<get-from-convex-dashboard-deploy-keys>
+CONVEX_DEPLOY_KEY=<production-deploy-key-from-convex-dashboard>
+SITE_URL=<your-netlify-url>  # e.g., https://your-app-name.netlify.app
+BETTER_AUTH_SECRET=<same-secret-as-convex>
+VITE_CONVEX_SITE_URL=<your-convex-deployment-url>  # e.g., https://abc-123.convex.cloud
 ```
 
 **✅ FREE TIER** - No credit card required!
