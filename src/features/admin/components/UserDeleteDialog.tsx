@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
-import { deleteUserServerFn } from '~/features/dashboard/admin.server';
+import { deleteUserServerFn } from '~/features/admin/server/admin.server';
 
 interface UserDeleteDialogProps {
   open: boolean;

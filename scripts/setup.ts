@@ -2,8 +2,8 @@
 
 /**
  * Set up local development environment with secrets and configuration.
- * - BETTER_AUTH_SECRET: 32 bytes for session signing
- * - BETTER_AUTH_URL: Base URL for Better Auth
+ * - BETTER_AUTH_SECRET: 32 bytes for session signing (also needed in Convex Dashboard)
+ * - BETTER_AUTH_URL: Base URL for Better Auth (also needed in Convex Dashboard)
  * Run: npm run setup
  */
 
@@ -55,16 +55,16 @@ BETTER_AUTH_URL=${authUrl}
 # Set development environment
 NODE_ENV=development
 
-# Set business name
-APP_NAME="TanStack Start Template"
-
 # ==========================================
-# OPTIONAL INTEGRATIONS
+# CONVEX DASHBOARD VARIABLES
 # ==========================================
-
-# Email notifications (optional - get from https://resend.com)
-# RESEND_API_KEY=your-resend-api-key
-# RESEND_EMAIL_SENDER=onboarding@resend.dev
+# These variables must also be set in your Convex Dashboard (Project Settings → Environment Variables):
+#
+# BETTER_AUTH_SECRET=<same-secret-as-above>
+# SITE_URL=http://localhost:3000
+# RESEND_API_KEY=<your-resend-api-key>          # Optional: for email functionality
+# RESEND_EMAIL_SENDER=<your-verified-email>      # Optional: for email functionality
+# APP_NAME="TanStack Start Template"             # Optional: for email templates
 
 # ==========================================
 # STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)
@@ -88,6 +88,15 @@ S3_PUBLIC_URL=http://localhost:9000
 # VITE_CONVEX_SITE_URL=https://your-app-domain.com
 
 # For production: Convex URLs are automatically configured by Netlify
+
+# ==========================================
+# NEXT STEPS
+# ==========================================
+#
+# 1. Copy BETTER_AUTH_SECRET to your Convex Dashboard
+# 2. Add SITE_URL=http://localhost:3000 to Convex Dashboard
+# 3. Run: npx convex dev (initializes Convex project)
+# 4. Add email variables to Convex Dashboard if using email features
 `;
 
   writeFileSync(envPath, envContent, 'utf8');
@@ -101,8 +110,8 @@ S3_PUBLIC_URL=http://localhost:9000
   console.log('────────────────────────────────────────────────\n');
   console.log('🚀 Ready to develop!');
   console.log('   1. Review the generated .env.local file');
-  console.log('   2. Add any integrations (email, Convex)');
-  console.log('   3. Run: npx convex dev (to initialize Convex)');
+  console.log('   2. Copy BETTER_AUTH_SECRET to Convex Dashboard → Environment Variables');
+  console.log('   3. Run: npx convex dev (to initialize Convex project)');
   console.log('   4. Run: pnpm dev');
   console.log('\n📌 Security Notes:');
   console.log('   • Never commit .env.local to version control');

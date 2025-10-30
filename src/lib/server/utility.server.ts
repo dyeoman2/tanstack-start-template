@@ -3,13 +3,16 @@ import { createServerFn } from '@tanstack/react-start';
 import { api } from '../../../convex/_generated/api';
 import { createAuth } from '../../../convex/auth';
 
+// No auth cookies needed for unauthenticated endpoints
+const noAuthCookieGetter = () => undefined;
+
 // Health check endpoint for monitoring database and service readiness
 export const healthCheckServerFn = createServerFn({ method: 'GET' }).handler(async () => {
   const startTime = Date.now();
 
   try {
     // Test Convex connectivity by checking user count
-    const { fetchQuery } = await setupFetchClient(createAuth, (_name: string) => undefined);
+    const { fetchQuery } = await setupFetchClient(createAuth, noAuthCookieGetter);
     const userCountResult = await fetchQuery(api.users.getUserCount, {});
 
     const responseTime = Date.now() - startTime;

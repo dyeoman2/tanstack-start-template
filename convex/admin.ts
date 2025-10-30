@@ -281,6 +281,93 @@ export const getAllUsers = query({
 });
 
 /**
+ * Get user by ID (admin only)
+ * Returns user email and name for deletion confirmation messages
+ */
+export const getUserById = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // Ensure user is authenticated and is admin
+    const currentUser = await authComponent.getAuthUser(ctx);
+    if (!currentUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const currentUserAny = currentUser as {
+      id?: string;
+      userId?: string;
+      _id?: unknown;
+    };
+    const currentUserId =
+      currentUserAny.id ||
+      currentUserAny.userId ||
+      (currentUserAny._id ? String(currentUserAny._id) : null);
+
+    if (!currentUserId) {
+      throw new Error('User ID not found');
+    }
+
+    const currentProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
+      .first();
+
+    if (currentProfile?.role !== 'admin') {
+      throw new Error('Admin access required');
+    }
+
+    // Query Better Auth user by ID using component's findMany query
+    type BetterAuthUser = {
+      _id: string;
+      email: string;
+      name: string | null;
+    };
+
+    try {
+      // Use Better Auth component's findMany query
+      // We'll fetch a small batch and filter by ID client-side
+      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
+      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000, // Fetch enough to find the user
+          id: 0,
+        },
+      });
+
+      // Extract users from result
+      let users: BetterAuthUser[] = [];
+      if (Array.isArray(result)) {
+        users = result as BetterAuthUser[];
+      } else if (result?.page && Array.isArray(result.page)) {
+        users = result.page as BetterAuthUser[];
+      } else if (result?.data && Array.isArray(result.data)) {
+        users = result.data as BetterAuthUser[];
+      }
+
+      // Find the specific user by ID
+      const user = users.find((u) => u._id === args.userId);
+
+      if (!user) {
+        return null;
+      }
+
+      return {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+      };
+    } catch (error) {
+      console.error('Failed to query Better Auth user:', error);
+      return null;
+    }
+  },
+});
+
+/**
  * Get system statistics (admin only)
  */
 export const getSystemStats = query({

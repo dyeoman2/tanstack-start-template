@@ -4,8 +4,8 @@ import { getCookie } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { api } from '../../../convex/_generated/api';
-import { createAuth } from '../../../convex/auth';
+import { api } from '../../../../convex/_generated/api';
+import { createAuth } from '../../../../convex/auth';
 
 const deleteUserSchema = z.object({
   userId: z.string().min(1, 'User ID is required'),
@@ -47,9 +47,7 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
       });
 
       // Find user being updated
-      const userToUpdate = allUsersResult.users.find(
-        (u: { id: string; email: string }) => u.id === userId,
-      );
+      const userToUpdate = allUsersResult.users.find((u) => u.id === userId);
       if (!userToUpdate) {
         throw new Error('User not found');
       }
@@ -57,8 +55,7 @@ export const updateUserProfileServerFn = createServerFn({ method: 'POST' })
       // Check if email is already taken by another user
       if (email !== userToUpdate.email) {
         const emailExists = allUsersResult.users.some(
-          (u: { id: string; email: string }) =>
-            u.id !== userId && u.email.toLowerCase() === email.toLowerCase(),
+          (u) => u.id !== userId && u.email.toLowerCase() === email.toLowerCase(),
         );
         if (emailExists) {
           throw new Error('Email address is already in use by another user');
@@ -120,18 +117,10 @@ export const deleteUserServerFn = createServerFn({ method: 'POST' })
 
       // Get user info before deletion (for success message)
       const { fetchQuery, fetchMutation } = await setupFetchClient(createAuth, getCookie);
-      const allUsersResult = await fetchQuery(api.admin.getAllUsers, {
-        page: 1,
-        pageSize: 1000,
-        sortBy: 'email',
-        sortOrder: 'asc',
-        secondarySortBy: 'email',
-        secondarySortOrder: 'asc',
-        search: undefined,
-        role: 'all',
+      const userToDelete = await fetchQuery(api.admin.getUserById, {
+        userId: _userId,
       });
 
-      const userToDelete = allUsersResult.users.find((u) => u.id === _userId);
       if (!userToDelete) {
         throw new Error('User not found');
       }
@@ -152,3 +141,69 @@ export const deleteUserServerFn = createServerFn({ method: 'POST' })
       throw handleServerError(error, 'Delete user');
     }
   });
+
+// Get all users (admin only) via Convex query
+export const getAllUsersServerFn = createServerFn({ method: 'GET' })
+  .inputValidator(
+    z.object({
+      page: z.number().int().positive().default(1),
+      pageSize: z.number().int().positive().max(100).default(10),
+      sortBy: z.enum(['name', 'email', 'role', 'emailVerified', 'createdAt']).default('email'),
+      sortOrder: z.enum(['asc', 'desc']).default('asc'),
+      secondarySortBy: z
+        .enum(['name', 'email', 'role', 'emailVerified', 'createdAt'])
+        .default('email'),
+      secondarySortOrder: z.enum(['asc', 'desc']).default('asc'),
+      search: z.string().optional(),
+      role: z.enum(['all', 'user', 'admin']).default('all'),
+    }),
+  )
+  .handler(async ({ data }) => {
+    try {
+      await requireAdmin();
+
+      const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+      const result = await fetchQuery(api.admin.getAllUsers, {
+        page: data.page,
+        pageSize: data.pageSize,
+        sortBy: data.sortBy,
+        sortOrder: data.sortOrder,
+        secondarySortBy: data.secondarySortBy,
+        secondarySortOrder: data.secondarySortOrder,
+        search: data.search,
+        role: data.role,
+      });
+
+      return result;
+    } catch (error) {
+      throw handleServerError(error, 'Get all users');
+    }
+  });
+
+// Get system statistics (admin only) via Convex query
+export const getSystemStatsServerFn = createServerFn({ method: 'GET' }).handler(async () => {
+  try {
+    await requireAdmin();
+
+    const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+    const result = await fetchQuery(api.admin.getSystemStats, {});
+
+    return result;
+  } catch (error) {
+    throw handleServerError(error, 'Get system stats');
+  }
+});
+
+// Truncate all application data (admin only) via Convex mutation
+export const truncateDataServerFn = createServerFn({ method: 'POST' }).handler(async () => {
+  try {
+    await requireAdmin();
+
+    const { fetchMutation } = await setupFetchClient(createAuth, getCookie);
+    const result = await fetchMutation(api.admin.truncateData, {});
+
+    return result;
+  } catch (error) {
+    throw handleServerError(error, 'Truncate data');
+  }
+});

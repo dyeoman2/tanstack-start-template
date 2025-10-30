@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { updateUserProfileServerFn } from '~/features/dashboard/admin.server';
+import { updateUserProfileServerFn } from '~/features/admin/server/admin.server';
 import type { User } from '../types';
 
 interface UserEditDialogProps {

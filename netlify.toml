@@ -1,40 +1,15 @@
 [build]
-  command = "echo '🏗️ Starting build process...' && echo '🏗️ Building application...' && pnpm build && echo '🎉 Build completed successfully'"
+  command = "echo '🏗️ Starting build process...' && echo '🚀 Deploying Convex functions and building application...' && npx convex deploy --cmd 'pnpm build' && echo '🎉 Build completed successfully'"
   publish = "dist/client"
 
 [build.environment]
   NODE_VERSION = "24"
-  SECRETS_SCAN_OMIT_KEYS = "RESEND_EMAIL_SENDER,APP_NAME,BETTER_AUTH_URL,S3_REGION"
 
 [template]
   full = true
 
 [[template.environment]]
-name = "APP_NAME"
-required = true
-default = "TanStack Start Template"
-description = "Name of the application"
-
-[[template.environment]]
-name = "BETTER_AUTH_SECRET"
+name = "CONVEX_DEPLOY_KEY"
 required = true
 default = ""
-description = "Signs JWTs for authentication. Run 'openssl rand -base64 32' in your terminal to generate"
-
-[[template.environment]]
-name = "BETTER_AUTH_URL"
-required = true
-default = "https://tanstack-start-template.netlify.app"
-description = "Base URL used by Better Auth callbacks"
-
-[[template.environment]]
-name = "RESEND_API_KEY"
-required = true
-default = ""
-description = "Resend API key for sending emails"
-
-[[template.environment]]
-name = "RESEND_EMAIL_SENDER"
-required = true
-default = "onboarding@resend.dev"
-description = "Sender email address for sending emails"
+description = "Production deploy key from Convex Dashboard (Settings → Deploy Keys → Production). Required for deploying Convex functions during Netlify build."

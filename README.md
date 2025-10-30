@@ -72,12 +72,30 @@ This creates a fresh copy of the codebase in your GitHub account.
 
 - Connect your GitHub account
 - Select your new repository
-- Netlify creates a Convex database
-- Generates required secrets (BETTER_AUTH_SECRET, CONVEX_URL)
-- Builds and deploys your app
+- Netlify builds and deploys your app
 - Sets up automatic deployments on every push
 
+**Required Setup Steps:**
+
+1. **Convex Deployment:**
+   - Create a Convex project: `npx convex dev` (follow prompts)
+   - Get your Production Deploy Key from Convex Dashboard → Settings → Deploy Keys
+   - Add `CONVEX_DEPLOY_KEY` to Netlify environment variables
+
+2. **Convex Environment Variables:**
+   - In your Convex Dashboard → Project Settings → Environment Variables, add:
+     - `BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
+     - `SITE_URL` (your Netlify site URL: `https://your-app-name.netlify.app`)
+     - `RESEND_API_KEY` (your Resend API key)
+     - `RESEND_EMAIL_SENDER` (your verified sender email)
+     - `APP_NAME` (your application name)
+
+3. **Netlify Environment Variables:**
+   - Add `CONVEX_DEPLOY_KEY` (from Convex Dashboard → Settings → Deploy Keys → Production)
+
 **✅ FREE TIER** - No credit card required. Uses Netlify's free tier + Convex free tier.
+
+**Note:** Authentication and email configuration is handled entirely in Convex. You do NOT need to set these in Netlify environment variables.
 
 That's it! Your app will be live at `https://your-app-name.netlify.app`
 
