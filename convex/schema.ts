@@ -14,7 +14,9 @@ export default defineSchema({
     // Add other app-specific user fields here as needed
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index('by_userId', ['userId']),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_role_createdAt', ['role', 'createdAt']),
 
   auditLogs: defineTable({
     id: v.string(),
@@ -29,4 +31,11 @@ export default defineSchema({
   })
     .index('by_userId', ['userId'])
     .index('by_createdAt', ['createdAt']),
+
+  dashboardStats: defineTable({
+    key: v.string(),
+    totalUsers: v.number(),
+    activeUsers: v.number(),
+    updatedAt: v.number(),
+  }).index('by_key', ['key']),
 });

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
-import { deleteUserServerFn } from '~/features/admin/server/admin.server';
+import { api } from '../../../../convex/_generated/api';
+import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
 
 interface UserDeleteDialogProps {
   open: boolean;
@@ -12,6 +13,17 @@ export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProp
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
 
+  // Optimistic mutation with automatic rollback on error
+  const deleteUserOptimistic = useOptimisticMutation(api.admin.deleteUser, {
+    onSuccess: () => {
+      // User deleted successfully - dialog will close
+    },
+    onError: (error) => {
+      console.error('Delete user failed:', error);
+      setError(error.message);
+    },
+  });
+
   const handleConfirm = async () => {
     if (!userId) return;
 
@@ -19,17 +31,13 @@ export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProp
     setError(undefined);
 
     try {
-      await deleteUserServerFn({
-        data: {
-          userId,
-          confirmation: 'DELETE_USER_DATA',
-        },
-      });
-      // Convex queries update automatically - no cache invalidation needed!
+      // Optimistic delete - Convex automatically removes from cache and updates queries
+      await deleteUserOptimistic({ userId });
+      // Convex queries update automatically - no manual cache invalidation needed!
       onClose();
     } catch (err) {
+      // Error handling is done in the onError callback above
       console.error('Delete user failed:', err);
-      setError(err instanceof Error ? err.message : 'Failed to delete user');
     } finally {
       setIsDeleting(false);
     }

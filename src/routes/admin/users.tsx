@@ -20,6 +20,7 @@ const usersSearchSchema = z.object({
   secondarySortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
   role: z.enum(['all', 'user', 'admin']).default('all'),
+  cursor: z.string().optional(), // Add cursor for optimized pagination
 });
 
 export const Route = createFileRoute('/admin/users')({

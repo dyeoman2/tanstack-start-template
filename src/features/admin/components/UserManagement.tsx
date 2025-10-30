@@ -42,6 +42,7 @@ export function UserManagement() {
         secondarySortOrder: 'asc' | 'desc';
         search: string;
         role: UserRoleFilterValue;
+        cursor?: string; // Add cursor for optimized pagination
       },
     [roleFilter, search],
   );

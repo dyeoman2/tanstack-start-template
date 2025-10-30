@@ -1,7 +1,7 @@
 import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { api } from '../../../../convex/_generated/api';
-import type { AdminDashboardLoaderData } from '../server/admin.server';
+import type { AdminDashboardLoaderData } from '../server/dashboard.server';
 
 /**
  * Result type from truncateData mutation
@@ -32,6 +32,7 @@ export function useAdminDashboard(initialData: AdminDashboardLoaderData) {
     secondarySortOrder: 'asc',
     search: undefined,
     role: 'all',
+    cursor: undefined, // Add cursor for optimized pagination
   });
 
   const statsData = useQuery(api.admin.getSystemStats);

@@ -1,5 +1,10 @@
 import { v } from 'convex/values';
-import { components } from './_generated/api';
+import {
+  type BetterAuthAdapterUserDoc,
+  normalizeAdapterFindManyResult,
+} from '../src/lib/server/better-auth/adapter-utils';
+import { assertUserId } from '../src/lib/shared/user-id';
+import { components, internal } from './_generated/api';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 
@@ -10,17 +15,11 @@ import { authComponent } from './auth';
 export const getUserCount = query({
   args: {},
   handler: async (ctx) => {
-    // Query Better Auth users directly - try different access methods
-    type BetterAuthUser = {
-      _id: string;
-    };
-
     // Use Better Auth component's findMany query to get all users
-    let allUsers: BetterAuthUser[] = [];
+    let allUsers: BetterAuthAdapterUserDoc[] = [];
     try {
       // Query all users using component's findMany query
-      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
-      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
         paginationOpts: {
           cursor: null,
@@ -29,10 +28,8 @@ export const getUserCount = query({
         },
       });
 
-      // Better Auth adapter.findMany returns users in result.page array
-      allUsers = (result?.page ||
-        result?.data ||
-        (Array.isArray(result) ? result : [])) as BetterAuthUser[];
+      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
+      allUsers = normalized.page;
     } catch (error) {
       console.error('Failed to query Better Auth users:', error);
       allUsers = [];
@@ -80,16 +77,75 @@ export const setUserRole = mutation({
         createdAt: now,
         updatedAt: now,
       });
+
+      await ctx.runMutation(internal.dashboardStats.adjustUserCounts, {
+        totalDelta: 1,
+      });
     }
 
     return { success: true };
   },
 });
 
-// Note: User profile updates (name, phoneNumber) are handled via Better Auth's HTTP API
-// in src/features/profile/server/profile.server.ts
-// We don't need a Convex mutation for this since Better Auth manages user data
-// and exposes update endpoints via its HTTP handler
+/**
+ * Update current user's profile (name, phoneNumber)
+ * Uses Better Auth component adapter's updateMany mutation
+ * Only allows users to update their own profile
+ */
+export const updateCurrentUserProfile = mutation({
+  args: {
+    name: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    // Get current user
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      throw new Error('User not authenticated');
+    }
+
+    const userId = assertUserId(authUser, 'User ID not found in auth user');
+
+    // Build update object - only include fields that are provided
+    const updateData: {
+      name?: string;
+      phoneNumber?: string | null;
+      updatedAt: number;
+    } = {
+      updatedAt: Date.now(),
+    };
+
+    if (args.name !== undefined) {
+      updateData.name = args.name.trim();
+    }
+
+    if (args.phoneNumber !== undefined) {
+      updateData.phoneNumber = args.phoneNumber || null;
+    }
+
+    // Use Better Auth component adapter's updateMany mutation
+    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+      input: {
+        model: 'user',
+        update: updateData,
+        where: [
+          {
+            field: '_id',
+            operator: 'eq',
+            value: userId,
+          },
+        ],
+      },
+      paginationOpts: {
+        cursor: null,
+        numItems: 1, // Only updating one user
+        id: 0, // Not used but required
+      },
+    });
+
+    return { success: true };
+  },
+});
 
 /**
  * Get current user profile (Better Auth user data + app-specific role)
@@ -107,21 +163,7 @@ export const getCurrentUserProfile = query({
     }
 
     // Better Auth Convex adapter returns the Convex document with _id
-    // The _id (Convex Id type) is the Better Auth user ID
-    // Convert _id to string - Convex Id types can be used as strings
-    const authUserAny = authUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-
-    // Extract user ID: prefer id/userId, fallback to _id converted to string
-    const userId =
-      authUserAny.id || authUserAny.userId || (authUserAny._id ? String(authUserAny._id) : null);
-
-    if (!userId) {
-      throw new Error('User ID not found in auth user');
-    }
+    const userId = assertUserId(authUser, 'User ID not found in auth user');
 
     // Get role from userProfiles
     const profile = await ctx.db

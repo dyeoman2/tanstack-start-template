@@ -1,13 +1,19 @@
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import type { UserId } from '~/lib/shared/user-id';
 import { DefaultCatchBoundary } from './components/DefaultCatchBoundary';
 import { NotFound } from './components/NotFound';
 import { routeTree } from './routeTree.gen';
 
 // Auth context type for route-level caching - matches root loader return type
-export type RouterAuthContext = {
-  user: { id: string; email: string; name?: string; role: string } | null;
-  authenticated: boolean;
-};
+export type RouterAuthContext =
+  | {
+      authenticated: false;
+      user: null;
+    }
+  | {
+      authenticated: true;
+      user: { id: UserId; email: string; name?: string; role: string };
+    };
 
 export function getRouter() {
   const router = createTanStackRouter({
@@ -20,8 +26,8 @@ export function getRouter() {
     scrollRestoration: false, // Disabled due to $_TSR ordering bug in v1.132.47
     // Provide default auth context
     context: {
-      user: null,
       authenticated: false,
+      user: null,
     } satisfies RouterAuthContext,
   });
 

@@ -15,10 +15,3 @@ export interface User {
   createdAt: number; // Unix timestamp from Convex
   updatedAt: number; // Unix timestamp from Convex
 }
-
-/**
- * System statistics type matching Convex admin.getSystemStats return type
- */
-export interface SystemStats {
-  users: number;
-}

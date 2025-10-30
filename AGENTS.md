@@ -66,6 +66,7 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
 
 - Load every route’s critical data through a loader-backed `createServerFn` so the server render includes real data.
 - Pass loader results into components via `Route.useLoaderData()` (or props) and keep UI shells pure.
+- Subscribe to Convex queries immediately; seed them with loader data (e.g. `liveData ?? initial`) instead of delaying the `useQuery` call.
 - Layer Convex `useQuery` calls on top for live updates, using the loader payload as the fallback until subscriptions resolve.
 
 ### Database

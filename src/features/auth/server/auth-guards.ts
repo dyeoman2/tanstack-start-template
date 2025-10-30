@@ -1,6 +1,8 @@
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { redirect } from '@tanstack/react-router';
 import { getCookie, getRequest } from '@tanstack/react-start/server';
+import type { UserId } from '~/lib/shared/user-id';
+import { normalizeUserId } from '~/lib/shared/user-id';
 import { api } from '../../../../convex/_generated/api';
 import { createAuth } from '../../../../convex/auth';
 
@@ -8,7 +10,7 @@ import { createAuth } from '../../../../convex/auth';
 export type UserRole = 'user' | 'admin';
 
 export interface AuthenticatedUser {
-  id: string;
+  id: UserId;
   email: string;
   role: UserRole;
   name?: string;
@@ -35,59 +37,41 @@ function getCurrentRequest(): Request | undefined {
  */
 async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   try {
-    const request = getCurrentRequest();
-    if (!request) {
+    if (!getCurrentRequest()) {
       return null;
     }
 
-    // Get the Convex site URL from environment
-    const convexSiteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
-    if (!convexSiteUrl) {
-      throw new Error('VITE_CONVEX_SITE_URL environment variable is required');
-    }
+    const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+    const authUser = await fetchQuery(api.auth.getCurrentUser, {});
 
-    // Call Convex Better Auth HTTP handler to get session
-    // Forward the original request headers (including cookies) to Convex
-    const headers = new Headers(request.headers);
-    headers.set('accept-encoding', 'application/json');
+    const sessionUserId = normalizeUserId(authUser);
+    const sessionUserEmail = typeof authUser?.email === 'string' ? authUser.email : null;
+    const sessionUserName = typeof authUser?.name === 'string' ? authUser.name : undefined;
 
-    const response = await fetch(`${convexSiteUrl}/api/auth/get-session`, {
-      method: 'GET',
-      headers,
-      redirect: 'manual',
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const sessionData = await response.json();
-
-    if (!sessionData?.user?.id) {
+    if (!sessionUserId || !sessionUserEmail) {
       return null;
     }
 
     // Fetch role from userProfiles table via Convex
     // Role is stored separately from Better Auth's user table
     try {
-      const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
       const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
 
       return {
-        id: sessionData.user.id,
-        email: sessionData.user.email,
+        id: sessionUserId,
+        email: sessionUserEmail,
         role: (profile?.role === 'admin' ? 'admin' : 'user') as UserRole,
-        name: sessionData.user.name,
+        name: sessionUserName,
       };
     } catch (profileError) {
       // If profile fetch fails, still return user but with default role
       // This can happen if user hasn't been fully set up yet
       console.warn('[Auth Guard] Failed to fetch user profile, using default role:', profileError);
       return {
-        id: sessionData.user.id,
-        email: sessionData.user.email,
+        id: sessionUserId,
+        email: sessionUserEmail,
         role: 'user',
-        name: sessionData.user.name,
+        name: sessionUserName,
       };
     }
   } catch {

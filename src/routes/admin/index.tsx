@@ -3,7 +3,7 @@ import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { AdminWarningBanner } from '~/features/admin/components/AdminErrorBanner';
 import { useAdminDashboard } from '~/features/admin/hooks/useAdminDashboard';
-import { getAdminDashboardDataServerFn } from '~/features/admin/server/admin.server';
+import { getAdminDashboardDataServerFn } from '~/features/admin/server/dashboard.server';
 import { routeAdminGuard } from '~/features/auth/server/route-guards';
 import { AdminCardsGrid } from '../../features/admin/components/AdminCardsGrid';
 import { AdminDashboardHeader } from '../../features/admin/components/AdminDashboardHeader';

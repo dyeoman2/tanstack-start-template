@@ -1,7 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["src/server.ts", "src/routes/**/*.{tsx,ts}", "scripts/**/*.ts", "*.config.{ts,js,mjs}"],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}"],
+  "entry": [
+    "src/server.ts",
+    "src/routes/**/*.{tsx,ts}",
+    "scripts/**/*.ts",
+    "*.config.{ts,js,mjs}",
+    "convex/**/*.{ts,js}"
+  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "convex/**/*.{ts,js}"],
   "ignore": [
     "**/node_modules/**",
     "**/dist/**",
@@ -14,7 +20,8 @@
     "src/lib/seeds/**/*",
     "src/lib/auth-client.ts",
     "src/lib/auth-utils.ts",
-    "src/features/auth/schemas.ts"
+    "src/features/auth/schemas.ts",
+    "src/router.tsx"
   ],
   "rules": {
     "files": "error",

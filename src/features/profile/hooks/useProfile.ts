@@ -1,6 +1,7 @@
 import { useQuery } from 'convex/react';
+import type { ProfileLoaderData } from '~/features/profile/server/profile.server';
 import { api } from '../../../../convex/_generated/api';
-import { updateUserProfileServerFn, type ProfileLoaderData } from '~/features/profile/server/profile.server';
+import { useOptimisticMutation } from '../../admin/hooks/useOptimisticUpdates';
 
 export interface UpdateProfileData {
   name: string;
@@ -29,14 +30,32 @@ export function useProfile(initialData?: ProfileLoaderData) {
   };
 }
 
-// Hook to update user profile - using server function for Better Auth HTTP API integration
+// Hook to update user profile with optimistic updates and rollback
 export function useUpdateProfile() {
-  // Profile updates are handled via server function to integrate with Better Auth HTTP API
+  // Use optimistic mutation utility for automatic rollback on error
+  const updateProfileOptimistic = useOptimisticMutation(api.users.updateCurrentUserProfile, {
+    onSuccess: () => {
+      // Profile updated successfully - Convex automatically updates queries
+    },
+    onError: (error) => {
+      console.error('Profile update failed:', error);
+    },
+  });
+
   return {
     mutateAsync: async (data: UpdateProfileData) => {
-      const result = await updateUserProfileServerFn({ data });
-      return result;
+      // Optimistic mutation with automatic rollback on error
+      await updateProfileOptimistic({
+        name: data.name || undefined,
+        phoneNumber: data.phoneNumber || undefined,
+      });
+
+      // Convex automatically invalidates queries, so the profile data will update
+      return {
+        success: true,
+        message: 'Profile updated successfully',
+      };
     },
-    isPending: false,
+    isPending: false, // Convex mutations don't provide loading state in the same way
   };
 }

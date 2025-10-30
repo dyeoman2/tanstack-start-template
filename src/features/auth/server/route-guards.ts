@@ -13,10 +13,12 @@ export async function routeAuthGuard({
   const isPublicRoute = publicRoutes.some(
     (route) => location.pathname === route || location.pathname.startsWith('/reset-password'),
   );
-  if (isPublicRoute) return { user: null, authenticated: false };
+  if (isPublicRoute) {
+    return { authenticated: false, user: null };
+  }
 
   const { user } = await getCurrentUserServerFn();
-  return { user, authenticated: true };
+  return { authenticated: true, user };
 }
 
 export async function routeAdminGuard({
@@ -28,22 +30,24 @@ export async function routeAdminGuard({
   if (user?.role !== 'admin') {
     throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
   }
-  return { user, authenticated: true };
+  return { authenticated: true, user };
 }
 
-const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(async () => {
-  try {
-    const { user } = await requireAuth();
-    return {
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-      authenticated: true,
-    };
-  } catch (_error) {
-    throw redirect({ to: '/login' });
-  }
-});
+const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(
+  async (): Promise<Extract<RouterAuthContext, { authenticated: true }>> => {
+    try {
+      const { user } = await requireAuth();
+      return {
+        authenticated: true as const,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      };
+    } catch (_error) {
+      throw redirect({ to: '/login' });
+    }
+  },
+);

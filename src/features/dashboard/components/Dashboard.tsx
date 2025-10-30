@@ -1,6 +1,6 @@
-import { useQuery } from 'convex/react';
 import { PageHeader } from '~/components/PageHeader';
 import { api } from '../../../../convex/_generated/api';
+import { useLoaderSeededQuery } from '../hooks/useLoaderSeededQuery';
 import type { DashboardLoaderData } from '../server/dashboard.server';
 import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
@@ -10,17 +10,15 @@ type DashboardProps = {
 };
 
 export function Dashboard({ initialData }: DashboardProps) {
-  // Use Convex query directly for real-time updates
-  const liveDashboardData = useQuery(api.dashboard.getDashboardData);
-  const fallbackData = initialData ?? null;
+  const { data: dashboardData, isLivePending } = useLoaderSeededQuery(
+    api.dashboard.getDashboardData,
+    {},
+    initialData,
+  );
 
-  const dashboardData = liveDashboardData ?? fallbackData;
-
-  // Handle loading state (only show skeletons when we have no data at all)
-  const isLoading = liveDashboardData === undefined && fallbackData === null;
-
-  // Handle error state (Convex queries throw on error)
-  const hasErrors = !isLoading && !dashboardData;
+  const hasInitialData = initialData !== null;
+  const isLoading = !hasInitialData && (isLivePending || dashboardData === null);
+  const hasErrors = !isLoading && dashboardData === null;
 
   // Extract data
   const stats = dashboardData?.stats;

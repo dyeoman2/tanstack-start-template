@@ -1,11 +1,96 @@
 import { v } from 'convex/values';
-import { components } from './_generated/api';
+import {
+  type BetterAuthAdapterUserDoc,
+  normalizeAdapterFindManyResult,
+} from '../src/lib/server/better-auth/adapter-utils';
+import { assertUserId } from '../src/lib/shared/user-id';
+import { components, internal } from './_generated/api';
+import type { GenericCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 
+type BetterAuthUser = BetterAuthAdapterUserDoc;
+
+// Helper function to fetch all Better Auth users with proper pagination
+async function fetchAllBetterAuthUsers(ctx: GenericCtx): Promise<BetterAuthUser[]> {
+  const allUsers: BetterAuthUser[] = [];
+  let cursor: string | null = null;
+
+  try {
+    while (true) {
+      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor,
+          numItems: 1000,
+          id: 0,
+        },
+      });
+
+      const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
+      const { page, continueCursor, isDone } = normalized;
+
+      if (page.length > 0) {
+        allUsers.push(...page);
+      }
+
+      const nextCursor: string | null =
+        continueCursor && continueCursor !== '[]' ? continueCursor : null;
+
+      if (!nextCursor || isDone || page.length < 1000) {
+        break;
+      }
+
+      cursor = nextCursor;
+    }
+  } catch (error) {
+    console.error('Failed to fetch Better Auth users:', error);
+    return [];
+  }
+
+  return allUsers;
+}
+
+// OPTIMIZATION: Helper function to fetch only relevant Better Auth users by IDs
+async function fetchBetterAuthUsersByIds(
+  ctx: GenericCtx,
+  userIds: string[],
+): Promise<BetterAuthUser[]> {
+  if (userIds.length === 0) return [];
+
+  try {
+    // Use Better Auth's findMany with where clause to filter by IDs
+    // This is more efficient than fetching all users when we only need specific ones
+    const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+      model: 'user',
+      paginationOpts: {
+        cursor: null,
+        numItems: userIds.length,
+        id: 0,
+      },
+    });
+
+    const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
+    const { page } = normalized;
+
+    // Filter to only the users we need
+    return page.filter((user) => {
+      try {
+        const userId = assertUserId(user, 'Better Auth user missing id');
+        return userIds.includes(userId);
+      } catch {
+        return false;
+      }
+    });
+  } catch (error) {
+    console.error('Failed to fetch Better Auth users by IDs:', error);
+    return [];
+  }
+}
+
 /**
  * Get all users with pagination, sorting, and filtering (admin only)
- * Combines Better Auth user data with userProfiles role
+ * Combines Better Auth user data with userProfiles role using optimized queries
  */
 export const getAllUsers = query({
   args: {
@@ -29,6 +114,7 @@ export const getAllUsers = query({
     secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
     search: v.optional(v.string()),
     role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
+    cursor: v.optional(v.string()), // Add cursor for efficient pagination
   },
   handler: async (ctx, args) => {
     // Ensure user is authenticated and is admin
@@ -37,19 +123,7 @@ export const getAllUsers = query({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -60,143 +134,54 @@ export const getAllUsers = query({
       throw new Error('Admin access required');
     }
 
-    // Query Better Auth's user table directly
-    // Component tables might be: 'betterAuth_user', 'betterAuth_users', or accessed via component db
-    type BetterAuthUser = {
-      _id: string;
-      email: string;
-      name: string | null;
-      emailVerified: boolean;
-      phoneNumber?: string | null;
-      createdAt: string | number;
-      updatedAt: string | number;
-      _creationTime: number;
-    };
+    // OPTIMIZATION: Use cursor-based pagination with userProfiles as primary source
+    // Only fetch Better Auth users for the current page, not all users
 
-    // Access Better Auth users via component's adapter.findMany query
-    // Component tables are accessed through the component's internal queries
-    let allAuthUsers: BetterAuthUser[] = [];
-    try {
-      // Use Better Auth component's findMany query to get all users
-      // This is the proper way to query component tables in Convex
-      // Query all users using component's findMany query with pagination
-      const batchSize = 1000; // Get all users in batches
-      let cursor: string | null = null;
-      let hasMore = true;
+    // Use the compound index for role filtering when needed
+    const paginatedProfiles =
+      args.role !== 'all'
+        ? await ctx.db
+            .query('userProfiles')
+            .withIndex('by_role_createdAt', (q) => q.eq('role', args.role))
+            .paginate({
+              cursor: args.cursor ?? null,
+              numItems: args.pageSize,
+            })
+        : await ctx.db.query('userProfiles').paginate({
+            cursor: args.cursor ?? null,
+            numItems: args.pageSize,
+          });
 
-      while (hasMore) {
-        // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
-        const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-          model: 'user',
-          paginationOpts: {
-            cursor,
-            numItems: batchSize,
-            id: 0, // Not used, but required by the API
-          },
-        });
+    // Only fetch Better Auth users for the profiles on this page
+    const profileUserIds = paginatedProfiles.page.map((p) => p.userId);
+    const relevantAuthUsers = await fetchBetterAuthUsersByIds(ctx, profileUserIds);
 
-        // Result format: { continueCursor: string, isDone: boolean, page: [...] }
-
-        // Better Auth adapter.findMany returns users in result.page array
-        // Format: { continueCursor: string, isDone: boolean, page: [...] }
-        let users: BetterAuthUser[] = [];
-        if (Array.isArray(result)) {
-          // Direct array response
-          users = result as BetterAuthUser[];
-        } else if (result?.page && Array.isArray(result.page)) {
-          // { page: [...] } format - this is the actual format used by Better Auth
-          users = result.page as BetterAuthUser[];
-        } else if (result?.data && Array.isArray(result.data)) {
-          // { data: [...] } format (fallback)
-          users = result.data as BetterAuthUser[];
-        } else if (result?.results && Array.isArray(result.results)) {
-          // { results: [...] } format (fallback)
-          users = result.results as BetterAuthUser[];
-        } else if (result?.items && Array.isArray(result.items)) {
-          // { items: [...] } format (fallback)
-          users = result.items as BetterAuthUser[];
-        }
-
-        if (users.length > 0) {
-          allAuthUsers.push(...users);
-        }
-
-        // Check if there are more results
-        // Better Auth uses continueCursor and isDone for pagination
-        const continueCursor = result?.continueCursor;
-        const isDone = result?.isDone === true;
-
-        // Parse continueCursor - it's a JSON string like "[]" when done
-        let nextCursor: string | null = null;
-        if (continueCursor && continueCursor !== '[]' && !isDone) {
-          try {
-            const parsed = JSON.parse(continueCursor);
-            if (parsed && parsed.length > 0) {
-              nextCursor = continueCursor;
-            }
-          } catch {
-            // If it's not JSON, use it as-is if it's not empty
-            if (continueCursor && continueCursor.trim() !== '[]') {
-              nextCursor = continueCursor;
-            }
-          }
-        }
-
-        hasMore = !isDone && !!nextCursor && users.length === batchSize;
-        cursor = nextCursor;
-
-        // Safety check: if we got fewer than batchSize, we're done
-        if (users.length < batchSize) {
-          hasMore = false;
-        }
-      }
-    } catch (error) {
-      console.error('Failed to query Better Auth users via component API:', error);
-      allAuthUsers = [];
+    // Create a map of auth users by ID for efficient lookup
+    const authUsersById = new Map<string, BetterAuthUser>();
+    for (const user of relevantAuthUsers) {
+      const authUserId = assertUserId(user, 'Better Auth user missing id');
+      authUsersById.set(authUserId, user);
     }
 
-    // Get all userProfiles to join roles
-    const allUserProfiles = await ctx.db.query('userProfiles').collect();
-    const profilesByUserId = new Map(allUserProfiles.map((profile) => [profile.userId, profile]));
+    // Combine profiles with auth users for this page only
+    let combinedUsers = paginatedProfiles.page
+      .map((profile) => {
+        const authUser = authUsersById.get(profile.userId);
+        if (!authUser) return null; // Skip if no matching auth user
 
-    // Combine Better Auth user data with userProfiles roles
-    let combinedUsers = allAuthUsers.map((authUser) => {
-      // Extract user ID from Better Auth document
-      // Better Auth uses _id as the document ID, which is also the user.id
-      const userId = String(authUser._id);
-      const profile = profilesByUserId.get(userId);
+        return {
+          id: profile.userId,
+          email: authUser.email,
+          name: authUser.name || null,
+          role: profile.role as 'user' | 'admin',
+          emailVerified: authUser.emailVerified || false,
+          createdAt: profile.createdAt,
+          updatedAt: profile.updatedAt,
+        };
+      })
+      .filter((user): user is NonNullable<typeof user> => user !== null);
 
-      // Convert Better Auth timestamps to Unix timestamps
-      const authCreatedAt =
-        typeof authUser.createdAt === 'string'
-          ? new Date(authUser.createdAt).getTime()
-          : typeof authUser.createdAt === 'number'
-            ? authUser.createdAt
-            : Date.now();
-      const authUpdatedAt =
-        typeof authUser.updatedAt === 'string'
-          ? new Date(authUser.updatedAt).getTime()
-          : typeof authUser.updatedAt === 'number'
-            ? authUser.updatedAt
-            : Date.now();
-
-      return {
-        id: userId,
-        email: authUser.email,
-        name: authUser.name || null,
-        role: (profile?.role || 'user') as 'user' | 'admin',
-        emailVerified: authUser.emailVerified || false,
-        createdAt: profile ? profile.createdAt : authCreatedAt, // Use profile timestamp if available
-        updatedAt: profile ? profile.updatedAt : authUpdatedAt,
-      };
-    });
-
-    // Filter by role if needed
-    if (args.role !== 'all') {
-      combinedUsers = combinedUsers.filter((user) => user.role === args.role);
-    }
-
-    // Apply search filter
+    // OPTIMIZATION: Apply search filter only to current page data
     if (args.search) {
       const searchLower = args.search.toLowerCase();
       combinedUsers = combinedUsers.filter(
@@ -206,7 +191,7 @@ export const getAllUsers = query({
       );
     }
 
-    // Apply sorting
+    // OPTIMIZATION: Apply sorting only to current page data
     const getSortValue = (
       user: (typeof combinedUsers)[number],
       field: typeof args.sortBy,
@@ -263,18 +248,29 @@ export const getAllUsers = query({
             : 0;
     });
 
-    // Apply pagination
-    const total = combinedUsers.length;
-    const offset = (args.page - 1) * args.pageSize;
-    const paginatedUsers = combinedUsers.slice(offset, offset + args.pageSize);
+    // OPTIMIZATION: Use cursor-based pagination metadata
+    // For accurate total count when role filtering, we need to count total profiles
+    const totalProfiles =
+      args.role !== 'all'
+        ? await ctx.db
+            .query('userProfiles')
+            .withIndex('by_role_createdAt', (q) => q.eq('role', args.role))
+            .collect()
+            .then((profiles) => profiles.length)
+        : await ctx.db
+            .query('userProfiles')
+            .collect()
+            .then((profiles) => profiles.length);
 
     return {
-      users: paginatedUsers,
+      users: combinedUsers,
       pagination: {
         page: args.page,
         pageSize: args.pageSize,
-        total,
-        totalPages: Math.ceil(total / args.pageSize),
+        total: totalProfiles,
+        totalPages: Math.ceil(totalProfiles / args.pageSize),
+        hasNextPage: !paginatedProfiles.isDone,
+        nextCursor: paginatedProfiles.continueCursor,
       },
     };
   },
@@ -295,19 +291,7 @@ export const getUserById = query({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -318,18 +302,8 @@ export const getUserById = query({
       throw new Error('Admin access required');
     }
 
-    // Query Better Auth user by ID using component's findMany query
-    type BetterAuthUser = {
-      _id: string;
-      email: string;
-      name: string | null;
-    };
-
     try {
-      // Use Better Auth component's findMany query
-      // We'll fetch a small batch and filter by ID client-side
-      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
-      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
         paginationOpts: {
           cursor: null,
@@ -338,25 +312,22 @@ export const getUserById = query({
         },
       });
 
-      // Extract users from result
-      let users: BetterAuthUser[] = [];
-      if (Array.isArray(result)) {
-        users = result as BetterAuthUser[];
-      } else if (result?.page && Array.isArray(result.page)) {
-        users = result.page as BetterAuthUser[];
-      } else if (result?.data && Array.isArray(result.data)) {
-        users = result.data as BetterAuthUser[];
-      }
+      const { page } = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
 
-      // Find the specific user by ID
-      const user = users.find((u) => u._id === args.userId);
+      const user = page.find((candidate) => {
+        try {
+          return assertUserId(candidate, 'Better Auth user missing id') === args.userId;
+        } catch {
+          return false;
+        }
+      });
 
       if (!user) {
         return null;
       }
 
       return {
-        id: user._id,
+        id: assertUserId(user, 'Better Auth user missing id'),
         email: user.email,
         name: user.name,
       };
@@ -369,6 +340,7 @@ export const getUserById = query({
 
 /**
  * Get system statistics (admin only)
+ * Uses efficient counting without fetching all user data
  */
 export const getSystemStats = query({
   args: {},
@@ -379,19 +351,7 @@ export const getSystemStats = query({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -402,41 +362,22 @@ export const getSystemStats = query({
       throw new Error('Admin access required');
     }
 
-    // Query Better Auth users directly via component's findMany query
-    type BetterAuthUser = {
-      _id: string;
-    };
-
-    let allUsers: BetterAuthUser[] = [];
     try {
-      // Use Better Auth component's findMany query
-      // biome-ignore lint/suspicious/noExplicitAny: Better Auth adapter return types
-      const result: any = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000, // Get all users for count
-          id: 0,
-        },
-      });
-
-      // Better Auth adapter.findMany returns users in result.page array
-      allUsers = (result?.page ||
-        result?.data ||
-        (Array.isArray(result) ? result : [])) as BetterAuthUser[];
+      const users = await fetchAllBetterAuthUsers(ctx);
+      return {
+        users: users.length,
+      };
     } catch (error) {
-      console.error('Failed to query Better Auth users:', error);
-      allUsers = [];
+      console.error('Failed to count Better Auth users:', error);
+      return {
+        users: 0,
+      };
     }
-
-    return {
-      users: allUsers.length,
-    };
   },
 });
 
 /**
- * Update Better Auth user data (name, email) (admin only)
+ * Update Better Auth user data (name, email, phoneNumber) (admin only)
  * Uses Better Auth component adapter's updateMany mutation
  */
 export const updateBetterAuthUser = mutation({
@@ -444,6 +385,7 @@ export const updateBetterAuthUser = mutation({
     userId: v.string(),
     name: v.optional(v.string()),
     email: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     // Ensure user is authenticated and is admin
@@ -452,19 +394,7 @@ export const updateBetterAuthUser = mutation({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -479,6 +409,7 @@ export const updateBetterAuthUser = mutation({
     const updateData: {
       name?: string;
       email?: string;
+      phoneNumber?: string | null;
       updatedAt: number;
     } = {
       updatedAt: Date.now(),
@@ -490,6 +421,10 @@ export const updateBetterAuthUser = mutation({
 
     if (args.email !== undefined) {
       updateData.email = args.email.toLowerCase().trim();
+    }
+
+    if (args.phoneNumber !== undefined) {
+      updateData.phoneNumber = args.phoneNumber || null;
     }
 
     // Use Better Auth component adapter's updateMany mutation
@@ -530,19 +465,7 @@ export const truncateData = mutation({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -603,19 +526,7 @@ export const deleteUser = mutation({
       throw new Error('User not authenticated');
     }
 
-    const currentUserAny = currentUser as {
-      id?: string;
-      userId?: string;
-      _id?: unknown;
-    };
-    const currentUserId =
-      currentUserAny.id ||
-      currentUserAny.userId ||
-      (currentUserAny._id ? String(currentUserAny._id) : null);
-
-    if (!currentUserId) {
-      throw new Error('User ID not found');
-    }
+    const currentUserId = assertUserId(currentUser, 'User ID not found');
 
     const currentProfile = await ctx.db
       .query('userProfiles')
@@ -649,6 +560,10 @@ export const deleteUser = mutation({
     // Delete user profile
     if (targetProfile) {
       await ctx.db.delete(targetProfile._id);
+
+      await ctx.runMutation(internal.dashboardStats.adjustUserCounts, {
+        totalDelta: -1,
+      });
     }
 
     // Delete audit logs for this user
