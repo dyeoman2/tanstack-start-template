@@ -13,8 +13,8 @@ ShadCN forms combine:
 
 ```tsx
 import { useForm } from '@tanstack/react-form';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Mail, MapPin, Phone, X } from 'lucide-react';
+import { useMutation } from 'convex/react';
+import { MapPin, Phone, X } from 'lucide-react';
 import { useId, useState } from 'react';
 
 // Import ShadCN components
@@ -35,7 +35,6 @@ import {
 } from '~/components/ui/select';
 import { Spinner } from '~/components/ui/spinner';
 import { usePhoneFormatter } from '~/hooks/use-phone-formatter';
-import { queryInvalidators, queryKeys } from '~/lib/query-keys';
 
 interface FormData {
   agentType: 'individual' | 'business';
@@ -51,7 +50,6 @@ interface FormData {
 }
 
 export function ExampleForm({ applicationId }: { applicationId: string }) {
-  const queryClient = useQueryClient();
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const phoneFormatter = usePhoneFormatter();
 
@@ -92,9 +90,6 @@ export function ExampleForm({ applicationId }: { applicationId: string }) {
       return await serverFunction({ data });
     },
     onSuccess: (result) => {
-      // Invalidate queries
-      queryClient.invalidateQueries({ queryKey: queryKeys.example.list() });
-
       // Reset form
       form.reset();
 

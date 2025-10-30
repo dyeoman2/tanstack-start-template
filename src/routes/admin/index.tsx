@@ -3,6 +3,7 @@ import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { AdminWarningBanner } from '~/features/admin/components/AdminErrorBanner';
 import { useAdminDashboard } from '~/features/admin/hooks/useAdminDashboard';
+import { getAdminDashboardDataServerFn } from '~/features/admin/server/admin.server';
 import { routeAdminGuard } from '~/features/auth/server/route-guards';
 import { AdminCardsGrid } from '../../features/admin/components/AdminCardsGrid';
 import { AdminDashboardHeader } from '../../features/admin/components/AdminDashboardHeader';
@@ -11,11 +12,13 @@ import { TruncateResultAlert } from '../../features/admin/components/TruncateRes
 
 export const Route = createFileRoute('/admin/')({
   beforeLoad: routeAdminGuard,
+  loader: () => getAdminDashboardDataServerFn(),
   component: AdminDashboardIndex,
   errorComponent: AdminErrorBoundary,
 });
 
 function AdminDashboardIndex() {
+  const initialData = Route.useLoaderData();
   const {
     isLoadingUsers,
     isLoadingStats,
@@ -26,7 +29,7 @@ function AdminDashboardIndex() {
     truncateResult,
     isTruncating,
     handleTruncateData,
-  } = useAdminDashboard();
+  } = useAdminDashboard(initialData);
 
   // Show loading state if both queries are loading
   if (isLoadingUsers && isLoadingStats) {

@@ -18,6 +18,7 @@ import { useToast } from '~/components/ui/toast';
 import { useProfile, useUpdateProfile } from '~/features/profile/hooks/useProfile';
 import { usePhoneFormatter } from '~/hooks/use-phone-formatter';
 import { cn } from '~/lib/utils';
+import type { ProfileLoaderData } from '../server/profile.server';
 
 // Form validation schema
 const profileSchema = z.object({
@@ -27,9 +28,13 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 
-export function ProfilePage() {
+interface ProfilePageProps {
+  initialProfile: ProfileLoaderData;
+}
+
+export function ProfilePage({ initialProfile }: ProfilePageProps) {
   const [isEditing, setIsEditing] = useState(false);
-  const { data: profile, isLoading, error } = useProfile();
+  const { data: profile, isLoading, error } = useProfile(initialProfile);
   const updateProfile = useUpdateProfile();
   const phoneFormatter = usePhoneFormatter();
   const toast = useToast();

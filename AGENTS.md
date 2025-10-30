@@ -26,6 +26,7 @@
 ## Key Patterns
 
 ### Routes
+
 ```ts
 export const Route = createFileRoute('/')({
   beforeLoad: routeAuthGuard,
@@ -36,6 +37,7 @@ export const Route = createFileRoute('/')({
 ```
 
 ### Server Functions
+
 ```ts
 // Parallel queries with discriminated unions
 export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handler(async () => {
@@ -60,32 +62,44 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
   });
 ```
 
+### SSR + Realtime Flow
+
+- Load every route’s critical data through a loader-backed `createServerFn` so the server render includes real data.
+- Pass loader results into components via `Route.useLoaderData()` (or props) and keep UI shells pure.
+- Layer Convex `useQuery` calls on top for live updates, using the loader payload as the fallback until subscriptions resolve.
+
 ### Database
+
 - Use Convex queries/mutations with automatic type generation.
 - Use `setupFetchClient` for server-side Convex operations.
 - Schema defined in `convex/schema.ts` with automatic deployment.
 - Real-time subscriptions available via Convex React hooks.
 
 ### Auth
+
 - Route guards: `routeAuthGuard`, `routeAdminGuard({ location })` in `beforeLoad`.
 - Server guards: `requireAuth()`, `requireAdmin()` throw on failure.
 - Client auth: `useAuth()` hook from `~/features/auth/hooks/useAuth`.
 
 ### Convex Client Hooks
-- Use `useQuery(api.xxx)` from `convex/react` for real-time data fetching.
+
+- Use `useQuery(api.xxx)` from `convex/react` for real-time data, seeded with loader data for instant SSR results.
 - Use `useMutation(api.xxx)` for mutations with automatic cache updates.
 - No manual cache invalidation needed - Convex automatically updates queries when data changes.
 - Real-time subscriptions enable live data updates across all connected clients.
 
 ### Forms
+
 - Use `@tanstack/react-form` with Zod validation.
 - Validate search params with Zod schemas.
 
 ### UI
+
 - Build from shadcn/ui components with `cn()` helper.
 - Keep components pure; logic in hooks.
 
 ### Advanced Patterns
+
 - **Branded Types**: `type IsoDateString = string & { __brand: 'IsoDateString' }`
 - **Discriminated Unions**: `{ status: 'success' | 'partial' | 'error' }` for safe error handling
 - **Promise.allSettled**: Parallel operations with individual error handling
@@ -94,17 +108,20 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
 ## TypeScript & Code Style
 
 ### Type Discipline
+
 - Strict mode only. No `any`, narrow `unknown`.
 - Use branded types and discriminated unions.
 - Derive types from implementations when possible.
 
 ### Naming
+
 - Components: `PascalCase.tsx`
 - Server functions: `camelCaseServerFn`
 - Server modules: `kebab-case.server.ts`
 - Use `~/` aliases, no relative imports.
 
 ### File Placement
+
 - Routes in `src/routes/`
 - Features in `src/features/`
 - Shared code in `src/lib/`
@@ -113,6 +130,7 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
 ## Workflow
 
 ### Commands
+
 ```bash
 pnpm dev             # Dev server
 pnpm build           # Build + typecheck
@@ -125,6 +143,7 @@ npx convex dashboard # Open Convex dashboard
 ```
 
 ### Development
+
 - Run `pnpm lint` and `pnpm typecheck` before committing.
 - Copy `.env.example` to `.env.local` for env vars.
 - Use `getEnv()` for server environment variables.
@@ -132,6 +151,7 @@ npx convex dashboard # Open Convex dashboard
 - **Database workflow**: Edit `convex/schema.ts` → Convex auto-deploys schema changes.
 
 ### Security
+
 - Never expose secrets to client-side code.
 - Rate-limit user-triggered server functions.
 
@@ -148,6 +168,7 @@ npx convex dashboard # Open Convex dashboard
 
 - ✅ Server functions in `*.server.ts` with Zod validation
 - ✅ Route loaders fetch all data in parallel
+- ✅ Loader data passed into components and reused as fallbacks for Convex hooks
 - ✅ Auth guards in `beforeLoad` and server functions
 - ✅ Convex queries/mutations for client-side data access
 - ✅ Components pure, logic in hooks

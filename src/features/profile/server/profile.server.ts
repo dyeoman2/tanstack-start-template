@@ -7,6 +7,19 @@ import { handleServerError } from '~/lib/server/error-utils.server';
 import { api } from '../../../../convex/_generated/api';
 import { createAuth } from '../../../../convex/auth';
 
+export const getCurrentUserProfileServerFn = createServerFn({ method: 'GET' }).handler(async () => {
+  try {
+    await requireAuth();
+    const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
+    return await fetchQuery(api.users.getCurrentUserProfile, {});
+  } catch (error) {
+    console.error('[Profile] Failed to fetch profile data during SSR:', error);
+    return null;
+  }
+});
+
+export type ProfileLoaderData = Awaited<ReturnType<typeof getCurrentUserProfileServerFn>>;
+
 // Zod schemas for profile operations
 const updateProfileSchema = z.object({
   name: z.string().min(1, 'Name is required').max(255, 'Name is too long'),
