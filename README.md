@@ -64,78 +64,82 @@ A comprehensive, production-ready starter template for building modern full-stac
 
 This creates a fresh copy of the codebase in your GitHub account.
 
-### One-Click Deploy to Netlify (Production)
+### 🚀 Quick Start (Production)
 
 [![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start)
 
 **What happens automatically:**
 
-- Connect your GitHub account
-- Select your new repository
-- Netlify builds and deploys your app
+- Connects to your GitHub repository
+- Builds and deploys your application
 - Sets up automatic deployments on every push
 
-**Required Setup Steps:**
+**Required Manual Setup (5 minutes):**
 
-1. **Convex Deployment:**
-   - Create a Convex project: `npx convex dev` (follow prompts)
-   - Get your Production Deploy Key from Convex Dashboard → Settings → Deploy Keys
-   - Add `CONVEX_DEPLOY_KEY` to Netlify environment variables
+#### 1. Set Up Convex Database
 
-2. **Convex Environment Variables:**
-   - In your Convex Dashboard → Project Settings → Environment Variables, add:
-     - `BETTER_AUTH_SECRET` (generate with `openssl rand -base64 32`)
-     - `SITE_URL` (your Netlify site URL: `https://your-app-name.netlify.app`)
-     - `RESEND_API_KEY` (your Resend API key)
-     - `RESEND_EMAIL_SENDER` (your verified sender email)
-     - `APP_NAME` (your application name)
+```bash
+# Create your Convex project
+npx convex dev
+# Follow prompts to create project and get your deployment URL
+```
 
-3. **Netlify Environment Variables:**
-   - Add `CONVEX_DEPLOY_KEY` (from Convex Dashboard → Settings → Deploy Keys → Production)
+#### 2. Configure Convex Environment Variables
 
-**✅ FREE TIER** - No credit card required. Uses Netlify's free tier + Convex free tier.
+Go to [Convex Dashboard](https://dashboard.convex.dev) → Your Project → Settings → Environment Variables or via the CLI:
+```bash
+npx convex env set BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>
+npx convex env set SITE_URL=<your-netlify-url>
+npx convex env set RESEND_API_KEY=<your-resend-key>
+npx convex env set RESEND_EMAIL_SENDER=<verified-email>
+npx convex env set APP_NAME="TanStack Start Template"
+```
 
-**Note:** Authentication and email configuration is handled entirely in Convex. You do NOT need to set these in Netlify environment variables.
+#### 3. Configure Netlify Environment Variables
 
-That's it! Your app will be live at `https://your-app-name.netlify.app`
+In Netlify Dashboard → Site Settings → Environment Variables:
 
-### Local Setup (Development)
+```
+CONVEX_DEPLOY_KEY=<get-from-convex-dashboard-deploy-keys>
+```
+
+**✅ FREE TIER** - No credit card required!
+
+**🎉 Result:** Your app will be live with authentication, database, and real-time features!
+
+---
+
+### 🛠️ Local Development Setup
 
 #### Prerequisites
 
-- Node.js 22+
+- Node.js 24+
 - pnpm
 - [Convex CLI](https://docs.convex.dev/quickstart) (`npx convex`)
 
-##### Installation & Setup
+#### Setup Steps
 
 ```bash
-# Clone your repository
+# 1. Clone and install
 git clone <your-repo-url>
 cd tanstack-start-template
-
-# Install dependencies
 pnpm install
 
-# Set up development environment (creates .env.local with required secrets)
+# 2. Set up local environment (generates .env.local)
 pnpm run setup
 
-# Initialize Convex (follow prompts to create your project)
+# 3. Configure Convex Dashboard (same variables as production)
+# Copy BETTER_AUTH_SECRET from .env.local to Convex Dashboard
+# Add SITE_URL=http://localhost:3000 to Convex Dashboard
+
+# 4. Initialize Convex project
 npx convex dev
 
-# Start development server
+# 5. Start development server
 pnpm dev
 ```
 
-#### Convex Setup
-
-The setup script will guide you through:
-
-1. **Convex Project Creation**: Creates your Convex project
-2. **Environment Variables**: Sets up `VITE_CONVEX_URL` and `BETTER_AUTH_SECRET`
-3. **Database Schema**: Automatically deploys your Convex schema
-
-Your app will be available at `http://localhost:3000` and Convex dashboard at the URL provided during setup.
+**Your app will be available at `http://localhost:3000`**
 
 ## Contributing
 
