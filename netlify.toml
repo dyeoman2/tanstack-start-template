@@ -10,10 +10,6 @@
 [context.deploy-preview]
   command = "echo '🏗️ Building preview (skipping Convex deploy)...' && pnpm build && echo '🎉 Preview build completed successfully'"
 
-[context.deploy-preview.environment]
-  VITE_CONVEX_SITE_URL = "https://striped-cheetah-712.convex.cloud"
-  CONVEX_URL = "https://striped-cheetah-712.convex.cloud"
-
 [template]
   full = true
 
