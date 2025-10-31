@@ -42,38 +42,25 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     }
 
     const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
-    const authUser = await fetchQuery(api.auth.getCurrentUser, {});
+    const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
 
-    const sessionUserId = normalizeUserId(authUser);
-    const sessionUserEmail = typeof authUser?.email === 'string' ? authUser.email : null;
-    const sessionUserName = typeof authUser?.name === 'string' ? authUser.name : undefined;
-
-    if (!sessionUserId || !sessionUserEmail) {
+    const sessionUserId = normalizeUserId(profile);
+    if (!sessionUserId) {
       return null;
     }
 
-    // Fetch role from userProfiles table via Convex
-    // Role is stored separately from Better Auth's user table
-    try {
-      const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
-
-      return {
-        id: sessionUserId,
-        email: sessionUserEmail,
-        role: (profile?.role === 'admin' ? 'admin' : 'user') as UserRole,
-        name: sessionUserName,
-      };
-    } catch (profileError) {
-      // If profile fetch fails, still return user but with default role
-      // This can happen if user hasn't been fully set up yet
-      console.warn('[Auth Guard] Failed to fetch user profile, using default role:', profileError);
-      return {
-        id: sessionUserId,
-        email: sessionUserEmail,
-        role: 'user',
-        name: sessionUserName,
-      };
+    const sessionUserEmail =
+      typeof profile?.email === 'string' && profile.email.length > 0 ? profile.email : null;
+    if (!sessionUserEmail) {
+      return null;
     }
+
+    return {
+      id: sessionUserId,
+      email: sessionUserEmail,
+      role: (profile?.role === 'admin' ? 'admin' : 'user') as UserRole,
+      name: typeof profile?.name === 'string' ? profile.name : undefined,
+    };
   } catch {
     return null;
   }

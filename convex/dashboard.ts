@@ -4,8 +4,34 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components } from './_generated/api';
+import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
 import { authComponent } from './auth';
+
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
+async function countSignupsSince(ctx: QueryCtx, since: number) {
+  let total = 0;
+  let cursor: string | null = null;
+
+  while (true) {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_createdAt', (q) => q.gte('createdAt', since))
+      .order('desc')
+      .paginate({ cursor, numItems: 100 });
+
+    total += page.filter((log) => log.action === 'SIGNUP').length;
+
+    if (isDone) {
+      break;
+    }
+
+    cursor = continueCursor ?? null;
+  }
+
+  return total;
+}
 
 /**
  * Get dashboard statistics and recent activity (admin only)
@@ -33,10 +59,17 @@ export const getDashboardData = query({
     }
 
     // Prefer cached dashboard stats, fall back to direct scan if stats doc missing
-    const statsDoc = await ctx.db
-      .query('dashboardStats')
-      .withIndex('by_key', (q) => q.eq('key', 'global'))
-      .first();
+    const now = Date.now();
+    const sevenDaysAgo = now - SEVEN_DAYS_MS;
+
+    const [statsDoc, recentAuditLogs, recentSignups] = await Promise.all([
+      ctx.db
+        .query('dashboardStats')
+        .withIndex('by_key', (q) => q.eq('key', 'global'))
+        .first(),
+      ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(10),
+      countSignupsSince(ctx, sevenDaysAgo),
+    ]);
 
     let totalUsers: number;
     let activeUsers: number;
@@ -49,43 +82,6 @@ export const getDashboardData = query({
       totalUsers = profiles.length;
       activeUsers = totalUsers; // TODO: Implement proper active user logic
     }
-
-    // Get recent signups (last 7 days) - still need to query Better Auth for this
-    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-    let recentSignups = 0;
-    try {
-      // Query Better Auth users created in the last 7 days (reasonable limit)
-      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000, // Reasonable limit for recent signups
-          id: 0,
-        },
-      });
-
-      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
-      const recentAuthUsers = normalized.page.filter((user) => {
-        const userCreatedAt =
-          typeof user.createdAt === 'string'
-            ? new Date(user.createdAt).getTime()
-            : typeof user.createdAt === 'number'
-              ? user.createdAt
-              : user._creationTime;
-        return userCreatedAt >= sevenDaysAgo;
-      });
-      recentSignups = recentAuthUsers.length;
-    } catch (error) {
-      console.error('Failed to query recent Better Auth users:', error);
-      recentSignups = 0;
-    }
-
-    // Get recent audit log activity (last 10 entries)
-    const recentAuditLogs = await ctx.db
-      .query('auditLogs')
-      .withIndex('by_createdAt')
-      .order('desc')
-      .take(10);
 
     // Create a map of user IDs to emails - only for users with recent activity
     // This is much more efficient than fetching ALL users
@@ -138,7 +134,7 @@ export const getDashboardData = query({
         totalUsers,
         activeUsers,
         recentSignups,
-        lastUpdated: new Date().toISOString() as string & { __brand: 'IsoDateString' },
+        lastUpdated: new Date(now).toISOString() as string & { __brand: 'IsoDateString' },
       },
       activity,
     };

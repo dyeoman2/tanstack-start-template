@@ -13,10 +13,7 @@ export function MobileNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const navItems = [
-    { to: '/', label: 'Dashboard', exact: true },
-    { to: '/applications', label: 'Applications' },
-  ];
+  const navItems = [{ to: '/', label: 'Dashboard', exact: true }];
 
   const handleLinkClick = () => {
     setOpen(false);
