@@ -78,16 +78,3 @@ export async function requireAuth(): Promise<AuthResult> {
 
   return { user };
 }
-
-/**
- * Require admin role
- */
-export async function requireAdmin(): Promise<AuthResult> {
-  const { user } = await requireAuth();
-
-  if (user.role !== 'admin') {
-    throw new Error('Admin access required');
-  }
-
-  return { user };
-}

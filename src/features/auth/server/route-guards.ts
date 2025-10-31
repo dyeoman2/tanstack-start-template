@@ -133,8 +133,3 @@ const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(
     }
   },
 );
-
-/**
- * Export server function for use in loaders when we need fresh auth data
- */
-export { getCurrentUserServerFn };
