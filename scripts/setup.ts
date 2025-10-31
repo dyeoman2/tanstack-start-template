@@ -14,7 +14,7 @@ import { generateSecret } from '../src/lib/server/crypto.server';
 async function main() {
   console.log('🔧 Setting up local development environment...\n');
 
-  const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing
+  const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing and rate limiting
 
   // BETTER_AUTH_URL: Base URL for Better Auth
   const authUrl = 'http://localhost:3000';
@@ -42,7 +42,7 @@ async function main() {
 # REQUIRED SECRETS (Generated Securely)
 # ==========================================
 
-# Signs JWTs for authentication
+# Signs JWTs for authentication and protects internal rate limiting operations
 BETTER_AUTH_SECRET=${authSecret}
 
 # Base URL for Better Auth

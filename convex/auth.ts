@@ -121,9 +121,15 @@ export const createAuth = (
   });
 };
 
+const internalRateLimitToken = process.env.BETTER_AUTH_SECRET;
+if (!internalRateLimitToken) {
+  throw new Error('BETTER_AUTH_SECRET environment variable is required');
+}
+
 // Action wrapper for rate limiting (callable from server functions)
 export const rateLimitAction = action({
   args: {
+    token: v.string(),
     name: v.string(),
     key: v.string(),
     config: v.union(
@@ -142,7 +148,12 @@ export const rateLimitAction = action({
     ),
   },
   handler: async (ctx, args) => {
-    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, args);
+    if (args.token !== internalRateLimitToken) {
+      throw new Error('Unauthorized rate limit access');
+    }
+
+    const { token: _token, ...rateLimitArgs } = args;
+    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, rateLimitArgs);
   },
 });
 

@@ -20,6 +20,10 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
   .inputValidator(signUpWithFirstAdminSchema)
   .handler(async ({ data }) => {
     const { email, password, name } = data;
+    const rateLimitToken = process.env.BETTER_AUTH_SECRET;
+    if (!rateLimitToken) {
+      throw new Error('BETTER_AUTH_SECRET environment variable is required');
+    }
 
     try {
       // Get client IP for rate limiting (defense-in-depth)
@@ -37,6 +41,7 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 
       // Apply server-side rate limiting (defense-in-depth)
       const rateLimitResult = await fetchAction(api.auth.rateLimitAction, {
+        token: rateLimitToken,
         name: 'signup',
         key: `signup:${clientIP}`,
         config: {
