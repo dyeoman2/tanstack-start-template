@@ -1,9 +1,10 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth } from 'better-auth';
+import { v } from 'convex/values';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
-import { query } from './_generated/server';
+import { action, query } from './_generated/server';
 
 const siteUrl = process.env.SITE_URL;
 if (!siteUrl) {
@@ -27,11 +28,51 @@ export const createAuth = (
     baseURL: siteUrl,
     secret,
     database: authComponent.adapter(ctx),
+    // Rate limiting at top level - Better Auth only inspects options.rateLimit
+    rateLimit: {
+      // Global rate limit - applies to all endpoints
+      window: 60 * 60, // 1 hour in seconds
+      max: 100, // 100 requests per hour per IP
+    },
     emailAndPassword: {
       enabled: true,
       requireEmailVerification: false,
       autoSignIn: true,
       sendResetPassword: async ({ user, url, token }) => {
+        // Apply server-side rate limiting for password reset (defense-in-depth)
+        const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
+          runMutation?: (
+            fn: unknown,
+            args: unknown,
+          ) => Promise<{ ok: boolean; retryAfter?: number }>;
+        };
+
+        if (!ctxWithRunMutation.runMutation) {
+          throw new Error('Rate limiter mutation unavailable in current context');
+        }
+
+        const rateLimitResult = await ctxWithRunMutation.runMutation(
+          components.rateLimiter.lib.rateLimit,
+          {
+            name: 'passwordReset',
+            key: `passwordReset:${user.email}`,
+            config: {
+              kind: 'token bucket',
+              rate: 3, // 3 requests
+              period: 60 * 60 * 1000, // per hour
+              capacity: 3,
+            },
+          },
+        );
+
+        if (!rateLimitResult.ok) {
+          throw new Error(
+            `Rate limit exceeded. Too many password reset requests. Please try again in ${Math.ceil(
+              (rateLimitResult.retryAfter ?? 0) / (60 * 1000),
+            )} minutes.`,
+          );
+        }
+
         // Call the email action which schedules the mutation using the Resend component
         // This ensures queueing, batching, durable execution, and rate limiting
         // We need to call it via the HTTP API since Better Auth callbacks don't have direct access to ctx.runAction
@@ -79,6 +120,31 @@ export const createAuth = (
     plugins: [convex()],
   });
 };
+
+// Action wrapper for rate limiting (callable from server functions)
+export const rateLimitAction = action({
+  args: {
+    name: v.string(),
+    key: v.string(),
+    config: v.union(
+      v.object({
+        kind: v.literal('token bucket'),
+        rate: v.number(),
+        period: v.number(),
+        capacity: v.number(),
+      }),
+      v.object({
+        kind: v.literal('fixed window'),
+        rate: v.number(),
+        period: v.number(),
+        capacity: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, args);
+  },
+});
 
 export const getCurrentUser = query({
   args: {},

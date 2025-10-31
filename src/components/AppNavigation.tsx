@@ -30,7 +30,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       await router.invalidate();
       navigate({ to: '/login', search: { reset: '', redirect: currentPath } });
     } catch (error) {
-      console.error('Error signing out:', error);
+      console.error('❌ NAVIGATION: Error signing out:', error);
       // Still try to invalidate even on error
       await router.invalidate();
       navigate({ to: '/login', search: { reset: '', redirect: currentPath } });

@@ -4,7 +4,9 @@ import { ProfilePage } from '~/features/profile/components/ProfilePage';
 import { getCurrentUserProfileServerFn } from '~/features/profile/server/profile.server';
 
 export const Route = createFileRoute('/profile')({
-  beforeLoad: routeAuthGuard,
+  beforeLoad: ({ location }) => {
+    return routeAuthGuard({ location });
+  },
   loader: () => getCurrentUserProfileServerFn(),
   component: ProfileRouteComponent,
 });

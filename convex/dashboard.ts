@@ -11,26 +11,22 @@ import { authComponent } from './auth';
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function countSignupsSince(ctx: QueryCtx, since: number) {
-  let total = 0;
-  let cursor: string | null = null;
-
-  while (true) {
-    const { page, isDone, continueCursor } = await ctx.db
+  try {
+    // Use collect() instead of pagination for counting - simpler and avoids cursor issues
+    // For admin dashboard stats, the number of recent signups should be manageable
+    const recentLogs = await ctx.db
       .query('auditLogs')
       .withIndex('by_createdAt', (q) => q.gte('createdAt', since))
-      .order('desc')
-      .paginate({ cursor, numItems: 100 });
+      .collect();
 
-    total += page.filter((log) => log.action === 'SIGNUP').length;
+    const signupCount = recentLogs.filter((log) => log.action === 'SIGNUP').length;
 
-    if (isDone) {
-      break;
-    }
-
-    cursor = continueCursor ?? null;
+    return signupCount;
+  } catch (error) {
+    console.error(`❌ Error counting signups:`, error);
+    // Fallback: return 0 on error
+    return 0;
   }
-
-  return total;
 }
 
 /**
@@ -41,10 +37,11 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
 export const getDashboardData = query({
   args: {},
   handler: async (ctx) => {
-    // Ensure user is authenticated and is admin
+    // ✅ Handle unauthenticated users gracefully - return null instead of throwing
+    // This prevents errors when users navigate to dashboard after sign out
     const currentUser = await authComponent.getAuthUser(ctx);
     if (!currentUser) {
-      throw new Error('User not authenticated');
+      return null;
     }
 
     const currentUserId = assertUserId(currentUser, 'User ID not found');
@@ -55,7 +52,7 @@ export const getDashboardData = query({
       .first();
 
     if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
+      return null;
     }
 
     // Prefer cached dashboard stats, fall back to direct scan if stats doc missing
@@ -108,8 +105,8 @@ export const getDashboardData = query({
             userEmailsById.set(authUserId, authUser.email);
           }
         }
-      } catch (error) {
-        console.error('Failed to query Better Auth users for activity:', error);
+      } catch {
+        // Silently handle Better Auth query failures
       }
     }
 

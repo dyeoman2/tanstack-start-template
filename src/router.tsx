@@ -12,7 +12,7 @@ export type RouterAuthContext =
     }
   | {
       authenticated: true;
-      user: { id: UserId; email: string; name?: string; role: string };
+      user: { id: UserId; email: string; name?: string; role: string } | null; // null for optimistic auth
     };
 
 export function getRouter() {
@@ -24,7 +24,7 @@ export function getRouter() {
     defaultErrorComponent: DefaultCatchBoundary,
     defaultNotFoundComponent: () => <NotFound />,
     scrollRestoration: false, // Disabled due to $_TSR ordering bug in v1.132.47
-    // Provide default auth context
+    // Provide default auth context - optimistic for performance
     context: {
       authenticated: false,
       user: null,

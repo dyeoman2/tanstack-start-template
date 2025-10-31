@@ -1,10 +1,9 @@
 import { useForm } from '@tanstack/react-form';
-import { Edit, Mail, Phone, User } from 'lucide-react';
+import { Edit, Mail, Phone } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldDescription, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import {
@@ -115,150 +114,143 @@ export function ProfilePage({ initialProfile }: ProfilePageProps) {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Profile" description="Manage your account information and preferences." />
+      <PageHeader
+        title="Profile"
+        description="Manage your account information and preferences."
+        actions={
+          !isEditing && (
+            <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+              <Edit className="mr-2 h-4 w-4" />
+              Edit
+            </Button>
+          )
+        }
+      />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <User className="h-5 w-5" />
-              Profile Information
-            </CardTitle>
-            {!isEditing && (
-              <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
-              </Button>
-            )}
-          </div>
-        </CardHeader>
-        <CardContent>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              form.handleSubmit();
-            }}
-            className="space-y-4"
-          >
-            {/* Name */}
-            <form.Field name="name">
-              {(field) => (
-                <Field>
-                  <FieldLabel>Full Name</FieldLabel>
-                  <Input
-                    id={nameId}
-                    type="text"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    disabled={!isEditing}
-                    className={cn(!isEditing && 'bg-muted')}
-                    placeholder="Enter your full name"
-                  />
-                  {field.state.meta.errors.length > 0 && (
-                    <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
-                  )}
-                </Field>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          form.handleSubmit();
+        }}
+        className="space-y-4 mx-auto"
+      >
+        {/* Name */}
+        <form.Field name="name">
+          {(field) => (
+            <Field>
+              <FieldLabel>Full Name</FieldLabel>
+              <Input
+                id={nameId}
+                type="text"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                disabled={!isEditing}
+                className={cn(!isEditing && 'bg-muted')}
+                placeholder="Enter your full name"
+              />
+              {field.state.meta.errors.length > 0 && (
+                <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
               )}
-            </form.Field>
+            </Field>
+          )}
+        </form.Field>
 
-            {/* Email - Read Only */}
+        {/* Email - Read Only */}
+        <Field orientation="vertical">
+          <FieldLabel>Email Address</FieldLabel>
+          <InputGroup>
+            <InputGroupIcon>
+              <Mail />
+            </InputGroupIcon>
+            <InputGroupInput
+              id={emailId}
+              type="email"
+              value={profile.email}
+              disabled
+              className="bg-muted"
+            />
+          </InputGroup>
+          <FieldDescription>
+            Email cannot be changed. Contact support if you need to update your email address.
+          </FieldDescription>
+        </Field>
+
+        {/* Phone Number */}
+        <form.Field name="phoneNumber">
+          {(field) => (
             <Field orientation="vertical">
-              <FieldLabel>Email Address</FieldLabel>
+              <FieldLabel>Phone Number</FieldLabel>
               <InputGroup>
-                <InputGroupIcon>
-                  <Mail />
-                </InputGroupIcon>
+                <InputGroupAddon>
+                  <Phone />
+                </InputGroupAddon>
                 <InputGroupInput
-                  id={emailId}
-                  type="email"
-                  value={profile.email}
-                  disabled
-                  className="bg-muted"
+                  id={phoneId}
+                  type="tel"
+                  value={field.state.value}
+                  onChange={(e) => {
+                    const formatted = phoneFormatter.formatInput(e.target.value);
+                    field.handleChange(formatted);
+                  }}
+                  disabled={!isEditing}
+                  className={cn(!isEditing && 'bg-muted')}
+                  placeholder="(805) 123-4567"
                 />
               </InputGroup>
-              <FieldDescription>
-                Email cannot be changed. Contact support if you need to update your email address.
-              </FieldDescription>
             </Field>
+          )}
+        </form.Field>
 
-            {/* Phone Number */}
-            <form.Field name="phoneNumber">
-              {(field) => (
-                <Field orientation="vertical">
-                  <FieldLabel>Phone Number</FieldLabel>
-                  <InputGroup>
-                    <InputGroupAddon>
-                      <Phone />
-                    </InputGroupAddon>
-                    <InputGroupInput
-                      id={phoneId}
-                      type="tel"
-                      value={field.state.value}
-                      onChange={(e) => {
-                        const formatted = phoneFormatter.formatInput(e.target.value);
-                        field.handleChange(formatted);
-                      }}
-                      disabled={!isEditing}
-                      className={cn(!isEditing && 'bg-muted')}
-                      placeholder="(805) 123-4567"
-                    />
-                  </InputGroup>
-                </Field>
-              )}
-            </form.Field>
+        {/* Read-only fields */}
+        <div className="grid grid-cols-2 gap-4">
+          <Field orientation="vertical">
+            <FieldLabel>Role</FieldLabel>
+            <Input
+              value={profile.role === 'admin' ? 'Administrator' : 'User'}
+              disabled
+              className="bg-muted capitalize"
+            />
+          </Field>
+          <Field orientation="vertical">
+            <FieldLabel>Created At</FieldLabel>
+            <Input
+              value={new Date(profile.createdAt).toLocaleDateString()}
+              disabled
+              className="bg-muted"
+            />
+          </Field>
+        </div>
 
-            {/* Read-only fields */}
-            <div className="grid grid-cols-2 gap-4">
-              <Field orientation="vertical">
-                <FieldLabel>Role</FieldLabel>
-                <Input
-                  value={profile.role === 'admin' ? 'Administrator' : 'User'}
-                  disabled
-                  className="bg-muted capitalize"
-                />
-              </Field>
-              <Field orientation="vertical">
-                <FieldLabel>Created At</FieldLabel>
-                <Input
-                  value={new Date(profile.createdAt).toLocaleDateString()}
-                  disabled
-                  className="bg-muted"
-                />
-              </Field>
-            </div>
-
-            {/* Form Actions */}
-            {isEditing && (
-              <form.Subscribe
-                selector={(state) => ({
-                  canSubmit: state.canSubmit,
-                  isSubmitting: state.isSubmitting,
-                })}
-              >
-                {({ canSubmit, isSubmitting }) => (
-                  <div className="flex gap-3 pt-4">
-                    <Button type="submit" disabled={!canSubmit || isSubmitting} className="flex-1">
-                      {isSubmitting ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        setIsEditing(false);
-                        form.reset();
-                      }}
-                      className="flex-1"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                )}
-              </form.Subscribe>
+        {/* Form Actions */}
+        {isEditing && (
+          <form.Subscribe
+            selector={(state) => ({
+              canSubmit: state.canSubmit,
+              isSubmitting: state.isSubmitting,
+            })}
+          >
+            {({ canSubmit, isSubmitting }) => (
+              <div className="flex gap-3 pt-4">
+                <Button type="submit" disabled={!canSubmit || isSubmitting} className="flex-1">
+                  {isSubmitting ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setIsEditing(false);
+                    form.reset();
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              </div>
             )}
-          </form>
-        </CardContent>
-      </Card>
+          </form.Subscribe>
+        )}
+      </form>
     </div>
   );
 }

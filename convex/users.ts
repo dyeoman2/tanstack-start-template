@@ -5,8 +5,36 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
+import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
+
+/**
+ * Helper function to verify caller is authenticated and has admin role
+ */
+async function requireAdminAuth(ctx: MutationCtx) {
+  // Get current user using the same pattern as the rest of the codebase
+  const authUser = await authComponent.getAuthUser(ctx);
+
+  if (!authUser) {
+    throw new Error('Authentication required');
+  }
+
+  // Better Auth Convex adapter returns the Convex document with _id
+  const userId = assertUserId(authUser, 'User ID not found in auth user');
+
+  // Get user's profile to check role
+  const profile = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_userId', (q) => q.eq('userId', userId))
+    .first();
+
+  if (!profile || profile.role !== 'admin') {
+    throw new Error('Admin privileges required');
+  }
+
+  return userId;
+}
 
 /**
  * Check if there are any users in the system (for determining first admin)
@@ -53,8 +81,31 @@ export const setUserRole = mutation({
   args: {
     userId: v.string(), // Better Auth user ID
     role: v.string(), // 'user' | 'admin'
+    allowBootstrap: v.optional(v.boolean()), // Special flag for first user signup
   },
   handler: async (ctx, args) => {
+    // Validate role
+    if (args.role !== 'user' && args.role !== 'admin') {
+      throw new Error('Invalid role. Must be "user" or "admin"');
+    }
+
+    // Check if this is a bootstrap operation (first user creation)
+    // Allow bootstrap without admin authentication for initial setup
+    if (!args.allowBootstrap) {
+      // SECURITY: Verify caller is authenticated admin for normal operations
+      await requireAdminAuth(ctx);
+    } else {
+      // BOOTSTRAP: Allow only when no other user profiles exist (idempotent for the same user)
+      const existingProfiles = await ctx.db.query('userProfiles').collect();
+      const nonBootstrapProfile = existingProfiles.find(
+        (profile) => profile.userId !== args.userId,
+      );
+
+      if (nonBootstrapProfile) {
+        throw new Error('Bootstrap not allowed - another user profile already exists');
+      }
+    }
+
     // Check if profile already exists
     const existingProfile = await ctx.db
       .query('userProfiles')
@@ -156,6 +207,7 @@ export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx) => {
     // Get Better Auth user via authComponent
+    // Note: This should be cached by Convex since we're in an authenticated context
     const authUser = await authComponent.getAuthUser(ctx);
 
     if (!authUser) {
@@ -165,7 +217,7 @@ export const getCurrentUserProfile = query({
     // Better Auth Convex adapter returns the Convex document with _id
     const userId = assertUserId(authUser, 'User ID not found in auth user');
 
-    // Get role from userProfiles
+    // Get role from userProfiles - this is a fast indexed query
     const profile = await ctx.db
       .query('userProfiles')
       .withIndex('by_userId', (q) => q.eq('userId', userId))
@@ -193,5 +245,42 @@ export const getCurrentUserProfile = query({
       createdAt,
       updatedAt,
     };
+  },
+});
+
+/**
+ * Update user role (for admin operations)
+ * SECURITY: Requires authenticated admin caller
+ */
+export const updateUserRole = mutation({
+  args: {
+    userId: v.string(),
+    role: v.string(),
+  },
+  handler: async (ctx, args) => {
+    // SECURITY: Verify caller is authenticated admin
+    await requireAdminAuth(ctx);
+
+    // Validate role
+    if (args.role !== 'user' && args.role !== 'admin') {
+      throw new Error('Invalid role. Must be "user" or "admin"');
+    }
+
+    // Update role in userProfiles
+    const profile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .first();
+
+    if (!profile) {
+      throw new Error('User profile not found');
+    }
+
+    await ctx.db.patch(profile._id, {
+      role: args.role,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
   },
 });

@@ -60,43 +60,44 @@ function RegisterPage() {
     onSubmit: async ({ value }) => {
       setError('');
       setSuccessMessage('');
+      const { email, password, name } = value;
 
       // Validate form fields
       const errors: string[] = [];
 
       // Validate name
-      if (!value.name) {
+      if (!name) {
         errors.push('Name is required');
-      } else if (value.name.length < 2) {
+      } else if (name.length < 2) {
         errors.push('Name must be at least 2 characters long');
-      } else if (value.name.length > 50) {
+      } else if (name.length > 50) {
         errors.push('Name must be less than 50 characters');
-      } else if (!/^[a-zA-Z\s'-]+$/.test(value.name)) {
+      } else if (!/^[a-zA-Z\s'-]+$/.test(name)) {
         errors.push('Name can only contain letters, spaces, hyphens, and apostrophes');
       }
 
       // Validate email
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-      if (!value.email) {
+      if (!email) {
         errors.push('Email is required');
-      } else if (!emailRegex.test(value.email)) {
+      } else if (!emailRegex.test(email)) {
         errors.push('Please enter a valid email address');
       }
 
       // Validate password
-      if (!value.password) {
+      if (!password) {
         errors.push('Password is required');
-      } else if (value.password.length < 8) {
+      } else if (password.length < 8) {
         errors.push('Password must be at least 8 characters long');
-      } else if (value.password.length > 128) {
+      } else if (password.length > 128) {
         errors.push('Password must be less than 128 characters');
-      } else if (!/(?=.*[a-z])/.test(value.password)) {
+      } else if (!/(?=.*[a-z])/.test(password)) {
         errors.push('Password must contain at least one lowercase letter');
-      } else if (!/(?=.*[A-Z])/.test(value.password)) {
+      } else if (!/(?=.*[A-Z])/.test(password)) {
         errors.push('Password must contain at least one uppercase letter');
-      } else if (!/(?=.*\d)/.test(value.password)) {
+      } else if (!/(?=.*\d)/.test(password)) {
         errors.push('Password must contain at least one number');
-      } else if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(value.password)) {
+      } else if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(password)) {
         errors.push('Password must contain at least one symbol');
       }
 
@@ -108,7 +109,7 @@ function RegisterPage() {
 
       try {
         const result = await signUpWithFirstAdminServerFn({
-          data: { email: value.email, password: value.password, name: value.name },
+          data: { email, password, name },
         });
 
         // Automatically sign in the user after successful registration
@@ -116,7 +117,7 @@ function RegisterPage() {
           const { data, error: signInError } = await signIn.email(
             {
               email: result.userCredentials.email,
-              password: result.userCredentials.password,
+              password,
               rememberMe: true,
             },
             {

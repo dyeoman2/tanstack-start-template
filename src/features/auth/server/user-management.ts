@@ -1,6 +1,6 @@
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { getCookie } from '@tanstack/react-start/server';
+import { getCookie, getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { handleServerError } from '~/lib/server/error-utils.server';
 import { api } from '../../../../convex/_generated/api';
@@ -22,8 +22,37 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
     const { email, password, name } = data;
 
     try {
+      // Get client IP for rate limiting (defense-in-depth)
+      const request = getRequest();
+      const clientIP =
+        request?.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+        request?.headers.get('x-real-ip') ||
+        'unknown';
+
       // Initialize Convex fetch client for server-side calls
-      const { fetchQuery, fetchMutation } = await setupFetchClient(createAuth, getCookie);
+      const { fetchQuery, fetchMutation, fetchAction } = await setupFetchClient(
+        createAuth,
+        getCookie,
+      );
+
+      // Apply server-side rate limiting (defense-in-depth)
+      const rateLimitResult = await fetchAction(api.auth.rateLimitAction, {
+        name: 'signup',
+        key: `signup:${clientIP}`,
+        config: {
+          kind: 'token bucket',
+          rate: 5, // 5 attempts
+          period: 60 * 60 * 1000, // per hour
+          capacity: 5,
+        },
+      });
+
+      if (!rateLimitResult.ok) {
+        const retryMinutes = Math.ceil(rateLimitResult.retryAfter / (60 * 1000));
+        throw new Error(
+          `Rate limit exceeded. Too many signup attempts. Please try again in ${retryMinutes} minutes.`,
+        );
+      }
 
       // Check if this would be the first user (using Convex)
       const userCountResult = await fetchQuery(api.users.getUserCount, {});
@@ -53,11 +82,6 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
         let errorData: { message?: string; code?: string; details?: unknown } = {};
         try {
           const responseText = await signUpResponse.text();
-          console.log('[Signup] Convex Better Auth error response:', {
-            status: signUpResponse.status,
-            statusText: signUpResponse.statusText,
-            body: responseText,
-          });
 
           try {
             errorData = JSON.parse(responseText);
@@ -110,9 +134,11 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 
         try {
           // Store role in userProfiles table (app-specific data)
+          // Use allowBootstrap flag for first admin user creation
           await fetchMutation(api.users.setUserRole, {
             userId: signUpResult.user.id,
             role: roleToSet,
+            allowBootstrap: isFirstUser, // Allow bootstrap for first admin
           });
         } catch (roleError) {
           // Log but don't fail signup if role update fails
@@ -130,7 +156,6 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
           : 'Account created successfully!',
         userCredentials: {
           email,
-          password,
         },
       };
     } catch (error) {

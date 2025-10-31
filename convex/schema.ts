@@ -38,4 +38,14 @@ export default defineSchema({
     activeUsers: v.number(),
     updatedAt: v.number(),
   }).index('by_key', ['key']),
+
+  // Rate limiting table - managed by @convex-dev/rate-limiter
+  rateLimit: defineTable({
+    identifier: v.string(),
+    kind: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_identifier_kind', ['identifier', 'kind'])
+    .index('by_createdAt', ['createdAt']),
 });
