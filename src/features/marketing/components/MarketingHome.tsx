@@ -39,6 +39,7 @@ type TechItem = {
   Icon: MarketingIcon;
   iconColor?: string;
   iconClassName?: string;
+  url: string;
 };
 
 const coreTechnologies: TechItem[] = [
@@ -47,73 +48,84 @@ const coreTechnologies: TechItem[] = [
     description: 'File-based routing, SSR, and progressive enhancement.',
     Icon: TanStackIcon,
     iconColor: '#f97316',
+    url: 'https://tanstack.com/start',
   },
   {
     name: 'Convex',
     description: 'Realtime database operations with zero client boilerplate.',
     Icon: ConvexIcon,
     iconColor: '#0f172a',
+    url: 'https://www.convex.dev/',
   },
   {
     name: 'Netlify',
     description: 'Serverless hosting and edge delivery tuned for TanStack Start.',
     Icon: SiNetlify,
     iconClassName: 'text-emerald-500',
+    url: 'https://www.netlify.com/',
   },
   {
     name: 'BetterAuth',
     description: 'Email-first authentication with session management baked in.',
     Icon: BetterAuthIcon,
     iconColor: '#be123c',
+    url: 'https://www.better-auth.com/',
   },
   {
     name: 'Resend',
     description: 'Transactional emails for auth flows and lifecycle messaging.',
     Icon: SiResend,
-    iconClassName: 'text-violet-600',
+    iconClassName: 'text-slate-900',
+    url: 'https://resend.com/',
   },
   {
     name: 'Biome',
     description: 'Fast linting and formatting to keep the codebase consistent.',
     Icon: SiBiome,
-    iconClassName: 'text-lime-600',
+    iconClassName: 'text-blue-600',
+    url: 'https://biomejs.dev/',
   },
-
   {
     name: 'React 19',
     description: 'Modern UI library powering server and client rendering.',
     Icon: SiReact,
     iconClassName: 'text-sky-400',
+    url: 'https://react.dev/',
   },
   {
     name: 'Shadcn/UI',
     description: 'Accessible component primitives ready for rapid iteration.',
     Icon: SiShadcnui,
     iconClassName: 'text-slate-900',
+    url: 'https://ui.shadcn.com/',
   },
   {
     name: 'Tailwind',
     description: 'Utility-first styling with design tokens configured for the template.',
     Icon: SiTailwindcss,
     iconClassName: 'text-sky-500',
+    url: 'https://tailwindcss.com/',
   },
   {
     name: 'TypeScript',
     description: 'Type-safe foundations from server to client with strict typing.',
     Icon: SiTypescript,
     iconClassName: 'text-blue-600',
+    url: 'https://www.typescriptlang.org/',
   },
   {
     name: 'Vite',
     description: 'Lightning-fast dev server and build pipeline optimized for React.',
     Icon: SiVite,
     iconClassName: 'text-purple-600',
+    url: 'https://vitejs.dev/',
   },
   {
     name: 'Zod',
     description: 'Type-safe validation for data schemas.',
     Icon: SiZod,
     iconClassName: 'text-blue-500',
+    url: 'https://zod.dev/',
   },
 ];
 
@@ -170,9 +182,12 @@ export function MarketingHome() {
           {coreTechnologies.map((tech) => {
             const Icon = tech.Icon;
             return (
-              <div
+              <a
                 key={tech.name}
-                className="flex items-center gap-4 rounded-2xl border border-border/60 bg-background px-4 py-4 shadow-sm"
+                href={tech.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-4 rounded-2xl border border-border/60 bg-background px-4 py-4 shadow-sm transition-colors hover:bg-muted/50"
               >
                 <div
                   className="flex h-12 w-12 items-center justify-center rounded-full"
@@ -184,7 +199,7 @@ export function MarketingHome() {
                   <p className="text-base font-semibold text-foreground">{tech.name}</p>
                   <p className="text-sm text-muted-foreground">{tech.description}</p>
                 </div>
-              </div>
+              </a>
             );
           })}
         </div>
