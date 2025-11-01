@@ -56,12 +56,12 @@ function RouteErrorBoundary({
             </Button>
 
             {showHomeButton && (
-              <Link to="/app">
-                <Button size="sm" variant="default">
-                  <Home className="h-4 w-4 mr-2" />
+              <Button asChild size="sm" variant="default">
+                <Link to="/app" className="inline-flex items-center gap-2">
+                  <Home className="h-4 w-4" />
                   Home
-                </Button>
-              </Link>
+                </Link>
+              </Button>
             )}
           </div>
 

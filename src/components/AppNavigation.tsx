@@ -28,12 +28,12 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       // Invalidate the root route loader which caches auth state
       // Convex handles auth state automatically, so no need for React Query invalidation
       await router.invalidate();
-      navigate({ to: '/login', search: { reset: '', redirect: currentPath } });
+      navigate({ to: '/' });
     } catch (error) {
       console.error('❌ NAVIGATION: Error signing out:', error);
       // Still try to invalidate even on error
       await router.invalidate();
-      navigate({ to: '/login', search: { reset: '', redirect: currentPath } });
+      navigate({ to: '/' });
     }
   };
 

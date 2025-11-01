@@ -4,6 +4,7 @@ import type { ComponentProps } from 'react';
 import type { IconType } from 'react-icons';
 import {
   SiBiome,
+  SiGithub,
   SiNetlify,
   SiReact,
   SiResend,
@@ -121,25 +122,33 @@ export function MarketingHome() {
     <div className="flex flex-col gap-16 py-16">
       <section className="text-center space-y-6">
         <span className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-medium text-primary">
-          Built with TanStack Start
+          Free Open Source Template
         </span>
         <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
           Ship full-stack apps faster with best-in-class developer experience.
         </h1>
         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
-          TanStack Start Template pairs modern tooling, auth, and real-time data so you can focus on
-          your product instead of plumbing. Server-first by default, progressively enhanced for the
-          richest user experiences.
+          TanStack Start Template is a free, open-source starter that pairs modern tooling, auth,
+          and real-time data so you can focus on your product instead of plumbing. Server-first by
+          default, progressively enhanced for the richest user experiences.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
-            <Link to="/register">
-              Get Started
-              <ArrowRight className="ml-2 h-4 w-4" />
+            <Link to="/register" className="inline-flex items-center gap-2">
+              Explore the Demo
+              <ArrowRight className="h-4 w-4" />
             </Link>
           </Button>
           <Button asChild variant="outline" size="lg">
-            <Link to="/app">Explore the Demo</Link>
+            <a
+              href="https://github.com/dyeoman2/tanstack-start-template"
+              className="inline-flex items-center gap-2"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <SiGithub className="h-4 w-4" />
+              View on GitHub
+            </a>
           </Button>
         </div>
       </section>
@@ -153,8 +162,8 @@ export function MarketingHome() {
             Pre-configured with a production-ready toolchain
           </h2>
           <p className="text-base text-muted-foreground">
-            Best-of-breed platforms wired together so teams can ship quickly without compromising on
-            reliability or developer experience.
+            Best-of-breed platforms wired together in this free, open-source template so teams can
+            ship quickly without compromising on reliability or developer experience.
           </p>
         </div>
         <div className="mt-10 grid gap-5 sm:grid-cols-2 xl:grid-cols-3">

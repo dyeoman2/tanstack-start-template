@@ -23,13 +23,13 @@ export function MobileNavigation() {
     try {
       await signOut();
       handleLinkClick(); // Close the mobile menu
-      // Navigate to login page after successful sign out
-      navigate({ to: '/login', search: { reset: '', redirect: location.pathname } });
+      // Navigate to home page after successful sign out
+      navigate({ to: '/' });
     } catch (error) {
       console.error('Error signing out:', error);
       handleLinkClick(); // Close the mobile menu
-      // Still navigate to login even if there's an error
-      navigate({ to: '/login', search: { reset: '', redirect: location.pathname } });
+      // Still navigate to home even if there's an error
+      navigate({ to: '/' });
     }
   };
 
