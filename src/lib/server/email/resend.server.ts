@@ -1,7 +1,7 @@
+import { api } from '@convex/_generated/api';
+import { createAuth } from '@convex/auth';
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { api } from '../../../../convex/_generated/api';
-import { createAuth } from '../../../../convex/auth';
 
 // No auth cookies needed for unauthenticated endpoints
 const noAuthCookieGetter = () => undefined;

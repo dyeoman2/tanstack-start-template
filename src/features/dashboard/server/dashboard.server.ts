@@ -1,8 +1,8 @@
+import { api } from '@convex/_generated/api';
+import { createAuth } from '@convex/auth';
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
 import { getCookie } from '@tanstack/react-start/server';
-import { api } from '../../../../convex/_generated/api';
-import { createAuth } from '../../../../convex/auth';
 
 export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handler(async () => {
   try {

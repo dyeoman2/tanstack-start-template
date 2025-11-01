@@ -1,7 +1,7 @@
+import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
 import { Mail, User as UserIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
-
 import { Button } from '~/components/ui/button';
 import {
   Dialog,
@@ -20,7 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { api } from '../../../../convex/_generated/api';
 import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
 import type { User } from '../types';
 

@@ -1,10 +1,10 @@
+import { api } from '@convex/_generated/api';
+import { createAuth } from '@convex/auth';
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { redirect } from '@tanstack/react-router';
 import { getCookie, getRequest } from '@tanstack/react-start/server';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
-import { api } from '../../../../convex/_generated/api';
-import { createAuth } from '../../../../convex/auth';
 
 // Type definitions for user roles
 export type UserRole = 'user' | 'admin';

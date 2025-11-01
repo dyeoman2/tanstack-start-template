@@ -1,10 +1,10 @@
+import { api } from '@convex/_generated/api';
+import { createAuth } from '@convex/auth';
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
 import { getCookie, getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { api } from '../../../../convex/_generated/api';
-import { createAuth } from '../../../../convex/auth';
 
 // Zod schemas for user management
 const signUpWithFirstAdminSchema = z.object({

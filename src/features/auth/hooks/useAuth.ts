@@ -1,6 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { useSession } from '~/features/auth/auth-client';
-import { api } from '../../../../convex/_generated/api';
 
 export type UserRole = 'user' | 'admin';
 

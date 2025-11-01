@@ -1,6 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import type { ProfileLoaderData } from '~/features/profile/server/profile.server';
-import { api } from '../../../../convex/_generated/api';
 import { useOptimisticMutation } from '../../admin/hooks/useOptimisticUpdates';
 
 export interface UpdateProfileData {

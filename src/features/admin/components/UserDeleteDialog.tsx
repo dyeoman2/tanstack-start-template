@@ -1,6 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { useState } from 'react';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
-import { api } from '../../../../convex/_generated/api';
 import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
 
 interface UserDeleteDialogProps {

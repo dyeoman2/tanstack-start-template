@@ -1,5 +1,5 @@
+import { api } from '@convex/_generated/api';
 import { PageHeader } from '~/components/PageHeader';
-import { api } from '../../../../convex/_generated/api';
 import { useLoaderSeededQuery } from '../hooks/useLoaderSeededQuery';
 import type { DashboardLoaderData } from '../server/dashboard.server';
 import { MetricCard, SkeletonCard } from './MetricCard';

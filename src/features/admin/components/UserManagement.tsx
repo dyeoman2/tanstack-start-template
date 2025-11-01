@@ -1,9 +1,9 @@
+import { api } from '@convex/_generated/api';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
-import { api } from '../../../../convex/_generated/api';
 import type { User as AdminUser } from '../types';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';

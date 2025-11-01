@@ -1,6 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { useMutation } from 'convex/react';
 import { useEffect, useState } from 'react';
-import { api } from '../../../../convex/_generated/api';
 
 /**
  * Result type from truncateData mutation
