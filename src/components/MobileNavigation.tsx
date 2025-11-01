@@ -13,7 +13,7 @@ export function MobileNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const navItems = [{ to: '/', label: 'Dashboard', exact: true }];
+  const navItems = isAuthenticated ? [{ to: '/app', label: 'Dashboard', exact: true }] : [];
 
   const handleLinkClick = () => {
     setOpen(false);
@@ -63,24 +63,26 @@ export function MobileNavigation() {
         </SheetHeader>
         <div className="flex flex-col mx-2">
           {/* Main Navigation */}
-          <nav className="flex flex-col space-y-2">
-            {navItems.map((item) => (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={handleLinkClick}
-                className={cn(
-                  'text-foreground hover:text-foreground hover:bg-accent px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                )}
-                activeOptions={item.exact ? { exact: true } : undefined}
-                activeProps={{
-                  className: 'bg-accent text-accent-foreground border-l-4 border-primary',
-                }}
-              >
-                {item.label}
-              </Link>
-            ))}
-          </nav>
+          {navItems.length > 0 && (
+            <nav className="flex flex-col space-y-2">
+              {navItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={handleLinkClick}
+                  className={cn(
+                    'text-foreground hover:text-foreground hover:bg-accent px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  )}
+                  activeOptions={item.exact ? { exact: true } : undefined}
+                  activeProps={{
+                    className: 'bg-accent text-accent-foreground border-l-4 border-primary',
+                  }}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+          )}
 
           {/* Divider */}
           <div className="border-t border-border my-4" />
@@ -93,7 +95,7 @@ export function MobileNavigation() {
               <div className="space-y-2">
                 {isAdmin && (
                   <Link
-                    to="/admin"
+                    to="/app/admin"
                     onClick={handleLinkClick}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                   >
@@ -102,7 +104,7 @@ export function MobileNavigation() {
                   </Link>
                 )}
                 <Link
-                  to="/profile"
+                  to="/app/profile"
                   onClick={handleLinkClick}
                   className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                 >

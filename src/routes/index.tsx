@@ -1,22 +1,17 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { routeAuthGuard } from '~/features/auth/server/route-guards';
-import { Dashboard } from '~/features/dashboard/components/Dashboard';
-import { getDashboardDataServerFn } from '~/features/dashboard/server/dashboard.server';
-import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
+import { createFileRoute, redirect } from '@tanstack/react-router';
+import { getAuthStatusServerFn } from '~/features/auth/server/session.server';
+import { MarketingHome } from '~/features/marketing/components/MarketingHome';
 
 export const Route = createFileRoute('/')({
-  beforeLoad: routeAuthGuard,
-  loader: () => getDashboardDataServerFn(),
-  component: DashboardComponent,
-  errorComponent: DashboardErrorBoundary,
+  beforeLoad: async () => {
+    const { isAuthenticated } = await getAuthStatusServerFn();
+    if (isAuthenticated) {
+      throw redirect({ to: '/app' });
+    }
+  },
+  component: MarketingHomeRoute,
 });
 
-function DashboardComponent() {
-  // Use dedicated performance monitoring hook
-  usePerformanceMonitoring('Dashboard');
-
-  const initialData = Route.useLoaderData();
-
-  return <Dashboard initialData={initialData} />;
+function MarketingHomeRoute() {
+  return <MarketingHome />;
 }

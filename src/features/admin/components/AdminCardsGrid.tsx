@@ -10,13 +10,13 @@ export function AdminCardsGrid({ onTruncateClick }: AdminCardsGridProps) {
       <AdminCard
         title="User Management"
         description="Manage users and their roles"
-        href="/admin/users"
+        href="/app/admin/users"
       />
 
       <AdminCard
         title="System Statistics"
         description="View system-wide statistics"
-        href="/admin/stats"
+        href="/app/admin/stats"
       />
 
       <AdminCard

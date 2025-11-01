@@ -59,7 +59,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
           {isAdmin && (
             <DropdownMenuItem asChild>
               <Link
-                to="/admin"
+                to="/app/admin"
                 className="flex items-center gap-2 w-full cursor-pointer text-destructive hover:text-destructive focus:text-destructive"
               >
                 <Shield className="w-4 h-4" />
@@ -68,7 +68,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>
-            <Link to="/profile" className="flex items-center gap-2 w-full cursor-pointer">
+            <Link to="/app/profile" className="flex items-center gap-2 w-full cursor-pointer">
               <User className="w-4 h-4" />
               Profile
             </Link>
@@ -110,6 +110,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
  */
 export function AppNavigation() {
   const location = useLocation();
+  const { isAuthenticated } = useAuth();
 
   return (
     <nav className="bg-card shadow-sm border-b">
@@ -144,15 +145,17 @@ export function AppNavigation() {
             </Link>
 
             {/* Navigation Links */}
-            <div className="flex items-center space-x-1">
-              <Link
-                to="/"
-                className={cn(navigationMenuTriggerStyle(), 'no-underline')}
-                activeOptions={{ exact: true }}
-              >
-                Dashboard
-              </Link>
-            </div>
+            {isAuthenticated && (
+              <div className="flex items-center space-x-1">
+                <Link
+                  to="/app"
+                  className={cn(navigationMenuTriggerStyle(), 'no-underline')}
+                  activeOptions={{ exact: true }}
+                >
+                  Dashboard
+                </Link>
+              </div>
+            )}
           </div>
 
           {/* Right side - Mobile menu on mobile, Auth nav on desktop */}

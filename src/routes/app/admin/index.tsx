@@ -1,15 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { PageHeader } from '~/components/PageHeader';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
+import { AdminCardsGrid } from '~/features/admin/components/AdminCardsGrid';
+import { TruncateDataModal } from '~/features/admin/components/TruncateDataModal';
+import { TruncateResultAlert } from '~/features/admin/components/TruncateResultAlert';
 import { useAdminDashboard } from '~/features/admin/hooks/useAdminDashboard';
-import { routeAdminGuard } from '~/features/auth/server/route-guards';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
-import { AdminCardsGrid } from '../../features/admin/components/AdminCardsGrid';
-import { TruncateDataModal } from '../../features/admin/components/TruncateDataModal';
-import { TruncateResultAlert } from '../../features/admin/components/TruncateResultAlert';
 
-export const Route = createFileRoute('/admin/')({
-  beforeLoad: routeAdminGuard,
+export const Route = createFileRoute('/app/admin/')({
   component: AdminDashboardIndex,
   errorComponent: AdminErrorBoundary,
 });

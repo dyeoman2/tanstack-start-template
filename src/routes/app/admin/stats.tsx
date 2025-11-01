@@ -5,9 +5,9 @@ import { PageHeader } from '~/components/PageHeader';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
-import { api } from '../../../convex/_generated/api';
+import { api } from '../../../../convex/_generated/api';
 
-export const Route = createFileRoute('/admin/stats')({
+export const Route = createFileRoute('/app/admin/stats')({
   component: SystemStats,
   errorComponent: AdminErrorBoundary,
 });

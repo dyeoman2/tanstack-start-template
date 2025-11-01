@@ -55,7 +55,7 @@ export function UserTable({
       const newSortOrder =
         searchParams.sortBy === columnId && searchParams.sortOrder === 'asc' ? 'desc' : 'asc';
       navigate({
-        to: '/admin/users',
+        to: '/app/admin/users',
         search: {
           ...searchParams,
           sortBy: columnId as 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt',
@@ -70,7 +70,7 @@ export function UserTable({
   const handlePageChange = useCallback(
     (newPage: number) => {
       navigate({
-        to: '/admin/users',
+        to: '/app/admin/users',
         search: {
           ...searchParams,
           page: newPage,
@@ -83,7 +83,7 @@ export function UserTable({
   const handlePageSizeChange = useCallback(
     (newPageSize: number) => {
       navigate({
-        to: '/admin/users',
+        to: '/app/admin/users',
         search: {
           ...searchParams,
           pageSize: newPageSize,

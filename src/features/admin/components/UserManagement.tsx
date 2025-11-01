@@ -19,7 +19,7 @@ const ROLE_FILTER_OPTIONS: TableFilterOption<UserRoleFilterValue>[] = [
 
 export function UserManagement() {
   const navigate = useNavigate();
-  const search = useSearch({ from: '/admin/users' });
+  const search = useSearch({ from: '/app/admin/users' });
   const searchTerm = search.search ?? '';
   const roleFilter = (search.role ?? 'all') as UserRoleFilterValue;
 
@@ -80,7 +80,7 @@ export function UserManagement() {
       }
 
       navigate({
-        to: '/admin/users',
+        to: '/app/admin/users',
         search: {
           ...adminUsersSearchParams,
           search: normalizedTerm,
@@ -98,7 +98,7 @@ export function UserManagement() {
       }
 
       navigate({
-        to: '/admin/users',
+        to: '/app/admin/users',
         search: {
           ...adminUsersSearchParams,
           role: nextRole,

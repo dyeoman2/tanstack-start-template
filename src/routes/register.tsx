@@ -139,9 +139,9 @@ function RegisterPage() {
             // Invalidate router to refresh auth state
             await router.invalidate();
 
-            // Navigate to home after showing success message
+            // Navigate to the app after showing success message
             setTimeout(() => {
-              navigate({ to: '/' });
+              navigate({ to: '/app' });
             }, 2000);
           } else {
             throw new Error('Sign-in returned no data');
@@ -184,19 +184,31 @@ function RegisterPage() {
   // Redirect if already logged in
   useEffect(() => {
     if (session?.user) {
-      navigate({ to: '/' });
+      navigate({ to: '/app' });
     }
   }, [session?.user, navigate]);
 
-  if (session?.user) {
-    navigate({ to: '/' });
-    return null;
-  }
+if (session?.user) {
+  navigate({ to: '/app' });
+  return null;
+}
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
+          <div className="flex justify-center">
+            <Link
+              to="/"
+              className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+            >
+              <img
+                src="/android-chrome-192x192.png"
+                alt="TanStack Start Template Logo"
+                className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
+              />
+            </Link>
+          </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Create your account
           </h2>

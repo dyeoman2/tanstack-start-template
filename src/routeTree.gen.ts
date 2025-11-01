@@ -13,24 +13,21 @@ import { createFileRoute } from '@tanstack/react-router'
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
-import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as AppRouteImport } from './routes/app'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as AdminIndexRouteImport } from './routes/admin/index'
+import { Route as AppIndexRouteImport } from './routes/app/index'
+import { Route as AppProfileRouteImport } from './routes/app/profile'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
-import { Route as AdminUsersRouteImport } from './routes/admin/users'
-import { Route as AdminStatsRouteImport } from './routes/admin/stats'
-import { Route as AdminLayoutRouteImport } from './routes/admin/_layout'
+import { Route as AppAdminIndexRouteImport } from './routes/app/admin/index'
+import { Route as AppAdminUsersRouteImport } from './routes/app/admin/users'
+import { Route as AppAdminStatsRouteImport } from './routes/app/admin/stats'
+import { Route as AppAdminLayoutRouteImport } from './routes/app/admin/_layout'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
-const AdminRouteImport = createFileRoute('/admin')()
+const AppAdminRouteImport = createFileRoute('/app/admin')()
 
-const AdminRoute = AdminRouteImport.update({
-  id: '/admin',
-  path: '/admin',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
   id: '/reset-password',
   path: '/reset-password',
@@ -39,11 +36,6 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const RegisterRoute = RegisterRouteImport.update({
   id: '/register',
   path: '/register',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ProfileRoute = ProfileRouteImport.update({
-  id: '/profile',
-  path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -56,34 +48,54 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   path: '/forgot-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppRoute = AppRouteImport.update({
+  id: '/app',
+  path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminIndexRoute = AdminIndexRouteImport.update({
+const AppAdminRoute = AppAdminRouteImport.update({
+  id: '/admin',
+  path: '/admin',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppIndexRoute = AppIndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => AppRoute,
+} as any)
+const AppProfileRoute = AppProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AppRoute,
 } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
+const AppAdminIndexRoute = AppAdminIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminRoute,
+} as any)
+const AppAdminUsersRoute = AppAdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => AppAdminRoute,
 } as any)
-const AdminStatsRoute = AdminStatsRouteImport.update({
+const AppAdminStatsRoute = AppAdminStatsRouteImport.update({
   id: '/stats',
   path: '/stats',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => AppAdminRoute,
 } as any)
-const AdminLayoutRoute = AdminLayoutRouteImport.update({
+const AppAdminLayoutRoute = AppAdminLayoutRouteImport.update({
   id: '/_layout',
-  getParentRoute: () => AdminRoute,
+  getParentRoute: () => AppAdminRoute,
 } as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
@@ -93,113 +105,115 @@ const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/admin': typeof AdminLayoutRoute
-  '/admin/stats': typeof AdminStatsRoute
-  '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
-  '/admin/': typeof AdminIndexRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/app/admin': typeof AppAdminLayoutRoute
+  '/app/admin/stats': typeof AppAdminStatsRoute
+  '/app/admin/users': typeof AppAdminUsersRoute
+  '/app/admin/': typeof AppAdminIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/admin': typeof AdminIndexRoute
-  '/admin/stats': typeof AdminStatsRoute
-  '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/app/admin': typeof AppAdminIndexRoute
+  '/app/admin/stats': typeof AppAdminStatsRoute
+  '/app/admin/users': typeof AppAdminUsersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
-  '/profile': typeof ProfileRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
-  '/admin': typeof AdminRouteWithChildren
-  '/admin/_layout': typeof AdminLayoutRoute
-  '/admin/stats': typeof AdminStatsRoute
-  '/admin/users': typeof AdminUsersRoute
   '/api/health': typeof ApiHealthRoute
-  '/admin/': typeof AdminIndexRoute
+  '/app/profile': typeof AppProfileRoute
+  '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/app/admin': typeof AppAdminRouteWithChildren
+  '/app/admin/_layout': typeof AppAdminLayoutRoute
+  '/app/admin/stats': typeof AppAdminStatsRoute
+  '/app/admin/users': typeof AppAdminUsersRoute
+  '/app/admin/': typeof AppAdminIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/app'
     | '/forgot-password'
     | '/login'
-    | '/profile'
     | '/register'
     | '/reset-password'
-    | '/admin'
-    | '/admin/stats'
-    | '/admin/users'
     | '/api/health'
-    | '/admin/'
+    | '/app/profile'
+    | '/app/'
     | '/api/auth/$'
+    | '/app/admin'
+    | '/app/admin/stats'
+    | '/app/admin/users'
+    | '/app/admin/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/forgot-password'
     | '/login'
-    | '/profile'
     | '/register'
     | '/reset-password'
-    | '/admin'
-    | '/admin/stats'
-    | '/admin/users'
     | '/api/health'
+    | '/app/profile'
+    | '/app'
     | '/api/auth/$'
+    | '/app/admin'
+    | '/app/admin/stats'
+    | '/app/admin/users'
   id:
     | '__root__'
     | '/'
+    | '/app'
     | '/forgot-password'
     | '/login'
-    | '/profile'
     | '/register'
     | '/reset-password'
-    | '/admin'
-    | '/admin/_layout'
-    | '/admin/stats'
-    | '/admin/users'
     | '/api/health'
-    | '/admin/'
+    | '/app/profile'
+    | '/app/'
     | '/api/auth/$'
+    | '/app/admin'
+    | '/app/admin/_layout'
+    | '/app/admin/stats'
+    | '/app/admin/users'
+    | '/app/admin/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AppRoute: typeof AppRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
-  ProfileRoute: typeof ProfileRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
-  AdminRoute: typeof AdminRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/admin': {
-      id: '/admin'
-      path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/reset-password': {
       id: '/reset-password'
       path: '/reset-password'
@@ -212,13 +226,6 @@ declare module '@tanstack/react-router' {
       path: '/register'
       fullPath: '/register'
       preLoaderRoute: typeof RegisterRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -235,6 +242,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ForgotPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/app': {
+      id: '/app'
+      path: '/app'
+      fullPath: '/app'
+      preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -242,12 +256,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/': {
-      id: '/admin/'
+    '/app/admin': {
+      id: '/app/admin'
+      path: '/admin'
+      fullPath: '/app/admin'
+      preLoaderRoute: typeof AppAdminRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/': {
+      id: '/app/'
       path: '/'
-      fullPath: '/admin/'
-      preLoaderRoute: typeof AdminIndexRouteImport
-      parentRoute: typeof AdminRoute
+      fullPath: '/app/'
+      preLoaderRoute: typeof AppIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/app/profile': {
+      id: '/app/profile'
+      path: '/profile'
+      fullPath: '/app/profile'
+      preLoaderRoute: typeof AppProfileRouteImport
+      parentRoute: typeof AppRoute
     }
     '/api/health': {
       id: '/api/health'
@@ -256,26 +284,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/users': {
-      id: '/admin/users'
+    '/app/admin/': {
+      id: '/app/admin/'
+      path: '/'
+      fullPath: '/app/admin/'
+      preLoaderRoute: typeof AppAdminIndexRouteImport
+      parentRoute: typeof AppAdminRoute
+    }
+    '/app/admin/users': {
+      id: '/app/admin/users'
       path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
+      fullPath: '/app/admin/users'
+      preLoaderRoute: typeof AppAdminUsersRouteImport
+      parentRoute: typeof AppAdminRoute
     }
-    '/admin/stats': {
-      id: '/admin/stats'
+    '/app/admin/stats': {
+      id: '/app/admin/stats'
       path: '/stats'
-      fullPath: '/admin/stats'
-      preLoaderRoute: typeof AdminStatsRouteImport
-      parentRoute: typeof AdminRoute
+      fullPath: '/app/admin/stats'
+      preLoaderRoute: typeof AppAdminStatsRouteImport
+      parentRoute: typeof AppAdminRoute
     }
-    '/admin/_layout': {
-      id: '/admin/_layout'
+    '/app/admin/_layout': {
+      id: '/app/admin/_layout'
       path: '/admin'
-      fullPath: '/admin'
-      preLoaderRoute: typeof AdminLayoutRouteImport
-      parentRoute: typeof AdminRoute
+      fullPath: '/app/admin'
+      preLoaderRoute: typeof AppAdminLayoutRouteImport
+      parentRoute: typeof AppAdminRoute
     }
     '/api/auth/$': {
       id: '/api/auth/$'
@@ -287,30 +322,45 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AdminRouteChildren {
-  AdminLayoutRoute: typeof AdminLayoutRoute
-  AdminStatsRoute: typeof AdminStatsRoute
-  AdminUsersRoute: typeof AdminUsersRoute
-  AdminIndexRoute: typeof AdminIndexRoute
+interface AppAdminRouteChildren {
+  AppAdminLayoutRoute: typeof AppAdminLayoutRoute
+  AppAdminStatsRoute: typeof AppAdminStatsRoute
+  AppAdminUsersRoute: typeof AppAdminUsersRoute
+  AppAdminIndexRoute: typeof AppAdminIndexRoute
 }
 
-const AdminRouteChildren: AdminRouteChildren = {
-  AdminLayoutRoute: AdminLayoutRoute,
-  AdminStatsRoute: AdminStatsRoute,
-  AdminUsersRoute: AdminUsersRoute,
-  AdminIndexRoute: AdminIndexRoute,
+const AppAdminRouteChildren: AppAdminRouteChildren = {
+  AppAdminLayoutRoute: AppAdminLayoutRoute,
+  AppAdminStatsRoute: AppAdminStatsRoute,
+  AppAdminUsersRoute: AppAdminUsersRoute,
+  AppAdminIndexRoute: AppAdminIndexRoute,
 }
 
-const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
+const AppAdminRouteWithChildren = AppAdminRoute._addFileChildren(
+  AppAdminRouteChildren,
+)
+
+interface AppRouteChildren {
+  AppProfileRoute: typeof AppProfileRoute
+  AppIndexRoute: typeof AppIndexRoute
+  AppAdminRoute: typeof AppAdminRouteWithChildren
+}
+
+const AppRouteChildren: AppRouteChildren = {
+  AppProfileRoute: AppProfileRoute,
+  AppIndexRoute: AppIndexRoute,
+  AppAdminRoute: AppAdminRouteWithChildren,
+}
+
+const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AppRoute: AppRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
-  ProfileRoute: ProfileRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
-  AdminRoute: AdminRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
 }

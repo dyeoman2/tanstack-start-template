@@ -43,7 +43,7 @@ export async function routeAuthGuard({
   }
 
   // For admin routes, always do server-side validation to ensure role is current
-  const adminRoutes = ['/admin'];
+  const adminRoutes = ['/app/admin'];
   const isAdminRoute = adminRoutes.some((route) => location.pathname.startsWith(route));
 
   if (isAdminRoute) {

@@ -56,7 +56,7 @@ function RouteErrorBoundary({
             </Button>
 
             {showHomeButton && (
-              <Link to="/">
+              <Link to="/app">
                 <Button size="sm" variant="default">
                   <Home className="h-4 w-4 mr-2" />
                   Home

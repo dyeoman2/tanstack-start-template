@@ -1,12 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { routeAuthGuard } from '~/features/auth/server/route-guards';
 import { ProfilePage } from '~/features/profile/components/ProfilePage';
 import { getCurrentUserProfileServerFn } from '~/features/profile/server/profile.server';
 
-export const Route = createFileRoute('/profile')({
-  beforeLoad: ({ location }) => {
-    return routeAuthGuard({ location });
-  },
+export const Route = createFileRoute('/app/profile')({
   loader: () => getCurrentUserProfileServerFn(),
   component: ProfileRouteComponent,
 });

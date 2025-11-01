@@ -23,7 +23,7 @@ const usersSearchSchema = z.object({
   cursor: z.string().optional(), // Add cursor for optimized pagination
 });
 
-export const Route = createFileRoute('/admin/users')({
+export const Route = createFileRoute('/app/admin/users')({
   validateSearch: usersSearchSchema,
   component: UserManagement,
   errorComponent: AdminErrorBoundary,

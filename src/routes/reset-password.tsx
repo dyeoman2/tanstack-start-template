@@ -82,9 +82,9 @@ function ResetPasswordPage() {
         // Invalidate router to refresh auth state
         await router.invalidate();
 
-        // Navigate to home after showing success message
+        // Navigate to the app after showing success message
         setTimeout(() => {
-          router.navigate({ to: '/' });
+          router.navigate({ to: '/app' });
         }, 2000);
       } catch (error: unknown) {
         if (
@@ -115,7 +115,7 @@ function ResetPasswordPage() {
   useEffect(() => {
     if (session?.user && success) {
       setTimeout(() => {
-        router.navigate({ to: '/' });
+        router.navigate({ to: '/app' });
       }, 1000);
     }
   }, [session, success, router]);
@@ -125,6 +125,18 @@ function ResetPasswordPage() {
       <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
+            <div className="flex justify-center mb-4">
+              <Link
+                to="/"
+                className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+              >
+                <img
+                  src="/android-chrome-192x192.png"
+                  alt="TanStack Start Template Logo"
+                  className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
+                />
+              </Link>
+            </div>
             <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-primary/10">
               <svg
                 className="h-6 w-6 text-primary"
@@ -158,6 +170,18 @@ function ResetPasswordPage() {
     <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-md w-full space-y-8">
         <div>
+          <div className="flex justify-center">
+            <Link
+              to="/"
+              className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+            >
+              <img
+                src="/android-chrome-192x192.png"
+                alt="TanStack Start Template Logo"
+                className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
+              />
+            </Link>
+          </div>
           <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Reset your password
           </h2>
