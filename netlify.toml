@@ -46,5 +46,5 @@ description = "Same as CONVEX_URL but for client-side use. Run 'npx convex env g
 [[template.environment]]
 name = "APP_NAME"
 required = false
-default = "Hackathon"
-description = "Application name used in email templates and branding. Defaults to 'Hackathon'."
+default = "TanStack Start Template"
+description = "Application name used in email templates and branding. Defaults to 'TanStack Start Template'."

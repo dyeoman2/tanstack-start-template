@@ -27,7 +27,6 @@ async function main() {
 
   const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing and rate limiting
 
-
   const envPath = join(process.cwd(), '.env.local');
 
   // Check if .env.local already exists
@@ -61,7 +60,7 @@ BETTER_AUTH_SECRET=${authSecret}
 NODE_ENV=development
 
 # Application name for email templates
-APP_NAME=Hackathon
+APP_NAME="TanStack Start Template"
 
 # ==========================================
 # RESEND EMAIL SETUP
@@ -69,14 +68,6 @@ APP_NAME=Hackathon
 #
 # RESEND_API_KEY=<your-resend-api-key>          # Optional: for email functionality
 RESEND_EMAIL_SENDER=onboarding@resend.dev
-
-# ==========================================
-# AUTUMN PRICING SETUP (Optional)
-# ==========================================
-#
-# Get your Autumn secret key from https://app.useautumn.com
-# Set it with: npx convex env set AUTUMN_SECRET_KEY=am_sk_xxx
-# AUTUMN_SECRET_KEY=<your-autumn-secret-key>
 
 # ==========================================
 # STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)

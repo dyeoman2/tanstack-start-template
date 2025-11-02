@@ -39,7 +39,6 @@ async function _askInput(question: string): Promise<string> {
   });
 }
 
-
 async function main() {
   console.log('🚀 Starting complete project setup...\n');
 

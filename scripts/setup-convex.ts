@@ -78,7 +78,7 @@ async function main() {
     if (!convexUrl.startsWith('https://') || !convexUrl.includes('.convex.cloud')) {
       console.log('❌ Invalid URL format!');
       console.log('   Expected: https://your-project.convex.cloud');
-      console.log('   Got: ' + convexUrl);
+      console.log(`   Got: ${convexUrl}`);
       console.log('');
       console.log('💡 Make sure you copied the URL from "npx convex dev" output.');
       process.exit(1);
@@ -117,10 +117,10 @@ async function main() {
     console.log(`   VITE_CONVEX_URL match: "${convexUrlMatch ? convexUrlMatch[1] : 'null'}"`);
     console.log(`   VITE_CONVEX_SITE_URL match: "${siteUrlMatch ? siteUrlMatch[1] : 'null'}"`);
 
-    if (convexUrlMatch && convexUrlMatch[1].trim()) {
+    if (convexUrlMatch?.[1].trim()) {
       convexUrl = convexUrlMatch[1].trim();
       console.log(`   ✓ Using VITE_CONVEX_URL: ${convexUrl}`);
-    } else if (convexDeploymentMatch && convexDeploymentMatch[1].trim()) {
+    } else if (convexDeploymentMatch?.[1].trim()) {
       // Construct URL from deployment name (e.g., dev:quick-elk-245 -> https://quick-elk-245.convex.cloud)
       const deploymentName = convexDeploymentMatch[1].trim().replace('dev:', '');
       convexUrl = `https://${deploymentName}.convex.cloud`;
@@ -194,9 +194,7 @@ async function main() {
   const envVars = [
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
     { name: 'RESEND_EMAIL_SENDER', value: 'onboarding@resend.dev' },
-    { name: 'APP_NAME', value: 'Hackathon' },
-    // Note: AUTUMN_SECRET_KEY is optional and should be set manually if needed
-    // { name: 'AUTUMN_SECRET_KEY', value: '<your-autumn-secret-key>' },
+    { name: 'APP_NAME', value: 'TanStack Start Template' },
   ];
 
   for (const { name, value } of envVars) {
@@ -206,7 +204,7 @@ async function main() {
         stdio: 'pipe',
         cwd: process.cwd(),
       });
-    } catch (error) {
+    } catch (_error) {
       console.log(`   ⚠️  Failed to set ${name} (may already be set)`);
     }
   }

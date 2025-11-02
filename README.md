@@ -1,6 +1,6 @@
-# Hackathon Project
+# TanStack Start Template
 
-A hackathon project built with TanStack Start, featuring modern full-stack TypeScript architecture with end-to-end type safety, authentication, real-time database, and production-ready components.
+A TanStack Start Template built with TanStack Start, featuring modern full-stack TypeScript architecture with end-to-end type safety, authentication, real-time database, and production-ready components.
 
 ## ✨ What's Included
 
@@ -35,14 +35,6 @@ A hackathon project built with TanStack Start, featuring modern full-stack TypeS
 - **Automatic scaling** and global distribution
 - **Integrated authentication** with Better Auth
 
-### 💰 **Pricing & Billing (Autumn)**
-
-- **Autumn integration** for subscription management and billing
-- **Stripe-powered pricing** with support for subscriptions, usage-based billing, and trials
-- **Customer management** with automatic customer data sync
-- **Feature gating** and access control based on subscription status
-- **Real-time billing events** and webhook handling
-
 ### 🚀 **Developer Experience**
 
 - **End-to-end type safety** from database to UI
@@ -73,8 +65,8 @@ A hackathon project built with TanStack Start, featuring modern full-stack TypeS
 For the easiest setup experience, run:
 
 ```bash
-git clone https://github.com/dyeoman2/hackathon.git
-cd hackathon
+git clone https://github.com/dyeoman2/tanstack-start-template.git
+cd tanstack-start-template
 pnpm run setup:all
 ```
 
@@ -107,7 +99,6 @@ pnpm run setup:prod
 ## 📄 Documentation
 
 - [Email Setup Guide](docs/EMAIL_SETUP.md) - Password reset and transactional email configuration
-- [Autumn Setup Guide](docs/AUTUMN_SETUP.md) - Pricing, subscriptions, and billing integration
 
 ## 📄 License
 

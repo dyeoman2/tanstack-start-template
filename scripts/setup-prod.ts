@@ -73,9 +73,8 @@ async function setupConvexProduction(): Promise<{
   // Set production environment variables
   const prodEnvVars = [
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
-    { name: 'APP_NAME', value: 'Hackathon' },
+    { name: 'APP_NAME', value: 'TanStack Start Template' },
     { name: 'RESEND_EMAIL_SENDER', value: 'onboarding@resend.dev' },
-    { name: 'AUTUMN_SECRET_KEY', value: 'placeholder-key-replace-with-real-key' }, // Placeholder to prevent log spam
   ];
 
   for (const { name, value } of prodEnvVars) {
