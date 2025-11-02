@@ -9,7 +9,6 @@ interface ImportMetaEnv {
   readonly VITE_CONVEX_URL?: string;
   readonly VITE_CONVEX_SITE_URL?: string;
   readonly BETTER_AUTH_SECRET?: string;
-  readonly BETTER_AUTH_URL?: string;
 }
 
 interface ImportMeta {

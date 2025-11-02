@@ -1,16 +1,16 @@
 {
-  "name": "tanstack-start-starter",
+  "name": "hackathon",
   "private": true,
   "sideEffects": false,
   "type": "module",
   "license": "MIT",
   "author": "Daniel Yeoman",
   "version": "1.0.0",
-  "description": "TanStack Start template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI, Resend, and deployed to Netlify",
-  "homepage": "https://github.com/dyeoman2/tanstack-start-template",
+  "description": "Hackathon project built with TanStack Start, Better Auth, Convex, Tailwind CSS, Shadcn/UI, and Resend",
+  "homepage": "https://github.com/dyeoman2/hackathon",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dyeoman2/tanstack-start-template.git"
+    "url": "https://github.com/dyeoman2/hackathon.git"
   },
   "engines": {
     "node": ">=24"
@@ -40,6 +40,9 @@
     "knip": "knip",
     "knip:prod": "knip --production",
     "setup": "tsx scripts/setup.ts",
+    "setup:convex": "tsx scripts/setup-convex.ts",
+    "setup:all": "tsx scripts/setup-all.ts",
+    "setup:prod": "tsx scripts/setup-prod.ts",
     "precommit": "biome check --write",
     "updates": "npx npm-check-updates",
     "analyze": "pnpm build && npx vite-bundle-analyzer dist/client/assets/*.js",
@@ -51,6 +54,8 @@
     "@convex-dev/better-auth": "^0.9.6",
     "@convex-dev/rate-limiter": "^0.2.14",
     "@convex-dev/resend": "^0.1.13",
+    "@useautumn/convex": "^0.0.12",
+    "autumn-js": "^0.1.24",
     "@netlify/vite-plugin-tanstack-start": "^1.1.8",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",

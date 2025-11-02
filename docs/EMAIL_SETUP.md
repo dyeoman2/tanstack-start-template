@@ -23,7 +23,7 @@ Add your Resend API key and optional email sender configuration to your `.env.lo
 RESEND_API_KEY=resend-api-key
 
 # Optional: Custom sender email address (defaults to onboarding@resend.dev)
-# RESEND_EMAIL_SENDER=
+RESEND_EMAIL_SENDER=onboarding@resend.dev
 ```
 
 ### 3. Domain Verification (Production)
