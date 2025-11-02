@@ -2,18 +2,13 @@ import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth } from 'better-auth';
 import { v } from 'convex/values';
+import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import { action, query } from './_generated/server';
 
-const siteUrl = process.env.SITE_URL;
-if (!siteUrl) {
-  throw new Error('SITE_URL environment variable is required');
-}
-const secret = process.env.BETTER_AUTH_SECRET;
-if (!secret) {
-  throw new Error('BETTER_AUTH_SECRET environment variable is required');
-}
+const siteUrl = getSiteUrl();
+const secret = getBetterAuthSecret();
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 

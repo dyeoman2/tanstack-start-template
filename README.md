@@ -1,6 +1,6 @@
-# TanStack Start Template
+# Hackathon Project
 
-A comprehensive, production-ready starter template for building modern full-stack TypeScript applications with TanStack Start. This template provides everything you need to build scalable web applications with end-to-end type safety, server-first architecture, and enterprise-grade features.
+A hackathon project built with TanStack Start, featuring modern full-stack TypeScript architecture with end-to-end type safety, authentication, real-time database, and production-ready components.
 
 ## ✨ What's Included
 
@@ -35,6 +35,14 @@ A comprehensive, production-ready starter template for building modern full-stac
 - **Automatic scaling** and global distribution
 - **Integrated authentication** with Better Auth
 
+### 💰 **Pricing & Billing (Autumn)**
+
+- **Autumn integration** for subscription management and billing
+- **Stripe-powered pricing** with support for subscriptions, usage-based billing, and trials
+- **Customer management** with automatic customer data sync
+- **Feature gating** and access control based on subscription status
+- **Real-time billing events** and webhook handling
+
 ### 🚀 **Developer Experience**
 
 - **End-to-end type safety** from database to UI
@@ -60,93 +68,46 @@ A comprehensive, production-ready starter template for building modern full-stac
 
 ## 🚀 Setup Guide
 
-[![Use this template](https://img.shields.io/badge/Use%20this%20template-2ea44f?style=for-the-badge&logo=github)](https://github.com/dyeoman2/tanstack-start-template/generate)
+### ⚡ Quick Start (Local Development)
 
-This creates a fresh copy of the codebase in your GitHub account.
+For the easiest setup experience, run:
+
+```bash
+git clone https://github.com/dyeoman2/hackathon.git
+cd hackathon
+pnpm run setup:all
+```
+
+This automated script will guide you through local development setup, including:
+
+- Interactive Convex project creation
+- Development environment configuration (URLs and environment variables)
+- Automatic startup of both development servers simultaneously in the current terminal!
 
 ### 🚀 Quick Start (Production)
 
-[![Deploy to Netlify](https://www.netlify.com/img/deploy/button.svg)](https://app.netlify.com/start)
+**Automated Production Setup** (Recommended):
+
+```bash
+# After completing local development setup
+pnpm run setup:prod
+```
 
 **What happens automatically:**
 
-- Connects to your GitHub repository
-- Builds and deploys your application
-- Sets up automatic deployments on every push
-
-**Required Manual Setup (5 minutes):**
-
-#### 1. Set Up Convex Database
-
-```bash
-# Create your Convex project
-npx convex dev
-# Follow prompts to create project and get your deployment URL
-```
-
-#### 2. Configure Convex Environment Variables
-
-Go to [Convex Dashboard](https://dashboard.convex.dev) → Your Project → Settings → Environment Variables or via the CLI:
-```bash
-npx convex env set BETTER_AUTH_SECRET=<generate-with-openssl-rand-base64-32>
-npx convex env set SITE_URL=<your-netlify-url>
-npx convex env set RESEND_API_KEY=<your-resend-key>
-npx convex env set RESEND_EMAIL_SENDER=<verified-email>
-npx convex env set APP_NAME="TanStack Start Template"
-```
-
-#### 3. Configure Netlify Environment Variables
-
-In Netlify Dashboard → Site Settings → Environment Variables:
-
-```
-CONVEX_DEPLOY_KEY=<production-deploy-key-from-convex-dashboard>
-SITE_URL=<your-netlify-url>  # e.g., https://your-app-name.netlify.app
-BETTER_AUTH_SECRET=<same-secret-as-convex>
-VITE_CONVEX_SITE_URL=<your-convex-deployment-url>  # e.g., https://abc-123.convex.cloud
-```
-
-**✅ FREE TIER** - No credit card required!
+- ✅ Checks for git remote repository
+- ✅ Deploys Convex functions to production
+- ✅ Guides you through getting your Convex deploy key
+- ✅ Creates Netlify site from your git repository
+- ✅ Configures all environment variables automatically
+- ✅ Deploys your application to production
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
 
----
+## 📄 Documentation
 
-### 🛠️ Local Development Setup
-
-#### Prerequisites
-
-- Node.js 24+
-- pnpm
-- [Convex CLI](https://docs.convex.dev/quickstart) (`npx convex`)
-
-#### Setup Steps
-
-```bash
-# 1. Clone and install
-git clone <your-repo-url>
-cd tanstack-start-template
-pnpm install
-
-# 2. Set up local environment (generates .env.local)
-pnpm run setup
-
-# 3. Configure Convex Dashboard (same variables as production)
-# Copy BETTER_AUTH_SECRET from .env.local to Convex Dashboard
-# Add SITE_URL=http://localhost:3000 to Convex Dashboard
-
-# 4. Initialize Convex project
-npx convex dev
-
-# 5. Start development server
-pnpm dev
-```
-
-**Your app will be available at `http://localhost:3000`**
-
-## Contributing
-
-This is a TanStack Start template with authentication, admin dashboard, and modern React patterns. Perfect for building full-stack TypeScript applications.
+- [Email Setup Guide](docs/EMAIL_SETUP.md) - Password reset and transactional email configuration
+- [Autumn Setup Guide](docs/AUTUMN_SETUP.md) - Pricing, subscriptions, and billing integration
 
 ## 📄 License
 

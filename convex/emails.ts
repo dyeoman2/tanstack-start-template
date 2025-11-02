@@ -78,7 +78,7 @@ export const sendPasswordResetEmailMutation = internalMutation({
     token: v.string(),
   },
   handler: async (ctx, args) => {
-    const appName = process.env.APP_NAME || 'TanStack Start';
+    const appName = process.env.APP_NAME || 'Hackathon';
     const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
     const resetLink = args.url;
     const userName = args.user.name;

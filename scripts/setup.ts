@@ -1,12 +1,13 @@
 #!/usr/bin/env tsx
 
 /**
- * Set up local development environment with secrets and configuration.
+ * Set up local development environment with dependencies and configuration.
+ * - Installs project dependencies with pnpm
  * - BETTER_AUTH_SECRET: 32 bytes for session signing (also needed in Convex Dashboard)
- * - BETTER_AUTH_URL: Base URL for Better Auth (also needed in Convex Dashboard)
  * Run: npm run setup
  */
 
+import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateSecret } from '../src/lib/server/crypto.server';
@@ -14,10 +15,18 @@ import { generateSecret } from '../src/lib/server/crypto.server';
 async function main() {
   console.log('🔧 Setting up local development environment...\n');
 
+  // Install project dependencies
+  console.log('📦 Installing project dependencies...');
+  try {
+    execSync('pnpm install', { stdio: 'inherit', cwd: process.cwd() });
+    console.log('✅ Dependencies installed successfully!\n');
+  } catch {
+    console.error('❌ Failed to install dependencies. Please run: pnpm install');
+    process.exit(1);
+  }
+
   const authSecret = await generateSecret(32); // BETTER_AUTH_SECRET: 32 bytes for session signing and rate limiting
 
-  // BETTER_AUTH_URL: Base URL for Better Auth
-  const authUrl = 'http://localhost:3000';
 
   const envPath = join(process.cwd(), '.env.local');
 
@@ -27,7 +36,6 @@ async function main() {
     console.log('   To avoid overwriting existing configuration, here are your generated secrets:');
     console.log('────────────────────────────────────────────────');
     console.log(`BETTER_AUTH_SECRET=${authSecret}`);
-    console.log(`BETTER_AUTH_URL=${authUrl}`);
     console.log('────────────────────────────────────────────────\n');
     console.log('📝 Add these to your existing .env.local file.');
     return;
@@ -45,9 +53,6 @@ async function main() {
 # Signs JWTs for authentication and protects internal rate limiting operations
 BETTER_AUTH_SECRET=${authSecret}
 
-# Base URL for Better Auth
-BETTER_AUTH_URL=${authUrl}
-
 # ==========================================
 # REQUIRED DEFAULTS
 # ==========================================
@@ -55,16 +60,23 @@ BETTER_AUTH_URL=${authUrl}
 # Set development environment
 NODE_ENV=development
 
+# Application name for email templates
+APP_NAME=Hackathon
+
 # ==========================================
-# CONVEX DASHBOARD VARIABLES
+# RESEND EMAIL SETUP
 # ==========================================
-# These variables must also be set in your Convex Dashboard (Project Settings → Environment Variables):
 #
-# BETTER_AUTH_SECRET=<same-secret-as-above>
-# SITE_URL=http://localhost:3000
 # RESEND_API_KEY=<your-resend-api-key>          # Optional: for email functionality
-# RESEND_EMAIL_SENDER=<your-verified-email>      # Optional: for email functionality
-# APP_NAME="TanStack Start Template"             # Optional: for email templates
+RESEND_EMAIL_SENDER=onboarding@resend.dev
+
+# ==========================================
+# AUTUMN PRICING SETUP (Optional)
+# ==========================================
+#
+# Get your Autumn secret key from https://app.useautumn.com
+# Set it with: npx convex env set AUTUMN_SECRET_KEY=am_sk_xxx
+# AUTUMN_SECRET_KEY=<your-autumn-secret-key>
 
 # ==========================================
 # STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)
@@ -84,19 +96,7 @@ S3_PUBLIC_URL=http://localhost:9000
 # ==========================================
 
 # Convex URLs will be automatically set after running: npx convex dev
-# VITE_CONVEX_URL=your-convex-deployment-url
-# VITE_CONVEX_SITE_URL=https://your-app-domain.com
-
-# For production: Convex URLs are automatically configured by Netlify
-
-# ==========================================
-# NEXT STEPS
-# ==========================================
-#
-# 1. Copy BETTER_AUTH_SECRET to your Convex Dashboard
-# 2. Add SITE_URL=http://localhost:3000 to Convex Dashboard
-# 3. Run: npx convex dev (initializes Convex project)
-# 4. Add email variables to Convex Dashboard if using email features
+# VITE_CONVEX_SITE_URL= set after running: pnpm run setup:convex
 `;
 
   writeFileSync(envPath, envContent, 'utf8');
@@ -106,13 +106,18 @@ S3_PUBLIC_URL=http://localhost:9000
   console.log('────────────────────────────────────────────────');
   console.log('🔑 Generated Secrets:');
   console.log(`   BETTER_AUTH_SECRET: ${authSecret.substring(0, 10)}...`);
-  console.log(`   BETTER_AUTH_URL: ${authUrl}`);
   console.log('────────────────────────────────────────────────\n');
-  console.log('🚀 Ready to develop!');
-  console.log('   1. Review the generated .env.local file');
-  console.log('   2. Copy BETTER_AUTH_SECRET to Convex Dashboard → Environment Variables');
-  console.log('   3. Run: npx convex dev (to initialize Convex project)');
-  console.log('   4. Run: pnpm dev');
+  console.log('🚀 Next steps:');
+  console.log('   1. 📋 Review the generated .env.local file');
+  console.log('   2. ☁️  Run: npx convex dev --once (initialize Convex project)');
+  console.log('   3. ⚙️  Run: pnpm run setup:convex (configure URLs & env vars)');
+  console.log('   4. 🔄 Terminal 1: npx convex dev (start Convex backend)');
+  console.log('   5. 🎯 Terminal 2: pnpm dev (start frontend development)');
+  console.log('');
+  console.log("💡 Tip: After step 5, you'll never need to run setup again!");
+  console.log(
+    '   Future development: run "npx convex dev" in one terminal and "pnpm dev" in another',
+  );
   console.log('\n📌 Security Notes:');
   console.log('   • Never commit .env.local to version control');
   console.log('   • Back up these secrets if they guard real data');

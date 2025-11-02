@@ -10,6 +10,7 @@
 
 import type * as admin from "../admin.js";
 import type * as auth from "../auth.js";
+import type * as autumn from "../autumn.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
 import type * as emails from "../emails.js";
@@ -33,6 +34,7 @@ import type {
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
   auth: typeof auth;
+  autumn: typeof autumn;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;
   emails: typeof emails;
@@ -2413,4 +2415,5 @@ export declare const components: {
       getServerTime: FunctionReference<"mutation", "internal", {}, number>;
     };
   };
+  autumn: {};
 };
