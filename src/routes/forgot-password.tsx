@@ -1,7 +1,7 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { Mail } from 'lucide-react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { ClientOnly } from '~/components/ClientOnly';
@@ -9,17 +9,14 @@ import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
 export const Route = createFileRoute('/forgot-password')({
+  staticData: true,
   component: ForgotPasswordPage,
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
-  loader: async () => {
-    // Preload email service status for initial render
-    const emailServiceStatus = await checkEmailServiceConfiguredServerFn();
-    return { emailServiceStatus };
-  },
   validateSearch: z.object({
     email: z
       .string()
@@ -30,7 +27,11 @@ export const Route = createFileRoute('/forgot-password')({
 
 function ForgotPasswordPage() {
   const { email: emailFromQuery } = Route.useSearch();
-  const { emailServiceStatus } = Route.useLoaderData();
+  const { isAuthenticated, isPending } = useAuth();
+  const [emailServiceStatus, setEmailServiceStatus] = useState<
+    Awaited<ReturnType<typeof checkEmailServiceConfiguredServerFn>> | null
+  >(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState('');
   const [error, setError] = useState('');
@@ -69,6 +70,32 @@ function ForgotPasswordPage() {
 
   // Get current email value for navigation links
   const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
+
+  useEffect(() => {
+    let active = true;
+    void checkEmailServiceConfiguredServerFn()
+      .then((status) => {
+        if (!active) return;
+        setEmailServiceStatus(status);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        console.error('Failed to check email service status:', err);
+        setStatusError('Unable to verify email service configuration.');
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (isPending) {
+    return <AuthSkeleton />;
+  }
+
+  if (isAuthenticated) {
+    throw redirect({ to: '/app' });
+  }
 
   if (isSubmitted) {
     return (
@@ -165,6 +192,11 @@ function ForgotPasswordPage() {
                   </ol>
                 </div>
               </div>
+            </div>
+          )}
+          {statusError && (
+            <div className="mt-4 bg-muted border border-border text-muted-foreground px-4 py-3 rounded">
+              {statusError}
             </div>
           )}
         </div>

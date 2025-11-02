@@ -28,46 +28,76 @@
 ### Routes
 
 ```ts
-export const Route = createFileRoute('/')({
-  beforeLoad: routeAuthGuard,
-  loader: async () => getDashboardDataServerFn(),
-  pendingComponent: DashboardSkeleton,
+export const Route = createFileRoute('/app')({
+  pendingMs: 150,
+  pendingMinMs: 250,
+  pendingComponent: ShellSkeleton,
+  component: AppLayout,
   errorComponent: DashboardErrorBoundary,
 });
+
+function AppLayout() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, isPending } = useAuth();
+  const redirectRef = useRef(false);
+  const redirectTarget = location.href ?? '/app';
+
+  useEffect(() => {
+    if (isPending) return;
+
+    if (!isAuthenticated) {
+      if (redirectRef.current) return;
+
+      redirectRef.current = true;
+      void navigate({
+        to: '/login',
+        search: { redirect: redirectTarget },
+        replace: true,
+      }).catch(() => {
+        redirectRef.current = false;
+      });
+    } else {
+      redirectRef.current = false;
+    }
+  }, [isAuthenticated, isPending, navigate, redirectTarget]);
+
+  if (isPending || !isAuthenticated) {
+    return <ShellSkeleton />;
+  }
+
+  return (
+    <AppChrome>
+      <Outlet />
+    </AppChrome>
+  );
+}
 ```
 
-### Server Functions
+### Client Data + Convex Hooks
 
 ```ts
-// Parallel queries with discriminated unions
-export const getDashboardDataServerFn = createServerFn({ method: 'GET' }).handler(async () => {
-  const [statsResult, activityResult] = await Promise.allSettled([
-    getStats(), getActivity()
-  ]);
+export function DashboardRoute() {
+  const live = useQuery(api.dashboard.getDashboardData, {});
 
-  // Return discriminated union: success | partial | error
-  if (statsResult.status === 'fulfilled' && activityResult.status === 'fulfilled') {
-    return { status: 'success', stats: statsResult.value, activity: activityResult.value };
-  } else {
-    return { status: 'partial', errors: ['Some data failed to load'] };
+  if (live === undefined) {
+    return <DashboardSkeleton />;
   }
-});
 
-// Input validation with Zod
-export const signUpServerFn = createServerFn({ method: 'POST' })
-  .inputValidator(z.object({ email: z.string().email(), password: z.string().min(8) }))
-  .handler(async ({ data }) => {
-    // Business logic...
-    return { success: true };
-  });
+  if (live === null) {
+    return <DashboardAccessFallback />;
+  }
+
+  return <Dashboard data={live} />;
+}
 ```
 
-### SSR + Realtime Flow
+### Marketing SSG + App SPA Flow
 
-- Load every route’s critical data through a loader-backed `createServerFn` so the server render includes real data.
-- Pass loader results into components via `Route.useLoaderData()` (or props) and keep UI shells pure.
-- Subscribe to Convex queries immediately; seed them with loader data (e.g. `liveData ?? initial`) instead of delaying the `useQuery` call.
-- Layer Convex `useQuery` calls on top for live updates, using the loader payload as the fallback until subscriptions resolve.
+- Public marketing/auth routes use `staticData: true` for static HTML.
+- `/app` routes run as an SPA: components call Convex `useQuery` directly and render skeletons while subscriptions warm up.
+- Keep layout-level guards client-side for UX, and rely on Convex server functions (`requireAuth`, `requireAdmin`) for true authorization.
+- When Convex returns `null` (lost session or access), invalidate the router and prompt the user to refresh or sign back in.
 
 ### Database
 
@@ -84,7 +114,7 @@ export const signUpServerFn = createServerFn({ method: 'POST' })
 
 ### Convex Client Hooks
 
-- Use `useQuery(api.xxx)` from `convex/react` for real-time data, seeded with loader data for instant SSR results.
+- Use `useQuery(api.xxx)` from `convex/react` for real-time data and show skeleton placeholders while subscriptions warm up.
 - Use `useMutation(api.xxx)` for mutations with automatic cache updates.
 - No manual cache invalidation needed - Convex automatically updates queries when data changes.
 - Real-time subscriptions enable live data updates across all connected clients.

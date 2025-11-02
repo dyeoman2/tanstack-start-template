@@ -6,6 +6,9 @@ import { Providers } from '~/components/Providers';
 import { seo } from '~/lib/seo';
 import appCss from '~/styles/app.css?url';
 
+const convexPreconnect =
+  import.meta.env.VITE_CONVEX_URL || import.meta.env.VITE_CONVEX_SITE_URL || undefined;
+
 export const Route = createRootRoute({
   head: () => ({
     meta: [
@@ -43,6 +46,9 @@ export const Route = createRootRoute({
       },
       { rel: 'manifest', href: '/site.webmanifest', color: '#fffff' },
       { rel: 'icon', href: '/favicon.ico' },
+      ...(convexPreconnect
+        ? [{ rel: 'preconnect', href: convexPreconnect, crossOrigin: 'anonymous' as const }]
+        : []),
     ],
   }),
   errorComponent: DefaultCatchBoundary,

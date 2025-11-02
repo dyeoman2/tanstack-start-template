@@ -10,6 +10,11 @@
 [context.deploy-preview]
   command = "echo '🏗️ Building preview (skipping Convex deploy)...' && pnpm build && echo '🎉 Preview build completed successfully'"
 
+[[redirects]]
+  from = "/app/*"
+  to = "/index.html"
+  status = 200
+
 [template]
   full = true
 

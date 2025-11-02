@@ -146,7 +146,7 @@ export function MarketingHome() {
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
-            <Link to="/register" className="inline-flex items-center gap-2">
+            <Link to="/register" preload="intent" className="inline-flex items-center gap-2">
               Explore the Demo
               <ArrowRight className="h-4 w-4" />
             </Link>

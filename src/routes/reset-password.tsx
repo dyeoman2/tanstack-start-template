@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
@@ -11,6 +11,7 @@ import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/reset-password')({
+  staticData: true,
   component: ResetPasswordPage,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
@@ -20,7 +21,7 @@ export const Route = createFileRoute('/reset-password')({
 
 function ResetPasswordPage() {
   const { token } = Route.useSearch();
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isPending } = useAuth();
   const session = useMemo(() => ({ user: isAuthenticated ? user : null }), [user, isAuthenticated]);
   const router = useRouter();
   const [error, setError] = useState('');
@@ -119,6 +120,16 @@ function ResetPasswordPage() {
       }, 1000);
     }
   }, [session, success, router]);
+
+  if (!success) {
+    if (isPending) {
+      return <AuthSkeleton />;
+    }
+
+    if (isAuthenticated) {
+      throw redirect({ to: '/app' });
+    }
+  }
 
   if (success) {
     return (

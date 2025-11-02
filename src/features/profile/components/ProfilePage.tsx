@@ -1,4 +1,5 @@
 import { useForm } from '@tanstack/react-form';
+import { useRouter } from '@tanstack/react-router';
 import { Edit, Mail, Phone } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -15,9 +16,9 @@ import {
 import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
 import { useProfile, useUpdateProfile } from '~/features/profile/hooks/useProfile';
+import { signOut } from '~/features/auth/auth-client';
 import { usePhoneFormatter } from '~/hooks/use-phone-formatter';
 import { cn } from '~/lib/utils';
-import type { ProfileLoaderData } from '../server/profile.server';
 
 // Form validation schema
 const profileSchema = z.object({
@@ -27,16 +28,14 @@ const profileSchema = z.object({
 
 type ProfileFormData = z.infer<typeof profileSchema>;
 
-interface ProfilePageProps {
-  initialProfile: ProfileLoaderData;
-}
-
-export function ProfilePage({ initialProfile }: ProfilePageProps) {
+export function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
-  const { data: profile, isLoading, error } = useProfile(initialProfile);
+  const { data: profile, isLoading, error } = useProfile();
   const updateProfile = useUpdateProfile();
   const phoneFormatter = usePhoneFormatter();
   const toast = useToast();
+  const router = useRouter();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Generate unique IDs for form fields
   const emailId = useId();
@@ -73,6 +72,12 @@ export function ProfilePage({ initialProfile }: ProfilePageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, profile?.name, profile?.phoneNumber, isEditing, form.reset, profile]);
 
+  useEffect(() => {
+    if (error?.message === 'UNAUTHORIZED') {
+      void router.invalidate();
+    }
+  }, [error, router]);
+
   if (isLoading) {
     return (
       <div className="space-y-6">
@@ -95,6 +100,16 @@ export function ProfilePage({ initialProfile }: ProfilePageProps) {
   }
 
   if (error || !profile) {
+    const handleSignOut = async () => {
+      setIsSigningOut(true);
+      try {
+        await signOut();
+      } finally {
+        setIsSigningOut(false);
+        router.navigate({ to: '/login', search: { redirect: '/app/profile' } });
+      }
+    };
+
     return (
       <div className="space-y-6">
         <PageHeader
@@ -104,8 +119,24 @@ export function ProfilePage({ initialProfile }: ProfilePageProps) {
 
         <div className="max-w-2xl mx-auto">
           <div className="bg-destructive/10 border border-destructive rounded-md p-6">
-            <h3 className="text-lg font-medium text-destructive mb-2">Error Loading Profile</h3>
-            <p className="text-sm text-destructive">Failed to load your profile information.</p>
+            <div className="space-y-3">
+              <div>
+                <h3 className="text-lg font-medium text-destructive mb-1">Error loading profile</h3>
+                <p className="text-sm text-destructive">
+                  {error?.message === 'UNAUTHORIZED'
+                    ? 'Your session may have changed. Try refreshing or sign back in.'
+                    : 'Failed to load your profile information.'}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="default" size="sm" onClick={() => router.invalidate()}>
+                  Refresh
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleSignOut} disabled={isSigningOut}>
+                  {isSigningOut ? 'Signing out…' : 'Sign out'}
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       </div>

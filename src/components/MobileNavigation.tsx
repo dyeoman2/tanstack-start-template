@@ -49,6 +49,7 @@ export function MobileNavigation() {
           <div className="flex items-center gap-3">
             <Link
               to="/"
+              preload="intent"
               onClick={() => setOpen(false)}
               className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
             >
@@ -69,6 +70,7 @@ export function MobileNavigation() {
                 <Link
                   key={item.to}
                   to={item.to}
+                  preload="intent"
                   onClick={handleLinkClick}
                   className={cn(
                     'text-foreground hover:text-foreground hover:bg-accent px-3 py-2 rounded-md text-sm font-medium transition-colors',
@@ -96,6 +98,7 @@ export function MobileNavigation() {
                 {isAdmin && (
                   <Link
                     to="/app/admin"
+                    preload="intent"
                     onClick={handleLinkClick}
                     className="flex items-center gap-2 px-3 py-2 text-sm text-destructive hover:text-destructive hover:bg-destructive/10 rounded-md transition-colors"
                   >
@@ -105,6 +108,7 @@ export function MobileNavigation() {
                 )}
                 <Link
                   to="/app/profile"
+                  preload="intent"
                   onClick={handleLinkClick}
                   className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                 >
@@ -124,6 +128,7 @@ export function MobileNavigation() {
               <div className="space-y-2">
                 <Link
                   to="/login"
+                  preload="intent"
                   search={{ reset: '', redirect: location.pathname }}
                   onClick={handleLinkClick}
                   className="block w-full px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
@@ -132,6 +137,7 @@ export function MobileNavigation() {
                 </Link>
                 <Link
                   to="/register"
+                  preload="intent"
                   onClick={handleLinkClick}
                   className="block w-full px-3 py-2 text-sm text-center bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors"
                 >

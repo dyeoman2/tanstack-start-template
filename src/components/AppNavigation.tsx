@@ -90,6 +90,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
     <div className="flex items-center space-x-4">
       <Link
         to="/login"
+        preload="intent"
         search={{ reset: '', redirect: currentPath }}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
@@ -97,6 +98,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       </Link>
       <Link
         to="/register"
+        preload="intent"
         className="text-sm bg-primary text-primary-foreground px-3 py-2 rounded-md hover:bg-primary/90"
       >
         Sign up
@@ -120,6 +122,7 @@ export function AppNavigation() {
           <div className="flex items-center md:hidden">
             <Link
               to="/"
+              preload="intent"
               className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
             >
               <img
@@ -135,6 +138,7 @@ export function AppNavigation() {
             {/* Logo */}
             <Link
               to="/"
+              preload="intent"
               className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
             >
               <img
@@ -149,6 +153,7 @@ export function AppNavigation() {
               <div className="flex items-center space-x-1">
                 <Link
                   to="/app"
+                  preload="intent"
                   className={cn(navigationMenuTriggerStyle(), 'no-underline')}
                   activeOptions={{ exact: true }}
                 >

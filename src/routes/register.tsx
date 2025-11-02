@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tanstack/react-router';
 import { Crown, Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -16,14 +16,8 @@ import {
 } from '~/features/auth/server/user-management';
 
 export const Route = createFileRoute('/register')({
+  staticData: true,
   errorComponent: () => <div>Something went wrong</div>,
-  loader: async () => {
-    const firstUserCheck = await checkIsFirstUserServerFn();
-
-    return {
-      firstUserCheck,
-    };
-  },
   component: RegisterPage,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
@@ -40,13 +34,14 @@ function RegisterPage() {
   const nameId = `${uid}-name`;
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
-  const { user, isAuthenticated } = useAuth();
-  const session = { user: isAuthenticated ? user : null };
+  const { isAuthenticated, isPending } = useAuth();
   const navigate = useNavigate();
   const router = useRouter();
 
-  // Get data from server loader
-  const { firstUserCheck } = Route.useLoaderData();
+  const [firstUserCheck, setFirstUserCheck] = useState<Awaited<
+    ReturnType<typeof checkIsFirstUserServerFn>
+  > | null>(null);
+  const [firstUserError, setFirstUserError] = useState<string | null>(null);
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -181,16 +176,30 @@ function RegisterPage() {
   // Get current email value for navigation links
   const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
 
-  // Redirect if already logged in
   useEffect(() => {
-    if (session?.user) {
-      navigate({ to: '/app' });
-    }
-  }, [session?.user, navigate]);
+    let active = true;
+    void checkIsFirstUserServerFn()
+      .then((result) => {
+        if (!active) return;
+        setFirstUserCheck(result);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        console.error('Failed to fetch first user status:', err);
+        setFirstUserError('Unable to determine first user status at this time.');
+      });
 
-  if (session?.user) {
-    navigate({ to: '/app' });
-    return null;
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (isPending) {
+    return <AuthSkeleton />;
+  }
+
+  if (isAuthenticated) {
+    throw redirect({ to: '/app' });
   }
 
   return (
@@ -228,6 +237,11 @@ function RegisterPage() {
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+          {firstUserError && (
+            <div className="mt-4 bg-muted border border-border rounded-md p-4 text-sm text-muted-foreground">
+              {firstUserError}
             </div>
           )}
         </div>
