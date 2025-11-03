@@ -124,6 +124,12 @@ In order to send password reset and transactional emails, you need to set up Res
 - [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration
 - [Sentry Setup](./docs/SENTRY_SETUP.md) - Error monitoring and performance tracking
 
+### 🗂️ **Optional Infrastructure Setup**
+
+The template includes pre-configured infrastructure for file storage using AWS S3, but this is **not currently implemented** in the application. If you need document or file upload functionality, the infrastructure is ready to leverage:
+
+- [AWS S3 Storage Setup](infra/README.md) - Document and file storage infrastructure (ready but not implemented)
+
 ## 📄 License
 
 MIT License - See `LICENSE` file for details.

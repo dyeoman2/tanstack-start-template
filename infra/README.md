@@ -13,19 +13,23 @@ This directory contains the Infrastructure as Code (IaC) setup for the TanStack 
 
 1. **AWS Account** with appropriate permissions to create S3 buckets and IAM resources
 2. **AWS CLI configured** with your credentials:
+
    ```bash
    aws configure
    ```
+
 3. **Node.js** and **pnpm** installed
 
 ## Quick Setup
 
 1. **Set your Netlify domain** (optional):
+
    ```bash
    export NETLIFY_DOMAIN=https://your-app-name.netlify.app
    ```
 
 2. **Run the infrastructure setup**:
+
    ```bash
    pnpm infra:deploy
    ```
@@ -83,6 +87,7 @@ If you prefer to set up resources manually:
 ## Cost Optimization
 
 The setup includes:
+
 - **Lifecycle rules**: Automatically delete old versions after 30 days
 - **Minimal permissions**: Only necessary S3 operations allowed
 - **No public access**: Files accessed via signed URLs only
@@ -90,12 +95,15 @@ The setup includes:
 ## Troubleshooting
 
 ### AWS Permissions Error
+
 Make sure your AWS user has permissions to create S3 buckets and IAM resources.
 
 ### Bucket Already Exists
+
 The script handles existing buckets gracefully.
 
 ### CORS Issues
+
 Update the `NETLIFY_DOMAIN` environment variable if your domain changes.
 
 ## State Management
