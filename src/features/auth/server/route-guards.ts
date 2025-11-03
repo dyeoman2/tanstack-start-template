@@ -11,17 +11,46 @@ export async function routeAdminGuard({
   location: ParsedLocation;
 }): Promise<RouterAuthContext> {
   try {
-    const { user } = await getCurrentUserServerFn();
+    // Add timeout to prevent hanging requests
+    const timeoutPromise = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Auth check timeout')), 10000),
+    );
+
+    const authPromise = getCurrentUserServerFn();
+    const { user } = await Promise.race([authPromise, timeoutPromise]);
 
     // Use capability-based checking for consistency with the RBAC system
     const adminCapability: Capability = 'route:/app/admin';
     const allowedRoles = Caps[adminCapability] ?? [];
+
     if (!user?.role || !(allowedRoles as readonly string[]).includes(user.role)) {
+      if (import.meta.env.DEV) {
+        console.warn('[routeAdminGuard] Access denied:', {
+          userRole: user?.role,
+          requiredRoles: allowedRoles,
+          path: location.pathname,
+        });
+      }
       throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
     }
 
     return { authenticated: true as const, user };
-  } catch (_error) {
+  } catch (error) {
+    // Enhanced error logging in development
+    if (import.meta.env.DEV) {
+      console.error('[routeAdminGuard] Auth check failed:', {
+        error: error instanceof Error ? error.message : String(error),
+        path: location.pathname,
+        href: location.href,
+      });
+    }
+
+    // Re-throw redirects as-is, wrap other errors
+    if (error instanceof Response && error.status >= 300 && error.status < 400) {
+      throw error;
+    }
+
+    // For other errors, redirect to login
     throw redirect({ to: '/login', search: { redirect: location.href } });
   }
 }
@@ -32,15 +61,31 @@ export async function routeAdminGuard({
  */
 const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(
   async (): Promise<Extract<RouterAuthContext, { authenticated: true }>> => {
-    const { user } = await requireAuth();
-    return {
-      authenticated: true as const,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-      },
-    };
+    try {
+      const { user } = await requireAuth();
+
+      // Validate that we have all required user data
+      if (!user.id || !user.email) {
+        if (import.meta.env.DEV) {
+          console.error('[getCurrentUserServerFn] Invalid user data:', { user });
+        }
+        throw new Error('Invalid user session data');
+      }
+
+      return {
+        authenticated: true as const,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+        },
+      };
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('[getCurrentUserServerFn] Failed to get user:', error);
+      }
+      throw error; // Re-throw to let the route guard handle it
+    }
   },
 );

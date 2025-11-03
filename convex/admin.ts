@@ -58,34 +58,48 @@ async function fetchBetterAuthUsersByIds(
 ): Promise<BetterAuthUser[]> {
   if (userIds.length === 0) return [];
 
+  const remainingIds = new Set(userIds);
+  const matchedUsers: BetterAuthUser[] = [];
+  let cursor: string | null = null;
+
   try {
-    // Use Better Auth's findMany with where clause to filter by IDs
-    // This is more efficient than fetching all users when we only need specific ones
-    const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-      model: 'user',
-      paginationOpts: {
-        cursor: null,
-        numItems: userIds.length,
-        id: 0,
-      },
-    });
+    while (remainingIds.size > 0) {
+      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor,
+          numItems: 1000,
+          id: 0,
+        },
+      });
 
-    const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
-    const { page } = normalized;
+      const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
+      const { page, continueCursor, isDone } = normalized;
 
-    // Filter to only the users we need
-    return page.filter((user) => {
-      try {
-        const userId = assertUserId(user, 'Better Auth user missing id');
-        return userIds.includes(userId);
-      } catch {
-        return false;
+      for (const user of page) {
+        try {
+          const userId = assertUserId(user, 'Better Auth user missing id');
+          if (remainingIds.has(userId)) {
+            matchedUsers.push(user);
+            remainingIds.delete(userId);
+          }
+        } catch {
+          // Ignore malformed user docs
+        }
       }
-    });
+
+      if (isDone || !continueCursor || page.length === 0) {
+        break;
+      }
+
+      cursor = continueCursor;
+    }
   } catch (error) {
     console.error('Failed to fetch Better Auth users by IDs:', error);
     return [];
   }
+
+  return matchedUsers;
 }
 
 /**

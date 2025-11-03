@@ -13,9 +13,17 @@ export function setupClaimRefresh(maxAgeMs = 20 * 60_000) {
     if (!authClient.getSession) return;
     try {
       const snapshot = await authClient.getSession();
-      // Type assertion to access the user property safely
-      const user = (snapshot as { user?: { lastRefreshedAt?: number } })?.user;
-      const lastRefreshedAt = user?.lastRefreshedAt ?? 0;
+
+      // Safe property access with type guards
+      if (!snapshot || typeof snapshot !== 'object') return;
+
+      const user = (snapshot as Record<string, unknown>).user;
+      if (!user || typeof user !== 'object') return;
+
+      const userObj = user as Record<string, unknown>;
+      const lastRefreshedAt =
+        typeof userObj.lastRefreshedAt === 'number' ? userObj.lastRefreshedAt : 0;
+
       if (Date.now() - lastRefreshedAt > maxAgeMs) {
         await authClient.getSession();
       }

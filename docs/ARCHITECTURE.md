@@ -46,36 +46,113 @@ function LoginPage() {
 ```tsx
 // src/routes/app.tsx
 export const Route = createFileRoute('/app')({
+  pendingMs: 150,
+  pendingMinMs: 250,
   pendingComponent: () => <AppLayoutSkeleton />,
   component: AppLayout,
 });
 
 function AppLayout() {
+  const location = useLocation();
+  const navigate = useNavigate();
   const { isAuthenticated, isPending } = useAuth();
-  if (isPending) return <AppLayoutSkeleton />;
-  if (!isAuthenticated) throw redirect({ to: '/login', search: { redirect: '/app' } });
+  const redirectRef = useRef(false);
+  const redirectTarget = location.href ?? '/app';
+
+  useEffect(() => {
+    if (isPending) return;
+    if (isAuthenticated) {
+      redirectRef.current = false;
+      return;
+    }
+    if (redirectRef.current) return;
+
+    redirectRef.current = true;
+    void navigate({
+      to: '/login',
+      search: { redirect: redirectTarget },
+      replace: true,
+    }).catch(() => {
+      redirectRef.current = false;
+    });
+  }, [isAuthenticated, isPending, navigate, redirectTarget]);
+
+  if (isPending || !isAuthenticated) {
+    return <AppLayoutSkeleton />;
+  }
+
   return <Outlet />;
 }
 ```
 
 ---
 
-## 3. Authentication & Session Handling
+## 3. Server Functions
 
-### 3.1 Better Auth Client Integration
+The application uses two types of server functions with different purposes:
+
+### 3.1 TanStack Start Server Functions
+
+- **Location**: `src/features/*/server/*.ts` (regular `.ts` files, not `.server.ts`)
+- **Purpose**: Route loaders, actions, form handlers, and API endpoints
+- **Technology**: TanStack Start's `createServerFn()` with Zod validation
+- **Examples**: User registration, email sending, route guards
+
+```ts
+// src/features/auth/server/user-management.ts
+export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(signUpWithFirstAdminSchema)
+  .handler(async ({ data }) => {
+    // Implementation with access to secrets and server-side APIs
+  });
+```
+
+### 3.2 Convex Functions
+
+- **Location**: `convex/*.ts`
+- **Purpose**: Database operations, real-time subscriptions, data mutations
+- **Technology**: Convex's query/mutation/action system
+- **Examples**: User profile management, dashboard data, RBAC enforcement
+
+```ts
+// convex/users.ts
+export const getCurrentUserProfile = query({
+  args: {},
+  handler: async (ctx) => {
+    // Database operations with automatic type generation
+  }
+});
+```
+
+### 3.3 Key Differences
+
+| Aspect | TanStack Start Server Functions | Convex Functions |
+|--------|-------------------------------|------------------|
+| **Execution Context** | Node.js server | Convex cloud runtime |
+| **Database Access** | Via Convex client (`setupFetchClient`) | Direct database access |
+| **Real-time** | No | Yes (subscriptions) |
+| **Caching** | Manual | Automatic (Convex) |
+| **Secrets Access** | Yes | No (security boundary) |
+| **File Extension** | `.ts` | `.ts` |
+
+---
+
+## 4. Authentication & Session Handling
+
+### 4.1 Better Auth Client Integration
 
 - Client SDK created once in `src/features/auth/auth-client.ts`.
-- Exposes `useSession` for hooks; session typing extended via `src/types/auth.d.ts`.
+- Re-exports `signIn`, `signOut`, and `useSession` while keeping access to the underlying `authClient` for lower-level helpers (e.g. `authClient.getSession()` in `setupClaimRefresh`).
 
 ```ts
 // src/features/auth/auth-client.ts
 export const authClient = createAuthClient({
   plugins: [convexClient()],
 });
-export const { signIn, signOut, useSession, getSession } = authClient;
+export const { signIn, signOut, useSession } = authClient;
 ```
 
-### 3.2 Lightweight Auth State Hook
+### 4.2 Lightweight Auth State Hook
 
 `useAuthState()` provides basic authentication status without database calls.
 
@@ -92,9 +169,9 @@ export function useAuthState(): AuthState {
 }
 ```
 
-### 3.3 Role-Aware Auth Hook
+### 4.3 Role-Aware Auth Hook
 
-`useAuth()` fetches role data from Convex when needed. Uses conditional fetching to minimize database hits.
+`useAuth()` conditionally fetches role data using `'skip'` so Convex is only queried once a session exists, keeping hook order stable without unnecessary requests.
 
 ```ts
 // src/features/auth/hooks/useAuth.ts
@@ -102,31 +179,73 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   const { fetchRole = true } = options;
 
   const authState = useAuthState();
-  const shouldFetchProfile = authState.isAuthenticated && fetchRole;
+  const { data: session, isPending: sessionPending, error } = useSession();
 
-  // Always call useQuery to maintain hooks order - server returns null for unauthenticated
-  const profileQuery = useQuery(api.users.getCurrentUserProfile, {});
+  const shouldFetchProfile = authState.isAuthenticated && !sessionPending && fetchRole;
+
+  // Skip Convex query until a session exists to keep hooks stable without extra requests
+  const profileQuery = useQuery(api.users.getCurrentUserProfile, shouldFetchProfile ? {} : 'skip');
   const profile = shouldFetchProfile ? profileQuery : undefined;
 
-  const role: UserRole = shouldFetchProfile
-    ? ((profile?.role === 'admin' ? 'admin' : 'user') as UserRole)
-    : 'user';
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
 
-  return {
-    user: session?.user ? {
-      ...session.user,
-      role,
-      phoneNumber: shouldFetchProfile ? (profile?.phoneNumber || null) : null,
-    } : null,
-    isAuthenticated: authState.isAuthenticated,
-    isAdmin: role === 'admin',
-    isPending: sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined),
+    console.log('[useAuth]', {
+      authenticated: authState.isAuthenticated,
+      pending: sessionPending || (shouldFetchProfile && profile === undefined),
+      role: shouldFetchProfile ? profile?.role : 'not-fetched',
+      userId: `${session?.user?.id?.slice(0, 8)}...`,
+      hasError: !!error,
+    });
+  }, [
+    authState.isAuthenticated,
+    sessionPending,
+    shouldFetchProfile,
+    profile?.role,
+    profile,
     error,
-  };
+    session?.user?.id,
+  ]);
+
+  const isPending =
+    sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined);
+
+  const role: UserRole = shouldFetchProfile
+    ? profile?.role === USER_ROLES.ADMIN
+      ? USER_ROLES.ADMIN
+      : USER_ROLES.USER
+    : DEFAULT_ROLE;
+
+  return useMemo(
+    () => ({
+      user: session?.user
+        ? {
+            ...session.user,
+            role,
+            phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
+          }
+        : null,
+      isAuthenticated: authState.isAuthenticated,
+      isAdmin: role === USER_ROLES.ADMIN,
+      isPending,
+      error,
+    }),
+    [
+      session?.user,
+      role,
+      profile?.phoneNumber,
+      authState.isAuthenticated,
+      isPending,
+      error,
+      shouldFetchProfile,
+    ],
+  );
 }
 ```
 
-### 3.4 Claim Refresh Helper
+> **Note:** Passing `'skip'` keeps hook order consistent while avoiding Convex traffic when no session is present.
+
+### 4.4 Claim Refresh Helper
 
 We refresh Better Auth claims when the window regains focus so role changes on the server propagate quickly without forcing a full reload.
 
@@ -141,7 +260,17 @@ export function setupClaimRefresh(maxAgeMs = 20 * 60_000) {
     if (!authClient.getSession) return;
     try {
       const snapshot = await authClient.getSession();
-      const lastRefreshedAt = snapshot?.user?.lastRefreshedAt ?? 0;
+
+      // Safe property access with type guards
+      if (!snapshot || typeof snapshot !== 'object') return;
+
+      const user = (snapshot as Record<string, unknown>).user;
+      if (!user || typeof user !== 'object') return;
+
+      const userObj = user as Record<string, unknown>;
+      const lastRefreshedAt =
+        typeof userObj.lastRefreshedAt === 'number' ? userObj.lastRefreshedAt : 0;
+
       if (Date.now() - lastRefreshedAt > maxAgeMs) {
         await authClient.getSession();
       }
@@ -163,9 +292,9 @@ export function setupClaimRefresh(maxAgeMs = 20 * 60_000) {
 
 ---
 
-## 4. RBAC & Capability Enforcement
+## 5. RBAC & Capability Enforcement
 
-### 4.1 Capability Map
+### 5.1 Capability Map
 
 Single source of truth for role → capability mapping. Role validation is enforced at the database level using Convex enums.
 
@@ -183,7 +312,7 @@ export const Caps = {
   'profile.write': ['user', 'admin'],        // Update own profile
   'util.firstUserCheck': ['public', 'user', 'admin'], // Public utilities
   'util.emailServiceStatus': ['public', 'user', 'admin'],
-  'dashboard.read': ['user', 'admin'],       // Dashboard access
+  'dashboard.read': ['admin'],               // Admin dashboard access
 } as const;
 
 export const PublicCaps = new Set<Capability>([
@@ -193,7 +322,7 @@ export const PublicCaps = new Set<Capability>([
 ]);
 ```
 
-### 4.1.1 Database Schema with Enum Validation
+### 5.1.1 Database Schema with Enum Validation
 
 ```ts
 // convex/schema.ts - Database-level enum validation
@@ -211,9 +340,15 @@ userProfiles: defineTable({
 - **Type-safe** - Generated Convex types ensure consistency
 - **Performance** - No application-level validation overhead
 
-### 4.3 Guard Wrapper
+### 5.2 Guard Wrapper
 
-All Convex queries/mutations/actions are exported via `guarded.*`. The helper enforces capability-based access control before executing handlers.
+Most Convex queries, mutations, and actions are exported via `guarded.*`, which enforces capability-based access control before executing handlers. A few functions stay outside the guard system for explicit reasons:
+
+- `users.getUserCount` – remains public so bootstrap flows can detect the first user before any session exists.
+- `dashboard.getDashboardData` – stays a plain query to return `null` for non-admins, allowing the dashboard route to render a friendly fallback rather than tripping the error boundary.
+- `auth.rateLimitAction` – exposed as a public action but protected by the shared Better Auth secret so server utilities can invoke it across the HTTP boundary.
+- `users.getUserProfile` – defined with `internalQuery`, keeping profile lookups internal while still supporting guard resolution.
+- `users.updateCurrentUserProfile` – stays a plain mutation because Better Auth enforces the session, and the handler only updates the caller’s own record.
 
 ```ts
 // convex/authz/guardFactory.ts (excerpt)
@@ -236,39 +371,48 @@ export const guarded = {
 ```ts
 async function resolveRole(ctx, cap: Capability) {
   // Check if capability is public
-  if (PublicCaps.has(cap)) return 'public';
+  if (PublicCaps.has(cap)) {
+    return 'public';
+  }
 
-  // Get authenticated user
   const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) throw new Error(`Authentication required for ${cap}`);
+  if (!authUser) {
+    throw new Error(`Authentication required for capability: ${cap}`);
+  }
 
-  // Get role from database
-  const profile = await ctx.db.query('userProfiles').first();
+  const userId = assertUserId(authUser, 'User ID not found');
+
+  let profile: { role?: string } | null = null;
+  if ('db' in ctx) {
+    profile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .first();
+  } else {
+    profile = await ctx.runQuery(internal.users.getUserProfile, { userId });
+  }
+
   const role = profile?.role || 'user';
-
-  // Check capability permissions
   const allowedRoles = Caps[cap] ?? [];
-  if (!allowedRoles.some(allowedRole => allowedRole === role)) {
-    throw new Error(`Insufficient permissions for ${cap}`);
+  if (!allowedRoles.some((allowedRole) => allowedRole === role)) {
+    throw new Error(`Insufficient permissions for capability: ${cap}`);
   }
 
   return role;
 }
 ```
 
-### 4.4 Client-Side RBAC Enforcement
+### 5.3 Client-Side RBAC Enforcement
 
-**Conditional Role Fetching:**
+**Direct Admin Checks:**
 
 ```tsx
-// Navigation components use lightweight auth
+// Navigation components use direct admin checks
 const authState = useAuthState(); // No DB calls
 const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
-// Capability-based UI components
-<Allowed cap="user.write">
-  <AdminButton />
-</Allowed>
+// Conditional rendering using isAdmin
+{isAdmin && <AdminButton />}
 ```
 
 **Performance Optimization:**
@@ -278,98 +422,44 @@ const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 - **Dashboard:** 1 DB hit per session (cached)
 - **Navigation:** Zero DB hits (uses cached auth state)
 
-### 4.5 Sample Convex Functions
+### 5.4 Sample Convex Functions
 
 **Admin Operations:**
 
-```ts
-// convex/admin.ts
-export const getAllUsers = guarded.query(
-  'route:/app/admin.users',
-  { page: v.number(), pageSize: v.number(), /* ... */ },
-  async (ctx, args, _role) => {
-    // Role already validated by guard - proceed with admin logic
-    const users = await fetchUsers(ctx, args);
-    return users;
-  }
-);
+`convex/admin.ts` keeps all privileged flows behind the guard wrappers. For example, `getAllUsers` calls `guarded.query('route:/app/admin.users', …)` and then:
 
-export const updateBetterAuthUser = guarded.mutation(
-  'user.write',
-  { userId: v.string(), name: v.string(), /* ... */ },
-  async (ctx, args, _role) => {
-    // Admin-only operation
-    await updateUser(ctx, args);
-  }
-);
-```
+- Pages through `userProfiles` using indexed queries (`by_role_createdAt`) to minimise scans.
+- Fetches the matching Better Auth documents for the current page only (`fetchBetterAuthUsersByIds`).
+- Merges the two data sources and applies in-memory sort/search before returning pagination metadata.
+
+`updateBetterAuthUser` follows the same pattern with `guarded.mutation('user.write', …)` to ensure only admins can update Better Auth user records.
 
 **Bootstrap Operations:**
 
-```ts
-// convex/users.ts
-export const setUserRole = guarded.mutation(
-  'user.bootstrap', // Public capability with logic restrictions
-  { userId: v.string(), role: v.string(), allowBootstrap: v.optional(v.boolean()) },
-  async (ctx, args, role) => {
-    // Bootstrap logic enforced in handler
-    if (!args.allowBootstrap && role !== 'admin') {
-      throw new Error('Admin privileges required');
-    }
-    // ... bootstrap validation and role setting
-  }
-);
-```
+`convex/users.ts` uses `guarded.mutation('user.bootstrap', …)` for bootstrap logic so we can allow the first profile to be created without an authenticated admin while still requiring admin role for subsequent changes.
 
-### 4.6 Client Capability Checks
+`convex/dashboard.ts` keeps `getDashboardData` as a plain Convex `query` so non-admin callers receive `null` instead of a thrown authorization error—the dashboard UI listens for that `null` and shows a friendly fallback. The capability map still marks `dashboard.read` as admin-only so client UI can hide admin affordances.
 
-Use the `Allowed` component for capability-based UI rendering. It uses proper role checking with conditional database queries.
 
-```tsx
-// src/lib/Allowed.tsx
-export function Allowed({ cap, children }: AllowedProps) {
-  const authState = useAuthState();
-
-  // For public capabilities, allow without authentication
-  if (PublicCaps.has(cap)) {
-    return <>{children}</>;
-  }
-
-  // For protected capabilities, check role when authenticated
-  const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
-  const allowedRoles = Caps[cap] ?? [];
-  const userRole = isAdmin ? 'admin' : 'user';
-
-  if (!allowedRoles.some(allowedRole => allowedRole === userRole)) {
-    return null;
-  }
-
-  return <>{children}</>;
-}
-
-// Usage in components
-<Allowed cap="user.write">
-  <AdminButton />
-</Allowed>
-```
-
-### 4.7 Route Guards
+### 5.6 Route Guards
 
 Server-side route guards use capability-based validation before page loads.
 
 ```ts
 // src/features/auth/server/route-guards.ts
-export async function routeCapabilityGuard(
-  cap: Capability,
-  location: ParsedLocation
-): Promise<RouterAuthContext> {
+export async function routeAdminGuard({
+  location,
+}: {
+  location: ParsedLocation;
+}): Promise<RouterAuthContext> {
   try {
-    const { user } = await requireAuth(); // Hits Convex DB
+    const { user } = await getCurrentUserServerFn();
 
-    // Check if user's role grants access to the capability
-    const allowedRoles = Caps[cap] ?? [];
-    if (!allowedRoles.some(allowedRole => allowedRole === user.role)) {
-      throw redirect({ to: '/login', search: { redirect: location.href } });
+    // Use capability-based checking for consistency with the RBAC system
+    const adminCapability: Capability = 'route:/app/admin';
+    const allowedRoles = Caps[adminCapability] ?? [];
+    if (!user?.role || !(allowedRoles as readonly string[]).includes(user.role)) {
+      throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
     }
 
     return { authenticated: true, user };
@@ -385,133 +475,81 @@ export const Route = createFileRoute('/app/admin/_layout')({
 });
 ```
 
+### 5.6.1 Redirect Patterns
+
+The application uses two different redirect patterns depending on the context:
+
+**Throwing Redirects (Server Guards):**
+
+- Used in `beforeLoad` route guards for immediate route blocking
+- Throws a redirect response that TanStack Router catches and handles
+- Best for: Admin-only routes, capability-gated pages, strict access control
+- Example: `routeAdminGuard` throws redirect to `/login` when access is denied
+
+**Effect-Driven Redirects (Layout Guards):**
+
+- Used in authenticated app layouts for smooth navigation without full page reloads
+- Uses `useEffect` + `navigate()` for client-side routing
+- Best for: Main app areas, authenticated user flows, preserving navigation state
+- Example: `/app` layout redirects unauthenticated users to `/login` while maintaining pending states
+
+Choose the pattern based on whether you want immediate blocking (throwing) or smooth UX transitions (effect-driven).
+
 ## Adding New Capabilities
 
-### Step-by-Step Guide
-
-**1. Define the Capability Type**
-Add to `convex/authz/policy.map.ts`:
-
-```ts
-export type Capability =
-  | 'route:/app'
-  | 'route:/app/admin'
-  | 'route:/app/admin.users'
-  | 'user.write'
-  | 'profile.read'
-  | 'profile.write'
-  | 'util.firstUserCheck'
-  | 'util.emailServiceStatus'
-  | 'dashboard.read'
-  | 'posts.create'     // New capability
-  | 'posts.delete';    // New capability
-```
-
-**2. Add to Capability Map**
-
-```ts
-export const Caps = {
-  // ... existing capabilities
-  'posts.create': ['user', 'admin'],
-  'posts.delete': ['admin'],
-} as const;
-```
-
-**3. Add Public Capabilities (if needed)**
-
-```ts
-export const PublicCaps = new Set<Capability>([
-  'util.firstUserCheck',
-  'util.emailServiceStatus',
-  'user.bootstrap',
-  // Add new public capabilities here
-]);
-```
-
-**4. Use in Convex Functions**
-
-```ts
-// convex/posts.ts
-export const createPost = guarded.mutation(
-  'posts.create',
-  { title: v.string(), content: v.string() },
-  async (ctx, args, role) => {
-    // Implementation - role is guaranteed to have posts.create capability
-  }
-);
-
-export const deletePost = guarded.mutation(
-  'posts.delete',
-  { postId: v.string() },
-  async (ctx, args, role) => {
-    // Implementation - only admins can reach this
-  }
-);
-```
-
-**5. Protect Routes (if needed)**
-```ts
-// src/routes/app/posts/create.tsx
-export const Route = createFileRoute('/app/posts/create')({
-  beforeLoad: ({ location }) => routeCapabilityGuard('posts.create', location),
-});
-```
-
-**6. Add UI Components**
-```tsx
-<Allowed cap="posts.create">
-  <CreatePostButton />
-</Allowed>
-
-<Allowed cap="posts.delete">
-  <DeletePostButton />
-</Allowed>
-```
+1. Extend the `Capability` union in `convex/authz/policy.map.ts` and update the `Caps` mapping with the roles that should gain access. Only add entries to `PublicCaps` when the capability should bypass authentication entirely.
+2. Wrap new Convex handlers with the appropriate `guarded.query/mutation/action` helper so role resolution stays centralised.
+3. If a route requires the new capability, create a server guard that mirrors `routeAdminGuard` (`requireAuth` + capability check) and attach it via `beforeLoad`.
+4. Use direct role checks (e.g., `isAdmin` from `useAuth()`) so the UI reflects the same capability decisions on the client.
 
 ## Performance Characteristics
 
-| Scenario | DB Hits | Implementation |
-|----------|---------|----------------|
-| Public pages | 0 | `useAuthState()` only |
-| Auth pages | 0 | Session validation only |
-| Dashboard load | 1 | Cached role fetch |
-| Navigation | 0 | Convex caching |
-| Role changes | Auto-invalidation | Real-time updates |
+| Scenario | Convex traffic | Notes |
+|----------|----------------|-------|
+| Public/auth marketing routes | None | `useAuthState()` only; no Convex hooks run |
+| App shell guard | 1 cached query | `useAuth` always calls `api.users.getCurrentUserProfile`; unauthenticated sessions get a fast `null` |
+| Admin dashboard load | 1 guarded query | `api.dashboard.getDashboardData` returns data only for admins |
+| SPA navigation | Subscription reuse | Convex keeps previous queries hot; no extra loaders |
+| Role changes | Auto-invalidation | Convex subscriptions refresh affected queries automatically |
 
 ## Best Practices
 
 ### Capability Naming Conventions
+
 - **Routes**: `route:/path` (e.g., `route:/app/admin`)
 - **Data Operations**: `resource.action` (e.g., `user.write`, `profile.read`)
 - **Utilities**: `util.functionName` (e.g., `util.emailServiceStatus`)
 
 ### Role Design
+
 - Keep roles simple: only `user` and `admin`
 - Use capabilities for fine-grained permissions
 - Database enum validation prevents invalid roles
 
 ### Error Handling
+
 ```ts
 try {
-  await ctx.runMutation(api.posts.createPost, args);
+  await ctx.runMutation(api.users.updateUserRole, args);
 } catch (error) {
   if (error.message.includes('Insufficient permissions')) {
     // Handle permission denied gracefully
-    throw new Error('You do not have permission to create posts');
+    throw new Error('You do not have permission to modify user roles');
   }
   throw error;
 }
 ```
 
 ### Testing
+
 ```ts
 // Test capability enforcement
-describe('createPost', () => {
-  it('requires posts.create capability', async () => {
+describe('updateUserRole', () => {
+  it('requires user.write capability', async () => {
     // Test with different user roles
   });
 
-  it('allows users and admins to create posts', async () => {
+  it('allows admins to update user roles', async () => {
     // Test positive authorization
   });
 });
@@ -522,17 +560,20 @@ describe('createPost', () => {
 ### Common Issues
 
 **"Authentication required" errors:**
+
 - Ensure user is authenticated before calling protected functions
 - Check Better Auth session validity
 - Verify route guards are properly configured
 
 **"Insufficient permissions" errors:**
+
 - Verify capability is granted to user's role in `policy.map.ts`
 - Check capability spelling and naming consistency
 - Ensure role is correctly set in user profile
 - Confirm database schema enum validation
 
 **Performance issues:**
+
 - Use `useAuthState()` for lightweight auth checks
 - Enable role fetching only when needed with `fetchRole` option
 - Check Convex query caching is working properly
@@ -547,6 +588,7 @@ VITE_DEBUG=true pnpm dev
 ```
 
 This provides logging for:
+
 - Authentication state changes
 - Capability resolution
 - Role validation
@@ -554,9 +596,9 @@ This provides logging for:
 
 ---
 
-## 5. RBAC Performance & Security
+## 7. RBAC Performance & Security
 
-### 5.1 Database Hit Optimization
+### 7.1 Database Hit Optimization
 
 The RBAC system is designed to minimize database queries while maintaining security and real-time updates:
 
@@ -565,14 +607,14 @@ The RBAC system is designed to minimize database queries while maintaining secur
 - **Subsequent navigation:** 0 DB hits (Convex caching preserves role data)
 - **Role changes:** Automatic cache invalidation via Convex subscriptions
 
-### 5.2 Security Layers
+### 7.2 Security Layers
 
 1. **Route Guards** (Server) - Pre-load validation
 2. **Convex Guards** (Server) - Database operation validation
 3. **UI Components** (Client) - Conditional rendering
 4. **Bootstrap Logic** (Server) - Special case handling
 
-### 5.3 Real-time Role Updates
+### 7.3 Real-time Role Updates
 
 - Convex subscriptions automatically invalidate cached role data
 - UI updates immediately when roles change
@@ -580,9 +622,9 @@ The RBAC system is designed to minimize database queries while maintaining secur
 
 ---
 
-## 6. Data Access & Real-Time Updates
+## 8. Data Access & Real-Time Updates
 
-### 6.1 Dashboard Example
+### 8.1 Dashboard Example
 
 - Loader removed; page fetches via Convex `useQuery` and handles the `undefined` (pending) state.
 
@@ -600,7 +642,7 @@ function DashboardComponent() {
 }
 ```
 
-### 6.2 Convex Client Setup
+### 8.2 Convex Client Setup
 
 ```ts
 // src/lib/convexClient.ts
@@ -612,7 +654,7 @@ Servers call Convex through `setupFetchClient` for authenticated operations (`sr
 
 ---
 
-## 7. Error Handling & UX
+## 9. Error Handling & UX
 
 - Custom error boundaries (`src/components/RouteErrorBoundaries.tsx`) ignore redirect responses to avoid logging noise.
 - Skeleton components at route level for perceived performance (`AppLayoutSkeleton`, `AuthSkeleton`, etc.).
@@ -620,25 +662,24 @@ Servers call Convex through `setupFetchClient` for authenticated operations (`sr
 
 ---
 
-## 8. Environment & Secrets
+## 10. Environment & Secrets
 
-- `.env.example` enumerates required keys.
 - `README.md` documents the `ROOT_ADMINS` override to guarantee at least one admin.
 - Server-only modules (`*.server.ts`) guard against leaking secrets client-side.
 
 ---
 
-## 9. Tooling & Quality Gates
+## 11. Tooling & Quality Gates
 
 - `pnpm fix` runs Biome formatting and linting.
 - `pnpm typecheck` ensures type safety.
-- `node tools/eslint-guarded-convex-exports.js` confirms all Convex exports go through the guard helper.
+- Convex guard wrappers ensure all privileged operations require proper authorization.
 
 ---
 
-## 10. RBAC Architecture Summary
+## 12. RBAC Architecture Summary
 
-### Performance Characteristics
+### RBAC Performance Characteristics
 
 - **Zero DB hits** on public/auth pages through lightweight auth state
 - **Single cached query** per authenticated session for role data
@@ -657,7 +698,6 @@ Servers call Convex through `setupFetchClient` for authenticated operations (`sr
 - `useAuthState()` - Lightweight auth status (no DB)
 - `useAuth()` - Role-aware auth with conditional fetching
 - `guarded.*` - Server-side capability enforcement
-- `Allowed` - Client-side capability-based rendering
 - Route guards - Pre-load security validation
 
 ### Key Benefits
@@ -666,6 +706,93 @@ Servers call Convex through `setupFetchClient` for authenticated operations (`sr
 - ✅ **Security enhanced** - consistent capability-based authorization across all layers
 - ✅ **Maintainable** - single source of truth for permissions in capability map
 - ✅ **Real-time** - automatic cache invalidation when roles change
+
+---
+
+## 13. Bootstrap Flow - First Admin User Creation
+
+The application implements a secure bootstrap mechanism to ensure at least one admin user exists without compromising security.
+
+### 13.1 Bootstrap Process Overview
+
+1. **First User Detection**: Check if any user profiles exist in the database
+2. **Automatic Admin Assignment**: First user to register gets admin role automatically
+3. **Security Lockdown**: Bootstrap capability becomes unavailable once any user exists
+
+### 13.2 Implementation Details
+
+**Server Function (TanStack Start):**
+
+```ts
+// src/features/auth/server/user-management.ts
+export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(signUpWithFirstAdminSchema)
+  .handler(async ({ data }) => {
+    // 1. Check user count via Convex
+    const userCountResult = await fetchQuery(api.users.getUserCount, {});
+    const isFirstUser = userCountResult.isFirstUser;
+
+    // 2. Create user via Better Auth HTTP API
+    const signUpResponse = await fetch(`${convexSiteUrl}/api/auth/sign-up/email`, {
+      // ... user creation
+    });
+
+    // 3. Set role via Convex (admin for first user, user for others)
+    const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
+    await fetchMutation(api.users.setUserRole, {
+      userId: signUpResult.user.id,
+      role: roleToSet,
+      allowBootstrap: isFirstUser, // Bootstrap flag for first admin
+    });
+  });
+```
+
+**Convex Bootstrap Logic:**
+
+```ts
+// convex/users.ts
+export const setUserRole = guarded.mutation('user.bootstrap', { ... }, async (ctx, args, role) => {
+  if (!args.allowBootstrap) {
+    // Non-bootstrap: require admin role
+    if (role !== 'admin') {
+      throw new Error('Admin privileges required for role management');
+    }
+  } else {
+    // BOOTSTRAP: Allow only when no other user profiles exist
+    const existingProfiles = await ctx.db.query('userProfiles').collect();
+    const nonBootstrapProfile = existingProfiles.find(
+      (profile) => profile.userId !== args.userId,
+    );
+
+    if (nonBootstrapProfile) {
+      throw new Error('Bootstrap not allowed - another user profile already exists');
+    }
+  }
+
+  // Create/update user profile with role
+  // ...
+});
+```
+
+### 13.3 Security Features
+
+- **Idempotent**: Safe to retry bootstrap operations for the same user
+- **Race Condition Protection**: Bootstrap window closes immediately when first profile is created
+- **Rate Limiting**: Server-side rate limiting prevents abuse
+- **Capability-Based**: Uses `user.bootstrap` capability available to all roles but with logic restrictions
+
+### 13.4 Bootstrap States
+
+| State | User Profiles Exist | Bootstrap Allowed | Role Assigned |
+|-------|-------------------|-------------------|----------------|
+| **Initial** | 0 | ✅ Yes | `admin` |
+| **Normal** | 1+ | ❌ No | `user` |
+
+### 13.5 Error Handling
+
+- **Bootstrap Race Conditions**: Protected by database-level checks
+- **Role Assignment Failures**: Logged but don't fail signup (can be fixed manually)
+- **Rate Limiting**: Clear error messages with retry times
 
 ---
 

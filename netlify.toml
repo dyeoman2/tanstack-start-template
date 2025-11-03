@@ -31,12 +31,6 @@ default = ""
 description = "Production deploy key from Convex Dashboard. To get this: 1) Go to https://dashboard.convex.dev, 2) Select your project, 3) Go to Settings → Deploy Keys, 4) Click 'Generate Production Deploy Key', 5) Copy the key (starts with 'prod:'). Required for deploying Convex functions during Netlify build."
 
 [[template.environment]]
-name = "CONVEX_URL"
-required = true
-default = ""
-description = "Your Convex deployment URL. Run 'npx convex env get CONVEX_URL --prod' to get this value. Example: https://abc-123.convex.cloud"
-
-[[template.environment]]
 name = "VITE_CONVEX_SITE_URL"
 required = true
 default = ""
@@ -46,7 +40,7 @@ description = "Convex site URL for client-side connections. Run 'npx convex env 
 name = "VITE_CONVEX_URL"
 required = true
 default = ""
-description = "Same as CONVEX_URL but for client-side use. Run 'npx convex env get VITE_CONVEX_URL --prod' to get this value. Example: https://abc-123.convex.cloud"
+description = "Convex deployment URL for client-side connections. Run 'npx convex env get VITE_CONVEX_URL --prod' to get this value. Example: https://abc-123.convex.cloud"
 
 [[template.environment]]
 name = "APP_NAME"

@@ -33,7 +33,7 @@ export const Caps = {
   'profile.write': ['user', 'admin'],
   'util.firstUserCheck': ['public', 'user', 'admin'],
   'util.emailServiceStatus': ['public', 'user', 'admin'],
-  'dashboard.read': ['user', 'admin'],
+  'dashboard.read': ['admin'], // Admin dashboard data
 } as const;
 
 export const PublicCaps = new Set<Capability>([

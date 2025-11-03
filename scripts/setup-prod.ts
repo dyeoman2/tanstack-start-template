@@ -213,7 +213,6 @@ async function main() {
     }
 
     console.log(`   BETTER_AUTH_SECRET = ${betterAuthSecret}`);
-    console.log(`   CONVEX_URL = ${convexUrl}`);
     console.log(`   VITE_CONVEX_URL = ${convexUrl}`);
     console.log(`   VITE_CONVEX_SITE_URL = ${convexSiteUrl}`);
     console.log('');

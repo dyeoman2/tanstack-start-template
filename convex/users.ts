@@ -5,13 +5,16 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import { mutation, query } from './_generated/server';
+import { internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 import { guarded } from './authz/guardFactory';
 
 /**
  * Check if there are any users in the system (for determining first admin)
- * Queries Better Auth's user table directly for accurate count
+ * Queries Better Auth's user table directly for accurate count.
+ *
+ * Intentionally left unguarded so bootstrap flows and health checks can run
+ * before an authenticated session exists.
  */
 export const getUserCount = query({
   args: {},
@@ -114,7 +117,10 @@ export const setUserRole = guarded.mutation(
 /**
  * Update current user's profile (name, phoneNumber)
  * Uses Better Auth component adapter's updateMany mutation
- * Only allows users to update their own profile
+ * Only allows users to update their own profile.
+ *
+ * Authorization is enforced by Better Auth's `getAuthUser`, so this remains a
+ * plain mutation rather than `guarded.mutation('profile.write', ...)`.
  */
 export const updateCurrentUserProfile = mutation({
   args: {
@@ -173,9 +179,9 @@ export const updateCurrentUserProfile = mutation({
 
 /**
  * Get user profile by user ID
- * Used internally by the authz system
+ * Internal-only so profiles can't be fetched directly from clients
  */
-export const getUserProfile = query({
+export const getUserProfile = internalQuery({
   args: {
     userId: v.string(),
   },
@@ -188,9 +194,9 @@ export const getUserProfile = query({
 });
 
 /**
- * Get current user profile (Better Auth user data + app-specific role)
- * Combines Better Auth user data with userProfiles role
- * Returns null if user is not authenticated (for useAuth hook compatibility)
+ * Get current user profile (Better Auth user data + app-specific role).
+ * Returns `null` for unauthenticated callers so client hooks can handle the
+ * signed-out state without throwing.
  */
 export const getCurrentUserProfile = query({
   args: {},

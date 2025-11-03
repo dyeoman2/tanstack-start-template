@@ -158,6 +158,15 @@ export function DashboardRoute() {
 - Shared code in `src/lib/`
 - Never edit `routeTree.gen.ts`
 
+### Markdown Formatting
+
+- **Headings**: Use proper heading syntax (`##`, `###`) instead of emphasis (`**text**`)
+- **Heading Spacing**: Surround headings with blank lines for readability
+- **Lists**: Surround lists with blank lines (both before and after)
+- **Code Blocks**: Surround fenced code blocks with blank lines
+- **Unique Headings**: Avoid duplicate heading text, even with different levels
+- **No Emphasis as Headings**: Never use `**bold text**` as section headers
+
 ## Workflow
 
 ### Commands
@@ -176,7 +185,6 @@ npx convex dashboard # Open Convex dashboard
 ### Development
 
 - Run `pnpm lint` and `pnpm typecheck` before committing.
-- Copy `.env.example` to `.env.local` for env vars.
 - Use `getEnv()` for server environment variables.
 - Server-only files (`.server.ts`) never ship to client.
 - **Database workflow**: Edit `convex/schema.ts` → Convex auto-deploys schema changes.
@@ -207,6 +215,7 @@ npx convex dashboard # Open Convex dashboard
 - ✅ Static imports, no dynamic imports in server
 - ✅ Database via Convex queries/mutations
 - ✅ Database schema in `convex/schema.ts` with auto-deployment
+- ✅ Markdown formatting follows linting rules (headings, lists, code blocks)
 - ✅ Never commit files with git unless explicitly requested
 
 Follow these patterns for TanStack Start consistency.

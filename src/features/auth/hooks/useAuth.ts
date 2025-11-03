@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSession } from '~/features/auth/auth-client';
 import type { UserRole } from '../types';
 import { DEFAULT_ROLE, USER_ROLES } from '../types';
@@ -35,66 +35,31 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   // Only fetch profile if we have a session user, we're not already loading, AND role fetching is enabled
   const shouldFetchProfile = authState.isAuthenticated && !sessionPending && fetchRole;
 
-  // Always call useQuery to maintain hooks order - the server returns null for unauthenticated users
-  // This ensures hooks are called in the same order every render
-  const profileQuery = useQuery(api.users.getCurrentUserProfile, {});
+  // Pass "skip" to avoid running the Convex query when profile data is not needed
+  const profileQuery = useQuery(api.users.getCurrentUserProfile, shouldFetchProfile ? {} : 'skip');
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
 
-  // Development-only logging (hooks must be called unconditionally)
-  const prevStateRef = useRef<
-    | {
-        isAuthenticated: boolean;
-        sessionPending: boolean;
-        shouldFetchProfile: boolean;
-        profileRole?: string;
-        hasError: boolean;
-      }
-    | undefined
-  >(undefined);
-
-  // Log only when state changes in development
+  // Development-only structured logging
   useEffect(() => {
     if (!import.meta.env.DEV) return;
 
-    const prevState = prevStateRef.current;
-    const currentState = {
-      isAuthenticated: authState.isAuthenticated,
-      sessionPending,
-      shouldFetchProfile,
-      profileRole: profile?.role,
+    console.log('[useAuth]', {
+      authenticated: authState.isAuthenticated,
+      pending: sessionPending || (shouldFetchProfile && profile === undefined),
+      role: shouldFetchProfile ? profile?.role : 'not-fetched',
+      userId: `${session?.user?.id?.slice(0, 8)}...`, // Truncate for privacy
       hasError: !!error,
-    };
-
-    if (
-      !prevState ||
-      prevState.isAuthenticated !== currentState.isAuthenticated ||
-      prevState.sessionPending !== currentState.sessionPending ||
-      prevState.shouldFetchProfile !== currentState.shouldFetchProfile ||
-      prevState.profileRole !== currentState.profileRole ||
-      prevState.hasError !== currentState.hasError
-    ) {
-      console.log('[useAuth] State changed:', {
-        isAuthenticated: authState.isAuthenticated,
-        sessionPending,
-        shouldFetchProfile,
-        fetchRole,
-        sessionUserId: session?.user?.id,
-        profileRole: profile?.role,
-        hasError: !!error,
-      });
-
-      prevStateRef.current = currentState;
-    }
+    });
   }, [
     authState.isAuthenticated,
     sessionPending,
     shouldFetchProfile,
     profile?.role,
+    profile,
     error,
     session?.user?.id,
-    fetchRole,
   ]);
 
   const isPending =

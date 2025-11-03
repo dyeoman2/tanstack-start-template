@@ -1,5 +1,5 @@
 import { assertUserId } from '../../src/lib/shared/user-id';
-import { api } from '../_generated/api';
+import { internal } from '../_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { action, mutation, query } from '../_generated/server';
 import { authComponent } from '../auth';
@@ -37,7 +37,7 @@ async function resolveRole(
       .first();
   } else {
     // Action context - use runQuery since actions don't have direct db access
-    profile = await ctx.runQuery(api.users.getUserProfile, { userId });
+    profile = await ctx.runQuery(internal.users.getUserProfile, { userId });
   }
 
   const role = profile?.role || 'user';
