@@ -12,13 +12,17 @@ import {
 import { navigationMenuTriggerStyle } from '~/components/ui/navigation-menu';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { cn } from '~/lib/utils';
 
 /**
  * Authentication Navigation - Sign in/out links
  */
 function AuthNavigation({ currentPath }: { currentPath: string }) {
-  const { user, isAuthenticated, isPending, isAdmin } = useAuth();
+  const authState = useAuthState();
+  const { user, isAuthenticated, isPending, isAdmin } = useAuth({
+    fetchRole: authState.isAuthenticated,
+  });
   const navigate = useNavigate();
   const router = useRouter();
 

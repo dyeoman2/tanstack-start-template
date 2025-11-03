@@ -20,6 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
+import type { UserRole } from '../../auth/types';
+import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
 import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
 import type { User } from '../types';
 
@@ -41,7 +43,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
     defaultValues: {
       name: user?.name || '',
       email: user?.email || '',
-      role: (user?.role as 'user' | 'admin') || 'user',
+      role: (user?.role as UserRole) || DEFAULT_ROLE,
     },
     onSubmit: async ({ value }) => {
       if (!user?.id) return;
@@ -108,7 +110,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
       form.reset({
         name: user.name || '',
         email: user.email || '',
-        role: (user.role as 'user' | 'admin') || 'user',
+        role: (user.role as UserRole) || DEFAULT_ROLE,
       });
     }
   }, [user, form]);
@@ -198,7 +200,8 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
               validators={{
                 onChange: ({ value }) => {
                   if (!value) return 'Role is required';
-                  if (!['user', 'admin'].includes(value)) return 'Invalid role selected';
+                  if (!Object.values(USER_ROLES).includes(value as UserRole))
+                    return 'Invalid role selected';
                   return undefined;
                 },
               }}
@@ -208,7 +211,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
                   <FieldLabel>Role</FieldLabel>
                   <Select
                     value={field.state.value}
-                    onValueChange={(value: 'user' | 'admin') => field.handleChange(value)}
+                    onValueChange={(value: UserRole) => field.handleChange(value)}
                     disabled={isSubmitting}
                   >
                     <SelectTrigger>

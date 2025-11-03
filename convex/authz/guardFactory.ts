@@ -1,4 +1,5 @@
 import { assertUserId } from '../../src/lib/shared/user-id';
+import { api } from '../_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { action, mutation, query } from '../_generated/server';
 import { authComponent } from '../auth';
@@ -9,7 +10,10 @@ import { Caps, PublicCaps } from './policy.map';
  * Resolve the role for a given capability and context
  * Returns the user's role or throws if unauthorized
  */
-async function resolveRole(ctx: QueryCtx | MutationCtx, cap: Capability): Promise<string> {
+async function resolveRole(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  cap: Capability,
+): Promise<string> {
   // Check if this is a public capability
   if (PublicCaps.has(cap)) {
     return 'public';
@@ -24,16 +28,23 @@ async function resolveRole(ctx: QueryCtx | MutationCtx, cap: Capability): Promis
   const userId = assertUserId(authUser, 'User ID not found');
 
   // Get user profile with role
-  const profile = await ctx.db
-    .query('userProfiles')
-    .withIndex('by_userId', (q) => q.eq('userId', userId))
-    .first();
+  let profile: { role?: string } | null = null;
+  if ('db' in ctx) {
+    // Query or Mutation context - direct database access
+    profile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .first();
+  } else {
+    // Action context - use runQuery since actions don't have direct db access
+    profile = await ctx.runQuery(api.users.getUserProfile, { userId });
+  }
 
   const role = profile?.role || 'user';
 
   // Check if the role has the required capability
   const allowedRoles = Caps[cap] ?? [];
-  if (!allowedRoles.includes(role as any)) {
+  if (!allowedRoles.some((allowedRole) => allowedRole === role)) {
     throw new Error(`Insufficient permissions for capability: ${cap}`);
   }
 
@@ -51,14 +62,17 @@ export const guarded = {
   /**
    * Create a guarded query that enforces capability-based access control
    */
+  // biome-ignore lint/suspicious/noExplicitAny: Convex validator schemas require any for generic typing
   query: <Args extends Record<string, any>, Result>(
     cap: Capability,
     args: Args,
+    // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
     handler: (ctx: QueryCtx, args: any, role: string) => Promise<Result>,
   ) => {
     return query({
       args,
-      handler: async (ctx: any, args: any) => {
+      // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
+      handler: async (ctx: QueryCtx, args: any) => {
         const role = await resolveRole(ctx, cap);
         return handler(ctx, args, role);
       },
@@ -68,14 +82,17 @@ export const guarded = {
   /**
    * Create a guarded mutation that enforces capability-based access control
    */
+  // biome-ignore lint/suspicious/noExplicitAny: Convex validator schemas require any for generic typing
   mutation: <Args extends Record<string, any>, Result>(
     cap: Capability,
     args: Args,
+    // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
     handler: (ctx: MutationCtx, args: any, role: string) => Promise<Result>,
   ) => {
     return mutation({
       args,
-      handler: async (ctx: any, args: any) => {
+      // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
+      handler: async (ctx: MutationCtx, args: any) => {
         const role = await resolveRole(ctx, cap);
         return handler(ctx, args, role);
       },
@@ -85,14 +102,17 @@ export const guarded = {
   /**
    * Create a guarded action that enforces capability-based access control
    */
+  // biome-ignore lint/suspicious/noExplicitAny: Convex validator schemas require any for generic typing
   action: <Args extends Record<string, any>, Result>(
     cap: Capability,
     args: Args,
+    // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
     handler: (ctx: ActionCtx, args: any, role: string) => Promise<Result>,
   ) => {
     return action({
       args,
-      handler: async (ctx: any, args: any) => {
+      // biome-ignore lint/suspicious/noExplicitAny: Convex runtime args are dynamically typed
+      handler: async (ctx: ActionCtx, args: any) => {
         const role = await resolveRole(ctx, cap);
         return handler(ctx, args, role);
       },

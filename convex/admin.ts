@@ -117,7 +117,7 @@ export const getAllUsers = guarded.query(
     role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
     cursor: v.optional(v.string()), // Add cursor for efficient pagination
   },
-  async (ctx, args, role) => {
+  async (ctx, args, _role) => {
     // OPTIMIZATION: Use cursor-based pagination with userProfiles as primary source
     // Only fetch Better Auth users for the current page, not all users
 
@@ -269,7 +269,7 @@ export const getUserById = guarded.query(
   {
     userId: v.string(),
   },
-  async (ctx, args, role) => {
+  async (ctx, args, _role) => {
     try {
       const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
@@ -313,7 +313,7 @@ export const getUserById = guarded.query(
 export const getSystemStats = guarded.query(
   'route:/app/admin.stats',
   {},
-  async (ctx, args, role) => {
+  async (ctx, _args, _role) => {
     try {
       const users = await fetchAllBetterAuthUsers(ctx);
       return {
@@ -340,7 +340,7 @@ export const updateBetterAuthUser = guarded.mutation(
     email: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
   },
-  async (ctx, args, role) => {
+  async (ctx, args, _role) => {
     // Build update object - only include fields that are provided
     const updateData: {
       name?: string;
@@ -392,7 +392,7 @@ export const updateBetterAuthUser = guarded.mutation(
  * Truncate application data (admin only)
  * Deletes all audit logs, preserves user data
  */
-export const truncateData = guarded.mutation('user.write', {}, async (ctx, args, role) => {
+export const truncateData = guarded.mutation('user.write', {}, async (ctx, _args, _role) => {
   // Delete all audit logs
   const auditLogs = await ctx.db.query('auditLogs').collect();
   let deletedCount = 0;
@@ -436,7 +436,7 @@ export const deleteUser = guarded.mutation(
   {
     userId: v.string(),
   },
-  async (ctx, args, role) => {
+  async (ctx, args, _role) => {
     // Get current user for self-deletion check
     const currentUser = await authComponent.getAuthUser(ctx);
     const currentUserId = assertUserId(currentUser, 'User ID not found');

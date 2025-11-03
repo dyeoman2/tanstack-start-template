@@ -22,18 +22,18 @@ export type Capability =
   | 'dashboard.read';
 
 export const Caps = {
-  'route:/app': ['user', 'staff', 'admin'],
+  'route:/app': ['user', 'admin'],
   'route:/app/admin': ['admin'],
   'route:/app/admin.users': ['admin'],
   'route:/app/admin.stats': ['admin'],
-  'route:/app/profile': ['user', 'staff', 'admin'],
+  'route:/app/profile': ['user', 'admin'],
   'user.write': ['admin'],
-  'user.bootstrap': ['public', 'user', 'staff', 'admin'], // Bootstrap allowed for everyone, but logic restricts it
-  'profile.read': ['user', 'staff', 'admin'],
-  'profile.write': ['user', 'staff', 'admin'],
-  'util.firstUserCheck': ['public', 'user', 'staff', 'admin'],
-  'util.emailServiceStatus': ['public', 'user', 'staff', 'admin'],
-  'dashboard.read': ['user', 'staff', 'admin'],
+  'user.bootstrap': ['public', 'user', 'admin'], // Bootstrap allowed for everyone, but logic restricts it
+  'profile.read': ['user', 'admin'],
+  'profile.write': ['user', 'admin'],
+  'util.firstUserCheck': ['public', 'user', 'admin'],
+  'util.emailServiceStatus': ['public', 'user', 'admin'],
+  'dashboard.read': ['user', 'admin'],
 } as const;
 
 export const PublicCaps = new Set<Capability>([

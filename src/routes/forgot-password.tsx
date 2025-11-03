@@ -9,7 +9,7 @@ import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
-import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
 export const Route = createFileRoute('/forgot-password')({
@@ -27,7 +27,7 @@ export const Route = createFileRoute('/forgot-password')({
 
 function ForgotPasswordPage() {
   const { email: emailFromQuery } = Route.useSearch();
-  const { isAuthenticated, isPending } = useAuth();
+  const { isAuthenticated, isPending } = useAuthState();
   const [emailServiceStatus, setEmailServiceStatus] = useState<Awaited<
     ReturnType<typeof checkEmailServiceConfiguredServerFn>
   > | null>(null);

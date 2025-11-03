@@ -1,3 +1,5 @@
+import type { UserRole } from '../auth/types';
+
 /**
  * Admin feature types
  * Matches Convex query return types
@@ -10,7 +12,7 @@ export interface User {
   id: string;
   email: string;
   name: string | null;
-  role: 'user' | 'admin';
+  role: UserRole;
   emailVerified: boolean;
   createdAt: number; // Unix timestamp from Convex
   updatedAt: number; // Unix timestamp from Convex

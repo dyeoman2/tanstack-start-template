@@ -9,7 +9,7 @@ import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { signIn } from '~/features/auth/auth-client';
-import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import {
   checkIsFirstUserServerFn,
   signUpWithFirstAdminServerFn,
@@ -34,7 +34,7 @@ function RegisterPage() {
   const nameId = `${uid}-name`;
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
-  const { isAuthenticated, isPending } = useAuth();
+  const { isAuthenticated, isPending } = useAuthState();
   const navigate = useNavigate();
   const router = useRouter();
 

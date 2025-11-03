@@ -9,6 +9,7 @@ import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 
 export const Route = createFileRoute('/reset-password')({
   staticData: true,
@@ -21,8 +22,12 @@ export const Route = createFileRoute('/reset-password')({
 
 function ResetPasswordPage() {
   const { token } = Route.useSearch();
-  const { user, isAuthenticated, isPending } = useAuth();
-  const session = useMemo(() => ({ user: isAuthenticated ? user : null }), [user, isAuthenticated]);
+  const authState = useAuthState();
+  const { user } = useAuth({ fetchRole: authState.isAuthenticated }); // Only fetch when authenticated
+  const session = useMemo(
+    () => ({ user: authState.isAuthenticated ? user : null }),
+    [user, authState.isAuthenticated],
+  );
   const router = useRouter();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -122,11 +127,11 @@ function ResetPasswordPage() {
   }, [session, success, router]);
 
   if (!success) {
-    if (isPending) {
+    if (authState.isPending) {
       return <AuthSkeleton />;
     }
 
-    if (isAuthenticated) {
+    if (authState.isAuthenticated) {
       throw redirect({ to: '/app' });
     }
   }

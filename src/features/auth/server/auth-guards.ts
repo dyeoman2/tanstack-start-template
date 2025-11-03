@@ -5,9 +5,8 @@ import { redirect } from '@tanstack/react-router';
 import { getCookie, getRequest } from '@tanstack/react-start/server';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
-
-// Type definitions for user roles
-export type UserRole = 'user' | 'admin';
+import type { UserRole } from '../types';
+import { USER_ROLES } from '../types';
 
 export interface AuthenticatedUser {
   id: UserId;
@@ -58,7 +57,7 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     return {
       id: sessionUserId,
       email: sessionUserEmail,
-      role: (profile?.role === 'admin' ? 'admin' : 'user') as UserRole,
+      role: profile?.role === USER_ROLES.ADMIN ? USER_ROLES.ADMIN : USER_ROLES.USER,
       name: typeof profile?.name === 'string' ? profile.name : undefined,
     };
   } catch {

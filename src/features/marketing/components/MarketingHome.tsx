@@ -1,19 +1,8 @@
 import { Link } from '@tanstack/react-router';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Monitor, Shield, Zap } from 'lucide-react';
 import type { ComponentProps } from 'react';
+import React from 'react';
 import type { IconType } from 'react-icons';
-import {
-  SiBiome,
-  SiGithub,
-  SiNetlify,
-  SiReact,
-  SiResend,
-  SiShadcnui,
-  SiTailwindcss,
-  SiTypescript,
-  SiVite,
-  SiZod,
-} from 'react-icons/si';
 import { Button } from '~/components/ui/button';
 import { cn } from '~/lib/utils';
 
@@ -42,6 +31,18 @@ type TechItem = {
   url: string;
 };
 
+// Create lazy-loaded icon components to avoid bundling issues
+const createLazyIcon = (iconName: string) => {
+  const LazyIcon = React.lazy(() =>
+    import('react-icons/si').then((module) => ({
+      default: module[iconName as keyof typeof module] as React.ComponentType<
+        React.SVGProps<SVGSVGElement>
+      >,
+    })),
+  );
+  return LazyIcon;
+};
+
 const coreTechnologies: TechItem[] = [
   {
     name: 'TanStack Start',
@@ -60,7 +61,7 @@ const coreTechnologies: TechItem[] = [
   {
     name: 'Netlify',
     description: 'Serverless hosting and edge delivery tuned for TanStack Start.',
-    Icon: SiNetlify,
+    Icon: createLazyIcon('SiNetlify'),
     iconClassName: 'text-emerald-500',
     url: 'https://www.netlify.com/',
   },
@@ -74,56 +75,56 @@ const coreTechnologies: TechItem[] = [
   {
     name: 'Resend',
     description: 'Transactional emails for auth flows and lifecycle messaging.',
-    Icon: SiResend,
+    Icon: createLazyIcon('SiResend'),
     iconClassName: 'text-slate-900',
     url: 'https://resend.com/',
   },
   {
     name: 'Biome',
     description: 'Fast linting and formatting to keep the codebase consistent.',
-    Icon: SiBiome,
+    Icon: createLazyIcon('SiBiome'),
     iconClassName: 'text-blue-600',
     url: 'https://biomejs.dev/',
   },
   {
     name: 'React 19',
     description: 'Modern UI library powering server and client rendering.',
-    Icon: SiReact,
+    Icon: createLazyIcon('SiReact'),
     iconClassName: 'text-sky-400',
     url: 'https://react.dev/',
   },
   {
     name: 'Shadcn/UI',
     description: 'Accessible component primitives ready for rapid iteration.',
-    Icon: SiShadcnui,
+    Icon: createLazyIcon('SiShadcnui'),
     iconClassName: 'text-slate-900',
     url: 'https://ui.shadcn.com/',
   },
   {
     name: 'Tailwind',
     description: 'Utility-first styling with design tokens configured for the template.',
-    Icon: SiTailwindcss,
+    Icon: createLazyIcon('SiTailwindcss'),
     iconClassName: 'text-sky-500',
     url: 'https://tailwindcss.com/',
   },
   {
     name: 'TypeScript',
     description: 'Type-safe foundations from server to client with strict typing.',
-    Icon: SiTypescript,
+    Icon: createLazyIcon('SiTypescript'),
     iconClassName: 'text-blue-600',
     url: 'https://www.typescriptlang.org/',
   },
   {
     name: 'Vite',
     description: 'Lightning-fast dev server and build pipeline optimized for React.',
-    Icon: SiVite,
+    Icon: createLazyIcon('SiVite'),
     iconClassName: 'text-purple-600',
     url: 'https://vitejs.dev/',
   },
   {
     name: 'Zod',
     description: 'Type-safe validation for data schemas.',
-    Icon: SiZod,
+    Icon: createLazyIcon('SiZod'),
     iconClassName: 'text-blue-500',
     url: 'https://zod.dev/',
   },
@@ -158,7 +159,7 @@ export function MarketingHome() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <SiGithub className="h-4 w-4" />
+              <span className="font-semibold text-sm">GitHub</span>
               View on GitHub
             </a>
           </Button>
@@ -202,6 +203,61 @@ export function MarketingHome() {
               </a>
             );
           })}
+        </div>
+      </section>
+
+      <section className="rounded-3xl border border-border bg-linear-to-br from-primary/5 to-secondary/5 p-10 shadow-sm">
+        <div className="text-center space-y-3 mb-10">
+          <span className="text-sm font-medium uppercase tracking-widest text-muted-foreground">
+            Performance-First Architecture
+          </span>
+          <h2 className="text-3xl font-semibold text-foreground sm:text-4xl">
+            Optimized for speed, security, and real-time experiences
+          </h2>
+          <p className="text-base text-muted-foreground">
+            Built with modern web patterns that deliver exceptional performance while maintaining
+            strict security boundaries.
+          </p>
+        </div>
+
+        <div className="grid gap-8 md:grid-cols-3">
+          <div className="space-y-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Zap className="h-6 w-6 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground">SSG for Public Pages</h3>
+            <p className="text-muted-foreground">
+              Marketing and authentication routes render as static HTML for instant first paint and
+              optimal SEO. No JavaScript required for initial page loads, with progressive
+              enhancement for rich interactions.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Monitor className="h-6 w-6 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground">
+              SPA Mode for Authenticated Pages
+            </h3>
+            <p className="text-muted-foreground">
+              Application routes run as a single-page app with Convex real-time queries. Zero
+              waterfalls, instant updates, and seamless navigation between protected areas of your
+              application.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+              <Shield className="h-6 w-6 text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground">Universal RBAC Infrastructure</h3>
+            <p className="text-muted-foreground">
+              Role-based access control enforced on both client and server with minimal database
+              hits. Single capability map drives all authorization, with automatic cache
+              invalidation for real-time role updates.
+            </p>
+          </div>
         </div>
       </section>
     </div>

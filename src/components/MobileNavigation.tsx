@@ -4,10 +4,17 @@ import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '~/components/ui/sheet';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { cn } from '~/lib/utils';
 
 export function MobileNavigation() {
-  const { user, isAuthenticated, isAdmin, isPending: isLoading } = useAuth();
+  const authState = useAuthState();
+  const {
+    user,
+    isAuthenticated,
+    isAdmin,
+    isPending: isLoading,
+  } = useAuth({ fetchRole: authState.isAuthenticated });
   const session = { user: isAuthenticated ? user : null };
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();

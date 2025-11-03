@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
-import { useSession } from '~/features/auth/auth-client';
+import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { USER_ROLES } from '~/features/auth/types';
 import type { Capability } from '../../convex/authz/policy.map';
-import { Caps } from '../../convex/authz/policy.map';
+import { Caps, PublicCaps } from '../../convex/authz/policy.map';
 
 interface AllowedProps {
   cap: Capability;
@@ -11,12 +13,26 @@ interface AllowedProps {
 /**
  * Client-side capability check component
  * Renders children only if the current user has the required capability
- * Use the generated Convex API or simple session role checks for conditional rendering
+ * Uses proper role checking with conditional database queries
  */
 export function Allowed({ cap, children }: AllowedProps) {
-  const { data: session } = useSession();
-  const role = (session?.user as { role?: string } | undefined)?.role;
+  const authState = useAuthState();
+
+  // Always call useAuth, but only fetch roles when authenticated
+  const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
+
+  // For public capabilities, allow without authentication
+  if (PublicCaps.has(cap)) {
+    return <>{children}</>;
+  }
+
+  // For protected capabilities, check role when authenticated
   const allowedRoles = Caps[cap] ?? [];
-  if (!role || !allowedRoles.includes(role as any)) return null;
+  const userRole = isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER;
+
+  if (!allowedRoles.some((allowedRole) => allowedRole === userRole)) {
+    return null;
+  }
+
   return <>{children}</>;
 }

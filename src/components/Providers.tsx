@@ -5,6 +5,7 @@ import { ThemeProvider } from '~/components/theme-provider';
 import { ToastProvider } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { USER_ROLES } from '~/features/auth/types';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
 import { normalizeUserId } from '~/lib/shared/user-id';
@@ -84,7 +85,7 @@ function AuthProvider({ children }: AuthProviderProps) {
             id: userId,
             email: user.email,
             name: user.name || undefined,
-            role: isAdmin ? 'admin' : 'user',
+            role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
           },
         };
       } else {

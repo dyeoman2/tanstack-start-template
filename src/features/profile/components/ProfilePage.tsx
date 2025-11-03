@@ -19,6 +19,7 @@ import { signOut } from '~/features/auth/auth-client';
 import { useProfile, useUpdateProfile } from '~/features/profile/hooks/useProfile';
 import { usePhoneFormatter } from '~/hooks/use-phone-formatter';
 import { cn } from '~/lib/utils';
+import { USER_ROLES } from '../../auth/types';
 
 // Form validation schema
 const profileSchema = z.object({
@@ -238,7 +239,7 @@ export function ProfilePage() {
           <Field orientation="vertical">
             <FieldLabel>Role</FieldLabel>
             <Input
-              value={profile.role === 'admin' ? 'Administrator' : 'User'}
+              value={profile.role === USER_ROLES.ADMIN ? 'Administrator' : 'User'}
               disabled
               className="bg-muted capitalize"
             />

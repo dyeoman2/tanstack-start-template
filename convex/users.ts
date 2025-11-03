@@ -54,14 +54,11 @@ export const setUserRole = guarded.mutation(
   'user.bootstrap', // Public capability but with strict bootstrap logic
   {
     userId: v.string(), // Better Auth user ID
-    role: v.string(), // 'user' | 'admin'
+    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum
     allowBootstrap: v.optional(v.boolean()), // Special flag for first user signup
   },
   async (ctx, args, role) => {
-    // Validate role
-    if (args.role !== 'user' && args.role !== 'admin') {
-      throw new Error('Invalid role. Must be "user" or "admin"');
-    }
+    // Role validation is now handled by the Convex schema enum
 
     // Check if this is a bootstrap operation (first user creation)
     // Allow bootstrap without admin authentication for initial setup
@@ -175,6 +172,22 @@ export const updateCurrentUserProfile = mutation({
 });
 
 /**
+ * Get user profile by user ID
+ * Used internally by the authz system
+ */
+export const getUserProfile = query({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('userProfiles')
+      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .first();
+  },
+});
+
+/**
  * Get current user profile (Better Auth user data + app-specific role)
  * Combines Better Auth user data with userProfiles role
  * Returns null if user is not authenticated (for useAuth hook compatibility)
@@ -184,8 +197,7 @@ export const getCurrentUserProfile = query({
   handler: async (ctx) => {
     // Get Better Auth user via authComponent
     // Note: This should be cached by Convex since we're in an authenticated context
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    let authUser: any;
+    let authUser: unknown;
     try {
       authUser = await authComponent.getAuthUser(ctx);
     } catch {
@@ -209,24 +221,32 @@ export const getCurrentUserProfile = query({
       .first();
 
     // Convert Better Auth timestamps (ISO strings or numbers) to Unix timestamps
-    const createdAt = authUser.createdAt
-      ? typeof authUser.createdAt === 'string'
-        ? new Date(authUser.createdAt).getTime()
-        : authUser.createdAt
+    const authUserTyped = authUser as {
+      createdAt?: string | number;
+      updatedAt?: string | number;
+      email?: string;
+      name?: string;
+      phoneNumber?: string;
+      emailVerified?: boolean;
+    };
+    const createdAt = authUserTyped.createdAt
+      ? typeof authUserTyped.createdAt === 'string'
+        ? new Date(authUserTyped.createdAt).getTime()
+        : authUserTyped.createdAt
       : Date.now();
-    const updatedAt = authUser.updatedAt
-      ? typeof authUser.updatedAt === 'string'
-        ? new Date(authUser.updatedAt).getTime()
-        : authUser.updatedAt
+    const updatedAt = authUserTyped.updatedAt
+      ? typeof authUserTyped.updatedAt === 'string'
+        ? new Date(authUserTyped.updatedAt).getTime()
+        : authUserTyped.updatedAt
       : Date.now();
 
     return {
       id: userId, // Better Auth user ID
-      email: authUser.email,
-      name: authUser.name || null,
-      phoneNumber: authUser.phoneNumber || null,
+      email: authUserTyped.email || '',
+      name: authUserTyped.name || null,
+      phoneNumber: authUserTyped.phoneNumber || null,
       role: profile?.role || 'user', // Default to 'user' if no profile exists
-      emailVerified: authUser.emailVerified || false,
+      emailVerified: authUserTyped.emailVerified || false,
       createdAt,
       updatedAt,
     };
@@ -241,13 +261,10 @@ export const updateUserRole = guarded.mutation(
   'user.write',
   {
     userId: v.string(),
-    role: v.string(),
+    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum
   },
   async (ctx, args, _role) => {
-    // Validate role
-    if (args.role !== 'user' && args.role !== 'admin') {
-      throw new Error('Invalid role. Must be "user" or "admin"');
-    }
+    // Role validation is now handled by the Convex schema enum
 
     // Update role in userProfiles
     const profile = await ctx.db
