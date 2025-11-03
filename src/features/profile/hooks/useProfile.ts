@@ -1,6 +1,5 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
-import type { ProfileLoaderData } from '~/features/profile/server/profile.server';
 import { useOptimisticMutation } from '../../admin/hooks/useOptimisticUpdates';
 
 export interface UpdateProfileData {
@@ -8,25 +7,27 @@ export interface UpdateProfileData {
   phoneNumber?: string;
 }
 
-type LoaderProfile = Exclude<ProfileLoaderData, null>;
+type ProfileQueryResult = typeof api.users.getCurrentUserProfile._returnType;
+type ProfileRecord = Exclude<ProfileQueryResult, null | undefined>;
 
-const toProfileData = (profile: LoaderProfile) => ({
+const toProfileData = (profile: ProfileRecord) => ({
   ...profile,
   createdAt: new Date(profile.createdAt),
   updatedAt: new Date(profile.updatedAt),
   emailVerified: profile.emailVerified as boolean | null,
 });
 
-// Hook to get user profile using Convex real-time query with SSR fallback
-export function useProfile(initialData?: ProfileLoaderData) {
+// Hook to get user profile using Convex real-time query
+export function useProfile() {
   const profile = useQuery(api.users.getCurrentUserProfile);
-  const fallbackProfile = initialData ?? null;
-  const resolvedProfile = profile ?? fallbackProfile ?? null;
+  const hasResolved = profile !== undefined;
+  const normalizedProfile = profile ? toProfileData(profile as ProfileRecord) : undefined;
+  const isUnauthorized = hasResolved && profile === null;
 
   return {
-    data: resolvedProfile ? toProfileData(resolvedProfile) : undefined,
-    isLoading: profile === undefined && fallbackProfile === null,
-    error: null, // Convex handles errors differently
+    data: normalizedProfile,
+    isLoading: profile === undefined,
+    error: isUnauthorized ? new Error('UNAUTHORIZED') : null,
   };
 }
 

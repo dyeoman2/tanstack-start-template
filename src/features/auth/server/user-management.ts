@@ -5,6 +5,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { getCookie, getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { handleServerError } from '~/lib/server/error-utils.server';
+import { USER_ROLES } from '../types';
 
 // Zod schemas for user management
 const signUpWithFirstAdminSchema = z.object({
@@ -132,7 +133,7 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
       // Better Auth manages user auth data in betterAuth.user table
       // We store app-specific data (like role) in app.userProfiles table
       if (signUpResult?.user?.id) {
-        const roleToSet = isFirstUser ? 'admin' : 'user';
+        const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
 
         // Small delay to ensure Better Auth user is committed to Convex database
         await new Promise((resolve) => setTimeout(resolve, 100));

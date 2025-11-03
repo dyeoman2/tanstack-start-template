@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tanstack/react-router';
 import { Lock, Mail } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -8,9 +8,10 @@ import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { signIn } from '~/features/auth/auth-client';
-import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 
 export const Route = createFileRoute('/login')({
+  staticData: true,
   component: LoginPage,
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
@@ -27,11 +28,33 @@ export const Route = createFileRoute('/login')({
   }),
 });
 
+const REDIRECT_TARGETS = [
+  '/app',
+  '/app/profile',
+  '/app/admin',
+  '/app/admin/users',
+  '/app/admin/stats',
+] as const;
+
+type RedirectTarget = (typeof REDIRECT_TARGETS)[number];
+
+function resolveRedirectTarget(value?: string | null): RedirectTarget {
+  if (!value) {
+    return '/app';
+  }
+
+  const [path] = value.split('?');
+  const match = REDIRECT_TARGETS.find((route) => route === path);
+
+  return (match ?? '/app') as RedirectTarget;
+}
+
 function LoginPage() {
-  const { email: emailFromQuery, reset } = Route.useSearch();
+  const { email: emailFromQuery, reset, redirect: redirectParam } = Route.useSearch();
+  const redirectTarget = resolveRedirectTarget(redirectParam);
   const navigate = useNavigate();
   const router = useRouter();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isPending } = useAuthState();
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -97,7 +120,7 @@ function LoginPage() {
           await router.invalidate();
           // Small delay to ensure invalidation settles before navigation
           setTimeout(() => {
-            navigate({ to: '/app' });
+            navigate({ to: redirectTarget });
           }, 50);
         } else {
           setError('An unexpected error occurred. Please try again.');
@@ -146,15 +169,12 @@ function LoginPage() {
     }
   }, [reset, form]);
 
-  // Redirect if already logged in
-  useEffect(() => {
-    if (isAuthenticated) {
-      navigate({ to: '/app' });
-    }
-  }, [isAuthenticated, navigate]);
+  if (isPending) {
+    return <AuthSkeleton />;
+  }
 
   if (isAuthenticated) {
-    return null;
+    throw redirect({ to: redirectTarget });
   }
 
   return (

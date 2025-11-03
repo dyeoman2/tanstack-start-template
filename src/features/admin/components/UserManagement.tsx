@@ -4,17 +4,19 @@ import { useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import type { UserRole } from '../../auth/types';
+import { USER_ROLES } from '../../auth/types';
 import type { User as AdminUser } from '../types';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
 import { UserTable } from './UserTable';
 
-type UserRoleFilterValue = 'all' | 'admin' | 'user';
+type UserRoleFilterValue = 'all' | UserRole;
 
 const ROLE_FILTER_OPTIONS: TableFilterOption<UserRoleFilterValue>[] = [
   { label: 'All roles', value: 'all' },
-  { label: 'Admin', value: 'admin' },
-  { label: 'User', value: 'user' },
+  { label: 'Admin', value: USER_ROLES.ADMIN },
+  { label: 'User', value: USER_ROLES.USER },
 ];
 
 export function UserManagement() {

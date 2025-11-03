@@ -10,7 +10,7 @@ export default defineSchema({
   // User profiles table - stores app-specific user data that references Better Auth user IDs
   userProfiles: defineTable({
     userId: v.string(), // References Better Auth user.id
-    role: v.string(), // Application-specific: 'user' | 'admin'
+    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum for data integrity
     // Add other app-specific user fields here as needed
     createdAt: v.number(),
     updatedAt: v.number(),

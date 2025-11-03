@@ -33,6 +33,10 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
  * Get dashboard statistics and recent activity (admin only)
  * Returns user stats and recent audit log activity
  * OPTIMIZED: No longer fetches ALL users for stats - uses userProfiles table for counts
+ *
+ * NOTE: We intentionally keep this as a plain `query` instead of `guarded.query`.
+ * Returning `null` for non-admin callers allows the client to render a friendly
+ * fallback instead of hitting the route error boundary on authorization failures.
  */
 export const getDashboardData = query({
   args: {},

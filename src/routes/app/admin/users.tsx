@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { UserManagement } from '~/features/admin/components/UserManagement';
+import { USER_ROLES } from '~/features/auth/types';
 
 function _UserTableSkeleton() {
   return (
@@ -19,7 +20,7 @@ const usersSearchSchema = z.object({
   secondarySortBy: z.enum(['name', 'email', 'role', 'emailVerified', 'createdAt']).default('name'),
   secondarySortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
-  role: z.enum(['all', 'user', 'admin']).default('all'),
+  role: z.enum(['all', ...Object.values(USER_ROLES)]).default('all'),
   cursor: z.string().optional(), // Add cursor for optimized pagination
 });
 

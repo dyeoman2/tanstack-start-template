@@ -50,6 +50,29 @@ async function getGitRemote(): Promise<string | null> {
   }
 }
 
+function normalizeGitRemote(remoteUrl: string): string | null {
+  if (remoteUrl.startsWith('git@github.com:')) {
+    const repo = remoteUrl.replace('git@github.com:', '').replace(/\.git$/, '');
+    return `https://github.com/${repo}`;
+  }
+
+  if (remoteUrl.startsWith('https://github.com/')) {
+    return remoteUrl.replace(/\.git$/, '');
+  }
+
+  return null;
+}
+
+function createNetlifyDeployUrl(remoteUrl: string): string | null {
+  const httpsRepoUrl = normalizeGitRemote(remoteUrl);
+  if (!httpsRepoUrl) {
+    return null;
+  }
+
+  const encodedRepo = encodeURIComponent(httpsRepoUrl);
+  return `https://app.netlify.com/start/deploy?repository=${encodedRepo}`;
+}
+
 async function _checkNetlifyCLI(): Promise<boolean> {
   try {
     execSync('netlify --version', { stdio: 'pipe' });
@@ -161,11 +184,21 @@ async function main() {
 
     console.log('📋 Complete these steps to deploy to Netlify:');
     console.log('');
-    console.log('1. Go to: https://app.netlify.com/start');
-    console.log('2. Click "Import an existing project"');
-    console.log(`3. Connect your repository: ${remoteUrl}`);
-    console.log('4. Netlify will automatically detect your build settings from netlify.toml');
-    console.log("5. You'll be prompted to enter these environment variables during site creation:");
+    const netlifyDeployUrl = createNetlifyDeployUrl(remoteUrl);
+    if (netlifyDeployUrl) {
+      console.log(
+        '1. Open the Deploy to Netlify link (this path reads template env vars from netlify.toml):',
+      );
+      console.log(`   ${netlifyDeployUrl}`);
+      console.log('2. Authorize Netlify and confirm the repository when prompted.');
+    } else {
+      console.log('1. From a browser, open https://app.netlify.com/start/deploy');
+      console.log(
+        '   When asked for the repository URL, enter your GitHub repo (include https://).',
+      );
+    }
+    console.log('3. Netlify will pre-fill the build command and publish directory from netlify.toml.');
+    console.log('4. On the environment variables step, provide the values listed below:');
     console.log('');
 
     // Get the values for the environment variables
@@ -213,7 +246,6 @@ async function main() {
     }
 
     console.log(`   BETTER_AUTH_SECRET = ${betterAuthSecret}`);
-    console.log(`   CONVEX_URL = ${convexUrl}`);
     console.log(`   VITE_CONVEX_URL = ${convexUrl}`);
     console.log(`   VITE_CONVEX_SITE_URL = ${convexSiteUrl}`);
     console.log('');
@@ -224,7 +256,11 @@ async function main() {
     console.log('   4. Click "Generate Production Deploy Key"');
     console.log('   5. Copy the key (starts with "prod:")');
     console.log('');
-    console.log('6. Click "Deploy site"');
+    console.log(
+      'ℹ️  If you come through the generic import flow, these prompts will be skipped—add them later under Site settings → Environment variables.',
+    );
+    console.log('');
+    console.log('5. Click "Deploy site"');
     console.log('');
     console.log('💡 Your site will be live at: https://your-site-name.netlify.app');
 

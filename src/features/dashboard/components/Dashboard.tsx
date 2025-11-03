@@ -1,28 +1,42 @@
-import { api } from '@convex/_generated/api';
+import type { api } from '@convex/_generated/api';
+import { useRouter } from '@tanstack/react-router';
+import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
-import { useLoaderSeededQuery } from '../hooks/useLoaderSeededQuery';
-import type { DashboardLoaderData } from '../server/dashboard.server';
+import { Button } from '~/components/ui/button';
+import { signOut } from '~/features/auth/auth-client';
 import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
 
+type DashboardData = typeof api.dashboard.getDashboardData._returnType;
+
 type DashboardProps = {
-  initialData: DashboardLoaderData;
+  data: DashboardData;
+  isLoading: boolean;
 };
 
-export function Dashboard({ initialData }: DashboardProps) {
-  const { data: dashboardData, isLivePending } = useLoaderSeededQuery(
-    api.dashboard.getDashboardData,
-    {},
-    initialData,
-  );
+export function Dashboard({ data, isLoading }: DashboardProps) {
+  const router = useRouter();
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
-  const hasInitialData = initialData !== null;
-  const isLoading = !hasInitialData && (isLivePending || dashboardData === null);
-  const hasErrors = !isLoading && dashboardData === null;
+  useEffect(() => {
+    if (!isLoading && data === null) {
+      void router.invalidate();
+    }
+  }, [data, isLoading, router]);
 
-  // Extract data
-  const stats = dashboardData?.stats;
-  const activity = dashboardData?.activity || [];
+  const handleSignOut = useCallback(async () => {
+    setIsSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setIsSigningOut(false);
+      router.navigate({ to: '/login', search: { redirect: '/app' } });
+    }
+  }, [router]);
+
+  const hasDashboardData = !!data;
+  const stats = data?.stats ?? null;
+  const activity = data?.activity ?? [];
 
   if (isLoading) {
     return (
@@ -65,6 +79,44 @@ export function Dashboard({ initialData }: DashboardProps) {
     );
   }
 
+  if (!hasDashboardData) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Dashboard"
+          description="TanStack Start Template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI, Resend, and deployed to Netlify."
+        />
+
+        <div className="bg-muted border border-border rounded-md p-6">
+          <div className="space-y-4 text-sm text-muted-foreground">
+            <div className="space-y-2">
+              <h3 className="text-base font-semibold text-foreground">
+                We couldn&apos;t load your dashboard data
+              </h3>
+              <p>
+                This can happen if your session changed or your account no longer has access. Try
+                refreshing, or sign back in to continue.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => router.invalidate()}
+                disabled={isSigningOut}
+              >
+                Refresh
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleSignOut} disabled={isSigningOut}>
+                {isSigningOut ? 'Signing out…' : 'Sign out'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -78,36 +130,6 @@ export function Dashboard({ initialData }: DashboardProps) {
       />
 
       {/* Error Alert */}
-      {hasErrors && (
-        <div className="bg-muted border border-border rounded-md p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <svg
-                className="h-5 w-5 text-muted-foreground"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-secondary-foreground">
-                Failed to load dashboard data
-              </h3>
-              <div className="mt-2 text-sm text-secondary-foreground">
-                Please try refreshing the page.
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Metrics Cards */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
         {stats ? (
           <MetricCard title="Total Users" value={stats.totalUsers.toLocaleString()} />

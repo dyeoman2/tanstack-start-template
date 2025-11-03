@@ -10,6 +10,7 @@ import {
   formatTableDate,
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
+import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
 import type { User as AdminUser } from '../types';
 
 type UserRow = AdminUser;
@@ -117,8 +118,8 @@ export function UserTable({
         accessorKey: 'role',
         header: createSortableHeader('Role', 'role', searchParams, handleSorting),
         cell: ({ row }) => {
-          const role = row.original.role ?? 'user';
-          const isAdmin = role === 'admin';
+          const role = row.original.role ?? DEFAULT_ROLE;
+          const isAdmin = role === USER_ROLES.ADMIN;
           const roleLabel = `${role.slice(0, 1).toUpperCase()}${role.slice(1)}`;
 
           return (

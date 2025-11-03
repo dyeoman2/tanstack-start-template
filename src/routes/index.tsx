@@ -1,14 +1,15 @@
-import { createFileRoute, redirect } from '@tanstack/react-router';
-import { getAuthStatusServerFn } from '~/features/auth/server/session.server';
+import { createFileRoute } from '@tanstack/react-router';
 import { MarketingHome } from '~/features/marketing/components/MarketingHome';
 
 export const Route = createFileRoute('/')({
-  beforeLoad: async () => {
-    const { isAuthenticated } = await getAuthStatusServerFn();
-    if (isAuthenticated) {
-      throw redirect({ to: '/app' });
-    }
-  },
+  staticData: true,
+  head: () => ({
+    meta: [
+      {
+        title: 'TanStack Start Template — Home',
+      },
+    ],
+  }),
   component: MarketingHomeRoute,
 });
 
