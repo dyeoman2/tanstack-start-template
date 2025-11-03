@@ -28,7 +28,13 @@ export const Route = createFileRoute('/login')({
   }),
 });
 
-const REDIRECT_TARGETS = ['/app', '/app/profile', '/app/admin', '/app/admin/users', '/app/admin/stats'] as const;
+const REDIRECT_TARGETS = [
+  '/app',
+  '/app/profile',
+  '/app/admin',
+  '/app/admin/users',
+  '/app/admin/stats',
+] as const;
 
 type RedirectTarget = (typeof REDIRECT_TARGETS)[number];
 

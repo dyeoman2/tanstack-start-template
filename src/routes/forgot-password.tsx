@@ -28,9 +28,9 @@ export const Route = createFileRoute('/forgot-password')({
 function ForgotPasswordPage() {
   const { email: emailFromQuery } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuth();
-  const [emailServiceStatus, setEmailServiceStatus] = useState<
-    Awaited<ReturnType<typeof checkEmailServiceConfiguredServerFn>> | null
-  >(null);
+  const [emailServiceStatus, setEmailServiceStatus] = useState<Awaited<
+    ReturnType<typeof checkEmailServiceConfiguredServerFn>
+  > | null>(null);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState('');

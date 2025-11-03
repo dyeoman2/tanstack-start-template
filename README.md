@@ -96,6 +96,11 @@ pnpm run setup:prod
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
 
+### 🔑 Environment Variables
+
+- `ROOT_ADMINS` — comma-separated list of email addresses that should always resolve to the `admin` role, even if their stored profile role is lower. This protects against accidentally demoting the last administrator. Configure this in Netlify/Convex/`.env.local` as needed (e.g. `ROOT_ADMINS=ceo@example.com,cto@example.com`).
+- Standard Better Auth and Convex environment variables remain required (see `.env.example`). Copy `.env.example` to `.env.local` for local development and keep secrets out of client bundles by accessing them only in `*.server.ts` modules.
+
 ## 📄 Documentation
 
 - [Email Setup Guide](docs/EMAIL_SETUP.md) - Password reset and transactional email configuration

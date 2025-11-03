@@ -27,9 +27,7 @@ export function useProfile() {
   return {
     data: normalizedProfile,
     isLoading: profile === undefined,
-    error: isUnauthorized
-      ? new Error('UNAUTHORIZED')
-      : null,
+    error: isUnauthorized ? new Error('UNAUTHORIZED') : null,
   };
 }
 

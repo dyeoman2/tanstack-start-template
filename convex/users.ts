@@ -5,36 +5,9 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import type { MutationCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
-
-/**
- * Helper function to verify caller is authenticated and has admin role
- */
-async function requireAdminAuth(ctx: MutationCtx) {
-  // Get current user using the same pattern as the rest of the codebase
-  const authUser = await authComponent.getAuthUser(ctx);
-
-  if (!authUser) {
-    throw new Error('Authentication required');
-  }
-
-  // Better Auth Convex adapter returns the Convex document with _id
-  const userId = assertUserId(authUser, 'User ID not found in auth user');
-
-  // Get user's profile to check role
-  const profile = await ctx.db
-    .query('userProfiles')
-    .withIndex('by_userId', (q) => q.eq('userId', userId))
-    .first();
-
-  if (!profile || profile.role !== 'admin') {
-    throw new Error('Admin privileges required');
-  }
-
-  return userId;
-}
+import { guarded } from './authz/guardFactory';
 
 /**
  * Check if there are any users in the system (for determining first admin)
@@ -77,13 +50,14 @@ export const getUserCount = query({
  * Create or update a user profile with role
  * This stores app-specific user data separate from Better Auth's user table
  */
-export const setUserRole = mutation({
-  args: {
+export const setUserRole = guarded.mutation(
+  'user.bootstrap', // Public capability but with strict bootstrap logic
+  {
     userId: v.string(), // Better Auth user ID
     role: v.string(), // 'user' | 'admin'
     allowBootstrap: v.optional(v.boolean()), // Special flag for first user signup
   },
-  handler: async (ctx, args) => {
+  async (ctx, args, role) => {
     // Validate role
     if (args.role !== 'user' && args.role !== 'admin') {
       throw new Error('Invalid role. Must be "user" or "admin"');
@@ -92,8 +66,10 @@ export const setUserRole = mutation({
     // Check if this is a bootstrap operation (first user creation)
     // Allow bootstrap without admin authentication for initial setup
     if (!args.allowBootstrap) {
-      // SECURITY: Verify caller is authenticated admin for normal operations
-      await requireAdminAuth(ctx);
+      // For non-bootstrap operations, ensure caller has admin role
+      if (role !== 'admin') {
+        throw new Error('Admin privileges required for role management');
+      }
     } else {
       // BOOTSTRAP: Allow only when no other user profiles exist (idempotent for the same user)
       const existingProfiles = await ctx.db.query('userProfiles').collect();
@@ -136,7 +112,7 @@ export const setUserRole = mutation({
 
     return { success: true };
   },
-});
+);
 
 /**
  * Update current user's profile (name, phoneNumber)
@@ -201,17 +177,26 @@ export const updateCurrentUserProfile = mutation({
 /**
  * Get current user profile (Better Auth user data + app-specific role)
  * Combines Better Auth user data with userProfiles role
- * Requires authentication - returns current authenticated user
+ * Returns null if user is not authenticated (for useAuth hook compatibility)
  */
 export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx) => {
     // Get Better Auth user via authComponent
     // Note: This should be cached by Convex since we're in an authenticated context
-    const authUser = await authComponent.getAuthUser(ctx);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let authUser: any;
+    try {
+      authUser = await authComponent.getAuthUser(ctx);
+    } catch {
+      // Better Auth throws "Unauthenticated" error when session is invalid
+      // Return null to allow conditional usage in useAuth hook
+      return null;
+    }
 
     if (!authUser) {
-      throw new Error('User not authenticated');
+      // Return null instead of throwing to allow conditional usage in useAuth hook
+      return null;
     }
 
     // Better Auth Convex adapter returns the Convex document with _id
@@ -252,15 +237,13 @@ export const getCurrentUserProfile = query({
  * Update user role (for admin operations)
  * SECURITY: Requires authenticated admin caller
  */
-export const updateUserRole = mutation({
-  args: {
+export const updateUserRole = guarded.mutation(
+  'user.write',
+  {
     userId: v.string(),
     role: v.string(),
   },
-  handler: async (ctx, args) => {
-    // SECURITY: Verify caller is authenticated admin
-    await requireAdminAuth(ctx);
-
+  async (ctx, args, _role) => {
     // Validate role
     if (args.role !== 'user' && args.role !== 'admin') {
       throw new Error('Invalid role. Must be "user" or "admin"');
@@ -283,4 +266,4 @@ export const updateUserRole = mutation({
 
     return { success: true };
   },
-});
+);

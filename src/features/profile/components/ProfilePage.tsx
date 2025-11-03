@@ -15,8 +15,8 @@ import {
 } from '~/components/ui/input-group';
 import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
-import { useProfile, useUpdateProfile } from '~/features/profile/hooks/useProfile';
 import { signOut } from '~/features/auth/auth-client';
+import { useProfile, useUpdateProfile } from '~/features/profile/hooks/useProfile';
 import { usePhoneFormatter } from '~/hooks/use-phone-formatter';
 import { cn } from '~/lib/utils';
 

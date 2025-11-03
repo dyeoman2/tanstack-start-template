@@ -4,6 +4,8 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import type { RouterAuthContext } from '~/router';
+import type { Capability } from '../../../../convex/authz/policy.map';
+import { Caps } from '../../../../convex/authz/policy.map';
 
 // SECURITY: Removed route guard caching due to auth bypass vulnerability
 // Cache was keyed only by pathname, allowing unauthenticated users to bypass
@@ -47,7 +49,18 @@ export async function routeAuthGuard({
   const isAdminRoute = adminRoutes.some((route) => location.pathname.startsWith(route));
 
   if (isAdminRoute) {
-    return await routeAdminGuard({ location });
+    // Use capability-based guard for admin routes
+    if (location.pathname.startsWith('/app/admin/users')) {
+      return await routeCapabilityGuard('route:/app/admin.users', location);
+    } else if (location.pathname.startsWith('/app/admin/stats')) {
+      return await routeCapabilityGuard('route:/app/admin.stats', location);
+    } else if (location.pathname === '/app/admin' || location.pathname.startsWith('/app/admin/')) {
+      // Admin layout and other admin routes
+      return await routeCapabilityGuard('route:/app/admin', location);
+    } else {
+      // Default admin route guard for other admin routes
+      return await routeAdminGuard({ location });
+    }
   }
 
   // For regular authenticated routes, do lightweight session checking
@@ -76,6 +89,29 @@ export async function routeAdminGuard({
     const { user } = await getCurrentUserServerFn();
     if (user?.role !== 'admin') {
       throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
+    }
+
+    return { authenticated: true as const, user };
+  } catch (_error) {
+    throw redirect({ to: '/login', search: { redirect: location.href } });
+  }
+}
+
+/**
+ * Standardized route guard that checks capabilities using the same system as Convex functions
+ * This ensures consistency between client-side and server-side authorization
+ */
+export async function routeCapabilityGuard(
+  cap: Capability,
+  location: ParsedLocation,
+): Promise<RouterAuthContext> {
+  try {
+    const { user } = await getCurrentUserServerFn();
+
+    // Check if the user's role grants access to the capability
+    const allowedRoles = Caps[cap] ?? [];
+    if (!allowedRoles.includes(user?.role as any)) {
+      throw redirect({ to: '/login', search: { redirect: location.href } });
     }
 
     return { authenticated: true as const, user };

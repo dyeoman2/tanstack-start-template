@@ -6,8 +6,8 @@ import {
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { GenericCtx } from './_generated/server';
-import { mutation, query } from './_generated/server';
 import { authComponent } from './auth';
+import { guarded } from './authz/guardFactory';
 
 type BetterAuthUser = BetterAuthAdapterUserDoc;
 
@@ -92,8 +92,9 @@ async function fetchBetterAuthUsersByIds(
  * Get all users with pagination, sorting, and filtering (admin only)
  * Combines Better Auth user data with userProfiles role using optimized queries
  */
-export const getAllUsers = query({
-  args: {
+export const getAllUsers = guarded.query(
+  'route:/app/admin.users',
+  {
     page: v.number(),
     pageSize: v.number(),
     sortBy: v.union(
@@ -116,24 +117,7 @@ export const getAllUsers = query({
     role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
     cursor: v.optional(v.string()), // Add cursor for efficient pagination
   },
-  handler: async (ctx, args) => {
-    // Ensure user is authenticated and is admin
-    const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
-    }
-
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
+  async (ctx, args, role) => {
     // OPTIMIZATION: Use cursor-based pagination with userProfiles as primary source
     // Only fetch Better Auth users for the current page, not all users
 
@@ -274,34 +258,18 @@ export const getAllUsers = query({
       },
     };
   },
-});
+);
 
 /**
  * Get user by ID (admin only)
  * Returns user email and name for deletion confirmation messages
  */
-export const getUserById = query({
-  args: {
+export const getUserById = guarded.query(
+  'route:/app/admin.users',
+  {
     userId: v.string(),
   },
-  handler: async (ctx, args) => {
-    // Ensure user is authenticated and is admin
-    const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
-    }
-
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
+  async (ctx, args, role) => {
     try {
       const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
@@ -336,32 +304,16 @@ export const getUserById = query({
       return null;
     }
   },
-});
+);
 
 /**
  * Get system statistics (admin only)
  * Uses efficient counting without fetching all user data
  */
-export const getSystemStats = query({
-  args: {},
-  handler: async (ctx) => {
-    // Ensure user is authenticated and is admin
-    const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
-    }
-
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
+export const getSystemStats = guarded.query(
+  'route:/app/admin.stats',
+  {},
+  async (ctx, args, role) => {
     try {
       const users = await fetchAllBetterAuthUsers(ctx);
       return {
@@ -374,37 +326,21 @@ export const getSystemStats = query({
       };
     }
   },
-});
+);
 
 /**
  * Update Better Auth user data (name, email, phoneNumber) (admin only)
  * Uses Better Auth component adapter's updateMany mutation
  */
-export const updateBetterAuthUser = mutation({
-  args: {
+export const updateBetterAuthUser = guarded.mutation(
+  'user.write',
+  {
     userId: v.string(),
     name: v.optional(v.string()),
     email: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    // Ensure user is authenticated and is admin
-    const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
-    }
-
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
+  async (ctx, args, role) => {
     // Build update object - only include fields that are provided
     const updateData: {
       name?: string;
@@ -450,64 +386,44 @@ export const updateBetterAuthUser = mutation({
 
     return { success: true };
   },
-});
+);
 
 /**
  * Truncate application data (admin only)
  * Deletes all audit logs, preserves user data
  */
-export const truncateData = mutation({
-  args: {},
-  handler: async (ctx) => {
-    // Ensure user is authenticated and is admin
-    const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
+export const truncateData = guarded.mutation('user.write', {}, async (ctx, args, role) => {
+  // Delete all audit logs
+  const auditLogs = await ctx.db.query('auditLogs').collect();
+  let deletedCount = 0;
+  let failedCount = 0;
+
+  for (const log of auditLogs) {
+    try {
+      await ctx.db.delete(log._id);
+      deletedCount++;
+    } catch (error) {
+      failedCount++;
+      console.error(`Failed to delete audit log ${log._id}:`, error);
     }
+  }
 
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
+  // Log the truncation in audit log (before we delete it, so it won't be persisted)
+  // Actually, we can't log it since we're deleting all logs
+  // So we'll just return success
 
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
-
-    // Delete all audit logs
-    const auditLogs = await ctx.db.query('auditLogs').collect();
-    let deletedCount = 0;
-    let failedCount = 0;
-
-    for (const log of auditLogs) {
-      try {
-        await ctx.db.delete(log._id);
-        deletedCount++;
-      } catch (error) {
-        failedCount++;
-        console.error(`Failed to delete audit log ${log._id}:`, error);
-      }
-    }
-
-    // Log the truncation in audit log (before we delete it, so it won't be persisted)
-    // Actually, we can't log it since we're deleting all logs
-    // So we'll just return success
-
-    return {
-      success: failedCount === 0,
-      message:
-        failedCount === 0
-          ? `All audit logs have been truncated successfully. User accounts and authentication data preserved.`
-          : `Partial truncation completed. ${deletedCount} audit logs deleted, ${failedCount} failed. User accounts and authentication data preserved.`,
-      truncatedTables: deletedCount > 0 ? 1 : 0,
-      failedTables: failedCount > 0 ? 1 : 0,
-      totalTables: 1,
-      failedTableNames: failedCount > 0 ? ['auditLogs'] : [],
-      invalidateAllCaches: true,
-    };
-  },
+  return {
+    success: failedCount === 0,
+    message:
+      failedCount === 0
+        ? `All audit logs have been truncated successfully. User accounts and authentication data preserved.`
+        : `Partial truncation completed. ${deletedCount} audit logs deleted, ${failedCount} failed. User accounts and authentication data preserved.`,
+    truncatedTables: deletedCount > 0 ? 1 : 0,
+    failedTables: failedCount > 0 ? 1 : 0,
+    totalTables: 1,
+    failedTableNames: failedCount > 0 ? ['auditLogs'] : [],
+    invalidateAllCaches: true,
+  };
 });
 
 /**
@@ -515,27 +431,15 @@ export const truncateData = mutation({
  * Deletes user from userProfiles and auditLogs
  * Note: Better Auth user deletion should be handled via Better Auth HTTP API
  */
-export const deleteUser = mutation({
-  args: {
+export const deleteUser = guarded.mutation(
+  'user.write',
+  {
     userId: v.string(),
   },
-  handler: async (ctx, args) => {
-    // Ensure user is authenticated and is admin
+  async (ctx, args, role) => {
+    // Get current user for self-deletion check
     const currentUser = await authComponent.getAuthUser(ctx);
-    if (!currentUser) {
-      throw new Error('User not authenticated');
-    }
-
     const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
-      throw new Error('Admin access required');
-    }
 
     // Prevent deletion of self
     if (args.userId === currentUserId) {
@@ -581,4 +485,4 @@ export const deleteUser = mutation({
 
     return { success: true };
   },
-});
+);

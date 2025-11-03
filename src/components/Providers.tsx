@@ -1,22 +1,14 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
-import { ConvexReactClient } from 'convex/react';
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { ToastProvider } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { convexClient } from '~/lib/convexClient';
+import { setupClaimRefresh } from '~/lib/roleRefresh';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import type { RouterAuthContext } from '~/router';
-
-const convexUrl = import.meta.env.VITE_CONVEX_URL || import.meta.env.VITE_CONVEX_SITE_URL;
-if (!convexUrl) {
-  throw new Error('VITE_CONVEX_URL or VITE_CONVEX_SITE_URL environment variable is required');
-}
-
-const convex = new ConvexReactClient(convexUrl, {
-  expectAuth: true,
-});
 
 // Auth context for sharing auth state across the app
 const AuthContext = createContext<{
@@ -106,6 +98,11 @@ function AuthProvider({ children }: AuthProviderProps) {
     setAuthContext(newAuthContext);
   }, [isAuthenticated, user?.id, user?.email, user?.name, isPending, isAdmin]);
 
+  // Setup claim refresh when component mounts
+  useEffect(() => {
+    return setupClaimRefresh();
+  }, []);
+
   return (
     <AuthContext.Provider value={{ authContext, isAuthLoading: isPending }}>
       {children}
@@ -120,7 +117,7 @@ export function Providers({ children }: { children: ReactNode }) {
       description="An unexpected error occurred in the application. Please refresh the page to try again."
       showDetails={false}
     >
-      <ConvexBetterAuthProvider client={convex} authClient={authClient}>
+      <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
         <AuthProvider>
           <ThemeProvider
             attribute="class"
