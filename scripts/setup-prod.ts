@@ -38,30 +38,6 @@ async function _askInput(question: string): Promise<string> {
   });
 }
 
-function createNetlifyDeployUrl(
-  convexUrl?: string,
-  convexSiteUrl?: string,
-  betterAuthSecret?: string,
-  convexDeployKey?: string,
-  appName?: string,
-): string | null {
-  // Use the template repository URL directly
-  const httpsRepoUrl = 'https://github.com/dyeoman2/tanstack-start-template';
-  const encodedRepo = encodeURIComponent(httpsRepoUrl);
-
-  // Build environment variables hash for URL - always include variable names even if empty
-  const envVars: string[] = [
-    `APP_NAME=${appName ? encodeURIComponent(appName) : ''}`,
-    `BETTER_AUTH_SECRET=${betterAuthSecret && betterAuthSecret !== '[not found - will be prompted]' ? encodeURIComponent(betterAuthSecret) : ''}`,
-    `VITE_CONVEX_URL=${convexUrl ? encodeURIComponent(convexUrl) : ''}`,
-    `VITE_CONVEX_SITE_URL=${convexSiteUrl ? encodeURIComponent(convexSiteUrl) : ''}`,
-    `CONVEX_DEPLOY_KEY=${convexDeployKey ? encodeURIComponent(convexDeployKey) : ''}`,
-  ];
-
-  const hash = envVars.length > 0 ? `#${envVars.join('&')}` : '';
-  return `https://app.netlify.com/start/deploy?repository=${encodedRepo}${hash}`;
-}
-
 async function setupConvexProduction(): Promise<{
   convexUrl: string;
   deploymentName: string;
@@ -195,49 +171,48 @@ async function main() {
       betterAuthSecret = '[not found - will be prompted]';
     }
 
-    // Create the Netlify deploy URL with environment variables
-    const netlifyDeployUrl = createNetlifyDeployUrl(
-      convexUrl,
-      convexSiteUrl,
-      betterAuthSecret,
-      undefined, // CONVEX_DEPLOY_KEY - user needs to get this manually from Convex dashboard
-      'TanStack Start Template', // APP_NAME - default value
-    );
+    // Get the repository URL for instructions
+    let repoUrl: string;
+    try {
+      const gitRemote = execSync('git config --get remote.origin.url', {
+        encoding: 'utf8',
+        cwd: process.cwd(),
+      }).trim();
 
-    if (netlifyDeployUrl) {
-      console.log('1. Open the Deploy to Netlify link (environment variables are pre-filled):');
-      console.log(`   ${netlifyDeployUrl}`);
-      console.log('2. Authorize Netlify and confirm the repository when prompted.');
-      console.log('3. The environment variables will be automatically set from the URL.');
-      console.log('');
-      console.log('   For CONVEX_DEPLOY_KEY (if not pre-filled):');
-    } else {
-      console.log('1. From a browser, open https://app.netlify.com/start/deploy');
-      console.log(
-        '   When asked for the repository URL, enter your GitHub repo (include https://).',
-      );
-      console.log('2. On the environment variables step, provide these values:');
-      console.log('');
-      console.log(`   BETTER_AUTH_SECRET = ${betterAuthSecret}`);
-      console.log(`   VITE_CONVEX_URL = ${convexUrl}`);
-      console.log(`   VITE_CONVEX_SITE_URL = ${convexSiteUrl}`);
-      console.log('');
-      console.log('   For CONVEX_DEPLOY_KEY:');
+      // Convert SSH URL to HTTPS if needed
+      if (gitRemote.startsWith('git@')) {
+        repoUrl = gitRemote.replace('git@github.com:', 'https://github.com/').replace('.git', '');
+      } else if (gitRemote.startsWith('https://')) {
+        repoUrl = gitRemote.replace('.git', '');
+      } else {
+        throw new Error('Unsupported git remote format');
+      }
+    } catch {
+      repoUrl = 'your GitHub repository URL';
     }
+
+    console.log('1. Go to https://app.netlify.com/start');
+    console.log('2. Click "Deploy manually" (do not use a template)');
+    console.log('3. Connect your GitHub account and select your repository:');
+    console.log(`   ${repoUrl}`);
+    console.log('4. Netlify will detect your netlify.toml file automatically');
+    console.log('5. On the environment variables step, provide these values:');
+    console.log('');
+    console.log(`   BETTER_AUTH_SECRET = ${betterAuthSecret}`);
+    console.log(`   VITE_CONVEX_URL = ${convexUrl}`);
+    console.log(`   VITE_CONVEX_SITE_URL = ${convexSiteUrl}`);
+    console.log('');
+    console.log('   For CONVEX_DEPLOY_KEY:');
     console.log('   1. Go to https://dashboard.convex.dev');
     console.log('   2. Select your project');
     console.log('   3. Go to Settings → Deploy Keys');
     console.log('   4. Click "Generate Production Deploy Key"');
     console.log('   5. Copy the key (starts with "prod:")');
     console.log('');
-    if (netlifyDeployUrl) {
-      console.log('4. Click "Deploy site"');
-    } else {
-      console.log(
-        '3. Netlify will pre-fill the build command and publish directory from netlify.toml.',
-      );
-      console.log('4. Click "Deploy site"');
-    }
+    console.log(
+      '6. Netlify will pre-fill the build command and publish directory from netlify.toml.',
+    );
+    console.log('7. Click "Deploy site"');
     console.log('');
     console.log('💡 Your site will be live at: https://your-site-name.netlify.app');
 

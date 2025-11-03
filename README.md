@@ -62,13 +62,20 @@ A TanStack Start Template built with TanStack Start, featuring modern full-stack
 
 ### ⚡ Quick Start (Local Development)
 
-For the easiest setup experience, run:
+1. **[Create your repository](https://github.com/new?template_name=tanstack-start-template&template_owner=dyeoman2)** from this template
 
-```bash
-git clone https://github.com/dyeoman2/tanstack-start-template.git
-cd tanstack-start-template
-pnpm run setup:all
-```
+2. **Clone your new repository**:
+
+   ```bash
+   git clone https://github.com/YOUR_USERNAME/YOUR_REPO_NAME.git
+   cd YOUR_REPO_NAME
+   ```
+
+3. **Run the automated setup**:
+
+   ```bash
+   pnpm run setup:all
+   ```
 
 This automated script will guide you through local development setup, including:
 
@@ -89,17 +96,15 @@ pnpm run setup:prod
 
 - ✅ Checks for git remote repository
 - ✅ Deploys Convex functions to production
-- ✅ Guides you through getting your Convex deploy key
-- ✅ Creates Netlify site from your git repository
-- ✅ Configures all environment variables automatically
-- ✅ Deploys your application to production
+- ✅ Provides step-by-step Netlify deployment instructions
+- ✅ Pre-fills environment variables for easy copying
+- ✅ Guides you through connecting your existing repository
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
 
 ### 🔑 Environment Variables
 
-- `ROOT_ADMINS` — comma-separated list of email addresses that should always resolve to the `admin` role, even if their stored profile role is lower. This protects against accidentally demoting the last administrator. Configure this in Netlify/Convex/`.env.local` as needed (e.g. `ROOT_ADMINS=ceo@example.com,cto@example.com`).
-- The setup scripts scaffold a local `.env.local` with reasonable defaults, but you still need to provide real credentials (e.g. Convex deployment URLs, Resend keys, S3 settings) and configure the same variables in production (Netlify, Convex env vars, etc.). Keep secrets out of client bundles by accessing them only in `*.server.ts` modules.
+- The setup scripts scaffold a local `.env.local` with reasonable defaults, but you still need to provide real credentials (e.g. Convex deployment URLs, Resend keys, S3 settings) and configure the same variables in production (Netlify, Convex env vars, etc.).
 
 ## 📄 Documentation
 
