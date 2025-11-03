@@ -19,39 +19,55 @@ function AppLayout() {
   const navigate = useNavigate();
   const { isAuthenticated, isPending } = useAuth();
   const redirectRef = useRef(false);
-  const unauthenticatedStreakRef = useRef(0);
+  const redirectTimerRef = useRef<number | null>(null);
   const redirectTarget = location.href ?? '/app';
 
   useEffect(() => {
     if (isPending) {
-      unauthenticatedStreakRef.current = 0;
+      if (redirectTimerRef.current !== null) {
+        window.clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
       return;
     }
 
     if (!isAuthenticated) {
-      unauthenticatedStreakRef.current += 1;
+      if (redirectTimerRef.current === null) {
+        redirectTimerRef.current = window.setTimeout(() => {
+          redirectTimerRef.current = null;
 
-      if (unauthenticatedStreakRef.current < 2) {
-        return;
+          if (redirectRef.current) {
+            return;
+          }
+
+          redirectRef.current = true;
+          void navigate({
+            to: '/login',
+            search: { redirect: redirectTarget },
+            replace: true,
+          }).catch(() => {
+            redirectRef.current = false;
+          });
+        }, 400);
       }
-
-      if (redirectRef.current) {
-        return;
-      }
-
-      redirectRef.current = true;
-      void navigate({
-        to: '/login',
-        search: { redirect: redirectTarget },
-        replace: true,
-      }).catch(() => {
-        redirectRef.current = false;
-      });
     } else {
-      unauthenticatedStreakRef.current = 0;
+      if (redirectTimerRef.current !== null) {
+        window.clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+
       redirectRef.current = false;
     }
   }, [isAuthenticated, isPending, navigate, redirectTarget]);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current !== null) {
+        window.clearTimeout(redirectTimerRef.current);
+        redirectTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (isPending || !isAuthenticated) {
     return <AppLayoutSkeleton />;

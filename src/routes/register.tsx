@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, redirect, useNavigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
 import { Crown, Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -194,12 +194,16 @@ function RegisterPage() {
     };
   }, []);
 
-  if (isPending) {
-    return <AuthSkeleton />;
-  }
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
 
-  if (isAuthenticated) {
-    throw redirect({ to: '/app' });
+    void navigate({ to: '/app', replace: true });
+  }, [isAuthenticated, navigate]);
+
+  if (isPending || isAuthenticated) {
+    return <AuthSkeleton />;
   }
 
   return (

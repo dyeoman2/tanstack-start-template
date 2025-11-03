@@ -1,9 +1,10 @@
 import type { api } from '@convex/_generated/api';
 import { useRouter } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
 import { signOut } from '~/features/auth/auth-client';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import { MetricCard, SkeletonCard } from './MetricCard';
 import { RecentActivity } from './RecentActivity';
 
@@ -16,13 +17,18 @@ type DashboardProps = {
 
 export function Dashboard({ data, isLoading }: DashboardProps) {
   const router = useRouter();
+  const { isAdmin, isPending: authPending } = useAuth();
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const shouldInvalidate = useMemo(
+    () => !authPending && isAdmin && !isLoading && data === null,
+    [authPending, isAdmin, isLoading, data],
+  );
 
   useEffect(() => {
-    if (!isLoading && data === null) {
+    if (shouldInvalidate) {
       void router.invalidate();
     }
-  }, [data, isLoading, router]);
+  }, [router, shouldInvalidate]);
 
   const handleSignOut = useCallback(async () => {
     setIsSigningOut(true);
@@ -34,7 +40,6 @@ export function Dashboard({ data, isLoading }: DashboardProps) {
     }
   }, [router]);
 
-  const hasDashboardData = !!data;
   const stats = data?.stats ?? null;
   const activity = data?.activity ?? [];
 
@@ -79,7 +84,35 @@ export function Dashboard({ data, isLoading }: DashboardProps) {
     );
   }
 
-  if (!hasDashboardData) {
+  if (!isLoading && data === null) {
+    if (!isAdmin) {
+      return (
+        <div className="space-y-6">
+          <PageHeader
+            title="Dashboard"
+            description="TanStack Start Template built with Better Auth, Convex, Tailwind CSS, Shadcn/UI, Resend, and deployed to Netlify."
+          />
+
+          <div className="bg-muted border border-border rounded-md p-6">
+            <div className="space-y-4 text-sm text-muted-foreground">
+              <div className="space-y-2">
+                <h3 className="text-base font-semibold text-foreground">Limited access</h3>
+                <p>
+                  Your account does not have admin permissions, so the dashboard metrics are
+                  unavailable. If you believe you should have access, contact an administrator.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-3">
+                <Button variant="outline" size="sm" onClick={handleSignOut} disabled={isSigningOut}>
+                  {isSigningOut ? 'Signing out…' : 'Sign out'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="space-y-6">
         <PageHeader
