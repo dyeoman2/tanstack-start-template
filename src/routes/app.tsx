@@ -19,14 +19,22 @@ function AppLayout() {
   const navigate = useNavigate();
   const { isAuthenticated, isPending } = useAuth();
   const redirectRef = useRef(false);
+  const unauthenticatedStreakRef = useRef(0);
   const redirectTarget = location.href ?? '/app';
 
   useEffect(() => {
     if (isPending) {
+      unauthenticatedStreakRef.current = 0;
       return;
     }
 
     if (!isAuthenticated) {
+      unauthenticatedStreakRef.current += 1;
+
+      if (unauthenticatedStreakRef.current < 2) {
+        return;
+      }
+
       if (redirectRef.current) {
         return;
       }
@@ -40,6 +48,7 @@ function AppLayout() {
         redirectRef.current = false;
       });
     } else {
+      unauthenticatedStreakRef.current = 0;
       redirectRef.current = false;
     }
   }, [isAuthenticated, isPending, navigate, redirectTarget]);

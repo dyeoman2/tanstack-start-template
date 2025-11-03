@@ -41,23 +41,26 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
       );
 
       // Apply server-side rate limiting (defense-in-depth)
-      const rateLimitResult = await fetchAction(api.auth.rateLimitAction, {
-        token: rateLimitToken,
-        name: 'signup',
-        key: `signup:${clientIP}`,
-        config: {
-          kind: 'token bucket',
-          rate: 5, // 5 attempts
-          period: 60 * 60 * 1000, // per hour
-          capacity: 5,
-        },
-      });
+      // Skip rate limiting in development mode
+      if (!import.meta.env.DEV) {
+        const rateLimitResult = await fetchAction(api.auth.rateLimitAction, {
+          token: rateLimitToken,
+          name: 'signup',
+          key: `signup:${clientIP}`,
+          config: {
+            kind: 'token bucket',
+            rate: 5, // 5 attempts
+            period: 60 * 60 * 1000, // per hour
+            capacity: 5,
+          },
+        });
 
-      if (!rateLimitResult.ok) {
-        const retryMinutes = Math.ceil(rateLimitResult.retryAfter / (60 * 1000));
-        throw new Error(
-          `Rate limit exceeded. Too many signup attempts. Please try again in ${retryMinutes} minutes.`,
-        );
+        if (!rateLimitResult.ok) {
+          const retryMinutes = Math.ceil(rateLimitResult.retryAfter / (60 * 1000));
+          throw new Error(
+            `Rate limit exceeded. Too many signup attempts. Please try again in ${retryMinutes} minutes.`,
+          );
+        }
       }
 
       // Check if this would be the first user (using Convex)
