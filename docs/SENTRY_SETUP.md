@@ -1,0 +1,223 @@
+# Sentry Setup Guide
+
+This guide will help you set up Sentry error monitoring, performance tracing, session replay, and logging for your TanStack Start application.
+
+## What's Included
+
+Your TanStack Start template comes with a complete Sentry integration that includes:
+
+- **Error Monitoring**: Automatic capture of unhandled errors and exceptions
+- **Performance Tracing**: TanStack Router navigation tracing and custom spans
+- **Session Replay**: Video-like reproduction of user sessions (10% sample rate, 100% for errors)
+- **User Feedback**: User feedback collection integration
+- **Logging**: Centralized log collection and correlation with errors
+- **Server-side Monitoring**: Error tracking for server functions and API routes
+
+## Prerequisites
+
+1. **Sentry Account**: Sign up at [sentry.io](https://sentry.io/signup/) (free tier available)
+2. **Sentry Project**: Create a new project in Sentry for your application
+
+## Step 1: Get Your Sentry DSN
+
+1. Go to your [Sentry dashboard](https://sentry.io)
+2. Select your project (or create a new one)
+3. Go to **Settings** → **Client Keys (DSN)**
+4. Copy the **DSN** value (it should look like: `https://your-key.ingest.your-region.sentry.io/project-id`)
+
+## Step 2: Development Setup
+
+### Add Environment Variable
+
+Create or update your `.env.local` file in the project root:
+
+```bash
+# Add this line to your .env.local file
+VITE_SENTRY_DSN=https://your-project-dsn.ingest.sentry.io/project-id
+```
+
+### Test the Setup
+
+1. Start your development server:
+
+   ```bash
+   pnpm dev
+   ```
+
+2. Visit the test page: `http://localhost:3000/test-sentry`
+
+3. Click the "Break the world (Test Sentry)" button
+
+4. Check your Sentry dashboard - you should see:
+   - A frontend error
+   - A server-side error from the API route
+   - A performance trace
+
+## Step 3: Production Setup
+
+### Convex Environment Setup
+
+Your application uses Convex for data management. Set the Sentry DSN in Convex:
+
+```bash
+# Set environment variable in Convex
+npx convex env set VITE_SENTRY_DSN https://your-project-dsn.ingest.sentry.io/project-id --prod
+
+```
+
+### Netlify Deployment
+
+#### Option 1: Netlify CLI
+
+If you're deploying via Netlify CLI:
+
+```bash
+# Set the environment variable
+npx netlify env:set VITE_SENTRY_DSN https://your-project-dsn.ingest.sentry.io/project-id
+
+# Deploy
+npx netlify deploy --prod
+```
+
+#### Option 2: Netlify Dashboard
+
+1. Go to your [Netlify dashboard](https://app.netlify.com)
+2. Select your site
+3. Go to **Site settings** → **Environment variables**
+4. Add a new variable:
+   - **Key**: `VITE_SENTRY_DSN`
+   - **Value**: `https://your-project-dsn.ingest.sentry.io/project-id`
+   - **Scopes**: Check both "Builds" and "Functions" (if using Netlify Functions)
+
+## Step 4: Verify Production Setup
+
+After deploying to production:
+
+1. Visit your live application
+2. Go to `/test-sentry` (or create a test error in your app)
+3. Trigger an error
+4. Check your Sentry dashboard for the production errors
+
+## Configuration Options
+
+### Development Behavior
+
+**Sentry is completely disabled in development** except on the test page (`/test-sentry`). This prevents any data collection during development while still allowing you to test Sentry integration.
+
+- **Development**: Only the `/test-sentry` page enables Sentry monitoring
+- **Production**: Full Sentry monitoring (errors, performance, replays, logs)
+
+### Logging Behavior
+
+**Logs are enabled only in production** to reduce noise during development.
+
+### Adjust Sample Rates (Optional)
+
+You can modify the sample rates in `src/lib/sentry.ts`:
+
+```typescript
+// For production, consider lower sample rates
+tracesSampleRate: 0.1, // 10% instead of 100%
+replaysSessionSampleRate: 0.01, // 1% instead of 10%
+```
+
+### Environment-Specific Configuration
+
+Sentry automatically detects environments, but you can customize per environment:
+
+```typescript
+Sentry.init({
+  dsn: sentryDsn,
+  environment: import.meta.env.PROD ? 'production' : 'development',
+  // ... other options
+});
+```
+
+## Testing Different Error Types
+
+### Frontend Errors
+
+```typescript
+// In any component
+throw new Error('Frontend test error');
+```
+
+### Server Function Errors
+
+```typescript
+// In a server function (*.server.ts)
+export async function someServerFunction() {
+  throw new Error('Server function error');
+}
+```
+
+### API Route Errors
+
+```typescript
+// In an API route
+export const Route = createFileRoute('/api/test')({
+  server: {
+    handlers: {
+      GET: () => {
+        throw new Error('API route error');
+      },
+    },
+  },
+});
+```
+
+## Troubleshooting
+
+### Errors Not Appearing in Sentry
+
+1. **Check your DSN**: Make sure `VITE_SENTRY_DSN` is set correctly
+2. **Environment**: Ensure the environment variable is available (check browser dev tools → Console → `import.meta.env`)
+3. **Network**: Make sure Sentry's endpoints aren't blocked by ad blockers or firewalls
+4. **Timing**: Errors might take a few minutes to appear in the dashboard
+
+### Common Issues
+
+### "Sentry not initialized" warnings
+
+- Check that `initializeSentry(router)` is called in `src/router.tsx`
+- Verify the DSN is not undefined
+
+### Missing server-side errors
+
+- Ensure `instrument.server.mjs` is being loaded (check dev/build scripts)
+- Verify server environment has the DSN
+
+### Performance traces not showing
+
+- Check that `Sentry.tanstackRouterBrowserTracingIntegration(router)` is included
+- Verify `tracesSampleRate` is set
+
+### Debug Mode
+
+Enable debug logging temporarily:
+
+```typescript
+Sentry.init({
+  dsn: sentryDsn,
+  debug: true, // Remove in production
+  // ... other options
+});
+```
+
+## Additional Resources
+
+- [Sentry TanStack Start Documentation](https://docs.sentry.io/platforms/javascript/guides/tanstackstart-react/)
+- [Sentry Dashboard](https://sentry.io)
+- [TanStack Start Documentation](https://tanstack.com/start)
+
+## Support
+
+If you encounter issues:
+
+1. Check the [Sentry Troubleshooting Guide](https://docs.sentry.io/platforms/javascript/guides/tanstackstart-react/troubleshooting/)
+2. Search existing issues on [GitHub](https://github.com/getsentry/sentry-javascript/issues)
+3. Create a new issue if needed
+
+---
+
+**Note**: This setup provides comprehensive monitoring out of the box. Review Sentry's [configuration options](https://docs.sentry.io/platforms/javascript/guides/tanstackstart-react/configuration/) to customize for your specific needs.

@@ -1,6 +1,8 @@
+import * as Sentry from '@sentry/tanstackstart-react';
 import type { ErrorComponentProps } from '@tanstack/react-router';
 import { ErrorComponent, Link, useRouter } from '@tanstack/react-router';
 import { AlertTriangle, ArrowLeft, Home, RefreshCw } from 'lucide-react';
+import { useEffect } from 'react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 
@@ -19,6 +21,10 @@ function RouteErrorBoundary({
   showHomeButton?: boolean;
 }) {
   const router = useRouter();
+
+  useEffect(() => {
+    Sentry.captureException(error);
+  }, [error]);
 
   console.error(`${feature} Route Error:`, error);
 

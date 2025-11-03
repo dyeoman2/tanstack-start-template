@@ -46,7 +46,8 @@ A TanStack Start Template built with TanStack Start, featuring modern full-stack
 ### 📧 **Production Features**
 
 - **Email integration** with Resend for transactional emails
-- **Error handling** with comprehensive error boundaries
+- **Error monitoring** with Sentry integration (optional)
+- **Performance monitoring** and session replay
 - **SEO optimization** utilities
 - **Export functionality** for data management
 - **Virtualized components** for handling large datasets
@@ -102,13 +103,26 @@ pnpm run setup:prod
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
 
-### 🔑 Environment Variables
+### 🔗 Link Your Local Project to Netlify (Optional)
 
-- The setup scripts scaffold a local `.env.local` with reasonable defaults, but you still need to provide real credentials (e.g. Convex deployment URLs, Resend keys, S3 settings) and configure the same variables in production (Netlify, Convex env vars, etc.).
+After deploying, link your local project to Netlify for easier management:
 
-## 📄 Documentation
+```bash
+# Link your local project to the deployed Netlify site
+npx netlify link
 
-- [Email Setup Guide](docs/EMAIL_SETUP.md) - Password reset and transactional email configuration
+# This allows you to:
+# - Deploy updates with `npx netlify deploy --prod`
+# - View build logs locally
+# - Manage environment variables from CLI
+```
+
+## 📄 Third Party Services Setup
+
+In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. These are optional, but recommended for production.
+
+- [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration
+- [Sentry Setup](./docs/SENTRY_SETUP.md) - Error monitoring and performance tracking
 
 ## 📄 License
 

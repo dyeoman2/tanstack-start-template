@@ -16,17 +16,56 @@ The application uses Resend for sending password reset emails with beautiful, br
 
 ### 2. Configure Environment Variables
 
+#### Local Development
+
 Add your Resend API key and optional email sender configuration to your `.env.local` file:
 
 ```bash
 # Email notifications
-RESEND_API_KEY=resend-api-key
+RESEND_API_KEY=your-resend-api-key-here
 
 # Optional: Custom sender email address (defaults to onboarding@resend.dev)
 RESEND_EMAIL_SENDER=onboarding@resend.dev
 ```
 
-### 3. Domain Verification (Production)
+#### Production Setup
+
+##### Netlify Production Setup
+
+For Netlify deployments, set these environment variables via CLI or dashboard:
+
+**Netlify CLI:**
+
+```bash
+# Set environment variables
+npx netlify env:set RESEND_API_KEY your-resend-api-key-here
+npx netlify env:set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
+
+# Deploy
+npx netlify deploy --prod
+```
+
+**Netlify Dashboard:**
+
+1. Go to your [Netlify dashboard](https://app.netlify.com)
+2. Select your site → **Site settings** → **Environment variables**
+3. Add the following variables:
+   - `RESEND_API_KEY`: Your Resend API key
+   - `RESEND_EMAIL_SENDER`: Your verified sender email (optional)
+
+##### Convex Environment Setup
+
+Since email functionality runs in Convex functions, you need to set the environment variables in Convex:
+
+```bash
+# Set the Resend API key in Convex (required for email functionality)
+npx convex env set RESEND_API_KEY your-resend-api-key-here --prod
+
+# Set custom sender email (optional, defaults to onboarding@resend.dev)
+npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
+```
+
+### 4. Domain Verification (Production)
 
 For production deployments, you'll need to verify your domain with Resend:
 
@@ -87,16 +126,20 @@ You can also test the full password reset flow:
 
 ### Common Issues
 
-**"RESEND_API_KEY environment variable is required"**
-- Make sure you've added the API key to your `.env.local` file
-- Restart the development server after adding the key
+#### "RESEND_API_KEY environment variable is required"
 
-**"Failed to send password reset email"**
+- **Local development**: Make sure you've added the API key to your `.env.local` file and restarted the dev server
+- **Convex**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key`
+- **Production**: Verify the environment variable is set in your hosting platform (Netlify)
+
+#### "Failed to send password reset email"
+
 - Check your Resend API key is valid
 - Verify your domain is verified (production)
 - Check Resend dashboard for delivery status
 
-**Emails not being delivered**
+#### Emails not being delivered
+
 - Check spam/junk folders
 - Verify domain verification status
 - Check Resend dashboard for bounce/complaint reports
@@ -104,6 +147,7 @@ You can also test the full password reset flow:
 ### Logs
 
 Email operations are logged with the following information:
+
 - Success/failure status
 - Email addresses (obfuscated for privacy)
 - Resend message IDs
@@ -148,6 +192,7 @@ The application will automatically use this email address for all outgoing email
 ## Support
 
 For issues with email delivery, check:
+
 - Resend dashboard for delivery metrics
 - Application logs for error details
 - Network connectivity to Resend API

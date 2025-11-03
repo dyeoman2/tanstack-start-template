@@ -83,6 +83,15 @@ S3_FORCE_PATH_STYLE=true
 S3_PUBLIC_URL=http://localhost:9000
 
 # ==========================================
+# SENTRY ERROR MONITORING (Optional)
+# ==========================================
+
+# Optional: Sentry DSN for error monitoring and performance tracking
+# Get from: https://sentry.io/settings/projects/YOUR_PROJECT/keys/
+# VITE_SENTRY_DSN=https://your-project-dsn.ingest.sentry.io/project-id
+# Leave commented out to disable Sentry monitoring
+
+# ==========================================
 # CONVEX DATABASE (Auto-configured)
 # ==========================================
 

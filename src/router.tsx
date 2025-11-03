@@ -1,4 +1,5 @@
 import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import { initializeSentry } from '~/lib/sentry';
 import type { UserId } from '~/lib/shared/user-id';
 import { DefaultCatchBoundary } from './components/DefaultCatchBoundary';
 import { NotFound } from './components/NotFound';
@@ -30,6 +31,9 @@ export function getRouter() {
       user: null,
     } satisfies RouterAuthContext,
   });
+
+  // Initialize Sentry for error tracking and performance monitoring
+  initializeSentry(router);
 
   return router;
 }
