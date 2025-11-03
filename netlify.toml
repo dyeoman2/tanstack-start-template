@@ -15,35 +15,35 @@
   to = "/index.html"
   status = 200
 
-[template]
-  full = true
+# [template]
+#   full = true
 
-[[template.environment]]
-name = "BETTER_AUTH_SECRET"
-required = true
-default = ""
-description = "32-byte base64 secret for JWT signing and rate limiting. Generate with: openssl rand -base64 32. Must match the secret used in Convex. Example: 'abc123def456ghi789jkl012mno345pqr678stu901vwx='"
+# [[template.environment]]
+# name = "BETTER_AUTH_SECRET"
+# required = true
+# default = ""
+# description = "32-byte base64 secret for JWT signing and rate limiting. Generate with: openssl rand -base64 32. Must match the secret used in Convex. Example: 'abc123def456ghi789jkl012mno345pqr678stu901vwx='"
 
-[[template.environment]]
-name = "CONVEX_DEPLOY_KEY"
-required = true
-default = ""
-description = "Production deploy key from Convex Dashboard. To get this: 1) Go to https://dashboard.convex.dev, 2) Select your project, 3) Go to Settings → Deploy Keys, 4) Click 'Generate Production Deploy Key', 5) Copy the key (starts with 'prod:'). Required for deploying Convex functions during Netlify build."
+# [[template.environment]]
+# name = "CONVEX_DEPLOY_KEY"
+# required = true
+# default = ""
+# description = "Production deploy key from Convex Dashboard. To get this: 1) Go to https://dashboard.convex.dev, 2) Select your project, 3) Go to Settings → Deploy Keys, 4) Click 'Generate Production Deploy Key', 5) Copy the key (starts with 'prod:'). Required for deploying Convex functions during Netlify build."
 
-[[template.environment]]
-name = "VITE_CONVEX_SITE_URL"
-required = true
-default = ""
-description = "Convex site URL for client-side connections. Run 'npx convex env get VITE_CONVEX_SITE_URL --prod' to get this value. Example: https://abc-123.convex.site"
+# [[template.environment]]
+# name = "VITE_CONVEX_SITE_URL"
+# required = true
+# default = ""
+# description = "Convex site URL for client-side connections. Run 'npx convex env get VITE_CONVEX_SITE_URL --prod' to get this value. Example: https://abc-123.convex.site"
 
-[[template.environment]]
-name = "VITE_CONVEX_URL"
-required = true
-default = ""
-description = "Convex deployment URL for client-side connections. Run 'npx convex env get VITE_CONVEX_URL --prod' to get this value. Example: https://abc-123.convex.cloud"
+# [[template.environment]]
+# name = "VITE_CONVEX_URL"
+# required = true
+# default = ""
+# description = "Convex deployment URL for client-side connections. Run 'npx convex env get VITE_CONVEX_URL --prod' to get this value. Example: https://abc-123.convex.cloud"
 
-[[template.environment]]
-name = "APP_NAME"
-required = false
-default = "TanStack Start Template"
-description = "Application name used in email templates and branding. Defaults to 'TanStack Start Template'."
+# [[template.environment]]
+# name = "APP_NAME"
+# required = false
+# default = "TanStack Start Template"
+# description = "Application name used in email templates and branding. Defaults to 'TanStack Start Template'."
