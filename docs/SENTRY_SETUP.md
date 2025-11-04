@@ -102,14 +102,22 @@ After deploying to production:
 
 ### Development Behavior
 
-**Sentry is completely disabled in development** except on the test page (`/test-sentry`). This prevents any data collection during development while still allowing you to test Sentry integration.
+Sentry stays dormant in development until you visit the test page (`/test-sentry`). Hitting that page—either directly or via client navigation—boots the SDK for the remainder of the session so you can verify errors, tracing, logging, and profiling locally without collecting data during normal development.
 
-- **Development**: Only the `/test-sentry` page enables Sentry monitoring
+- **Development**: Open `/test-sentry` to enable monitoring for the current session
 - **Production**: Full Sentry monitoring (errors, performance, replays, logs)
 
 ### Logging Behavior
 
-**Logs are enabled only in production** to reduce noise during development.
+Console logging is forwarded to Sentry in production and while the development session is in test mode, helping you confirm log collection before deploying.
+
+### Server Profiling in Development
+
+The template attempts to load Sentry's native Node profiling module during local runs. If the prebuilt binary for your platform is unavailable, you'll see a warning (`Node profiling native module not available`). The rest of the integration—including server errors, logs, and tracing—continues to work; only server CPU profiling is skipped locally.
+
+Install `@sentry/profiling-node` for your platform, then restart the dev server so the integration can load. Profiling binaries currently ship for Node ABIs 93/108/115/127 (Node 16-22). Node 24 uses ABI 137; until Sentry ships a matching binary you will see the warning and CPU profiling will remain disabled locally.
+
+> Note: The instrumentation uses only static `require` calls on the server (no dynamic imports) so the warning you see is purely about Sentry’s missing Node 24 binary.
 
 ### Adjust Sample Rates (Optional)
 

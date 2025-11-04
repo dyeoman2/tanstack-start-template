@@ -20,7 +20,7 @@ export function SentryTestButton() {
           },
           async () => {
             // Simulate some work that should be profiled
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, 100));
 
             // Test API call that will trigger server-side profiling and error
             const res = await fetch('/api/sentry-example');

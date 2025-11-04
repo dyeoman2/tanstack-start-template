@@ -18,7 +18,7 @@ export const Route = createFileRoute('/api/sentry-example')({
           },
           async () => {
             // Simulate some server work that should be profiled
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise((resolve) => setTimeout(resolve, 50));
 
             // Throw error to test error tracking
             throw new Error('Sentry Example Route Error');

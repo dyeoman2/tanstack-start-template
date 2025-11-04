@@ -11,7 +11,8 @@ function TestSentryRoute() {
       <div className="max-w-md mx-auto p-6 bg-card rounded-lg shadow-lg border">
         <h1 className="text-2xl font-bold text-center mb-6">Sentry Test Page</h1>
         <p className="text-muted-foreground mb-6 text-center">
-          Click the button below to test all Sentry features: error monitoring, performance tracing, console logging, and profiling.
+          Click the button below to test all Sentry features: error monitoring, performance tracing,
+          console logging, and profiling.
         </p>
         <div className="flex justify-center">
           <SentryTestButton />
