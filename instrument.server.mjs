@@ -16,7 +16,7 @@ try {
   } else {
     console.info('[sentry] Node profiling integration enabled.');
   }
-} catch (error) {
+} catch (_error) {
   console.warn(
     '[sentry] Node profiling native module not available, continuing without profiling integration.',
   );

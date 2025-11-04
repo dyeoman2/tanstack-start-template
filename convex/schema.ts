@@ -48,4 +48,14 @@ export default defineSchema({
   })
     .index('by_identifier_kind', ['identifier', 'kind'])
     .index('by_createdAt', ['createdAt']),
+
+  aiMessageUsage: defineTable({
+    userId: v.string(),
+    messagesUsed: v.number(),
+    pendingMessages: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastReservedAt: v.optional(v.number()),
+    lastCompletedAt: v.optional(v.number()),
+  }).index('by_userId', ['userId']),
 });

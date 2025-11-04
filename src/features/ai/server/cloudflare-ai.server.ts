@@ -1,4 +1,8 @@
+import { api } from '@convex/_generated/api';
+import { createAuth } from '@convex/auth';
+import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
+import { getCookie } from '@tanstack/react-start/server';
 import { generateObject, generateText, type LanguageModel, streamText } from 'ai';
 import { createWorkersAI } from 'workers-ai-provider';
 import { z } from 'zod';
@@ -65,6 +69,59 @@ const structuredGenerationSchema = z.object({
   topic: z.string().min(1, 'Topic is required'),
   style: z.enum(['formal', 'casual', 'technical']).default('formal'),
 });
+
+interface AiUsageMetadata {
+  provider?: string;
+  model?: string;
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+function buildReservationError(reservation: {
+  requiresUpgrade?: boolean;
+  reason?: string;
+  errorMessage?: string;
+  freeLimit: number;
+  usage: { freeMessagesRemaining: number };
+}) {
+  if (reservation.requiresUpgrade && reservation.reason !== 'autumn_not_configured') {
+    return new Error(
+      `You have used all ${reservation.freeLimit} free AI messages. Upgrade your plan to continue.`,
+    );
+  }
+
+  if (reservation.reason === 'autumn_not_configured') {
+    return new Error(
+      'Autumn billing is not configured. Follow docs/AUTUMN_SETUP.md to enable paid AI access.',
+    );
+  }
+
+  if (reservation.reason === 'autumn_check_failed') {
+    const detail = reservation.errorMessage ? ` (${reservation.errorMessage})` : '';
+    return new Error(`Unable to verify your AI subscription${detail}. Please try again shortly.`);
+  }
+
+  return new Error('Unable to reserve an AI message. Please try again in a moment.');
+}
+
+function extractUsageMetadata(
+  usage: {
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+  } | null,
+  provider?: string,
+  model?: string,
+): AiUsageMetadata {
+  return {
+    provider,
+    model,
+    totalTokens: usage?.totalTokens,
+    inputTokens: usage?.inputTokens,
+    outputTokens: usage?.outputTokens,
+  };
+}
 
 // Helper functions for AI operations
 async function generateWithWorkersAIHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
@@ -251,8 +308,6 @@ async function* streamWithGatewayHelper(prompt: string, model: 'llama' | 'falcon
   // Yield final result with usage (estimated if not available)
   const usage = await result.usage;
   const finishReason = await result.finishReason;
-  console.log('Gateway usage data:', usage);
-  console.log('Gateway finish reason:', finishReason);
 
   // If usage data is not available or all zeros, estimate based on text
   const estimatedUsage =
@@ -276,7 +331,52 @@ export const generateWithWorkersAI = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
   .handler(async ({ data }) => {
     await requireAuth();
-    return await generateWithWorkersAIHelper(data.prompt, data.model);
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: { provider: 'cloudflare-workers-ai', model: data.model },
+    });
+
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
+
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
+    };
+
+    try {
+      const result = await generateWithWorkersAIHelper(data.prompt, data.model);
+      try {
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(result.usage ?? null, result.provider, result.model),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      return result;
+    } catch (error) {
+      await releaseReservation();
+      throw error;
+    }
   });
 
 // Streaming version for real-time text updates
@@ -284,7 +384,80 @@ export const streamWithWorkersAI = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
   .handler(async function* ({ data }) {
     await requireAuth();
-    yield* streamWithWorkersAIHelper(data.prompt, data.model);
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: { provider: 'cloudflare-workers-ai', model: data.model },
+    });
+
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
+
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
+    };
+
+    let providerFromMetadata: string | undefined;
+    let modelFromMetadata: string | undefined;
+
+    try {
+      const stream = await streamWithWorkersAIHelper(data.prompt, data.model);
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'metadata') {
+          providerFromMetadata = 'provider' in chunk ? chunk.provider : undefined;
+          modelFromMetadata = 'model' in chunk ? chunk.model : undefined;
+          yield chunk;
+          continue;
+        }
+
+        if (chunk.type === 'complete') {
+          try {
+            const completion = await fetchAction(api.ai.completeAiMessage, {
+              mode: reservation.mode,
+              metadata: extractUsageMetadata(
+                chunk.usage ?? null,
+                providerFromMetadata ?? 'cloudflare-workers-ai',
+                modelFromMetadata ?? data.model,
+              ),
+            });
+            usageFinalized = true;
+            if (completion.trackError) {
+              console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+            }
+          } catch (completionError) {
+            await releaseReservation();
+            throw completionError instanceof Error
+              ? completionError
+              : new Error('Failed to finalize AI usage.');
+          }
+
+          yield chunk;
+          continue;
+        }
+
+        yield chunk;
+      }
+
+      if (!usageFinalized) {
+        await releaseReservation();
+      }
+    } catch (error) {
+      if (!usageFinalized) {
+        await releaseReservation();
+      }
+      throw error;
+    }
   });
 
 // Inference via AI Gateway (with monitoring/logging)
@@ -292,7 +465,52 @@ export const generateWithGateway = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
   .handler(async ({ data }) => {
     await requireAuth();
-    return await generateWithGatewayHelper(data.prompt, data.model);
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: { provider: 'cloudflare-gateway-workers-ai', model: data.model },
+    });
+
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
+
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
+    };
+
+    try {
+      const result = await generateWithGatewayHelper(data.prompt, data.model);
+      try {
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(result.usage ?? null, result.provider, result.model),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      return result;
+    } catch (error) {
+      await releaseReservation();
+      throw error;
+    }
   });
 
 // Streaming version for gateway
@@ -300,7 +518,80 @@ export const streamWithGateway = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
   .handler(async function* ({ data }) {
     await requireAuth();
-    yield* streamWithGatewayHelper(data.prompt, data.model);
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: { provider: 'cloudflare-gateway-workers-ai', model: data.model },
+    });
+
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
+
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
+    };
+
+    let providerFromMetadata: string | undefined;
+    let modelFromMetadata: string | undefined;
+
+    try {
+      const stream = await streamWithGatewayHelper(data.prompt, data.model);
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'metadata') {
+          providerFromMetadata = 'provider' in chunk ? chunk.provider : undefined;
+          modelFromMetadata = 'model' in chunk ? chunk.model : undefined;
+          yield chunk;
+          continue;
+        }
+
+        if (chunk.type === 'complete') {
+          try {
+            const completion = await fetchAction(api.ai.completeAiMessage, {
+              mode: reservation.mode,
+              metadata: extractUsageMetadata(
+                chunk.usage ?? null,
+                providerFromMetadata ?? 'cloudflare-gateway-workers-ai',
+                modelFromMetadata ?? data.model,
+              ),
+            });
+            usageFinalized = true;
+            if (completion.trackError) {
+              console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+            }
+          } catch (completionError) {
+            await releaseReservation();
+            throw completionError instanceof Error
+              ? completionError
+              : new Error('Failed to finalize AI usage.');
+          }
+
+          yield chunk;
+          continue;
+        }
+
+        yield chunk;
+      }
+
+      if (!usageFinalized) {
+        await releaseReservation();
+      }
+    } catch (error) {
+      if (!usageFinalized) {
+        await releaseReservation();
+      }
+      throw error;
+    }
   });
 
 // Structured output example using Workers AI
@@ -309,41 +600,90 @@ export const generateStructuredResponse = createServerFn({ method: 'POST' })
   .inputValidator(structuredGenerationSchema)
   .handler(async ({ data }) => {
     await requireAuth();
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
 
-    const { llamaModel } = getWorkersAIProvider();
-    const result = await generateObject({
-      model: llamaModel,
-      schema: z.object({
-        title: z.string(),
-        summary: z.string(),
-        keyPoints: z.array(z.string()),
-        category: z.string(),
-        difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
-      }),
-      prompt: `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: {
+        provider: 'cloudflare-workers-ai-structured',
+        model: '@cf/meta/llama-3.1-8b-instruct',
+      },
     });
 
-    // If usage data is not available or all zeros, estimate based on text
-    const estimatedUsage =
-      !result.usage || !result.usage.totalTokens || result.usage.totalTokens === 0
-        ? {
-            inputTokens: estimateTokens(
-              `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
-            ),
-            outputTokens: estimateTokens(JSON.stringify(result.object)),
-            totalTokens:
-              estimateTokens(
-                `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
-              ) + estimateTokens(JSON.stringify(result.object)),
-          }
-        : result.usage;
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
 
-    return {
-      provider: 'cloudflare-workers-ai-structured',
-      model: '@cf/meta/llama-3.1-8b-instruct',
-      structuredData: result.object,
-      usage: estimatedUsage,
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
     };
+
+    try {
+      const { llamaModel } = getWorkersAIProvider();
+      const result = await generateObject({
+        model: llamaModel,
+        schema: z.object({
+          title: z.string(),
+          summary: z.string(),
+          keyPoints: z.array(z.string()),
+          category: z.string(),
+          difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
+        }),
+        prompt: `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
+      });
+
+      const estimatedUsage =
+        !result.usage || !result.usage.totalTokens || result.usage.totalTokens === 0
+          ? {
+              inputTokens: estimateTokens(
+                `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
+              ),
+              outputTokens: estimateTokens(JSON.stringify(result.object)),
+              totalTokens:
+                estimateTokens(
+                  `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
+                ) + estimateTokens(JSON.stringify(result.object)),
+            }
+          : result.usage;
+
+      try {
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(
+            estimatedUsage,
+            'cloudflare-workers-ai-structured',
+            '@cf/meta/llama-3.1-8b-instruct',
+          ),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      return {
+        provider: 'cloudflare-workers-ai-structured',
+        model: '@cf/meta/llama-3.1-8b-instruct',
+        structuredData: result.object,
+        usage: estimatedUsage,
+      };
+    } catch (error) {
+      await releaseReservation();
+      throw error;
+    }
   });
 
 // Streaming version for structured output
@@ -351,92 +691,176 @@ export const streamStructuredResponse = createServerFn({ method: 'POST' })
   .inputValidator(structuredGenerationSchema)
   .handler(async function* ({ data }) {
     await requireAuth();
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
 
-    const { llamaModel } = getWorkersAIProvider();
-    const prompt = `Generate a structured explanation about "${data.topic}" in a ${data.style} style. Return ONLY valid JSON with this exact structure: {"title": "string", "summary": "string", "keyPoints": ["string1", "string2"], "category": "string", "difficulty": "beginner|intermediate|advanced"}`;
-
-    const result = await streamText({
-      model: llamaModel,
-      prompt,
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: {
+        provider: 'cloudflare-workers-ai-structured',
+        model: '@cf/meta/llama-3.1-8b-instruct',
+      },
     });
 
-    // Yield metadata first
-    yield {
-      type: 'metadata',
-      provider: 'cloudflare-workers-ai-structured',
-      model: '@cf/meta/llama-3.1-8b-instruct',
-    };
-
-    let accumulatedText = '';
-
-    // Yield text chunks as they come in
-    for await (const delta of result.textStream) {
-      accumulatedText += delta;
-      yield {
-        type: 'text',
-        content: delta,
-      };
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
     }
 
-    // Try to parse the accumulated text as JSON
-    let structuredData = null;
-    let parseError = null;
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
+    };
 
     try {
-      // Clean up the text (remove markdown code blocks if present)
-      let jsonText = accumulatedText.trim();
-      if (jsonText.startsWith('```json')) {
-        jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-      } else if (jsonText.startsWith('```')) {
-        jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      const { llamaModel } = getWorkersAIProvider();
+      const prompt = `Generate a structured explanation about "${data.topic}" in a ${data.style} style. Return ONLY valid JSON with this exact structure: {"title": "string", "summary": "string", "keyPoints": ["string1", "string2"], "category": "string", "difficulty": "beginner|intermediate|advanced"}`;
+
+      const result = await streamText({
+        model: llamaModel,
+        prompt,
+      });
+
+      // Yield metadata first
+      yield {
+        type: 'metadata',
+        provider: 'cloudflare-workers-ai-structured',
+        model: '@cf/meta/llama-3.1-8b-instruct',
+      };
+
+      let accumulatedText = '';
+
+      // Yield text chunks as they come in
+      for await (const delta of result.textStream) {
+        accumulatedText += delta;
+        yield {
+          type: 'text',
+          content: delta,
+        };
       }
 
-      structuredData = JSON.parse(jsonText);
-    } catch (error) {
-      parseError = error instanceof Error ? error.message : 'Failed to parse JSON';
-      // Try to extract JSON from the text if parsing failed
-      const jsonMatch = accumulatedText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          structuredData = JSON.parse(jsonMatch[0]);
-          parseError = null;
-        } catch {
-          // Keep the original error
+      // Try to parse the accumulated text as JSON
+      let structuredData = null;
+      let parseError = null;
+
+      try {
+        // Clean up the text (remove markdown code blocks if present)
+        let jsonText = accumulatedText.trim();
+        if (jsonText.startsWith('```json')) {
+          jsonText = jsonText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        } else if (jsonText.startsWith('```')) {
+          jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+        }
+
+        structuredData = JSON.parse(jsonText);
+      } catch (error) {
+        parseError = error instanceof Error ? error.message : 'Failed to parse JSON';
+        const jsonMatch = accumulatedText.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          try {
+            structuredData = JSON.parse(jsonMatch[0]);
+            parseError = null;
+          } catch {
+            // Keep the original error
+          }
         }
       }
+
+      const usage = await result.usage;
+      const finishReason = await result.finishReason;
+
+      const estimatedUsage =
+        !usage || !usage.totalTokens || usage.totalTokens === 0
+          ? {
+              inputTokens: estimateTokens(prompt),
+              outputTokens: estimateTokens(accumulatedText),
+              totalTokens: estimateTokens(prompt) + estimateTokens(accumulatedText),
+            }
+          : usage;
+
+      try {
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(
+            estimatedUsage,
+            'cloudflare-workers-ai-structured',
+            '@cf/meta/llama-3.1-8b-instruct',
+          ),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      yield {
+        type: 'complete',
+        usage: estimatedUsage,
+        finishReason: finishReason || 'stop',
+        structuredData: structuredData,
+        parseError: parseError,
+        rawText: accumulatedText,
+      };
+    } catch (error) {
+      if (!usageFinalized) {
+        await releaseReservation();
+      }
+      throw error;
     }
-
-    // Yield final result with usage and parsed data
-    const usage = await result.usage;
-    const finishReason = await result.finishReason;
-
-    // If usage data is not available or all zeros, estimate based on text
-    const estimatedUsage =
-      !usage || !usage.totalTokens || usage.totalTokens === 0
-        ? {
-            inputTokens: estimateTokens(prompt),
-            outputTokens: estimateTokens(accumulatedText),
-            totalTokens: estimateTokens(prompt) + estimateTokens(accumulatedText),
-          }
-        : usage;
-
-    yield {
-      type: 'complete',
-      usage: estimatedUsage,
-      finishReason: finishReason || 'stop',
-      structuredData: structuredData,
-      parseError: parseError,
-      rawText: accumulatedText,
-    };
   });
 
 // Test gateway connectivity
 export const testGatewayConnectivity = createServerFn({ method: 'POST' }).handler(async () => {
   await requireAuth();
+  if (!process.env.AUTUMN_SECRET_KEY) {
+    return {
+      success: false,
+      error:
+        'Autumn billing is not configured. Follow docs/AUTUMN_SETUP.md to enable paid AI access.',
+      gatewayUrl: null,
+    };
+  }
+
+  const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+
+  const reservation = await fetchAction(api.ai.reserveAiMessage, {
+    metadata: {
+      provider: 'cloudflare-gateway-connectivity-test',
+      model: '@cf/meta/llama-3.1-8b-instruct',
+    },
+  });
+
+  if (!reservation.allowed) {
+    throw buildReservationError(reservation);
+  }
+
+  let usageFinalized = false;
+  const releaseReservation = async () => {
+    if (usageFinalized) {
+      return;
+    }
+    usageFinalized = true;
+    try {
+      await fetchAction(api.ai.releaseAiMessage, {});
+    } catch (releaseError) {
+      console.error('[AI] Failed to release AI reservation', releaseError);
+    }
+  };
 
   const config = getCloudflareConfig();
 
   if (!config.gatewayId) {
+    await releaseReservation();
     return {
       success: false,
       error: 'CLOUDFLARE_GATEWAY_ID not configured',
@@ -462,21 +886,46 @@ export const testGatewayConnectivity = createServerFn({ method: 'POST' }).handle
     // Try to create a model and make a simple request
     const testModel = testWorkersAI('@cf/meta/llama-3.1-8b-instruct');
 
-    // This will test the actual connectivity
-    const result = await generateText({
-      model: testModel,
-      prompt: 'Hello',
-    });
+    try {
+      const result = await generateText({
+        model: testModel,
+        prompt: 'Hello',
+      });
 
-    return {
-      success: true,
-      status: 200,
-      statusText: 'OK',
-      gatewayUrl: `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gatewayId}`,
-      response: result.text,
-    };
+      try {
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(
+            result.usage ?? null,
+            'cloudflare-gateway-connectivity-test',
+            '@cf/meta/llama-3.1-8b-instruct',
+          ),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      return {
+        success: true,
+        status: 200,
+        statusText: 'OK',
+        gatewayUrl: `https://gateway.ai.cloudflare.com/v1/${config.accountId}/${config.gatewayId}`,
+        response: result.text,
+      };
+    } catch (error) {
+      await releaseReservation();
+      throw error;
+    }
   } catch (error) {
     console.error('❌ Gateway connectivity test failed:', error);
+    await releaseReservation();
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Unknown error',
@@ -490,23 +939,89 @@ export const compareInferenceMethods = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
   .handler(async ({ data }) => {
     await requireAuth();
+    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
 
-    const [directResult, gatewayResult] = await Promise.allSettled([
-      generateWithWorkersAIHelper(data.prompt, data.model),
-      generateWithGatewayHelper(data.prompt, data.model),
-    ]);
+    const reservation = await fetchAction(api.ai.reserveAiMessage, {
+      metadata: { provider: 'cloudflare-ai-comparison', model: data.model },
+    });
 
-    return {
-      direct:
-        directResult.status === 'fulfilled' ? directResult.value : { error: directResult.reason },
-      gateway:
-        gatewayResult.status === 'fulfilled'
-          ? gatewayResult.value
-          : { error: gatewayResult.reason },
-      comparison: {
-        timestamp: new Date().toISOString(),
-        promptLength: data.prompt.length,
-        model: data.model,
-      },
+    if (!reservation.allowed) {
+      throw buildReservationError(reservation);
+    }
+
+    let usageFinalized = false;
+    const releaseReservation = async () => {
+      if (usageFinalized) {
+        return;
+      }
+      usageFinalized = true;
+      try {
+        await fetchAction(api.ai.releaseAiMessage, {});
+      } catch (releaseError) {
+        console.error('[AI] Failed to release AI reservation', releaseError);
+      }
     };
+
+    try {
+      const [directResult, gatewayResult] = await Promise.allSettled([
+        generateWithWorkersAIHelper(data.prompt, data.model),
+        generateWithGatewayHelper(data.prompt, data.model),
+      ]);
+
+      const directUsage =
+        directResult.status === 'fulfilled' ? (directResult.value.usage ?? null) : null;
+      const gatewayUsage =
+        gatewayResult.status === 'fulfilled' ? (gatewayResult.value.usage ?? null) : null;
+
+      try {
+        const totalTokens =
+          (directUsage?.totalTokens ?? 0) + (gatewayUsage?.totalTokens ?? 0) || undefined;
+        const completion = await fetchAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: {
+            provider: 'cloudflare-ai-comparison',
+            model: data.model,
+            totalTokens,
+          },
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        }
+      } catch (completionError) {
+        await releaseReservation();
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
+      }
+
+      return {
+        direct:
+          directResult.status === 'fulfilled' ? directResult.value : { error: directResult.reason },
+        gateway:
+          gatewayResult.status === 'fulfilled'
+            ? gatewayResult.value
+            : { error: gatewayResult.reason },
+        comparison: {
+          timestamp: new Date().toISOString(),
+          promptLength: data.prompt.length,
+          model: data.model,
+        },
+      };
+    } catch (error) {
+      await releaseReservation();
+      throw error;
+    }
   });
+
+export const getAiUsageStatus = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAuth();
+  const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+  return await fetchAction(api.ai.getAiUsageStatus, {});
+});
+
+export const getAiUsageConstants = createServerFn({ method: 'GET' }).handler(async () => {
+  await requireAuth();
+  const { fetchAction } = await setupFetchClient(createAuth, getCookie);
+  return await fetchAction(api.ai.aiUsageConstants, {});
+});

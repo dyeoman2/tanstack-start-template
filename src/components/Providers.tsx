@@ -1,5 +1,6 @@
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import { AutumnClientProvider } from '~/components/AutumnProvider';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { ToastProvider } from '~/components/ui/toast';
@@ -125,16 +126,18 @@ export function Providers({ children }: { children: ReactNode }) {
       showDetails={false}
     >
       <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
-        <AuthProvider>
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="system"
-            enableSystem
-            disableTransitionOnChange
-          >
-            <ToastProvider>{children}</ToastProvider>
-          </ThemeProvider>
-        </AuthProvider>
+        <AutumnClientProvider>
+          <AuthProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            >
+              <ToastProvider>{children}</ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
+        </AutumnClientProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>
   );

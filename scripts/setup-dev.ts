@@ -4,40 +4,10 @@
  * Complete local development setup automation script.
  * Runs all local setup steps sequentially with user guidance.
  * For production deployment, use: pnpm run setup:prod
- * Run: pnpm run setup:all
+ * Run: pnpm run setup:dev
  */
 
 import { execSync, spawn } from 'node:child_process';
-import { createInterface } from 'node:readline';
-
-// Helper functions for user input
-async function _askYesNo(question: string): Promise<boolean> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.toLowerCase().startsWith('y'));
-    });
-  });
-}
-
-async function _askInput(question: string): Promise<string> {
-  const rl = createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  return new Promise((resolve) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer.trim());
-    });
-  });
-}
 
 async function main() {
   console.log('🚀 Starting complete project setup...\n');
@@ -47,7 +17,7 @@ async function main() {
   // Step 1: Run initial setup
   console.log('📦 Step 1: Setting up local environment...');
   try {
-    execSync('pnpm run setup', { stdio: 'inherit', cwd });
+    execSync('pnpm run setup:env', { stdio: 'inherit', cwd });
     console.log('✅ Environment setup complete!\n');
   } catch {
     console.log('❌ Environment setup failed. Please fix any issues and try again.');
@@ -158,7 +128,7 @@ async function main() {
   console.log('📱 Your app is available at: http://localhost:3000');
   console.log('');
   console.log('💡 For future development sessions:');
-  console.log('  pnpm run setup:all    # Starts both development servers automatically');
+  console.log('  pnpm run setup:dev    # Starts both development servers automatically');
   console.log('  pnpm run setup:prod   # Sets up production deployment');
 }
 

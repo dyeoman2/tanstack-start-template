@@ -22,11 +22,11 @@ async function main() {
     console.log('❌ .env.local not found!');
     console.log('');
     console.log('📋 Setup Steps (run in order):');
-    console.log('   1. pnpm run setup        # Create .env.local with secrets');
+    console.log('   1. pnpm run setup:env    # Create .env.local with secrets');
     console.log('   2. npx convex dev        # Initialize Convex project');
     console.log('   3. pnpm run setup:convex # Configure URLs & environment variables');
     console.log('');
-    console.log('💡 Start with: pnpm run setup');
+    console.log('💡 Start with: pnpm run setup:env');
     process.exit(1);
   }
 
@@ -47,7 +47,7 @@ async function main() {
     console.log("💡 This usually means you haven't run Convex setup yet.");
     console.log('');
     console.log('📋 Complete setup steps:');
-    console.log("   ✅ pnpm run setup        # You've done this");
+    console.log("   ✅ pnpm run setup:env    # You've done this");
     console.log('   🔄 npx convex dev        # Do this next (interactively)');
     console.log("   ⏳ pnpm run setup:convex # You're here now");
     console.log('');
@@ -177,7 +177,7 @@ async function main() {
 
   if (!betterAuthSecret) {
     console.log('❌ Could not find BETTER_AUTH_SECRET in .env.local');
-    console.log('   Please ensure pnpm run setup was run first.');
+    console.log('   Please ensure pnpm run setup:env was run first.');
     process.exit(1);
   }
 
