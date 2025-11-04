@@ -7,10 +7,10 @@ let nodeProfilingIntegration;
 try {
   ({ nodeProfilingIntegration } = require('@sentry/profiling-node'));
   const semverMajor = parseInt(process.versions.modules ?? '0', 10);
-  const supportedModules = new Set([93, 108, 115, 127]);
+  const supportedModules = new Set([93, 108, 115, 127, 137]);
   if (!supportedModules.has(semverMajor)) {
     console.warn(
-      `[sentry] Node profiling native module does not yet ship binaries for Node ${process.version} (ABI ${semverMajor}). Profiling is disabled until Sentry adds Node 24 support.`,
+      `[sentry] Node profiling native module does not ship a binary for Node ${process.version} (ABI ${semverMajor}). Profiling is disabled.`,
     );
     nodeProfilingIntegration = undefined;
   } else {

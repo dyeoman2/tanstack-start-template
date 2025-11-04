@@ -125,7 +125,7 @@ Your TanStack Start template includes a comprehensive Sentry integration with th
 #### Profiling Test Results
 
 - **Client profiling**: CPU profile data for the frontend span execution
-- **Server profiling**: CPU profile data for the server span (if `@sentry/profiling-node` is available)
+- **Server profiling**: CPU profile data for the server span.
 - Profiles show function execution time and can identify performance bottlenecks
 
 ### Manual Testing Options
@@ -242,10 +242,6 @@ Console logging is forwarded to Sentry in production and while the development s
 ### Server Profiling in Development
 
 The template attempts to load Sentry's native Node profiling module during local runs. If the prebuilt binary for your platform is unavailable, you'll see a warning (`Node profiling native module not available`). The rest of the integration—including server errors, logs, and tracing—continues to work; only server CPU profiling is skipped locally.
-
-Install `@sentry/profiling-node` for your platform, then restart the dev server so the integration can load. Profiling binaries currently ship for Node ABIs 93/108/115/127 (Node 16-22). Node 24 uses ABI 137; until Sentry ships a matching binary you will see the warning and CPU profiling will remain disabled locally.
-
-> Note: The instrumentation uses only static `require` calls on the server (no dynamic imports) so the warning you see is purely about Sentry’s missing Node 24 binary.
 
 ### Adjust Sample Rates (Optional)
 
