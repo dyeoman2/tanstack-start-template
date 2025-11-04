@@ -216,10 +216,14 @@ async function main() {
     console.log('');
     console.log('💡 Your site will be live at: https://your-site-name.netlify.app');
 
-    const rawNetlifySiteUrl = (await askInput('\nEnter your Netlify production URL (e.g. https://your-site.netlify.app): ')).trim();
+    const rawNetlifySiteUrl = (
+      await askInput('\nEnter your Netlify production URL (e.g. https://your-site.netlify.app): ')
+    ).trim();
     if (!rawNetlifySiteUrl) {
       console.log('⚠️ Skipping BETTER_AUTH_SITE_URL setup (no URL provided). You can run');
-      console.log('   npx convex env set BETTER_AUTH_SITE_URL https://your-site.netlify.app --prod');
+      console.log(
+        '   npx convex env set BETTER_AUTH_SITE_URL https://your-site.netlify.app --prod',
+      );
     } else {
       const normalizedUrl = (() => {
         const candidate = /^https?:\/\//i.test(rawNetlifySiteUrl)
@@ -228,7 +232,9 @@ async function main() {
         try {
           return new URL(candidate).origin;
         } catch {
-          console.log(`⚠️ Could not parse "${rawNetlifySiteUrl}" as a URL. Skipping BETTER_AUTH_SITE_URL setup.`);
+          console.log(
+            `⚠️ Could not parse "${rawNetlifySiteUrl}" as a URL. Skipping BETTER_AUTH_SITE_URL setup.`,
+          );
           return null;
         }
       })();
@@ -242,7 +248,9 @@ async function main() {
           });
           console.log('✅ BETTER_AUTH_SITE_URL configured in Convex production environment.');
         } catch {
-          console.log('⚠️ Failed to set BETTER_AUTH_SITE_URL. You may need additional permissions or can try again later with:');
+          console.log(
+            '⚠️ Failed to set BETTER_AUTH_SITE_URL. You may need additional permissions or can try again later with:',
+          );
           console.log(`   npx convex env set BETTER_AUTH_SITE_URL "${normalizedUrl}" --prod`);
         }
       }

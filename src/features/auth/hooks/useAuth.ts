@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
-import { useEffect, useMemo } from 'react';
+import { useMemo } from 'react';
 import { useSession } from '~/features/auth/auth-client';
 import type { UserRole } from '../types';
 import { DEFAULT_ROLE, USER_ROLES } from '../types';
@@ -40,27 +40,6 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
-
-  // Development-only structured logging
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-
-    console.log('[useAuth]', {
-      authenticated: authState.isAuthenticated,
-      pending: sessionPending || (shouldFetchProfile && profile === undefined),
-      role: shouldFetchProfile ? profile?.role : 'not-fetched',
-      userId: `${session?.user?.id?.slice(0, 8)}...`, // Truncate for privacy
-      hasError: !!error,
-    });
-  }, [
-    authState.isAuthenticated,
-    sessionPending,
-    shouldFetchProfile,
-    profile?.role,
-    profile,
-    error,
-    session?.user?.id,
-  ]);
 
   const isPending =
     sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined);
