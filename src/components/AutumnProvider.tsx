@@ -1,5 +1,4 @@
 import { api } from '@convex/_generated/api';
-import { AutumnProvider } from 'autumn-js/react';
 import { useConvex } from 'convex/react';
 import {
   createContext,
@@ -57,14 +56,6 @@ export function AutumnClientProvider({ children }: AutumnClientProviderProps) {
   );
 
   return (
-    <AutumnBillingContext.Provider value={contextValue}>
-      {ready ? (
-        <AutumnProvider convex={convex} convexApi={api.autumn}>
-          {children}
-        </AutumnProvider>
-      ) : (
-        children
-      )}
-    </AutumnBillingContext.Provider>
+    <AutumnBillingContext.Provider value={contextValue}>{children}</AutumnBillingContext.Provider>
   );
 }

@@ -1,12 +1,11 @@
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute } from '@tanstack/react-router';
-import { CheckoutDialog, useCustomer } from 'autumn-js/react';
 import { BarChart3, Cloud, Cpu, Loader2, Network, Shield } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { z } from 'zod';
 import { useAutumnBilling } from '~/components/AutumnProvider';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
+import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -18,10 +17,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { Skeleton } from '~/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
-import { AUTUMN_AI_PRODUCT_ID } from '~/features/ai/constants';
+import { CreditPurchase } from '~/features/ai/components/CreditPurchase';
+import { CREDIT_PACKAGES } from '~/features/ai/constants';
 import { useAiUsageStatus } from '~/features/ai/hooks/useAiUsageStatus';
 import {
   compareInferenceMethods,
@@ -70,16 +69,9 @@ function CloudflareAIDemo() {
   const [activeTab, setActiveTab] = useState('inference');
   const [results, setResults] = useState<Record<string, AIResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
-  const [envVarsMissing, setEnvVarsMissing] = useState(false);
-  const [setupInstructions, setSetupInstructions] = useState<string | null>(null);
+  const [envVarsMissing] = useState(false);
   const [resultTabs, setResultTabs] = useState<Record<string, string>>({});
-  const {
-    status: usageStatus,
-    error: usageError,
-    isLoading: isUsageLoading,
-    isRefreshing: isUsageRefreshing,
-    refresh: refreshUsage,
-  } = useAiUsageStatus();
+  const { status: usageStatus, refresh: refreshUsage } = useAiUsageStatus();
   const { ready: autumnReady } = useAutumnBilling();
   const usageDetails = usageStatus?.authenticated ? usageStatus.usage : null;
   const subscriptionDetails = usageStatus?.authenticated ? usageStatus.subscription : null;
@@ -87,10 +79,11 @@ function CloudflareAIDemo() {
   const freeLimit = usageDetails?.freeLimit ?? 10;
   const freeRemaining = usageDetails?.freeMessagesRemaining ?? freeLimit;
   const isSubscribed = subscriptionDetails?.status === 'subscribed';
+  const isUnlimited = subscriptionDetails?.isUnlimited ?? false;
+  const creditBalance = subscriptionDetails?.creditBalance ?? null;
   const autumnNotConfigured = subscriptionDetails?.status === 'not_configured';
   const showAutumnSetupCard = !autumnReady || autumnNotConfigured;
   const generationBlocked = !isSubscribed && freeRemaining <= 0;
-  const isUsageBusy = isUsageLoading || isUsageRefreshing;
 
   const addUsageDepletedResult = () => {
     setResults((prev) => ({
@@ -102,24 +95,8 @@ function CloudflareAIDemo() {
     }));
   };
 
-  // Check for environment variables availability
-  useEffect(() => {
-    const checkEnvVars = async () => {
-      try {
-        // Try to test gateway connectivity to see if env vars are set
-        await testGatewayConnectivity();
-        setEnvVarsMissing(false);
-        setSetupInstructions(null);
-      } catch (_error) {
-        setEnvVarsMissing(true);
-        setSetupInstructions(
-          'Cloudflare AI is not configured. Please follow the setup guide to get started with Cloudflare Workers AI.',
-        );
-      }
-    };
-
-    checkEnvVars();
-  }, []);
+  // Note: We don't auto-check env vars on page load to avoid consuming AI credits
+  // Users will see error messages when they try to use AI features if not configured
 
   const inferenceForm = useForm({
     defaultValues: {
@@ -376,7 +353,9 @@ function CloudflareAIDemo() {
               <Cloud className="w-5 h-5" />
               <span>Cloudflare AI Setup Required</span>
             </CardTitle>
-            <CardDescription className="text-amber-700">{setupInstructions}</CardDescription>
+            <CardDescription className="text-amber-700">
+              Configure your environment variables to start using Cloudflare Workers AI
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="text-sm text-amber-800 space-y-3">
@@ -442,13 +421,22 @@ function CloudflareAIDemo() {
               </p>
               <div className="bg-white p-3 rounded border font-mono text-xs">
                 <div>AUTUMN_SECRET_KEY=am_sk_your_secret_key_here</div>
-                <div>VITE_AUTUMN_AI_PRODUCT_ID=prod_ai_unlimited</div>
+                <div>VITE_AUTUMN_50_CREDITS_ID=prod_50_credits</div>
               </div>
               <div className="space-y-2">
                 <p className="font-semibold">Setup Steps:</p>
                 <ol className="list-decimal list-inside space-y-1 ml-4">
-                  <li>Create an Autumn account at useautumn.com</li>
-                  <li>Create a product with the ai_messages feature</li>
+                  <li>
+                    Create an Autumn account at{' '}
+                    <button
+                      type="button"
+                      onClick={() => window.open('https://useautumn.com', '_blank')}
+                      className="text-blue-600 hover:text-blue-800 underline font-medium"
+                    >
+                      useautumn.com
+                    </button>
+                  </li>
+                  <li>Create a credit package: $5.00 (50 credits)</li>
                   <li>Get your secret key and product ID from the Autumn dashboard</li>
                   <li>Add environment variables to your deployment platforms</li>
                 </ol>
@@ -595,20 +583,40 @@ function CloudflareAIDemo() {
                     }
                   >
                     <AlertDescription>
-                      <div className="flex items-center justify-between w-full">
-                        {isSubscribed
-                          ? 'Your Autumn subscription provides unlimited AI messages.'
-                          : generationBlocked
-                            ? 'You have no free AI messages remaining. Configure Autumn billing to add credits and resume generation.'
-                            : `You have ${freeRemaining} free AI message${freeRemaining === 1 ? '' : 's'} remaining.`}
-                        {!isSubscribed && (
-                          <AutumnUpgradeButton
-                            autumnReady={autumnReady}
-                            envVarsMissing={envVarsMissing}
-                            isUsageBusy={isUsageBusy}
-                            onFallback={addUsageDepletedResult}
-                            refreshUsage={refreshUsage}
-                          />
+                      <div className="space-y-3 w-full">
+                        <div className="flex items-center justify-between gap-4">
+                          <span>
+                            {isSubscribed && isUnlimited
+                              ? 'Your Autumn subscription provides unlimited AI messages.'
+                              : isSubscribed && creditBalance !== null
+                                ? `You have ${creditBalance} AI message${creditBalance === 1 ? '' : 's'} remaining.`
+                                : generationBlocked
+                                  ? 'You have no messages remaining. Purchase more credits to continue.'
+                                  : `You have ${freeRemaining} free AI message${freeRemaining === 1 ? '' : 's'} remaining.`}
+                          </span>
+                          {!isSubscribed && generationBlocked && (
+                            <CreditPurchase onPurchaseSuccess={refreshUsage} compact />
+                          )}
+                        </div>
+                        {!isSubscribed && !generationBlocked && freeRemaining <= 2 && (
+                          <div>
+                            <p className="text-sm text-muted-foreground mb-2">
+                              Running low on free messages? Purchase credits to continue:
+                            </p>
+                            <div className="flex gap-2">
+                              {CREDIT_PACKAGES.map((pkg) => (
+                                <Button
+                                  key={pkg.productId}
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => window.open('https://useautumn.com', '_blank')}
+                                  className="text-xs"
+                                >
+                                  ${pkg.price} ({pkg.credits} credits)
+                                </Button>
+                              ))}
+                            </div>
+                          </div>
                         )}
                       </div>
                     </AlertDescription>
@@ -1105,89 +1113,5 @@ function CloudflareAIDemo() {
           })}
       </div>
     </div>
-  );
-}
-
-interface AutumnUpgradeButtonProps {
-  autumnReady: boolean;
-  envVarsMissing: boolean;
-  isUsageBusy: boolean;
-  onFallback: () => void;
-  refreshUsage: () => Promise<void>;
-}
-
-function AutumnUpgradeButton({
-  autumnReady,
-  envVarsMissing,
-  isUsageBusy,
-  onFallback,
-  refreshUsage,
-}: AutumnUpgradeButtonProps) {
-  if (!autumnReady) {
-    return (
-      <Button variant="outline" onClick={onFallback} disabled={envVarsMissing || isUsageBusy}>
-        Upgrade
-      </Button>
-    );
-  }
-
-  return (
-    <AutumnCheckoutButton
-      envVarsMissing={envVarsMissing}
-      isUsageBusy={isUsageBusy}
-      refreshUsage={refreshUsage}
-      onError={onFallback}
-    />
-  );
-}
-
-interface AutumnCheckoutButtonProps {
-  envVarsMissing: boolean;
-  isUsageBusy: boolean;
-  refreshUsage: () => Promise<void>;
-  onError: () => void;
-}
-
-function AutumnCheckoutButton({
-  envVarsMissing,
-  isUsageBusy,
-  refreshUsage,
-  onError,
-}: AutumnCheckoutButtonProps) {
-  const { checkout, isLoading: isCustomerLoading } = useCustomer({
-    errorOnNotFound: false,
-    swrConfig: {
-      shouldRetryOnError: false,
-    },
-  });
-  const [isCheckoutPending, setIsCheckoutPending] = useState(false);
-
-  const handleUpgrade = async () => {
-    setIsCheckoutPending(true);
-    try {
-      await checkout({
-        productId: AUTUMN_AI_PRODUCT_ID,
-        dialog: CheckoutDialog,
-      });
-      await refreshUsage();
-    } catch (error) {
-      console.error('[AI Demo] Failed to start Autumn checkout', error);
-      onError();
-    } finally {
-      setIsCheckoutPending(false);
-    }
-  };
-
-  return (
-    <Button
-      variant="outline"
-      onClick={() => void handleUpgrade()}
-      disabled={envVarsMissing || isUsageBusy || isCustomerLoading || isCheckoutPending}
-    >
-      {(isCheckoutPending || isCustomerLoading) && (
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-      )}
-      Upgrade with Autumn
-    </Button>
   );
 }

@@ -20,6 +20,8 @@ type AiUsageStatusResult =
         status: 'unknown' | 'needs_upgrade' | 'subscribed' | 'not_configured';
         configured: boolean;
         lastCheckError: { message: string; code: string } | null;
+        creditBalance: number | null;
+        isUnlimited: boolean;
       };
     };
 

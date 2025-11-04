@@ -11,7 +11,7 @@ import {
 } from './autumn';
 
 const FREE_MESSAGE_LIMIT = 10;
-const AI_MESSAGE_FEATURE_ID = 'ai_messages';
+const AI_MESSAGE_FEATURE_ID = 'messages';
 
 type ReservationMode = 'free' | 'paid';
 
@@ -106,6 +106,8 @@ type AiUsageStatusResult =
         status: 'unknown' | 'needs_upgrade' | 'subscribed' | 'not_configured';
         configured: boolean;
         lastCheckError: { message: string; code: string } | null;
+        creditBalance: number | null;
+        isUnlimited: boolean;
       };
     };
 
@@ -559,6 +561,8 @@ export const getAiUsageStatus = action({
     let subscriptionStatus: 'unknown' | 'needs_upgrade' | 'subscribed' | 'not_configured' =
       autumnSecretConfigured ? 'unknown' : 'not_configured';
     let lastCheckError: { message: string; code: string } | null = null;
+    let creditBalance: number | null = null;
+    let isUnlimited = false;
 
     if (autumnSecretConfigured && messagesUsed >= freeLimit) {
       const checkResult = await checkAutumnAccess(ctx, {
@@ -569,6 +573,9 @@ export const getAiUsageStatus = action({
         subscriptionStatus = 'needs_upgrade';
         lastCheckError = checkResult.error;
       } else if (checkResult.data?.allowed) {
+        // Check if they have unlimited access or prepaid credits
+        isUnlimited = checkResult.data.unlimited ?? false;
+        creditBalance = checkResult.data.balance ?? null;
         subscriptionStatus = 'subscribed';
       } else {
         subscriptionStatus = 'needs_upgrade';
@@ -589,6 +596,8 @@ export const getAiUsageStatus = action({
         status: subscriptionStatus,
         configured: autumnSecretConfigured,
         lastCheckError,
+        creditBalance,
+        isUnlimited,
       },
     };
   },

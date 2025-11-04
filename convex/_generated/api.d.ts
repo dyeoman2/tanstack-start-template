@@ -2285,7 +2285,6 @@ export declare const components: {
       >;
     };
   };
-  autumn: {};
   rateLimiter: {
     lib: {
       checkRateLimit: FunctionReference<

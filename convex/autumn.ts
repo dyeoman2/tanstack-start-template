@@ -1,6 +1,6 @@
-import { Autumn } from '@useautumn/convex';
+import { Autumn } from 'autumn-js';
+import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
-import { components } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { authComponent } from './auth';
@@ -14,101 +14,21 @@ export const AUTUMN_NOT_CONFIGURED_ERROR = {
 
 type AuthCtx = Parameters<typeof authComponent.getAuthUser>[0];
 
-type AutumnInstance = InstanceType<typeof Autumn>;
-type TrackArgs = Parameters<AutumnInstance['track']>[1];
-type TrackResult = Awaited<ReturnType<AutumnInstance['track']>>;
-type CheckArgs = Parameters<AutumnInstance['check']>[1];
-type CheckResult = Awaited<ReturnType<AutumnInstance['check']>>;
-type CheckoutArgs = Parameters<AutumnInstance['checkout']>[1];
-type CheckoutResult = Awaited<ReturnType<AutumnInstance['checkout']>>;
-type AutumnApi = ReturnType<AutumnInstance['api']>;
-
-const FALLBACK_AUTUMN_API = {
-  track: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  check: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  attach: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  checkout: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  createCustomer: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  listProducts: async () => ({ data: [], error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  usage: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  query: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  cancel: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  setupPayment: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  billingPortal: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  createReferralCode: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  redeemReferralCode: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  createEntity: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-  getEntity: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }),
-} as unknown as AutumnApi;
-
-interface AutumnClientLike {
-  track: (ctx: AuthCtx, args: TrackArgs) => Promise<TrackResult>;
-  check: (ctx: AuthCtx, args: CheckArgs) => Promise<CheckResult>;
-  checkout: (ctx: AuthCtx, args: CheckoutArgs) => Promise<CheckoutResult>;
-  api: () => AutumnApi;
-}
-
-const FALLBACK_AUTUMN_CLIENT: AutumnClientLike = {
-  track: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }) as TrackResult,
-  check: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }) as CheckResult,
-  checkout: async () => ({ data: null, error: AUTUMN_NOT_CONFIGURED_ERROR }) as CheckoutResult,
-  api: () => FALLBACK_AUTUMN_API,
-};
-
 let cachedAutumn: Autumn | null = null;
-let autumnInitPromise: Promise<Autumn> | null = null;
 
-function createAutumnInstance(): Autumn {
-  return new Autumn(components.autumn, {
-    secretKey: AUTUMN_SECRET_KEY,
-    identify: async (ctx: AuthCtx) => {
-      const authUser = await authComponent.getAuthUser(ctx);
-      if (!authUser) {
-        return null;
-      }
-
-      const customerId = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
-      return {
-        customerId,
-        customerData: {
-          name: typeof authUser.name === 'string' ? authUser.name : undefined,
-          email: typeof authUser.email === 'string' ? authUser.email : undefined,
-        },
-      };
-    },
-  });
-}
-
-async function getAutumnClient(): Promise<AutumnClientLike> {
+function getAutumnClient(): Autumn {
   if (!isAutumnConfigured()) {
-    return FALLBACK_AUTUMN_CLIENT;
+    throw new Error(AUTUMN_NOT_CONFIGURED_ERROR.message);
   }
 
-  if (cachedAutumn) {
-    return cachedAutumn;
+  if (!cachedAutumn) {
+    cachedAutumn = new Autumn({
+      secretKey: AUTUMN_SECRET_KEY,
+    });
   }
-
-  if (autumnInitPromise) {
-    await autumnInitPromise;
-    if (!cachedAutumn) {
-      throw new Error('Autumn client was not initialized properly');
-    }
-    return cachedAutumn;
-  }
-
-  autumnInitPromise = Promise.resolve(createAutumnInstance());
-  cachedAutumn = await autumnInitPromise;
-  autumnInitPromise = null;
 
   return cachedAutumn;
 }
-
-export const autumn = {
-  api: async () => {
-    const client = await getAutumnClient();
-    return client.api();
-  },
-} as unknown as Pick<Autumn, 'api'>;
 
 export function isAutumnConfigured(): boolean {
   return AUTUMN_SECRET_KEY.length > 0;
@@ -120,20 +40,76 @@ export function ensureAutumnConfigured(): void {
   }
 }
 
-export async function trackAutumnUsage(ctx: AuthCtx, args: TrackArgs): Promise<TrackResult> {
-  const client = await getAutumnClient();
-  return await client.track(ctx, args);
+export async function trackAutumnUsage(
+  ctx: AuthCtx,
+  args: { featureId: string; value: number; properties?: Record<string, unknown> },
+) {
+  if (!isAutumnConfigured()) {
+    return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
+  }
+
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
+  }
+
+  const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
+  const client = getAutumnClient();
+  return await client.track({
+    customer_id,
+    feature_id: args.featureId,
+    value: args.value,
+    properties: args.properties,
+  });
 }
 
-export async function checkAutumnAccess(ctx: AuthCtx, args: CheckArgs): Promise<CheckResult> {
-  const client = await getAutumnClient();
-  return await client.check(ctx, args);
+export async function checkAutumnAccess(ctx: AuthCtx, args: { featureId: string }) {
+  if (!isAutumnConfigured()) {
+    return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
+  }
+
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
+  }
+
+  const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
+  const client = getAutumnClient();
+  return await client.check({ customer_id, feature_id: args.featureId });
 }
 
-export async function checkoutAutumn(ctx: AuthCtx, args: CheckoutArgs): Promise<CheckoutResult> {
-  const client = await getAutumnClient();
-  return await client.checkout(ctx, args);
-}
+export const checkoutAutumn = action({
+  args: { productId: v.string(), successUrl: v.optional(v.string()) },
+  handler: async (ctx: ActionCtx, args: { productId: string; successUrl?: string }) => {
+    if (!isAutumnConfigured()) {
+      return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
+    }
+
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
+    }
+
+    const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
+    const client = getAutumnClient();
+
+    const checkoutParams: {
+      customer_id: string;
+      product_id: string;
+      successUrl?: string;
+    } = {
+      customer_id,
+      product_id: args.productId,
+    };
+
+    // Add success URL if provided
+    if (args.successUrl) {
+      checkoutParams.successUrl = args.successUrl;
+    }
+
+    return await client.checkout(checkoutParams);
+  },
+});
 
 export const isAutumnReady = action({
   args: {},

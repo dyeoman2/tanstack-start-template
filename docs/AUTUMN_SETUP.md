@@ -1,24 +1,102 @@
-# Usage-Based Billing with Autumn
+# Credit-Based Billing with Autumn
 
-This guide walks through configuring the Autumn billing platform for the AI messaging experience in this TanStack Start project. Autumn enforces the 10-message free tier, tracks paid usage, and powers the upgrade flow surfaced in the `/app/ai-demo` route.
+This guide walks through configuring the Autumn billing platform for credit-based AI messaging in this TanStack Start project. Users purchase credits upfront ($0.10 per credit, minimum $5) and consume them as they use AI features after the free tier.
 
 ## Overview
 
-- **Free tier enforcement**: Every authenticated user receives 10 complimentary AI messages.
-- **Autumn metering**: Additional usage is tracked against the `ai_messages` feature through Autumn's API.
-- **Upgrade workflow**: The AI demo route surfaces a call-to-action that launches the Autumn checkout dialog when a customer runs out of free credits.
-- **Real-time status**: The UI shows current usage, remaining credits, and billing status directly from Convex actions.
+- **Free tier**: First 10 AI messages are completely free
+- **Credit pricing**: $0.10 per credit (1 credit = 1 AI message)
+- **Minimum purchase**: $5.00 (50 credits) when free tier is exhausted
+- **Autumn metering**: Paid usage is tracked against the `messages` feature through Autumn's API
+- **Credit packages**: Multiple purchase options available
 
-## 1. Create an Autumn Account and Product
+## 1. Create an Autumn Account and Credit Products
 
 1. Sign up at [useautumn.com](https://useautumn.com) and open the dashboard.
-2. Create a product (for example `AI Unlimited`) that unlocks the `ai_messages` feature. You can model this as a subscription or usage plan depending on how you want to bill.
-3. Make note of the product's **Product ID** (e.g. `prod_ai_unlimited`)—you will use it on the client to launch checkout.
-4. Locate your **Secret Key** (`am_sk_...`) from the dashboard. This key is required on the server for metering and access checks.
+2. Follow the steps below to create your first credit package ($5 for 50 credits)
+3. Repeat the configuration for additional packages as needed
+4. Locate your **Secret Key** (`am_sk_...`) from the dashboard
 
-> The feature ID `ai_messages` is already referenced throughout the Convex actions. Align the feature or usage identifier in Autumn with this name for consistency.
+> The feature ID `messages` is referenced in the Convex actions for tracking usage.
 
-## 2. Configure Environment Variables (Local)
+## 2. Configure the $5 Credit Package in Autumn
+
+Follow these steps to create the base credit package ($5 for 50 messages). You can repeat this process for larger packages.
+
+## Step 1: Create a Plan
+
+1. In Autumn dashboard, click "Add Plan" or navigate to the Plans section
+2. Configure the plan details:
+
+**Plan Details:**
+
+- Name: `50 messages`
+- ID: `prod_50_credits` (must match your environment variable)
+
+**Base Price:**
+
+- Enable "Base Price" (checkbox checked)
+- Price: `5`
+- Billing Interval: `one off`
+
+## Step 2: Create a Feature
+
+1. In the same plan creation flow, add a feature
+2. Configure the feature details:
+
+**Feature Details:**
+
+- Name: `Messages`
+- ID: `messages` (must match your code)
+
+**Feature Type:**
+
+- Select: **Metered** (usage-based tracking)
+
+**Feature Behavior:**
+
+- Select: **Consumable** (credits are used up as messages are sent)
+
+## Step 3: Define Feature Limits
+
+Configure how credits are allocated:
+
+**Configuration:**
+
+- Select: **Included** (credits are part of the plan purchase)
+
+**Allowance:**
+
+- Quantity: `50` (number of messages this customer gets)
+- Interval: `no reset` (credits don't expire or refresh)
+
+## Step 4: Finish Setup
+
+**Additional Options:**
+
+- Enable by Default: **Unchecked** (this is a paid plan, not free)
+- Add On: **Unchecked** (standalone purchase)
+- Group: **Unchecked** (not part of a plan group)
+- Free Trial: **Unchecked** (no trial for credits)
+
+Click "Save" or "Add Plan" to create the plan.
+
+## Additional Credit Packages (Optional)
+
+To offer more purchase options, repeat the above steps with these configurations:
+
+- **$10 Package**: Name "100 messages", ID `prod_100_credits`, Price $10, Allowance 100
+- **$25 Package**: Name "250 messages", ID `prod_250_credits`, Price $25, Allowance 250
+- **$50 Package**: Name "500 messages", ID `prod_500_credits`, Price $50, Allowance 500
+
+All packages should use:
+
+- Feature ID: `messages` (same feature across all packages)
+- Billing Interval: `one off`
+- Allowance Interval: `no reset`
+- Configuration: `Included`
+
+## 3. Configure Environment Variables (Local)
 
 ### Convex (server)
 
@@ -30,13 +108,13 @@ npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here
 ### Client (`.env.local`)
 
 ```bash
-# Used by the upgrade CTA in /app/ai-demo
-VITE_AUTUMN_AI_PRODUCT_ID=prod_ai_unlimited
+# Credit package product ID
+VITE_AUTUMN_50_CREDITS_ID=prod_50_credits
 ```
 
 Restart the dev server after updating environment variables so that both Convex and Vite pick up the changes.
 
-## 3. Configure Environment Variables (Production)
+## 4. Configure Environment Variables (Production)
 
 ### Convex Production Environment
 
@@ -46,23 +124,23 @@ npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here --prod
 
 ### Netlify (or your hosting platform)
 
-Set `VITE_AUTUMN_AI_PRODUCT_ID` in the deployment environment. For Netlify you can use either the UI or CLI:
+Set the credit package product ID in the deployment environment:
 
 ```bash
-npx netlify env:set VITE_AUTUMN_AI_PRODUCT_ID prod_ai_unlimited
+npx netlify env:set VITE_AUTUMN_50_CREDITS_ID prod_50_credits
 ```
 
 Redeploy after the variables are in place.
 
-## 4. Verify the Integration
+## 5. Verify the Integration
 
-1. Start the dev servers: `pnpm dev`.
-2. Sign in and open `/app/ai-demo`.
-3. Send a few prompts—usage should decrement from 10 towards 0.
-4. After the free tier is exhausted, click **Upgrade with Autumn** to open the checkout dialog.
-5. Complete a checkout (or close the dialog) and confirm the usage status indicator reflects the Autumn subscription.
+1. Start the dev servers: `pnpm dev`
+2. Sign in and open `/app/ai-demo`
+3. Send up to 10 messages (free tier)
+4. After free tier is exhausted, credit purchase options should appear
+5. Complete a credit purchase and confirm usage continues
 
-## 5. Optional: Regenerate Convex Types
+## 6. Optional: Regenerate Convex Types
 
 If you make adjustments to the Convex functions or upgrade to a new version of the template, regenerate Convex helper types:
 
@@ -74,9 +152,8 @@ npx convex codegen
 
 ## Troubleshooting
 
-- **"Autumn billing is not configured" message**: Verify that `AUTUMN_SECRET_KEY` is set in Convex for the current environment.
-- **Checkout dialog does not open**: Ensure `VITE_AUTUMN_AI_PRODUCT_ID` matches a product that is publishable in your Autumn dashboard.
-- **Usage never resets from 0**: Confirm the `ai_messages` feature exists on the plan the customer purchased.
-- **Convex build failures**: Run `npx convex codegen` after restoring network access so that generated API bindings include the new Autumn module.
+- **"Autumn billing is not configured" message**: Verify that `AUTUMN_SECRET_KEY` is set in Convex
+- **Checkout dialog does not open**: Ensure product IDs match your Autumn dashboard
+- **Credits not added after purchase**: Check that the `messages` feature is properly configured
 
-With these steps in place, customers automatically receive 10 free AI messages, and Autumn handles upgrades, metering, and billing for additional usage.
+With these steps in place, customers get 10 free AI messages, then must purchase credits at $0.10 each (minimum $5) for continued usage.
