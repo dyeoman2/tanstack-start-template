@@ -63,6 +63,7 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.7",
     "@radix-ui/react-slot": "^1.2.3",
+    "@sentry/profiling-node": "^8.40.0",
     "@sentry/tanstackstart-react": "^10.22.0",
     "@tanstack/react-form": "^1.23.8",
     "@tanstack/react-router": "^1.134.9",

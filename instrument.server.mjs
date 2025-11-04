@@ -1,3 +1,4 @@
+import { nodeProfilingIntegration } from '@sentry/profiling-node';
 import * as Sentry from '@sentry/tanstackstart-react';
 
 const sentryDsn = process.env.VITE_SENTRY_DSN;
@@ -22,5 +23,16 @@ if (sentryDsn && (isProduction || process.argv.includes('--test-sentry'))) {
     // https://docs.sentry.io/platforms/javascript/configuration/options/#traces-sample-rate
     tracesSampleRate: 1.0,
     // performance
+    // Node.js profiling
+    integrations: [
+      nodeProfilingIntegration(),
+      // send console.log, console.warn, and console.error calls as logs to Sentry
+      Sentry.consoleLoggingIntegration({ levels: ['log', 'warn', 'error'] }),
+    ],
+    // Set sampling rate for profiling - this is evaluated only once per SDK.init call
+    profileSessionSampleRate: 1.0,
+    // Trace lifecycle automatically enables profiling during active traces
+    profileLifecycle: 'trace',
+    // Node.js profiling
   });
 }

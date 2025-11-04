@@ -8,6 +8,7 @@ import { useAuth } from '~/features/auth/hooks/useAuth';
 import { USER_ROLES } from '~/features/auth/types';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
+import { setSentryUser } from '~/lib/sentry';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import type { RouterAuthContext } from '~/router';
 
@@ -97,6 +98,11 @@ function AuthProvider({ children }: AuthProviderProps) {
 
     // Update the context
     setAuthContext(newAuthContext);
+
+    // Update Sentry user context when auth state changes
+    if (!isPending) {
+      setSentryUser(newAuthContext.authenticated ? newAuthContext.user : null);
+    }
   }, [isAuthenticated, user?.id, user?.email, user?.name, isPending, isAdmin]);
 
   // Setup claim refresh when component mounts
