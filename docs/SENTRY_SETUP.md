@@ -46,12 +46,140 @@ VITE_SENTRY_DSN=https://your-project-dsn.ingest.sentry.io/project-id
 
 2. Visit the test page: `http://localhost:3000/test-sentry`
 
-3. Click the "Break the world (Test Sentry)" button
+3. Click the "Test All Sentry Features" button
 
-4. Check your Sentry dashboard - you should see:
-   - A frontend error
-   - A server-side error from the API route
-   - A performance trace
+4. Check your Sentry dashboard - you should see all configured services working
+
+## Sentry Services Overview
+
+Your TanStack Start template includes a comprehensive Sentry integration with the following services:
+
+### 🔍 Error Monitoring
+
+**What it tracks**: Unhandled errors, exceptions, and manually captured errors from both client and server
+**Client-side**: Captures React component errors, promise rejections, and manual error captures
+**Server-side**: Captures errors in server functions, API routes, and Convex operations
+
+### 📊 Performance Tracing
+
+**What it tracks**: Application performance, route navigation timing, and custom performance spans
+**Client-side**: TanStack Router navigation tracing, component render timing, API calls
+**Server-side**: Server function execution time, database queries, API route performance
+
+### 🎥 Session Replay
+
+**What it tracks**: Video-like reproduction of user sessions for debugging
+**Sample rate**: 10% of all sessions, 100% for sessions with errors
+**Features**: User interactions, console logs, network requests, DOM changes
+
+### 📝 Centralized Logging
+
+**What it tracks**: Console messages forwarded to Sentry for correlation with errors
+**Levels**: `console.log`, `console.warn`, `console.error`
+**Integration**: Logs appear alongside errors and performance data
+
+### ⚡ Profiling (Browser & Server)
+
+**What it tracks**: CPU and memory usage, function execution time, performance bottlenecks
+**Client-side**: Browser profiling integration with automatic span profiling
+**Server-side**: Node.js profiling (requires `@sentry/profiling-node` for full functionality, disabled on Node 24 until Sentry adds support)
+
+### 💬 User Feedback
+
+**What it collects**: User feedback on errors and crashes
+**Integration**: Widget appears when errors occur, collects user reports
+
+## Local Testing Guide
+
+### How to Test Each Service
+
+1. **Visit the test page**: `http://localhost:3000/test-sentry`
+2. **Click "Test All Sentry Features"** - this triggers all services simultaneously
+3. **Check your Sentry dashboard** for the following:
+
+#### Error Monitoring Test Results
+
+- **Frontend Error**: "Sentry Example Frontend Error" in the Issues section
+- **Server Error**: "Sentry Example Route Error" from the `/api/sentry-example` route
+- Both errors will include stack traces, user context, and environment information
+
+#### Performance Tracing Test Results
+
+- **Client-side spans**: "Example Frontend Span" showing browser execution time
+- **Server-side spans**: "Example Server Span" showing server execution time
+- **Route navigation**: Automatic tracing of the `/test-sentry` route load
+- All traces include timing data and can be viewed in the Performance section
+
+#### Session Replay Test Results
+
+- If your session is sampled (10% chance), a replay will be available
+- The replay captures the button click, console messages, and error occurrence
+- Viewable in the Replays section of your Sentry dashboard
+
+#### Logging Test Results
+
+- **Client logs**: 3 console messages (log, warn, error) from the browser
+- **Server logs**: 3 console messages (log, warn, error) from the API route
+- Logs are correlated with the errors and appear in the issue details
+
+#### Profiling Test Results
+
+- **Client profiling**: CPU profile data for the frontend span execution
+- **Server profiling**: CPU profile data for the server span (if `@sentry/profiling-node` is available)
+- Profiles show function execution time and can identify performance bottlenecks
+
+### Manual Testing Options
+
+#### Test Frontend Errors Only
+
+```typescript
+// In any React component
+throw new Error('Manual frontend test error');
+```
+
+#### Test Server Errors Only
+
+```typescript
+// In any server function (*.server.ts)
+export async function testServerFunction() {
+  throw new Error('Manual server test error');
+}
+```
+
+#### Test Performance Spans Manually
+
+```typescript
+import * as Sentry from '@sentry/tanstackstart-react';
+
+// Client-side span
+await Sentry.startSpan({ name: 'Custom Operation', op: 'test' }, async () => {
+  // Your code here
+  await someAsyncOperation();
+});
+
+// Server-side span (in server functions)
+return Sentry.startSpan({ name: 'Server Operation', op: 'db' }, async () => {
+  // Your server code here
+  return await databaseQuery();
+});
+```
+
+### What to Expect in Development vs Production
+
+#### Development Mode (`pnpm dev`)
+
+- Sentry only activates when you visit `/test-sentry`
+- Full functionality available for testing
+- Errors and performance data sent to your Sentry project
+- Session replays may be captured based on sample rate
+- Server profiling is disabled on Node 24 (shows warning until Sentry adds Node 24 support)
+
+#### Production Mode
+
+- All services active for all users
+- Sample rates apply (adjustable in `src/lib/sentry.ts`)
+- User feedback widget available on errors
+- All errors, performance issues, and replays collected
 
 ## Step 3: Production Setup
 
