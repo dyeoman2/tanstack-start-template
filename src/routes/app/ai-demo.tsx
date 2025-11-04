@@ -19,9 +19,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
 import {
   compareInferenceMethods,
-  generateStructuredResponse,
-  generateWithGateway,
-  generateWithWorkersAI,
+  streamStructuredResponse,
+  streamWithGateway,
+  streamWithWorkersAI,
   testGatewayConnectivity,
 } from '~/features/ai/server/cloudflare-ai.server';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
@@ -53,6 +53,9 @@ interface AIResult {
   statusText?: string;
   gatewayUrl?: string | null;
   headers?: Record<string, string>;
+  // Structured output parsing
+  parseError?: string;
+  rawText?: string;
 }
 
 function CloudflareAIDemo() {
@@ -63,6 +66,7 @@ function CloudflareAIDemo() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [envVarsMissing, setEnvVarsMissing] = useState(false);
   const [setupInstructions, setSetupInstructions] = useState<string | null>(null);
+  const [resultTabs, setResultTabs] = useState<Record<string, string>>({});
 
   // Check for environment variables availability
   useEffect(() => {
@@ -102,22 +106,65 @@ function CloudflareAIDemo() {
       }
 
       const key = `${value.method}-${Date.now()}`;
+
+      // Show result card immediately with loading state
+      const initialResult: AIResult = {
+        response: '',
+        provider:
+          value.method === 'gateway'
+            ? 'cloudflare-gateway'
+            : value.method === 'structured'
+              ? 'cloudflare-workers-ai-structured'
+              : 'cloudflare-workers-ai',
+        model: value.model,
+      };
+      setResults((prev) => ({ ...prev, [key]: initialResult }));
       setLoading((prev) => ({ ...prev, [key]: true }));
 
       try {
-        let result: AIResult;
-
         switch (value.method) {
           case 'direct':
-            result = await generateWithWorkersAI({
+          case 'gateway': {
+            // Use streaming for direct and gateway methods
+            const streamFn = value.method === 'direct' ? streamWithWorkersAI : streamWithGateway;
+            let accumulatedText = '';
+            let metadata: { provider?: string; model?: string } | null = null;
+
+            for await (const chunk of await streamFn({
               data: { prompt: value.prompt, model: value.model },
-            });
+            })) {
+              if (chunk.type === 'metadata') {
+                metadata = chunk;
+              } else if (chunk.type === 'text') {
+                accumulatedText += chunk.content;
+                // Update the result in real-time
+                setResults((prev) => ({
+                  ...prev,
+                  [key]: {
+                    ...prev[key],
+                    response: accumulatedText,
+                    provider: metadata?.provider || prev[key]?.provider,
+                    model: metadata?.model || prev[key]?.model,
+                  },
+                }));
+              } else if (chunk.type === 'complete') {
+                // Final update with complete data
+                const result = {
+                  response: accumulatedText,
+                  usage: chunk.usage,
+                  finishReason: chunk.finishReason,
+                  provider:
+                    metadata?.provider ||
+                    (value.method === 'gateway' ? 'cloudflare-gateway' : 'cloudflare-workers-ai'),
+                  model: metadata?.model || value.model,
+                };
+                // Update final result and mark loading as complete
+                setResults((prev) => ({ ...prev, [key]: result }));
+                setLoading((prev) => ({ ...prev, [key]: false }));
+              }
+            }
             break;
-          case 'gateway':
-            result = await generateWithGateway({
-              data: { prompt: value.prompt, model: value.model },
-            });
-            break;
+          }
           case 'comparison': {
             const comparisonResult = await compareInferenceMethods({
               data: { prompt: value.prompt, model: value.model },
@@ -135,26 +182,27 @@ function CloudflareAIDemo() {
             const gatewayUsage =
               'usage' in comparisonResult.gateway ? comparisonResult.gateway.usage : undefined;
 
-            result = {
+            const result = {
               response: `Direct: ${directResponse}\n\nGateway: ${gatewayResponse}`,
               usage: {
                 direct: directUsage,
                 gateway: gatewayUsage,
               },
+              provider: 'cloudflare-gateway', // Use gateway icon for comparison
+              model: value.model,
             };
+
+            setResults((prev) => ({ ...prev, [key]: result }));
             break;
           }
           default:
             throw new Error('Invalid method');
         }
-
-        setResults((prev) => ({ ...prev, [key]: result }));
       } catch (error) {
         setResults((prev) => ({
           ...prev,
           [key]: { error: error instanceof Error ? error.message : 'Unknown error' },
         }));
-      } finally {
         setLoading((prev) => ({ ...prev, [key]: false }));
       }
     },
@@ -178,20 +226,59 @@ function CloudflareAIDemo() {
       }
 
       const key = `structured-${Date.now()}`;
+
+      // Show result card immediately with loading state
+      const initialResult: AIResult = {
+        response: '',
+        provider: 'cloudflare-workers-ai-structured',
+        model: 'llama', // Default model for structured responses
+      };
+      setResults((prev) => ({ ...prev, [key]: initialResult }));
       setLoading((prev) => ({ ...prev, [key]: true }));
 
       try {
-        const result = await generateStructuredResponse({
-          data: { topic: value.topic, style: value.style },
-        });
+        // Use streaming for structured output
+        let accumulatedText = '';
+        let metadata: { provider?: string; model?: string } | null = null;
 
-        setResults((prev) => ({ ...prev, [key]: result }));
+        for await (const chunk of await streamStructuredResponse({
+          data: { topic: value.topic, style: value.style },
+        })) {
+          if (chunk.type === 'metadata') {
+            metadata = chunk;
+          } else if (chunk.type === 'text') {
+            accumulatedText += chunk.content;
+            // Update the result in real-time showing the raw text
+            setResults((prev) => ({
+              ...prev,
+              [key]: {
+                ...prev[key],
+                response: accumulatedText,
+                provider: metadata?.provider || prev[key]?.provider,
+                model: metadata?.model || prev[key]?.model,
+              },
+            }));
+          } else if (chunk.type === 'complete') {
+            // Final update with complete data
+            const result: AIResult = {
+              response: chunk.rawText || accumulatedText,
+              usage: chunk.usage,
+              finishReason: chunk.finishReason,
+              provider: metadata?.provider || 'cloudflare-workers-ai-structured',
+              model: metadata?.model || '@cf/meta/llama-3.1-8b-instruct',
+              structuredData: chunk.structuredData,
+              parseError: chunk.parseError || undefined,
+            };
+            // Update final result and mark loading as complete
+            setResults((prev) => ({ ...prev, [key]: result }));
+            setLoading((prev) => ({ ...prev, [key]: false }));
+          }
+        }
       } catch (error) {
         setResults((prev) => ({
           ...prev,
           [key]: { error: error instanceof Error ? error.message : 'Unknown error' },
         }));
-      } finally {
         setLoading((prev) => ({ ...prev, [key]: false }));
       }
     },
@@ -287,10 +374,25 @@ function CloudflareAIDemo() {
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="inference">Text Generation</TabsTrigger>
-          <TabsTrigger value="structured">Structured Output</TabsTrigger>
-          <TabsTrigger value="diagnostics">Gateway Diagnostics</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 h-auto p-1">
+          <TabsTrigger
+            value="inference"
+            className="text-xs sm:text-sm whitespace-normal h-auto py-2"
+          >
+            Text Generation
+          </TabsTrigger>
+          <TabsTrigger
+            value="structured"
+            className="text-xs sm:text-sm whitespace-normal h-auto py-2"
+          >
+            Structured Output
+          </TabsTrigger>
+          <TabsTrigger
+            value="diagnostics"
+            className="text-xs sm:text-sm whitespace-normal h-auto py-2"
+          >
+            Gateway Diagnostics
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="inference" className="space-y-6">
@@ -367,6 +469,12 @@ function CloudflareAIDemo() {
                       <Textarea
                         value={field.state.value}
                         onChange={(e) => field.handleChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) {
+                            e.preventDefault();
+                            inferenceForm.handleSubmit();
+                          }
+                        }}
                         placeholder="Enter your prompt..."
                         rows={4}
                       />
@@ -494,6 +602,12 @@ function CloudflareAIDemo() {
               <Button
                 onClick={async () => {
                   const key = 'gateway-test';
+
+                  // Show result card immediately with loading state
+                  const initialResult: AIResult = {
+                    response: '',
+                  };
+                  setResults((prev) => ({ ...prev, [key]: initialResult }));
                   setLoading((prev) => ({ ...prev, [key]: true }));
 
                   try {
@@ -530,141 +644,334 @@ function CloudflareAIDemo() {
           </Card>
         )}
 
-        {Object.entries(results).map(([key, result]) => {
-          const isLoading = loading[key];
+        {Object.entries(results)
+          .reverse()
+          .map(([key, result]) => {
+            const isLoading = loading[key];
 
-          return (
-            <Card key={key}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    {result.provider === 'cloudflare-workers-ai' && (
-                      <Cpu className="w-5 h-5 text-blue-500" />
-                    )}
-                    {result.provider === 'cloudflare-gateway' && (
-                      <Network className="w-5 h-5 text-green-500" />
-                    )}
-                    {result.provider === 'cloudflare-workers-ai-structured' && (
-                      <Shield className="w-5 h-5 text-purple-500" />
-                    )}
-                    {key === 'gateway-test' && <Network className="w-5 h-5 text-orange-500" />}
-                    <CardTitle className="text-lg">
-                      {key === 'gateway-test'
-                        ? 'Gateway Connectivity Test'
-                        : result.provider === 'cloudflare-gateway'
-                          ? 'AI Gateway'
-                          : result.provider === 'cloudflare-workers-ai-structured'
-                            ? 'Structured Output'
-                            : 'Direct Workers AI'}
-                    </CardTitle>
-                  </div>
-                  <Badge variant={result.error ? 'destructive' : 'default'}>
-                    {isLoading ? 'Loading...' : result.error ? 'Error' : 'Complete'}
-                  </Badge>
-                </div>
-                {result.model && <CardDescription>Model: {result.model}</CardDescription>}
-              </CardHeader>
-              <CardContent>
-                {isLoading && (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Generating response...</span>
-                  </div>
-                )}
-
-                {result.error && (
-                  <div className="text-red-500 p-3 bg-red-50 rounded border">
-                    <strong>Error:</strong> {result.error}
-                  </div>
-                )}
-
-                {result.structuredData && (
-                  <div className="space-y-3">
-                    <div className="p-4 bg-muted rounded">
-                      <h4 className="font-semibold mb-2">{result.structuredData.title}</h4>
-                      <p className="text-sm mb-3">{result.structuredData.summary}</p>
-
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <Badge variant="outline">{result.structuredData.category}</Badge>
-                          <Badge variant="outline">{result.structuredData.difficulty}</Badge>
-                        </div>
-
-                        <div>
-                          <h5 className="font-medium mb-1">Key Points:</h5>
-                          <ul className="list-disc list-inside text-sm space-y-1">
-                            {result.structuredData.keyPoints.map((point: string) => (
-                              <li key={point}>{point}</li>
-                            ))}
-                          </ul>
-                        </div>
-                      </div>
+            return (
+              <Card key={key}>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      {result.provider === 'cloudflare-workers-ai' && (
+                        <Cpu className="w-5 h-5 text-blue-500" />
+                      )}
+                      {result.provider === 'cloudflare-gateway' && (
+                        <Network className="w-5 h-5 text-green-500" />
+                      )}
+                      {result.provider === 'cloudflare-workers-ai-structured' && (
+                        <Shield className="w-5 h-5 text-purple-500" />
+                      )}
+                      {key === 'gateway-test' && <Network className="w-5 h-5 text-orange-500" />}
+                      <CardTitle className="text-lg">
+                        {key === 'gateway-test'
+                          ? 'Gateway Connectivity Test'
+                          : result.provider === 'cloudflare-gateway'
+                            ? 'AI Gateway'
+                            : result.provider === 'cloudflare-workers-ai-structured'
+                              ? 'Structured Output'
+                              : 'Direct Workers AI'}
+                      </CardTitle>
                     </div>
+                    <Badge variant={result.error ? 'destructive' : 'default'}>
+                      {isLoading ? 'Loading...' : result.error ? 'Error' : 'Complete'}
+                    </Badge>
                   </div>
-                )}
+                  {result.model && <CardDescription>Model: {result.model}</CardDescription>}
+                </CardHeader>
+                <CardContent>
+                  {isLoading && !result.response && (
+                    <div className="flex items-center space-x-2">
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Generating response...</span>
+                    </div>
+                  )}
 
-                {result.response && !result.structuredData && (
-                  <div className="p-3 bg-muted rounded whitespace-pre-wrap">{result.response}</div>
-                )}
+                  {result.error && (
+                    <div className="text-red-500 p-3 bg-red-50 rounded border">
+                      <strong>Error:</strong> {result.error}
+                    </div>
+                  )}
 
-                {key === 'gateway-test' && (
-                  <div className="space-y-3">
-                    {result.success ? (
-                      <div className="p-4 bg-green-50 border border-green-200 rounded">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                          <span className="font-semibold text-green-800">
-                            Gateway Connected Successfully
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm text-green-700">
-                          <p>
-                            <strong>Status:</strong> {result.status} {result.statusText}
-                          </p>
-                          <p>
-                            <strong>Gateway URL:</strong> {result.gatewayUrl}
-                          </p>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="p-4 bg-red-50 border border-red-200 rounded">
-                        <div className="flex items-center space-x-2">
-                          <div className="w-3 h-3 bg-red-500 rounded-full"></div>
-                          <span className="font-semibold text-red-800">
-                            Gateway Connection Failed
-                          </span>
-                        </div>
-                        <div className="mt-2 text-sm text-red-700">
-                          <p>
-                            <strong>Error:</strong> {result.error}
-                          </p>
-                          {result.gatewayUrl && (
-                            <p>
-                              <strong>Gateway URL:</strong> {result.gatewayUrl}
-                            </p>
+                  {/* Result Content with Tabs */}
+                  {(result.response || result.structuredData || result.parseError) &&
+                    !result.error &&
+                    (() => {
+                      // Calculate which tabs are available
+                      const hasJsonTab =
+                        result.provider === 'cloudflare-workers-ai-structured' &&
+                        (result.rawText || result.response);
+                      const hasUsageTab = !!result.usage;
+                      const totalTabs = 1 + (hasJsonTab ? 1 : 0) + (hasUsageTab ? 1 : 0);
+                      const gridCols =
+                        totalTabs === 3
+                          ? 'grid-cols-3'
+                          : totalTabs === 2
+                            ? 'grid-cols-2'
+                            : 'grid-cols-1';
+
+                      return (
+                        <Tabs
+                          value={resultTabs[key] || 'response'}
+                          onValueChange={(value) =>
+                            setResultTabs((prev) => ({ ...prev, [key]: value }))
+                          }
+                          className="w-full"
+                        >
+                          <TabsList className={`grid w-full ${gridCols}`}>
+                            <TabsTrigger value="response">Response</TabsTrigger>
+                            {hasJsonTab && <TabsTrigger value="json">JSON</TabsTrigger>}
+                            {hasUsageTab && <TabsTrigger value="usage">Usage</TabsTrigger>}
+                          </TabsList>
+
+                          <TabsContent value="response" className="mt-4">
+                            {result.structuredData ? (
+                              <div className="space-y-3">
+                                <div className="p-4 bg-muted rounded">
+                                  <h4 className="font-semibold mb-2">
+                                    {result.structuredData.title}
+                                  </h4>
+                                  <p className="text-sm mb-3">{result.structuredData.summary}</p>
+
+                                  <div className="space-y-2">
+                                    <div className="flex gap-2">
+                                      <Badge variant="outline">
+                                        {result.structuredData.category}
+                                      </Badge>
+                                      <Badge variant="outline">
+                                        {result.structuredData.difficulty}
+                                      </Badge>
+                                    </div>
+
+                                    <div>
+                                      <h5 className="font-medium mb-1">Key Points:</h5>
+                                      <ul className="list-disc list-inside text-sm space-y-1">
+                                        {result.structuredData.keyPoints.map((point: string) => (
+                                          <li key={point}>{point}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ) : result.parseError ? (
+                              <div className="space-y-3">
+                                <div className="p-3 bg-red-50 border border-red-200 rounded">
+                                  <div className="flex items-center space-x-2 mb-2">
+                                    <span className="text-red-600 font-medium">
+                                      JSON Parse Error:
+                                    </span>
+                                    <span className="text-red-500 text-sm">
+                                      {result.parseError}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-red-700">
+                                    The AI generated a response that couldn't be parsed as valid
+                                    JSON. Check the JSON tab to see the raw response.
+                                  </p>
+                                </div>
+                              </div>
+                            ) : result.response &&
+                              result.provider === 'cloudflare-workers-ai-structured' ? (
+                              <div className="p-3 bg-muted rounded whitespace-pre-wrap">
+                                <div className="text-sm text-muted-foreground mb-2">
+                                  Generating structured JSON...
+                                </div>
+                                {result.response}
+                              </div>
+                            ) : result.response ? (
+                              <div className="p-3 bg-muted rounded whitespace-pre-wrap">
+                                {result.response}
+                              </div>
+                            ) : null}
+                          </TabsContent>
+
+                          {hasJsonTab && (
+                            <TabsContent value="json" className="mt-4">
+                              <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Raw JSON Response</h4>
+                                <pre className="p-3 bg-slate-50 rounded text-xs overflow-x-auto whitespace-pre-wrap border">
+                                  {result.rawText || result.response || 'No JSON data available'}
+                                </pre>
+                              </div>
+                            </TabsContent>
                           )}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
 
-                {result.usage && (
-                  <div className="mt-3 p-3 bg-slate-50 rounded text-sm">
-                    <strong>Usage:</strong>
-                    <pre className="mt-1 text-xs">{JSON.stringify(result.usage, null, 2)}</pre>
-                  </div>
-                )}
+                          {hasUsageTab && (
+                            <TabsContent value="usage" className="mt-4">
+                              <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Usage Statistics</h4>
+                                {result.usage ? (
+                                  <div className="grid grid-cols-3 gap-4 p-3 bg-slate-50 rounded">
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-blue-600">
+                                        {result.usage.inputTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Input Tokens
+                                      </div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-green-600">
+                                        {result.usage.outputTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Output Tokens
+                                      </div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-purple-600">
+                                        {result.usage.totalTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Total Tokens
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 bg-slate-50 rounded text-center text-muted-foreground">
+                                    No usage data available
+                                  </div>
+                                )}
+                                {result.finishReason && (
+                                  <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
+                                    <strong>Finish Reason:</strong> {result.finishReason}
+                                  </div>
+                                )}
+                              </div>
+                            </TabsContent>
+                          )}
+                        </Tabs>
+                      );
+                    })()}
 
-                {result.finishReason && (
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    Finish Reason: {result.finishReason}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+                  {key === 'gateway-test' &&
+                    (() => {
+                      // Calculate which tabs are available for gateway test
+                      const hasResponseTab = !!(result.response || result.error);
+                      const hasUsageTab = !!result.usage;
+                      const totalTabs = 1 + (hasResponseTab ? 1 : 0) + (hasUsageTab ? 1 : 0);
+                      const gridCols =
+                        totalTabs === 3
+                          ? 'grid-cols-3'
+                          : totalTabs === 2
+                            ? 'grid-cols-2'
+                            : 'grid-cols-1';
+
+                      return (
+                        <Tabs
+                          value={resultTabs[key] || 'response'}
+                          onValueChange={(value) =>
+                            setResultTabs((prev) => ({ ...prev, [key]: value }))
+                          }
+                          className="w-full"
+                        >
+                          <TabsList className={`grid w-full ${gridCols}`}>
+                            <TabsTrigger value="response">Connection Test</TabsTrigger>
+                            {hasResponseTab && <TabsTrigger value="json">Response</TabsTrigger>}
+                            {hasUsageTab && <TabsTrigger value="usage">Usage</TabsTrigger>}
+                          </TabsList>
+
+                          <TabsContent value="response" className="mt-4">
+                            <div className="space-y-3">
+                              {result.success ? (
+                                <div className="p-4 bg-green-50 border border-green-200 rounded">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                    <span className="font-semibold text-green-800">
+                                      Gateway Connected Successfully
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 text-sm text-green-700">
+                                    <p>
+                                      <strong>Status:</strong> {result.status} {result.statusText}
+                                    </p>
+                                    <p>
+                                      <strong>Gateway URL:</strong> {result.gatewayUrl}
+                                    </p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="p-4 bg-red-50 border border-red-200 rounded">
+                                  <div className="flex items-center space-x-2">
+                                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                                    <span className="font-semibold text-red-800">
+                                      Gateway Connection Failed
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 text-sm text-red-700">
+                                    <p>
+                                      <strong>Error:</strong> {result.error}
+                                    </p>
+                                    {result.gatewayUrl && (
+                                      <p>
+                                        <strong>Gateway URL:</strong> {result.gatewayUrl}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </TabsContent>
+
+                          {hasResponseTab && (
+                            <TabsContent value="json" className="mt-4">
+                              <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Raw Response</h4>
+                                <pre className="p-3 bg-slate-50 rounded text-xs overflow-x-auto whitespace-pre-wrap border">
+                                  {result.response || result.error || 'No response data available'}
+                                </pre>
+                              </div>
+                            </TabsContent>
+                          )}
+
+                          {hasUsageTab && (
+                            <TabsContent value="usage" className="mt-4">
+                              <div className="space-y-2">
+                                <h4 className="text-sm font-medium">Usage Statistics</h4>
+                                {result.usage ? (
+                                  <div className="grid grid-cols-3 gap-4 p-3 bg-slate-50 rounded">
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-blue-600">
+                                        {result.usage.inputTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Input Tokens
+                                      </div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-green-600">
+                                        {result.usage.outputTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Output Tokens
+                                      </div>
+                                    </div>
+                                    <div className="text-center">
+                                      <div className="text-lg font-semibold text-purple-600">
+                                        {result.usage.totalTokens?.toLocaleString() || '0'}
+                                      </div>
+                                      <div className="text-xs text-muted-foreground">
+                                        Total Tokens
+                                      </div>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="p-3 bg-slate-50 rounded text-center text-muted-foreground">
+                                    No usage data available
+                                  </div>
+                                )}
+                              </div>
+                            </TabsContent>
+                          )}
+                        </Tabs>
+                      );
+                    })()}
+                </CardContent>
+              </Card>
+            );
+          })}
       </div>
     </div>
   );

@@ -1,11 +1,18 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { LogOut, Menu, Shield, User } from 'lucide-react';
+import { Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '~/components/ui/sheet';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { cn } from '~/lib/utils';
+
+type NavItem = {
+  to: string;
+  label: string;
+  exact?: boolean;
+  icon?: LucideIcon;
+};
 
 export function MobileNavigation() {
   const authState = useAuthState();
@@ -20,7 +27,12 @@ export function MobileNavigation() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const navItems = isAuthenticated ? [{ to: '/app', label: 'Dashboard', exact: true }] : [];
+  const navItems: NavItem[] = isAuthenticated
+    ? [
+        { to: '/app', label: 'Dashboard', exact: true },
+        { to: '/app/ai-demo', label: 'AI Demo', icon: Cloud },
+      ]
+    : [];
 
   const handleLinkClick = () => {
     setOpen(false);
@@ -73,23 +85,29 @@ export function MobileNavigation() {
           {/* Main Navigation */}
           {navItems.length > 0 && (
             <nav className="flex flex-col space-y-2">
-              {navItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  preload="intent"
-                  onClick={handleLinkClick}
-                  className={cn(
-                    'text-foreground hover:text-foreground hover:bg-accent px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                  )}
-                  activeOptions={item.exact ? { exact: true } : undefined}
-                  activeProps={{
-                    className: 'bg-accent text-accent-foreground border-l-4 border-primary',
-                  }}
-                >
-                  {item.label}
-                </Link>
-              ))}
+              {navItems.map((item) => {
+                const IconComponent = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    preload="intent"
+                    onClick={handleLinkClick}
+                    className={cn(
+                      'text-foreground hover:text-foreground hover:bg-accent px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                    )}
+                    activeOptions={item.exact ? { exact: true } : undefined}
+                    activeProps={{
+                      className: 'bg-accent text-accent-foreground border-l-4 border-primary',
+                    }}
+                  >
+                    <div className="flex items-center gap-2">
+                      {IconComponent && <IconComponent className="w-4 h-4" />}
+                      {item.label}
+                    </div>
+                  </Link>
+                );
+              })}
             </nav>
           )}
 
