@@ -1,7 +1,13 @@
 import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { internal } from './_generated/api';
-import { type ActionCtx, action, internalMutation, internalQuery } from './_generated/server';
+import {
+  type ActionCtx,
+  action,
+  internalMutation,
+  internalQuery,
+  query,
+} from './_generated/server';
 import { authComponent } from './auth';
 import {
   AUTUMN_NOT_CONFIGURED_ERROR,
@@ -156,6 +162,45 @@ export const getUsageRecord = internalQuery({
       lastCompletedAt: usageDoc.lastCompletedAt ?? null,
       createdAt: usageDoc.createdAt,
       updatedAt: usageDoc.updatedAt,
+    };
+  },
+});
+
+/**
+ * Public query to get current user's AI usage record (reactive)
+ * Returns null if user is not authenticated
+ */
+export const getCurrentUserUsage = query({
+  args: {},
+  handler: async (ctx) => {
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      return null;
+    }
+
+    const userId = assertUserId(authUser, 'Unable to resolve user id.');
+    const usageDoc = await ctx.db
+      .query('aiMessageUsage')
+      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .first();
+
+    if (!usageDoc) {
+      return null;
+    }
+
+    const freeLimit = FREE_MESSAGE_LIMIT;
+    const messagesUsed = usageDoc.messagesUsed ?? 0;
+    const pendingMessages = usageDoc.pendingMessages ?? 0;
+    const consumed = messagesUsed;
+    const freeMessagesRemaining = Math.max(0, freeLimit - consumed);
+
+    return {
+      messagesUsed,
+      pendingMessages,
+      freeMessagesRemaining,
+      freeLimit,
+      lastReservedAt: usageDoc.lastReservedAt ?? null,
+      lastCompletedAt: usageDoc.lastCompletedAt ?? null,
     };
   },
 });

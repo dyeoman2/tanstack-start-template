@@ -96,7 +96,7 @@ export const checkoutAutumn = action({
     const checkoutParams: {
       customer_id: string;
       product_id: string;
-      successUrl?: string;
+      success_url?: string;
     } = {
       customer_id,
       product_id: args.productId,
@@ -104,7 +104,7 @@ export const checkoutAutumn = action({
 
     // Add success URL if provided
     if (args.successUrl) {
-      checkoutParams.successUrl = args.successUrl;
+      checkoutParams.success_url = args.successUrl;
     }
 
     return await client.checkout(checkoutParams);

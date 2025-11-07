@@ -18,8 +18,8 @@ export function CreditPurchase({ onPurchaseSuccess, compact = false }: CreditPur
   const handlePurchase = async (productId: string) => {
     try {
       setIsLoading(true);
-      // Redirect back to the AI demo page after successful payment
-      const successUrl = `${window.location.origin}/app/ai-demo`;
+      // Redirect back to the AI demo page after successful payment with status query param
+      const successUrl = `${window.location.origin}/app/ai-demo?payment=success`;
       const result = await checkoutAction({ productId, successUrl });
 
       if (result.error) {
@@ -29,8 +29,8 @@ export function CreditPurchase({ onPurchaseSuccess, compact = false }: CreditPur
       }
 
       if (result.data?.url) {
-        // Redirect to Stripe checkout
-        window.location.href = result.data.url;
+        // Open Stripe checkout in a new tab
+        window.open(result.data.url, '_blank');
       } else {
         // Success - credits added
         onPurchaseSuccess?.();

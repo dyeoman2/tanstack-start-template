@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
-import { useAction } from 'convex/react';
-import { useCallback, useEffect, useState } from 'react';
+import { useAction, useQuery } from 'convex/react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 type AiUsageStatusResult =
   | {
@@ -34,34 +34,88 @@ interface UseAiUsageStatusReturn {
 }
 
 export function useAiUsageStatus(): UseAiUsageStatusReturn {
+  // Use reactive query for usage data (updates automatically when aiMessageUsage table changes)
+  const usageData = useQuery(api.ai.getCurrentUserUsage);
+
+  // Use action for Autumn subscription status (less frequent, requires external API call)
   const getAiUsageStatusAction = useAction(api.ai.getAiUsageStatus);
-  const [status, setStatus] = useState<AiUsageStatusResult | null>(null);
+  const [subscriptionData, setSubscriptionData] = useState<{
+    status: 'unknown' | 'needs_upgrade' | 'subscribed' | 'not_configured';
+    configured: boolean;
+    lastCheckError: { message: string; code: string } | null;
+    creditBalance: number | null;
+    isUnlimited: boolean;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const refresh = useCallback(async () => {
+  // Fetch subscription status when usage data changes or on mount
+  const refreshSubscription = useCallback(async () => {
     setIsRefreshing(true);
     try {
       const result = await getAiUsageStatusAction({});
-      setStatus(result);
+      if (result.authenticated) {
+        setSubscriptionData(result.subscription);
+      }
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load AI usage status');
     } finally {
       setIsRefreshing(false);
-      setIsLoading(false);
     }
   }, [getAiUsageStatusAction]);
 
+  // Fetch subscription status when usage data is available
+  // This ensures we have subscription info, especially when free tier is exhausted
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    if (usageData) {
+      // Always fetch subscription status when we have usage data
+      // This ensures we have accurate subscription info, especially when messagesUsed >= freeLimit
+      void refreshSubscription();
+    }
+  }, [usageData, refreshSubscription]);
+
+  // Combine usage data (reactive) with subscription data (fetched)
+  const status = useMemo<AiUsageStatusResult | null>(() => {
+    if (usageData === undefined) {
+      // Still loading
+      return null;
+    }
+
+    if (usageData === null) {
+      // Not authenticated
+      return { authenticated: false };
+    }
+
+    // Authenticated - combine usage data with subscription data
+    return {
+      authenticated: true,
+      usage: {
+        messagesUsed: usageData.messagesUsed,
+        pendingMessages: usageData.pendingMessages,
+        freeMessagesRemaining: usageData.freeMessagesRemaining,
+        freeLimit: usageData.freeLimit,
+        lastReservedAt: usageData.lastReservedAt,
+        lastCompletedAt: usageData.lastCompletedAt,
+      },
+      subscription: subscriptionData ?? {
+        status: 'unknown',
+        configured: false,
+        lastCheckError: null,
+        creditBalance: null,
+        isUnlimited: false,
+      },
+    };
+  }, [usageData, subscriptionData]);
+
+  const refresh = useCallback(async () => {
+    await refreshSubscription();
+  }, [refreshSubscription]);
 
   return {
     status,
     error,
-    isLoading,
+    isLoading: usageData === undefined,
     isRefreshing,
     refresh,
   };

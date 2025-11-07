@@ -1,7 +1,7 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { BarChart3, Cloud, Cpu, Loader2, Network, Shield } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useAutumnBilling } from '~/components/AutumnProvider';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
@@ -19,6 +19,7 @@ import {
 } from '~/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
+import { useToast } from '~/components/ui/toast';
 import { CreditPurchase } from '~/features/ai/components/CreditPurchase';
 import { CREDIT_PACKAGES } from '~/features/ai/constants';
 import { useAiUsageStatus } from '~/features/ai/hooks/useAiUsageStatus';
@@ -31,9 +32,14 @@ import {
 } from '~/features/ai/server/cloudflare-ai.server';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
 
+const paymentStatusSchema = z.object({
+  payment: z.enum(['success', 'cancelled', 'failed']).optional(),
+});
+
 export const Route = createFileRoute('/app/ai-demo')({
   component: CloudflareAIDemo,
   errorComponent: DashboardErrorBoundary,
+  validateSearch: paymentStatusSchema,
 });
 
 type InferenceMethod = 'direct' | 'gateway' | 'structured' | 'comparison';
@@ -66,6 +72,9 @@ interface AIResult {
 function CloudflareAIDemo() {
   usePerformanceMonitoring('Cloudflare AI Demo');
 
+  const navigate = useNavigate();
+  const toast = useToast();
+  const { payment } = Route.useSearch();
   const [activeTab, setActiveTab] = useState('inference');
   const [results, setResults] = useState<Record<string, AIResult>>({});
   const [loading, setLoading] = useState<Record<string, boolean>>({});
@@ -75,6 +84,35 @@ function CloudflareAIDemo() {
   const { ready: autumnReady } = useAutumnBilling();
   const usageDetails = usageStatus?.authenticated ? usageStatus.usage : null;
   const subscriptionDetails = usageStatus?.authenticated ? usageStatus.subscription : null;
+  const paymentHandledRef = useRef<string | undefined>(undefined);
+
+  // Handle payment status query parameter - only once per payment status
+  useEffect(() => {
+    // Skip if no payment status or if we've already handled this status
+    if (!payment || paymentHandledRef.current === payment) {
+      return;
+    }
+
+    // Mark this payment status as handled
+    paymentHandledRef.current = payment;
+
+    // Clean up URL immediately to prevent re-triggering
+    navigate({
+      to: '/app/ai-demo',
+      replace: true,
+    });
+
+    // Show toast and refresh usage
+    if (payment === 'success') {
+      toast.showToast(
+        'Payment completed successfully! Credits have been added to your account.',
+        'success',
+      );
+      void refreshUsage();
+    } else if (payment === 'cancelled' || payment === 'failed') {
+      toast.showToast('Payment was cancelled or failed. Please try again.', 'error');
+    }
+  }, [payment, navigate, toast, refreshUsage]);
 
   const freeLimit = usageDetails?.freeLimit ?? 10;
   const freeRemaining = usageDetails?.freeMessagesRemaining ?? freeLimit;
