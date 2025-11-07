@@ -96,41 +96,67 @@ All packages should use:
 - Allowance Interval: `no reset`
 - Configuration: `Included`
 
-## 3. Configure Environment Variables (Local)
+## 3. Configure Environment Variables
 
-### Convex (server)
+### Development Environment
+
+#### Convex (Server-Side)
+
+Set the Autumn secret key for your development Convex deployment:
 
 ```bash
-# Set the Autumn secret key for local Convex usage
+# Set the Autumn secret key (development)
 npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here
 ```
 
-### Client (`.env.local`)
+**Important**: This variable must be set in Convex, not in your local `.env` file.
+
+#### Client-Side (`.env.local`)
+
+Set the credit package product ID for local development:
 
 ```bash
-# Credit package product ID
+# Credit package product ID (development)
 VITE_AUTUMN_50_CREDITS_ID=prod_50_credits
 ```
 
 Restart the dev server after updating environment variables so that both Convex and Vite pick up the changes.
 
-## 4. Configure Environment Variables (Production)
+### Production Environment
 
-### Convex Production Environment
+#### Convex (Server-Side)
+
+Set the Autumn secret key for your production Convex deployment:
 
 ```bash
+# Set the Autumn secret key (production)
 npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here --prod
 ```
 
-### Netlify (or your hosting platform)
+**Important**: This variable must be set in Convex, not in Netlify.
 
-Set the credit package product ID in the deployment environment:
+#### Netlify (Client-Side)
+
+Set the credit package product ID in your Netlify deployment environment:
 
 ```bash
+# Credit package product ID (production)
 npx netlify env:set VITE_AUTUMN_50_CREDITS_ID prod_50_credits
 ```
 
-Redeploy after the variables are in place.
+**Note**: `VITE_AUTUMN_50_CREDITS_ID` is a client-side variable (prefixed with `VITE_`), so it needs to be set in Netlify for production builds. The `AUTUMN_SECRET_KEY` is server-side and only needs to be in Convex.
+
+### Using the Convex Dashboard
+
+You can also set the Convex environment variable via the dashboard:
+
+1. Go to your [Convex Dashboard](https://dashboard.convex.dev)
+2. Select your project
+3. Go to **Settings > Environment Variables**
+4. Select the environment (Development or Production) from the dropdown
+5. Add the variable:
+   - `AUTUMN_SECRET_KEY`: Your Autumn secret key (`am_sk_...`)
+6. Click **Save** - Convex will automatically redeploy your functions
 
 ## 5. Verify the Integration
 
@@ -152,7 +178,11 @@ npx convex codegen
 
 ## Troubleshooting
 
-- **"Autumn billing is not configured" message**: Verify that `AUTUMN_SECRET_KEY` is set in Convex
+- **"Autumn billing is not configured" message**: 
+  - Verify that `AUTUMN_SECRET_KEY` is set in Convex (check both Development and Production environments if needed)
+  - **For development**: Use `npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here`
+  - **For production**: Use `npx convex env set AUTUMN_SECRET_KEY am_sk_your_secret_key_here --prod`
+  - Use `npx convex env ls` to list all environment variables and verify `AUTUMN_SECRET_KEY` is present
 - **Checkout dialog does not open**: Ensure product IDs match your Autumn dashboard
 - **Credits not added after purchase**: Check that the `messages` feature is properly configured
 

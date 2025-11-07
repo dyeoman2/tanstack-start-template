@@ -119,12 +119,13 @@ npx netlify link
 
 ## 📄 Third Party Services Setup
 
-In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For AI functionality, you need to set up Cloudflare Workers AI. To meter usage and offer paid upgrades after the 10 free messages, you need to set up Autumn. These are optional, but recommended for production.
+In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For AI functionality, you need to set up Cloudflare Workers AI. To meter usage and offer paid upgrades after the 10 free messages, you need to set up Autumn. For web scraping and content extraction in the AI demo, you can set up Firecrawl. These are optional, but recommended for production.
 
 - [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration
 - [Sentry Setup](./docs/SENTRY_SETUP.md) - Error monitoring and performance tracking
 - [Cloudflare AI Setup](docs/CLOUDFLARE_AI_SETUP.md) - AI inference and gateway configuration
 - [Autumn Billing Setup](docs/AUTUMN_SETUP.md) - Usage metering and upgrade flow for AI messaging
+- [Firecrawl Setup](docs/FIRECRAWL_SETUP.md) - Web scraping and content extraction for AI demo
 
 - [CodeRabbit CLI Setup](docs/CODERABBIT_CLI_SETUP.md) - AI-powered code review assistance
 

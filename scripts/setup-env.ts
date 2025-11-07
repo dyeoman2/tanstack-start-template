@@ -97,6 +97,14 @@ S3_PUBLIC_URL=http://localhost:9000
 
 # Convex URLs will be automatically set after running: npx convex dev
 # VITE_CONVEX_SITE_URL= set after running: pnpm run setup:convex
+
+# ==========================================
+# AUTUMN BILLING (Optional)
+# ==========================================
+
+# Optional: Autumn product ID for credit purchases
+# Get from: https://useautumn.com dashboard after creating a credit package
+VITE_AUTUMN_50_CREDITS_ID=prod_50_credits
 `;
 
   writeFileSync(envPath, envContent, 'utf8');

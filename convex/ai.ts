@@ -674,6 +674,96 @@ export const getAiUsageStatus = action({
   },
 });
 
+export const isFirecrawlConfigured = action({
+  args: {},
+  handler: async (_ctx: ActionCtx) => {
+    const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY ?? '';
+    return {
+      configured: FIRECRAWL_API_KEY.length > 0,
+    };
+  },
+});
+
+export const extractWithFirecrawl = action({
+  args: {
+    url: v.string(),
+  },
+  handler: async (ctx: ActionCtx, args) => {
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      throw new Error('Authentication required');
+    }
+
+    const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY;
+
+    if (!FIRECRAWL_API_KEY) {
+      console.warn(
+        '[Firecrawl] API key is not configured. Set FIRECRAWL_API_KEY in Convex environment variables to enable Firecrawl web scraping. See docs/FIRECRAWL_SETUP.md for setup instructions.',
+      );
+      return {
+        success: false,
+        url: args.url,
+        error: 'Firecrawl API key is not configured. Please set FIRECRAWL_API_KEY in your Convex environment variables to use this feature. See docs/FIRECRAWL_SETUP.md for setup instructions.',
+        markdown: null,
+        json: null,
+      };
+    }
+
+    try {
+      const response = await fetch('https://api.firecrawl.dev/v1/extract', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          urls: [args.url],
+          scrapeOptions: {
+            formats: ['markdown', 'json'],
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData: { error?: string } = {};
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          // If JSON parsing fails, use the raw text
+        }
+        throw new Error(
+          errorData.error || `Firecrawl API error: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const result = await response.json();
+
+      if (!result.success) {
+        throw new Error(result.error || 'Firecrawl extraction failed');
+      }
+
+      // Extract the first result from the data array (Firecrawl returns array of results)
+      const extractData = Array.isArray(result.data) ? result.data[0] : result.data;
+
+      if (!extractData) {
+        throw new Error('No data returned from Firecrawl');
+      }
+
+      return {
+        success: true,
+        url: args.url,
+        markdown: extractData.markdown || '',
+        json: extractData.json || null,
+      };
+    } catch (error) {
+      throw error instanceof Error
+        ? error
+        : new Error('Failed to extract content from Firecrawl');
+    }
+  },
+});
+
 export const aiUsageConstants = action({
   args: {},
   handler: async (_ctx: ActionCtx): Promise<{ freeMessageLimit: number; featureId: string }> => {

@@ -46,62 +46,51 @@ AI Gateway provides monitoring, rate limiting, and analytics for your AI request
 
 ## Environment Variables Setup
 
-### Local Development (.env file)
+Cloudflare AI operations run in Convex, so the environment variables only need to be set in your Convex environment variables.
 
-Create or update your `.env` file in the project root:
+**Important**: These variables must be set in Convex, not in your local `.env` file or Netlify. The Convex environment is separate and shared across all deployments.
 
-```env
-# Cloudflare AI Configuration
-CLOUDFLARE_API_TOKEN=your_api_token_here
-CLOUDFLARE_ACCOUNT_ID=your_account_id_here
-CLOUDFLARE_GATEWAY_ID=your_gateway_id_here  # Optional
-```
+### Development Environment
 
-### Convex Deployment
-
-Use the Convex CLI to set environment variables:
+Set environment variables for your development Convex deployment:
 
 ```bash
-# Set required environment variables
-convex env set CLOUDFLARE_API_TOKEN your_api_token_here --prod
-convex env set CLOUDFLARE_ACCOUNT_ID your_account_id_here --prod
+# Set required environment variables (development)
+npx convex env set CLOUDFLARE_API_TOKEN your_api_token_here
+npx convex env set CLOUDFLARE_ACCOUNT_ID your_account_id_here
 
 # Set optional gateway variable (if using AI Gateway)
-convex env set CLOUDFLARE_GATEWAY_ID your_gateway_id_here --prod
+npx convex env set CLOUDFLARE_GATEWAY_ID your_gateway_id_here
 ```
+
+### Production Environment
+
+Set environment variables for your production Convex deployment:
+
+```bash
+# Set required environment variables (production)
+npx convex env set CLOUDFLARE_API_TOKEN your_api_token_here --prod
+npx convex env set CLOUDFLARE_ACCOUNT_ID your_account_id_here --prod
+
+# Set optional gateway variable (if using AI Gateway)
+npx convex env set CLOUDFLARE_GATEWAY_ID your_gateway_id_here --prod
+```
+
+### Using the Convex Dashboard
 
 Alternatively, you can set them via the Convex dashboard:
 
-1. Go to your Convex dashboard
+1. Go to your [Convex Dashboard](https://dashboard.convex.dev)
 2. Select your project
 3. Go to **Settings > Environment Variables**
-4. Add the following variables:
+4. Select the environment (Development or Production) from the dropdown
+5. Add the following variables:
    - `CLOUDFLARE_API_TOKEN`
    - `CLOUDFLARE_ACCOUNT_ID`
    - `CLOUDFLARE_GATEWAY_ID` (optional)
+6. Click **Save** - Convex will automatically redeploy your functions
 
-### Netlify Deployment
-
-Use the Netlify CLI to set environment variables:
-
-```bash
-# Set required environment variables
-netlify env:set CLOUDFLARE_API_TOKEN your_api_token_here
-netlify env:set CLOUDFLARE_ACCOUNT_ID your_account_id_here
-
-# Set optional gateway variable (if using AI Gateway)
-netlify env:set CLOUDFLARE_GATEWAY_ID your_gateway_id_here
-```
-
-Alternatively, you can set them via the Netlify dashboard:
-
-1. Go to your Netlify dashboard
-2. Select your site
-3. Go to **Site settings > Environment variables**
-4. Add the following variables:
-   - `CLOUDFLARE_API_TOKEN`
-   - `CLOUDFLARE_ACCOUNT_ID`
-   - `CLOUDFLARE_GATEWAY_ID` (optional)
+**Note**: Since Cloudflare AI runs in Convex, you don't need to set these variables in your local `.env` file or Netlify. This also avoids Netlify's 10-26 second function timeout limits, as Convex actions can run for up to 10 minutes.
 
 ## Testing Your Setup
 
@@ -115,65 +104,64 @@ Alternatively, you can set them via the Netlify dashboard:
 
 ### "Missing required Cloudflare AI environment variables"
 
-- Check that all required environment variables are set in your `.env` file
-- Restart your development server after adding env vars
+- Make sure you've set `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` in your Convex environment variables
+- **For development**: Use `npx convex env set CLOUDFLARE_API_TOKEN your_api_token_here` (and same for `CLOUDFLARE_ACCOUNT_ID`)
+- **For production**: Use `npx convex env set CLOUDFLARE_API_TOKEN your_api_token_here --prod` (and same for `CLOUDFLARE_ACCOUNT_ID`)
+- Or set it via the Convex Dashboard: **Settings > Environment Variables** (select the correct environment)
+- Use `npx convex env ls` to list all environment variables and verify both variables are present
+- After setting, Convex will automatically redeploy - wait a few seconds and try again
 - Verify the variable names match exactly (case-sensitive)
 
 ### Gateway requests not logging
 
 - Verify your `CLOUDFLARE_GATEWAY_ID` is correct
 - Check that the gateway exists in your Cloudflare dashboard
-- Ensure your API token has AI Gateway permissions
-- Check the server logs for detailed error messages
 
-### API Token Issues
+### Long-running AI operations timing out
 
-- Verify your token hasn't expired
-- Check that it has the correct permissions:
-  - Workers AI: Read
-  - AI Gateway: Read (if using gateway)
-- Try regenerating the token if issues persist
+- Cloudflare AI operations now run in Convex, which supports up to 10 minutes of execution time
+- This avoids Netlify's 10-26 second timeout limits
+- If you still experience timeouts, check your Convex dashboard for any execution limits
 
+## How It Works
 
-### Account ID Issues
+The Cloudflare AI integration runs entirely in Convex:
 
-- Double-check your Account ID in the Cloudflare dashboard
-- Make sure you're using the correct account (if you have multiple)
+- **Direct Workers AI**: Direct calls to Cloudflare Workers AI models
+- **AI Gateway**: Routes requests through Cloudflare's AI Gateway for monitoring and analytics
+- **Structured Output**: Generates structured JSON responses from AI models
+- **Comparison**: Compares direct vs gateway methods side-by-side
 
-## Available AI Models
+All operations use Convex actions with the `"use node"` directive to access Node.js packages like `workers-ai-provider` and `ai`.
 
-The demo supports two modes:
+## Rate Limits
 
-### Direct Workers AI (No Gateway)
-- **@cf/meta/llama-3.1-8b-instruct** - Meta's Llama 3.1 model
-- **@cf/tiiuae/falcon-7b-instruct** - TII UAE's Falcon model
+Cloudflare Workers AI has rate limits based on your plan:
 
-### AI Gateway (Cloudflare Workers AI)
-- **@cf/meta/llama-3.1-8b-instruct** - Meta's Llama 3.1 model (via Gateway)
-- **@cf/tiiuae/falcon-7b-instruct** - TII UAE's Falcon model (via Gateway)
+- **Free tier**: Limited requests per day
+- **Paid plans**: Higher limits and additional features
 
-You can modify the code to use other [available models](https://developers.cloudflare.com/workers-ai/models/) from Cloudflare Workers AI.
-
-## Monitoring and Analytics
-
-Once your gateway is set up, you can monitor your AI usage in the Cloudflare dashboard:
-
-1. Go to **AI > AI Gateway**
-2. Select your gateway
-3. View request logs, analytics, and performance metrics
-
-This helps you track costs, monitor usage patterns, and optimize your AI implementation.
+Check your Cloudflare dashboard for current usage and limits.
 
 ## Security Best Practices
 
-- Never commit API tokens to version control
-- Use environment variables for all sensitive configuration
-- Rotate API tokens regularly
-- Use AI Gateway for production deployments to enable monitoring
-- Set up rate limiting in your gateway configuration
+- Never commit API keys to version control
+- Use Convex environment variables for all sensitive configuration
+- Rotate API keys regularly
+- Monitor API usage in the Cloudflare dashboard
+- Set up rate limiting if needed for production use
+
+## Support
+
+For issues with Cloudflare AI:
+
+- Check the [Cloudflare Workers AI Documentation](https://developers.cloudflare.com/workers-ai/)
+- Review your Cloudflare dashboard for API status
+- Check application logs for detailed error messages
+- Verify network connectivity to Cloudflare API
 
 ## Need Help?
 
 - [Cloudflare Workers AI Documentation](https://developers.cloudflare.com/workers-ai/)
-- [AI Gateway Documentation](https://developers.cloudflare.com/ai-gateway/)
-- [API Token Management](https://developers.cloudflare.com/fundamentals/api/get-started/create-token/)
+- [Cloudflare AI Gateway Documentation](https://developers.cloudflare.com/ai-gateway/)
+- [Cloudflare Dashboard](https://dash.cloudflare.com)
