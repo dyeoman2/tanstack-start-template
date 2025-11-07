@@ -4,8 +4,8 @@ This guide walks through configuring the Autumn billing platform for credit-base
 
 ## Overview
 
-- **Free tier**: First 10 AI messages are completely free
-- **Credit pricing**: $0.10 per credit (1 credit = 1 AI message)
+- **Free tier**: First 10 messages are completely free
+- **Credit pricing**: $0.10 per credit (1 credit = 1 message)
 - **Minimum purchase**: $5.00 (50 credits) when free tier is exhausted
 - **Autumn metering**: Paid usage is tracked against the `messages` feature through Autumn's API
 - **Credit packages**: Multiple purchase options available
@@ -156,4 +156,4 @@ npx convex codegen
 - **Checkout dialog does not open**: Ensure product IDs match your Autumn dashboard
 - **Credits not added after purchase**: Check that the `messages` feature is properly configured
 
-With these steps in place, customers get 10 free AI messages, then must purchase credits at $0.10 each (minimum $5) for continued usage.
+With these steps in place, customers get 10 free messages, then must purchase credits at $0.10 each (minimum $5) for continued usage.

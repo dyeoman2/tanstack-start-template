@@ -87,7 +87,7 @@ function buildReservationError(reservation: {
 }) {
   if (reservation.requiresUpgrade && reservation.reason !== 'autumn_not_configured') {
     return new Error(
-      `You have used all ${reservation.freeLimit} free AI messages. Upgrade your plan to continue.`,
+      `You have used all ${reservation.freeLimit} free messages. Upgrade your plan to continue.`,
     );
   }
 
@@ -102,7 +102,7 @@ function buildReservationError(reservation: {
     return new Error(`Unable to verify your AI subscription${detail}. Please try again shortly.`);
   }
 
-  return new Error('Unable to reserve an AI message. Please try again in a moment.');
+  return new Error('Unable to reserve an message. Please try again in a moment.');
 }
 
 function extractUsageMetadata(

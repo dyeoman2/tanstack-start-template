@@ -94,7 +94,7 @@ export function CreditPurchase({ onPurchaseSuccess, compact = false }: CreditPur
           ))}
         </div>
         <div className="mt-6 text-sm text-muted-foreground text-center">
-          <p>• $0.10 per credit (1 credit = 1 AI message)</p>
+          <p>• $0.10 per credit (1 credit = 1 message)</p>
           <p>• Credits never expire and can be used anytime</p>
         </div>
       </CardContent>

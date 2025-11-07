@@ -30,6 +30,7 @@ interface UseAiUsageStatusReturn {
   error: string | null;
   isLoading: boolean;
   isRefreshing: boolean;
+  isInitialSubscriptionLoad: boolean;
   refresh: () => Promise<void>;
 }
 
@@ -48,6 +49,7 @@ export function useAiUsageStatus(): UseAiUsageStatusReturn {
   } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isInitialSubscriptionLoad, setIsInitialSubscriptionLoad] = useState(true);
 
   // Fetch subscription status when usage data changes or on mount
   const refreshSubscription = useCallback(async () => {
@@ -62,15 +64,17 @@ export function useAiUsageStatus(): UseAiUsageStatusReturn {
       setError(err instanceof Error ? err.message : 'Failed to load AI usage status');
     } finally {
       setIsRefreshing(false);
+      setIsInitialSubscriptionLoad(false);
     }
   }, [getAiUsageStatusAction]);
 
   // Fetch subscription status when usage data is available
-  // This ensures we have subscription info, especially when free tier is exhausted
+  // This ensures we have subscription info, including when users have purchased credits
+  // but still have free messages remaining (so we can show both)
   useEffect(() => {
     if (usageData) {
       // Always fetch subscription status when we have usage data
-      // This ensures we have accurate subscription info, especially when messagesUsed >= freeLimit
+      // This ensures we detect purchased credits even when free tier hasn't been exhausted yet
       void refreshSubscription();
     }
   }, [usageData, refreshSubscription]);
@@ -117,6 +121,7 @@ export function useAiUsageStatus(): UseAiUsageStatusReturn {
     error,
     isLoading: usageData === undefined,
     isRefreshing,
+    isInitialSubscriptionLoad,
     refresh,
   };
 }

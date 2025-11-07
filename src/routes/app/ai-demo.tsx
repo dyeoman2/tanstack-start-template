@@ -80,7 +80,11 @@ function CloudflareAIDemo() {
   const [loading, setLoading] = useState<Record<string, boolean>>({});
   const [envVarsMissing] = useState(false);
   const [resultTabs, setResultTabs] = useState<Record<string, string>>({});
-  const { status: usageStatus, refresh: refreshUsage } = useAiUsageStatus();
+  const {
+    status: usageStatus,
+    refresh: refreshUsage,
+    isInitialSubscriptionLoad,
+  } = useAiUsageStatus();
   const { ready: autumnReady } = useAutumnBilling();
   const usageDetails = usageStatus?.authenticated ? usageStatus.usage : null;
   const subscriptionDetails = usageStatus?.authenticated ? usageStatus.subscription : null;
@@ -121,14 +125,18 @@ function CloudflareAIDemo() {
   const creditBalance = subscriptionDetails?.creditBalance ?? null;
   const autumnNotConfigured = subscriptionDetails?.status === 'not_configured';
   const showAutumnSetupCard = !autumnReady || autumnNotConfigured;
+  // Generation is blocked if: not subscribed AND free tier exhausted (including pending)
   const generationBlocked = !isSubscribed && freeRemaining <= 0;
+  // User has purchased credits but still has free messages remaining
+  const hasPaidCreditsWithFreeRemaining =
+    isSubscribed && creditBalance !== null && freeRemaining > 0;
 
   const addUsageDepletedResult = () => {
     setResults((prev) => ({
       ...prev,
       [`autumn-usage-${Date.now()}`]: {
         error:
-          'You have no free AI messages remaining. Configure Autumn billing to add credits and continue.',
+          'You have no free messages remaining. Configure Autumn billing to add credits and continue.',
       },
     }));
   };
@@ -614,7 +622,7 @@ function CloudflareAIDemo() {
                   )}
                 </inferenceForm.Field>
 
-                {usageDetails ? (
+                {usageDetails && !isInitialSubscriptionLoad ? (
                   <Alert
                     variant={
                       isSubscribed ? 'default' : generationBlocked ? 'destructive' : 'warning'
@@ -625,14 +633,16 @@ function CloudflareAIDemo() {
                         <div className="flex items-center justify-between gap-4">
                           <span>
                             {isSubscribed && isUnlimited
-                              ? 'Your Autumn subscription provides unlimited AI messages.'
-                              : isSubscribed && creditBalance !== null
-                                ? `You have ${creditBalance} AI message${creditBalance === 1 ? '' : 's'} remaining.`
-                                : generationBlocked
-                                  ? 'You have no messages remaining. Purchase more credits to continue.'
-                                  : `You have ${freeRemaining} free AI message${freeRemaining === 1 ? '' : 's'} remaining.`}
+                              ? 'Your Autumn subscription provides unlimited messages.'
+                              : hasPaidCreditsWithFreeRemaining
+                                ? `You have ${freeRemaining} free message${freeRemaining === 1 ? '' : 's'} remaining. After that, you have ${creditBalance} paid credit${creditBalance === 1 ? '' : 's'} available.`
+                                : isSubscribed && creditBalance !== null
+                                  ? `You have ${creditBalance} message${creditBalance === 1 ? '' : 's'} remaining.`
+                                  : generationBlocked
+                                    ? 'You have no messages remaining. Purchase more credits to continue.'
+                                    : `You have ${freeRemaining} free message${freeRemaining === 1 ? '' : 's'} remaining.`}
                           </span>
-                          {!isSubscribed && generationBlocked && (
+                          {!isSubscribed && (
                             <CreditPurchase onPurchaseSuccess={refreshUsage} compact />
                           )}
                         </div>

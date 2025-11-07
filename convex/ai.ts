@@ -117,6 +117,25 @@ type AiUsageStatusResult =
       };
     };
 
+/**
+ * Calculate usage metrics consistently across the application.
+ * This ensures display calculations match limit enforcement logic.
+ */
+function calculateUsageMetrics(messagesUsed: number, pendingMessages: number, freeLimit: number) {
+  const totalConsumed = messagesUsed + pendingMessages;
+  const freeMessagesRemaining = Math.max(0, freeLimit - totalConsumed);
+  const isFreeTierExhausted = totalConsumed >= freeLimit;
+
+  return {
+    messagesUsed,
+    pendingMessages,
+    totalConsumed,
+    freeMessagesRemaining,
+    isFreeTierExhausted,
+    freeLimit,
+  };
+}
+
 function createUsageSnapshot(
   doc: AiUsageRecord | null,
   freeLimit: number,
@@ -124,14 +143,13 @@ function createUsageSnapshot(
 ): UsageSnapshot {
   const messagesUsed = doc?.messagesUsed ?? 0;
   const pendingMessages = doc?.pendingMessages ?? 0;
-  const consumed = messagesUsed;
-  const freeMessagesRemaining = Math.max(0, freeLimit - consumed);
+  const metrics = calculateUsageMetrics(messagesUsed, pendingMessages, freeLimit);
 
   return {
     userId: doc?.userId ?? fallbackUserId ?? '',
     messagesUsed,
     pendingMessages,
-    freeMessagesRemaining,
+    freeMessagesRemaining: metrics.freeMessagesRemaining,
     lastReservedAt: doc?.lastReservedAt ?? null,
     lastCompletedAt: doc?.lastCompletedAt ?? null,
   };
@@ -191,13 +209,12 @@ export const getCurrentUserUsage = query({
     const freeLimit = FREE_MESSAGE_LIMIT;
     const messagesUsed = usageDoc.messagesUsed ?? 0;
     const pendingMessages = usageDoc.pendingMessages ?? 0;
-    const consumed = messagesUsed;
-    const freeMessagesRemaining = Math.max(0, freeLimit - consumed);
+    const metrics = calculateUsageMetrics(messagesUsed, pendingMessages, freeLimit);
 
     return {
       messagesUsed,
       pendingMessages,
-      freeMessagesRemaining,
+      freeMessagesRemaining: metrics.freeMessagesRemaining,
       freeLimit,
       lastReservedAt: usageDoc.lastReservedAt ?? null,
       lastCompletedAt: usageDoc.lastCompletedAt ?? null,
@@ -249,9 +266,15 @@ export const reserveUsage = internalMutation({
       };
     }
 
-    const consumedBefore = usageDoc.messagesUsed + usageDoc.pendingMessages;
+    // Calculate total consumed (completed + pending) to check against free limit
+    // This matches the display calculation for consistency
+    const metrics = calculateUsageMetrics(
+      usageDoc.messagesUsed,
+      usageDoc.pendingMessages,
+      args.freeLimit,
+    );
 
-    if (args.mode === 'free' && consumedBefore >= args.freeLimit) {
+    if (args.mode === 'free' && metrics.isFreeTierExhausted) {
       return {
         ok: false,
         reason: 'free_limit_exhausted' as const,
@@ -598,8 +621,8 @@ export const getAiUsageStatus = action({
     const messagesUsed = usageDoc?.messagesUsed ?? 0;
     const pendingMessages = usageDoc?.pendingMessages ?? 0;
     const freeLimit = FREE_MESSAGE_LIMIT;
-    const consumed = messagesUsed;
-    const freeMessagesRemaining = Math.max(0, freeLimit - consumed);
+    const metrics = calculateUsageMetrics(messagesUsed, pendingMessages, freeLimit);
+    const freeMessagesRemaining = metrics.freeMessagesRemaining;
 
     const autumnSecretConfigured = (process.env.AUTUMN_SECRET_KEY ?? '').length > 0;
 
@@ -609,20 +632,28 @@ export const getAiUsageStatus = action({
     let creditBalance: number | null = null;
     let isUnlimited = false;
 
-    if (autumnSecretConfigured && messagesUsed >= freeLimit) {
+    // Check Autumn subscription status to detect purchased credits
+    // This allows us to show paid credits even when free tier hasn't been exhausted yet
+    if (autumnSecretConfigured) {
       const checkResult = await checkAutumnAccess(ctx, {
         featureId: AI_MESSAGE_FEATURE_ID,
       });
 
       if (checkResult.error) {
-        subscriptionStatus = 'needs_upgrade';
-        lastCheckError = checkResult.error;
+        // Only mark as needs_upgrade if free tier is exhausted
+        // Otherwise, user still has free messages available
+        if (metrics.isFreeTierExhausted) {
+          subscriptionStatus = 'needs_upgrade';
+          lastCheckError = checkResult.error;
+        }
       } else if (checkResult.data?.allowed) {
-        // Check if they have unlimited access or prepaid credits
+        // User has purchased credits (unlimited or prepaid)
+        // Autumn is the source of truth for credit balance
         isUnlimited = checkResult.data.unlimited ?? false;
         creditBalance = checkResult.data.balance ?? null;
         subscriptionStatus = 'subscribed';
-      } else {
+      } else if (metrics.isFreeTierExhausted) {
+        // Free tier exhausted and no Autumn access
         subscriptionStatus = 'needs_upgrade';
       }
     }
