@@ -54,6 +54,7 @@
     "@convex-dev/better-auth": "^0.9.7",
     "@convex-dev/rate-limiter": "^0.2.14",
     "@convex-dev/resend": "^0.1.13",
+    "@mendable/firecrawl-js": "^4.5.0",
     "@netlify/vite-plugin-tanstack-start": "^1.1.11",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-dialog": "^1.1.15",

@@ -16,7 +16,7 @@ export function useFirecrawlForm({
   setResults,
   setLoading,
 }: UseFirecrawlFormProps) {
-  const extractWithFirecrawlAction = useAction(api.ai.extractWithFirecrawl);
+  const extractWithFirecrawlAction = useAction(api.firecrawl.extractWithFirecrawl);
 
   const handleSubmit = async (data: { url: string }) => {
     const key = `firecrawl-${Date.now()}`;

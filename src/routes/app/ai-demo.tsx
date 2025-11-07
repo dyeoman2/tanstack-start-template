@@ -47,7 +47,7 @@ function CloudflareAIDemo() {
     isInitialSubscriptionLoad,
   } = useAiUsageStatus();
   const { ready: autumnReady } = useAutumnBilling();
-  const checkFirecrawlConfigured = useAction(api.ai.isFirecrawlConfigured);
+  const checkFirecrawlConfigured = useAction(api.firecrawl.isFirecrawlConfigured);
   const checkCloudflareConfigured = useAction(api.cloudflareAi.isCloudflareConfigured);
   const [firecrawlConfigured, setFirecrawlConfigured] = useState<boolean | null>(null);
   const [cloudflareConfigured, setCloudflareConfigured] = useState<boolean | null>(null);
