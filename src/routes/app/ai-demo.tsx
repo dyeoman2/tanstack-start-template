@@ -382,12 +382,12 @@ function CloudflareAIDemo() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold flex items-center gap-3">
-          <Cloud className="w-8 h-8 text-orange-500" />
-          Cloudflare AI Demo
-        </h1>
+        <h1 className="text-3xl font-bold flex items-center gap-3">AI Demo</h1>
         <p className="text-muted-foreground">
-          Compare direct Workers AI inference with AI Gateway monitoring using the Vercel AI SDK
+          Interactive demo for streaming AI text generation and structured output. Built with the
+          Cloudflare Workers AI for inference, Cloudflare AI Gateway for request monitoring and
+          analytics, Autumn for usage-based billing and credit management, and AI SDK for unified AI
+          interfaces.
         </p>
       </div>
 

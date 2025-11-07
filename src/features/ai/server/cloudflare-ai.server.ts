@@ -3,7 +3,7 @@ import { createAuth } from '@convex/auth';
 import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
 import { getCookie } from '@tanstack/react-start/server';
-import { generateObject, generateText, type LanguageModel, streamText } from 'ai';
+import { generateText, type LanguageModel, streamText } from 'ai';
 import { createWorkersAI } from 'workers-ai-provider';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
@@ -326,59 +326,6 @@ async function* streamWithGatewayHelper(prompt: string, model: 'llama' | 'falcon
   };
 }
 
-// Direct inference via Workers AI REST API
-export const generateWithWorkersAI = createServerFn({ method: 'POST' })
-  .inputValidator(textGenerationSchema)
-  .handler(async ({ data }) => {
-    await requireAuth();
-    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
-
-    const reservation = await fetchAction(api.ai.reserveAiMessage, {
-      metadata: { provider: 'cloudflare-workers-ai', model: data.model },
-    });
-
-    if (!reservation.allowed) {
-      throw buildReservationError(reservation);
-    }
-
-    let usageFinalized = false;
-    const releaseReservation = async () => {
-      if (usageFinalized) {
-        return;
-      }
-      usageFinalized = true;
-      try {
-        await fetchAction(api.ai.releaseAiMessage, {});
-      } catch (releaseError) {
-        console.error('[AI] Failed to release AI reservation', releaseError);
-      }
-    };
-
-    try {
-      const result = await generateWithWorkersAIHelper(data.prompt, data.model);
-      try {
-        const completion = await fetchAction(api.ai.completeAiMessage, {
-          mode: reservation.mode,
-          metadata: extractUsageMetadata(result.usage ?? null, result.provider, result.model),
-        });
-        usageFinalized = true;
-        if (completion.trackError) {
-          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
-        }
-      } catch (completionError) {
-        await releaseReservation();
-        throw completionError instanceof Error
-          ? completionError
-          : new Error('Failed to finalize AI usage.');
-      }
-
-      return result;
-    } catch (error) {
-      await releaseReservation();
-      throw error;
-    }
-  });
-
 // Streaming version for real-time text updates
 export const streamWithWorkersAI = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
@@ -460,59 +407,6 @@ export const streamWithWorkersAI = createServerFn({ method: 'POST' })
     }
   });
 
-// Inference via AI Gateway (with monitoring/logging)
-export const generateWithGateway = createServerFn({ method: 'POST' })
-  .inputValidator(textGenerationSchema)
-  .handler(async ({ data }) => {
-    await requireAuth();
-    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
-
-    const reservation = await fetchAction(api.ai.reserveAiMessage, {
-      metadata: { provider: 'cloudflare-gateway-workers-ai', model: data.model },
-    });
-
-    if (!reservation.allowed) {
-      throw buildReservationError(reservation);
-    }
-
-    let usageFinalized = false;
-    const releaseReservation = async () => {
-      if (usageFinalized) {
-        return;
-      }
-      usageFinalized = true;
-      try {
-        await fetchAction(api.ai.releaseAiMessage, {});
-      } catch (releaseError) {
-        console.error('[AI] Failed to release AI reservation', releaseError);
-      }
-    };
-
-    try {
-      const result = await generateWithGatewayHelper(data.prompt, data.model);
-      try {
-        const completion = await fetchAction(api.ai.completeAiMessage, {
-          mode: reservation.mode,
-          metadata: extractUsageMetadata(result.usage ?? null, result.provider, result.model),
-        });
-        usageFinalized = true;
-        if (completion.trackError) {
-          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
-        }
-      } catch (completionError) {
-        await releaseReservation();
-        throw completionError instanceof Error
-          ? completionError
-          : new Error('Failed to finalize AI usage.');
-      }
-
-      return result;
-    } catch (error) {
-      await releaseReservation();
-      throw error;
-    }
-  });
-
 // Streaming version for gateway
 export const streamWithGateway = createServerFn({ method: 'POST' })
   .inputValidator(textGenerationSchema)
@@ -590,98 +484,6 @@ export const streamWithGateway = createServerFn({ method: 'POST' })
       if (!usageFinalized) {
         await releaseReservation();
       }
-      throw error;
-    }
-  });
-
-// Structured output example using Workers AI
-// Structured output generation
-export const generateStructuredResponse = createServerFn({ method: 'POST' })
-  .inputValidator(structuredGenerationSchema)
-  .handler(async ({ data }) => {
-    await requireAuth();
-    const { fetchAction } = await setupFetchClient(createAuth, getCookie);
-
-    const reservation = await fetchAction(api.ai.reserveAiMessage, {
-      metadata: {
-        provider: 'cloudflare-workers-ai-structured',
-        model: '@cf/meta/llama-3.1-8b-instruct',
-      },
-    });
-
-    if (!reservation.allowed) {
-      throw buildReservationError(reservation);
-    }
-
-    let usageFinalized = false;
-    const releaseReservation = async () => {
-      if (usageFinalized) {
-        return;
-      }
-      usageFinalized = true;
-      try {
-        await fetchAction(api.ai.releaseAiMessage, {});
-      } catch (releaseError) {
-        console.error('[AI] Failed to release AI reservation', releaseError);
-      }
-    };
-
-    try {
-      const { llamaModel } = getWorkersAIProvider();
-      const result = await generateObject({
-        model: llamaModel,
-        schema: z.object({
-          title: z.string(),
-          summary: z.string(),
-          keyPoints: z.array(z.string()),
-          category: z.string(),
-          difficulty: z.enum(['beginner', 'intermediate', 'advanced']),
-        }),
-        prompt: `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
-      });
-
-      const estimatedUsage =
-        !result.usage || !result.usage.totalTokens || result.usage.totalTokens === 0
-          ? {
-              inputTokens: estimateTokens(
-                `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
-              ),
-              outputTokens: estimateTokens(JSON.stringify(result.object)),
-              totalTokens:
-                estimateTokens(
-                  `Generate a structured explanation about "${data.topic}" in a ${data.style} style.`,
-                ) + estimateTokens(JSON.stringify(result.object)),
-            }
-          : result.usage;
-
-      try {
-        const completion = await fetchAction(api.ai.completeAiMessage, {
-          mode: reservation.mode,
-          metadata: extractUsageMetadata(
-            estimatedUsage,
-            'cloudflare-workers-ai-structured',
-            '@cf/meta/llama-3.1-8b-instruct',
-          ),
-        });
-        usageFinalized = true;
-        if (completion.trackError) {
-          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
-        }
-      } catch (completionError) {
-        await releaseReservation();
-        throw completionError instanceof Error
-          ? completionError
-          : new Error('Failed to finalize AI usage.');
-      }
-
-      return {
-        provider: 'cloudflare-workers-ai-structured',
-        model: '@cf/meta/llama-3.1-8b-instruct',
-        structuredData: result.object,
-        usage: estimatedUsage,
-      };
-    } catch (error) {
-      await releaseReservation();
       throw error;
     }
   });
@@ -1013,15 +815,3 @@ export const compareInferenceMethods = createServerFn({ method: 'POST' })
       throw error;
     }
   });
-
-export const getAiUsageStatus = createServerFn({ method: 'GET' }).handler(async () => {
-  await requireAuth();
-  const { fetchAction } = await setupFetchClient(createAuth, getCookie);
-  return await fetchAction(api.ai.getAiUsageStatus, {});
-});
-
-export const getAiUsageConstants = createServerFn({ method: 'GET' }).handler(async () => {
-  await requireAuth();
-  const { fetchAction } = await setupFetchClient(createAuth, getCookie);
-  return await fetchAction(api.ai.aiUsageConstants, {});
-});

@@ -1,4 +1,4 @@
-export const AUTUMN_50_CREDITS_PRODUCT_ID =
+const AUTUMN_50_CREDITS_PRODUCT_ID =
   import.meta.env.VITE_AUTUMN_50_CREDITS_ID && import.meta.env.VITE_AUTUMN_50_CREDITS_ID.length > 0
     ? import.meta.env.VITE_AUTUMN_50_CREDITS_ID
     : 'prod_50_credits';
