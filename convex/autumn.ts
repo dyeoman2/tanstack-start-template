@@ -1,6 +1,6 @@
-import { Autumn } from 'autumn-js';
-import { v } from 'convex/values';
+import { Autumn } from '@useautumn/convex';
 import { assertUserId } from '../src/lib/shared/user-id';
+import { components } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { authComponent } from './auth';
@@ -14,21 +14,45 @@ export const AUTUMN_NOT_CONFIGURED_ERROR = {
 
 type AuthCtx = Parameters<typeof authComponent.getAuthUser>[0];
 
-let cachedAutumn: Autumn | null = null;
+// Initialize the Autumn component client
+export const autumn = new Autumn(components.autumn, {
+  secretKey: AUTUMN_SECRET_KEY,
+  identify: async (ctx: AuthCtx) => {
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      return null;
+    }
 
-function getAutumnClient(): Autumn {
-  if (!isAutumnConfigured()) {
-    throw new Error(AUTUMN_NOT_CONFIGURED_ERROR.message);
-  }
+    const userId = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
+    return {
+      customerId: userId,
+      customerData: {
+        name: authUser.name,
+        email: authUser.email,
+      },
+    };
+  },
+});
 
-  if (!cachedAutumn) {
-    cachedAutumn = new Autumn({
-      secretKey: AUTUMN_SECRET_KEY,
-    });
-  }
-
-  return cachedAutumn;
-}
+// Export component API functions for use by AutumnProvider and hooks
+// These are automatically registered as public actions by the component
+export const {
+  track,
+  check,
+  checkout,
+  attach,
+  cancel,
+  query,
+  usage,
+  setupPayment,
+  createCustomer,
+  listProducts,
+  billingPortal,
+  createReferralCode,
+  redeemReferralCode,
+  createEntity,
+  getEntity,
+} = autumn.api();
 
 export function isAutumnConfigured(): boolean {
   return AUTUMN_SECRET_KEY.length > 0;
@@ -40,76 +64,8 @@ export function ensureAutumnConfigured(): void {
   }
 }
 
-export async function trackAutumnUsage(
-  ctx: AuthCtx,
-  args: { featureId: string; value: number; properties?: Record<string, unknown> },
-) {
-  if (!isAutumnConfigured()) {
-    return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
-  }
-
-  const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) {
-    return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
-  }
-
-  const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
-  const client = getAutumnClient();
-  return await client.track({
-    customer_id,
-    feature_id: args.featureId,
-    value: args.value,
-    properties: args.properties,
-  });
-}
-
-export async function checkAutumnAccess(ctx: AuthCtx, args: { featureId: string }) {
-  if (!isAutumnConfigured()) {
-    return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
-  }
-
-  const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) {
-    return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
-  }
-
-  const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
-  const client = getAutumnClient();
-  return await client.check({ customer_id, feature_id: args.featureId });
-}
-
-export const checkoutAutumn = action({
-  args: { productId: v.string(), successUrl: v.optional(v.string()) },
-  handler: async (ctx: ActionCtx, args: { productId: string; successUrl?: string }) => {
-    if (!isAutumnConfigured()) {
-      return { data: null, error: AUTUMN_NOT_CONFIGURED_ERROR };
-    }
-
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
-      return { data: null, error: { message: 'Authentication required', code: 'UNAUTHENTICATED' } };
-    }
-
-    const customer_id = assertUserId(authUser, 'Unable to resolve user id for Autumn.');
-    const client = getAutumnClient();
-
-    const checkoutParams: {
-      customer_id: string;
-      product_id: string;
-      success_url?: string;
-    } = {
-      customer_id,
-      product_id: args.productId,
-    };
-
-    // Add success URL if provided
-    if (args.successUrl) {
-      checkoutParams.success_url = args.successUrl;
-    }
-
-    return await client.checkout(checkoutParams);
-  },
-});
+// Re-export checkout with a custom name for backward compatibility with CreditPurchase component
+export const checkoutAutumn = checkout;
 
 export const isAutumnReady = action({
   args: {},

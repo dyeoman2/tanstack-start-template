@@ -9,12 +9,7 @@ import {
   query,
 } from './_generated/server';
 import { authComponent } from './auth';
-import {
-  AUTUMN_NOT_CONFIGURED_ERROR,
-  checkAutumnAccess,
-  isAutumnConfigured,
-  trackAutumnUsage,
-} from './autumn';
+import { AUTUMN_NOT_CONFIGURED_ERROR, autumn, isAutumnConfigured } from './autumn';
 
 const FREE_MESSAGE_LIMIT = 10;
 const AI_MESSAGE_FEATURE_ID = 'messages';
@@ -50,7 +45,7 @@ type ReservationMutationResult =
       reason: 'free_limit_exhausted' | 'no_pending_reservation';
     };
 
-type AutumnCheckResult = Awaited<ReturnType<typeof checkAutumnAccess>>;
+type AutumnCheckResult = Awaited<ReturnType<typeof autumn.check>>;
 
 type ReserveAiMessageResult =
   | {
@@ -444,7 +439,7 @@ export const reserveAiMessage = action({
         };
       }
 
-      const checkResult = await checkAutumnAccess(ctx, {
+      const checkResult = await autumn.check(ctx, {
         featureId: AI_MESSAGE_FEATURE_ID,
       });
 
@@ -552,7 +547,7 @@ export const completeAiMessage = action({
           properties.outputTokens = args.metadata.outputTokens;
         }
 
-        const trackResult = await trackAutumnUsage(ctx, {
+        const trackResult = await autumn.track(ctx, {
           featureId: AI_MESSAGE_FEATURE_ID,
           value: 1,
           ...(Object.keys(properties).length > 0 ? { properties } : {}),
@@ -635,7 +630,7 @@ export const getAiUsageStatus = action({
     // Check Autumn subscription status to detect purchased credits
     // This allows us to show paid credits even when free tier hasn't been exhausted yet
     if (autumnSecretConfigured) {
-      const checkResult = await checkAutumnAccess(ctx, {
+      const checkResult = await autumn.check(ctx, {
         featureId: AI_MESSAGE_FEATURE_ID,
       });
 

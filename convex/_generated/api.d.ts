@@ -2419,4 +2419,5 @@ export declare const components: {
       getServerTime: FunctionReference<"mutation", "internal", {}, number>;
     };
   };
+  autumn: {};
 };
