@@ -1,10 +1,6 @@
 import { useForm } from '@tanstack/react-form';
 import { BarChart3, Cpu, Loader2, Network } from 'lucide-react';
 import { z } from 'zod';
-import { CreditPurchase } from '~/features/ai/components/CreditPurchase';
-import { CREDIT_PACKAGES } from '~/features/ai/constants';
-import type { InferenceMethod } from '~/features/ai/types';
-import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
@@ -16,6 +12,8 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { Textarea } from '~/components/ui/textarea';
+import { UsageAlert } from '~/features/ai/components/UsageAlert';
+import type { InferenceMethod } from '~/features/ai/types';
 
 interface InferenceFormProps {
   onSubmit: (data: {
@@ -83,14 +81,6 @@ export function InferenceForm({
       await onSubmit(value);
     },
   });
-
-  const freeLimit = usageDetails?.freeLimit ?? 10;
-  const freeRemaining = usageDetails?.freeMessagesRemaining ?? freeLimit;
-  const isSubscribed = subscriptionDetails?.status === 'subscribed';
-  const isUnlimited = subscriptionDetails?.isUnlimited ?? false;
-  const creditBalance = subscriptionDetails?.creditBalance ?? null;
-  const hasPaidCreditsWithFreeRemaining =
-    isSubscribed && creditBalance !== null && freeRemaining > 0;
 
   return (
     <Card>
@@ -182,52 +172,12 @@ export function InferenceForm({
             )}
           </form.Field>
 
-          {usageDetails && !isInitialSubscriptionLoad ? (
-            <Alert
-              variant={isSubscribed ? 'default' : generationBlocked ? 'destructive' : 'warning'}
-            >
-              <AlertDescription>
-                <div className="space-y-3 w-full">
-                  <div className="flex items-center justify-between gap-4">
-                    <span>
-                      {isSubscribed && isUnlimited
-                        ? 'Your Autumn subscription provides unlimited messages.'
-                        : hasPaidCreditsWithFreeRemaining
-                          ? `You have ${freeRemaining} free message${freeRemaining === 1 ? '' : 's'} remaining. After that, you have ${creditBalance} paid credit${creditBalance === 1 ? '' : 's'} available.`
-                          : isSubscribed && creditBalance !== null
-                            ? `You have ${creditBalance} message${creditBalance === 1 ? '' : 's'} remaining.`
-                            : generationBlocked
-                              ? 'You have no messages remaining. Purchase more credits to continue.'
-                              : `You have ${freeRemaining} free message${freeRemaining === 1 ? '' : 's'} remaining.`}
-                    </span>
-                    {!isSubscribed && (
-                      <CreditPurchase onPurchaseSuccess={onRefreshUsage} compact />
-                    )}
-                  </div>
-                  {!isSubscribed && !generationBlocked && freeRemaining <= 2 && (
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">
-                        Running low on free messages? Purchase credits to continue:
-                      </p>
-                      <div className="flex gap-2">
-                        {CREDIT_PACKAGES.map((pkg) => (
-                          <Button
-                            key={pkg.productId}
-                            variant="outline"
-                            size="sm"
-                            onClick={() => window.open('https://useautumn.com', '_blank')}
-                            className="text-xs"
-                          >
-                            ${pkg.price} ({pkg.credits} credits)
-                          </Button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </AlertDescription>
-            </Alert>
-          ) : null}
+          <UsageAlert
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={onRefreshUsage}
+          />
 
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
             {([canSubmit, isSubmittingForm]) => (
@@ -254,4 +204,3 @@ export function InferenceForm({
     </Card>
   );
 }
-

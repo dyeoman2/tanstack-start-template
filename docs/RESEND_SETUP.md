@@ -4,7 +4,7 @@ This document describes how to set up password reset emails using Resend in the 
 
 ## Overview
 
-The application uses Resend for sending password reset emails with beautiful, branded templates. The email system is fully integrated with TanStack Start server functions and follows the project's architectural patterns.
+The application uses Resend for sending password reset emails with beautiful, branded templates. The email system runs entirely in Convex using the official `@convex-dev/resend` component, which provides queueing, batching, durable execution, and rate limiting.
 
 ## Setup Instructions
 
@@ -16,54 +16,47 @@ The application uses Resend for sending password reset emails with beautiful, br
 
 ### 2. Configure Environment Variables
 
-#### Local Development
+Email functionality runs entirely in Convex, so you need to set environment variables in Convex, not in your local `.env` file or Netlify.
 
-Add your Resend API key and optional email sender configuration to your `.env.local` file:
+#### Development Environment
+
+Set the Resend API key in Convex for development:
 
 ```bash
-# Email notifications
-RESEND_API_KEY=your-resend-api-key-here
-
-# Optional: Custom sender email address (defaults to onboarding@resend.dev)
-RESEND_EMAIL_SENDER=onboarding@resend.dev
+npx convex env set RESEND_API_KEY your-resend-api-key-here
 ```
 
-#### Production Setup
-
-##### Netlify Production Setup
-
-For Netlify deployments, set these environment variables via CLI or dashboard:
-
-**Netlify CLI:**
+Optionally set a custom sender email (defaults to `onboarding@resend.dev`):
 
 ```bash
-# Set environment variables
-npx netlify env:set RESEND_API_KEY your-resend-api-key-here
-npx netlify env:set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
-
-# Deploy
-npx netlify deploy --prod
+npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
 ```
 
-**Netlify Dashboard:**
+#### Production Environment
 
-1. Go to your [Netlify dashboard](https://app.netlify.com)
-2. Select your site → **Site settings** → **Environment variables**
-3. Add the following variables:
-   - `RESEND_API_KEY`: Your Resend API key
-   - `RESEND_EMAIL_SENDER`: Your verified sender email (optional)
-
-##### Convex Environment Setup
-
-Since email functionality runs in Convex functions, you need to set the environment variables in Convex:
+Set the Resend API key in Convex for production:
 
 ```bash
-# Set the Resend API key in Convex (required for email functionality)
 npx convex env set RESEND_API_KEY your-resend-api-key-here --prod
+```
 
-# Set custom sender email (optional, defaults to onboarding@resend.dev)
+Optionally set a custom sender email (defaults to `onboarding@resend.dev`):
+
+```bash
 npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
 ```
+
+#### Using the Convex Dashboard
+
+1. Go to your [Convex Dashboard](https://dashboard.convex.dev)
+2. Select your project
+3. Go to **Settings** → **Environment Variables**
+4. Select the appropriate environment (Development or Production)
+5. Add the following variables:
+   - `RESEND_API_KEY`: Your Resend API key (required)
+   - `RESEND_EMAIL_SENDER`: Your verified sender email (optional)
+
+**Note:** These variables must be set in Convex, not in your local `.env` file or Netlify. This ensures reliable email delivery and avoids Netlify function timeout limitations.
 
 ### 4. Domain Verification (Production)
 
@@ -87,13 +80,14 @@ The password reset emails use professional HTML templates with:
 
 ### Better Auth Integration
 
-- **Custom `sendResetPassword`**: Better Auth configuration sends emails via Resend
+- **Custom `sendResetPassword`**: Better Auth configuration sends emails via Convex Resend component
 - **Client Methods**: `authClient.forgetPassword()` and `authClient.resetPassword()`
 - `testEmailServerFn`: Tests email configuration (admin only)
 
 ### Key Features
 
 - **Better Auth Integration**: Leverages Better Auth's secure token management and password hashing
+- **Convex Resend Component**: Uses `@convex-dev/resend` for reliable email delivery with queueing and rate limiting
 - **Custom Email Templates**: Professional HTML templates sent via Resend
 - **Type Safety**: Full TypeScript validation with Zod schemas
 - **Error Handling**: Comprehensive error handling and logging
@@ -103,9 +97,18 @@ The password reset emails use professional HTML templates with:
 
 1. User requests password reset via `authClient.forgetPassword()`
 2. Better Auth generates secure token and calls our custom `sendResetPassword` function
-3. Email sent via Resend with reset link using our custom template
+3. Email sent via Convex Resend component with reset link using our custom template
 4. User clicks link and resets password via `authClient.resetPassword()`
 5. Better Auth handles token validation and password update securely
+
+### How It Works
+
+The integration runs entirely in Convex:
+- The `@convex-dev/resend` component handles all email operations
+- Environment variables (`RESEND_API_KEY`, `RESEND_EMAIL_SENDER`) are read from Convex
+- Email sending is queued and batched for reliability
+- Rate limiting prevents abuse
+- Durable execution ensures emails are delivered even if there are temporary failures
 
 ## Testing Email Functionality
 
@@ -128,9 +131,9 @@ You can also test the full password reset flow:
 
 #### "RESEND_API_KEY environment variable is required"
 
-- **Local development**: Make sure you've added the API key to your `.env.local` file and restarted the dev server
-- **Convex**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key`
-- **Production**: Verify the environment variable is set in your hosting platform (Netlify)
+- **Development**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key`
+- **Production**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key --prod`
+- **Verification**: Check your Convex environment variables with `npx convex env ls` (or `npx convex env ls --prod` for production)
 
 #### "Failed to send password reset email"
 
@@ -180,11 +183,16 @@ const createPasswordResetEmailTemplate = (resetLink: string, userName?: string) 
 
 ### Changing Sender Address
 
-Set the `RESEND_EMAIL_SENDER` environment variable in your `.env.local` file:
+Set the `RESEND_EMAIL_SENDER` environment variable in Convex:
 
+**Development:**
 ```bash
-# Custom sender email address
-RESEND_EMAIL_SENDER=
+npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
+```
+
+**Production:**
+```bash
+npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
 ```
 
 The application will automatically use this email address for all outgoing emails. If not set, it defaults to `onboarding@resend.dev`.

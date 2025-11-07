@@ -11,12 +11,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
+import { UsageAlert } from '~/features/ai/components/UsageAlert';
 
 interface StructuredFormProps {
   onSubmit: (data: { topic: string; style: 'formal' | 'casual' | 'technical' }) => Promise<void>;
   envVarsMissing: boolean;
   generationBlocked: boolean;
   isSubmitting: boolean;
+  usageDetails: {
+    freeLimit: number;
+    freeMessagesRemaining: number;
+  } | null;
+  subscriptionDetails: {
+    status: string;
+    isUnlimited: boolean;
+    creditBalance: number | null;
+  } | null;
+  isInitialSubscriptionLoad: boolean;
+  onRefreshUsage: () => Promise<void>;
 }
 
 export function StructuredForm({
@@ -24,6 +36,10 @@ export function StructuredForm({
   envVarsMissing,
   generationBlocked,
   isSubmitting,
+  usageDetails,
+  subscriptionDetails,
+  isInitialSubscriptionLoad,
+  onRefreshUsage,
 }: StructuredFormProps) {
   const form = useForm({
     defaultValues: {
@@ -39,7 +55,9 @@ export function StructuredForm({
     <Card>
       <CardHeader>
         <CardTitle>Structured Output</CardTitle>
-        <CardDescription>Generate structured JSON responses with predefined schemas</CardDescription>
+        <CardDescription>
+          Generate structured JSON responses with predefined schemas
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <form
@@ -98,6 +116,13 @@ export function StructuredForm({
             </form.Field>
           </div>
 
+          <UsageAlert
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={onRefreshUsage}
+          />
+
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
             {([canSubmit, isSubmittingForm]) => (
               <Button
@@ -123,4 +148,3 @@ export function StructuredForm({
     </Card>
   );
 }
-

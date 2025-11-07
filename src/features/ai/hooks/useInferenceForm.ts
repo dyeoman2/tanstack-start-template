@@ -33,8 +33,7 @@ export function useInferenceForm({
       setResults((prev) => ({
         ...prev,
         [`error-${Date.now()}`]: {
-          error:
-            'Cloudflare AI is not configured. Please set up your environment variables first.',
+          error: 'Cloudflare AI is not configured. Please set up your environment variables first.',
         },
       }));
       return;
@@ -169,4 +168,3 @@ export function useInferenceForm({
     handleSubmit,
   };
 }
-

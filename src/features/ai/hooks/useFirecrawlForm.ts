@@ -73,9 +73,7 @@ export function useFirecrawlForm({
       setResults((prev) => ({ ...prev, [key]: finalResult }));
       setLoading((prev) => ({ ...prev, [key]: false }));
       // Refresh Firecrawl configuration status
-      void checkFirecrawlConfigured().then((result) =>
-        setFirecrawlConfigured(result.configured),
-      );
+      void checkFirecrawlConfigured().then((result) => setFirecrawlConfigured(result.configured));
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       // Check for various forms of the missing API key error (fallback for unexpected errors)
@@ -89,9 +87,7 @@ export function useFirecrawlForm({
 
       if (isApiKeyMissing) {
         // Refresh Firecrawl configuration status
-        void checkFirecrawlConfigured().then((result) =>
-          setFirecrawlConfigured(result.configured),
-        );
+        void checkFirecrawlConfigured().then((result) => setFirecrawlConfigured(result.configured));
       }
 
       setResults((prev) => ({
@@ -110,4 +106,3 @@ export function useFirecrawlForm({
     handleSubmit,
   };
 }
-

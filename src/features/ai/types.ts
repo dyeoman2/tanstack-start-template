@@ -28,4 +28,3 @@ export interface AIResult {
   firecrawlJson?: string | object;
   firecrawlUrl?: string;
 }
-

@@ -1,9 +1,9 @@
 import { Autumn } from '@useautumn/convex';
+import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
-import { v } from 'convex/values';
 import { authComponent } from './auth';
 
 const AUTUMN_SECRET_KEY = process.env.AUTUMN_SECRET_KEY ?? '';

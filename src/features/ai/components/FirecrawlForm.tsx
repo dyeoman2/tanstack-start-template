@@ -5,17 +5,33 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
+import { UsageAlert } from '~/features/ai/components/UsageAlert';
 
 interface FirecrawlFormProps {
   onSubmit: (data: { url: string }) => Promise<void>;
   apiKeyMissing: boolean;
   isSubmitting: boolean;
+  usageDetails: {
+    freeLimit: number;
+    freeMessagesRemaining: number;
+  } | null;
+  subscriptionDetails: {
+    status: string;
+    isUnlimited: boolean;
+    creditBalance: number | null;
+  } | null;
+  isInitialSubscriptionLoad: boolean;
+  onRefreshUsage: () => Promise<void>;
 }
 
 export function FirecrawlForm({
   onSubmit,
   apiKeyMissing,
   isSubmitting,
+  usageDetails,
+  subscriptionDetails,
+  isInitialSubscriptionLoad,
+  onRefreshUsage,
 }: FirecrawlFormProps) {
   const form = useForm({
     defaultValues: {
@@ -65,6 +81,13 @@ export function FirecrawlForm({
             )}
           </form.Field>
 
+          <UsageAlert
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={onRefreshUsage}
+          />
+
           <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
             {([canSubmit, isSubmittingForm]) => (
               <Button
@@ -84,4 +107,3 @@ export function FirecrawlForm({
     </Card>
   );
 }
-

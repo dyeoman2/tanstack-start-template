@@ -118,6 +118,38 @@ export function DashboardRoute() {
 - Use `useMutation(api.xxx)` for mutations with automatic cache updates.
 - No manual cache invalidation needed - Convex automatically updates queries when data changes.
 - Real-time subscriptions enable live data updates across all connected clients.
+- **Prefer direct Convex queries over server function wrappers** - if a server function only calls a Convex query with no server-specific logic, use the Convex query directly on the client.
+
+### When to Use Convex vs TanStack Start Server Functions
+
+**Use Convex Queries/Mutations (Client-Side):**
+
+- ✅ Read operations (queries) - no server-specific dependencies
+- ✅ Write operations (mutations) - no server-specific dependencies
+- ✅ Real-time subscriptions
+- ✅ Simple database operations that don't need request context
+
+**Use Convex Actions:**
+
+- ✅ Need to make HTTP requests to third-party services
+- ✅ Need to call LLMs or AI services
+- ✅ Need to send emails
+- ✅ Operations that can't be pure queries/mutations
+
+**Use Convex HTTP Endpoints (`convex/http.ts`):**
+
+- ✅ Expose HTTP endpoints directly from Convex
+- ✅ Health checks, webhooks, public APIs
+- ✅ Don't need TanStack Start server function wrapper
+
+**Use TanStack Start Server Functions (`createServerFn`):**
+
+- ✅ Need request context (headers, cookies, IP addresses)
+- ✅ Need server-side environment variables/secrets
+- ✅ Route guards (SSR requirement - `beforeLoad`)
+- ✅ Complex orchestration of multiple services
+- ✅ Better Auth integration (HTTP calls + error handling)
+- ✅ Operations that require server-side request/response handling
 
 ### Forms
 
@@ -202,6 +234,8 @@ npx convex dashboard # Open Convex dashboard
 - ❌ `window.location.href` navigation (use `useRouter().navigate()`)
 - ❌ Manual cache invalidation (Convex handles this automatically)
 - ❌ Direct database access in client components (use Convex queries/mutations)
+- ❌ Server function wrappers for simple Convex queries (use `useQuery` directly instead)
+- ❌ Using server functions when Convex HTTP endpoints would suffice (health checks, webhooks)
 
 ## Quick Checklist
 

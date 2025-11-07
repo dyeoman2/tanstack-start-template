@@ -171,17 +171,3 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
       throw handleServerError(error, 'User signup');
     }
   });
-
-// Check if there are any users in the system (for determining first admin)
-export const checkIsFirstUserServerFn = createServerFn({
-  method: 'GET',
-}).handler(async () => {
-  // Initialize Convex fetch client for server-side calls
-  const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
-
-  const userCountResult = await fetchQuery(api.users.getUserCount, {});
-  return {
-    isFirstUser: userCountResult.isFirstUser,
-    totalUsers: userCountResult.totalUsers,
-  };
-});

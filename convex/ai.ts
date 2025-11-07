@@ -703,7 +703,8 @@ export const extractWithFirecrawl = action({
       return {
         success: false,
         url: args.url,
-        error: 'Firecrawl API key is not configured. Please set FIRECRAWL_API_KEY in your Convex environment variables to use this feature. See docs/FIRECRAWL_SETUP.md for setup instructions.',
+        error:
+          'Firecrawl API key is not configured. Please set FIRECRAWL_API_KEY in your Convex environment variables to use this feature. See docs/FIRECRAWL_SETUP.md for setup instructions.',
         markdown: null,
         json: null,
       };
@@ -713,7 +714,7 @@ export const extractWithFirecrawl = action({
       const response = await fetch('https://api.firecrawl.dev/v1/extract', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${FIRECRAWL_API_KEY}`,
+          Authorization: `Bearer ${FIRECRAWL_API_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -757,9 +758,7 @@ export const extractWithFirecrawl = action({
         json: extractData.json || null,
       };
     } catch (error) {
-      throw error instanceof Error
-        ? error
-        : new Error('Failed to extract content from Firecrawl');
+      throw error instanceof Error ? error : new Error('Failed to extract content from Firecrawl');
     }
   },
 });

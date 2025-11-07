@@ -1,8 +1,8 @@
 import { Cpu, Globe, Loader2, Network, Shield } from 'lucide-react';
-import type { AIResult } from '~/features/ai/types';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import type { AIResult } from '~/features/ai/types';
 
 interface AIResultsDisplayProps {
   results: Record<string, AIResult>;
@@ -107,7 +107,9 @@ export function AIResultsDisplay({
                   (result.firecrawlMarkdown || result.firecrawlJson) && (
                     <FirecrawlResultTabs
                       result={result}
-                      activeTab={resultTabs[key] || (result.firecrawlMarkdown ? 'markdown' : 'json')}
+                      activeTab={
+                        resultTabs[key] || (result.firecrawlMarkdown ? 'markdown' : 'json')
+                      }
                       onTabChange={(value) => onTabChange(key, value)}
                     />
                   )}
@@ -199,8 +201,7 @@ function AIResultTabs({
   onTabChange: (value: string) => void;
 }) {
   const hasJsonTab =
-    result.provider === 'cloudflare-workers-ai-structured' &&
-    (result.rawText || result.response);
+    result.provider === 'cloudflare-workers-ai-structured' && (result.rawText || result.response);
   const hasUsageTab = !!result.usage;
   const totalTabs = 1 + (hasJsonTab ? 1 : 0) + (hasUsageTab ? 1 : 0);
   const gridCols =
@@ -251,12 +252,9 @@ function AIResultTabs({
               </p>
             </div>
           </div>
-        ) : result.response &&
-            result.provider === 'cloudflare-workers-ai-structured' ? (
+        ) : result.response && result.provider === 'cloudflare-workers-ai-structured' ? (
           <div className="p-3 bg-muted rounded whitespace-pre-wrap">
-            <div className="text-sm text-muted-foreground mb-2">
-              Generating structured JSON...
-            </div>
+            <div className="text-sm text-muted-foreground mb-2">Generating structured JSON...</div>
             {result.response}
           </div>
         ) : result.response ? (
@@ -346,9 +344,7 @@ function GatewayTestTabs({
             <div className="p-4 bg-green-50 border border-green-200 rounded">
               <div className="flex items-center space-x-2">
                 <div className="w-3 h-3 bg-green-500 rounded-full"></div>
-                <span className="font-semibold text-green-800">
-                  Gateway Connected Successfully
-                </span>
+                <span className="font-semibold text-green-800">Gateway Connected Successfully</span>
               </div>
               <div className="mt-2 text-sm text-green-700">
                 <p>
@@ -427,4 +423,3 @@ function GatewayTestTabs({
     </Tabs>
   );
 }
-

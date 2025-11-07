@@ -50,7 +50,7 @@
     "infra:preview": "tsx infra/storage.ts --preview"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.926.0",
+    "@aws-sdk/client-s3": "^3.927.0",
     "@convex-dev/better-auth": "^0.9.7",
     "@convex-dev/rate-limiter": "^0.2.14",
     "@convex-dev/resend": "^0.1.13",
@@ -92,7 +92,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "@aws-sdk/client-iam": "^3.926.0",
+    "@aws-sdk/client-iam": "^3.927.0",
     "@biomejs/biome": "^2.3.4",
     "@tailwindcss/vite": "^4.1.17",
     "@types/node": "^24.10.0",

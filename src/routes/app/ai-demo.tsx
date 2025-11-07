@@ -221,6 +221,10 @@ function CloudflareAIDemo() {
             envVarsMissing={envVarsMissing}
             generationBlocked={generationBlocked}
             isSubmitting={Object.values(allLoading).some((v) => v)}
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={refreshUsage}
           />
         </TabsContent>
 
@@ -229,6 +233,10 @@ function CloudflareAIDemo() {
             onSubmit={firecrawlForm.handleSubmit}
             apiKeyMissing={firecrawlApiKeyMissing}
             isSubmitting={Object.values(allLoading).some((v) => v)}
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={refreshUsage}
           />
         </TabsContent>
 
@@ -237,6 +245,10 @@ function CloudflareAIDemo() {
             onTest={gatewayDiagnostics.handleTest}
             disabled={envVarsMissing}
             isLoading={allLoading['gateway-test'] ?? false}
+            usageDetails={usageDetails}
+            subscriptionDetails={subscriptionDetails}
+            isInitialSubscriptionLoad={isInitialSubscriptionLoad}
+            onRefreshUsage={refreshUsage}
           />
         </TabsContent>
       </Tabs>

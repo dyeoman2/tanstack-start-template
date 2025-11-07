@@ -1,8 +1,8 @@
 'use node';
 
 import { generateText, streamText } from 'ai';
-import { createWorkersAI } from 'workers-ai-provider';
 import { v } from 'convex/values';
+import { createWorkersAI } from 'workers-ai-provider';
 import { api } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
@@ -874,4 +874,3 @@ export const compareInferenceMethods = action({
     }
   },
 });
-

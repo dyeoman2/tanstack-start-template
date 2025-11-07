@@ -22,13 +22,15 @@ export function useStructuredForm({
 }: UseStructuredFormProps) {
   const streamStructuredResponseAction = useAction(api.cloudflareAi.streamStructuredResponse);
 
-  const handleSubmit = async (data: { topic: string; style: 'formal' | 'casual' | 'technical' }) => {
+  const handleSubmit = async (data: {
+    topic: string;
+    style: 'formal' | 'casual' | 'technical';
+  }) => {
     if (envVarsMissing) {
       setResults((prev) => ({
         ...prev,
         [`error-${Date.now()}`]: {
-          error:
-            'Cloudflare AI is not configured. Please set up your environment variables first.',
+          error: 'Cloudflare AI is not configured. Please set up your environment variables first.',
         },
       }));
       return;
@@ -125,4 +127,3 @@ export function useStructuredForm({
     handleSubmit,
   };
 }
-

@@ -1,5 +1,7 @@
+import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Crown, Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
@@ -10,10 +12,7 @@ import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { signIn } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
-import {
-  checkIsFirstUserServerFn,
-  signUpWithFirstAdminServerFn,
-} from '~/features/auth/server/user-management';
+import { signUpWithFirstAdminServerFn } from '~/features/auth/server/user-management';
 
 export const Route = createFileRoute('/register')({
   staticData: true,
@@ -38,10 +37,9 @@ function RegisterPage() {
   const navigate = useNavigate();
   const router = useRouter();
 
-  const [firstUserCheck, setFirstUserCheck] = useState<Awaited<
-    ReturnType<typeof checkIsFirstUserServerFn>
-  > | null>(null);
-  const [firstUserError, setFirstUserError] = useState<string | null>(null);
+  // Use Convex query directly instead of server function wrapper
+  const userCountResult = useQuery(api.users.getUserCount, {});
+  const isFirstUser = userCountResult?.isFirstUser ?? false;
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -177,24 +175,6 @@ function RegisterPage() {
   const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
 
   useEffect(() => {
-    let active = true;
-    void checkIsFirstUserServerFn()
-      .then((result) => {
-        if (!active) return;
-        setFirstUserCheck(result);
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        console.error('Failed to fetch first user status:', err);
-        setFirstUserError('Unable to determine first user status at this time.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!isAuthenticated) {
       return;
     }
@@ -225,7 +205,7 @@ function RegisterPage() {
           <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Create your account
           </h2>
-          {firstUserCheck?.isFirstUser && (
+          {isFirstUser && (
             <div className="mt-4 bg-card border border-border rounded-md p-4">
               <div className="flex">
                 <div className="shrink-0">
@@ -241,11 +221,6 @@ function RegisterPage() {
                   </div>
                 </div>
               </div>
-            </div>
-          )}
-          {firstUserError && (
-            <div className="mt-4 bg-muted border border-border rounded-md p-4 text-sm text-muted-foreground">
-              {firstUserError}
             </div>
           )}
         </div>

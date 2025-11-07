@@ -1,16 +1,18 @@
+import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Mail } from 'lucide-react';
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { ClientOnly } from '~/components/ClientOnly';
 import { Button } from '~/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
-import { checkEmailServiceConfiguredServerFn } from '~/lib/server/email/resend.server';
 
 export const Route = createFileRoute('/forgot-password')({
   staticData: true,
@@ -28,10 +30,8 @@ export const Route = createFileRoute('/forgot-password')({
 function ForgotPasswordPage() {
   const { email: emailFromQuery } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuthState();
-  const [emailServiceStatus, setEmailServiceStatus] = useState<Awaited<
-    ReturnType<typeof checkEmailServiceConfiguredServerFn>
-  > | null>(null);
-  const [statusError, setStatusError] = useState<string | null>(null);
+  // Use Convex query directly instead of server function wrapper
+  const emailServiceStatus = useQuery(api.emails.checkEmailServiceConfigured, {});
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [submittedEmail, setSubmittedEmail] = useState('');
   const [error, setError] = useState('');
@@ -70,24 +70,6 @@ function ForgotPasswordPage() {
 
   // Get current email value for navigation links
   const [currentEmail, setCurrentEmail] = useState(emailFromQuery || '');
-
-  useEffect(() => {
-    let active = true;
-    void checkEmailServiceConfiguredServerFn()
-      .then((status) => {
-        if (!active) return;
-        setEmailServiceStatus(status);
-      })
-      .catch((err: unknown) => {
-        if (!active) return;
-        console.error('Failed to check email service status:', err);
-        setStatusError('Unable to verify email service configuration.');
-      });
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   if (isPending) {
     return <AuthSkeleton />;
@@ -151,53 +133,70 @@ function ForgotPasswordPage() {
             Enter your email address and we'll send you a link to reset your password.
           </p>
           {emailServiceStatus && !emailServiceStatus.isConfigured && (
-            <div className="mt-4 bg-muted border border-border text-muted-foreground px-4 py-3 rounded">
-              <div className="font-medium mb-2 text-foreground">Email service not configured</div>
-              <div className="text-sm space-y-2">
-                <p>
-                  Password reset functionality requires the{' '}
-                  <code className="bg-muted px-1 rounded text-xs">RESEND_API_KEY</code> environment
-                  variable to be set in your <strong>Convex</strong> environment.
-                </p>
-                <div className="space-y-1">
-                  <p className="font-medium">To fix this:</p>
-                  <ol className="list-decimal list-inside space-y-1 text-left ml-4">
-                    <li>
-                      Go to{' '}
-                      <a
-                        href="https://resend.com"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline hover:text-destructive"
-                      >
-                        resend.com
-                      </a>{' '}
-                      and create an account
-                    </li>
-                    <li>Create a new API key</li>
-                    <li>
-                      Add{' '}
-                      <code className="bg-muted px-1 rounded text-xs">
-                        RESEND_API_KEY=your_api_key_here
-                      </code>{' '}
-                      to your Convex environment (use{' '}
-                      <code className="bg-muted px-1 rounded text-xs">npx convex env set</code> or
-                      Convex dashboard)
-                    </li>
-                    <li>
-                      For local development: Set in Convex dashboard or via{' '}
-                      <code className="bg-muted px-1 rounded text-xs">.env.local</code> (if using
-                      Convex CLI)
-                    </li>
-                  </ol>
+            <Card className="mt-4 border-amber-200 bg-amber-50">
+              <CardHeader>
+                <CardTitle className="flex items-center space-x-2 text-amber-800">
+                  <Mail className="w-5 h-5" />
+                  <span>Resend Email Setup Required</span>
+                </CardTitle>
+                <CardDescription className="text-amber-700">
+                  To use password reset functionality, you need to set up the Resend API key in
+                  Convex.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="text-sm text-amber-800 space-y-3">
+                  <div className="space-y-2">
+                    <p className="font-semibold">Setup Steps:</p>
+                    <ol className="list-decimal list-inside space-y-3 ml-4">
+                      <li>
+                        Create a Resend account at{' '}
+                        <button
+                          type="button"
+                          onClick={() => window.open('https://resend.com', '_blank')}
+                          className="text-amber-600 hover:text-amber-800 underline font-medium"
+                        >
+                          resend.com
+                        </button>
+                      </li>
+                      <li>Create a new API key from the Resend dashboard</li>
+                      <li>
+                        Set the environment variable in Convex:
+                        <div className="bg-white p-2 rounded border font-mono text-xs space-y-1 mt-2 ml-4">
+                          <div className="mb-1">Development:</div>
+                          <div>npx convex env set RESEND_API_KEY your_api_key_here</div>
+                          <div className="mt-2 mb-1">Production:</div>
+                          <div>npx convex env set RESEND_API_KEY your_api_key_here --prod</div>
+                        </div>
+                      </li>
+                      <li>Or use the Convex Dashboard: Settings → Environment Variables</li>
+                    </ol>
+                    <p className="text-xs text-amber-700 mt-2">
+                      <strong>Note:</strong> This variable must be set in Convex, not in your local
+                      `.env` file or Netlify.
+                    </p>
+                  </div>
                 </div>
-              </div>
-            </div>
-          )}
-          {statusError && (
-            <div className="mt-4 bg-muted border border-border text-muted-foreground px-4 py-3 rounded">
-              {statusError}
-            </div>
+                <div className="flex space-x-3">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open('/docs/RESEND_SETUP.md', '_blank')}
+                    className="text-amber-700 border-amber-300 hover:bg-amber-100"
+                  >
+                    📖 Setup Guide
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => window.open('https://resend.com', '_blank')}
+                    className="text-amber-700 border-amber-300 hover:bg-amber-100"
+                  >
+                    🔗 Resend Dashboard
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
         <ClientOnly
@@ -255,7 +254,8 @@ function ForgotPasswordPage() {
             </form.Field>
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
               {([canSubmit, isSubmitting]) => {
-                const isEmailConfigured = emailServiceStatus?.isConfigured ?? true; // Default to true while loading
+                // Default to true while loading to avoid blocking user
+                const isEmailConfigured = emailServiceStatus?.isConfigured ?? true;
                 const isDisabled = !canSubmit || !isEmailConfigured;
 
                 return (
