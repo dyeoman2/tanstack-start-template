@@ -45,7 +45,7 @@ export function UsageAlert({
   const handlePurchase = async (productId: string) => {
     try {
       setIsLoading(true);
-      const successUrl = `${window.location.origin}/app/ai-demo?payment=success`;
+      const successUrl = `${window.location.origin}/app/ai-playground?payment=success`;
       const result = await checkoutAction({ productId, successUrl });
 
       if (result.error) {

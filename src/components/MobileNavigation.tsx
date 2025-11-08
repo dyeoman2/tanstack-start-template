@@ -30,7 +30,7 @@ export function MobileNavigation() {
   const navItems: NavItem[] = isAuthenticated
     ? [
         { to: '/app', label: 'Dashboard', exact: true },
-        { to: '/app/ai-demo', label: 'AI Demo', icon: Cloud },
+        { to: '/app/ai-playground', label: 'AI Playground', icon: Cloud },
       ]
     : [];
 

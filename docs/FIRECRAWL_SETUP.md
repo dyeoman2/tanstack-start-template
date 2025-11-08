@@ -4,7 +4,7 @@ This guide will help you set up Firecrawl for web scraping and content extractio
 
 ## Overview
 
-Firecrawl is a web scraping API that converts websites into clean markdown and structured JSON. The AI demo page includes a Firecrawl integration that allows users to extract content from any URL and view it in both markdown and JSON formats.
+Firecrawl is a web scraping API that converts websites into clean markdown and structured JSON. The AI playground page includes a Firecrawl integration that allows users to extract content from any URL and view it in both markdown and JSON formats.
 
 ## Prerequisites
 
@@ -64,7 +64,7 @@ Alternatively, you can set it via the Convex dashboard:
 ## Testing Your Setup
 
 1. Start your development server: `pnpm dev`
-2. Navigate to `/app/ai-demo`
+2. Navigate to `/app/ai-playground`
 3. Click on the **Firecrawl** tab
 4. Enter a URL (defaults to `https://useautumn.com/`)
 5. Click **Extract Content**
@@ -161,7 +161,7 @@ The Firecrawl integration provides:
 
 ### Changing the Default URL
 
-Edit the default URL in `src/routes/app/ai-demo.tsx`:
+Edit the default URL in `src/routes/app/ai-playground.tsx`:
 
 ```typescript
 const firecrawlForm = useForm({

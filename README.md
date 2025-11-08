@@ -7,7 +7,7 @@ A TanStack Start Template built with TanStack Start, featuring modern full-stack
 After registering and logging in, you can explore these demo features:
 
 - **📊 Dashboard** - View real-time statistics and metrics with live data updates via Convex subscriptions
-- **🤖 AI Demo** - Interactive AI playground featuring:
+- **🤖 AI Playground** - Interactive AI playground featuring:
   - Streaming text generation with Cloudflare Workers AI
   - Structured output generation (JSON, markdown, etc.)
   - Web scraping and content extraction with Firecrawl
@@ -136,13 +136,13 @@ npx netlify link
 
 ## 📄 Third Party Services Setup
 
-In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For AI functionality, you need to set up Cloudflare Workers AI. To meter usage and offer paid upgrades after the 10 free messages, you need to set up Autumn. For web scraping and content extraction in the AI demo, you can set up Firecrawl. These are optional, but recommended for production.
+In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For AI functionality, you need to set up Cloudflare Workers AI. To meter usage and offer paid upgrades after the 10 free messages, you need to set up Autumn. For web scraping and content extraction in the AI playground, you can set up Firecrawl. These are optional, but recommended for production.
 
 - [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration
 - [Sentry Setup](./docs/SENTRY_SETUP.md) - Error monitoring and performance tracking
 - [Cloudflare AI Setup](docs/CLOUDFLARE_AI_SETUP.md) - AI inference and gateway configuration
 - [Autumn Billing Setup](docs/AUTUMN_SETUP.md) - Usage metering and upgrade flow for AI messaging
-- [Firecrawl Setup](docs/FIRECRAWL_SETUP.md) - Web scraping and content extraction for AI demo
+- [Firecrawl Setup](docs/FIRECRAWL_SETUP.md) - Web scraping and content extraction for AI playground
 
 - [CodeRabbit CLI Setup](docs/CODERABBIT_CLI_SETUP.md) - AI-powered code review assistance
 

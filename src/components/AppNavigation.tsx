@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { Cloud, LogOut, Shield, User } from 'lucide-react';
+import { LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
 import { ThemeToggle } from '~/components/theme-toggle';
 import {
@@ -164,12 +164,11 @@ export function AppNavigation() {
                   Dashboard
                 </Link>
                 <Link
-                  to="/app/ai-demo"
+                  to="/app/ai-playground"
                   preload="intent"
                   className={cn(navigationMenuTriggerStyle(), 'no-underline')}
                 >
-                  <Cloud className="w-4 h-4 mr-1" />
-                  AI Demo
+                  AI Playground
                 </Link>
               </div>
             )}

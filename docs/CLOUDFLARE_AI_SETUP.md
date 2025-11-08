@@ -95,7 +95,7 @@ Alternatively, you can set them via the Convex dashboard:
 ## Testing Your Setup
 
 1. Start your development server: `pnpm dev`
-2. Navigate to `/app/ai-demo`
+2. Navigate to `/app/ai-playground`
 3. Try the **"Direct Workers AI"** option first - this should work immediately
 4. If you set up a gateway, try the **"AI Gateway"** option
 5. Use the **"Gateway Diagnostics"** tab to test your gateway connectivity

@@ -18,8 +18,8 @@ export function CreditPurchase({ onPurchaseSuccess, compact = false }: CreditPur
   const handlePurchase = async (productId: string) => {
     try {
       setIsLoading(true);
-      // Redirect back to the AI demo page after successful payment with status query param
-      const successUrl = `${window.location.origin}/app/ai-demo?payment=success`;
+      // Redirect back to the AI playground page after successful payment with status query param
+      const successUrl = `${window.location.origin}/app/ai-playground?payment=success`;
       const result = await checkoutAction({ productId, successUrl });
 
       if (result.error) {

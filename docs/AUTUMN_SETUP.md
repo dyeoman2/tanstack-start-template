@@ -161,7 +161,7 @@ You can also set the Convex environment variable via the dashboard:
 ## 5. Verify the Integration
 
 1. Start the dev servers: `pnpm dev`
-2. Sign in and open `/app/ai-demo`
+2. Sign in and open `/app/ai-playground`
 3. Send up to 10 messages (free tier)
 4. After free tier is exhausted, credit purchase options should appear
 5. Complete a credit purchase and confirm usage continues

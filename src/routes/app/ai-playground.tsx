@@ -1,11 +1,13 @@
 import { api } from '@convex/_generated/api';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useAction } from 'convex/react';
+import { useAction, useMutation } from 'convex/react';
+import { Trash2 } from 'lucide-react';
 import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useAutumnBilling } from '~/components/AutumnProvider';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
+import { Button } from '~/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import { AIResultsDisplay } from '~/features/ai/components/AIResultsDisplay';
@@ -29,7 +31,7 @@ const paymentStatusSchema = z.object({
   payment: z.enum(['success', 'cancelled', 'failed']).optional(),
 });
 
-export const Route = createFileRoute('/app/ai-demo')({
+export const Route = createFileRoute('/app/ai-playground')({
   component: CloudflareAIDemo,
   errorComponent: DashboardErrorBoundary,
   validateSearch: paymentStatusSchema,
@@ -57,6 +59,7 @@ function CloudflareAIDemo() {
   const subscriptionDetails = usageStatus?.authenticated ? usageStatus.subscription : null;
   const paymentHandledRef = useRef<string | undefined>(undefined);
   const streamingEntries = useAiResponseStream();
+  const deleteAllResponses = useMutation(api.aiResponses.deleteAllUserResponses);
 
   // Check Firecrawl configuration using Convex action
   useEffect(() => {
@@ -97,7 +100,7 @@ function CloudflareAIDemo() {
 
     // Clean up URL immediately to prevent re-triggering
     navigate({
-      to: '/app/ai-demo',
+      to: '/app/ai-playground',
       replace: true,
     });
 
@@ -200,10 +203,32 @@ function CloudflareAIDemo() {
     setLoading: setAllLoading,
   });
 
+  const handleDeleteAllResults = useCallback(async () => {
+    try {
+      // Clear local state
+      setAllResults({});
+      setAllLoading({});
+      setResultTimestamps({});
+      setResultTabs({});
+
+      // Delete streaming entries from Convex
+      await deleteAllResponses({});
+
+      toast.showToast('All results deleted successfully.', 'success');
+    } catch (error) {
+      toast.showToast(
+        error instanceof Error ? error.message : 'Failed to delete results.',
+        'error',
+      );
+    }
+  }, [deleteAllResponses, toast]);
+
+  const hasResults = combinedEntries.length > 0;
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="space-y-2">
-        <h1 className="text-3xl font-bold flex items-center gap-3">AI Demo</h1>
+        <h1 className="text-3xl font-bold flex items-center gap-3">AI Playground</h1>
         <p className="text-muted-foreground">
           Interactive demo for streaming AI text generation and structured output. Built with the
           Cloudflare Workers AI for inference, Cloudflare AI Gateway for request monitoring and
@@ -298,7 +323,20 @@ function CloudflareAIDemo() {
 
       {/* Results Display */}
       <div className="space-y-4">
-        <h2 className="text-xl font-semibold">Results</h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold">Results</h2>
+          {hasResults && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDeleteAllResults}
+              disabled={isSubmitting}
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete All
+            </Button>
+          )}
+        </div>
         <AIResultsDisplay
           entries={combinedEntries}
           resultTabs={resultTabs}
