@@ -28,7 +28,7 @@
     "netlify"
   ],
   "scripts": {
-    "dev": "NODE_OPTIONS='--import ./instrument.server.mjs' vite dev",
+    "dev": "concurrently -n vite,convex -c blue,green \"NODE_OPTIONS='--import ./instrument.server.mjs' vite dev\" \"npx convex dev\"",
     "dev:full": "tsx scripts/dev-full.ts",
     "build": "vite build && mkdir -p .output/server && cp instrument.server.mjs .output/server",
     "start": "node --import ./.output/server/instrument.server.mjs ./.output/server/index.mjs",
@@ -100,6 +100,7 @@
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.1.0",
+    "concurrently": "^9.1.2",
     "knip": "^5.68.0",
     "rollup-plugin-visualizer": "^6.0.5",
     "tailwindcss": "^4.1.17",
