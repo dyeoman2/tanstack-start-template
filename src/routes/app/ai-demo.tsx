@@ -1,7 +1,8 @@
 import { api } from '@convex/_generated/api';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useAction } from 'convex/react';
-import { useEffect, useRef, useState } from 'react';
+import type { Dispatch, SetStateAction } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useAutumnBilling } from '~/components/AutumnProvider';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
@@ -15,6 +16,7 @@ import { FirecrawlSetupCard } from '~/features/ai/components/FirecrawlSetupCard'
 import { GatewayDiagnostics } from '~/features/ai/components/GatewayDiagnostics';
 import { InferenceForm } from '~/features/ai/components/InferenceForm';
 import { StructuredForm } from '~/features/ai/components/StructuredForm';
+import { useAiResponseStream } from '~/features/ai/hooks/useAiResponseStream';
 import { useAiUsageStatus } from '~/features/ai/hooks/useAiUsageStatus';
 import { useFirecrawlForm } from '~/features/ai/hooks/useFirecrawlForm';
 import { useGatewayDiagnostics } from '~/features/ai/hooks/useGatewayDiagnostics';
@@ -54,6 +56,7 @@ function CloudflareAIDemo() {
   const usageDetails = usageStatus?.authenticated ? usageStatus.usage : null;
   const subscriptionDetails = usageStatus?.authenticated ? usageStatus.subscription : null;
   const paymentHandledRef = useRef<string | undefined>(undefined);
+  const streamingEntries = useAiResponseStream();
 
   // Check Firecrawl configuration using Convex action
   useEffect(() => {
@@ -125,13 +128,53 @@ function CloudflareAIDemo() {
   // Shared state for all results
   const [allResults, setAllResults] = useState<Record<string, AIResult>>({});
   const [allLoading, setAllLoading] = useState<Record<string, boolean>>({});
+  const [resultTimestamps, setResultTimestamps] = useState<Record<string, number>>({});
+
+  const setResultsWithMeta = useCallback<Dispatch<SetStateAction<Record<string, AIResult>>>>(
+    (updater) => {
+      setAllResults((prev) => {
+        const next = typeof updater === 'function' ? updater(prev) : updater;
+        setResultTimestamps((prevTs) => {
+          const nextTs = { ...prevTs };
+          for (const key of Object.keys(next)) {
+            if (!(key in prev) && !(key in nextTs)) {
+              nextTs[key] = Date.now();
+            }
+          }
+          return nextTs;
+        });
+        return next;
+      });
+    },
+    [],
+  );
+
+  const localEntries = useMemo(
+    () =>
+      Object.entries(allResults).map(([key, result]) => ({
+        key,
+        result,
+        isLoading: allLoading[key] ?? false,
+        createdAt: resultTimestamps[key] ?? 0,
+      })),
+    [allResults, allLoading, resultTimestamps],
+  );
+
+  const combinedEntries = useMemo(() => {
+    const merged = [...streamingEntries, ...localEntries];
+    return merged.sort((a, b) => b.createdAt - a.createdAt);
+  }, [streamingEntries, localEntries]);
+
+  const streamingSubmitting = streamingEntries.some((entry) => entry.isLoading);
+  const anyLocalLoading = Object.values(allLoading).some((v) => v);
+  const isSubmitting = streamingSubmitting || anyLocalLoading;
 
   const inferenceForm = useInferenceForm({
     onRefreshUsage: refreshUsage,
     envVarsMissing,
     generationBlocked,
     addUsageDepletedResult,
-    setResults: setAllResults,
+    setResults: setResultsWithMeta,
     setLoading: setAllLoading,
   });
 
@@ -140,20 +183,20 @@ function CloudflareAIDemo() {
     envVarsMissing,
     generationBlocked,
     addUsageDepletedResult,
-    setResults: setAllResults,
+    setResults: setResultsWithMeta,
     setLoading: setAllLoading,
   });
 
   const firecrawlForm = useFirecrawlForm({
     checkFirecrawlConfigured: () => checkFirecrawlConfigured({}),
     setFirecrawlConfigured,
-    setResults: setAllResults,
+    setResults: setResultsWithMeta,
     setLoading: setAllLoading,
   });
 
   const gatewayDiagnostics = useGatewayDiagnostics({
     onRefreshUsage: refreshUsage,
-    setResults: setAllResults,
+    setResults: setResultsWithMeta,
     setLoading: setAllLoading,
   });
 
@@ -207,7 +250,7 @@ function CloudflareAIDemo() {
             onSubmit={inferenceForm.handleSubmit}
             envVarsMissing={envVarsMissing}
             generationBlocked={generationBlocked}
-            isSubmitting={Object.values(allLoading).some((v) => v)}
+            isSubmitting={isSubmitting}
             usageDetails={usageDetails}
             subscriptionDetails={subscriptionDetails}
             isInitialSubscriptionLoad={isInitialSubscriptionLoad}
@@ -220,7 +263,7 @@ function CloudflareAIDemo() {
             onSubmit={structuredForm.handleSubmit}
             envVarsMissing={envVarsMissing}
             generationBlocked={generationBlocked}
-            isSubmitting={Object.values(allLoading).some((v) => v)}
+            isSubmitting={isSubmitting}
             usageDetails={usageDetails}
             subscriptionDetails={subscriptionDetails}
             isInitialSubscriptionLoad={isInitialSubscriptionLoad}
@@ -232,7 +275,7 @@ function CloudflareAIDemo() {
           <FirecrawlForm
             onSubmit={firecrawlForm.handleSubmit}
             apiKeyMissing={firecrawlApiKeyMissing}
-            isSubmitting={Object.values(allLoading).some((v) => v)}
+            isSubmitting={isSubmitting}
             usageDetails={usageDetails}
             subscriptionDetails={subscriptionDetails}
             isInitialSubscriptionLoad={isInitialSubscriptionLoad}
@@ -257,8 +300,7 @@ function CloudflareAIDemo() {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold">Results</h2>
         <AIResultsDisplay
-          results={allResults}
-          loading={allLoading}
+          entries={combinedEntries}
           resultTabs={resultTabs}
           onTabChange={(key, value) => setResultTabs((prev) => ({ ...prev, [key]: value }))}
         />

@@ -58,4 +58,38 @@ export default defineSchema({
     lastReservedAt: v.optional(v.number()),
     lastCompletedAt: v.optional(v.number()),
   }).index('by_userId', ['userId']),
+
+  aiResponses: defineTable({
+    userId: v.string(),
+    requestKey: v.string(),
+    method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+    response: v.string(),
+    rawText: v.optional(v.string()),
+    structuredData: v.optional(
+      v.object({
+        title: v.string(),
+        summary: v.string(),
+        keyPoints: v.array(v.string()),
+        category: v.string(),
+        difficulty: v.string(),
+      }),
+    ),
+    parseError: v.optional(v.string()),
+    usage: v.optional(
+      v.object({
+        totalTokens: v.optional(v.number()),
+        inputTokens: v.optional(v.number()),
+        outputTokens: v.optional(v.number()),
+      }),
+    ),
+    finishReason: v.optional(v.string()),
+    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_userId_createdAt', ['userId', 'createdAt'])
+    .index('by_requestKey', ['requestKey']),
 });

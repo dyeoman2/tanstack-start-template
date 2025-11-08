@@ -22,6 +22,11 @@ export function useStructuredForm({
 }: UseStructuredFormProps) {
   const streamStructuredResponseAction = useAction(api.cloudflareAi.streamStructuredResponse);
 
+  const createRequestId = () =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
   const handleSubmit = async (data: {
     topic: string;
     style: 'formal' | 'casual' | 'technical';
@@ -41,83 +46,21 @@ export function useStructuredForm({
       return;
     }
 
-    const key = `structured-${Date.now()}`;
-
-    // Show result card immediately with loading state
-    const initialResult: AIResult = {
-      response: '',
-      provider: 'cloudflare-workers-ai-structured',
-      model: 'llama', // Default model for structured responses
-    };
-    setResults((prev) => ({ ...prev, [key]: initialResult }));
-    setLoading((prev) => ({ ...prev, [key]: true }));
+    const requestId = createRequestId();
 
     try {
-      // Use streaming for structured output
-      let accumulatedText = '';
-      let metadata: { provider?: string; model?: string } | null = null;
-
-      // Convex returns an array of chunks instead of an async generator
-      const chunks = await streamStructuredResponseAction({
+      await streamStructuredResponseAction({
         topic: data.topic,
         style: data.style,
+        requestId,
       });
-
-      // Process chunks sequentially to simulate streaming
-      for (const chunk of chunks) {
-        if (chunk.type === 'metadata') {
-          metadata = chunk;
-          // Update with metadata
-          setResults((prev) => ({
-            ...prev,
-            [key]: {
-              ...prev[key],
-              provider: chunk.provider,
-              model: chunk.model,
-            },
-          }));
-        } else if (chunk.type === 'text') {
-          accumulatedText += chunk.content;
-          // Update the result in real-time showing the raw text
-          setResults((prev) => ({
-            ...prev,
-            [key]: {
-              ...prev[key],
-              response: accumulatedText,
-              provider: metadata?.provider || prev[key]?.provider,
-              model: metadata?.model || prev[key]?.model,
-            },
-          }));
-        } else if (chunk.type === 'complete') {
-          // Final update with complete data
-          const result: AIResult = {
-            response: chunk.rawText || accumulatedText,
-            usage: chunk.usage,
-            finishReason: chunk.finishReason,
-            provider: metadata?.provider || 'cloudflare-workers-ai-structured',
-            model: metadata?.model || '@cf/meta/llama-3.1-8b-instruct',
-            structuredData: chunk.structuredData
-              ? (chunk.structuredData as {
-                  title: string;
-                  summary: string;
-                  keyPoints: string[];
-                  category: string;
-                  difficulty: string;
-                })
-              : undefined,
-            parseError: chunk.parseError || undefined,
-          };
-          // Update final result and mark loading as complete
-          setResults((prev) => ({ ...prev, [key]: result }));
-          setLoading((prev) => ({ ...prev, [key]: false }));
-        }
-      }
     } catch (error) {
+      const errorKey = `structured-error-${Date.now()}`;
       setResults((prev) => ({
         ...prev,
-        [key]: { error: error instanceof Error ? error.message : 'Unknown error' },
+        [errorKey]: { error: error instanceof Error ? error.message : 'Unknown error' },
       }));
-      setLoading((prev) => ({ ...prev, [key]: false }));
+      setLoading((prev) => ({ ...prev, [errorKey]: false }));
     } finally {
       await onRefreshUsage();
     }

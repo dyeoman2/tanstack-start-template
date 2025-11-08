@@ -2,6 +2,23 @@
 
 A TanStack Start Template built with TanStack Start, featuring modern full-stack TypeScript architecture with end-to-end type safety, authentication, real-time database, and production-ready components.
 
+## 🎯 Demo Features
+
+After registering and logging in, you can explore these demo features:
+
+- **📊 Dashboard** - View real-time statistics and metrics with live data updates via Convex subscriptions
+- **🤖 AI Demo** - Interactive AI playground featuring:
+  - Streaming text generation with Cloudflare Workers AI
+  - Structured output generation (JSON, markdown, etc.)
+  - Web scraping and content extraction with Firecrawl
+  - Gateway diagnostics and request monitoring
+  - Usage metering with Autumn billing integration (10 free messages, then upgrade prompts)
+- **👥 Admin Dashboard** - Full admin interface with:
+  - User management (view, edit, delete users)
+  - System statistics and analytics
+  - Data management tools
+- **👤 Profile** - User profile management and settings
+
 ## ✨ What's Included
 
 ### 🏗️ **Complete Full-Stack Architecture**

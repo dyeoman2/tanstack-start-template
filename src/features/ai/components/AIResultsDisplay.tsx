@@ -2,22 +2,17 @@ import { Cpu, Globe, Loader2, Network, Shield } from 'lucide-react';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import type { AiResultEntry } from '~/features/ai/hooks/useAiResponseStream';
 import type { AIResult } from '~/features/ai/types';
 
 interface AIResultsDisplayProps {
-  results: Record<string, AIResult>;
-  loading: Record<string, boolean>;
+  entries: AiResultEntry[];
   resultTabs: Record<string, string>;
   onTabChange: (key: string, value: string) => void;
 }
 
-export function AIResultsDisplay({
-  results,
-  loading,
-  resultTabs,
-  onTabChange,
-}: AIResultsDisplayProps) {
-  if (Object.entries(results).length === 0) {
+export function AIResultsDisplay({ entries, resultTabs, onTabChange }: AIResultsDisplayProps) {
+  if (entries.length === 0) {
     return (
       <Card>
         <CardContent className="p-6 text-center text-muted-foreground">
@@ -29,115 +24,105 @@ export function AIResultsDisplay({
 
   return (
     <>
-      {Object.entries(results)
-        .reverse()
-        .map(([key, result]) => {
-          const isLoading = loading[key];
-
-          return (
-            <Card key={key}>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    {result.provider === 'cloudflare-workers-ai' && (
-                      <Cpu className="w-5 h-5 text-blue-500" />
-                    )}
-                    {result.provider === 'cloudflare-gateway' && (
-                      <Network className="w-5 h-5 text-green-500" />
-                    )}
-                    {result.provider === 'cloudflare-workers-ai-structured' && (
-                      <Shield className="w-5 h-5 text-purple-500" />
-                    )}
-                    {result.provider === 'firecrawl' && (
-                      <Globe className="w-5 h-5 text-orange-500" />
-                    )}
-                    {key === 'gateway-test' && <Network className="w-5 h-5 text-orange-500" />}
-                    <CardTitle className="text-lg">
-                      {key === 'gateway-test'
-                        ? 'Gateway Connectivity Test'
-                        : result.provider === 'cloudflare-gateway'
-                          ? 'AI Gateway'
-                          : result.provider === 'cloudflare-workers-ai-structured'
-                            ? 'Structured Output'
-                            : result.provider === 'firecrawl'
-                              ? 'Firecrawl Extraction'
-                              : 'Direct Workers AI'}
-                    </CardTitle>
-                  </div>
-                  <Badge variant={result.error ? 'destructive' : 'default'}>
-                    {isLoading ? 'Loading...' : result.error ? 'Error' : 'Complete'}
-                  </Badge>
-                </div>
-                {result.model && <CardDescription>Model: {result.model}</CardDescription>}
-                {result.firecrawlUrl && (
-                  <CardDescription>
-                    URL:{' '}
-                    <a
-                      href={result.firecrawlUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-600 hover:underline"
-                    >
-                      {result.firecrawlUrl}
-                    </a>
-                  </CardDescription>
+      {entries.map(({ key, result, isLoading }) => (
+        <Card key={key}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                {result.provider === 'cloudflare-workers-ai' && (
+                  <Cpu className="w-5 h-5 text-blue-500" />
                 )}
-              </CardHeader>
-              <CardContent>
-                {isLoading && !result.response && !result.firecrawlMarkdown && (
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>
-                      {result.provider === 'firecrawl'
-                        ? 'Extracting content...'
-                        : 'Generating response...'}
-                    </span>
-                  </div>
+                {result.provider === 'cloudflare-gateway' && (
+                  <Network className="w-5 h-5 text-green-500" />
                 )}
-
-                {result.error && (
-                  <div className="text-red-500 p-3 bg-red-50 rounded border">
-                    <strong>Error:</strong> {result.error}
-                  </div>
+                {result.provider === 'cloudflare-workers-ai-structured' && (
+                  <Shield className="w-5 h-5 text-purple-500" />
                 )}
+                {result.provider === 'firecrawl' && <Globe className="w-5 h-5 text-orange-500" />}
+                {key === 'gateway-test' && <Network className="w-5 h-5 text-orange-500" />}
+                <CardTitle className="text-lg">
+                  {key === 'gateway-test'
+                    ? 'Gateway Connectivity Test'
+                    : result.provider === 'cloudflare-gateway'
+                      ? 'AI Gateway'
+                      : result.provider === 'cloudflare-workers-ai-structured'
+                        ? 'Structured Output'
+                        : result.provider === 'firecrawl'
+                          ? 'Firecrawl Extraction'
+                          : 'Direct Workers AI'}
+                </CardTitle>
+              </div>
+              <Badge variant={result.error ? 'destructive' : 'default'}>
+                {isLoading ? 'Loading...' : result.error ? 'Error' : 'Complete'}
+              </Badge>
+            </div>
+            {result.model && <CardDescription>Model: {result.model}</CardDescription>}
+            {result.firecrawlUrl && (
+              <CardDescription>
+                URL:{' '}
+                <a
+                  href={result.firecrawlUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-600 hover:underline"
+                >
+                  {result.firecrawlUrl}
+                </a>
+              </CardDescription>
+            )}
+          </CardHeader>
+          <CardContent>
+            {isLoading && !result.response && !result.firecrawlMarkdown && (
+              <div className="flex items-center space-x-2">
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>
+                  {result.provider === 'firecrawl'
+                    ? 'Extracting content...'
+                    : 'Generating response...'}
+                </span>
+              </div>
+            )}
 
-                {/* Firecrawl Results */}
-                {result.provider === 'firecrawl' &&
-                  !result.error &&
-                  (result.firecrawlMarkdown || result.firecrawlJson) && (
-                    <FirecrawlResultTabs
-                      result={result}
-                      activeTab={
-                        resultTabs[key] || (result.firecrawlMarkdown ? 'markdown' : 'json')
-                      }
-                      onTabChange={(value) => onTabChange(key, value)}
-                    />
-                  )}
+            {result.error && (
+              <div className="text-red-500 p-3 bg-red-50 rounded border">
+                <strong>Error:</strong> {result.error}
+              </div>
+            )}
 
-                {/* AI Result Content with Tabs */}
-                {(result.response || result.structuredData || result.parseError) &&
-                  !result.error &&
-                  result.provider !== 'firecrawl' &&
-                  key !== 'gateway-test' && (
-                    <AIResultTabs
-                      result={result}
-                      activeTab={resultTabs[key] || 'response'}
-                      onTabChange={(value) => onTabChange(key, value)}
-                    />
-                  )}
+            {/* Firecrawl Results */}
+            {result.provider === 'firecrawl' &&
+              !result.error &&
+              (result.firecrawlMarkdown || result.firecrawlJson) && (
+                <FirecrawlResultTabs
+                  result={result}
+                  activeTab={resultTabs[key] || (result.firecrawlMarkdown ? 'markdown' : 'json')}
+                  onTabChange={(value) => onTabChange(key, value)}
+                />
+              )}
 
-                {/* Gateway Test Results */}
-                {key === 'gateway-test' && (
-                  <GatewayTestTabs
-                    result={result}
-                    activeTab={resultTabs[key] || 'response'}
-                    onTabChange={(value) => onTabChange(key, value)}
-                  />
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
+            {/* AI Result Content with Tabs */}
+            {(result.response || result.structuredData || result.parseError) &&
+              !result.error &&
+              result.provider !== 'firecrawl' &&
+              key !== 'gateway-test' && (
+                <AIResultTabs
+                  result={result}
+                  activeTab={resultTabs[key] || 'response'}
+                  onTabChange={(value) => onTabChange(key, value)}
+                />
+              )}
+
+            {/* Gateway Test Results */}
+            {key === 'gateway-test' && (
+              <GatewayTestTabs
+                result={result}
+                activeTab={resultTabs[key] || 'response'}
+                onTabChange={(value) => onTabChange(key, value)}
+              />
+            )}
+          </CardContent>
+        </Card>
+      ))}
     </>
   );
 }

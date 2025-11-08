@@ -3,7 +3,9 @@
 import { generateText, streamText } from 'ai';
 import { v } from 'convex/values';
 import { createWorkersAI } from 'workers-ai-provider';
-import { api } from './_generated/api';
+import { assertUserId } from '../src/lib/shared/user-id';
+import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { authComponent } from './auth';
@@ -80,6 +82,30 @@ interface AiUsageMetadata {
   outputTokens?: number;
 }
 
+type StructuredResult = {
+  title: string;
+  summary: string;
+  keyPoints: string[];
+  category: string;
+  difficulty: string;
+};
+
+function isStructuredResult(value: unknown): value is StructuredResult {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  return (
+    typeof candidate.title === 'string' &&
+    typeof candidate.summary === 'string' &&
+    Array.isArray(candidate.keyPoints) &&
+    candidate.keyPoints.every((point) => typeof point === 'string') &&
+    typeof candidate.category === 'string' &&
+    typeof candidate.difficulty === 'string'
+  );
+}
+
 function buildReservationError(reservation: {
   requiresUpgrade?: boolean;
   reason?: string;
@@ -130,11 +156,34 @@ async function ensureAuthenticatedUser(ctx: ActionCtx) {
   if (!authUser) {
     throw new Error('Authentication required');
   }
-  return { authUser };
+
+  const userId = assertUserId(authUser, 'Unable to resolve user id.');
+  return { authUser, userId };
 }
 
-// Helper function for streaming - accumulates chunks and returns them
-async function streamWithWorkersAIHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
+type StreamHandlers = {
+  onMetadata?: (chunk: { provider: string; model: string }) => Promise<void> | void;
+  onText?: (chunk: { content: string }) => Promise<void> | void;
+  onComplete?: (chunk: {
+    usage: {
+      inputTokens?: number;
+      outputTokens?: number;
+      totalTokens?: number;
+    };
+    finishReason: string;
+    accumulatedText: string;
+  }) => Promise<void> | void;
+};
+
+// Helper function for streaming - emits chunks via handlers
+const STREAMING_FLUSH_CHAR_TARGET = 100;
+const STREAMING_FLUSH_INTERVAL_MS = 100;
+
+async function streamWithWorkersAIHelper(
+  prompt: string,
+  model: 'llama' | 'falcon' = 'llama',
+  handlers: StreamHandlers = {},
+) {
   const { llamaModel, falconModel } = getWorkersAIProvider();
   const selectedModel = model === 'llama' ? llamaModel : falconModel;
 
@@ -143,36 +192,19 @@ async function streamWithWorkersAIHelper(prompt: string, model: 'llama' | 'falco
     prompt,
   });
 
-  const chunks: Array<
-    | { type: 'metadata'; provider: string; model: string }
-    | { type: 'text'; content: string }
-    | {
-        type: 'complete';
-        usage: {
-          inputTokens?: number;
-          outputTokens?: number;
-          totalTokens?: number;
-        };
-        finishReason: string;
-      }
-  > = [];
-
-  // Add metadata first
-  chunks.push({
-    type: 'metadata',
+  const metadataChunk = {
     provider: 'cloudflare-workers-ai',
     model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
-  });
+  };
+
+  await handlers.onMetadata?.(metadataChunk);
 
   let accumulatedText = '';
 
   // Accumulate text chunks
   for await (const delta of result.textStream) {
     accumulatedText += delta;
-    chunks.push({
-      type: 'text',
-      content: delta,
-    });
+    await handlers.onText?.({ content: delta });
   }
 
   // Get final usage and finish reason
@@ -189,16 +221,18 @@ async function streamWithWorkersAIHelper(prompt: string, model: 'llama' | 'falco
         }
       : usage;
 
-  chunks.push({
-    type: 'complete',
+  await handlers.onComplete?.({
     usage: estimatedUsage,
     finishReason: finishReason || 'stop',
+    accumulatedText,
   });
-
-  return chunks;
 }
 
-async function streamWithGatewayHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
+async function streamWithGatewayHelper(
+  prompt: string,
+  model: 'llama' | 'falcon' = 'llama',
+  handlers: StreamHandlers = {},
+) {
   const config = getCloudflareConfig();
 
   if (!config.gatewayId) {
@@ -231,36 +265,19 @@ async function streamWithGatewayHelper(prompt: string, model: 'llama' | 'falcon'
     prompt,
   });
 
-  const chunks: Array<
-    | { type: 'metadata'; provider: string; model: string }
-    | { type: 'text'; content: string }
-    | {
-        type: 'complete';
-        usage: {
-          inputTokens?: number;
-          outputTokens?: number;
-          totalTokens?: number;
-        };
-        finishReason: string;
-      }
-  > = [];
-
-  // Add metadata first
-  chunks.push({
-    type: 'metadata',
+  const metadataChunk = {
     provider: 'cloudflare-gateway',
     model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
-  });
+  };
+
+  await handlers.onMetadata?.(metadataChunk);
 
   let accumulatedText = '';
 
   // Accumulate text chunks
   for await (const delta of result.textStream) {
     accumulatedText += delta;
-    chunks.push({
-      type: 'text',
-      content: delta,
-    });
+    await handlers.onText?.({ content: delta });
   }
 
   // Get final usage and finish reason
@@ -277,13 +294,11 @@ async function streamWithGatewayHelper(prompt: string, model: 'llama' | 'falcon'
         }
       : usage;
 
-  chunks.push({
-    type: 'complete',
+  await handlers.onComplete?.({
     usage: estimatedUsage,
     finishReason: finishReason || 'stop',
+    accumulatedText,
   });
-
-  return chunks;
 }
 
 async function generateWithWorkersAIHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
@@ -371,9 +386,15 @@ export const streamWithWorkersAI = action({
   args: {
     prompt: v.string(),
     model: v.union(v.literal('llama'), v.literal('falcon')),
+    requestId: v.string(),
   },
-  handler: async (ctx: ActionCtx, args) => {
-    await ensureAuthenticatedUser(ctx);
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    responseId: Id<'aiResponses'>;
+  }> => {
+    const { userId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: { provider: 'cloudflare-workers-ai', model: args.model },
@@ -382,6 +403,14 @@ export const streamWithWorkersAI = action({
     if (!reservation.allowed) {
       throw buildReservationError(reservation);
     }
+
+    const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
+      userId,
+      requestKey: args.requestId,
+      method: 'direct',
+      provider: 'cloudflare-workers-ai',
+      model: args.model,
+    })) as { responseId: Id<'aiResponses'> };
 
     let usageFinalized = false;
     const releaseReservation = async () => {
@@ -396,45 +425,96 @@ export const streamWithWorkersAI = action({
       }
     };
 
-    let providerFromMetadata: string | undefined;
-    let modelFromMetadata: string | undefined;
+    let providerFromMetadata: string | undefined = 'cloudflare-workers-ai';
+    let modelFromMetadata: string | undefined = args.model;
+    let usageFromComplete: {
+      totalTokens?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    } | null = null;
+
+    const markError = async (message: string) => {
+      await ctx.runMutation(internal.aiResponses.markError, {
+        responseId,
+        errorMessage: message,
+      });
+    };
+
+    let bufferedContent = '';
+    let lastFlushTime = Date.now();
+    const flushBufferedContent = async () => {
+      if (!bufferedContent) {
+        return;
+      }
+      await ctx.runMutation(internal.aiResponses.appendChunk, {
+        responseId,
+        content: bufferedContent,
+      });
+      bufferedContent = '';
+      lastFlushTime = Date.now();
+    };
 
     try {
-      const chunks = await streamWithWorkersAIHelper(args.prompt, args.model);
-
-      // Find metadata and complete chunks
-      const metadataChunk = chunks.find((c) => c.type === 'metadata');
-      const completeChunk = chunks.find((c) => c.type === 'complete');
-
-      if (metadataChunk && metadataChunk.type === 'metadata') {
-        providerFromMetadata = metadataChunk.provider;
-        modelFromMetadata = metadataChunk.model;
-      }
-
-      if (completeChunk && completeChunk.type === 'complete') {
-        try {
-          const completion = await ctx.runAction(api.ai.completeAiMessage, {
-            mode: reservation.mode,
-            metadata: extractUsageMetadata(
-              completeChunk.usage ?? null,
-              providerFromMetadata ?? 'cloudflare-workers-ai',
-              modelFromMetadata ?? args.model,
-            ),
+      await streamWithWorkersAIHelper(args.prompt, args.model, {
+        onMetadata: async (metadata) => {
+          providerFromMetadata = metadata.provider;
+          modelFromMetadata = metadata.model;
+          await ctx.runMutation(internal.aiResponses.updateMetadata, {
+            responseId,
+            provider: metadata.provider,
+            model: metadata.model,
           });
-          usageFinalized = true;
-          if (completion.trackError) {
-            console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        },
+        onText: async (chunk) => {
+          bufferedContent += chunk.content;
+          const shouldFlush =
+            bufferedContent.length >= STREAMING_FLUSH_CHAR_TARGET ||
+            Date.now() - lastFlushTime >= STREAMING_FLUSH_INTERVAL_MS;
+          if (shouldFlush) {
+            await flushBufferedContent();
           }
-        } catch (completionError) {
-          await releaseReservation();
-          throw completionError instanceof Error
-            ? completionError
-            : new Error('Failed to finalize AI usage.');
+        },
+        onComplete: async (complete) => {
+          await flushBufferedContent();
+          usageFromComplete = complete.usage;
+          await ctx.runMutation(internal.aiResponses.markComplete, {
+            responseId,
+            response: complete.accumulatedText,
+            usage: complete.usage,
+            finishReason: complete.finishReason,
+          });
+        },
+      });
+
+      try {
+        const completion = await ctx.runAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(
+            usageFromComplete,
+            providerFromMetadata ?? 'cloudflare-workers-ai',
+            modelFromMetadata ?? args.model,
+          ),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
         }
+      } catch (completionError) {
+        await releaseReservation();
+        const completionMessage =
+          completionError instanceof Error
+            ? completionError.message
+            : 'Failed to finalize AI usage.';
+        await markError(completionMessage);
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
       }
 
-      return chunks;
+      return { responseId };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await markError(message);
       if (!usageFinalized) {
         await releaseReservation();
       }
@@ -448,9 +528,15 @@ export const streamWithGateway = action({
   args: {
     prompt: v.string(),
     model: v.union(v.literal('llama'), v.literal('falcon')),
+    requestId: v.string(),
   },
-  handler: async (ctx: ActionCtx, args) => {
-    await ensureAuthenticatedUser(ctx);
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    responseId: Id<'aiResponses'>;
+  }> => {
+    const { userId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: { provider: 'cloudflare-gateway-workers-ai', model: args.model },
@@ -459,6 +545,14 @@ export const streamWithGateway = action({
     if (!reservation.allowed) {
       throw buildReservationError(reservation);
     }
+
+    const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
+      userId,
+      requestKey: args.requestId,
+      method: 'gateway',
+      provider: 'cloudflare-gateway',
+      model: args.model,
+    })) as { responseId: Id<'aiResponses'> };
 
     let usageFinalized = false;
     const releaseReservation = async () => {
@@ -473,45 +567,100 @@ export const streamWithGateway = action({
       }
     };
 
-    let providerFromMetadata: string | undefined;
-    let modelFromMetadata: string | undefined;
+    let providerFromMetadata: string | undefined = 'cloudflare-gateway';
+    let modelFromMetadata: string | undefined = args.model;
+    let usageFromComplete: {
+      totalTokens?: number;
+      inputTokens?: number;
+      outputTokens?: number;
+    } | null = null;
+
+    const markError = async (message: string) => {
+      await ctx.runMutation(internal.aiResponses.markError, {
+        responseId,
+        errorMessage: message,
+      });
+    };
+
+    let bufferedContent = '';
+    let lastFlushTime = Date.now();
+    const flushBufferedContent = async () => {
+      if (!bufferedContent) {
+        return;
+      }
+      await ctx.runMutation(internal.aiResponses.appendChunk, {
+        responseId,
+        content: bufferedContent,
+      });
+      bufferedContent = '';
+      lastFlushTime = Date.now();
+    };
 
     try {
-      const chunks = await streamWithGatewayHelper(args.prompt, args.model);
-
-      // Find metadata and complete chunks
-      const metadataChunk = chunks.find((c) => c.type === 'metadata');
-      const completeChunk = chunks.find((c) => c.type === 'complete');
-
-      if (metadataChunk && metadataChunk.type === 'metadata') {
-        providerFromMetadata = metadataChunk.provider;
-        modelFromMetadata = metadataChunk.model;
-      }
-
-      if (completeChunk && completeChunk.type === 'complete') {
-        try {
-          const completion = await ctx.runAction(api.ai.completeAiMessage, {
-            mode: reservation.mode,
-            metadata: extractUsageMetadata(
-              completeChunk.usage ?? null,
-              providerFromMetadata ?? 'cloudflare-gateway-workers-ai',
-              modelFromMetadata ?? args.model,
-            ),
+      await streamWithGatewayHelper(args.prompt, args.model, {
+        onMetadata: async (metadata) => {
+          providerFromMetadata = metadata.provider;
+          modelFromMetadata = metadata.model;
+          await ctx.runMutation(internal.aiResponses.updateMetadata, {
+            responseId,
+            provider: metadata.provider,
+            model: metadata.model,
           });
-          usageFinalized = true;
-          if (completion.trackError) {
-            console.warn('[AI] Autumn usage tracking failed', completion.trackError);
+        },
+        onText: async (chunk) => {
+          bufferedContent += chunk.content;
+          const shouldFlush =
+            bufferedContent.length >= STREAMING_FLUSH_CHAR_TARGET ||
+            Date.now() - lastFlushTime >= STREAMING_FLUSH_INTERVAL_MS;
+          if (shouldFlush) {
+            await flushBufferedContent();
           }
-        } catch (completionError) {
-          await releaseReservation();
-          throw completionError instanceof Error
-            ? completionError
-            : new Error('Failed to finalize AI usage.');
+        },
+        onComplete: async (complete) => {
+          await flushBufferedContent();
+          usageFromComplete = complete.usage;
+          await ctx.runMutation(internal.aiResponses.markComplete, {
+            responseId,
+            response: complete.accumulatedText,
+            usage: complete.usage,
+            finishReason: complete.finishReason,
+          });
+        },
+      });
+
+      try {
+        const usageProvider =
+          providerFromMetadata === 'cloudflare-gateway'
+            ? 'cloudflare-gateway-workers-ai'
+            : (providerFromMetadata ?? 'cloudflare-gateway-workers-ai');
+        const completion = await ctx.runAction(api.ai.completeAiMessage, {
+          mode: reservation.mode,
+          metadata: extractUsageMetadata(
+            usageFromComplete,
+            usageProvider,
+            modelFromMetadata ?? args.model,
+          ),
+        });
+        usageFinalized = true;
+        if (completion.trackError) {
+          console.warn('[AI] Autumn usage tracking failed', completion.trackError);
         }
+      } catch (completionError) {
+        await releaseReservation();
+        const completionMessage =
+          completionError instanceof Error
+            ? completionError.message
+            : 'Failed to finalize AI usage.';
+        await markError(completionMessage);
+        throw completionError instanceof Error
+          ? completionError
+          : new Error('Failed to finalize AI usage.');
       }
 
-      return chunks;
+      return { responseId };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await markError(message);
       if (!usageFinalized) {
         await releaseReservation();
       }
@@ -525,9 +674,15 @@ export const streamStructuredResponse = action({
   args: {
     topic: v.string(),
     style: v.union(v.literal('formal'), v.literal('casual'), v.literal('technical')),
+    requestId: v.string(),
   },
-  handler: async (ctx: ActionCtx, args) => {
-    await ensureAuthenticatedUser(ctx);
+  handler: async (
+    ctx: ActionCtx,
+    args,
+  ): Promise<{
+    responseId: Id<'aiResponses'>;
+  }> => {
+    const { userId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: {
@@ -539,6 +694,16 @@ export const streamStructuredResponse = action({
     if (!reservation.allowed) {
       throw buildReservationError(reservation);
     }
+
+    const modelName = '@cf/meta/llama-3.1-8b-instruct';
+
+    const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
+      userId,
+      requestKey: args.requestId,
+      method: 'structured',
+      provider: 'cloudflare-workers-ai-structured',
+      model: modelName,
+    })) as { responseId: Id<'aiResponses'> };
 
     let usageFinalized = false;
     const releaseReservation = async () => {
@@ -553,6 +718,13 @@ export const streamStructuredResponse = action({
       }
     };
 
+    const markError = async (message: string) => {
+      await ctx.runMutation(internal.aiResponses.markError, {
+        responseId,
+        errorMessage: message,
+      });
+    };
+
     try {
       const { llamaModel } = getWorkersAIProvider();
       const prompt = `Generate a structured explanation about "${args.topic}" in a ${args.style} style. Return ONLY valid JSON with this exact structure: {"title": "string", "summary": "string", "keyPoints": ["string1", "string2"], "category": "string", "difficulty": "beginner|intermediate|advanced"}`;
@@ -562,43 +734,36 @@ export const streamStructuredResponse = action({
         prompt,
       });
 
-      const chunks: Array<
-        | { type: 'metadata'; provider: string; model: string }
-        | { type: 'text'; content: string }
-        | {
-            type: 'complete';
-            usage: {
-              inputTokens?: number;
-              outputTokens?: number;
-              totalTokens?: number;
-            };
-            finishReason: string;
-            structuredData: Record<string, unknown> | null;
-            parseError: string | null;
-            rawText: string;
-          }
-      > = [];
-
-      // Add metadata first
-      chunks.push({
-        type: 'metadata',
-        provider: 'cloudflare-workers-ai-structured',
-        model: '@cf/meta/llama-3.1-8b-instruct',
-      });
-
       let accumulatedText = '';
+      let bufferedContent = '';
+      let lastFlushTime = Date.now();
+      const flushBufferedContent = async () => {
+        if (!bufferedContent) {
+          return;
+        }
+        await ctx.runMutation(internal.aiResponses.appendChunk, {
+          responseId,
+          content: bufferedContent,
+        });
+        bufferedContent = '';
+        lastFlushTime = Date.now();
+      };
 
       // Accumulate text chunks
       for await (const delta of result.textStream) {
         accumulatedText += delta;
-        chunks.push({
-          type: 'text',
-          content: delta,
-        });
+        bufferedContent += delta;
+        const shouldFlush =
+          bufferedContent.length >= STREAMING_FLUSH_CHAR_TARGET ||
+          Date.now() - lastFlushTime >= STREAMING_FLUSH_INTERVAL_MS;
+        if (shouldFlush) {
+          await flushBufferedContent();
+        }
       }
+      await flushBufferedContent();
 
       // Try to parse the accumulated text as JSON
-      let structuredData = null;
+      let structuredData: StructuredResult | null = null;
       let parseError = null;
 
       try {
@@ -610,14 +775,22 @@ export const streamStructuredResponse = action({
           jsonText = jsonText.replace(/^```\s*/, '').replace(/\s*```$/, '');
         }
 
-        structuredData = JSON.parse(jsonText);
+        const parsed = JSON.parse(jsonText);
+        if (isStructuredResult(parsed)) {
+          structuredData = parsed;
+        } else {
+          parseError = 'Structured data response missing required fields';
+        }
       } catch (error) {
         parseError = error instanceof Error ? error.message : 'Failed to parse JSON';
         const jsonMatch = accumulatedText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
           try {
-            structuredData = JSON.parse(jsonMatch[0]);
-            parseError = null;
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (isStructuredResult(parsed)) {
+              structuredData = parsed;
+              parseError = null;
+            }
           } catch {
             // Keep the original error
           }
@@ -636,13 +809,23 @@ export const streamStructuredResponse = action({
             }
           : usage;
 
+      await ctx.runMutation(internal.aiResponses.markComplete, {
+        responseId,
+        response: accumulatedText,
+        usage: estimatedUsage,
+        finishReason: finishReason || 'stop',
+        structuredData: structuredData ?? undefined,
+        rawText: accumulatedText,
+        parseError: parseError ?? undefined,
+      });
+
       try {
         const completion = await ctx.runAction(api.ai.completeAiMessage, {
           mode: reservation.mode,
           metadata: extractUsageMetadata(
             estimatedUsage,
             'cloudflare-workers-ai-structured',
-            '@cf/meta/llama-3.1-8b-instruct',
+            modelName,
           ),
         });
         usageFinalized = true;
@@ -651,22 +834,20 @@ export const streamStructuredResponse = action({
         }
       } catch (completionError) {
         await releaseReservation();
+        const completionMessage =
+          completionError instanceof Error
+            ? completionError.message
+            : 'Failed to finalize AI usage.';
+        await markError(completionMessage);
         throw completionError instanceof Error
           ? completionError
           : new Error('Failed to finalize AI usage.');
       }
 
-      chunks.push({
-        type: 'complete',
-        usage: estimatedUsage,
-        finishReason: finishReason || 'stop',
-        structuredData: structuredData,
-        parseError: parseError,
-        rawText: accumulatedText,
-      });
-
-      return chunks;
+      return { responseId };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      await markError(message);
       if (!usageFinalized) {
         await releaseReservation();
       }

@@ -145,6 +145,11 @@ export function MarketingHome() {
           and real-time data so you can focus on your product instead of plumbing. Server-first by
           default, progressively enhanced for the richest user experiences.
         </p>
+        <p className="mx-auto max-w-2xl text-sm text-muted-foreground">
+          Explore a fully functional demo with dashboard analytics, AI playground (streaming text
+          generation, structured output, web scraping), admin user management, and profile
+          settings—all showcasing real-time data updates and production-ready patterns.
+        </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild size="lg">
             <Link to="/register" preload="intent" className="inline-flex items-center gap-2">
