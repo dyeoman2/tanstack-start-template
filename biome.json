@@ -28,11 +28,6 @@
       "assist": { "enabled": false }
     },
     {
-      "includes": ["drizzle/**"],
-      "formatter": { "enabled": false },
-      "linter": { "enabled": false }
-    },
-    {
       "includes": [".claude/**"],
       "formatter": { "enabled": false },
       "linter": { "enabled": false }

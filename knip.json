@@ -12,7 +12,6 @@
     "**/node_modules/**",
     "**/dist/**",
     "**/.output/**",
-    "**/drizzle/**",
     "**/*.d.ts",
     "src/routeTree.gen.ts",
     "src/components/ui/**/*",
