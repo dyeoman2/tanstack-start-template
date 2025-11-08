@@ -3,6 +3,7 @@ import { ArrowRight, Monitor, Shield, Zap } from 'lucide-react';
 import type { ComponentProps } from 'react';
 import React from 'react';
 import type { IconType } from 'react-icons';
+import { SiGithub } from 'react-icons/si';
 import { Button } from '~/components/ui/button';
 import { cn } from '~/lib/utils';
 
@@ -138,7 +139,7 @@ export function MarketingHome() {
           Free Open Source Template
         </span>
         <h1 className="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-6xl">
-          Ship full-stack apps faster with best-in-class developer experience.
+          A production-ready starter template for TanStack Start
         </h1>
         <p className="mx-auto max-w-2xl text-lg text-muted-foreground">
           TanStack Start Template is a free, open-source starter that pairs modern tooling, auth,
@@ -164,7 +165,7 @@ export function MarketingHome() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <span className="font-semibold text-sm">GitHub</span>
+              <SiGithub className="h-4 w-4" />
               View on GitHub
             </a>
           </Button>
