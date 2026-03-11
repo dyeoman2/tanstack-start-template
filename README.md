@@ -99,6 +99,7 @@ This automated script will guide you through local development setup, including:
 
 - Interactive Convex project creation
 - Development environment configuration (URLs and environment variables)
+- Optional authenticated Playwright E2E setup via `pnpm run setup:e2e`
 - Automatic startup of both development servers simultaneously in the current terminal!
 
 ### 🚀 Quick Start (Production)
@@ -142,7 +143,7 @@ Authenticated E2E relies on a gated test-only auth helper. The easiest setup pat
 pnpm setup:e2e
 ```
 
-That command updates `.env.local` with deterministic E2E principals and syncs the required gate vars to your current Convex deployment. If you prefer to manage the values manually, add these values to `.env.local` before running authenticated suites:
+That command updates `.env.local` with deterministic E2E principals and syncs the required gate vars to your current Convex deployment automatically. If you prefer to manage the values manually, add these values to `.env.local` before running authenticated suites:
 
 ```bash
 ENABLE_E2E_TEST_AUTH=true
@@ -161,6 +162,8 @@ Because the frontend test server reuses your configured Convex deployment, that 
 ENABLE_E2E_TEST_AUTH=true
 E2E_TEST_SECRET=the-same-shared-secret
 ```
+
+`pnpm setup:e2e` handles that sync for the current deployment. You only need to set those deployment vars manually if you are not using the setup script.
 
 ### 🔗 Link Your Local Project to Netlify (Optional)
 
