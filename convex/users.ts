@@ -21,7 +21,6 @@ import {
   type BetterAuthOrganization,
   createBetterAuthMember,
   createBetterAuthOrganization,
-  fetchAllBetterAuthUsers,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
 } from './lib/betterAuth';
@@ -44,31 +43,6 @@ function slugify(value: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
-}
-
-async function findFirstOrganizationForUser(ctx: MutationCtx, authUserId: string) {
-  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
-  if (memberships.length === 0) {
-    return null;
-  }
-
-  const organizations = await fetchBetterAuthOrganizationsByIds(
-    ctx,
-    memberships.map((membership) => membership.organizationId),
-  );
-  const organizationsById = new Map(organizations.map((organization) => [organization._id ?? '', organization]));
-
-  for (const membership of memberships) {
-    const organization = organizationsById.get(membership.organizationId);
-    if (organization) {
-      return {
-        organization,
-        membership,
-      };
-    }
-  }
-
-  return null;
 }
 
 async function resolveActiveOrganizationForUser(
@@ -320,33 +294,6 @@ export const ensureCurrentUserContext = mutation({
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-  },
-});
-
-export const setActiveOrganization = mutation({
-  args: {
-    organizationId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const user = await getCurrentUserOrNull(ctx);
-    if (!user) {
-      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
-    }
-
-    const memberships = await fetchBetterAuthMembersByUserId(ctx, user.authUserId);
-    const hasMembership = memberships.some(
-      (membership) => membership.organizationId === args.organizationId,
-    );
-    if (!hasMembership && !user.isSiteAdmin) {
-      throwConvexError('FORBIDDEN', 'Not authorized to access this organization');
-    }
-
-    await ctx.db.patch(user._id, {
-      lastActiveOrganizationId: args.organizationId,
-      updatedAt: Date.now(),
-    });
-
-    return { success: true };
   },
 });
 

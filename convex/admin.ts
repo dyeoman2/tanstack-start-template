@@ -284,22 +284,6 @@ export const promoteUserByEmail = action({
   },
 });
 
-export const cleanupLegacyTeams = mutation({
-  args: {
-    token: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const secret = process.env.BETTER_AUTH_SECRET;
-    if (!secret || args.token !== secret) {
-      throw new Error('Unauthorized legacy team cleanup access');
-    }
-
-    return {
-      renamedCount: 0,
-    };
-  },
-});
-
 export const truncateData = mutation({
   args: {},
   handler: async (ctx) => {

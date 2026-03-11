@@ -1,8 +1,6 @@
 import { v } from 'convex/values';
 import { getSiteUrl } from '../src/lib/server/env.server';
 import { components, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
-import type { Doc } from './_generated/dataModel';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { action, mutation, query } from './_generated/server';
 import {
@@ -18,13 +16,11 @@ import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
 import {
   type BetterAuthInvitation,
-  type BetterAuthMember,
   createBetterAuthInvitation,
   createBetterAuthMember,
   createBetterAuthOrganization,
   fetchAllBetterAuthUsers,
   fetchBetterAuthInvitationsByOrganizationId,
-  fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthUsersByIds,
   findBetterAuthInvitationById,
   findBetterAuthMember,
@@ -145,7 +141,7 @@ export const getCurrentOrganization = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
-    if (!user?.lastActiveOrganizationId) {
+    if (!user) {
       return null;
     }
 
@@ -548,15 +544,10 @@ export const removeMember = mutation({
       .query('users')
       .withIndex('by_auth_user_id', (q) => q.eq('authUserId', membership.userId))
       .first();
-    if (appUser?.lastActiveOrganizationId === args.organizationId) {
-      const remainingMemberships = await fetchBetterAuthOrganizationsByIds(
-        ctx,
-        (await fetchAllBetterAuthUsers(ctx), await listOrganizationMembers(ctx, args.organizationId)).map(
-          () => args.organizationId,
-        ),
-      );
-      await ctx.db.patch(appUser._id, {
-        lastActiveOrganizationId: remainingMemberships[0]?._id,
+    if (appUser) {
+      await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+        authUserId: membership.userId,
+        createdAt: appUser.createdAt,
         updatedAt: Date.now(),
       });
     }

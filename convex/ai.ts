@@ -19,7 +19,7 @@ type ReservationMode = 'free' | 'paid';
 
 interface AiUsageRecord {
   userId: string;
-  organizationId?: string | null;
+  organizationId: string;
   messagesUsed: number;
   pendingMessages: number;
   lastReservedAt?: number | null;
@@ -189,7 +189,7 @@ export const getCurrentUserUsage = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
-    if (!user?.lastActiveOrganizationId) {
+    if (!user) {
       return null;
     }
 
@@ -292,7 +292,7 @@ export const reserveUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      organizationId: usageDoc.organizationId ?? null,
+      organizationId: usageDoc.organizationId,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: args.timestamp,
@@ -338,7 +338,7 @@ export const completeUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      organizationId: usageDoc.organizationId ?? null,
+      organizationId: usageDoc.organizationId,
       messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,
@@ -381,7 +381,7 @@ export const releaseUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      organizationId: usageDoc.organizationId ?? null,
+      organizationId: usageDoc.organizationId,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,

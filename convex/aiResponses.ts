@@ -173,7 +173,7 @@ export const listUserResponses = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
-    if (!user?.lastActiveOrganizationId) {
+    if (!user) {
       return [];
     }
 
@@ -191,10 +191,6 @@ export const deleteAllUserResponses = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrThrow(ctx);
-    if (!user.lastActiveOrganizationId) {
-      throw new Error('No active organization selected');
-    }
-
     const responses = await ctx.db
       .query('aiResponses')
       .withIndex('by_organizationId_createdAt', (q) =>

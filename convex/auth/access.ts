@@ -185,7 +185,7 @@ export async function getCurrentOrganizationOrNull(
   user?: CurrentUser,
 ) {
   const resolvedUser = user ?? (await getCurrentUserOrNull(ctx));
-  if (!resolvedUser?.lastActiveOrganizationId) {
+  if (!resolvedUser) {
     return null;
   }
 
@@ -223,7 +223,7 @@ export async function checkAiResponseAccess(
   userCtx?: { user: CurrentUser },
 ): Promise<ACCESS> {
   const response = await ctx.db.get(responseId);
-  if (!response?.organizationId) {
+  if (!response) {
     return NO_ACCESS;
   }
 
@@ -238,7 +238,7 @@ export async function checkAiUsageAccess(
   userCtx?: { user: CurrentUser },
 ): Promise<ACCESS> {
   const usage = await ctx.db.get(usageId);
-  if (!usage?.organizationId) {
+  if (!usage) {
     return NO_ACCESS;
   }
 
