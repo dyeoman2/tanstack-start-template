@@ -1,27 +1,37 @@
 import { Link } from '@tanstack/react-router';
 import { ArrowRight, Monitor, Shield, Zap } from 'lucide-react';
-import type { ComponentProps } from 'react';
-import React from 'react';
+import type { ComponentProps, ComponentType, FC } from 'react';
 import type { IconType } from 'react-icons';
-import { SiGithub } from 'react-icons/si';
+import {
+  SiBiome,
+  SiGithub,
+  SiNetlify,
+  SiReact,
+  SiResend,
+  SiShadcnui,
+  SiTailwindcss,
+  SiTypescript,
+  SiVite,
+  SiZod,
+} from 'react-icons/si';
 import { Button } from '~/components/ui/button';
 import { cn } from '~/lib/utils';
 
 type GenericIconProps = ComponentProps<'img'> & ComponentProps<'svg'>;
 
-const TanStackIcon: React.FC<GenericIconProps> = ({ className }) => (
+const TanStackIcon: FC<GenericIconProps> = ({ className }) => (
   <img src="/android-chrome-192x192.png" alt="TanStack" className={className} />
 );
 
-const ConvexIcon: React.FC<GenericIconProps> = ({ className }) => (
+const ConvexIcon: FC<GenericIconProps> = ({ className }) => (
   <img src="/convex.png" alt="Convex" className={className} />
 );
 
-const BetterAuthIcon: React.FC<GenericIconProps> = ({ className }) => (
+const BetterAuthIcon: FC<GenericIconProps> = ({ className }) => (
   <img src="/better-auth.png" alt="BetterAuth" className={className} />
 );
 
-type MarketingIcon = IconType | React.FC<{ className?: string; color?: string }>;
+type MarketingIcon = IconType | ComponentType<{ className?: string; color?: string }>;
 
 type TechItem = {
   name: string;
@@ -30,18 +40,6 @@ type TechItem = {
   iconColor?: string;
   iconClassName?: string;
   url: string;
-};
-
-// Create lazy-loaded icon components to avoid bundling issues
-const createLazyIcon = (iconName: string) => {
-  const LazyIcon = React.lazy(() =>
-    import('react-icons/si').then((module) => ({
-      default: module[iconName as keyof typeof module] as React.ComponentType<
-        React.SVGProps<SVGSVGElement>
-      >,
-    })),
-  );
-  return LazyIcon;
 };
 
 const coreTechnologies: TechItem[] = [
@@ -62,7 +60,7 @@ const coreTechnologies: TechItem[] = [
   {
     name: 'Netlify',
     description: 'Serverless hosting and edge delivery tuned for TanStack Start.',
-    Icon: createLazyIcon('SiNetlify'),
+    Icon: SiNetlify,
     iconClassName: 'text-emerald-500',
     url: 'https://www.netlify.com/',
   },
@@ -76,56 +74,56 @@ const coreTechnologies: TechItem[] = [
   {
     name: 'Resend',
     description: 'Transactional emails for auth flows and lifecycle messaging.',
-    Icon: createLazyIcon('SiResend'),
+    Icon: SiResend,
     iconClassName: 'text-slate-900',
     url: 'https://resend.com/',
   },
   {
     name: 'Biome',
     description: 'Fast linting and formatting to keep the codebase consistent.',
-    Icon: createLazyIcon('SiBiome'),
+    Icon: SiBiome,
     iconClassName: 'text-blue-600',
     url: 'https://biomejs.dev/',
   },
   {
     name: 'React 19',
     description: 'Modern UI library powering server and client rendering.',
-    Icon: createLazyIcon('SiReact'),
+    Icon: SiReact,
     iconClassName: 'text-sky-400',
     url: 'https://react.dev/',
   },
   {
     name: 'Shadcn/UI',
     description: 'Accessible component primitives ready for rapid iteration.',
-    Icon: createLazyIcon('SiShadcnui'),
+    Icon: SiShadcnui,
     iconClassName: 'text-slate-900',
     url: 'https://ui.shadcn.com/',
   },
   {
     name: 'Tailwind',
     description: 'Utility-first styling with design tokens configured for the template.',
-    Icon: createLazyIcon('SiTailwindcss'),
+    Icon: SiTailwindcss,
     iconClassName: 'text-sky-500',
     url: 'https://tailwindcss.com/',
   },
   {
     name: 'TypeScript',
     description: 'Type-safe foundations from server to client with strict typing.',
-    Icon: createLazyIcon('SiTypescript'),
+    Icon: SiTypescript,
     iconClassName: 'text-blue-600',
     url: 'https://www.typescriptlang.org/',
   },
   {
     name: 'Vite',
     description: 'Lightning-fast dev server and build pipeline optimized for React.',
-    Icon: createLazyIcon('SiVite'),
+    Icon: SiVite,
     iconClassName: 'text-purple-600',
     url: 'https://vitejs.dev/',
   },
   {
     name: 'Zod',
     description: 'Type-safe validation for data schemas.',
-    Icon: createLazyIcon('SiZod'),
+    Icon: SiZod,
     iconClassName: 'text-blue-500',
     url: 'https://zod.dev/',
   },
