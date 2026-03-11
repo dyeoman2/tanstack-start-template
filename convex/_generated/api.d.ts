@@ -17,6 +17,7 @@ import type * as autumn from "../autumn.js";
 import type * as cloudflareAi from "../cloudflareAi.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
+import type * as e2e from "../e2e.js";
 import type * as emails from "../emails.js";
 import type * as firecrawl from "../firecrawl.js";
 import type * as health from "../health.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   cloudflareAi: typeof cloudflareAi;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;
+  e2e: typeof e2e;
   emails: typeof emails;
   firecrawl: typeof firecrawl;
   health: typeof health;

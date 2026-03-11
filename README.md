@@ -134,7 +134,33 @@ pnpm test
 pnpm test:e2e
 ```
 
-Playwright uses the real local app at `http://127.0.0.1:3000` and will start it automatically with `pnpm dev` if needed. That means your normal local environment setup must already be in place before running E2E tests.
+Playwright uses the real local app at `http://127.0.0.1:3000` and starts a frontend-only server with `pnpm test:e2e:server`. It reuses your configured Convex deployment from env instead of starting `convex dev`.
+
+Authenticated E2E relies on a gated test-only auth helper. The easiest setup path is:
+
+```bash
+pnpm setup:e2e
+```
+
+That command updates `.env.local` with deterministic E2E principals and syncs the required gate vars to your current Convex deployment. If you prefer to manage the values manually, add these values to `.env.local` before running authenticated suites:
+
+```bash
+ENABLE_E2E_TEST_AUTH=true
+E2E_TEST_SECRET=replace-with-a-shared-secret
+E2E_USER_EMAIL=e2e-user@local.test
+E2E_USER_PASSWORD=replace-with-a-deterministic-password
+E2E_ADMIN_EMAIL=e2e-admin@local.test
+E2E_ADMIN_PASSWORD=replace-with-a-deterministic-password
+```
+
+The setup project will provision those principals, reconcile the Convex role profile, and save `playwright/.auth/user.json` and `playwright/.auth/admin.json` automatically.
+
+Because the frontend test server reuses your configured Convex deployment, that deployment must also have:
+
+```bash
+ENABLE_E2E_TEST_AUTH=true
+E2E_TEST_SECRET=the-same-shared-secret
+```
 
 ### 🔗 Link Your Local Project to Netlify (Optional)
 

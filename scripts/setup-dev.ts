@@ -8,6 +8,21 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+
+async function askYesNo(question: string): Promise<boolean> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase().startsWith('y'));
+    });
+  });
+}
 
 async function main() {
   console.log('🚀 Starting complete project setup...\n');
@@ -51,8 +66,26 @@ async function main() {
     process.exit(1);
   }
 
-  // Step 4: Start development servers in current IDE terminal
-  console.log('🎯 Step 4: Starting your development servers');
+  // Step 4: Optionally configure authenticated E2E helpers
+  console.log('🧪 Step 4: Optional Playwright E2E setup');
+  const shouldSetupE2E = await askYesNo(
+    'Configure authenticated Playwright E2E env and sync the Convex gate now? (y/N): ',
+  );
+
+  if (shouldSetupE2E) {
+    try {
+      execSync('pnpm run setup:e2e', { stdio: 'inherit', cwd });
+      console.log('✅ Playwright E2E setup complete!\n');
+    } catch {
+      console.log('❌ Playwright E2E setup failed. Please check the output and try again.');
+      process.exit(1);
+    }
+  } else {
+    console.log('ℹ️  Skipping Playwright E2E setup. Run `pnpm run setup:e2e` any time.\n');
+  }
+
+  // Step 5: Start development servers in current IDE terminal
+  console.log('🎯 Step 5: Starting your development servers');
   console.log('');
   console.log('📋 Starting both servers in your current terminal...');
   console.log('');

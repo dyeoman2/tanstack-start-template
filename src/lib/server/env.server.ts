@@ -72,3 +72,46 @@ export function getBetterAuthSecret(): string {
 
   return secret;
 }
+
+export type E2EPrincipalType = 'user' | 'admin';
+
+export type E2EPrincipalConfig = {
+  email: string;
+  name: string;
+  password: string;
+  role: E2EPrincipalType;
+};
+
+function getRequiredServerEnv(name: string): string {
+  const value = process.env[name];
+  if (!value || value.trim().length === 0) {
+    throw new Error(`${name} environment variable is required`);
+  }
+  return value;
+}
+
+export function isE2ETestAuthEnabled(): boolean {
+  return process.env.ENABLE_E2E_TEST_AUTH === 'true';
+}
+
+export function getE2ETestSecret(): string {
+  return getRequiredServerEnv('E2E_TEST_SECRET');
+}
+
+export function getE2EPrincipalConfig(principal: E2EPrincipalType): E2EPrincipalConfig {
+  if (principal === 'admin') {
+    return {
+      email: getRequiredServerEnv('E2E_ADMIN_EMAIL'),
+      name: process.env.E2E_ADMIN_NAME?.trim() || 'E2E Admin',
+      password: getRequiredServerEnv('E2E_ADMIN_PASSWORD'),
+      role: 'admin',
+    };
+  }
+
+  return {
+    email: getRequiredServerEnv('E2E_USER_EMAIL'),
+    name: process.env.E2E_USER_NAME?.trim() || 'E2E User',
+    password: getRequiredServerEnv('E2E_USER_PASSWORD'),
+    role: 'user',
+  };
+}

@@ -99,6 +99,20 @@ S3_PUBLIC_URL=http://localhost:9000
 # VITE_CONVEX_SITE_URL= set after running: pnpm run setup:convex
 
 # ==========================================
+# PLAYWRIGHT E2E AUTH (Optional)
+# ==========================================
+
+# Enable only when you want authenticated E2E seeding/login helpers
+# ENABLE_E2E_TEST_AUTH=true
+# E2E_TEST_SECRET=<shared-secret-for-test-route>
+# E2E_USER_EMAIL=e2e-user@local.test
+# E2E_USER_PASSWORD=<deterministic-test-password>
+# E2E_USER_NAME="E2E User"
+# E2E_ADMIN_EMAIL=e2e-admin@local.test
+# E2E_ADMIN_PASSWORD=<deterministic-test-password>
+# E2E_ADMIN_NAME="E2E Admin"
+
+# ==========================================
 # AUTUMN BILLING (Optional)
 # ==========================================
 
