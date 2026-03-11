@@ -1,4 +1,7 @@
-import { createRouter as createTanStackRouter } from '@tanstack/react-router';
+import {
+  type RouterHistory,
+  createRouter as createTanStackRouter,
+} from '@tanstack/react-router';
 import { initializeSentry } from '~/lib/sentry';
 import type { UserId } from '~/lib/shared/user-id';
 import { DefaultCatchBoundary } from './components/DefaultCatchBoundary';
@@ -16,9 +19,23 @@ export type RouterAuthContext =
       user: { id: UserId; email: string; name?: string; role: string } | null; // null for optimistic auth
     };
 
-export function getRouter() {
+export const defaultRouterAuthContext: RouterAuthContext = {
+  authenticated: false,
+  user: null,
+};
+
+interface CreateAppRouterOptions {
+  history?: RouterHistory;
+  context?: RouterAuthContext;
+}
+
+export function createAppRouter({
+  history,
+  context = defaultRouterAuthContext,
+}: CreateAppRouterOptions = {}) {
   const router = createTanStackRouter({
     routeTree,
+    history,
     defaultPreload: 'intent',
     defaultPreloadStaleTime: 30_000, // 30 seconds
     defaultPreloadGcTime: 5 * 60_000, // 5 minutes
@@ -26,14 +43,15 @@ export function getRouter() {
     defaultNotFoundComponent: () => <NotFound />,
     scrollRestoration: false, // Disabled due to $_TSR ordering bug in v1.132.47
     // Provide default auth context - optimistic for performance
-    context: {
-      authenticated: false,
-      user: null,
-    } satisfies RouterAuthContext,
+    context,
   });
 
   // Initialize Sentry for error tracking and performance monitoring
   initializeSentry(router);
 
   return router;
+}
+
+export function getRouter() {
+  return createAppRouter();
 }

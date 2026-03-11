@@ -3,6 +3,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Dashboard } from '~/features/dashboard/components/Dashboard';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
 
 export const Route = createFileRoute('/app/')({
@@ -16,8 +17,16 @@ function DashboardComponent() {
   // Use dedicated performance monitoring hook
   usePerformanceMonitoring('Dashboard');
 
-  const dashboardData = useQuery(api.dashboard.getDashboardData, {});
-  const isLoading = dashboardData === undefined;
+  const authState = useAuthState();
+  const dashboardData = useQuery(
+    api.dashboard.getDashboardData,
+    authState.isAuthenticated ? {} : 'skip',
+  );
+  const isLoading =
+    authState.isPending || (authState.isAuthenticated && dashboardData === undefined);
+  const resolvedData = authState.isAuthenticated
+    ? (dashboardData ?? null)
+    : { status: 'unauthenticated' as const };
 
-  return <Dashboard data={dashboardData ?? null} isLoading={isLoading} />;
+  return <Dashboard data={resolvedData} isLoading={isLoading} />;
 }

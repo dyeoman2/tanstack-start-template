@@ -1,10 +1,13 @@
+import { Spinner } from '~/components/ui/spinner';
+
 interface MetricCardProps {
   title: string;
-  value: string;
+  value?: string;
+  isLoading?: boolean;
   onClick?: () => void;
 }
 
-export function MetricCard({ title, value, onClick }: MetricCardProps) {
+export function MetricCard({ title, value, isLoading = false, onClick }: MetricCardProps) {
   const isClickable = !!onClick;
 
   const content = (
@@ -13,7 +16,9 @@ export function MetricCard({ title, value, onClick }: MetricCardProps) {
         <div className="flex-1">
           <dl>
             <dt className="text-sm font-medium text-muted-foreground truncate">{title}</dt>
-            <dd className="text-lg font-medium text-foreground">{value}</dd>
+            <dd className="flex h-[1.75rem] items-center text-lg font-medium text-foreground">
+              {isLoading ? <Spinner className="size-[1.125rem]" /> : value}
+            </dd>
           </dl>
         </div>
       </div>
@@ -34,19 +39,5 @@ export function MetricCard({ title, value, onClick }: MetricCardProps) {
 
   return (
     <div className="bg-card border border-border overflow-hidden shadow rounded-lg">{content}</div>
-  );
-}
-
-export function SkeletonCard({ title }: { title: string }) {
-  void title; // Mark as intentionally unused for future extensibility
-  return (
-    <div className="bg-card border border-border overflow-hidden shadow rounded-lg">
-      <div className="p-5">
-        <div className="animate-pulse">
-          <div className="h-4 bg-muted rounded mb-2 w-3/4" />
-          <div className="h-8 bg-muted rounded w-1/2" />
-        </div>
-      </div>
-    </div>
   );
 }

@@ -5,6 +5,7 @@ import { Users } from 'lucide-react';
 import { PageHeader } from '~/components/PageHeader';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card';
+import { Spinner } from '~/components/ui/spinner';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
 
 export const Route = createFileRoute('/app/admin/stats')({
@@ -17,27 +18,12 @@ function SystemStats() {
 
   // Use Convex query directly - enables real-time updates automatically
   const stats = useQuery(api.admin.getSystemStats);
-
-  if (stats === undefined) {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="System Statistics"
-          description="Overview of system usage and performance metrics (updates in real-time)"
-        />
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3">
-          <div className="animate-pulse bg-gray-100 rounded-lg h-32" />
-          <div className="animate-pulse bg-gray-100 rounded-lg h-32" />
-          <div className="animate-pulse bg-gray-100 rounded-lg h-32" />
-        </div>
-      </div>
-    );
-  }
+  const isLoading = stats === undefined;
 
   const statCards = [
     {
       title: 'Total Users',
-      value: stats?.users || 0,
+      value: stats?.users ?? 0,
       icon: Users,
       description: 'Registered users in the system',
     },
@@ -60,7 +46,9 @@ function SystemStats() {
                 <Icon className="h-4 w-4 text-muted-foreground" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stat.value.toLocaleString()}</div>
+                <div className="flex h-8 items-center text-2xl font-bold">
+                  {isLoading ? <Spinner className="size-6" /> : stat.value.toLocaleString()}
+                </div>
                 <p className="text-xs text-muted-foreground">{stat.description}</p>
               </CardContent>
             </Card>

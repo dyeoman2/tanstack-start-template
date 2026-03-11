@@ -120,6 +120,22 @@ pnpm run setup:prod
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
 
+## 🧪 Testing
+
+### Unit and component tests
+
+```bash
+pnpm test
+```
+
+### Browser E2E with Playwright
+
+```bash
+pnpm test:e2e
+```
+
+Playwright uses the real local app at `http://127.0.0.1:3000` and will start it automatically with `pnpm dev` if needed. That means your normal local environment setup must already be in place before running E2E tests.
+
 ### 🔗 Link Your Local Project to Netlify (Optional)
 
 After deploying, link your local project to Netlify for easier management:
