@@ -2,13 +2,8 @@ import { v } from 'convex/values';
 import { getE2ETestSecret, isE2ETestAuthEnabled } from '../src/lib/server/env.server';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import { type MutationCtx, mutation } from './_generated/server';
-
-type BetterAuthUserRecord = {
-  _id?: string;
-  id?: string;
-  email?: string;
-};
+import { mutation } from './_generated/server';
+import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 
 const deletePaginationOpts = {
   cursor: null,
@@ -26,21 +21,6 @@ function assertE2EAccess(secret: string) {
   }
 }
 
-async function findAuthUserByEmail(ctx: MutationCtx, email: string) {
-  const user = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
-    model: 'user',
-    where: [
-      {
-        field: 'email',
-        operator: 'eq',
-        value: email,
-      },
-    ],
-  })) as BetterAuthUserRecord | null;
-
-  return user;
-}
-
 export const ensurePrincipalRole = mutation({
   args: {
     secret: v.string(),
@@ -50,7 +30,7 @@ export const ensurePrincipalRole = mutation({
   handler: async (ctx, args) => {
     assertE2EAccess(args.secret);
 
-    const authUser = await findAuthUserByEmail(ctx, args.email);
+    const authUser = await findBetterAuthUserByEmail(ctx, args.email);
     if (!authUser) {
       return {
         found: false as const,
@@ -58,29 +38,12 @@ export const ensurePrincipalRole = mutation({
     }
 
     const userId = assertUserId(authUser, 'E2E auth user id not found');
-    const existingProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', userId))
-      .first();
-    const now = Date.now();
-
-    if (!existingProfile) {
-      await ctx.db.insert('userProfiles', {
-        userId,
-        role: args.role,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await ctx.runMutation(internal.dashboardStats.adjustUserCounts, {
-        totalDelta: 1,
-      });
-    } else if (existingProfile.role !== args.role) {
-      await ctx.db.patch(existingProfile._id, {
-        role: args.role,
-        updatedAt: now,
-      });
-    }
+    await updateBetterAuthUserRecord(ctx, userId, { role: args.role });
+    await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+      authUserId: userId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
 
     return {
       found: true as const,
@@ -98,7 +61,7 @@ export const resetPrincipalByEmail = mutation({
   handler: async (ctx, args) => {
     assertE2EAccess(args.secret);
 
-    const authUser = await findAuthUserByEmail(ctx, args.email);
+    const authUser = await findBetterAuthUserByEmail(ctx, args.email);
     if (!authUser) {
       return {
         deleted: false as const,
@@ -106,9 +69,9 @@ export const resetPrincipalByEmail = mutation({
     }
 
     const userId = assertUserId(authUser, 'E2E auth user id not found');
-    const existingProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', userId))
+    const appUser = await ctx.db
+      .query('users')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', userId))
       .first();
 
     await Promise.all([
@@ -142,8 +105,41 @@ export const resetPrincipalByEmail = mutation({
       }),
     ]);
 
-    if (existingProfile) {
-      await ctx.db.delete(existingProfile._id);
+    if (appUser) {
+      const [memberships, invites, logs] = await Promise.all([
+        ctx.db
+          .query('teamUsers')
+          .withIndex('by_user', (q) => q.eq('userId', appUser._id))
+          .collect(),
+        ctx.db
+          .query('teamInvites')
+          .withIndex('by_email', (q) => q.eq('email', args.email.toLowerCase()))
+          .collect(),
+        ctx.db
+          .query('auditLogs')
+          .withIndex('by_userId', (q) => q.eq('userId', userId))
+          .collect(),
+      ]);
+
+      for (const membership of memberships) {
+        await ctx.db.delete(membership._id);
+      }
+      for (const invite of invites) {
+        await ctx.db.delete(invite._id);
+      }
+      for (const log of logs) {
+        await ctx.db.delete(log._id);
+      }
+
+      const teams = await ctx.db
+        .query('teams')
+        .withIndex('by_created_by_id', (q) => q.eq('createdById', appUser._id))
+        .collect();
+      for (const team of teams) {
+        await ctx.db.delete(team._id);
+      }
+
+      await ctx.db.delete(appUser._id);
       await ctx.runMutation(internal.dashboardStats.recomputeUserCounts, {});
     }
 

@@ -18,8 +18,8 @@ export const adjustUserCounts = internalMutation({
     const activeDelta = args.activeDelta ?? args.totalDelta;
 
     if (!statsDoc) {
-      const profiles = await ctx.db.query('userProfiles').collect();
-      const totalUsers = profiles.length;
+      const users = await ctx.db.query('users').collect();
+      const totalUsers = users.length;
       const activeUsers = totalUsers;
 
       await ctx.db.insert('dashboardStats', {
@@ -45,8 +45,8 @@ export const adjustUserCounts = internalMutation({
 export const recomputeUserCounts = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const profiles = await ctx.db.query('userProfiles').collect();
-    const totalUsers = profiles.length;
+    const users = await ctx.db.query('users').collect();
+    const totalUsers = users.length;
     const activeUsers = totalUsers;
 
     const statsDoc = await ctx.db

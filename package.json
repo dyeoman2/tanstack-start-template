@@ -28,7 +28,7 @@
     "netlify"
   ],
   "scripts": {
-    "dev": "concurrently -n vite,convex -c blue,green \"NODE_OPTIONS='--import ./instrument.server.mjs' vite dev\" \"npx convex dev\"",
+    "dev": "concurrently -n vite,convex -c blue,green \"NODE_OPTIONS='--import ./instrument.server.mjs' vite dev\" \"pnpm exec convex dev\"",
     "dev:full": "tsx scripts/dev-full.ts",
     "build": "vite build && mkdir -p .output/server && cp instrument.server.mjs .output/server",
     "start": "node --import ./.output/server/instrument.server.mjs ./.output/server/index.mjs",
@@ -50,6 +50,7 @@
     "setup:convex": "tsx scripts/setup-convex.ts",
     "setup:dev": "tsx scripts/setup-dev.ts",
     "setup:prod": "tsx scripts/setup-prod.ts",
+    "make-admin": "tsx scripts/make-admin.ts",
     "precommit": "biome check --write",
     "updates": "npx npm-check-updates",
     "analyze": "pnpm build && npx vite-bundle-analyzer dist/client/assets/*.js",

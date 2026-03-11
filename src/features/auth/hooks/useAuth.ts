@@ -18,9 +18,16 @@ export interface AuthResult {
     name?: string;
     phoneNumber?: string | null;
     role: UserRole;
+    isSiteAdmin: boolean;
+    currentTeam?: {
+      id: string;
+      name: string;
+      role: 'admin' | 'edit' | 'view';
+    } | null;
   } | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isSiteAdmin: boolean;
   isPending: boolean;
   error: Error | null;
 }
@@ -51,6 +58,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       ? USER_ROLES.ADMIN
       : USER_ROLES.USER
     : DEFAULT_ROLE;
+  const isSiteAdmin = shouldFetchProfile ? profile?.isSiteAdmin === true : false;
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -59,17 +67,22 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
         ? {
             ...session.user,
             role,
+            isSiteAdmin,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
+            currentTeam: shouldFetchProfile ? profile?.currentTeam ?? null : null,
           }
         : null,
       isAuthenticated: authState.isAuthenticated,
-      isAdmin: role === USER_ROLES.ADMIN,
+      isAdmin: isSiteAdmin,
+      isSiteAdmin,
       isPending,
       error,
     }),
     [
       session?.user,
       role,
+      isSiteAdmin,
+      profile?.currentTeam,
       profile?.phoneNumber,
       authState.isAuthenticated,
       isPending,

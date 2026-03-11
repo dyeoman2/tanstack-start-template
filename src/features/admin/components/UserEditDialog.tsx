@@ -37,7 +37,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
 
   // Optimistic mutations with automatic rollback on error
   const updateBetterAuthUserOptimistic = useOptimisticMutation(api.admin.updateBetterAuthUser);
-  const setUserRoleOptimistic = useOptimisticMutation(api.users.setUserRole);
+  const setUserRoleOptimistic = useOptimisticMutation(api.admin.updateUserRole);
 
   const form = useForm({
     defaultValues: {

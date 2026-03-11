@@ -2,8 +2,6 @@ import { type ParsedLocation, redirect } from '@tanstack/react-router';
 import { createServerFn } from '@tanstack/react-start';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import type { RouterAuthContext } from '~/router';
-import type { Capability } from '../../../../convex/authz/policy.map';
-import { Caps } from '../../../../convex/authz/policy.map';
 
 export async function routeAdminGuard({
   location,
@@ -19,15 +17,10 @@ export async function routeAdminGuard({
     const authPromise = getCurrentUserServerFn();
     const { user } = await Promise.race([authPromise, timeoutPromise]);
 
-    // Use capability-based checking for consistency with the RBAC system
-    const adminCapability: Capability = 'route:/app/admin';
-    const allowedRoles = Caps[adminCapability] ?? [];
-
-    if (!user?.role || !(allowedRoles as readonly string[]).includes(user.role)) {
+    if (!user?.isSiteAdmin) {
       if (import.meta.env.DEV) {
         console.warn('[routeAdminGuard] Access denied:', {
           userRole: user?.role,
-          requiredRoles: allowedRoles,
           path: location.pathname,
         });
       }
@@ -79,6 +72,7 @@ const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(
           email: user.email,
           name: user.name,
           role: user.role,
+          isSiteAdmin: user.isSiteAdmin,
         },
       };
     } catch (error) {

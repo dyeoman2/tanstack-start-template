@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
-import { internal } from './_generated/api';
+import { api, internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import {
   type ActionCtx,
   action,
@@ -8,6 +9,7 @@ import {
   internalQuery,
   query,
 } from './_generated/server';
+import { getCurrentUserOrNull } from './auth/access';
 import { authComponent } from './auth';
 import { AUTUMN_NOT_CONFIGURED_ERROR, autumn, isAutumnConfigured } from './autumn';
 
@@ -18,6 +20,7 @@ type ReservationMode = 'free' | 'paid';
 
 interface AiUsageRecord {
   userId: string;
+  teamId?: Id<'teams'> | null;
   messagesUsed: number;
   pendingMessages: number;
   lastReservedAt?: number | null;
@@ -151,15 +154,15 @@ function createUsageSnapshot(
 }
 
 const usageRecordArgs = {
-  userId: v.string(),
+  teamId: v.id('teams'),
 } as const;
 
 export const getUsageRecord = internalQuery({
   args: usageRecordArgs,
-  handler: async (ctx, { userId }) => {
+  handler: async (ctx, { teamId }) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .withIndex('by_teamId', (q) => q.eq('teamId', teamId))
       .first();
 
     if (!usageDoc) {
@@ -186,15 +189,14 @@ export const getUsageRecord = internalQuery({
 export const getCurrentUserUsage = query({
   args: {},
   handler: async (ctx) => {
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user?.lastActiveTeamId) {
       return null;
     }
 
-    const userId = assertUserId(authUser, 'Unable to resolve user id.');
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', userId))
+      .withIndex('by_teamId', (q) => q.eq('teamId', user.lastActiveTeamId))
       .first();
 
     if (!usageDoc) {
@@ -220,6 +222,7 @@ export const getCurrentUserUsage = query({
 export const reserveUsage = internalMutation({
   args: {
     userId: v.string(),
+    teamId: v.id('teams'),
     freeLimit: v.number(),
     mode: v.union(v.literal('free'), v.literal('paid')),
     timestamp: v.number(),
@@ -227,7 +230,7 @@ export const reserveUsage = internalMutation({
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
       .first();
 
     if (!usageDoc) {
@@ -241,6 +244,7 @@ export const reserveUsage = internalMutation({
 
       await ctx.db.insert('aiMessageUsage', {
         userId: args.userId,
+        teamId: args.teamId,
         messagesUsed: 0,
         pendingMessages: 1,
         createdAt: args.timestamp,
@@ -287,6 +291,7 @@ export const reserveUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
+      teamId: usageDoc.teamId ?? null,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: args.timestamp,
@@ -295,28 +300,28 @@ export const reserveUsage = internalMutation({
 
     return {
       ok: true,
-      usage: createUsageSnapshot(updatedDoc, args.freeLimit, args.userId),
+      usage: createUsageSnapshot(updatedDoc, args.freeLimit, usageDoc.userId),
     };
   },
 });
 
 export const completeUsage = internalMutation({
   args: {
-    userId: v.string(),
+    teamId: v.id('teams'),
     freeLimit: v.number(),
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
       .first();
 
     if (!usageDoc || usageDoc.pendingMessages <= 0) {
       return {
         ok: false,
         reason: 'no_pending_reservation' as const,
-        usage: createUsageSnapshot(usageDoc ?? null, args.freeLimit, args.userId),
+        usage: createUsageSnapshot(usageDoc ?? null, args.freeLimit, usageDoc?.userId),
       };
     }
 
@@ -332,6 +337,7 @@ export const completeUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
+      teamId: usageDoc.teamId ?? null,
       messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,
@@ -340,28 +346,28 @@ export const completeUsage = internalMutation({
 
     return {
       ok: true,
-      usage: createUsageSnapshot(updatedDoc, args.freeLimit, args.userId),
+      usage: createUsageSnapshot(updatedDoc, args.freeLimit, usageDoc.userId),
     };
   },
 });
 
 export const releaseUsage = internalMutation({
   args: {
-    userId: v.string(),
+    teamId: v.id('teams'),
     freeLimit: v.number(),
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
       .first();
 
     if (!usageDoc || usageDoc.pendingMessages <= 0) {
       return {
         ok: false,
         reason: 'no_pending_reservation' as const,
-        usage: createUsageSnapshot(usageDoc ?? null, args.freeLimit, args.userId),
+        usage: createUsageSnapshot(usageDoc ?? null, args.freeLimit, usageDoc?.userId),
       };
     }
 
@@ -374,6 +380,7 @@ export const releaseUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
+      teamId: usageDoc.teamId ?? null,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,
@@ -382,23 +389,30 @@ export const releaseUsage = internalMutation({
 
     return {
       ok: true,
-      usage: createUsageSnapshot(updatedDoc, args.freeLimit, args.userId),
+      usage: createUsageSnapshot(updatedDoc, args.freeLimit, usageDoc.userId),
     };
   },
 });
 
-function ensureAuthenticatedUser(ctx: Parameters<typeof authComponent.getAuthUser>[0]) {
-  return authComponent.getAuthUser(ctx).then((authUser) => {
-    if (!authUser) {
-      throw new Error('Authentication required.');
-    }
+async function ensureAuthenticatedUser(ctx: ActionCtx) {
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    throw new Error('Authentication required.');
+  }
 
-    const userId = assertUserId(authUser, 'Unable to resolve user id.');
-    return {
-      authUser,
-      userId,
-    };
-  });
+  const userId = assertUserId(authUser, 'Unable to resolve user id.');
+  const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
+  const currentTeam = profile?.currentTeam ?? null;
+
+  if (!currentTeam) {
+    throw new Error('Active team not initialized for this user.');
+  }
+
+  return {
+    authUser,
+    userId,
+    teamId: currentTeam.id,
+  };
 }
 
 export const reserveAiMessage = action({
@@ -411,7 +425,7 @@ export const reserveAiMessage = action({
     ),
   },
   handler: async (ctx: ActionCtx): Promise<ReserveAiMessageResult> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { userId, teamId } = await ensureAuthenticatedUser(ctx);
     const freeLimit = FREE_MESSAGE_LIMIT;
     const timestamp = Date.now();
 
@@ -419,6 +433,7 @@ export const reserveAiMessage = action({
 
     let reserveResult = (await ctx.runMutation(internal.ai.reserveUsage, {
       userId,
+      teamId,
       freeLimit,
       mode: reservationMode,
       timestamp,
@@ -468,6 +483,7 @@ export const reserveAiMessage = action({
 
       reserveResult = (await ctx.runMutation(internal.ai.reserveUsage, {
         userId,
+        teamId,
         freeLimit,
         mode: reservationMode,
         timestamp,
@@ -511,11 +527,11 @@ export const completeAiMessage = action({
     ),
   },
   handler: async (ctx: ActionCtx, args): Promise<CompleteAiMessageResult> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { teamId } = await ensureAuthenticatedUser(ctx);
     const timestamp = Date.now();
 
     const completeResult = (await ctx.runMutation(internal.ai.completeUsage, {
-      userId,
+      teamId,
       freeLimit: FREE_MESSAGE_LIMIT,
       timestamp,
     })) as ReservationMutationResult;
@@ -570,11 +586,11 @@ export const completeAiMessage = action({
 export const releaseAiMessage = action({
   args: {},
   handler: async (ctx: ActionCtx): Promise<ReleaseAiMessageResult> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { teamId } = await ensureAuthenticatedUser(ctx);
     const timestamp = Date.now();
 
     const releaseResult = (await ctx.runMutation(internal.ai.releaseUsage, {
-      userId,
+      teamId,
       freeLimit: FREE_MESSAGE_LIMIT,
       timestamp,
     })) as ReservationMutationResult;
@@ -610,8 +626,16 @@ export const getAiUsageStatus = action({
       };
     }
 
-    const userId = assertUserId(authUser, 'Unable to resolve user id.');
-    const usageDoc = await ctx.runQuery(internal.ai.getUsageRecord, { userId });
+    const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
+    if (!profile?.currentTeam) {
+      return {
+        authenticated: false as const,
+      };
+    }
+
+    const usageDoc = await ctx.runQuery(internal.ai.getUsageRecord, {
+      teamId: profile.currentTeam.id,
+    });
 
     const messagesUsed = usageDoc?.messagesUsed ?? 0;
     const pendingMessages = usageDoc?.pendingMessages ?? 0;

@@ -1,4 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
+import { useMutation } from 'convex/react';
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { AutumnClientProvider } from '~/components/AutumnProvider';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
@@ -31,7 +33,8 @@ interface AuthProviderProps {
 }
 
 function AuthProvider({ children }: AuthProviderProps) {
-  const { user, isAuthenticated, isPending, isAdmin } = useAuth();
+  const { user, isAuthenticated, isPending, isAdmin, isSiteAdmin } = useAuth();
+  const ensureCurrentUserContext = useMutation(api.users.ensureCurrentUserContext);
   const [authContext, setAuthContext] = useState<RouterAuthContext>({
     authenticated: false,
     user: null,
@@ -45,6 +48,7 @@ function AuthProvider({ children }: AuthProviderProps) {
     userName: user?.name,
     isPending,
     isAdmin,
+    isSiteAdmin,
   });
 
   // Update auth context only when auth state actually changes
@@ -56,6 +60,7 @@ function AuthProvider({ children }: AuthProviderProps) {
       userName: user?.name,
       isPending,
       isAdmin,
+      isSiteAdmin,
     };
 
     // Check if any auth state values have changed
@@ -88,6 +93,7 @@ function AuthProvider({ children }: AuthProviderProps) {
             email: user.email,
             name: user.name || undefined,
             role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
+            isSiteAdmin,
           },
         };
       } else {
@@ -104,12 +110,22 @@ function AuthProvider({ children }: AuthProviderProps) {
     if (!isPending) {
       setSentryUser(newAuthContext.authenticated ? newAuthContext.user : null);
     }
-  }, [isAuthenticated, user?.id, user?.email, user?.name, isPending, isAdmin]);
+  }, [isAuthenticated, user?.id, user?.email, user?.name, isPending, isAdmin, isSiteAdmin]);
 
   // Setup claim refresh when component mounts
   useEffect(() => {
     return setupClaimRefresh();
   }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || isPending) {
+      return;
+    }
+
+    void ensureCurrentUserContext({}).catch((error) => {
+      console.warn('[auth] Failed to ensure user context', error);
+    });
+  }, [ensureCurrentUserContext, isAuthenticated, isPending]);
 
   return (
     <AuthContext.Provider value={{ authContext, isAuthLoading: isPending }}>

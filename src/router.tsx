@@ -16,7 +16,7 @@ export type RouterAuthContext =
     }
   | {
       authenticated: true;
-      user: { id: UserId; email: string; name?: string; role: string } | null; // null for optimistic auth
+      user: { id: UserId; email: string; name?: string; role: string; isSiteAdmin: boolean } | null;
     };
 
 export const defaultRouterAuthContext: RouterAuthContext = {

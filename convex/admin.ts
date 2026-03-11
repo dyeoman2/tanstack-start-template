@@ -1,115 +1,53 @@
-import type { GenericCtx } from '@convex-dev/better-auth';
 import { v } from 'convex/values';
-import {
-  type BetterAuthAdapterUserDoc,
-  normalizeAdapterFindManyResult,
-} from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import type { DataModel } from './_generated/dataModel';
+import type { MutationCtx, QueryCtx } from './_generated/server';
+import { action, mutation, query } from './_generated/server';
+import { isAdminRole } from './auth/access';
+import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
-import { guarded } from './authz/guardFactory';
+import {
+  fetchAllBetterAuthUsers,
+  findBetterAuthUserByEmail,
+  updateBetterAuthUserRecord,
+} from './lib/betterAuth';
 
-type BetterAuthUser = BetterAuthAdapterUserDoc;
-
-// Helper function to fetch all Better Auth users with proper pagination
-async function fetchAllBetterAuthUsers(ctx: GenericCtx<DataModel>): Promise<BetterAuthUser[]> {
-  const allUsers: BetterAuthUser[] = [];
-  let cursor: string | null = null;
-
-  try {
-    while (true) {
-      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor,
-          numItems: 1000,
-          id: 0,
-        },
-      });
-
-      const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
-      const { page, continueCursor, isDone } = normalized;
-
-      if (page.length > 0) {
-        allUsers.push(...page);
-      }
-
-      const nextCursor: string | null =
-        continueCursor && continueCursor !== '[]' ? continueCursor : null;
-
-      if (!nextCursor || isDone || page.length < 1000) {
-        break;
-      }
-
-      cursor = nextCursor;
-    }
-  } catch (error) {
-    console.error('Failed to fetch Better Auth users:', error);
-    return [];
+async function requireSiteAdmin(
+  ctx: QueryCtx | MutationCtx,
+) {
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
   }
 
-  return allUsers;
-}
-
-// OPTIMIZATION: Helper function to fetch only relevant Better Auth users by IDs
-async function fetchBetterAuthUsersByIds(
-  ctx: GenericCtx<DataModel>,
-  userIds: string[],
-): Promise<BetterAuthUser[]> {
-  if (userIds.length === 0) return [];
-
-  const remainingIds = new Set(userIds);
-  const matchedUsers: BetterAuthUser[] = [];
-  let cursor: string | null = null;
-
-  try {
-    while (remainingIds.size > 0) {
-      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor,
-          numItems: 1000,
-          id: 0,
-        },
-      });
-
-      const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
-      const { page, continueCursor, isDone } = normalized;
-
-      for (const user of page) {
-        try {
-          const userId = assertUserId(user, 'Better Auth user missing id');
-          if (remainingIds.has(userId)) {
-            matchedUsers.push(user);
-            remainingIds.delete(userId);
-          }
-        } catch {
-          // Ignore malformed user docs
-        }
-      }
-
-      if (isDone || !continueCursor || page.length === 0) {
-        break;
-      }
-
-      cursor = continueCursor;
-    }
-  } catch (error) {
-    console.error('Failed to fetch Better Auth users by IDs:', error);
-    return [];
+  if (!isAdminRole((authUser as { role?: string | string[] }).role)) {
+    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
   }
 
-  return matchedUsers;
+  return authUser;
 }
 
-/**
- * Get all users with pagination, sorting, and filtering (admin only)
- * Combines Better Auth user data with userProfiles role using optimized queries
- */
-export const getAllUsers = guarded.query(
-  'route:/app/admin.users',
-  {
+function toTimestamp(value: string | number | Date | undefined) {
+  if (!value) {
+    return Date.now();
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  return new Date(value).getTime();
+}
+
+const LEGACY_TEAM_NAMES = new Set(['personal', 'my team']);
+const SHARED_TEAM_DEFAULT_NAME = 'New Team';
+
+export const getAllUsers = query({
+  args: {
     page: v.number(),
     pageSize: v.number(),
     sortBy: v.union(
@@ -130,374 +68,407 @@ export const getAllUsers = guarded.query(
     secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
     search: v.optional(v.string()),
     role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
-    cursor: v.optional(v.string()), // Add cursor for efficient pagination
+    cursor: v.optional(v.string()),
   },
-  async (ctx, args, _role) => {
-    // OPTIMIZATION: Use cursor-based pagination with userProfiles as primary source
-    // Only fetch Better Auth users for the current page, not all users
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
 
-    // Use the compound index for role filtering when needed
-    const paginatedProfiles =
-      args.role !== 'all'
-        ? await ctx.db
-            .query('userProfiles')
-            .withIndex('by_role_createdAt', (q) => q.eq('role', args.role))
-            .paginate({
-              cursor: args.cursor ?? null,
-              numItems: args.pageSize,
-            })
-        : await ctx.db.query('userProfiles').paginate({
-            cursor: args.cursor ?? null,
-            numItems: args.pageSize,
-          });
+    const searchValue = args.search?.trim().toLowerCase() ?? '';
+    const allUsers = await fetchAllBetterAuthUsers(ctx);
+    let users = allUsers.map((user) => ({
+      id: assertUserId(user, 'Better Auth user missing id'),
+      email: user.email,
+      name: user.name ?? null,
+      role: isAdminRole(user.role) ? ('admin' as const) : ('user' as const),
+      emailVerified: user.emailVerified ?? false,
+      createdAt: toTimestamp(user.createdAt),
+      updatedAt: toTimestamp(user.updatedAt),
+    }));
 
-    // Only fetch Better Auth users for the profiles on this page
-    const profileUserIds = paginatedProfiles.page.map((p) => p.userId);
-    const relevantAuthUsers = await fetchBetterAuthUsersByIds(ctx, profileUserIds);
-
-    // Create a map of auth users by ID for efficient lookup
-    const authUsersById = new Map<string, BetterAuthUser>();
-    for (const user of relevantAuthUsers) {
-      const authUserId = assertUserId(user, 'Better Auth user missing id');
-      authUsersById.set(authUserId, user);
+    if (args.role !== 'all') {
+      users = users.filter((user) => user.role === args.role);
     }
 
-    // Combine profiles with auth users for this page only
-    let combinedUsers = paginatedProfiles.page
-      .map((profile) => {
-        const authUser = authUsersById.get(profile.userId);
-        if (!authUser) return null; // Skip if no matching auth user
-
-        return {
-          id: profile.userId,
-          email: authUser.email,
-          name: authUser.name || null,
-          role: profile.role as 'user' | 'admin',
-          emailVerified: authUser.emailVerified || false,
-          createdAt: profile.createdAt,
-          updatedAt: profile.updatedAt,
-        };
-      })
-      .filter((user): user is NonNullable<typeof user> => user !== null);
-
-    // OPTIMIZATION: Apply search filter only to current page data
-    if (args.search) {
-      const searchLower = args.search.toLowerCase();
-      combinedUsers = combinedUsers.filter(
+    if (searchValue) {
+      users = users.filter(
         (user) =>
-          user.name?.toLowerCase().includes(searchLower) ||
-          user.email.toLowerCase().includes(searchLower),
+          user.email.toLowerCase().includes(searchValue) ||
+          (user.name?.toLowerCase().includes(searchValue) ?? false),
       );
     }
 
-    // OPTIMIZATION: Apply sorting only to current page data
-    const getSortValue = (
-      user: (typeof combinedUsers)[number],
-      field: typeof args.sortBy,
-    ): string | number => {
+    const sortValue = (user: (typeof users)[number], field: typeof args.sortBy) => {
       switch (field) {
         case 'name':
-          return user.name?.toLowerCase() || '';
+          return user.name?.toLowerCase() ?? '';
         case 'email':
           return user.email.toLowerCase();
         case 'role':
           return user.role;
         case 'emailVerified':
           return user.emailVerified ? 1 : 0;
-        case 'createdAt':
-          return user.createdAt;
         default:
           return user.createdAt;
       }
     };
 
-    combinedUsers.sort((a, b) => {
-      const primaryA = getSortValue(a, args.sortBy);
-      const primaryB = getSortValue(b, args.sortBy);
-      const primaryCompare =
-        args.sortOrder === 'asc'
-          ? primaryA > primaryB
-            ? 1
-            : primaryA < primaryB
-              ? -1
-              : 0
-          : primaryA < primaryB
-            ? 1
-            : primaryA > primaryB
-              ? -1
-              : 0;
-
-      if (primaryCompare !== 0) {
-        return primaryCompare;
+    const compareValues = (left: string | number, right: string | number, direction: 'asc' | 'desc') => {
+      if (left === right) {
+        return 0;
       }
 
-      // Secondary sort
-      const secondaryA = getSortValue(a, args.secondarySortBy);
-      const secondaryB = getSortValue(b, args.secondarySortBy);
-      return args.secondarySortOrder === 'asc'
-        ? secondaryA > secondaryB
-          ? 1
-          : secondaryA < secondaryB
-            ? -1
-            : 0
-        : secondaryA < secondaryB
-          ? 1
-          : secondaryA > secondaryB
-            ? -1
-            : 0;
+      if (direction === 'asc') {
+        return left > right ? 1 : -1;
+      }
+
+      return left < right ? 1 : -1;
+    };
+
+    users.sort((left, right) => {
+      const primary = compareValues(
+        sortValue(left, args.sortBy),
+        sortValue(right, args.sortBy),
+        args.sortOrder,
+      );
+
+      if (primary !== 0) {
+        return primary;
+      }
+
+      return compareValues(
+        sortValue(left, args.secondarySortBy),
+        sortValue(right, args.secondarySortBy),
+        args.secondarySortOrder,
+      );
     });
 
-    // OPTIMIZATION: Use cursor-based pagination metadata
-    // For accurate total count when role filtering, we need to count total profiles
-    const totalProfiles =
-      args.role !== 'all'
-        ? await ctx.db
-            .query('userProfiles')
-            .withIndex('by_role_createdAt', (q) => q.eq('role', args.role))
-            .collect()
-            .then((profiles) => profiles.length)
-        : await ctx.db
-            .query('userProfiles')
-            .collect()
-            .then((profiles) => profiles.length);
+    const total = users.length;
+    const start = Math.max(0, (args.page - 1) * args.pageSize);
+    const end = start + args.pageSize;
+    const pageUsers = users.slice(start, end);
 
     return {
-      users: combinedUsers,
+      users: pageUsers,
       pagination: {
         page: args.page,
         pageSize: args.pageSize,
-        total: totalProfiles,
-        totalPages: Math.ceil(totalProfiles / args.pageSize),
-        hasNextPage: !paginatedProfiles.isDone,
-        nextCursor: paginatedProfiles.continueCursor,
+        total,
+        totalPages: Math.ceil(total / args.pageSize),
+        hasNextPage: end < total,
+        nextCursor: end < total ? String(args.page + 1) : null,
       },
     };
   },
-);
+});
 
-/**
- * Get user by ID (admin only)
- * Returns user email and name for deletion confirmation messages
- */
-export const getUserById = guarded.query(
-  'route:/app/admin.users',
-  {
+export const getUserById = query({
+  args: {
     userId: v.string(),
   },
-  async (ctx, args, _role) => {
-    try {
-      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000, // Fetch enough to find the user
-          id: 0,
-        },
-      });
-
-      const { page } = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
-
-      const user = page.find((candidate) => {
-        try {
-          return assertUserId(candidate, 'Better Auth user missing id') === args.userId;
-        } catch {
-          return false;
-        }
-      });
-
-      if (!user) {
-        return null;
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
+    const allUsers = await fetchAllBetterAuthUsers(ctx);
+    const user = allUsers.find((candidate) => {
+      try {
+        return assertUserId(candidate, 'Better Auth user missing id') === args.userId;
+      } catch {
+        return false;
       }
+    });
 
-      return {
-        id: assertUserId(user, 'Better Auth user missing id'),
-        email: user.email,
-        name: user.name,
-      };
-    } catch (error) {
-      console.error('Failed to query Better Auth user:', error);
+    if (!user) {
       return null;
     }
-  },
-);
 
-/**
- * Get system statistics (admin only)
- * Uses efficient counting without fetching all user data
- */
-export const getSystemStats = guarded.query(
-  'route:/app/admin.stats',
-  {},
-  async (ctx, _args, _role) => {
-    try {
-      const users = await fetchAllBetterAuthUsers(ctx);
-      return {
-        users: users.length,
-      };
-    } catch (error) {
-      console.error('Failed to count Better Auth users:', error);
-      return {
-        users: 0,
-      };
-    }
+    return {
+      id: assertUserId(user, 'Better Auth user missing id'),
+      email: user.email,
+      name: user.name ?? null,
+    };
   },
-);
+});
 
-/**
- * Update Better Auth user data (name, email, phoneNumber) (admin only)
- * Uses Better Auth component adapter's updateMany mutation
- */
-export const updateBetterAuthUser = guarded.mutation(
-  'user.write',
-  {
+export const getSystemStats = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+    const users = await fetchAllBetterAuthUsers(ctx);
+    return {
+      users: users.length,
+      admins: users.filter((user) => isAdminRole(user.role)).length,
+    };
+  },
+});
+
+export const updateBetterAuthUser = mutation({
+  args: {
     userId: v.string(),
     name: v.optional(v.string()),
     email: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
   },
-  async (ctx, args, _role) => {
-    // Build update object - only include fields that are provided
-    const updateData: {
-      name?: string;
-      email?: string;
-      phoneNumber?: string | null;
-      updatedAt: number;
-    } = {
-      updatedAt: Date.now(),
-    };
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
 
+    const updateData: Record<string, unknown> = {};
     if (args.name !== undefined) {
       updateData.name = args.name.trim();
     }
-
     if (args.email !== undefined) {
-      updateData.email = args.email.toLowerCase().trim();
+      updateData.email = args.email.trim().toLowerCase();
     }
-
     if (args.phoneNumber !== undefined) {
       updateData.phoneNumber = args.phoneNumber || null;
     }
 
-    // Use Better Auth component adapter's updateMany mutation
-    // This allows admin updates including email changes
-    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
-      input: {
-        model: 'user',
-        update: updateData,
-        where: [
-          {
-            field: '_id',
-            operator: 'eq',
-            value: args.userId,
-          },
-        ],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1, // Only updating one user
-        id: 0, // Not used but required
-      },
+    await updateBetterAuthUserRecord(ctx, args.userId, updateData);
+    return { success: true };
+  },
+});
+
+export const updateUserRole = mutation({
+  args: {
+    userId: v.string(),
+    role: v.union(v.literal('user'), v.literal('admin')),
+  },
+  handler: async (ctx, args) => {
+    const currentAdmin = await requireSiteAdmin(ctx);
+    const currentAdminId = assertUserId(currentAdmin, 'Current admin id not found');
+
+    if (args.userId === currentAdminId && args.role !== 'admin') {
+      const users = await fetchAllBetterAuthUsers(ctx);
+      const adminCount = users.filter((user) => isAdminRole(user.role)).length;
+      if (adminCount <= 1) {
+        throwConvexError('VALIDATION', 'At least one site admin must remain');
+      }
+    }
+
+    await updateBetterAuthUserRecord(ctx, args.userId, {
+      role: args.role,
     });
 
     return { success: true };
   },
-);
-
-/**
- * Truncate application data (admin only)
- * Deletes all audit logs, preserves user data
- */
-export const truncateData = guarded.mutation('user.write', {}, async (ctx, _args, _role) => {
-  // Delete all audit logs
-  const auditLogs = await ctx.db.query('auditLogs').collect();
-  let deletedCount = 0;
-  let failedCount = 0;
-
-  for (const log of auditLogs) {
-    try {
-      await ctx.db.delete(log._id);
-      deletedCount++;
-    } catch (error) {
-      failedCount++;
-      console.error(`Failed to delete audit log ${log._id}:`, error);
-    }
-  }
-
-  // Log the truncation in audit log (before we delete it, so it won't be persisted)
-  // Actually, we can't log it since we're deleting all logs
-  // So we'll just return success
-
-  return {
-    success: failedCount === 0,
-    message:
-      failedCount === 0
-        ? `All audit logs have been truncated successfully. User accounts and authentication data preserved.`
-        : `Partial truncation completed. ${deletedCount} audit logs deleted, ${failedCount} failed. User accounts and authentication data preserved.`,
-    truncatedTables: deletedCount > 0 ? 1 : 0,
-    failedTables: failedCount > 0 ? 1 : 0,
-    totalTables: 1,
-    failedTableNames: failedCount > 0 ? ['auditLogs'] : [],
-    invalidateAllCaches: true,
-  };
 });
 
-/**
- * Delete user (admin only)
- * Deletes user from userProfiles and auditLogs
- * Note: Better Auth user deletion should be handled via Better Auth HTTP API
- */
-export const deleteUser = guarded.mutation(
-  'user.write',
-  {
-    userId: v.string(),
+export const promoteUserByEmail = action({
+  args: {
+    token: v.string(),
+    email: v.string(),
   },
-  async (ctx, args, _role) => {
-    // Get current user for self-deletion check
-    const currentUser = await authComponent.getAuthUser(ctx);
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    // Prevent deletion of self
-    if (args.userId === currentUserId) {
-      throw new Error('Cannot delete your own account');
+  handler: async (ctx, args) => {
+    const secret = process.env.BETTER_AUTH_SECRET;
+    if (!secret || args.token !== secret) {
+      throw new Error('Unauthorized admin promotion access');
     }
 
-    // Get user profile to check role
-    const targetProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
-      .first();
+    const email = args.email.trim().toLowerCase();
+    const authUser = await findBetterAuthUserByEmail(ctx, email);
+    if (!authUser) {
+      throwConvexError('NOT_FOUND', 'User not found');
+    }
 
-    // Prevent deletion of the only admin user
-    if (targetProfile?.role === 'admin') {
-      const allProfiles = await ctx.db.query('userProfiles').collect();
-      const adminCount = allProfiles.filter((p) => p.role === 'admin').length;
-      if (adminCount <= 1) {
-        throw new Error('Cannot delete the only admin user. At least one admin must remain.');
+    const authUserId = assertUserId(authUser, 'Better Auth user missing id');
+    await updateBetterAuthUserRecord(ctx, authUserId, {
+      role: 'admin',
+    });
+
+    await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+      authUserId,
+      createdAt: toTimestamp(authUser.createdAt),
+      updatedAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      email,
+      userId: authUserId,
+    };
+  },
+});
+
+export const cleanupLegacyTeams = mutation({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const secret = process.env.BETTER_AUTH_SECRET;
+    if (!secret || args.token !== secret) {
+      throw new Error('Unauthorized legacy team cleanup access');
+    }
+
+    const teams = await ctx.db.query('teams').collect();
+    const now = Date.now();
+    let renamedCount = 0;
+
+    for (const team of teams) {
+      const normalizedName = team.name.trim().toLowerCase();
+      if (!LEGACY_TEAM_NAMES.has(normalizedName)) {
+        continue;
+      }
+
+      await ctx.db.patch(team._id, {
+        name: SHARED_TEAM_DEFAULT_NAME,
+        updatedAt: now,
+      });
+      renamedCount += 1;
+    }
+
+    return {
+      renamedCount,
+    };
+  },
+});
+
+export const truncateData = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
+    const auditLogs = await ctx.db.query('auditLogs').collect();
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const log of auditLogs) {
+      try {
+        await ctx.db.delete(log._id);
+        deletedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        console.error(`Failed to delete audit log ${log._id}:`, error);
       }
     }
 
-    // Delete user profile
-    if (targetProfile) {
-      await ctx.db.delete(targetProfile._id);
+    return {
+      success: failedCount === 0,
+      message:
+        failedCount === 0
+          ? 'All audit logs have been truncated successfully. User accounts and authentication data preserved.'
+          : `Partial truncation completed. ${deletedCount} audit logs deleted, ${failedCount} failed. User accounts and authentication data preserved.`,
+      truncatedTables: deletedCount > 0 ? 1 : 0,
+      failedTables: failedCount > 0 ? 1 : 0,
+      totalTables: 1,
+      failedTableNames: failedCount > 0 ? ['auditLogs'] : [],
+      invalidateAllCaches: true,
+    };
+  },
+});
 
-      await ctx.runMutation(internal.dashboardStats.adjustUserCounts, {
-        totalDelta: -1,
-      });
+export const deleteUser = mutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const currentAdmin = await requireSiteAdmin(ctx);
+    const currentAdminId = assertUserId(currentAdmin, 'Current admin id not found');
+
+    if (args.userId === currentAdminId) {
+      throwConvexError('VALIDATION', 'Cannot delete your own account');
     }
 
-    // Delete audit logs for this user
+    const allUsers = await fetchAllBetterAuthUsers(ctx);
+    const target = allUsers.find((user) => {
+      try {
+        return assertUserId(user, 'Better Auth user missing id') === args.userId;
+      } catch {
+        return false;
+      }
+    });
+
+    if (!target) {
+      throwConvexError('NOT_FOUND', 'User not found');
+    }
+
+    if (isAdminRole(target.role)) {
+      const adminCount = allUsers.filter((user) => isAdminRole(user.role)).length;
+      if (adminCount <= 1) {
+        throwConvexError('VALIDATION', 'Cannot delete the only site admin');
+      }
+    }
+
+    const appUser = await ctx.db
+      .query('users')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.userId))
+      .first();
+
+    if (appUser) {
+      const [memberships, invites] = await Promise.all([
+        ctx.db
+          .query('teamUsers')
+          .withIndex('by_user', (q) => q.eq('userId', appUser._id))
+          .collect(),
+        ctx.db
+          .query('teamInvites')
+          .withIndex('by_email', (q) => q.eq('email', target.email.toLowerCase()))
+          .collect(),
+      ]);
+
+      for (const membership of memberships) {
+        await ctx.db.delete(membership._id);
+      }
+
+      for (const invite of invites) {
+        await ctx.db.delete(invite._id);
+      }
+
+      await ctx.db.delete(appUser._id);
+    }
+
     const auditLogs = await ctx.db
       .query('auditLogs')
       .withIndex('by_userId', (q) => q.eq('userId', args.userId))
       .collect();
-
     for (const log of auditLogs) {
       await ctx.db.delete(log._id);
     }
 
-    // Note: Better Auth user deletion should be handled via Better Auth HTTP API
-    // This mutation only handles app-specific data cleanup
+    await Promise.all([
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'session',
+          where: [{ field: 'userId', operator: 'eq', value: args.userId }],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000,
+          id: 0,
+        },
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'account',
+          where: [{ field: 'userId', operator: 'eq', value: args.userId }],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000,
+          id: 0,
+        },
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'verification',
+          where: [{ field: 'identifier', operator: 'eq', value: target.email }],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000,
+          id: 0,
+        },
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'user',
+          where: [{ field: '_id', operator: 'eq', value: args.userId }],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+          id: 0,
+        },
+      }),
+    ]);
 
     return { success: true };
   },
-);
+});

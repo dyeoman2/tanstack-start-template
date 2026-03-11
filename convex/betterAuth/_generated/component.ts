@@ -1,6 +1,6 @@
 /* eslint-disable */
 /**
- * Generated `api` utility.
+ * Generated `ComponentApi` utility.
  *
  * THIS CODE IS AUTOMATICALLY GENERATED.
  *
@@ -8,82 +8,21 @@
  * @module
  */
 
-import type * as admin from "../admin.js";
-import type * as ai from "../ai.js";
-import type * as aiResponses from "../aiResponses.js";
-import type * as auth from "../auth.js";
-import type * as auth_access from "../auth/access.js";
-import type * as auth_authorized from "../auth/authorized.js";
-import type * as auth_errors from "../auth/errors.js";
-import type * as autumn from "../autumn.js";
-import type * as cloudflareAi from "../cloudflareAi.js";
-import type * as dashboard from "../dashboard.js";
-import type * as dashboardStats from "../dashboardStats.js";
-import type * as e2e from "../e2e.js";
-import type * as emails from "../emails.js";
-import type * as firecrawl from "../firecrawl.js";
-import type * as health from "../health.js";
-import type * as http from "../http.js";
-import type * as lib_betterAuth from "../lib/betterAuth.js";
-import type * as teams from "../teams.js";
-import type * as users from "../users.js";
-
-import type {
-  ApiFromModules,
-  FilterApi,
-  FunctionReference,
-} from "convex/server";
-
-declare const fullApi: ApiFromModules<{
-  admin: typeof admin;
-  ai: typeof ai;
-  aiResponses: typeof aiResponses;
-  auth: typeof auth;
-  "auth/access": typeof auth_access;
-  "auth/authorized": typeof auth_authorized;
-  "auth/errors": typeof auth_errors;
-  autumn: typeof autumn;
-  cloudflareAi: typeof cloudflareAi;
-  dashboard: typeof dashboard;
-  dashboardStats: typeof dashboardStats;
-  e2e: typeof e2e;
-  emails: typeof emails;
-  firecrawl: typeof firecrawl;
-  health: typeof health;
-  http: typeof http;
-  "lib/betterAuth": typeof lib_betterAuth;
-  teams: typeof teams;
-  users: typeof users;
-}>;
+import type { FunctionReference } from "convex/server";
 
 /**
- * A utility for referencing Convex functions in your app's public API.
+ * A utility for referencing a Convex component's exposed API.
  *
+ * Useful when expecting a parameter like `components.myComponent`.
  * Usage:
- * ```js
- * const myFunctionReference = api.myModule.myFunction;
+ * ```ts
+ * async function myFunction(ctx: QueryCtx, component: ComponentApi) {
+ *   return ctx.runQuery(component.someFile.someQuery, { ...args });
+ * }
  * ```
  */
-export declare const api: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "public">
->;
-
-/**
- * A utility for referencing Convex functions in your app's internal API.
- *
- * Usage:
- * ```js
- * const myFunctionReference = internal.myModule.myFunction;
- * ```
- */
-export declare const internal: FilterApi<
-  typeof fullApi,
-  FunctionReference<any, "internal">
->;
-
-export declare const components: {
-  betterAuth: {
+export type ComponentApi<Name extends string | undefined = string | undefined> =
+  {
     adapter: {
       create: FunctionReference<
         "mutation",
@@ -231,7 +170,8 @@ export declare const components: {
           onCreateHandle?: string;
           select?: Array<string>;
         },
-        any
+        any,
+        Name
       >;
       deleteMany: FunctionReference<
         "mutation",
@@ -620,7 +560,8 @@ export declare const components: {
             numItems: number;
           };
         },
-        any
+        any,
+        Name
       >;
       deleteOne: FunctionReference<
         "mutation",
@@ -1001,7 +942,8 @@ export declare const components: {
               };
           onDeleteHandle?: string;
         },
-        any
+        any,
+        Name
       >;
       findMany: FunctionReference<
         "query",
@@ -1055,7 +997,8 @@ export declare const components: {
               | null;
           }>;
         },
-        any
+        any,
+        Name
       >;
       findOne: FunctionReference<
         "query",
@@ -1099,7 +1042,8 @@ export declare const components: {
               | null;
           }>;
         },
-        any
+        any,
+        Name
       >;
       updateMany: FunctionReference<
         "mutation",
@@ -1597,7 +1541,8 @@ export declare const components: {
             numItems: number;
           };
         },
-        any
+        any,
+        Name
       >;
       updateOne: FunctionReference<
         "mutation",
@@ -2087,292 +2032,8 @@ export declare const components: {
               };
           onUpdateHandle?: string;
         },
-        any
+        any,
+        Name
       >;
     };
   };
-  resend: {
-    lib: {
-      cancelEmail: FunctionReference<
-        "mutation",
-        "internal",
-        { emailId: string },
-        null
-      >;
-      cleanupAbandonedEmails: FunctionReference<
-        "mutation",
-        "internal",
-        { olderThan?: number },
-        null
-      >;
-      cleanupOldEmails: FunctionReference<
-        "mutation",
-        "internal",
-        { olderThan?: number },
-        null
-      >;
-      createManualEmail: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          from: string;
-          headers?: Array<{ name: string; value: string }>;
-          replyTo?: Array<string>;
-          subject: string;
-          to: Array<string> | string;
-        },
-        string
-      >;
-      get: FunctionReference<
-        "query",
-        "internal",
-        { emailId: string },
-        {
-          bcc?: Array<string>;
-          bounced?: boolean;
-          cc?: Array<string>;
-          clicked?: boolean;
-          complained: boolean;
-          createdAt: number;
-          deliveryDelayed?: boolean;
-          errorMessage?: string;
-          failed?: boolean;
-          finalizedAt: number;
-          from: string;
-          headers?: Array<{ name: string; value: string }>;
-          html?: string;
-          opened: boolean;
-          replyTo: Array<string>;
-          resendId?: string;
-          segment: number;
-          status:
-            | "waiting"
-            | "queued"
-            | "cancelled"
-            | "sent"
-            | "delivered"
-            | "delivery_delayed"
-            | "bounced"
-            | "failed";
-          subject?: string;
-          template?: {
-            id: string;
-            variables?: Record<string, string | number>;
-          };
-          text?: string;
-          to: Array<string>;
-        } | null
-      >;
-      getStatus: FunctionReference<
-        "query",
-        "internal",
-        { emailId: string },
-        {
-          bounced: boolean;
-          clicked: boolean;
-          complained: boolean;
-          deliveryDelayed: boolean;
-          errorMessage: string | null;
-          failed: boolean;
-          opened: boolean;
-          status:
-            | "waiting"
-            | "queued"
-            | "cancelled"
-            | "sent"
-            | "delivered"
-            | "delivery_delayed"
-            | "bounced"
-            | "failed";
-        } | null
-      >;
-      handleEmailEvent: FunctionReference<
-        "mutation",
-        "internal",
-        { event: any },
-        null
-      >;
-      sendEmail: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          bcc?: Array<string>;
-          cc?: Array<string>;
-          from: string;
-          headers?: Array<{ name: string; value: string }>;
-          html?: string;
-          options: {
-            apiKey: string;
-            initialBackoffMs: number;
-            onEmailEvent?: { fnHandle: string };
-            retryAttempts: number;
-            testMode: boolean;
-          };
-          replyTo?: Array<string>;
-          subject?: string;
-          template?: {
-            id: string;
-            variables?: Record<string, string | number>;
-          };
-          text?: string;
-          to: Array<string>;
-        },
-        string
-      >;
-      updateManualEmail: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          emailId: string;
-          errorMessage?: string;
-          resendId?: string;
-          status:
-            | "waiting"
-            | "queued"
-            | "cancelled"
-            | "sent"
-            | "delivered"
-            | "delivery_delayed"
-            | "bounced"
-            | "failed";
-        },
-        null
-      >;
-    };
-  };
-  rateLimiter: {
-    lib: {
-      checkRateLimit: FunctionReference<
-        "query",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          count?: number;
-          key?: string;
-          name: string;
-          reserve?: boolean;
-          throws?: boolean;
-        },
-        { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
-      >;
-      clearAll: FunctionReference<
-        "mutation",
-        "internal",
-        { before?: number },
-        null
-      >;
-      getServerTime: FunctionReference<"mutation", "internal", {}, number>;
-      getValue: FunctionReference<
-        "query",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          key?: string;
-          name: string;
-          sampleShards?: number;
-        },
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          shard: number;
-          ts: number;
-          value: number;
-        }
-      >;
-      rateLimit: FunctionReference<
-        "mutation",
-        "internal",
-        {
-          config:
-            | {
-                capacity?: number;
-                kind: "token bucket";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: null;
-              }
-            | {
-                capacity?: number;
-                kind: "fixed window";
-                maxReserved?: number;
-                period: number;
-                rate: number;
-                shards?: number;
-                start?: number;
-              };
-          count?: number;
-          key?: string;
-          name: string;
-          reserve?: boolean;
-          throws?: boolean;
-        },
-        { ok: true; retryAfter?: number } | { ok: false; retryAfter: number }
-      >;
-      resetRateLimit: FunctionReference<
-        "mutation",
-        "internal",
-        { key?: string; name: string },
-        null
-      >;
-    };
-    time: {
-      getServerTime: FunctionReference<"mutation", "internal", {}, number>;
-    };
-  };
-  autumn: {};
-};

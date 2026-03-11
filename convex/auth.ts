@@ -1,8 +1,10 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth, type Auth } from 'better-auth';
+import { admin } from 'better-auth/plugins';
 import { v } from 'convex/values';
 import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
+import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import { action, query } from './_generated/server';
@@ -11,7 +13,11 @@ import authConfig from './auth.config';
 const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
 
-export const authComponent = createClient<DataModel>(components.betterAuth);
+export const authComponent = createClient<DataModel, typeof betterAuthSchema>(components.betterAuth, {
+  local: {
+    schema: betterAuthSchema,
+  },
+});
 
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
@@ -114,6 +120,10 @@ export const createAuth = (
       },
     },
     plugins: [
+      admin({
+        defaultRole: 'user',
+        adminRoles: ['admin'],
+      }),
       convex({
         authConfig,
         jwks: process.env.JWKS,
@@ -158,6 +168,45 @@ export const rateLimitAction = action({
 
     const { token: _token, ...rateLimitArgs } = args;
     return await ctx.runMutation(components.rateLimiter.lib.rateLimit, rateLimitArgs);
+  },
+});
+
+export const rotateKeys = action({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (args.token !== internalRateLimitToken) {
+      throw new Error('Unauthorized key rotation access');
+    }
+
+    const auth = createAuth(ctx) as ReturnType<typeof createAuth> & {
+      api: {
+        rotateKeys: () => Promise<
+          Array<{
+            alg?: string;
+            createdAt?: Date | number | string;
+            expiresAt?: Date | number | string;
+            id: string;
+            privateKey: string;
+            publicKey: string;
+          }>
+        >;
+      };
+    };
+
+    const jwks = await auth.api.rotateKeys();
+    return JSON.stringify(
+      jwks.map((key) => ({
+        ...key,
+        createdAt:
+          key.createdAt instanceof Date ? key.createdAt.getTime() : (key.createdAt ?? Date.now()),
+        expiresAt:
+          key.expiresAt instanceof Date
+            ? key.expiresAt.getTime()
+            : (key.expiresAt ?? undefined),
+      })),
+    );
   },
 });
 

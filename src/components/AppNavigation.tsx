@@ -1,4 +1,6 @@
+import { api } from '@convex/_generated/api';
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { useMutation, useQuery } from 'convex/react';
 import { LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
 import { ThemeToggle } from '~/components/theme-toggle';
@@ -10,6 +12,13 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { navigationMenuTriggerStyle } from '~/components/ui/navigation-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -116,7 +125,9 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
  */
 export function AppNavigation() {
   const location = useLocation();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const teamList = useQuery(api.teams.listMyTeams, isAuthenticated ? {} : 'skip');
+  const setActiveTeam = useMutation(api.teams.setActiveTeam);
 
   return (
     <nav className="bg-card shadow-sm border-b">
@@ -170,6 +181,13 @@ export function AppNavigation() {
                 >
                   AI Playground
                 </Link>
+                <Link
+                  to="/app/teams"
+                  preload="intent"
+                  className={cn(navigationMenuTriggerStyle(), 'no-underline')}
+                >
+                  Teams
+                </Link>
               </div>
             )}
           </div>
@@ -185,6 +203,26 @@ export function AppNavigation() {
             <div className="hidden md:block mr-2">
               <ThemeToggle />
             </div>
+
+            {isAuthenticated && teamList && teamList.teams.length > 0 && (
+              <div className="hidden md:block mr-3 min-w-[180px]">
+                <Select
+                  value={teamList.currentTeamId ?? undefined}
+                  onValueChange={(value) => void setActiveTeam({ teamId: value as typeof teamList.teams[number]['id'] })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder={user?.currentTeam?.name ?? 'Select team'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teamList.teams.map((team) => (
+                      <SelectItem key={team.id} value={team.id}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             {/* Desktop Auth Navigation */}
             <div className="hidden md:block">

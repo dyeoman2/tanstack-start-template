@@ -1,7 +1,16 @@
+import { api } from '@convex/_generated/api';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+import { useMutation, useQuery } from 'convex/react';
 import { Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
 import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '~/components/ui/sheet';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -26,11 +35,14 @@ export function MobileNavigation() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const teamList = useQuery(api.teams.listMyTeams, isAuthenticated ? {} : 'skip');
+  const setActiveTeam = useMutation(api.teams.setActiveTeam);
 
   const navItems: NavItem[] = isAuthenticated
     ? [
         { to: '/app', label: 'Dashboard', exact: true },
         { to: '/app/ai-playground', label: 'AI Playground', icon: Cloud },
+        { to: '/app/teams', label: 'Teams' },
       ]
     : [];
 
@@ -120,6 +132,25 @@ export function MobileNavigation() {
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading...</div>
             ) : session?.user ? (
               <div className="space-y-2">
+                {teamList && teamList.teams.length > 0 && (
+                  <Select
+                    value={teamList.currentTeamId ?? undefined}
+                    onValueChange={(value) =>
+                      void setActiveTeam({ teamId: value as typeof teamList.teams[number]['id'] })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Switch team" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {teamList.teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id}>
+                          {team.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
                 {isAdmin && (
                   <Link
                     to="/app/admin"
