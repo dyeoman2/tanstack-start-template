@@ -1,10 +1,9 @@
 import { api } from '@convex/_generated/api';
-import { createAuth } from '@convex/auth';
-import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { createServerFn } from '@tanstack/react-start';
-import { getCookie, getRequest } from '@tanstack/react-start/server';
+import { getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import { handleServerError } from '~/lib/server/error-utils.server';
+import { convexAuthReactStart } from './convex-better-auth-react-start';
 import { USER_ROLES } from '../types';
 
 // Zod schemas for user management
@@ -35,15 +34,10 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
         'unknown';
 
       // Initialize Convex fetch client for server-side calls
-      const { fetchQuery, fetchMutation, fetchAction } = await setupFetchClient(
-        createAuth,
-        getCookie,
-      );
-
       // Apply server-side rate limiting (defense-in-depth)
       // Skip rate limiting in development mode
       if (!import.meta.env.DEV) {
-        const rateLimitResult = await fetchAction(api.auth.rateLimitAction, {
+        const rateLimitResult = await convexAuthReactStart.fetchAuthAction(api.auth.rateLimitAction, {
           token: rateLimitToken,
           name: 'signup',
           key: `signup:${clientIP}`,
@@ -64,7 +58,7 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
       }
 
       // Check if this would be the first user (using Convex)
-      const userCountResult = await fetchQuery(api.users.getUserCount, {});
+      const userCountResult = await convexAuthReactStart.fetchAuthQuery(api.users.getUserCount, {});
       const isFirstUser = userCountResult.isFirstUser;
 
       // Get Convex site URL for Better Auth HTTP calls
@@ -144,7 +138,7 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
         try {
           // Store role in userProfiles table (app-specific data)
           // Use allowBootstrap flag for first admin user creation
-          await fetchMutation(api.users.setUserRole, {
+          await convexAuthReactStart.fetchAuthMutation(api.users.setUserRole, {
             userId: signUpResult.user.id,
             role: roleToSet,
             allowBootstrap: isFirstUser, // Allow bootstrap for first admin

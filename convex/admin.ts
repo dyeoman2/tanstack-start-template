@@ -1,3 +1,4 @@
+import type { GenericCtx } from '@convex-dev/better-auth';
 import { v } from 'convex/values';
 import {
   type BetterAuthAdapterUserDoc,
@@ -5,14 +6,14 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import type { GenericCtx } from './_generated/server';
+import type { DataModel } from './_generated/dataModel';
 import { authComponent } from './auth';
 import { guarded } from './authz/guardFactory';
 
 type BetterAuthUser = BetterAuthAdapterUserDoc;
 
 // Helper function to fetch all Better Auth users with proper pagination
-async function fetchAllBetterAuthUsers(ctx: GenericCtx): Promise<BetterAuthUser[]> {
+async function fetchAllBetterAuthUsers(ctx: GenericCtx<DataModel>): Promise<BetterAuthUser[]> {
   const allUsers: BetterAuthUser[] = [];
   let cursor: string | null = null;
 
@@ -53,7 +54,7 @@ async function fetchAllBetterAuthUsers(ctx: GenericCtx): Promise<BetterAuthUser[
 
 // OPTIMIZATION: Helper function to fetch only relevant Better Auth users by IDs
 async function fetchBetterAuthUsersByIds(
-  ctx: GenericCtx,
+  ctx: GenericCtx<DataModel>,
   userIds: string[],
 ): Promise<BetterAuthUser[]> {
   if (userIds.length === 0) return [];

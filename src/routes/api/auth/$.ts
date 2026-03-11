@@ -1,14 +1,14 @@
-import { reactStartHandler } from '@convex-dev/better-auth/react-start';
 import { createFileRoute } from '@tanstack/react-router';
+import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 
 export const Route = createFileRoute('/api/auth/$')({
   server: {
     handlers: {
       GET: ({ request }) => {
-        return reactStartHandler(request);
+        return convexAuthReactStart.handler(request);
       },
       POST: ({ request }) => {
-        return reactStartHandler(request);
+        return convexAuthReactStart.handler(request);
       },
     },
   },

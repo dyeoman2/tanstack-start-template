@@ -1,11 +1,12 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-import { betterAuth } from 'better-auth';
+import { betterAuth, type Auth } from 'better-auth';
 import { v } from 'convex/values';
 import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import { action, query } from './_generated/server';
+import authConfig from './auth.config';
 
 const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
@@ -15,7 +16,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
-) => {
+): Auth => {
   return betterAuth({
     logger: {
       disabled: optionsOnly,
@@ -112,7 +113,15 @@ export const createAuth = (
         },
       },
     },
-    plugins: [convex()],
+    plugins: [
+      convex({
+        authConfig,
+        jwks: process.env.JWKS,
+        options: {
+          basePath: '/api/auth',
+        },
+      }),
+    ],
   });
 };
 

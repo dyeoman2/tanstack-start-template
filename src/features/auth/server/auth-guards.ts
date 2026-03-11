@@ -1,10 +1,9 @@
 import { api } from '@convex/_generated/api';
-import { createAuth } from '@convex/auth';
-import { setupFetchClient } from '@convex-dev/better-auth/react-start';
 import { redirect } from '@tanstack/react-router';
-import { getCookie, getRequest } from '@tanstack/react-start/server';
+import { getRequest } from '@tanstack/react-start/server';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
+import { convexAuthReactStart } from './convex-better-auth-react-start';
 import type { UserRole } from '../types';
 import { USER_ROLES } from '../types';
 
@@ -40,8 +39,7 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
       return null;
     }
 
-    const { fetchQuery } = await setupFetchClient(createAuth, getCookie);
-    const profile = await fetchQuery(api.users.getCurrentUserProfile, {});
+    const profile = await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {});
 
     const sessionUserId = normalizeUserId(profile);
     if (!sessionUserId) {
