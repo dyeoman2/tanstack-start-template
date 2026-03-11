@@ -106,37 +106,30 @@ export const resetPrincipalByEmail = mutation({
     ]);
 
     if (appUser) {
-      const [memberships, invites, logs] = await Promise.all([
-        ctx.db
-          .query('teamUsers')
-          .withIndex('by_user', (q) => q.eq('userId', appUser._id))
-          .collect(),
-        ctx.db
-          .query('teamInvites')
-          .withIndex('by_email', (q) => q.eq('email', args.email.toLowerCase()))
-          .collect(),
-        ctx.db
-          .query('auditLogs')
-          .withIndex('by_userId', (q) => q.eq('userId', userId))
-          .collect(),
+      const logs = await ctx.db
+        .query('auditLogs')
+        .withIndex('by_userId', (q) => q.eq('userId', userId))
+        .collect();
+
+      await Promise.all([
+        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: 'member',
+            where: [{ field: 'userId', operator: 'eq', value: userId }],
+          },
+          paginationOpts: deletePaginationOpts,
+        }),
+        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: 'invitation',
+            where: [{ field: 'email', operator: 'eq', value: args.email.toLowerCase() }],
+          },
+          paginationOpts: deletePaginationOpts,
+        }),
       ]);
 
-      for (const membership of memberships) {
-        await ctx.db.delete(membership._id);
-      }
-      for (const invite of invites) {
-        await ctx.db.delete(invite._id);
-      }
       for (const log of logs) {
         await ctx.db.delete(log._id);
-      }
-
-      const teams = await ctx.db
-        .query('teams')
-        .withIndex('by_created_by_id', (q) => q.eq('createdById', appUser._id))
-        .collect();
-      for (const team of teams) {
-        await ctx.db.delete(team._id);
       }
 
       await ctx.db.delete(appUser._id);

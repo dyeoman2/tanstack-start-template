@@ -42,6 +42,7 @@ export const tables = {
     userAgent: v.optional(v.union(v.null(), v.string())),
     userId: v.string(),
     impersonatedBy: v.optional(v.union(v.null(), v.string())),
+    activeOrganizationId: v.optional(v.union(v.null(), v.string())),
   })
     .index('expiresAt', ['expiresAt'])
     .index('expiresAt_userId', ['expiresAt', 'userId'])
@@ -138,6 +139,42 @@ export const tables = {
     privateKey: v.string(),
     createdAt: v.number(),
   }),
+  organization: defineTable({
+    name: v.string(),
+    slug: v.string(),
+    logo: v.optional(v.union(v.null(), v.string())),
+    metadata: v.optional(v.union(v.null(), v.string())),
+    createdAt: v.number(),
+  })
+    .index('slug', ['slug'])
+    .index('name', ['name']),
+  member: defineTable({
+    organizationId: v.string(),
+    userId: v.string(),
+    role: v.string(),
+    createdAt: v.number(),
+  })
+    .index('organizationId', ['organizationId'])
+    .index('userId', ['userId'])
+    .index('organizationId_userId', ['organizationId', 'userId']),
+  invitation: defineTable({
+    organizationId: v.string(),
+    email: v.string(),
+    role: v.string(),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('accepted'),
+      v.literal('rejected'),
+      v.literal('canceled'),
+    ),
+    inviterId: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('organizationId', ['organizationId'])
+    .index('email', ['email'])
+    .index('organizationId_email', ['organizationId', 'email'])
+    .index('inviterId', ['inviterId']),
   rateLimit: defineTable({
     key: v.optional(v.union(v.null(), v.string())),
     count: v.optional(v.union(v.null(), v.number())),

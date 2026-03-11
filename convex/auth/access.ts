@@ -1,7 +1,15 @@
 import { assertUserId } from '../../src/lib/shared/user-id';
-import type { Doc, Id } from '../_generated/dataModel';
+import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { authComponent } from '../auth';
+import {
+  type BetterAuthMember,
+  fetchBetterAuthMembersByOrganizationId,
+  fetchBetterAuthMembersByUserId,
+  fetchBetterAuthOrganizationsByIds,
+  findBetterAuthMember,
+  findBetterAuthOrganizationById,
+} from '../lib/betterAuth';
 import { throwConvexError } from './errors';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -72,11 +80,6 @@ export type CurrentUser = Doc<'users'> & {
   isSiteAdmin: boolean;
 };
 
-const LEGACY_TEAM_NAME_REWRITES = new Map<string, string>([
-  ['personal', 'New Team'],
-  ['my team', 'New Team'],
-]);
-
 function toMillis(value: string | number | Date | undefined): number {
   if (!value) {
     return Date.now();
@@ -105,9 +108,16 @@ export function isAdminRole(role: string | string[] | undefined): boolean {
   return role === 'admin';
 }
 
-export function normalizeTeamName(name: string): string {
-  const normalized = name.trim().toLowerCase();
-  return LEGACY_TEAM_NAME_REWRITES.get(normalized) ?? name;
+function mapOrganizationRoleToAccess(role: string): ACCESS {
+  switch (role) {
+    case 'owner':
+    case 'admin':
+      return ADMIN_ACCESS;
+    case 'member':
+      return EDIT_ACCESS;
+    default:
+      return NO_ACCESS;
+  }
 }
 
 export async function getCurrentAuthUserOrThrow(ctx: AuthzCtx): Promise<BetterAuthUserWithRole> {
@@ -170,27 +180,27 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx | MutationCtx): Promis
   };
 }
 
-export async function getCurrentTeamOrNull(
+export async function getCurrentOrganizationOrNull(
   ctx: QueryCtx | MutationCtx,
   user?: CurrentUser,
-): Promise<Doc<'teams'> | null> {
+) {
   const resolvedUser = user ?? (await getCurrentUserOrNull(ctx));
-  if (!resolvedUser?.lastActiveTeamId) {
+  if (!resolvedUser?.lastActiveOrganizationId) {
     return null;
   }
 
-  return (await ctx.db.get(resolvedUser.lastActiveTeamId)) ?? null;
+  return await findBetterAuthOrganizationById(ctx, resolvedUser.lastActiveOrganizationId);
 }
 
-type TeamAccessOptions = {
+type OrganizationAccessOptions = {
   bypassSiteAdmin?: boolean;
 };
 
-export async function checkTeamAccess(
+export async function checkOrganizationAccess(
   ctx: QueryCtx | MutationCtx,
-  teamId: Id<'teams'>,
+  organizationId: string,
   userCtx?: { user: CurrentUser },
-  options: TeamAccessOptions = {},
+  options: OrganizationAccessOptions = {},
 ): Promise<ACCESS> {
   const user = userCtx?.user ?? (await getCurrentUserOrThrow(ctx));
   const bypassSiteAdmin = options.bypassSiteAdmin ?? true;
@@ -199,53 +209,40 @@ export async function checkTeamAccess(
     return SITE_ADMIN_ACCESS;
   }
 
-  const membership = await ctx.db
-    .query('teamUsers')
-    .withIndex('by_user_team', (q) => q.eq('userId', user._id).eq('teamId', teamId))
-    .first();
-
+  const membership = await findBetterAuthMember(ctx, organizationId, user.authUserId);
   if (!membership) {
     return NO_ACCESS;
   }
 
-  switch (membership.role) {
-    case 'admin':
-      return ADMIN_ACCESS;
-    case 'edit':
-      return EDIT_ACCESS;
-    case 'view':
-      return VIEW_ACCESS;
-    default:
-      return NO_ACCESS;
-  }
+  return mapOrganizationRoleToAccess(membership.role);
 }
 
 export async function checkAiResponseAccess(
   ctx: QueryCtx | MutationCtx,
-  responseId: Id<'aiResponses'>,
+  responseId: Doc<'aiResponses'>['_id'],
   userCtx?: { user: CurrentUser },
 ): Promise<ACCESS> {
   const response = await ctx.db.get(responseId);
-  if (!response?.teamId) {
+  if (!response?.organizationId) {
     return NO_ACCESS;
   }
 
-  return await checkTeamAccess(ctx, response.teamId, userCtx, {
+  return await checkOrganizationAccess(ctx, response.organizationId, userCtx, {
     bypassSiteAdmin: false,
   });
 }
 
 export async function checkAiUsageAccess(
   ctx: QueryCtx | MutationCtx,
-  usageId: Id<'aiMessageUsage'>,
+  usageId: Doc<'aiMessageUsage'>['_id'],
   userCtx?: { user: CurrentUser },
 ): Promise<ACCESS> {
   const usage = await ctx.db.get(usageId);
-  if (!usage?.teamId) {
+  if (!usage?.organizationId) {
     return NO_ACCESS;
   }
 
-  return await checkTeamAccess(ctx, usage.teamId, userCtx, {
+  return await checkOrganizationAccess(ctx, usage.organizationId, userCtx, {
     bypassSiteAdmin: false,
   });
 }
@@ -260,46 +257,56 @@ export type CurrentUserProfile = {
   emailVerified: boolean;
   createdAt: number;
   updatedAt: number;
-  currentTeam: {
-    id: Id<'teams'>;
+  currentOrganization: {
+    id: string;
     name: string;
-    role: Doc<'teamUsers'>['role'];
+    role: string;
   } | null;
-  teams: Array<{
-    id: Id<'teams'>;
+  organizations: Array<{
+    id: string;
     name: string;
-    role: Doc<'teamUsers'>['role'];
+    role: string;
   }>;
 };
+
+async function resolveOrganizationsForUser(
+  ctx: QueryCtx | MutationCtx,
+  authUserId: string,
+): Promise<Array<{ id: string; name: string; role: string }>> {
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  const organizations = await fetchBetterAuthOrganizationsByIds(
+    ctx,
+    memberships
+      .map((membership) => membership.organizationId)
+      .filter((organizationId, index, values) => values.indexOf(organizationId) === index),
+  );
+  const organizationsById = new Map(organizations.map((organization) => [organization._id ?? '', organization]));
+
+  return memberships
+    .map((membership) => {
+      const organization = organizationsById.get(membership.organizationId);
+      if (!organization) {
+        return null;
+      }
+
+      return {
+        id: organization._id ?? membership.organizationId,
+        name: organization.name,
+        role: membership.role,
+      };
+    })
+    .filter((organization): organization is NonNullable<typeof organization> => organization !== null)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
 
 export async function buildCurrentUserProfile(
   ctx: QueryCtx | MutationCtx,
   user: CurrentUser,
 ): Promise<CurrentUserProfile> {
-  const memberships = await ctx.db
-    .query('teamUsers')
-    .withIndex('by_user', (q) => q.eq('userId', user._id))
-    .collect();
-
-  const teams = await Promise.all(
-    memberships.map(async (membership) => {
-      const team = await ctx.db.get(membership.teamId);
-      if (!team) {
-        return null;
-      }
-
-      return {
-        id: team._id,
-        name: normalizeTeamName(team.name),
-        role: membership.role,
-      };
-    }),
-  );
-
-  const teamList = teams.filter((team): team is NonNullable<typeof team> => team !== null);
-  const currentTeam =
-    teamList.find((team) => team.id === user.lastActiveTeamId) ??
-    teamList[0] ??
+  const organizations = await resolveOrganizationsForUser(ctx, user.authUserId);
+  const currentOrganization =
+    organizations.find((organization) => organization.id === user.lastActiveOrganizationId) ??
+    organizations[0] ??
     null;
 
   return {
@@ -312,7 +319,14 @@ export async function buildCurrentUserProfile(
     emailVerified: user.authUser.emailVerified ?? false,
     createdAt: toMillis(user.authUser.createdAt),
     updatedAt: toMillis(user.authUser.updatedAt),
-    currentTeam,
-    teams: teamList.sort((left, right) => left.name.localeCompare(right.name)),
+    currentOrganization,
+    organizations,
   };
+}
+
+export async function listOrganizationMembers(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+): Promise<BetterAuthMember[]> {
+  return await fetchBetterAuthMembersByOrganizationId(ctx, organizationId);
 }

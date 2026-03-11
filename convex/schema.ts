@@ -8,56 +8,12 @@ export default defineSchema({
 
   users: defineTable({
     authUserId: v.string(),
-    lastActiveTeamId: v.optional(v.id('teams')),
+    lastActiveOrganizationId: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
     .index('by_auth_user_id', ['authUserId'])
-    .index('by_last_active_team_id', ['lastActiveTeamId']),
-
-  teams: defineTable({
-    name: v.string(),
-    createdById: v.id('users'),
-    updatedById: v.id('users'),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index('by_created_by_id', ['createdById']),
-
-  teamUsers: defineTable({
-    userId: v.id('users'),
-    teamId: v.id('teams'),
-    role: v.union(v.literal('admin'), v.literal('edit'), v.literal('view')),
-    createdById: v.id('users'),
-    updatedById: v.id('users'),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index('by_user', ['userId'])
-    .index('by_team', ['teamId'])
-    .index('by_user_team', ['userId', 'teamId']),
-
-  teamInvites: defineTable({
-    teamId: v.id('teams'),
-    email: v.string(),
-    role: v.union(v.literal('admin'), v.literal('edit'), v.literal('view')),
-    token: v.string(),
-    status: v.union(
-      v.literal('pending'),
-      v.literal('accepted'),
-      v.literal('revoked'),
-      v.literal('expired'),
-    ),
-    invitedById: v.id('users'),
-    acceptedById: v.optional(v.id('users')),
-    expiresAt: v.number(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index('by_token', ['token'])
-    .index('by_team', ['teamId'])
-    .index('by_email', ['email'])
-    .index('by_team_email', ['teamId', 'email']),
+    .index('by_last_active_organization_id', ['lastActiveOrganizationId']),
 
   auditLogs: defineTable({
     id: v.string(),
@@ -92,7 +48,7 @@ export default defineSchema({
 
   aiMessageUsage: defineTable({
     userId: v.string(),
-    teamId: v.optional(v.id('teams')),
+    organizationId: v.string(),
     messagesUsed: v.number(),
     pendingMessages: v.number(),
     createdAt: v.number(),
@@ -101,11 +57,11 @@ export default defineSchema({
     lastCompletedAt: v.optional(v.number()),
   })
     .index('by_userId', ['userId'])
-    .index('by_teamId', ['teamId']),
+    .index('by_organizationId', ['organizationId']),
 
   aiResponses: defineTable({
     userId: v.string(),
-    teamId: v.optional(v.id('teams')),
+    organizationId: v.string(),
     requestKey: v.string(),
     method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
     provider: v.optional(v.string()),
@@ -136,6 +92,6 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_userId_createdAt', ['userId', 'createdAt'])
-    .index('by_teamId_createdAt', ['teamId', 'createdAt'])
+    .index('by_organizationId_createdAt', ['organizationId', 'createdAt'])
     .index('by_requestKey', ['requestKey']),
 });

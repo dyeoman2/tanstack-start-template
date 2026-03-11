@@ -14,10 +14,17 @@ import {
   getCurrentAuthUserOrNull,
   getCurrentUserOrNull,
   isAdminRole,
-  normalizeTeamName,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
+import {
+  type BetterAuthOrganization,
+  createBetterAuthMember,
+  createBetterAuthOrganization,
+  fetchAllBetterAuthUsers,
+  fetchBetterAuthMembersByUserId,
+  fetchBetterAuthOrganizationsByIds,
+} from './lib/betterAuth';
 
 type EnsureUserContextArgs = {
   authUserId: string;
@@ -27,20 +34,35 @@ type EnsureUserContextArgs = {
 
 type EnsureUserContextResult = {
   userId: Id<'users'>;
-  teamId: Id<'teams'>;
+  organizationId: string;
 };
 
-async function findFirstTeamForUser(ctx: MutationCtx, userId: Id<'users'>) {
-  const memberships = await ctx.db
-    .query('teamUsers')
-    .withIndex('by_user', (q) => q.eq('userId', userId))
-    .collect();
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+async function findFirstOrganizationForUser(ctx: MutationCtx, authUserId: string) {
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  if (memberships.length === 0) {
+    return null;
+  }
+
+  const organizations = await fetchBetterAuthOrganizationsByIds(
+    ctx,
+    memberships.map((membership) => membership.organizationId),
+  );
+  const organizationsById = new Map(organizations.map((organization) => [organization._id ?? '', organization]));
 
   for (const membership of memberships) {
-    const team = await ctx.db.get(membership.teamId);
-    if (team) {
+    const organization = organizationsById.get(membership.organizationId);
+    if (organization) {
       return {
-        team,
+        organization,
         membership,
       };
     }
@@ -49,10 +71,69 @@ async function findFirstTeamForUser(ctx: MutationCtx, userId: Id<'users'>) {
   return null;
 }
 
-async function patchAiOwnershipToTeam(
+async function resolveActiveOrganizationForUser(
   ctx: MutationCtx,
   authUserId: string,
-  teamId: Id<'teams'>,
+  preferredOrganizationId?: string,
+) {
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  if (memberships.length === 0) {
+    const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
+    const organizationId = organization._id ?? organization.id;
+    if (!organizationId) {
+      throw new Error('Failed to initialize default organization');
+    }
+
+    return {
+      organization,
+      organizationId,
+    };
+  }
+
+  const organizations = await fetchBetterAuthOrganizationsByIds(
+    ctx,
+    memberships.map((membership) => membership.organizationId),
+  );
+  const organizationsById = new Map(
+    organizations.map((organization) => [organization._id ?? organization.id, organization]),
+  );
+
+  if (preferredOrganizationId) {
+    const preferredOrganization = organizationsById.get(preferredOrganizationId);
+    if (preferredOrganization) {
+      return {
+        organization: preferredOrganization,
+        organizationId: preferredOrganization._id ?? preferredOrganizationId,
+      };
+    }
+  }
+
+  for (const membership of memberships) {
+    const organization = organizationsById.get(membership.organizationId);
+    if (organization) {
+      return {
+        organization,
+        organizationId: organization._id ?? membership.organizationId,
+      };
+    }
+  }
+
+  const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
+  const organizationId = organization._id ?? organization.id;
+  if (!organizationId) {
+    throw new Error('Failed to initialize default organization');
+  }
+
+  return {
+    organization,
+    organizationId,
+  };
+}
+
+async function patchAiOwnershipToOrganization(
+  ctx: MutationCtx,
+  authUserId: string,
+  organizationId: string,
 ) {
   const [usageDocs, responseDocs] = await Promise.all([
     ctx.db
@@ -67,12 +148,34 @@ async function patchAiOwnershipToTeam(
 
   await Promise.all([
     ...usageDocs
-      .filter((doc) => doc.teamId !== teamId)
-      .map((doc) => ctx.db.patch(doc._id, { teamId, updatedAt: Date.now() })),
+      .filter((doc) => doc.organizationId !== organizationId)
+      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
     ...responseDocs
-      .filter((doc) => doc.teamId !== teamId)
-      .map((doc) => ctx.db.patch(doc._id, { teamId, updatedAt: Date.now() })),
+      .filter((doc) => doc.organizationId !== organizationId)
+      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
   ]);
+}
+
+async function createDefaultOrganization(
+  ctx: MutationCtx,
+  authUserId: string,
+  now: number,
+): Promise<BetterAuthOrganization> {
+  const slug = `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`;
+  const organization = await createBetterAuthOrganization(ctx, {
+    name: 'New Organization',
+    slug,
+    createdAt: now,
+  });
+
+  await createBetterAuthMember(ctx, {
+    organizationId: organization._id ?? organization.id,
+    userId: authUserId,
+    role: 'owner',
+    createdAt: now,
+  });
+
+  return organization;
 }
 
 async function ensureUserContextRecord(
@@ -85,78 +188,40 @@ async function ensureUserContextRecord(
     .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
     .first();
 
+  const resolvedOrganization = await resolveActiveOrganizationForUser(
+    ctx,
+    args.authUserId,
+    user?.lastActiveOrganizationId,
+  );
+  const organizationId = resolvedOrganization.organizationId;
+
   if (!user) {
     const userId = await ctx.db.insert('users', {
       authUserId: args.authUserId,
+      lastActiveOrganizationId: organizationId,
       createdAt: args.createdAt,
       updatedAt: args.updatedAt,
     });
     user = await ctx.db.get(userId);
+  } else if (user.lastActiveOrganizationId !== organizationId) {
+    await ctx.db.patch(user._id, {
+      lastActiveOrganizationId: organizationId,
+      updatedAt: now,
+    });
   }
 
   if (!user) {
     throw new Error('Failed to initialize user context');
   }
 
-  const existingTeam = await findFirstTeamForUser(ctx, user._id);
-  if (existingTeam) {
-    const normalizedTeamName = normalizeTeamName(existingTeam.team.name);
-    if (normalizedTeamName !== existingTeam.team.name) {
-      await ctx.db.patch(existingTeam.team._id, {
-        name: normalizedTeamName,
-        updatedAt: now,
-      });
-    }
-
-    if (user.lastActiveTeamId !== existingTeam.team._id) {
-      await ctx.db.patch(user._id, {
-        lastActiveTeamId: user.lastActiveTeamId ?? existingTeam.team._id,
-        updatedAt: now,
-      });
-    }
-
-    await patchAiOwnershipToTeam(ctx, args.authUserId, existingTeam.team._id);
-
-    return {
-      userId: user._id,
-      teamId: existingTeam.team._id,
-    };
-  }
-
-  const teamId = await ctx.db.insert('teams', {
-    name: 'New Team',
-    createdById: user._id,
-    updatedById: user._id,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await ctx.db.insert('teamUsers', {
-    userId: user._id,
-    teamId,
-    role: 'admin',
-    createdById: user._id,
-    updatedById: user._id,
-    createdAt: now,
-    updatedAt: now,
-  });
-
-  await ctx.db.patch(user._id, {
-    lastActiveTeamId: teamId,
-    updatedAt: now,
-  });
-
-  await patchAiOwnershipToTeam(ctx, args.authUserId, teamId);
+  await patchAiOwnershipToOrganization(ctx, args.authUserId, organizationId);
 
   return {
     userId: user._id,
-    teamId,
+    organizationId,
   };
 }
 
-/**
- * Check if there are any users in the system (for determining first admin)
- */
 export const getUserCount = query({
   args: {},
   handler: async (ctx) => {
@@ -210,14 +275,13 @@ export const bootstrapUserContext = action({
     }
 
     if (args.role) {
-      const update: Record<string, unknown> = {
-        updatedAt: Date.now(),
-        role: args.role,
-      };
       await ctx.runMutation(components.betterAuth.adapter.updateMany, {
         input: {
           model: 'user',
-          update,
+          update: {
+            updatedAt: Date.now(),
+            role: args.role,
+          },
           where: [
             {
               field: '_id',
@@ -259,9 +323,33 @@ export const ensureCurrentUserContext = mutation({
   },
 });
 
-/**
- * Update current user's Better Auth profile data.
- */
+export const setActiveOrganization = mutation({
+  args: {
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+    }
+
+    const memberships = await fetchBetterAuthMembersByUserId(ctx, user.authUserId);
+    const hasMembership = memberships.some(
+      (membership) => membership.organizationId === args.organizationId,
+    );
+    if (!hasMembership && !user.isSiteAdmin) {
+      throwConvexError('FORBIDDEN', 'Not authorized to access this organization');
+    }
+
+    await ctx.db.patch(user._id, {
+      lastActiveOrganizationId: args.organizationId,
+      updatedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 export const updateCurrentUserProfile = mutation({
   args: {
     name: v.optional(v.string()),
@@ -274,7 +362,6 @@ export const updateCurrentUserProfile = mutation({
     }
 
     const userId = assertUserId(authUser, 'User ID not found in auth user');
-
     const updateData: {
       name?: string;
       phoneNumber?: string | null;
@@ -314,9 +401,6 @@ export const updateCurrentUserProfile = mutation({
   },
 });
 
-/**
- * Get current user profile with active team summary.
- */
 export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx): Promise<CurrentUserProfile | null> => {
@@ -328,23 +412,22 @@ export const getCurrentUserProfile = query({
     const user = await getCurrentUserOrNull(ctx);
     if (!user) {
       const authUserId = assertUserId(authUser, 'User ID not found in auth user');
-      const authUserTyped = authUser as unknown as BetterAuthAdapterUserDoc & {
-        role?: string | string[];
-      };
-      const isSiteAdmin = isAdminRole(authUserTyped.role);
+      const isSiteAdmin = isAdminRole(
+        (authUser as BetterAuthAdapterUserDoc & { role?: string | string[] }).role,
+      );
 
       return {
         id: authUserId,
-        email: authUserTyped.email ?? '',
-        name: authUserTyped.name ?? null,
-        phoneNumber: authUserTyped.phoneNumber ?? null,
+        email: authUser.email ?? '',
+        name: authUser.name ?? null,
+        phoneNumber: authUser.phoneNumber ?? null,
         role: isSiteAdmin ? 'admin' : 'user',
         isSiteAdmin,
-        emailVerified: authUserTyped.emailVerified ?? false,
+        emailVerified: authUser.emailVerified ?? false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
-        currentTeam: null,
-        teams: [],
+        currentOrganization: null,
+        organizations: [],
       };
     }
 

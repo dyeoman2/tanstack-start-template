@@ -126,8 +126,8 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
 export function AppNavigation() {
   const location = useLocation();
   const { isAuthenticated, user } = useAuth();
-  const teamList = useQuery(api.teams.listMyTeams, isAuthenticated ? {} : 'skip');
-  const setActiveTeam = useMutation(api.teams.setActiveTeam);
+  const organizationList = useQuery(api.orgs.listMyOrganizations, isAuthenticated ? {} : 'skip');
+  const setActiveOrganization = useMutation(api.orgs.setActiveOrganization);
 
   return (
     <nav className="bg-card shadow-sm border-b">
@@ -186,7 +186,7 @@ export function AppNavigation() {
                   preload="intent"
                   className={cn(navigationMenuTriggerStyle(), 'no-underline')}
                 >
-                  Teams
+                  Organizations
                 </Link>
               </div>
             )}
@@ -204,19 +204,21 @@ export function AppNavigation() {
               <ThemeToggle />
             </div>
 
-            {isAuthenticated && teamList && teamList.teams.length > 0 && (
+            {isAuthenticated && organizationList && organizationList.organizations.length > 0 && (
               <div className="hidden md:block mr-3 min-w-[180px]">
                 <Select
-                  value={teamList.currentTeamId ?? undefined}
-                  onValueChange={(value) => void setActiveTeam({ teamId: value as typeof teamList.teams[number]['id'] })}
+                  value={organizationList.currentOrganizationId ?? undefined}
+                  onValueChange={(value) =>
+                    void setActiveOrganization({ organizationId: value })
+                  }
                 >
                   <SelectTrigger>
-                    <SelectValue placeholder={user?.currentTeam?.name ?? 'Select team'} />
+                    <SelectValue placeholder={user?.currentOrganization?.name ?? 'Select organization'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {teamList.teams.map((team) => (
-                      <SelectItem key={team.id} value={team.id}>
-                        {team.name}
+                    {organizationList.organizations.map((organization) => (
+                      <SelectItem key={organization.id} value={organization.id}>
+                        {organization.name}
                       </SelectItem>
                     ))}
                   </SelectContent>

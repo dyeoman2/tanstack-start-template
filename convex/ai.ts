@@ -1,7 +1,6 @@
 import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { api, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
 import {
   type ActionCtx,
   action,
@@ -20,7 +19,7 @@ type ReservationMode = 'free' | 'paid';
 
 interface AiUsageRecord {
   userId: string;
-  teamId?: Id<'teams'> | null;
+  organizationId?: string | null;
   messagesUsed: number;
   pendingMessages: number;
   lastReservedAt?: number | null;
@@ -154,15 +153,15 @@ function createUsageSnapshot(
 }
 
 const usageRecordArgs = {
-  teamId: v.id('teams'),
+  organizationId: v.string(),
 } as const;
 
 export const getUsageRecord = internalQuery({
   args: usageRecordArgs,
-  handler: async (ctx, { teamId }) => {
+  handler: async (ctx, { organizationId }) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_teamId', (q) => q.eq('teamId', teamId))
+      .withIndex('by_organizationId', (q) => q.eq('organizationId', organizationId))
       .first();
 
     if (!usageDoc) {
@@ -190,13 +189,15 @@ export const getCurrentUserUsage = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
-    if (!user?.lastActiveTeamId) {
+    if (!user?.lastActiveOrganizationId) {
       return null;
     }
 
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_teamId', (q) => q.eq('teamId', user.lastActiveTeamId))
+      .withIndex('by_organizationId', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
       .first();
 
     if (!usageDoc) {
@@ -222,7 +223,7 @@ export const getCurrentUserUsage = query({
 export const reserveUsage = internalMutation({
   args: {
     userId: v.string(),
-    teamId: v.id('teams'),
+    organizationId: v.string(),
     freeLimit: v.number(),
     mode: v.union(v.literal('free'), v.literal('paid')),
     timestamp: v.number(),
@@ -230,7 +231,7 @@ export const reserveUsage = internalMutation({
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
+      .withIndex('by_organizationId', (q) => q.eq('organizationId', args.organizationId))
       .first();
 
     if (!usageDoc) {
@@ -244,7 +245,7 @@ export const reserveUsage = internalMutation({
 
       await ctx.db.insert('aiMessageUsage', {
         userId: args.userId,
-        teamId: args.teamId,
+        organizationId: args.organizationId,
         messagesUsed: 0,
         pendingMessages: 1,
         createdAt: args.timestamp,
@@ -291,7 +292,7 @@ export const reserveUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      teamId: usageDoc.teamId ?? null,
+      organizationId: usageDoc.organizationId ?? null,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: args.timestamp,
@@ -307,14 +308,14 @@ export const reserveUsage = internalMutation({
 
 export const completeUsage = internalMutation({
   args: {
-    teamId: v.id('teams'),
+    organizationId: v.string(),
     freeLimit: v.number(),
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
+      .withIndex('by_organizationId', (q) => q.eq('organizationId', args.organizationId))
       .first();
 
     if (!usageDoc || usageDoc.pendingMessages <= 0) {
@@ -337,7 +338,7 @@ export const completeUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      teamId: usageDoc.teamId ?? null,
+      organizationId: usageDoc.organizationId ?? null,
       messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,
@@ -353,14 +354,14 @@ export const completeUsage = internalMutation({
 
 export const releaseUsage = internalMutation({
   args: {
-    teamId: v.id('teams'),
+    organizationId: v.string(),
     freeLimit: v.number(),
     timestamp: v.number(),
   },
   handler: async (ctx, args) => {
     const usageDoc = await ctx.db
       .query('aiMessageUsage')
-      .withIndex('by_teamId', (q) => q.eq('teamId', args.teamId))
+      .withIndex('by_organizationId', (q) => q.eq('organizationId', args.organizationId))
       .first();
 
     if (!usageDoc || usageDoc.pendingMessages <= 0) {
@@ -380,7 +381,7 @@ export const releaseUsage = internalMutation({
 
     const updatedDoc: AiUsageRecord = {
       userId: usageDoc.userId,
-      teamId: usageDoc.teamId ?? null,
+      organizationId: usageDoc.organizationId ?? null,
       messagesUsed: usageDoc.messagesUsed,
       pendingMessages,
       lastReservedAt: usageDoc.lastReservedAt,
@@ -402,16 +403,16 @@ async function ensureAuthenticatedUser(ctx: ActionCtx) {
 
   const userId = assertUserId(authUser, 'Unable to resolve user id.');
   const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
-  const currentTeam = profile?.currentTeam ?? null;
+  const currentOrganization = profile?.currentOrganization ?? null;
 
-  if (!currentTeam) {
-    throw new Error('Active team not initialized for this user.');
+  if (!currentOrganization) {
+    throw new Error('Active organization not initialized for this user.');
   }
 
   return {
     authUser,
     userId,
-    teamId: currentTeam.id,
+    organizationId: currentOrganization.id,
   };
 }
 
@@ -425,7 +426,7 @@ export const reserveAiMessage = action({
     ),
   },
   handler: async (ctx: ActionCtx): Promise<ReserveAiMessageResult> => {
-    const { userId, teamId } = await ensureAuthenticatedUser(ctx);
+    const { userId, organizationId } = await ensureAuthenticatedUser(ctx);
     const freeLimit = FREE_MESSAGE_LIMIT;
     const timestamp = Date.now();
 
@@ -433,7 +434,7 @@ export const reserveAiMessage = action({
 
     let reserveResult = (await ctx.runMutation(internal.ai.reserveUsage, {
       userId,
-      teamId,
+      organizationId,
       freeLimit,
       mode: reservationMode,
       timestamp,
@@ -483,7 +484,7 @@ export const reserveAiMessage = action({
 
       reserveResult = (await ctx.runMutation(internal.ai.reserveUsage, {
         userId,
-        teamId,
+        organizationId,
         freeLimit,
         mode: reservationMode,
         timestamp,
@@ -527,11 +528,11 @@ export const completeAiMessage = action({
     ),
   },
   handler: async (ctx: ActionCtx, args): Promise<CompleteAiMessageResult> => {
-    const { teamId } = await ensureAuthenticatedUser(ctx);
+    const { organizationId } = await ensureAuthenticatedUser(ctx);
     const timestamp = Date.now();
 
     const completeResult = (await ctx.runMutation(internal.ai.completeUsage, {
-      teamId,
+      organizationId,
       freeLimit: FREE_MESSAGE_LIMIT,
       timestamp,
     })) as ReservationMutationResult;
@@ -586,11 +587,11 @@ export const completeAiMessage = action({
 export const releaseAiMessage = action({
   args: {},
   handler: async (ctx: ActionCtx): Promise<ReleaseAiMessageResult> => {
-    const { teamId } = await ensureAuthenticatedUser(ctx);
+    const { organizationId } = await ensureAuthenticatedUser(ctx);
     const timestamp = Date.now();
 
     const releaseResult = (await ctx.runMutation(internal.ai.releaseUsage, {
-      teamId,
+      organizationId,
       freeLimit: FREE_MESSAGE_LIMIT,
       timestamp,
     })) as ReservationMutationResult;
@@ -627,14 +628,14 @@ export const getAiUsageStatus = action({
     }
 
     const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
-    if (!profile?.currentTeam) {
+    if (!profile?.currentOrganization) {
       return {
         authenticated: false as const,
       };
     }
 
     const usageDoc = await ctx.runQuery(internal.ai.getUsageRecord, {
-      teamId: profile.currentTeam.id,
+      organizationId: profile.currentOrganization.id,
     });
 
     const messagesUsed = usageDoc?.messagesUsed ?? 0;

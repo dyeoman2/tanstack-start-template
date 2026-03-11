@@ -31,7 +31,7 @@ const buildPatch = (
 export const createResponse = internalMutation({
   args: {
     userId: v.string(),
-    teamId: v.id('teams'),
+    organizationId: v.string(),
     requestKey: v.string(),
     method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
     provider: v.optional(v.string()),
@@ -42,7 +42,7 @@ export const createResponse = internalMutation({
 
     const responseId = await ctx.db.insert('aiResponses', {
       userId: args.userId,
-      teamId: args.teamId,
+      organizationId: args.organizationId,
       requestKey: args.requestKey,
       method: args.method,
       response: '',
@@ -173,13 +173,15 @@ export const listUserResponses = query({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrNull(ctx);
-    if (!user?.lastActiveTeamId) {
+    if (!user?.lastActiveOrganizationId) {
       return [];
     }
 
     return ctx.db
       .query('aiResponses')
-      .withIndex('by_teamId_createdAt', (q) => q.eq('teamId', user.lastActiveTeamId))
+      .withIndex('by_organizationId_createdAt', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
       .order('desc')
       .take(20);
   },
@@ -189,13 +191,15 @@ export const deleteAllUserResponses = mutation({
   args: {},
   handler: async (ctx) => {
     const user = await getCurrentUserOrThrow(ctx);
-    if (!user.lastActiveTeamId) {
-      throw new Error('No active team selected');
+    if (!user.lastActiveOrganizationId) {
+      throw new Error('No active organization selected');
     }
 
     const responses = await ctx.db
       .query('aiResponses')
-      .withIndex('by_teamId_createdAt', (q) => q.eq('teamId', user.lastActiveTeamId))
+      .withIndex('by_organizationId_createdAt', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
       .collect();
 
     await Promise.all(responses.map((response) => ctx.db.delete(response._id)));

@@ -197,6 +197,60 @@ This invite expires in 7 days.
   },
 });
 
+export const sendOrganizationInviteEmailMutation = internalMutation({
+  args: {
+    email: v.string(),
+    inviteUrl: v.string(),
+    inviterName: v.string(),
+    organizationName: v.string(),
+    role: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const appName = process.env.APP_NAME || 'Hackathon';
+    const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
+    const htmlContent = `
+    <div style="background: #f8fafc; padding: 30px; border-radius: 8px; margin-bottom: 20px;">
+      <h2 style="color: #1f2937; margin: 0 0 15px 0; font-size: 20px;">Join ${args.organizationName}</h2>
+      <p style="margin: 0 0 15px 0; color: #4b5563;">
+        ${args.inviterName} invited you to join <strong>${args.organizationName}</strong> on ${appName} as
+        a <strong>${args.role}</strong>.
+      </p>
+      <p style="margin: 0 0 25px 0; color: #4b5563;">
+        Accept the invite to join the organization. This invite expires in 7 days.
+      </p>
+      <div style="text-align: center; margin: 30px 0;">
+        <a href="${args.inviteUrl}"
+           style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
+          Accept Invite
+        </a>
+      </div>
+      <p style="margin: 25px 0 15px 0; color: #6b7280; font-size: 14px;">
+        If the button doesn't work, copy and paste this link into your browser:
+      </p>
+      <p style="margin: 0; color: #2563eb; word-break: break-all; font-size: 14px;">
+        ${args.inviteUrl}
+      </p>
+    </div>
+  `;
+
+    const textContent = `
+${args.inviterName} invited you to join ${args.organizationName} on ${appName} as a ${args.role}.
+
+Accept the invite here: ${args.inviteUrl}
+
+This invite expires in 7 days.
+    `;
+
+    await resend.sendEmail(ctx, {
+      from: `${appName} <${emailSender}>`,
+      to: args.email,
+      subject: `${args.inviterName} invited you to join ${args.organizationName}`,
+      html: createBaseHtmlTemplate(htmlContent, `Join ${args.organizationName}`, appName),
+      text: createBaseTextTemplate(textContent, appName),
+    });
+  },
+});
+
 /**
  * Action wrapper that schedules the email mutation
  * Can be called from Better Auth callbacks or external code

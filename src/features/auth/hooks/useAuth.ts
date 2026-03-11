@@ -19,10 +19,10 @@ export interface AuthResult {
     phoneNumber?: string | null;
     role: UserRole;
     isSiteAdmin: boolean;
-    currentTeam?: {
+    currentOrganization?: {
       id: string;
       name: string;
-      role: 'admin' | 'edit' | 'view';
+      role: string;
     } | null;
   } | null;
   isAuthenticated: boolean;
@@ -69,7 +69,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
             role,
             isSiteAdmin,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
-            currentTeam: shouldFetchProfile ? profile?.currentTeam ?? null : null,
+            currentOrganization: shouldFetchProfile ? profile?.currentOrganization ?? null : null,
           }
         : null,
       isAuthenticated: authState.isAuthenticated,
@@ -82,7 +82,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       session?.user,
       role,
       isSiteAdmin,
-      profile?.currentTeam,
+      profile?.currentOrganization,
       profile?.phoneNumber,
       authState.isAuthenticated,
       isPending,

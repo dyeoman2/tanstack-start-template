@@ -1,7 +1,7 @@
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
-import { admin } from 'better-auth/plugins';
+import { admin, organization } from 'better-auth/plugins';
 import authConfig from '../auth.config';
 
 export const options = {
@@ -27,6 +27,12 @@ export const options = {
     admin({
       defaultRole: 'user',
       adminRoles: ['admin'],
+    }),
+    organization({
+      allowUserToCreateOrganization: true,
+      invitationExpiresIn: 7 * 24 * 60 * 60,
+      cancelPendingInvitationsOnReInvite: true,
+      sendInvitationEmail: async () => {},
     }),
     convex({
       authConfig,

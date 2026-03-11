@@ -12,6 +12,8 @@ type CtxWithRunMutation = GenericCtx<DataModel> & {
   runMutation: MutationCtx['runMutation'] | ActionCtx['runMutation'];
 };
 
+type BetterAuthModel = 'user' | 'organization' | 'member' | 'invitation';
+
 export type BetterAuthUser = BetterAuthAdapterUserDoc & {
   role?: string | string[];
   banned?: boolean;
@@ -19,15 +21,54 @@ export type BetterAuthUser = BetterAuthAdapterUserDoc & {
   banExpires?: Date | string | number | null;
 };
 
-export async function fetchAllBetterAuthUsers(
+type BetterAuthRecord = {
+  _id: string;
+  _creationTime: number;
+  id?: string;
+  createdAt?: Date | string | number;
+  updatedAt?: Date | string | number;
+  [key: string]: unknown;
+};
+
+export type BetterAuthOrganization = BetterAuthRecord & {
+  name: string;
+  slug: string;
+  logo?: string | null;
+  metadata?: string | null;
+};
+
+export type BetterAuthMember = BetterAuthRecord & {
+  organizationId: string;
+  userId: string;
+  role: string;
+};
+
+export type BetterAuthInvitation = BetterAuthRecord & {
+  organizationId: string;
+  email: string;
+  role: string;
+  status: string;
+  inviterId: string;
+  expiresAt?: Date | string | number;
+};
+
+async function fetchAllRecords<T extends BetterAuthRecord>(
   ctx: GenericCtx<DataModel>,
-): Promise<BetterAuthUser[]> {
-  const allUsers: BetterAuthUser[] = [];
+  model: BetterAuthModel,
+  where?: Array<{
+    field: string;
+    operator?: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'in' | 'not_in' | 'ne' | 'contains' | 'starts_with' | 'ends_with';
+    value: string | number | boolean | string[] | number[] | null;
+    connector?: 'AND' | 'OR';
+  }>,
+): Promise<T[]> {
+  const records: T[] = [];
   let cursor: string | null = null;
 
   while (true) {
     const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-      model: 'user',
+      model,
+      where,
       paginationOpts: {
         cursor,
         numItems: 1000,
@@ -35,18 +76,23 @@ export async function fetchAllBetterAuthUsers(
       },
     });
 
-    const normalized = normalizeAdapterFindManyResult<BetterAuthUser>(rawResult);
-    const { page, continueCursor, isDone } = normalized;
-    allUsers.push(...page);
+    const normalized = normalizeAdapterFindManyResult<T>(rawResult);
+    records.push(...normalized.page);
 
-    if (isDone || !continueCursor || page.length < 1000) {
+    if (normalized.isDone || !normalized.continueCursor || normalized.page.length < 1000) {
       break;
     }
 
-    cursor = continueCursor;
+    cursor = normalized.continueCursor;
   }
 
-  return allUsers;
+  return records;
+}
+
+export async function fetchAllBetterAuthUsers(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthUser[]> {
+  return await fetchAllRecords<BetterAuthUser>(ctx, 'user');
 }
 
 export async function fetchBetterAuthUsersByIds(
@@ -120,4 +166,149 @@ export async function updateBetterAuthUserRecord(
       id: 0,
     },
   });
+}
+
+export async function createBetterAuthOrganization(
+  ctx: CtxWithRunMutation,
+  data: {
+    name: string;
+    slug: string;
+    createdAt: number;
+    logo?: string | null;
+    metadata?: string | null;
+  },
+): Promise<BetterAuthOrganization> {
+  return (await ctx.runMutation(components.betterAuth.adapter.create, {
+    input: {
+      model: 'organization',
+      data,
+    },
+  })) as BetterAuthOrganization;
+}
+
+export async function createBetterAuthMember(
+  ctx: CtxWithRunMutation,
+  data: {
+    organizationId: string;
+    userId: string;
+    role: string;
+    createdAt: number;
+  },
+): Promise<BetterAuthMember> {
+  return (await ctx.runMutation(components.betterAuth.adapter.create, {
+    input: {
+      model: 'member',
+      data,
+    },
+  })) as BetterAuthMember;
+}
+
+export async function createBetterAuthInvitation(
+  ctx: CtxWithRunMutation,
+  data: {
+    organizationId: string;
+    email: string;
+    role: string;
+    status: 'pending' | 'accepted' | 'rejected' | 'canceled';
+    inviterId: string;
+    expiresAt: number;
+    createdAt: number;
+  },
+): Promise<BetterAuthInvitation> {
+  return (await ctx.runMutation(components.betterAuth.adapter.create, {
+    input: {
+      model: 'invitation',
+      data,
+    },
+  })) as BetterAuthInvitation;
+}
+
+export async function findBetterAuthOrganizationById(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+): Promise<BetterAuthOrganization | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'organization',
+    where: [{ field: '_id', operator: 'eq', value: organizationId }],
+  })) as BetterAuthOrganization | null;
+}
+
+export async function fetchBetterAuthOrganizationsByIds(
+  ctx: GenericCtx<DataModel>,
+  organizationIds: string[],
+): Promise<BetterAuthOrganization[]> {
+  if (organizationIds.length === 0) {
+    return [];
+  }
+
+  return await fetchAllRecords<BetterAuthOrganization>(ctx, 'organization', [
+    {
+      field: '_id',
+      operator: 'in',
+      value: organizationIds,
+    },
+  ]);
+}
+
+export async function findBetterAuthMember(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+  userId: string,
+): Promise<BetterAuthMember | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'member',
+    where: [
+      { field: 'organizationId', operator: 'eq', value: organizationId },
+      { field: 'userId', operator: 'eq', value: userId, connector: 'AND' },
+    ],
+  })) as BetterAuthMember | null;
+}
+
+export async function fetchBetterAuthMembersByOrganizationId(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+): Promise<BetterAuthMember[]> {
+  return await fetchAllRecords<BetterAuthMember>(ctx, 'member', [
+    {
+      field: 'organizationId',
+      operator: 'eq',
+      value: organizationId,
+    },
+  ]);
+}
+
+export async function fetchBetterAuthMembersByUserId(
+  ctx: GenericCtx<DataModel>,
+  userId: string,
+): Promise<BetterAuthMember[]> {
+  return await fetchAllRecords<BetterAuthMember>(ctx, 'member', [
+    {
+      field: 'userId',
+      operator: 'eq',
+      value: userId,
+    },
+  ]);
+}
+
+export async function fetchBetterAuthInvitationsByOrganizationId(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+): Promise<BetterAuthInvitation[]> {
+  return await fetchAllRecords<BetterAuthInvitation>(ctx, 'invitation', [
+    {
+      field: 'organizationId',
+      operator: 'eq',
+      value: organizationId,
+    },
+  ]);
+}
+
+export async function findBetterAuthInvitationById(
+  ctx: GenericCtx<DataModel>,
+  invitationId: string,
+): Promise<BetterAuthInvitation | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'invitation',
+    where: [{ field: '_id', operator: 'eq', value: invitationId }],
+  })) as BetterAuthInvitation | null;
 }

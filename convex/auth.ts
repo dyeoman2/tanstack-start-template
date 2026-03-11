@@ -1,7 +1,7 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth, type Auth } from 'better-auth';
-import { admin } from 'better-auth/plugins';
+import { admin, organization } from 'better-auth/plugins';
 import { v } from 'convex/values';
 import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
 import betterAuthSchema from './betterAuth/schema';
@@ -123,6 +123,35 @@ export const createAuth = (
       admin({
         defaultRole: 'user',
         adminRoles: ['admin'],
+      }),
+      organization({
+        allowUserToCreateOrganization: true,
+        invitationExpiresIn: 7 * 24 * 60 * 60,
+        cancelPendingInvitationsOnReInvite: true,
+        sendInvitationEmail: async (data) => {
+          const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
+            scheduler?: {
+              runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
+            };
+          };
+
+          if (!ctxWithScheduler.scheduler) {
+            throw new Error('Cannot send organization invitation email: scheduler not available');
+          }
+
+          const inviteUrl = `${siteUrl}/invite/${data.id}`;
+          await ctxWithScheduler.scheduler.runAfter(
+            0,
+            internal.emails.sendOrganizationInviteEmailMutation,
+            {
+              email: data.email,
+              inviteUrl,
+              inviterName: data.inviter.user.name ?? data.inviter.user.email,
+              organizationName: data.organization.name,
+              role: data.role,
+            },
+          );
+        },
       }),
       convex({
         authConfig,

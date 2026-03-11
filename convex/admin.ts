@@ -43,9 +43,6 @@ function toTimestamp(value: string | number | Date | undefined) {
   return new Date(value).getTime();
 }
 
-const LEGACY_TEAM_NAMES = new Set(['personal', 'my team']);
-const SHARED_TEAM_DEFAULT_NAME = 'New Team';
-
 export const getAllUsers = query({
   args: {
     page: v.number(),
@@ -297,25 +294,8 @@ export const cleanupLegacyTeams = mutation({
       throw new Error('Unauthorized legacy team cleanup access');
     }
 
-    const teams = await ctx.db.query('teams').collect();
-    const now = Date.now();
-    let renamedCount = 0;
-
-    for (const team of teams) {
-      const normalizedName = team.name.trim().toLowerCase();
-      if (!LEGACY_TEAM_NAMES.has(normalizedName)) {
-        continue;
-      }
-
-      await ctx.db.patch(team._id, {
-        name: SHARED_TEAM_DEFAULT_NAME,
-        updatedAt: now,
-      });
-      renamedCount += 1;
-    }
-
     return {
-      renamedCount,
+      renamedCount: 0,
     };
   },
 });
@@ -392,24 +372,30 @@ export const deleteUser = mutation({
       .first();
 
     if (appUser) {
-      const [memberships, invites] = await Promise.all([
-        ctx.db
-          .query('teamUsers')
-          .withIndex('by_user', (q) => q.eq('userId', appUser._id))
-          .collect(),
-        ctx.db
-          .query('teamInvites')
-          .withIndex('by_email', (q) => q.eq('email', target.email.toLowerCase()))
-          .collect(),
+      await Promise.all([
+        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: 'member',
+            where: [{ field: 'userId', operator: 'eq', value: args.userId }],
+          },
+          paginationOpts: {
+            cursor: null,
+            numItems: 1000,
+            id: 0,
+          },
+        }),
+        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: 'invitation',
+            where: [{ field: 'email', operator: 'eq', value: target.email.toLowerCase() }],
+          },
+          paginationOpts: {
+            cursor: null,
+            numItems: 1000,
+            id: 0,
+          },
+        }),
       ]);
-
-      for (const membership of memberships) {
-        await ctx.db.delete(membership._id);
-      }
-
-      for (const invite of invites) {
-        await ctx.db.delete(invite._id);
-      }
 
       await ctx.db.delete(appUser._id);
     }

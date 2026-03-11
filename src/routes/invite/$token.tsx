@@ -13,14 +13,14 @@ export const Route = createFileRoute('/invite/$token')({
 function InviteAcceptancePage() {
   const { token } = Route.useParams();
   const authState = useAuthState();
-  const invite = useQuery(api.teams.getInvitePreview, { token });
-  const acceptInvite = useMutation(api.teams.acceptInvite);
+  const invite = useQuery(api.orgs.getInvitePreview, { invitationId: token });
+  const acceptInvite = useMutation(api.orgs.acceptInvitation);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   async function handleAccept() {
     try {
-      const result = await acceptInvite({ token });
-      setStatusMessage(`Joined ${result.teamName}.`);
+      const result = await acceptInvite({ invitationId: token });
+      setStatusMessage(`Joined ${result.organizationName}.`);
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Failed to accept invite.');
     }
@@ -29,8 +29,8 @@ function InviteAcceptancePage() {
   return (
     <div className="container mx-auto max-w-2xl p-6 space-y-6">
       <PageHeader
-        title="Team Invite"
-        description="Accept a team invitation."
+        title="Organization Invite"
+        description="Accept an organization invitation."
       />
 
       {!invite && <p className="text-sm text-muted-foreground">Invite not found.</p>}
@@ -38,7 +38,7 @@ function InviteAcceptancePage() {
       {invite && (
         <div className="rounded-lg border p-6 space-y-4">
           <div>
-            <h2 className="text-xl font-semibold">{invite.team.name}</h2>
+            <h2 className="text-xl font-semibold">{invite.organization.name}</h2>
             <p className="text-sm text-muted-foreground">
               {invite.email} invited as {invite.role}
             </p>

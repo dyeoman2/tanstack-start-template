@@ -35,14 +35,14 @@ export function MobileNavigation() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
-  const teamList = useQuery(api.teams.listMyTeams, isAuthenticated ? {} : 'skip');
-  const setActiveTeam = useMutation(api.teams.setActiveTeam);
+  const organizationList = useQuery(api.orgs.listMyOrganizations, isAuthenticated ? {} : 'skip');
+  const setActiveOrganization = useMutation(api.orgs.setActiveOrganization);
 
   const navItems: NavItem[] = isAuthenticated
     ? [
         { to: '/app', label: 'Dashboard', exact: true },
         { to: '/app/ai-playground', label: 'AI Playground', icon: Cloud },
-        { to: '/app/teams', label: 'Teams' },
+        { to: '/app/teams', label: 'Organizations' },
       ]
     : [];
 
@@ -132,20 +132,20 @@ export function MobileNavigation() {
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading...</div>
             ) : session?.user ? (
               <div className="space-y-2">
-                {teamList && teamList.teams.length > 0 && (
+                {organizationList && organizationList.organizations.length > 0 && (
                   <Select
-                    value={teamList.currentTeamId ?? undefined}
+                    value={organizationList.currentOrganizationId ?? undefined}
                     onValueChange={(value) =>
-                      void setActiveTeam({ teamId: value as typeof teamList.teams[number]['id'] })
+                      void setActiveOrganization({ organizationId: value })
                     }
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Switch team" />
+                      <SelectValue placeholder="Switch organization" />
                     </SelectTrigger>
                     <SelectContent>
-                      {teamList.teams.map((team) => (
-                        <SelectItem key={team.id} value={team.id}>
-                          {team.name}
+                      {organizationList.organizations.map((organization) => (
+                        <SelectItem key={organization.id} value={organization.id}>
+                          {organization.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
