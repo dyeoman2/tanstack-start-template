@@ -291,6 +291,16 @@ export async function findBetterAuthOrganizationById(
   })) as BetterAuthOrganization | null;
 }
 
+export async function findBetterAuthOrganizationBySlug(
+  ctx: GenericCtx<DataModel>,
+  slug: string,
+): Promise<BetterAuthOrganization | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'organization',
+    where: [{ field: 'slug', operator: 'eq', value: slug }],
+  })) as BetterAuthOrganization | null;
+}
+
 export async function fetchBetterAuthOrganizationsByIds(
   ctx: GenericCtx<DataModel>,
   organizationIds: string[],
@@ -306,6 +316,12 @@ export async function fetchBetterAuthOrganizationsByIds(
       value: organizationIds,
     },
   ]);
+}
+
+export async function fetchAllBetterAuthOrganizations(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthOrganization[]> {
+  return await fetchAllRecords<BetterAuthOrganization>(ctx, 'organization');
 }
 
 export async function findBetterAuthMember(
@@ -333,6 +349,12 @@ export async function fetchBetterAuthMembersByOrganizationId(
       value: organizationId,
     },
   ]);
+}
+
+export async function fetchAllBetterAuthMembers(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthMember[]> {
+  return await fetchAllRecords<BetterAuthMember>(ctx, 'member');
 }
 
 export async function fetchBetterAuthMembersByUserId(

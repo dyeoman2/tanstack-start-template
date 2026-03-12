@@ -8,6 +8,8 @@ import { authComponent } from './auth';
 import { isAdminRole } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
+  fetchAllBetterAuthMembers,
+  fetchAllBetterAuthOrganizations,
   fetchAllBetterAuthUsers,
   findBetterAuthUserByEmail,
   normalizeBetterAuthUserProfile,
@@ -72,13 +74,50 @@ export const listUsers = query({
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
-    const profiles =
+    const [profiles, memberships, organizations] = await Promise.all([
       args.role === 'all'
-        ? await ctx.db.query('userProfiles').collect()
-        : await ctx.db
+        ? ctx.db.query('userProfiles').collect()
+        : ctx.db
             .query('userProfiles')
             .withIndex('by_role', (q) => q.eq('role', args.role === 'admin' ? 'admin' : 'user'))
-            .collect();
+            .collect(),
+      fetchAllBetterAuthMembers(ctx),
+      fetchAllBetterAuthOrganizations(ctx),
+    ]);
+
+    const organizationsById = new Map(
+      organizations.map((organization) => [organization._id ?? organization.id ?? '', organization]),
+    );
+    const membershipsByUserId = new Map<
+      string,
+      Array<{
+        id: string;
+        slug: string;
+        name: string;
+        logo: string | null;
+      }>
+    >();
+
+    for (const membership of memberships) {
+      const organization = organizationsById.get(membership.organizationId);
+      if (!organization) {
+        continue;
+      }
+
+      const organizationSummary = {
+        id: organization._id ?? membership.organizationId,
+        slug: organization.slug,
+        name: organization.name,
+        logo: organization.logo ?? null,
+      };
+      const userOrganizations = membershipsByUserId.get(membership.userId) ?? [];
+
+      if (!userOrganizations.some((entry) => entry.id === organizationSummary.id)) {
+        userOrganizations.push(organizationSummary);
+        userOrganizations.sort((left, right) => left.name.localeCompare(right.name));
+        membershipsByUserId.set(membership.userId, userOrganizations);
+      }
+    }
 
     return shapeAdminUsers(
       profiles.map((profile) => ({
@@ -92,6 +131,7 @@ export const listUsers = query({
         banExpires: profile.banExpires,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
+        organizations: membershipsByUserId.get(profile.authUserId) ?? [],
       })),
       args,
     );

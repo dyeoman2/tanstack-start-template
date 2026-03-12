@@ -1,7 +1,8 @@
-import { useCurrentOrganization } from '@daveyplate/better-auth-ui';
+import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation } from '@tanstack/react-router';
 import { useNavigate, useRouter } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
@@ -84,9 +85,9 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
 }
 
 function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slug: string }) {
-  const { data: organization } = useCurrentOrganization({ slug });
+  const organization = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
 
-  return organization?.name ?? fallback;
+  return organization?.organization.name ?? fallback;
 }
 
 function AppBreadcrumbs() {

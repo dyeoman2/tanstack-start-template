@@ -27,6 +27,12 @@ export type AdminListUser = {
   banExpires: number | null;
   createdAt: number;
   updatedAt: number;
+  organizations?: Array<{
+    id: string;
+    slug: string;
+    name: string;
+    logo: string | null;
+  }>;
 };
 
 function compareValues(

@@ -1,19 +1,20 @@
 import { UserInvitationsCard } from '@daveyplate/better-auth-ui';
+import { api } from '@convex/_generated/api';
+import { useQuery } from 'convex/react';
 import { Link } from '@tanstack/react-router';
-import type { Organization } from 'better-auth/plugins/organization';
 import { Building2, Plus, Settings, Users } from 'lucide-react';
 import { useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
-import { authHooks } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { CreateOrganizationDialog } from '~/features/organizations/components/CreateOrganizationDialog';
 
 export function OrganizationDirectoryPage() {
   const authState = useAuthState();
-  const { data: organizations, isPending } = authHooks.useListOrganizations();
+  const organizations = useQuery(api.organizationManagement.listOrganizationsForDirectory, {});
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const isPending = organizations === undefined;
 
   return (
     <>
@@ -80,7 +81,19 @@ export function OrganizationDirectoryPage() {
   );
 }
 
-function OrganizationRow({ organization }: { organization: Organization }) {
+function OrganizationRow({
+  organization,
+}: {
+  organization: {
+    id: string;
+    slug: string;
+    name: string;
+    logo: string | null;
+    viewerRole: 'site-admin' | 'owner' | 'admin' | 'member';
+    canManage: boolean;
+    isSiteAdminView: boolean;
+  };
+}) {
   const slug = organization.slug;
 
   return (
@@ -95,6 +108,15 @@ function OrganizationRow({ organization }: { organization: Organization }) {
         </div>
         <div className="min-w-0">
           <h2 className="truncate text-base font-semibold text-foreground">{organization.name}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {organization.isSiteAdminView
+              ? 'Site admin access'
+              : organization.viewerRole === 'owner'
+                ? 'Owner'
+                : organization.viewerRole === 'admin'
+                  ? 'Admin'
+                  : 'Member'}
+          </p>
         </div>
       </Link>
 

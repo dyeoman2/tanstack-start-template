@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { PropsWithChildren } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { USER_ROLES } from '~/features/auth/types';
 import { UserTable } from './UserTable';
@@ -9,6 +10,22 @@ const navigateMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
+  Link: ({
+    children,
+    to,
+    params,
+    ...props
+  }: PropsWithChildren<{
+    to: string;
+    params?: { slug?: string };
+  }>) => {
+    const href = params?.slug ? to.replace('$slug', params.slug) : to;
+    return (
+      <a href={href} {...props}>
+        {children}
+      </a>
+    );
+  },
 }));
 
 const baseProps = {
@@ -59,6 +76,7 @@ describe('UserTable', () => {
         banExpires: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        organizations: [],
       },
     ]);
 
@@ -84,6 +102,7 @@ describe('UserTable', () => {
           banExpires: null,
           createdAt: Date.now(),
           updatedAt: Date.now(),
+          organizations: [],
         },
       ],
       'user-1',
@@ -110,6 +129,7 @@ describe('UserTable', () => {
         banExpires: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        organizations: [],
       },
     ]);
 
@@ -118,5 +138,35 @@ describe('UserTable', () => {
 
     expect(screen.getByRole('menuitem', { name: /unban user/i })).toBeInTheDocument();
     expect(screen.queryByRole('menuitem', { name: /^ban user$/i })).not.toBeInTheDocument();
+  });
+
+  it('renders organization avatars as links', () => {
+    renderTable([
+      {
+        id: 'user-3',
+        email: 'member@example.com',
+        name: 'Member User',
+        role: USER_ROLES.USER,
+        emailVerified: true,
+        banned: false,
+        banReason: null,
+        banExpires: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        organizations: [
+          {
+            id: 'org-1',
+            slug: 'cottage-hospital',
+            name: 'Cottage Hospital',
+            logo: null,
+          },
+        ],
+      },
+    ]);
+
+    expect(screen.getByRole('link', { name: /open cottage hospital/i })).toHaveAttribute(
+      'href',
+      '/app/organizations/cottage-hospital/settings',
+    );
   });
 });

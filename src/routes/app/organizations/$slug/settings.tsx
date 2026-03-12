@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { OrganizationWorkspacePage } from '~/features/organizations/components/OrganizationWorkspacePage';
+import { OrganizationSettingsManagement } from '~/features/organizations/components/OrganizationSettingsManagement';
 
 export const Route = createFileRoute('/app/organizations/$slug/settings')({
   component: OrganizationSettingsRoute,
@@ -10,5 +10,5 @@ export const Route = createFileRoute('/app/organizations/$slug/settings')({
 function OrganizationSettingsRoute() {
   const { slug } = Route.useParams();
 
-  return <OrganizationWorkspacePage slug={slug} view="SETTINGS" />;
+  return <OrganizationSettingsManagement slug={slug} />;
 }

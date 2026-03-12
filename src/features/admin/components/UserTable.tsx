@@ -1,8 +1,9 @@
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Ban, Clock3, Edit3, LogIn, MoreHorizontal, Shield, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
+import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import {
@@ -12,6 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
 import type { User as AdminUser } from '../types';
 
@@ -127,6 +129,46 @@ export function UserTable({
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">{row.original.email}</span>
         ),
+      },
+      {
+        id: 'organizations',
+        header: () => <span>Organizations</span>,
+        cell: ({ row }) => {
+          const organizations = row.original.organizations ?? [];
+
+          if (organizations.length === 0) {
+            return <span className="text-sm text-muted-foreground">No organizations</span>;
+          }
+
+          return (
+            <TooltipProvider delayDuration={150}>
+              <div className="flex flex-wrap items-center gap-2">
+                {organizations.map((organization) => (
+                  <Tooltip key={organization.id}>
+                    <TooltipTrigger asChild>
+                      <Link
+                        to="/app/organizations/$slug/settings"
+                        params={{ slug: organization.slug }}
+                        className="rounded-full outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                        aria-label={`Open ${organization.name}`}
+                      >
+                        <Avatar className="size-8 border border-border">
+                          {organization.logo ? (
+                            <AvatarImage src={organization.logo} alt={organization.name} />
+                          ) : null}
+                          <AvatarFallback className="bg-primary/10 text-[10px] font-semibold text-primary">
+                            {getInitials(organization.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                      </Link>
+                    </TooltipTrigger>
+                    <TooltipContent>{organization.name}</TooltipContent>
+                  </Tooltip>
+                ))}
+              </div>
+            </TooltipProvider>
+          );
+        },
       },
       {
         accessorKey: 'role',
@@ -271,4 +313,13 @@ export function UserTable({
       emptyMessage="No users found."
     />
   );
+}
+
+function getInitials(name: string) {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
 }

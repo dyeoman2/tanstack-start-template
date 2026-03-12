@@ -25,7 +25,7 @@ import type * as firecrawl from "../firecrawl.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
-import type * as orgs from "../orgs.js";
+import type * as organizationManagement from "../organizationManagement.js";
 import type * as users from "../users.js";
 
 import type {
@@ -52,7 +52,7 @@ declare const fullApi: ApiFromModules<{
   health: typeof health;
   http: typeof http;
   "lib/betterAuth": typeof lib_betterAuth;
-  orgs: typeof orgs;
+  organizationManagement: typeof organizationManagement;
   users: typeof users;
 }>;
 
