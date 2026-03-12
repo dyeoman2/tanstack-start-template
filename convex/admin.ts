@@ -1,20 +1,18 @@
 import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
-import { components, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { action, mutation, query } from './_generated/server';
+import { authComponent } from './auth';
 import { isAdminRole } from './auth/access';
 import { throwConvexError } from './auth/errors';
-import { authComponent } from './auth';
 import {
   fetchAllBetterAuthUsers,
   findBetterAuthUserByEmail,
   updateBetterAuthUserRecord,
 } from './lib/betterAuth';
 
-async function requireSiteAdmin(
-  ctx: QueryCtx | MutationCtx,
-) {
+async function requireSiteAdmin(ctx: QueryCtx | MutationCtx) {
   const authUser = await authComponent.getAuthUser(ctx);
   if (!authUser) {
     throwConvexError('UNAUTHENTICATED', 'Not authenticated');
@@ -43,148 +41,6 @@ function toTimestamp(value: string | number | Date | undefined) {
   return new Date(value).getTime();
 }
 
-export const getAllUsers = query({
-  args: {
-    page: v.number(),
-    pageSize: v.number(),
-    sortBy: v.union(
-      v.literal('name'),
-      v.literal('email'),
-      v.literal('role'),
-      v.literal('emailVerified'),
-      v.literal('createdAt'),
-    ),
-    sortOrder: v.union(v.literal('asc'), v.literal('desc')),
-    secondarySortBy: v.union(
-      v.literal('name'),
-      v.literal('email'),
-      v.literal('role'),
-      v.literal('emailVerified'),
-      v.literal('createdAt'),
-    ),
-    secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
-    search: v.optional(v.string()),
-    role: v.union(v.literal('all'), v.literal('user'), v.literal('admin')),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
-    const searchValue = args.search?.trim().toLowerCase() ?? '';
-    const allUsers = await fetchAllBetterAuthUsers(ctx);
-    let users = allUsers.map((user) => ({
-      id: assertUserId(user, 'Better Auth user missing id'),
-      email: user.email,
-      name: user.name ?? null,
-      role: isAdminRole(user.role) ? ('admin' as const) : ('user' as const),
-      emailVerified: user.emailVerified ?? false,
-      createdAt: toTimestamp(user.createdAt),
-      updatedAt: toTimestamp(user.updatedAt),
-    }));
-
-    if (args.role !== 'all') {
-      users = users.filter((user) => user.role === args.role);
-    }
-
-    if (searchValue) {
-      users = users.filter(
-        (user) =>
-          user.email.toLowerCase().includes(searchValue) ||
-          (user.name?.toLowerCase().includes(searchValue) ?? false),
-      );
-    }
-
-    const sortValue = (user: (typeof users)[number], field: typeof args.sortBy) => {
-      switch (field) {
-        case 'name':
-          return user.name?.toLowerCase() ?? '';
-        case 'email':
-          return user.email.toLowerCase();
-        case 'role':
-          return user.role;
-        case 'emailVerified':
-          return user.emailVerified ? 1 : 0;
-        default:
-          return user.createdAt;
-      }
-    };
-
-    const compareValues = (left: string | number, right: string | number, direction: 'asc' | 'desc') => {
-      if (left === right) {
-        return 0;
-      }
-
-      if (direction === 'asc') {
-        return left > right ? 1 : -1;
-      }
-
-      return left < right ? 1 : -1;
-    };
-
-    users.sort((left, right) => {
-      const primary = compareValues(
-        sortValue(left, args.sortBy),
-        sortValue(right, args.sortBy),
-        args.sortOrder,
-      );
-
-      if (primary !== 0) {
-        return primary;
-      }
-
-      return compareValues(
-        sortValue(left, args.secondarySortBy),
-        sortValue(right, args.secondarySortBy),
-        args.secondarySortOrder,
-      );
-    });
-
-    const total = users.length;
-    const start = Math.max(0, (args.page - 1) * args.pageSize);
-    const end = start + args.pageSize;
-    const pageUsers = users.slice(start, end);
-
-    return {
-      users: pageUsers,
-      pagination: {
-        page: args.page,
-        pageSize: args.pageSize,
-        total,
-        totalPages: Math.ceil(total / args.pageSize),
-        hasNextPage: end < total,
-        nextCursor: end < total ? String(args.page + 1) : null,
-      },
-    };
-  },
-});
-
-export const getUserById = query({
-  args: {
-    userId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-    const allUsers = await fetchAllBetterAuthUsers(ctx);
-    const user = allUsers.find((candidate) => {
-      try {
-        return assertUserId(candidate, 'Better Auth user missing id') === args.userId;
-      } catch {
-        return false;
-      }
-    });
-
-    if (!user) {
-      return null;
-    }
-
-    return {
-      id: assertUserId(user, 'Better Auth user missing id'),
-      email: user.email,
-      name: user.name ?? null,
-    };
-  },
-});
-
 export const getSystemStats = query({
   args: {},
   handler: async (ctx) => {
@@ -194,57 +50,6 @@ export const getSystemStats = query({
       users: users.length,
       admins: users.filter((user) => isAdminRole(user.role)).length,
     };
-  },
-});
-
-export const updateBetterAuthUser = mutation({
-  args: {
-    userId: v.string(),
-    name: v.optional(v.string()),
-    email: v.optional(v.string()),
-    phoneNumber: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
-    const updateData: Record<string, unknown> = {};
-    if (args.name !== undefined) {
-      updateData.name = args.name.trim();
-    }
-    if (args.email !== undefined) {
-      updateData.email = args.email.trim().toLowerCase();
-    }
-    if (args.phoneNumber !== undefined) {
-      updateData.phoneNumber = args.phoneNumber || null;
-    }
-
-    await updateBetterAuthUserRecord(ctx, args.userId, updateData);
-    return { success: true };
-  },
-});
-
-export const updateUserRole = mutation({
-  args: {
-    userId: v.string(),
-    role: v.union(v.literal('user'), v.literal('admin')),
-  },
-  handler: async (ctx, args) => {
-    const currentAdmin = await requireSiteAdmin(ctx);
-    const currentAdminId = assertUserId(currentAdmin, 'Current admin id not found');
-
-    if (args.userId === currentAdminId && args.role !== 'admin') {
-      const users = await fetchAllBetterAuthUsers(ctx);
-      const adminCount = users.filter((user) => isAdminRole(user.role)).length;
-      if (adminCount <= 1) {
-        throwConvexError('VALIDATION', 'At least one site admin must remain');
-      }
-    }
-
-    await updateBetterAuthUserRecord(ctx, args.userId, {
-      role: args.role,
-    });
-
-    return { success: true };
   },
 });
 
@@ -318,37 +123,13 @@ export const truncateData = mutation({
   },
 });
 
-export const deleteUser = mutation({
+export const cleanupDeletedUserData = mutation({
   args: {
     userId: v.string(),
+    email: v.string(),
   },
   handler: async (ctx, args) => {
-    const currentAdmin = await requireSiteAdmin(ctx);
-    const currentAdminId = assertUserId(currentAdmin, 'Current admin id not found');
-
-    if (args.userId === currentAdminId) {
-      throwConvexError('VALIDATION', 'Cannot delete your own account');
-    }
-
-    const allUsers = await fetchAllBetterAuthUsers(ctx);
-    const target = allUsers.find((user) => {
-      try {
-        return assertUserId(user, 'Better Auth user missing id') === args.userId;
-      } catch {
-        return false;
-      }
-    });
-
-    if (!target) {
-      throwConvexError('NOT_FOUND', 'User not found');
-    }
-
-    if (isAdminRole(target.role)) {
-      const adminCount = allUsers.filter((user) => isAdminRole(user.role)).length;
-      if (adminCount <= 1) {
-        throwConvexError('VALIDATION', 'Cannot delete the only site admin');
-      }
-    }
+    await requireSiteAdmin(ctx);
 
     const appUser = await ctx.db
       .query('users')
@@ -356,31 +137,6 @@ export const deleteUser = mutation({
       .first();
 
     if (appUser) {
-      await Promise.all([
-        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-          input: {
-            model: 'member',
-            where: [{ field: 'userId', operator: 'eq', value: args.userId }],
-          },
-          paginationOpts: {
-            cursor: null,
-            numItems: 1000,
-            id: 0,
-          },
-        }),
-        ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-          input: {
-            model: 'invitation',
-            where: [{ field: 'email', operator: 'eq', value: target.email.toLowerCase() }],
-          },
-          paginationOpts: {
-            cursor: null,
-            numItems: 1000,
-            id: 0,
-          },
-        }),
-      ]);
-
       await ctx.db.delete(appUser._id);
     }
 
@@ -392,53 +148,11 @@ export const deleteUser = mutation({
       await ctx.db.delete(log._id);
     }
 
-    await Promise.all([
-      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-        input: {
-          model: 'session',
-          where: [{ field: 'userId', operator: 'eq', value: args.userId }],
-        },
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000,
-          id: 0,
-        },
-      }),
-      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-        input: {
-          model: 'account',
-          where: [{ field: 'userId', operator: 'eq', value: args.userId }],
-        },
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000,
-          id: 0,
-        },
-      }),
-      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-        input: {
-          model: 'verification',
-          where: [{ field: 'identifier', operator: 'eq', value: target.email }],
-        },
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000,
-          id: 0,
-        },
-      }),
-      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-        input: {
-          model: 'user',
-          where: [{ field: '_id', operator: 'eq', value: args.userId }],
-        },
-        paginationOpts: {
-          cursor: null,
-          numItems: 1,
-          id: 0,
-        },
-      }),
-    ]);
-
-    return { success: true };
+    return {
+      success: true,
+      deletedAuditLogs: auditLogs.length,
+      deletedAppUser: appUser ? 1 : 0,
+      email: args.email,
+    };
   },
 });

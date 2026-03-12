@@ -1,6 +1,6 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-import { betterAuth, type Auth } from 'better-auth';
+import { betterAuth } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
 import { v } from 'convex/values';
 import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '../src/lib/server/env.server';
@@ -23,7 +23,7 @@ export const authComponent = createClient<DataModel, typeof betterAuthSchema>(co
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
-): Auth => {
+) => {
   return betterAuth({
     logger: {
       disabled: optionsOnly,
@@ -171,6 +171,45 @@ if (!internalRateLimitToken) {
   throw new Error('BETTER_AUTH_SECRET environment variable is required');
 }
 
+type RotatedJwk = {
+  alg?: string;
+  createdAt?: Date | number | string;
+  expiresAt?: Date | number | string;
+  id: string;
+  privateKey: string;
+  publicKey: string;
+};
+
+const isRotatedJwk = (value: unknown): value is RotatedJwk => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const isTimestampLike = (timestamp: unknown) =>
+    timestamp === undefined ||
+    typeof timestamp === 'string' ||
+    typeof timestamp === 'number' ||
+    timestamp instanceof Date;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.privateKey === 'string' &&
+    typeof candidate.publicKey === 'string' &&
+    (candidate.alg === undefined || typeof candidate.alg === 'string') &&
+    isTimestampLike(candidate.createdAt) &&
+    isTimestampLike(candidate.expiresAt)
+  );
+};
+
+const parseRotatedJwks = (value: unknown): RotatedJwk[] => {
+  if (!Array.isArray(value) || !value.every(isRotatedJwk)) {
+    throw new Error('Invalid JWKS response from Better Auth');
+  }
+
+  return value;
+};
+
 // Action wrapper for rate limiting (callable from server functions)
 export const rateLimitAction = action({
   args: {
@@ -211,24 +250,11 @@ export const rotateKeys = action({
       throw new Error('Unauthorized key rotation access');
     }
 
-    const auth = createAuth(ctx) as ReturnType<typeof createAuth> & {
-      api: {
-        rotateKeys: () => Promise<
-          Array<{
-            alg?: string;
-            createdAt?: Date | number | string;
-            expiresAt?: Date | number | string;
-            id: string;
-            privateKey: string;
-            publicKey: string;
-          }>
-        >;
-      };
-    };
-
-    const jwks = await auth.api.rotateKeys();
+    const auth = createAuth(ctx);
+    const jwksResult: unknown = await auth.api.rotateKeys();
+    const jwks = parseRotatedJwks(jwksResult);
     return JSON.stringify(
-      jwks.map((key) => ({
+      jwks.map((key: RotatedJwk) => ({
         ...key,
         createdAt:
           key.createdAt instanceof Date ? key.createdAt.getTime() : (key.createdAt ?? Date.now()),

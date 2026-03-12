@@ -1,18 +1,18 @@
-import { api } from '@convex/_generated/api';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
 import { useCallback, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import type { UserRole } from '../../auth/types';
 import { USER_ROLES } from '../../auth/types';
+import { useUserImpersonation } from '../hooks/useUserImpersonation';
+import { listAdminUsersServerFn } from '../server/admin-management';
 import type { User as AdminUser } from '../types';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
 import { UserTable } from './UserTable';
-import { useUserImpersonation } from '../hooks/useUserImpersonation';
-import { useAuthState } from '~/features/auth/hooks/useAuthState';
-import { useAuth } from '~/features/auth/hooks/useAuth';
 
 type UserRoleFilterValue = 'all' | UserRole;
 
@@ -55,13 +55,14 @@ export function UserManagement() {
     [roleFilter, search],
   );
 
-  // Use Convex query directly - enables real-time updates automatically
-  const data = useQuery(api.admin.getAllUsers, adminUsersSearchParams);
+  const { data, isLoading, isFetching } = useQuery({
+    queryKey: ['admin-users', adminUsersSearchParams],
+    queryFn: () => listAdminUsersServerFn({ data: adminUsersSearchParams }),
+    placeholderData: keepPreviousData,
+  });
 
-  // Memoize data to prevent unnecessary re-renders
   const users = useMemo(() => data?.users ?? [], [data]);
   const pagination = data?.pagination;
-  const isLoading = data === undefined;
 
   const handleEditUser = (user: AdminUser) => {
     setSelectedUser(user);
@@ -149,7 +150,7 @@ export function UserManagement() {
           searchParams={adminUsersSearchParams}
           currentUserId={currentUser?.id}
           isLoading={isLoading}
-          isFetching={false}
+          isFetching={isFetching}
           onEditUser={handleEditUser}
           onDeleteUser={handleDeleteUser}
           onImpersonateUser={impersonateUser}

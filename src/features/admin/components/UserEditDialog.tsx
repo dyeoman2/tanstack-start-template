@@ -1,5 +1,5 @@
-import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
+import { useQueryClient } from '@tanstack/react-query';
 import { Mail, User as UserIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '~/components/ui/button';
@@ -22,7 +22,7 @@ import {
 } from '~/components/ui/select';
 import type { UserRole } from '../../auth/types';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
-import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
+import { updateAdminUserServerFn } from '../server/admin-management';
 import type { User } from '../types';
 
 interface UserEditDialogProps {
@@ -32,12 +32,9 @@ interface UserEditDialogProps {
 }
 
 export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
+  const queryClient = useQueryClient();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-
-  // Optimistic mutations with automatic rollback on error
-  const updateBetterAuthUserOptimistic = useOptimisticMutation(api.admin.updateBetterAuthUser);
-  const setUserRoleOptimistic = useOptimisticMutation(api.admin.updateUserRole);
 
   const form = useForm({
     defaultValues: {
@@ -55,45 +52,22 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
         const trimmedName = value.name.trim();
         const trimmedEmail = value.email.trim().toLowerCase();
 
-        // Execute updates in parallel with optimistic updates
-        const updatePromises: Promise<{ success: boolean }>[] = [];
-
-        // Optimistic update for name - Convex handles cache invalidation automatically
-        if (trimmedName !== user.name) {
-          updatePromises.push(
-            updateBetterAuthUserOptimistic({
+        if (
+          trimmedName !== (user.name ?? '') ||
+          trimmedEmail !== user.email.toLowerCase() ||
+          value.role !== user.role
+        ) {
+          await updateAdminUserServerFn({
+            data: {
               userId: user.id,
               name: trimmedName,
-            }),
-          );
-        }
-
-        // Optimistic update for email - Convex handles cache invalidation automatically
-        if (trimmedEmail !== user.email.toLowerCase()) {
-          updatePromises.push(
-            updateBetterAuthUserOptimistic({
-              userId: user.id,
               email: trimmedEmail,
-            }),
-          );
-        }
-
-        // Optimistic update for role - Convex handles cache invalidation automatically
-        if (value.role !== user.role) {
-          updatePromises.push(
-            setUserRoleOptimistic({
-              userId: user.id,
               role: value.role,
-            }),
-          );
+            },
+          });
         }
 
-        // Execute all necessary updates in parallel
-        if (updatePromises.length > 0) {
-          await Promise.all(updatePromises);
-        }
-
-        // Convex automatically handles cache invalidation and real-time updates!
+        await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
         onClose();
       } catch (error) {
         console.error('Failed to update user:', error);

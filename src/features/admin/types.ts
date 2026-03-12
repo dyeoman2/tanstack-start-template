@@ -14,6 +14,9 @@ export interface User {
   name: string | null;
   role: UserRole;
   emailVerified: boolean;
+  banned: boolean;
+  banReason: string | null;
+  banExpires: number | null;
   createdAt: number; // Unix timestamp from Convex
   updatedAt: number; // Unix timestamp from Convex
 }
