@@ -40,16 +40,16 @@ import type {
   SpeechRecognitionInstance,
 } from '~/features/chat/types/speech-recognition';
 import {
-  CHAT_MODEL_OPTIONS,
   type ChatModelId,
+  type ChatModelOption,
   DEFAULT_CHAT_MODEL_ID,
   getChatModelOption,
-  isChatModelId,
 } from '~/lib/shared/chat-models';
 
 type ChatComposerProps = {
   disabled?: boolean;
   isSending: boolean;
+  modelOptions: ChatModelOption[];
   personas?: ChatPersona[];
   selectedModelId?: ChatModelId;
   selectedPersonaId?: string;
@@ -67,6 +67,7 @@ type ChatComposerProps = {
 export function ChatComposer({
   disabled = false,
   isSending,
+  modelOptions,
   personas = [],
   selectedModelId = DEFAULT_CHAT_MODEL_ID,
   selectedPersonaId,
@@ -97,7 +98,7 @@ export function ChatComposer({
   const isDefaultPersona = !selectedPersonaId;
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
-  const selectedModel = getChatModelOption(selectedModelId);
+  const selectedModel = getChatModelOption(modelOptions, selectedModelId);
 
   const clearComposer = useCallback(() => {
     setMessage('');
@@ -473,17 +474,26 @@ export function ChatComposer({
               <DropdownMenuRadioGroup
                 value={selectedModel.id}
                 onValueChange={(value) => {
-                  if (isChatModelId(value)) {
-                    onSelectModel?.(value);
-                  }
+                  onSelectModel?.(value);
                 }}
               >
-                {CHAT_MODEL_OPTIONS.map((model) => (
-                  <DropdownMenuRadioItem key={model.id} value={model.id}>
+                {modelOptions.map((model) => (
+                  <DropdownMenuRadioItem
+                    key={model.id}
+                    value={model.id}
+                    disabled={!model.selectable}
+                  >
                     <div className="flex min-w-0 flex-col">
-                      <span className="truncate">{model.label}</span>
+                      <div className="flex items-center gap-2">
+                        <span className="truncate">{model.label}</span>
+                        {model.badge ? (
+                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                            {model.badge}
+                          </span>
+                        ) : null}
+                      </div>
                       <span className="text-muted-foreground truncate text-xs">
-                        {model.description}
+                        {model.priceLabel ? `${model.description} • ${model.priceLabel}` : model.description}
                       </span>
                     </div>
                   </DropdownMenuRadioItem>

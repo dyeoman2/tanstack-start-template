@@ -4,9 +4,10 @@ import { type LanguageModelUsage, type ModelMessage, streamText } from 'ai';
 import { ConvexError, v } from 'convex/values';
 import { createWorkersAI } from 'workers-ai-provider';
 import {
+  getAuthorizedChatModel,
   type ChatModelId,
   DEFAULT_CHAT_MODEL_ID,
-  isChatModelId,
+  type ChatModelCatalogEntry,
 } from '../src/lib/shared/chat-models';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -101,7 +102,7 @@ const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find i
 const DEFAULT_THREAD_TITLE = 'New Chat';
 
 let workersProvider: ReturnType<typeof createWorkersAI> | null = null;
-const modelCache = new Map<ChatModelId, ReturnType<ReturnType<typeof createWorkersAI>>>();
+const modelCache = new Map<string, ReturnType<ReturnType<typeof createWorkersAI>>>();
 
 function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
@@ -222,19 +223,32 @@ function getChatModel(modelId: ChatModelId) {
   return nextModel;
 }
 
-function resolveChatModelId(modelId: string | undefined, messages: AiMessageDoc[]): ChatModelId {
+function resolveChatModelId(
+  modelId: string | undefined,
+  messages: AiMessageDoc[],
+  availableModels: ChatModelCatalogEntry[],
+  isSiteAdmin: boolean,
+): ChatModelId {
   if (modelId) {
-    if (!isChatModelId(modelId)) {
+    const authorization = getAuthorizedChatModel(modelId, availableModels, isSiteAdmin);
+    if (!authorization.ok) {
+      if (authorization.reason === 'forbidden') {
+        throw new ConvexError('This chat model is only available to site admins.');
+      }
+
       throw new ConvexError('Unsupported chat model.');
     }
 
-    return modelId;
+    return authorization.model.modelId;
   }
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message.role === 'assistant' && message.model && isChatModelId(message.model)) {
-      return message.model;
+    if (message.role === 'assistant' && message.model) {
+      const authorization = getAuthorizedChatModel(message.model, availableModels, isSiteAdmin);
+      if (authorization.ok) {
+        return authorization.model.modelId;
+      }
     }
   }
 
@@ -255,6 +269,7 @@ async function getAuthenticatedContext(ctx: ActionCtx) {
   return {
     userId: profile.id,
     organizationId: profile.currentOrganization.id,
+    isSiteAdmin: profile.isSiteAdmin === true,
   };
 }
 
@@ -340,7 +355,7 @@ export const sendChatMessage = action({
     ctx,
     args,
   ): Promise<{ threadId: Id<'aiThreads'>; assistantMessageId: Id<'aiMessages'> }> => {
-    const { userId, organizationId } = await getAuthenticatedContext(ctx);
+    const { userId, organizationId, isSiteAdmin } = await getAuthenticatedContext(ctx);
 
     if (args.parts.length === 0) {
       throw new ConvexError('Message content is required.');
@@ -386,7 +401,8 @@ export const sendChatMessage = action({
     });
 
     const messages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const modelId = resolveChatModelId(args.model, messages);
+    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
+    const modelId = resolveChatModelId(args.model, messages, availableModels, isSiteAdmin);
     const assistantMessageId = await streamAssistantReply(ctx, {
       threadId,
       userId,
@@ -413,7 +429,7 @@ export const editUserMessageAndRegenerate = action({
     ctx,
     args,
   ): Promise<{ threadId: Id<'aiThreads'>; assistantMessageId: Id<'aiMessages'> }> => {
-    const { userId, organizationId } = await getAuthenticatedContext(ctx);
+    const { userId, organizationId, isSiteAdmin } = await getAuthenticatedContext(ctx);
     const threadId = await ctx.runMutation(internal.chat.updateUserMessageTextInternal, {
       messageId: args.messageId,
       text: args.text,
@@ -424,7 +440,7 @@ export const editUserMessageAndRegenerate = action({
     }
 
     const messages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const editedMessage = messages.find((message) => message._id === args.messageId);
+    const editedMessage = messages.find((message: AiMessageDoc) => message._id === args.messageId);
     if (!editedMessage) {
       throw new Error('Message not found.');
     }
@@ -446,7 +462,8 @@ export const editUserMessageAndRegenerate = action({
     });
 
     const regeneratedMessages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const modelId = resolveChatModelId(args.model, regeneratedMessages);
+    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
+    const modelId = resolveChatModelId(args.model, regeneratedMessages, availableModels, isSiteAdmin);
     const assistantMessageId = await streamAssistantReply(ctx, {
       threadId,
       userId,

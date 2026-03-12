@@ -164,4 +164,32 @@ export default defineSchema({
   })
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
     .index('by_userId_and_createdAt', ['userId', 'createdAt']),
+
+  aiModelCatalog: defineTable({
+    modelId: v.string(),
+    label: v.string(),
+    description: v.string(),
+    task: v.string(),
+    access: v.union(v.literal('public'), v.literal('admin')),
+    priceLabel: v.optional(v.string()),
+    prices: v.optional(
+      v.array(
+        v.object({
+          unit: v.string(),
+          price: v.number(),
+          currency: v.string(),
+        }),
+      ),
+    ),
+    contextWindow: v.optional(v.number()),
+    source: v.string(),
+    isActive: v.boolean(),
+    refreshedAt: v.number(),
+    beta: v.optional(v.boolean()),
+    deprecated: v.optional(v.boolean()),
+    deprecationDate: v.optional(v.string()),
+  })
+    .index('by_modelId', ['modelId'])
+    .index('by_isActive', ['isActive'])
+    .index('by_refreshedAt', ['refreshedAt']),
 });

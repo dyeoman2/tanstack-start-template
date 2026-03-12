@@ -15,6 +15,7 @@ import type * as auth_authorized from "../auth/authorized.js";
 import type * as auth_errors from "../auth/errors.js";
 import type * as chat from "../chat.js";
 import type * as chatActions from "../chatActions.js";
+import type * as chatModels from "../chatModels.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
 import type * as e2e from "../e2e.js";
@@ -39,6 +40,7 @@ declare const fullApi: ApiFromModules<{
   "auth/errors": typeof auth_errors;
   chat: typeof chat;
   chatActions: typeof chatActions;
+  chatModels: typeof chatModels;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;
   e2e: typeof e2e;

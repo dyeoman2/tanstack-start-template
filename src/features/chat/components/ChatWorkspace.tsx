@@ -16,7 +16,11 @@ import {
   usePendingThreadSubmission,
 } from '~/features/chat/lib/pending-thread-submission';
 import type { ChatMessagePart } from '~/features/chat/types';
-import { type ChatModelId, DEFAULT_CHAT_MODEL_ID, isChatModelId } from '~/lib/shared/chat-models';
+import {
+  type ChatModelId,
+  DEFAULT_CHAT_MODEL_ID,
+  getChatModelOption,
+} from '~/lib/shared/chat-models';
 
 export function ChatWorkspaceSkeleton() {
   return (
@@ -57,6 +61,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     typedThreadId ? { threadId: typedThreadId } : 'skip',
   );
   const personas = useQuery(api.chat.listPersonas, {});
+  const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const sendChatMessage = useAction(api.chatActions.sendChatMessage);
   const createThread = useMutation(api.chat.createThread);
   const createPersona = useMutation(api.chat.createPersona);
@@ -77,16 +82,20 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
       const message = currentMessages[index];
-      if (message.role === 'assistant' && message.model && isChatModelId(message.model)) {
+      if (message.role === 'assistant' && message.model) {
         return message.model;
       }
     }
 
     return undefined;
   }, [currentMessages]);
-  const effectiveModelId = threadId
+  const requestedModelId = threadId
     ? (threadModelOverrides[threadId] ?? inferredThreadModelId ?? DEFAULT_CHAT_MODEL_ID)
     : draftModelId;
+  const selectedModelOption = getChatModelOption(modelOptions ?? [], requestedModelId);
+  const effectiveModelId = selectedModelOption.selectable
+    ? selectedModelOption.id
+    : DEFAULT_CHAT_MODEL_ID;
   const pendingPreview =
     pendingSubmission && threadId
       ? {
@@ -209,7 +218,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   if (
     (threadId && thread === undefined) ||
     (threadId && messages === undefined) ||
-    personas === undefined
+    personas === undefined ||
+    modelOptions === undefined
   ) {
     return <ChatWorkspaceSkeleton />;
   }
@@ -311,6 +321,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               <div className="mt-8 w-full max-w-3xl">
                 <ChatComposer
                   isSending={isSending}
+                  modelOptions={modelOptions}
                   personas={personas ?? []}
                   selectedModelId={effectiveModelId}
                   selectedPersonaId={effectivePersonaId}
@@ -366,6 +377,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
                     isSending={isSending}
+                    modelOptions={modelOptions}
                     personas={personas ?? []}
                     selectedModelId={effectiveModelId}
                     selectedPersonaId={effectivePersonaId}
