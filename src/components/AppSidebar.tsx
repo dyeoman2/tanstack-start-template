@@ -1,5 +1,5 @@
 import { useLocation } from '@tanstack/react-router';
-import { Bot, LayoutDashboard } from 'lucide-react';
+import { LayoutDashboard, MessageSquare } from 'lucide-react';
 import * as React from 'react';
 import { NavMain, type NavMainItem } from '~/components/sidebar/NavMain';
 import { NavUser } from '~/components/sidebar/NavUser';
@@ -13,11 +13,12 @@ import {
 } from '~/components/ui/sidebar';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { ChatSidebarGroup } from '~/features/chat/components/ChatSidebarGroup';
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
   const authState = useAuthState();
-  const { user, isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
+  const { user, isSiteAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
   const navMain = React.useMemo<NavMainItem[]>(() => {
     const items: NavMainItem[] = [
@@ -30,10 +31,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
           location.pathname === '/app/profile',
       },
       {
-        title: 'Playground',
-        to: '/app/ai-playground',
-        icon: Bot,
-        isActive: location.pathname === '/app/ai-playground',
+        title: 'Chat',
+        to: '/app/chat',
+        icon: MessageSquare,
+        isActive:
+          location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/'),
       },
     ];
 
@@ -56,10 +58,11 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
+        <ChatSidebarGroup />
       </SidebarContent>
       <SidebarFooter>
         <NavUser
-          showAdmin={isAdmin}
+          showAdmin={isSiteAdmin}
           user={{
             name: user?.name || 'Authenticated user',
             email: user?.email || 'Signed in',

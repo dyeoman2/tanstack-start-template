@@ -17,10 +17,6 @@ export const Route = createFileRoute('/login')({
       .string()
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
       .optional(),
-    redirect: z
-      .string()
-      .regex(/^\/|https?:\/\/.*$/)
-      .optional(),
     redirectTo: z
       .string()
       .regex(/^\/|https?:\/\/.*$/)
@@ -51,10 +47,10 @@ function resolveRedirectTarget(value?: string | null): RedirectTarget {
 }
 
 function LoginPage() {
-  const { email, redirect: legacyRedirect, redirectTo, reset } = Route.useSearch();
+  const { email, redirectTo, reset } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuthState();
   const router = useRouter();
-  const redirectTarget = resolveRedirectTarget(redirectTo ?? legacyRedirect);
+  const redirectTarget = resolveRedirectTarget(redirectTo);
   const [showResetSuccess] = useState(reset === 'success');
 
   useEffect(() => {

@@ -13,10 +13,13 @@ import {
   buildCurrentUserProfile,
   getCurrentAuthUserOrNull,
   getCurrentUserOrNull,
-  isAdminRole,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
+import {
+  deriveIsSiteAdmin,
+  normalizeUserRole,
+} from '../src/features/auth/lib/user-role';
 import {
   type BetterAuthOrganization,
   type BetterAuthUser,
@@ -111,25 +114,9 @@ async function patchAiOwnershipToOrganization(
   authUserId: string,
   organizationId: string,
 ) {
-  const [usageDocs, responseDocs] = await Promise.all([
-    ctx.db
-      .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', authUserId))
-      .collect(),
-    ctx.db
-      .query('aiResponses')
-      .withIndex('by_userId_createdAt', (q) => q.eq('userId', authUserId))
-      .collect(),
-  ]);
-
-  await Promise.all([
-    ...usageDocs
-      .filter((doc) => doc.organizationId !== organizationId)
-      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
-    ...responseDocs
-      .filter((doc) => doc.organizationId !== organizationId)
-      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
-  ]);
+  void ctx;
+  void authUserId;
+  void organizationId;
 }
 
 async function createDefaultOrganization(
@@ -212,7 +199,9 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
   };
 
   if (existing) {
-    await ctx.db.patch(existing._id, nextValue);
+    // Reinsert so persisted profile documents match the current schema exactly.
+    await ctx.db.delete(existing._id);
+    await ctx.db.insert('userProfiles', nextValue);
     return;
   }
 
@@ -315,7 +304,6 @@ export const syncUserProfilesSnapshot = internalMutation({
         nameLower: v.union(v.string(), v.null()),
         phoneNumber: v.union(v.string(), v.null()),
         role: v.union(v.literal('user'), v.literal('admin')),
-        isSiteAdmin: v.boolean(),
         emailVerified: v.boolean(),
         banned: v.boolean(),
         banReason: v.union(v.string(), v.null()),
@@ -341,7 +329,8 @@ export const syncUserProfilesSnapshot = internalMutation({
       };
 
       if (existing) {
-        await ctx.db.patch(existing._id, nextValue);
+        await ctx.db.delete(existing._id);
+        await ctx.db.insert('userProfiles', nextValue);
         existingByAuthUserId.delete(user.authUserId);
         continue;
       }
@@ -509,7 +498,7 @@ export const getCurrentUserProfile = query({
     const user = await getCurrentUserOrNull(ctx);
     if (!user) {
       const authUserId = assertUserId(authUser, 'User ID not found in auth user');
-      const isSiteAdmin = isAdminRole(
+      const role = normalizeUserRole(
         (authUser as BetterAuthAdapterUserDoc & { role?: string | string[] }).role,
       );
 
@@ -518,8 +507,8 @@ export const getCurrentUserProfile = query({
         email: authUser.email ?? '',
         name: authUser.name ?? null,
         phoneNumber: authUser.phoneNumber ?? null,
-        role: isSiteAdmin ? 'admin' : 'user',
-        isSiteAdmin,
+        role,
+        isSiteAdmin: deriveIsSiteAdmin(role),
         emailVerified: authUser.emailVerified ?? false,
         createdAt: Date.now(),
         updatedAt: Date.now(),

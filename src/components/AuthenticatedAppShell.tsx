@@ -31,7 +31,7 @@ type BreadcrumbPart = {
 
 const routeLabels = new Map<string, string>([
   ['admin', 'Admin'],
-  ['ai-playground', 'AI Playground'],
+  ['chat', 'Chat'],
   ['members', 'Members'],
   ['organizations', 'Organizations'],
   ['profile', 'Profile'],
@@ -68,7 +68,7 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
       const href = `/app/${childSegments.slice(0, index + 1).join('/')}`;
       const isLast = index === childSegments.length - 1;
       const previousSegment = childSegments[index - 1];
-      const fallbackLabel = formatSegment(segment);
+      const fallbackLabel = previousSegment === 'chat' ? 'Conversation' : formatSegment(segment);
 
       return {
         key: href,
@@ -76,6 +76,8 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
         label:
           previousSegment === 'organizations' ? (
             <OrganizationBreadcrumbLabel slug={segment} fallback={fallbackLabel} />
+          ) : previousSegment === 'chat' ? (
+            <ChatThreadBreadcrumbLabel threadId={segment} fallback={fallbackLabel} />
           ) : (
             fallbackLabel
           ),
@@ -88,6 +90,19 @@ function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slu
   const organization = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
 
   return organization?.organization.name ?? fallback;
+}
+
+function ChatThreadBreadcrumbLabel({
+  fallback,
+  threadId,
+}: {
+  fallback: string;
+  threadId: string;
+}) {
+  const threads = useQuery(api.chat.listThreads, {});
+  const thread = threads?.find((item) => item._id === threadId);
+
+  return thread?.title ?? fallback;
 }
 
 function AppBreadcrumbs() {
@@ -134,6 +149,7 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { isImpersonating, isPending, isSiteAdmin, user } = useAuth();
   const [isStoppingImpersonation, setIsStoppingImpersonation] = useState(false);
   const [isRestoringAdminContext, setIsRestoringAdminContext] = useState(false);
+  const isChatRoute = location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/');
 
   useEffect(() => {
     if (!isRestoringAdminContext || isPending || isImpersonating || !isSiteAdmin) {
@@ -187,7 +203,7 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="h-svh overflow-hidden">
         {isImpersonating ? (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -219,8 +235,13 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-x-hidden p-4 pt-0">
-          {children}
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden p-4 pt-0',
+            isChatRoute ? 'overflow-hidden' : 'overflow-y-auto',
+          )}
+        >
+          {isChatRoute ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : children}
         </div>
       </SidebarInset>
     </SidebarProvider>

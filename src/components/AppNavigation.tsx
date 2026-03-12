@@ -20,7 +20,7 @@ import { cn } from '~/lib/utils';
  */
 function AuthNavigation({ currentPath }: { currentPath: string }) {
   const authState = useAuthState();
-  const { user, isAuthenticated, isPending, isAdmin } = useAuth({
+  const { user, isAuthenticated, isPending, isSiteAdmin } = useAuth({
     fetchRole: authState.isAuthenticated,
   });
   const navigate = useNavigate();
@@ -60,7 +60,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-          {isAdmin && (
+          {isSiteAdmin && (
             <DropdownMenuItem asChild>
               <Link
                 to="/app/admin"
@@ -104,7 +104,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       <Link
         to="/login"
         preload="intent"
-        search={{ reset: '', redirect: currentPath }}
+        search={{ reset: '', redirectTo: currentPath }}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
         Sign in
@@ -173,11 +173,11 @@ export function AppNavigation() {
                   Dashboard
                 </Link>
                 <Link
-                  to="/app/ai-playground"
+                  to="/app/chat"
                   preload="intent"
                   className={cn(navigationMenuTriggerStyle(), 'no-underline')}
                 >
-                  AI Playground
+                  Chat
                 </Link>
               </div>
             )}

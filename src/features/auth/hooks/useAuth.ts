@@ -2,12 +2,13 @@ import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 import { useSession } from '~/features/auth/auth-client';
+import { deriveIsSiteAdmin } from '../lib/user-role';
 import type { UserRole } from '../types';
 import { DEFAULT_ROLE, USER_ROLES } from '../types';
 import { useAuthState } from './useAuthState';
 
 export interface AuthOptions {
-  /** Whether to fetch role data from the database. Defaults to true for backward compatibility. */
+  /** Whether to fetch role data from the database. Defaults to true. */
   fetchRole?: boolean;
 }
 
@@ -26,7 +27,6 @@ export interface AuthResult {
     } | null;
   } | null;
   isAuthenticated: boolean;
-  isAdmin: boolean;
   isSiteAdmin: boolean;
   isImpersonating: boolean;
   impersonatedByUserId?: string;
@@ -65,7 +65,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       ? USER_ROLES.ADMIN
       : USER_ROLES.USER
     : DEFAULT_ROLE;
-  const isSiteAdmin = shouldFetchProfile ? profile?.isSiteAdmin === true : false;
+  const isSiteAdmin = deriveIsSiteAdmin(role);
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -80,7 +80,6 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
           }
         : null,
       isAuthenticated: authState.isAuthenticated,
-      isAdmin: isSiteAdmin,
       isSiteAdmin,
       isImpersonating,
       impersonatedByUserId,

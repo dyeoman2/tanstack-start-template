@@ -14,7 +14,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AutumnClientProvider } from '~/components/AutumnProvider';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { Toaster } from '~/components/ui/sonner';
@@ -22,7 +21,6 @@ import { ToastProvider } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { authUiViewPaths } from '~/features/auth/auth-ui';
 import { useAuth } from '~/features/auth/hooks/useAuth';
-import { USER_ROLES } from '~/features/auth/types';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
 import { setSentryUser } from '~/lib/sentry';
@@ -47,7 +45,7 @@ interface AuthProviderProps {
 }
 
 function AuthProvider({ children }: AuthProviderProps) {
-  const { user, isAuthenticated, isPending, isAdmin, isSiteAdmin } = useAuth();
+  const { user, isAuthenticated, isPending, isSiteAdmin } = useAuth();
   const ensureCurrentUserContext = useMutation(api.users.ensureCurrentUserContext);
   const [authContext, setAuthContext] = useState<RouterAuthContext>({
     authenticated: false,
@@ -61,7 +59,7 @@ function AuthProvider({ children }: AuthProviderProps) {
     userEmail: user?.email,
     userName: user?.name,
     isPending,
-    isAdmin,
+    userRole: user?.role,
     isSiteAdmin,
   });
 
@@ -73,7 +71,7 @@ function AuthProvider({ children }: AuthProviderProps) {
       userEmail: user?.email,
       userName: user?.name,
       isPending,
-      isAdmin,
+      userRole: user?.role,
       isSiteAdmin,
     };
 
@@ -106,7 +104,7 @@ function AuthProvider({ children }: AuthProviderProps) {
             id: userId,
             email: user.email,
             name: user.name || undefined,
-            role: isAdmin ? USER_ROLES.ADMIN : USER_ROLES.USER,
+            role: user.role,
             isSiteAdmin,
           },
         };
@@ -124,7 +122,7 @@ function AuthProvider({ children }: AuthProviderProps) {
     if (!isPending) {
       setSentryUser(newAuthContext.authenticated ? newAuthContext.user : null);
     }
-  }, [isAuthenticated, user?.id, user?.email, user?.name, isPending, isAdmin, isSiteAdmin]);
+  }, [isAuthenticated, user?.id, user?.email, user?.name, user?.role, isPending, isSiteAdmin]);
 
   // Setup claim refresh when component mounts
   useEffect(() => {
@@ -251,21 +249,19 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
         <AuthUiProvider>
-          <AutumnClientProvider>
-            <AuthProvider>
-              <ThemeProvider
-                attribute="class"
-                defaultTheme="system"
-                enableSystem
-                disableTransitionOnChange
-              >
-                <ToastProvider>
-                  {children}
-                  <Toaster richColors />
-                </ToastProvider>
-              </ThemeProvider>
-            </AuthProvider>
-          </AutumnClientProvider>
+          <AuthProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            >
+              <ToastProvider>
+                {children}
+                <Toaster richColors />
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </AuthUiProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>

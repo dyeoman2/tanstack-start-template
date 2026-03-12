@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
-import { isAdminRole, ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } from './access';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
+import { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } from './access';
 
-describe('isAdminRole', () => {
-  it('accepts direct admin role values', () => {
-    expect(isAdminRole('admin')).toBe(true);
-    expect(isAdminRole('user')).toBe(false);
+describe('normalizeUserRole', () => {
+  it('normalizes scalar and array Better Auth role payloads', () => {
+    expect(normalizeUserRole('admin')).toBe('admin');
+    expect(normalizeUserRole('user')).toBe('user');
+    expect(normalizeUserRole(['user', 'admin'])).toBe('admin');
+    expect(normalizeUserRole(['user'])).toBe('user');
   });
+});
 
-  it('accepts admin role arrays from Better Auth plugin payloads', () => {
-    expect(isAdminRole(['user', 'admin'])).toBe(true);
-    expect(isAdminRole(['user'])).toBe(false);
+describe('deriveIsSiteAdmin', () => {
+  it('derives site admin from normalized role', () => {
+    expect(deriveIsSiteAdmin('admin')).toBe(true);
+    expect(deriveIsSiteAdmin('user')).toBe(false);
   });
 });
 

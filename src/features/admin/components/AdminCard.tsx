@@ -7,16 +7,24 @@ interface AdminCardProps {
   href?: string;
   onClick?: () => void;
   destructive?: boolean;
+  disabled?: boolean;
 }
 
-export function AdminCard({ title, description, href, onClick, destructive }: AdminCardProps) {
+export function AdminCard({
+  title,
+  description,
+  href,
+  onClick,
+  destructive,
+  disabled = false,
+}: AdminCardProps) {
   const cardClasses = `block p-6 bg-card rounded-lg shadow hover:shadow-lg transition-shadow border cursor-pointer ${
     destructive ? 'border-destructive/30 hover:border-destructive/50' : 'border-border'
-  }`;
+  } ${disabled ? 'opacity-60 cursor-not-allowed' : ''}`;
 
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className={cardClasses}>
+      <button type="button" onClick={onClick} className={cardClasses} disabled={disabled}>
         <div className="flex items-start justify-between">
           <div>
             <h3

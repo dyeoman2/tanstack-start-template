@@ -1,6 +1,6 @@
 import { getE2ETestSecret, isE2ETestAuthEnabled } from '~/lib/server/env.server';
 
-export const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
+const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
 
 export type PlaywrightCookiePayload = {
   expires?: number;

@@ -2,9 +2,30 @@ import { AdminCard } from './AdminCard';
 
 interface AdminCardsGridProps {
   onTruncateClick: () => void;
+  onRefreshModelsClick: () => void;
+  isRefreshingModels: boolean;
+  modelCatalogStatus: {
+    activeModelsCount: number;
+    publicModelsCount: number;
+    adminModelsCount: number;
+    lastRefreshedAt: number | null;
+  } | undefined;
 }
 
-export function AdminCardsGrid({ onTruncateClick }: AdminCardsGridProps) {
+function formatLastRefreshed(lastRefreshedAt: number | null) {
+  if (!lastRefreshedAt) {
+    return 'No catalog sync yet';
+  }
+
+  return `Last refreshed ${new Date(lastRefreshedAt).toLocaleString()}`;
+}
+
+export function AdminCardsGrid({
+  onTruncateClick,
+  onRefreshModelsClick,
+  isRefreshingModels,
+  modelCatalogStatus,
+}: AdminCardsGridProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <AdminCard
@@ -17,6 +38,19 @@ export function AdminCardsGrid({ onTruncateClick }: AdminCardsGridProps) {
         title="System Statistics"
         description="View system-wide statistics"
         href="/app/admin/stats"
+      />
+
+      <AdminCard
+        title={isRefreshingModels ? 'Refreshing AI Models...' : 'Refresh AI Models'}
+        description={
+          modelCatalogStatus
+            ? `${modelCatalogStatus.activeModelsCount} cached models. ${formatLastRefreshed(
+                modelCatalogStatus.lastRefreshedAt,
+              )}`
+            : 'Sync the Cloudflare catalog for admin chat model options'
+        }
+        onClick={onRefreshModelsClick}
+        disabled={isRefreshingModels}
       />
 
       <AdminCard

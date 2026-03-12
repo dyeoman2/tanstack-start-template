@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { Building2, Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
+import { Building2, LogOut, type LucideIcon, Menu, MessageSquare, Shield, User } from 'lucide-react';
 import { useState } from 'react';
 import {
   Sheet,
@@ -26,7 +26,7 @@ export function MobileNavigation() {
   const {
     user,
     isAuthenticated,
-    isAdmin,
+    isSiteAdmin,
     isPending: isLoading,
   } = useAuth({ fetchRole: authState.isAuthenticated });
   const session = { user: isAuthenticated ? user : null };
@@ -37,7 +37,7 @@ export function MobileNavigation() {
   const navItems: NavItem[] = isAuthenticated
     ? [
         { to: '/app', label: 'Dashboard', exact: true },
-        { to: '/app/ai-playground', label: 'AI Playground', icon: Cloud },
+        { to: '/app/chat', label: 'Chat', icon: MessageSquare },
       ]
     : [];
 
@@ -130,7 +130,7 @@ export function MobileNavigation() {
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading...</div>
             ) : session?.user ? (
               <div className="space-y-2">
-                {isAdmin && (
+                {isSiteAdmin && (
                   <Link
                     to="/app/admin"
                     preload="intent"
@@ -173,7 +173,7 @@ export function MobileNavigation() {
                 <Link
                   to="/login"
                   preload="intent"
-                  search={{ reset: '', redirect: location.pathname }}
+                  search={{ reset: '', redirectTo: location.pathname }}
                   onClick={handleLinkClick}
                   className="block w-full px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                 >

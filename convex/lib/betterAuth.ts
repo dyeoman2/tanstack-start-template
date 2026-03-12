@@ -3,6 +3,9 @@ import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../../src/lib/server/better-auth/adapter-utils';
+import {
+  normalizeUserRole,
+} from '../../src/features/auth/lib/user-role';
 import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
 import type { DataModel } from '../_generated/dataModel';
@@ -68,18 +71,11 @@ function toTimestamp(value: string | number | Date | undefined | null): number {
   return new Date(value).getTime();
 }
 
-function normalizeRole(role: string | string[] | undefined): 'user' | 'admin' {
-  if (Array.isArray(role)) {
-    return role.includes('admin') ? 'admin' : 'user';
-  }
-
-  return role === 'admin' ? 'admin' : 'user';
-}
-
 export function normalizeBetterAuthUserProfile(authUser: BetterAuthUser) {
   const authUserId = assertUserId(authUser, 'Better Auth user missing id');
   const email = authUser.email ?? '';
   const name = authUser.name ?? null;
+  const role = normalizeUserRole(authUser.role);
 
   return {
     authUserId,
@@ -88,8 +84,7 @@ export function normalizeBetterAuthUserProfile(authUser: BetterAuthUser) {
     name,
     nameLower: name ? name.toLowerCase() : null,
     phoneNumber: authUser.phoneNumber ?? null,
-    role: normalizeRole(authUser.role),
-    isSiteAdmin: normalizeRole(authUser.role) === 'admin',
+    role,
     emailVerified: authUser.emailVerified ?? false,
     banned: authUser.banned === true,
     banReason: authUser.banReason ?? null,

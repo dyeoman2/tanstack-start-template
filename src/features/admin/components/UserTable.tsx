@@ -175,12 +175,12 @@ export function UserTable({
         header: createSortableHeader('Role', 'role', searchParams, handleSorting),
         cell: ({ row }) => {
           const role = row.original.role ?? DEFAULT_ROLE;
-          const isAdmin = role === USER_ROLES.ADMIN;
+          const isSiteAdminRole = role === USER_ROLES.ADMIN;
           const roleLabel = `${role.slice(0, 1).toUpperCase()}${role.slice(1)}`;
 
           return (
-            <Badge variant={isAdmin ? 'destructive' : 'secondary'}>
-              {isAdmin && <Shield className="h-3 w-3 mr-1" />}
+            <Badge variant={isSiteAdminRole ? 'destructive' : 'secondary'}>
+              {isSiteAdminRole && <Shield className="h-3 w-3 mr-1" />}
               {roleLabel}
             </Badge>
           );

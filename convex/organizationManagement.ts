@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { getSiteUrl } from '../src/lib/server/env.server';
 import {
   canChangeMemberRole,
@@ -16,7 +17,6 @@ import { mutation, query } from './_generated/server';
 import {
   checkOrganizationAccess,
   getCurrentUserOrThrow,
-  isAdminRole,
   listOrganizationMembers,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
@@ -373,7 +373,9 @@ export const listOrganizationDirectory = query({
         role,
         status: 'active',
         createdAt: toTimestamp(membership.createdAt),
-        isSiteAdmin: authUser ? isAdminRole(authUser.role) : false,
+        isSiteAdmin: authUser
+          ? deriveIsSiteAdmin(normalizeUserRole(authUser.role))
+          : false,
         availableRoles,
         canChangeRole: canChangeMemberRole(
           context.viewerRole,
@@ -718,24 +720,7 @@ export const deleteOrganization = mutation({
   handler: async (ctx, args) => {
     await requireOrganizationManagerById(ctx, args.organizationId);
 
-    const [memberships, usageDocs, responseDocs] = await Promise.all([
-      listOrganizationMembers(ctx, args.organizationId),
-      ctx.db
-        .query('aiMessageUsage')
-        .withIndex('by_organizationId', (q) => q.eq('organizationId', args.organizationId))
-        .collect(),
-      ctx.db
-        .query('aiResponses')
-        .withIndex('by_organizationId_createdAt', (q) =>
-          q.eq('organizationId', args.organizationId),
-        )
-        .collect(),
-    ]);
-
-    await Promise.all([
-      ...usageDocs.map((doc) => ctx.db.delete(doc._id)),
-      ...responseDocs.map((doc) => ctx.db.delete(doc._id)),
-    ]);
+    const memberships = await listOrganizationMembers(ctx, args.organizationId);
 
     await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
       input: {

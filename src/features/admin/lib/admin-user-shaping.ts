@@ -1,5 +1,4 @@
 import type { UserRole } from '../../auth/types';
-import { USER_ROLES } from '../../auth/types';
 
 export type AdminUserSortField = 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
 export type AdminUserSortDirection = 'asc' | 'desc';
@@ -64,14 +63,6 @@ function sortValue(user: AdminListUser, field: AdminUserSortField): string | num
     default:
       return user.createdAt;
   }
-}
-
-export function normalizeRole(role: string | string[] | undefined): UserRole {
-  if (Array.isArray(role)) {
-    return role.includes(USER_ROLES.ADMIN) ? USER_ROLES.ADMIN : USER_ROLES.USER;
-  }
-
-  return role === USER_ROLES.ADMIN ? USER_ROLES.ADMIN : USER_ROLES.USER;
 }
 
 export function shapeAdminUsers(users: AdminListUser[], params: AdminUserSearchParams) {

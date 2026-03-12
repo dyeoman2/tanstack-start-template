@@ -3,7 +3,7 @@ export const ORGANIZATION_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
 export type OrganizationRole = (typeof ORGANIZATION_ROLE_VALUES)[number];
 export type OrganizationViewerRole = OrganizationRole | 'site-admin' | null;
 
-export function isOrganizationRole(value: string): value is OrganizationRole {
+function isOrganizationRole(value: string): value is OrganizationRole {
   return ORGANIZATION_ROLE_VALUES.includes(value as OrganizationRole);
 }
 

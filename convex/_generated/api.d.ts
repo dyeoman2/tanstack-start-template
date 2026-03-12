@@ -9,19 +9,17 @@
  */
 
 import type * as admin from "../admin.js";
-import type * as ai from "../ai.js";
-import type * as aiResponses from "../aiResponses.js";
 import type * as auth from "../auth.js";
 import type * as auth_access from "../auth/access.js";
 import type * as auth_authorized from "../auth/authorized.js";
 import type * as auth_errors from "../auth/errors.js";
-import type * as autumn from "../autumn.js";
-import type * as cloudflareAi from "../cloudflareAi.js";
+import type * as chat from "../chat.js";
+import type * as chatActions from "../chatActions.js";
+import type * as chatModels from "../chatModels.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
 import type * as e2e from "../e2e.js";
 import type * as emails from "../emails.js";
-import type * as firecrawl from "../firecrawl.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
@@ -36,19 +34,17 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
-  ai: typeof ai;
-  aiResponses: typeof aiResponses;
   auth: typeof auth;
   "auth/access": typeof auth_access;
   "auth/authorized": typeof auth_authorized;
   "auth/errors": typeof auth_errors;
-  autumn: typeof autumn;
-  cloudflareAi: typeof cloudflareAi;
+  chat: typeof chat;
+  chatActions: typeof chatActions;
+  chatModels: typeof chatModels;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;
   e2e: typeof e2e;
   emails: typeof emails;
-  firecrawl: typeof firecrawl;
   health: typeof health;
   http: typeof http;
   "lib/betterAuth": typeof lib_betterAuth;
@@ -2851,5 +2847,4 @@ export declare const components: {
       getServerTime: FunctionReference<"mutation", "internal", {}, number>;
     };
   };
-  autumn: {};
 };

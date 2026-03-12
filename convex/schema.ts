@@ -1,6 +1,47 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
+const parsedPdfImageValidator = v.object({
+  pageNumber: v.number(),
+  name: v.string(),
+  width: v.number(),
+  height: v.number(),
+  dataUrl: v.string(),
+});
+
+const aiMessagePartValidator = v.union(
+  v.object({
+    type: v.literal('text'),
+    text: v.string(),
+  }),
+  v.object({
+    type: v.literal('image'),
+    image: v.string(),
+    mimeType: v.optional(v.string()),
+    name: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal('document'),
+    name: v.string(),
+    content: v.string(),
+    mimeType: v.string(),
+    images: v.optional(v.array(parsedPdfImageValidator)),
+  }),
+  v.object({
+    type: v.literal('source-url'),
+    sourceId: v.string(),
+    url: v.string(),
+    title: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal('source-document'),
+    sourceId: v.string(),
+    mediaType: v.string(),
+    title: v.string(),
+    filename: v.optional(v.string()),
+  }),
+);
+
 export default defineSchema({
   // Note: Better Auth manages its own tables via the betterAuth component
   // Those tables are in the 'betterAuth' namespace (user, session, account, verification, etc.)
@@ -23,7 +64,6 @@ export default defineSchema({
     nameLower: v.union(v.string(), v.null()),
     phoneNumber: v.union(v.string(), v.null()),
     role: v.union(v.literal('user'), v.literal('admin')),
-    isSiteAdmin: v.boolean(),
     emailVerified: v.boolean(),
     banned: v.boolean(),
     banReason: v.union(v.string(), v.null()),
@@ -74,38 +114,30 @@ export default defineSchema({
     .index('by_identifier_kind', ['identifier', 'kind'])
     .index('by_createdAt', ['createdAt']),
 
-  aiMessageUsage: defineTable({
+  aiThreads: defineTable({
     userId: v.string(),
     organizationId: v.string(),
-    messagesUsed: v.number(),
-    pendingMessages: v.number(),
+    title: v.string(),
+    pinned: v.boolean(),
+    personaId: v.optional(v.id('aiPersonas')),
+    titleManuallyEdited: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
-    lastReservedAt: v.optional(v.number()),
-    lastCompletedAt: v.optional(v.number()),
+    lastMessageAt: v.number(),
   })
-    .index('by_userId', ['userId'])
-    .index('by_organizationId', ['organizationId']),
+    .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
+    .index('by_organizationId_and_pinned', ['organizationId', 'pinned'])
+    .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt']),
 
-  aiResponses: defineTable({
+  aiMessages: defineTable({
+    threadId: v.id('aiThreads'),
     userId: v.string(),
     organizationId: v.string(),
-    requestKey: v.string(),
-    method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
+    role: v.union(v.literal('assistant'), v.literal('user')),
+    parts: v.array(aiMessagePartValidator),
+    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
-    response: v.string(),
-    rawText: v.optional(v.string()),
-    structuredData: v.optional(
-      v.object({
-        title: v.string(),
-        summary: v.string(),
-        keyPoints: v.array(v.string()),
-        category: v.string(),
-        difficulty: v.string(),
-      }),
-    ),
-    parseError: v.optional(v.string()),
     usage: v.optional(
       v.object({
         totalTokens: v.optional(v.number()),
@@ -113,13 +145,50 @@ export default defineSchema({
         outputTokens: v.optional(v.number()),
       }),
     ),
-    finishReason: v.optional(v.string()),
-    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
     errorMessage: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
+    clientMessageId: v.optional(v.string()),
   })
-    .index('by_userId_createdAt', ['userId', 'createdAt'])
-    .index('by_organizationId_createdAt', ['organizationId', 'createdAt'])
-    .index('by_requestKey', ['requestKey']),
+    .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+
+  aiPersonas: defineTable({
+    userId: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    prompt: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_userId_and_createdAt', ['userId', 'createdAt']),
+
+  aiModelCatalog: defineTable({
+    modelId: v.string(),
+    label: v.string(),
+    description: v.string(),
+    task: v.string(),
+    access: v.union(v.literal('public'), v.literal('admin')),
+    priceLabel: v.optional(v.string()),
+    prices: v.optional(
+      v.array(
+        v.object({
+          unit: v.string(),
+          price: v.number(),
+          currency: v.string(),
+        }),
+      ),
+    ),
+    contextWindow: v.optional(v.number()),
+    source: v.string(),
+    isActive: v.boolean(),
+    refreshedAt: v.number(),
+    beta: v.optional(v.boolean()),
+    deprecated: v.optional(v.boolean()),
+    deprecationDate: v.optional(v.string()),
+  })
+    .index('by_modelId', ['modelId'])
+    .index('by_isActive', ['isActive'])
+    .index('by_refreshedAt', ['refreshedAt']),
 });

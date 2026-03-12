@@ -112,13 +112,6 @@ S3_PUBLIC_URL=http://localhost:9000
 # E2E_ADMIN_PASSWORD=<deterministic-test-password>
 # E2E_ADMIN_NAME="E2E Admin"
 
-# ==========================================
-# AUTUMN BILLING (Optional)
-# ==========================================
-
-# Optional: Autumn product ID for credit purchases
-# Get from: https://useautumn.com dashboard after creating a credit package
-VITE_AUTUMN_50_CREDITS_ID=prod_50_credits
 `;
 
   writeFileSync(envPath, envContent, 'utf8');

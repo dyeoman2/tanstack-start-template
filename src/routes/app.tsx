@@ -33,7 +33,7 @@ function AppLayout() {
     redirectRef.current = true;
     void navigate({
       to: '/login',
-      search: { redirect: redirectTarget },
+      search: { redirectTo: redirectTarget },
       replace: true,
     }).catch(() => {
       redirectRef.current = false;

@@ -58,6 +58,39 @@ describe('useAuth', () => {
     expect(result.current.isImpersonating).toBe(true);
     expect(result.current.impersonatedByUserId).toBe('admin-1');
     expect(result.current.user?.email).toBe('person@example.com');
-    expect(result.current.isAdmin).toBe(false);
+    expect(result.current.isSiteAdmin).toBe(false);
+  });
+
+  it('derives site admin from the normalized role', async () => {
+    useAuthStateMock.mockReturnValue({
+      isAuthenticated: true,
+      isPending: false,
+      error: null,
+      userId: 'admin-1',
+    });
+    useSessionMock.mockReturnValue({
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'admin@example.com',
+          name: 'Admin Example',
+        },
+        session: {},
+      },
+      isPending: false,
+      error: null,
+    });
+    useQueryMock.mockReturnValue({
+      role: 'admin',
+      isSiteAdmin: false,
+      phoneNumber: null,
+      currentOrganization: null,
+    });
+
+    const { useAuth } = await import('./useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.user?.role).toBe('admin');
+    expect(result.current.isSiteAdmin).toBe(true);
   });
 });

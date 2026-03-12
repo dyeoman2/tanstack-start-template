@@ -1,11 +1,11 @@
 import { api } from '@convex/_generated/api';
 import { redirect } from '@tanstack/react-router';
 import { getRequest } from '@tanstack/react-start/server';
+import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-role';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import { convexAuthReactStart } from './convex-better-auth-react-start';
 import type { UserRole } from '../types';
-import { USER_ROLES } from '../types';
 
 export interface AuthenticatedUser {
   id: UserId;
@@ -31,8 +31,8 @@ function getCurrentRequest(): Request | undefined {
  * Get the current session and user information from Convex Better Auth
  * Returns null if not authenticated
  *
- * Note: This calls the Convex Better Auth HTTP handler to get the session,
- * then fetches the role from the userProfiles table via Convex.
+ * Note: Better Auth remains the source of truth for the global role.
+ * The Convex profile query returns the app projection used by routes and UI.
  */
 async function getCurrentUser(): Promise<AuthenticatedUser | null> {
   try {
@@ -41,6 +41,7 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     }
 
     const profile = await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {});
+    const role = normalizeUserRole(profile?.role);
 
     const sessionUserId = normalizeUserId(profile);
     if (!sessionUserId) {
@@ -56,8 +57,8 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
     return {
       id: sessionUserId,
       email: sessionUserEmail,
-      role: profile?.role === USER_ROLES.ADMIN ? USER_ROLES.ADMIN : USER_ROLES.USER,
-      isSiteAdmin: profile?.isSiteAdmin === true,
+      role,
+      isSiteAdmin: deriveIsSiteAdmin(role),
       name: typeof profile?.name === 'string' ? profile.name : undefined,
     };
   } catch {

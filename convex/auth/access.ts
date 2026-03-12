@@ -1,4 +1,8 @@
 import { assertUserId } from '../../src/lib/shared/user-id';
+import {
+  deriveIsSiteAdmin,
+  normalizeUserRole,
+} from '../../src/features/auth/lib/user-role';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { authComponent } from '../auth';
@@ -96,18 +100,6 @@ function toMillis(value: string | number | Date | undefined): number {
   return new Date(value).getTime();
 }
 
-export function isAdminRole(role: string | string[] | undefined): boolean {
-  if (!role) {
-    return false;
-  }
-
-  if (Array.isArray(role)) {
-    return role.includes('admin');
-  }
-
-  return role === 'admin';
-}
-
 function mapOrganizationRoleToAccess(role: string): ACCESS {
   switch (role) {
     case 'owner':
@@ -160,7 +152,7 @@ export async function getCurrentUserOrNull(
     ...user,
     authUserId,
     authUser,
-    isSiteAdmin: isAdminRole(authUser.role),
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
   };
 }
 
@@ -176,7 +168,7 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx | MutationCtx): Promis
     ...user,
     authUserId,
     authUser,
-    isSiteAdmin: isAdminRole(authUser.role),
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
   };
 }
 
@@ -215,36 +207,6 @@ export async function checkOrganizationAccess(
   }
 
   return mapOrganizationRoleToAccess(membership.role);
-}
-
-export async function checkAiResponseAccess(
-  ctx: QueryCtx | MutationCtx,
-  responseId: Doc<'aiResponses'>['_id'],
-  userCtx?: { user: CurrentUser },
-): Promise<ACCESS> {
-  const response = await ctx.db.get(responseId);
-  if (!response) {
-    return NO_ACCESS;
-  }
-
-  return await checkOrganizationAccess(ctx, response.organizationId, userCtx, {
-    bypassSiteAdmin: false,
-  });
-}
-
-export async function checkAiUsageAccess(
-  ctx: QueryCtx | MutationCtx,
-  usageId: Doc<'aiMessageUsage'>['_id'],
-  userCtx?: { user: CurrentUser },
-): Promise<ACCESS> {
-  const usage = await ctx.db.get(usageId);
-  if (!usage) {
-    return NO_ACCESS;
-  }
-
-  return await checkOrganizationAccess(ctx, usage.organizationId, userCtx, {
-    bypassSiteAdmin: false,
-  });
 }
 
 export type CurrentUserProfile = {
@@ -303,6 +265,7 @@ export async function buildCurrentUserProfile(
   ctx: QueryCtx | MutationCtx,
   user: CurrentUser,
 ): Promise<CurrentUserProfile> {
+  const role = normalizeUserRole(user.authUser.role);
   const organizations = await resolveOrganizationsForUser(ctx, user.authUserId);
   const currentOrganization =
     organizations.find((organization) => organization.id === user.lastActiveOrganizationId) ??
@@ -314,8 +277,8 @@ export async function buildCurrentUserProfile(
     email: user.authUser.email ?? '',
     name: user.authUser.name ?? null,
     phoneNumber: user.authUser.phoneNumber ?? null,
-    role: user.isSiteAdmin ? 'admin' : 'user',
-    isSiteAdmin: user.isSiteAdmin,
+    role,
+    isSiteAdmin: deriveIsSiteAdmin(role),
     emailVerified: user.authUser.emailVerified ?? false,
     createdAt: toMillis(user.authUser.createdAt),
     updatedAt: toMillis(user.authUser.updatedAt),
