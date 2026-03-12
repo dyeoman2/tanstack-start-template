@@ -31,7 +31,6 @@ type BreadcrumbPart = {
 
 const routeLabels = new Map<string, string>([
   ['admin', 'Admin'],
-  ['ai-playground', 'AI Playground'],
   ['chat', 'Chat'],
   ['members', 'Members'],
   ['organizations', 'Organizations'],

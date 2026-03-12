@@ -173,11 +173,11 @@ export function AppNavigation() {
                   Dashboard
                 </Link>
                 <Link
-                  to="/app/ai-playground"
+                  to="/app/chat"
                   preload="intent"
                   className={cn(navigationMenuTriggerStyle(), 'no-underline')}
                 >
-                  AI Playground
+                  Chat
                 </Link>
               </div>
             )}

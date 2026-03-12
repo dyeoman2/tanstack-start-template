@@ -718,24 +718,7 @@ export const deleteOrganization = mutation({
   handler: async (ctx, args) => {
     await requireOrganizationManagerById(ctx, args.organizationId);
 
-    const [memberships, usageDocs, responseDocs] = await Promise.all([
-      listOrganizationMembers(ctx, args.organizationId),
-      ctx.db
-        .query('aiMessageUsage')
-        .withIndex('by_organizationId', (q) => q.eq('organizationId', args.organizationId))
-        .collect(),
-      ctx.db
-        .query('aiResponses')
-        .withIndex('by_organizationId_createdAt', (q) =>
-          q.eq('organizationId', args.organizationId),
-        )
-        .collect(),
-    ]);
-
-    await Promise.all([
-      ...usageDocs.map((doc) => ctx.db.delete(doc._id)),
-      ...responseDocs.map((doc) => ctx.db.delete(doc._id)),
-    ]);
+    const memberships = await listOrganizationMembers(ctx, args.organizationId);
 
     await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
       input: {

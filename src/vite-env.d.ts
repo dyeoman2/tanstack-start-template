@@ -8,8 +8,6 @@ interface ImportMetaEnv {
   // Remove APP_NAME (only used server-side)
   readonly VITE_CONVEX_URL?: string;
   readonly VITE_CONVEX_SITE_URL?: string;
-  // Add missing client-side environment variables
-  readonly VITE_AUTUMN_AI_PRODUCT_ID?: string;
   readonly VITE_SENTRY_DSN?: string;
   readonly VITE_DEBUG?: string;
 }

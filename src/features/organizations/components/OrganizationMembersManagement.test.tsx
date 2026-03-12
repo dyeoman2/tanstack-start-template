@@ -15,7 +15,7 @@ const useMutationMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
-  Link: ({ children }: { children: ReactNode }) => <a>{children}</a>,
+  Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
 }));
 
 vi.mock('convex/react', () => ({

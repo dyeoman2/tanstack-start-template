@@ -217,36 +217,6 @@ export async function checkOrganizationAccess(
   return mapOrganizationRoleToAccess(membership.role);
 }
 
-export async function checkAiResponseAccess(
-  ctx: QueryCtx | MutationCtx,
-  responseId: Doc<'aiResponses'>['_id'],
-  userCtx?: { user: CurrentUser },
-): Promise<ACCESS> {
-  const response = await ctx.db.get(responseId);
-  if (!response) {
-    return NO_ACCESS;
-  }
-
-  return await checkOrganizationAccess(ctx, response.organizationId, userCtx, {
-    bypassSiteAdmin: false,
-  });
-}
-
-export async function checkAiUsageAccess(
-  ctx: QueryCtx | MutationCtx,
-  usageId: Doc<'aiMessageUsage'>['_id'],
-  userCtx?: { user: CurrentUser },
-): Promise<ACCESS> {
-  const usage = await ctx.db.get(usageId);
-  if (!usage) {
-    return NO_ACCESS;
-  }
-
-  return await checkOrganizationAccess(ctx, usage.organizationId, userCtx, {
-    bypassSiteAdmin: false,
-  });
-}
-
 export type CurrentUserProfile = {
   id: string;
   email: string;

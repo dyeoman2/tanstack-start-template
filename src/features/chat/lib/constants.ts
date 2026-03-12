@@ -1,6 +1,6 @@
 import type { ChatPersona } from '~/features/chat/types';
 
-export const DEFAULT_CHAT_PERSONA_ID = 'chatgpt';
+export const DEFAULT_CHAT_PERSONA_ID = 'default';
 
 export const DEFAULT_CHAT_PERSONA: Pick<ChatPersona, 'name' | 'prompt'> & { _id: undefined } = {
   _id: undefined,

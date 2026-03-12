@@ -18,6 +18,23 @@ import {
 import type { ChatMessagePart } from '~/features/chat/types';
 import { type ChatModelId, DEFAULT_CHAT_MODEL_ID, isChatModelId } from '~/lib/shared/chat-models';
 
+export function ChatWorkspaceSkeleton() {
+  return (
+    <div className="flex min-h-[60vh] flex-col overflow-hidden px-4 py-5 md:px-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
+        <div className="flex-1 space-y-4">
+          <div className="ml-auto h-20 w-[min(32rem,80%)] animate-pulse rounded-2xl rounded-br-md bg-muted/70" />
+          <div className="h-24 w-[min(42rem,88%)] animate-pulse rounded-2xl bg-muted/55" />
+          <div className="ml-auto h-16 w-[min(28rem,72%)] animate-pulse rounded-2xl rounded-br-md bg-muted/70" />
+        </div>
+        <div className="pt-6">
+          <div className="h-24 animate-pulse rounded-[20px] bg-muted/60" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -173,13 +190,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       cancelAnimationFrame(outerFrame);
       cancelAnimationFrame(innerFrame);
     };
-  }, [
-    alignPendingMessageToTop,
-    messages?.length,
-    pendingPreview?.showAssistantPlaceholder,
-    pendingPreview?.showUserMessage,
-    pendingSubmission?.clientMessageId,
-  ]);
+  }, [alignPendingMessageToTop, pendingSubmission?.clientMessageId]);
 
   if (threadId && thread === null) {
     return (
@@ -200,9 +211,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     (threadId && messages === undefined) ||
     personas === undefined
   ) {
-    return (
-      <div className="min-h-[60vh] animate-pulse rounded-3xl border border-border/60 bg-card/30" />
-    );
+    return <ChatWorkspaceSkeleton />;
   }
 
   const handleSend = async ({ parts, clear }: { parts: ChatMessagePart[]; clear: () => void }) => {

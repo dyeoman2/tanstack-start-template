@@ -11,7 +11,7 @@ describe('app router', () => {
 
     expect(
       await screen.findByRole('heading', {
-        name: /a production-ready starter template for tanstack start/i,
+        name: /a production-ready ai chat starter for tanstack start/i,
       }),
     ).toBeInTheDocument();
 

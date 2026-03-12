@@ -14,7 +14,6 @@ import {
   useRef,
   useState,
 } from 'react';
-import { AutumnClientProvider } from '~/components/AutumnProvider';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { Toaster } from '~/components/ui/sonner';
@@ -251,21 +250,19 @@ export function Providers({ children }: { children: ReactNode }) {
     >
       <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
         <AuthUiProvider>
-          <AutumnClientProvider>
-            <AuthProvider>
-              <ThemeProvider
-                attribute="class"
-                defaultTheme="system"
-                enableSystem
-                disableTransitionOnChange
-              >
-                <ToastProvider>
-                  {children}
-                  <Toaster richColors />
-                </ToastProvider>
-              </ThemeProvider>
-            </AuthProvider>
-          </AutumnClientProvider>
+          <AuthProvider>
+            <ThemeProvider
+              attribute="class"
+              defaultTheme="system"
+              enableSystem
+              disableTransitionOnChange
+            >
+              <ToastProvider>
+                {children}
+                <Toaster richColors />
+              </ToastProvider>
+            </ThemeProvider>
+          </AuthProvider>
         </AuthUiProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>

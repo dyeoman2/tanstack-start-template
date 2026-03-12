@@ -111,25 +111,9 @@ async function patchAiOwnershipToOrganization(
   authUserId: string,
   organizationId: string,
 ) {
-  const [usageDocs, responseDocs] = await Promise.all([
-    ctx.db
-      .query('aiMessageUsage')
-      .withIndex('by_userId', (q) => q.eq('userId', authUserId))
-      .collect(),
-    ctx.db
-      .query('aiResponses')
-      .withIndex('by_userId_createdAt', (q) => q.eq('userId', authUserId))
-      .collect(),
-  ]);
-
-  await Promise.all([
-    ...usageDocs
-      .filter((doc) => doc.organizationId !== organizationId)
-      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
-    ...responseDocs
-      .filter((doc) => doc.organizationId !== organizationId)
-      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
-  ]);
+  void ctx;
+  void authUserId;
+  void organizationId;
 }
 
 async function createDefaultOrganization(

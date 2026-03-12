@@ -27,11 +27,11 @@ import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersTable } from '~/features/organizations/components/OrganizationMembersTable';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
-import {
-  type OrganizationDirectoryKind,
-  type OrganizationDirectoryRole,
-  type OrganizationDirectoryRow,
-  type OrganizationDirectorySearchParams,
+import type {
+  OrganizationDirectoryKind,
+  OrganizationDirectoryRole,
+  OrganizationDirectoryRow,
+  OrganizationDirectorySearchParams,
 } from '~/features/organizations/lib/organization-management';
 
 const KIND_FILTER_OPTIONS: TableFilterOption<OrganizationDirectoryKind>[] = [

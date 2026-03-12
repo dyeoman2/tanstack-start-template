@@ -1,5 +1,5 @@
 import { useLocation } from '@tanstack/react-router';
-import { Bot, LayoutDashboard, MessageSquare } from 'lucide-react';
+import { LayoutDashboard, MessageSquare } from 'lucide-react';
 import * as React from 'react';
 import { NavMain, type NavMainItem } from '~/components/sidebar/NavMain';
 import { NavUser } from '~/components/sidebar/NavUser';
@@ -36,12 +36,6 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         icon: MessageSquare,
         isActive:
           location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/'),
-      },
-      {
-        title: 'Playground',
-        to: '/app/ai-playground',
-        icon: Bot,
-        isActive: location.pathname === '/app/ai-playground',
       },
     ];
 

@@ -1,8 +1,8 @@
 export const CHAT_MODEL_OPTIONS = [
   {
     id: '@cf/nvidia/nemotron-3-120b-a12b',
-    label: 'Nemotron 3 120B',
-    description: 'Free Cloudflare text-generation model for chat and playground requests.',
+    label: 'Nemotron 3',
+    description: 'Cloudflare text-generation model used for chat responses.',
   },
 ] as const;
 

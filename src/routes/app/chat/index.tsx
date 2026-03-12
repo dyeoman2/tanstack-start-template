@@ -3,7 +3,7 @@ import { useQuery } from 'convex/react';
 import { useEffect } from 'react';
 import { api } from '@convex/_generated/api';
 import { z } from 'zod';
-import { ChatWorkspace } from '~/features/chat/components/ChatWorkspace';
+import { ChatWorkspace, ChatWorkspaceSkeleton } from '~/features/chat/components/ChatWorkspace';
 import { sortThreads } from '~/features/chat/lib/utils';
 
 export const Route = createFileRoute('/app/chat/')({
@@ -40,7 +40,7 @@ function ChatIndexRoute() {
   }, [isNewThread, navigate, threads]);
 
   if (threads === undefined) {
-    return <div className="min-h-[60vh] animate-pulse rounded-3xl border border-border/60 bg-card/30" />;
+    return <ChatWorkspaceSkeleton />;
   }
 
   if (threads.length > 0 && !isNewThread) {

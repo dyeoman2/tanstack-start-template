@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { Building2, Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
+import { Building2, LogOut, type LucideIcon, Menu, MessageSquare, Shield, User } from 'lucide-react';
 import { useState } from 'react';
 import {
   Sheet,
@@ -37,7 +37,7 @@ export function MobileNavigation() {
   const navItems: NavItem[] = isAuthenticated
     ? [
         { to: '/app', label: 'Dashboard', exact: true },
-        { to: '/app/ai-playground', label: 'AI Playground', icon: Cloud },
+        { to: '/app/chat', label: 'Chat', icon: MessageSquare },
       ]
     : [];
 
