@@ -31,6 +31,24 @@ export function getSiteUrl(): string {
   return 'http://localhost:3000';
 }
 
+export function getBetterAuthTrustedOrigins(siteUrl = getSiteUrl()): string[] {
+  const trustedOrigins = new Set<string>([siteUrl]);
+
+  try {
+    const origin = new URL(siteUrl);
+    const isLoopbackHost = origin.hostname === 'localhost' || origin.hostname === '127.0.0.1';
+
+    if (isLoopbackHost) {
+      trustedOrigins.add(`http://localhost:${origin.port || '3000'}`);
+      trustedOrigins.add(`http://127.0.0.1:${origin.port || '3000'}`);
+    }
+  } catch {
+    // getSiteUrl already normalizes inputs, so this is only a defensive fallback.
+  }
+
+  return [...trustedOrigins];
+}
+
 function resolveSiteUrlCandidate(value: string | undefined, label: string): string | null {
   if (!value) {
     return null;

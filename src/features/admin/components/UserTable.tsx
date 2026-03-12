@@ -8,6 +8,7 @@ import {
   DeleteActionButton,
   EditActionButton,
   formatTableDate,
+  ImpersonateActionButton,
 } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
@@ -17,6 +18,7 @@ type UserRow = AdminUser;
 
 interface UserTableProps {
   users: UserRow[];
+  currentUserId?: string;
   pagination: {
     page: number;
     pageSize: number;
@@ -37,16 +39,21 @@ interface UserTableProps {
   isFetching?: boolean;
   onEditUser: (user: UserRow) => void;
   onDeleteUser: (userId: string) => void;
+  onImpersonateUser: (userId: string) => void;
+  pendingImpersonationUserId: string | null;
 }
 
 export function UserTable({
   users,
+  currentUserId,
   pagination,
   searchParams,
   isLoading,
   isFetching = false,
   onEditUser,
   onDeleteUser,
+  onImpersonateUser,
+  pendingImpersonationUserId,
 }: UserTableProps) {
   const navigate = useNavigate();
 
@@ -151,17 +158,36 @@ export function UserTable({
       {
         id: 'actions',
         header: () => <div className="text-right">Actions</div>,
-        cell: ({ row }) => (
-          <div className="text-right">
-            <div className="flex items-center justify-end gap-2">
-              <EditActionButton onClick={() => onEditUser(row.original)} />
-              <DeleteActionButton onClick={() => onDeleteUser(row.original.id)} />
+        cell: ({ row }) => {
+          const canImpersonate =
+            row.original.role !== USER_ROLES.ADMIN && row.original.id !== currentUserId;
+
+          return (
+            <div className="text-right">
+              <div className="flex items-center justify-end gap-2">
+                {canImpersonate ? (
+                  <ImpersonateActionButton
+                    onClick={() => onImpersonateUser(row.original.id)}
+                    disabled={pendingImpersonationUserId === row.original.id}
+                  />
+                ) : null}
+                <EditActionButton onClick={() => onEditUser(row.original)} />
+                <DeleteActionButton onClick={() => onDeleteUser(row.original.id)} />
+              </div>
             </div>
-          </div>
-        ),
+          );
+        },
       },
     ],
-    [handleSorting, onDeleteUser, onEditUser, searchParams],
+    [
+      currentUserId,
+      handleSorting,
+      onDeleteUser,
+      onEditUser,
+      onImpersonateUser,
+      pendingImpersonationUserId,
+      searchParams,
+    ],
   );
 
   return (

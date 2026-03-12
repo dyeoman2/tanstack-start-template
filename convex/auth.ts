@@ -3,7 +3,7 @@ import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth, type Auth } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
 import { v } from 'convex/values';
-import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
+import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '../src/lib/server/env.server';
 import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -12,6 +12,7 @@ import authConfig from './auth.config';
 
 const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
+const trustedOrigins = getBetterAuthTrustedOrigins(siteUrl);
 
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(components.betterAuth, {
   local: {
@@ -119,6 +120,7 @@ export const createAuth = (
         },
       },
     },
+    trustedOrigins,
     plugins: [
       admin({
         defaultRole: 'user',

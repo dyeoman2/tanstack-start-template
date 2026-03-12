@@ -28,6 +28,8 @@ export interface AuthResult {
   isAuthenticated: boolean;
   isAdmin: boolean;
   isSiteAdmin: boolean;
+  isImpersonating: boolean;
+  impersonatedByUserId?: string;
   isPending: boolean;
   error: Error | null;
 }
@@ -47,6 +49,11 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
+  const impersonatedByUserId =
+    typeof session?.session?.impersonatedBy === 'string' && session.session.impersonatedBy.length > 0
+      ? session.session.impersonatedBy
+      : undefined;
+  const isImpersonating = impersonatedByUserId !== undefined;
 
   const isPending =
     sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined);
@@ -75,6 +82,8 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       isAuthenticated: authState.isAuthenticated,
       isAdmin: isSiteAdmin,
       isSiteAdmin,
+      isImpersonating,
+      impersonatedByUserId,
       isPending,
       error,
     }),
@@ -85,6 +94,8 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       profile?.currentOrganization,
       profile?.phoneNumber,
       authState.isAuthenticated,
+      isImpersonating,
+      impersonatedByUserId,
       isPending,
       error,
       shouldFetchProfile,

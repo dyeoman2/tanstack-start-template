@@ -1,8 +1,13 @@
 import { useCurrentOrganization } from '@daveyplate/better-auth-ui';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useLocation } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
+import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
+import { useEffect, useState } from 'react';
 import { AppSidebar } from '~/components/AppSidebar';
 import { ThemeToggle } from '~/components/theme-toggle';
+import { Button } from '~/components/ui/button';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -11,8 +16,10 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '~/components/ui/breadcrumb';
-import { Separator } from '~/components/ui/separator';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/sidebar';
+import { useToast } from '~/components/ui/toast';
+import { authClient } from '~/features/auth/auth-client';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
@@ -118,14 +125,93 @@ function AppBreadcrumbs() {
 }
 
 export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const router = useRouter();
+  const { showToast } = useToast();
+  const { isImpersonating, isPending, isSiteAdmin, user } = useAuth();
+  const [isStoppingImpersonation, setIsStoppingImpersonation] = useState(false);
+  const [isRestoringAdminContext, setIsRestoringAdminContext] = useState(false);
+
+  useEffect(() => {
+    if (!isRestoringAdminContext || isPending || isImpersonating || !isSiteAdmin) {
+      return;
+    }
+
+    setIsRestoringAdminContext(false);
+
+    if (location.pathname === '/app/admin/users') {
+      return;
+    }
+
+    void navigate({
+      to: '/app/admin/users',
+      replace: true,
+    }).then(() => router.invalidate());
+  }, [
+    isImpersonating,
+    isPending,
+    isRestoringAdminContext,
+    isSiteAdmin,
+    location.pathname,
+    navigate,
+    router,
+  ]);
+
+  const handleStopImpersonating = async () => {
+    setIsStoppingImpersonation(true);
+
+    try {
+      await authClient.admin.stopImpersonating({
+        fetchOptions: { throw: true },
+      });
+      const session = await authClient.getSession({
+        fetchOptions: { throw: true },
+      });
+
+      authClient.$store.notify('$sessionSignal');
+      queryClient.setQueryData(['session'], session);
+      setIsRestoringAdminContext(true);
+      await navigate({ to: '/app', replace: true });
+      await router.invalidate();
+    } catch (error) {
+      setIsRestoringAdminContext(false);
+      showToast(getErrorMessage(error, 'Failed to stop impersonation'), 'error');
+    } finally {
+      setIsStoppingImpersonation(false);
+    }
+  };
+
   return (
     <SidebarProvider defaultOpen>
       <AppSidebar />
       <SidebarInset>
+        {isImpersonating ? (
+          <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-sm font-medium">
+                You are impersonating {user?.email ?? 'this user'}.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  void handleStopImpersonating();
+                }}
+                disabled={isStoppingImpersonation}
+              >
+                {isStoppingImpersonation ? <Loader2 className="size-4 animate-spin" /> : null}
+                Stop impersonating
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <header className="flex h-16 shrink-0 items-center gap-2 transition-[width,height] ease-linear group-has-[[data-collapsible=icon]]/sidebar-wrapper:h-12">
-          <div className="flex w-full items-center gap-2 px-4">
+          <div className="flex w-full items-center gap-3 px-4">
             <SidebarTrigger className="-ml-1" />
-            <Separator orientation="vertical" className="mr-2 h-4" />
+            <div className="h-6 w-px shrink-0 bg-border" aria-hidden="true" />
             <AppBreadcrumbs />
             <div className="ml-auto">
               <ThemeToggle />
@@ -138,4 +224,12 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
       </SidebarInset>
     </SidebarProvider>
   );
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  return fallback;
 }

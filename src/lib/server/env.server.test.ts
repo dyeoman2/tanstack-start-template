@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBetterAuthSecret, getSiteUrl } from '~/lib/server/env.server';
+import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '~/lib/server/env.server';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -49,6 +49,15 @@ describe('env.server', () => {
     process.env.BETTER_AUTH_SECRET = 'x'.repeat(32);
 
     expect(getBetterAuthSecret()).toBe('x'.repeat(32));
+  });
+
+  it('adds both local loopback origins for local development', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
+
+    expect(getBetterAuthTrustedOrigins()).toEqual([
+      'http://127.0.0.1:3000',
+      'http://localhost:3000',
+    ]);
   });
 
   it('warns for short Better Auth secrets', () => {

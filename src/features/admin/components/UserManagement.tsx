@@ -10,6 +10,9 @@ import type { User as AdminUser } from '../types';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
 import { UserTable } from './UserTable';
+import { useUserImpersonation } from '../hooks/useUserImpersonation';
+import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 
 type UserRoleFilterValue = 'all' | UserRole;
 
@@ -22,6 +25,8 @@ const ROLE_FILTER_OPTIONS: TableFilterOption<UserRoleFilterValue>[] = [
 export function UserManagement() {
   const navigate = useNavigate();
   const search = useSearch({ from: '/app/admin/users' });
+  const authState = useAuthState();
+  const { user: currentUser } = useAuth({ fetchRole: authState.isAuthenticated });
   const searchTerm = search.search ?? '';
   const roleFilter = (search.role ?? 'all') as UserRoleFilterValue;
 
@@ -29,6 +34,7 @@ export function UserManagement() {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
+  const { impersonateUser, pendingUserId } = useUserImpersonation();
 
   const adminUsersSearchParams = useMemo(
     () =>
@@ -141,10 +147,13 @@ export function UserManagement() {
           users={users}
           pagination={pagination || { page: 1, pageSize: 10, total: 0, totalPages: 0 }}
           searchParams={adminUsersSearchParams}
+          currentUserId={currentUser?.id}
           isLoading={isLoading}
           isFetching={false}
           onEditUser={handleEditUser}
           onDeleteUser={handleDeleteUser}
+          onImpersonateUser={impersonateUser}
+          pendingImpersonationUserId={pendingUserId}
         />
       </div>
 

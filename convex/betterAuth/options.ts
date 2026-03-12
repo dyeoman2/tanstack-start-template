@@ -2,10 +2,14 @@ import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
+import { getBetterAuthTrustedOrigins, getSiteUrl } from '../../src/lib/server/env.server';
 import authConfig from '../auth.config';
+
+const siteUrl = getSiteUrl();
 
 export const options = {
   database: convexAdapter({} as never, {} as never),
+  trustedOrigins: getBetterAuthTrustedOrigins(siteUrl),
   rateLimit: {
     storage: 'database',
   },

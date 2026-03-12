@@ -168,11 +168,11 @@ function ProfileCardSkeleton() {
 }
 
 const profileSettingsCardClassNames = {
-  base: 'overflow-hidden rounded-xl border border-border py-6 shadow-sm',
-  header: 'px-6 pb-4',
+  base: 'overflow-hidden rounded-xl border border-border shadow-sm',
+  header: 'px-6 pt-6 pb-4',
   title: 'text-base font-semibold',
   description: 'mt-2 text-sm leading-6 text-muted-foreground',
-  content: 'px-6',
+  content: 'px-6 pb-6',
   footer: 'border-t border-border bg-muted/20 px-6 pt-6',
   instructions: 'text-sm leading-6 text-muted-foreground',
   input: 'h-10 rounded-md border-border bg-background shadow-none',
