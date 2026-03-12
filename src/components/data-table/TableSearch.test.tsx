@@ -30,10 +30,20 @@ describe('TableSearch', () => {
     const onSearch = vi.fn();
     render(<TableSearch initialValue="initial" onSearch={onSearch} />);
 
-    fireEvent.change(screen.getByRole('textbox', { name: /search table/i }), {
+    const searchInput = screen.getByRole('textbox', { name: /search table/i });
+
+    fireEvent.change(searchInput, {
       target: { value: '  grace  ' },
     });
-    fireEvent.submit(screen.getByRole('textbox', { name: /search table/i }).closest('form')!);
+    const form = searchInput.closest('form');
+
+    expect(form).not.toBeNull();
+
+    if (!form) {
+      throw new Error('Expected search input to be wrapped in a form');
+    }
+
+    fireEvent.submit(form);
 
     expect(onSearch).toHaveBeenCalledWith('grace');
     vi.runAllTimers();

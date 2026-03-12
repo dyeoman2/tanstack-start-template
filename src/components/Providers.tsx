@@ -1,12 +1,26 @@
 import { api } from '@convex/_generated/api';
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
+import { AuthQueryProvider } from '@daveyplate/better-auth-tanstack';
+import { AuthUIProviderTanstack } from '@daveyplate/better-auth-ui/tanstack';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useRouter } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
-import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
+import {
+  createContext,
+  type MouseEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { AutumnClientProvider } from '~/components/AutumnProvider';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
+import { Toaster } from '~/components/ui/sonner';
 import { ToastProvider } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
+import { authUiViewPaths } from '~/features/auth/auth-ui';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { USER_ROLES } from '~/features/auth/types';
 import { convexClient } from '~/lib/convexClient';
@@ -134,6 +148,100 @@ function AuthProvider({ children }: AuthProviderProps) {
   );
 }
 
+function AuthUiProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
+  const [queryClient] = useState(() => new QueryClient());
+
+  const navigateWithRouter = (href: string, replace = false) => {
+    if (/^https?:\/\//.test(href)) {
+      if (replace) {
+        window.location.replace(href);
+      } else {
+        window.location.assign(href);
+      }
+      return;
+    }
+
+    if (replace) {
+      router.history.replace(href);
+    } else {
+      router.history.push(href);
+    }
+  };
+
+  const AuthLink = ({
+    href,
+    className,
+    children: linkChildren,
+  }: {
+    href: string;
+    className?: string;
+    children: ReactNode;
+  }) => {
+    const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
+      if (
+        event.defaultPrevented ||
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey ||
+        /^https?:\/\//.test(href)
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      navigateWithRouter(href);
+    };
+
+    return (
+      <a href={href} className={className} onClick={handleClick}>
+        {linkChildren}
+      </a>
+    );
+  };
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthQueryProvider>
+        <AuthUIProviderTanstack
+          account={{
+            basePath: '/app/profile',
+            fields: ['name', 'phoneNumber'],
+          }}
+          additionalFields={{
+            phoneNumber: {
+              description: 'Add a phone number to your account profile.',
+              label: 'Phone Number',
+              placeholder: '(805) 123-4567',
+              type: 'string',
+            },
+          }}
+          authClient={authClient}
+          basePath=""
+          baseURL={typeof window === 'undefined' ? '' : window.location.origin}
+          Link={AuthLink}
+          credentials={{ forgotPassword: true }}
+          navigate={(href) => navigateWithRouter(href)}
+          onSessionChange={async () => {
+            await router.invalidate();
+          }}
+          organization={{
+            basePath: '/app/organizations',
+            pathMode: 'slug',
+            personalPath: '/app/profile',
+          }}
+          replace={(href) => navigateWithRouter(href, true)}
+          viewPaths={authUiViewPaths}
+        >
+          {children}
+        </AuthUIProviderTanstack>
+      </AuthQueryProvider>
+    </QueryClientProvider>
+  );
+}
+
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ErrorBoundaryWrapper
@@ -142,18 +250,23 @@ export function Providers({ children }: { children: ReactNode }) {
       showDetails={false}
     >
       <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
-        <AutumnClientProvider>
-          <AuthProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
-              <ToastProvider>{children}</ToastProvider>
-            </ThemeProvider>
-          </AuthProvider>
-        </AutumnClientProvider>
+        <AuthUiProvider>
+          <AutumnClientProvider>
+            <AuthProvider>
+              <ThemeProvider
+                attribute="class"
+                defaultTheme="system"
+                enableSystem
+                disableTransitionOnChange
+              >
+                <ToastProvider>
+                  {children}
+                  <Toaster richColors />
+                </ToastProvider>
+              </ThemeProvider>
+            </AuthProvider>
+          </AutumnClientProvider>
+        </AuthUiProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>
   );

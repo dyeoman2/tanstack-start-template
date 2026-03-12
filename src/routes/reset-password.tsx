@@ -1,12 +1,14 @@
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router';
-import { Lock } from 'lucide-react';
+import { CheckCircle2, Lock } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
+import { Card, CardContent } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
+import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -80,6 +82,7 @@ function ResetPasswordPage() {
         await authClient.resetPassword({
           token,
           newPassword: value.password,
+          fetchOptions: { throw: true },
         });
 
         setSuccess(true);
@@ -93,14 +96,26 @@ function ResetPasswordPage() {
           router.navigate({ to: '/app' });
         }, 2000);
       } catch (error: unknown) {
+        const errorObj = error as {
+          code?: string;
+          error?: { code?: string; message?: string };
+          message?: string;
+          status?: number;
+        };
+        const errorMessage = errorObj?.message || errorObj?.error?.message || '';
+        const errorCode = errorObj?.code || errorObj?.error?.code || '';
+
         if (
-          (error instanceof Error && error.message?.includes('Invalid token')) ||
-          (error instanceof Error && error.message?.includes('expired'))
+          errorMessage.toLowerCase().includes('invalid token') ||
+          errorMessage.toLowerCase().includes('expired') ||
+          errorMessage.toLowerCase().includes('invalid or expired') ||
+          errorCode === 'INVALID_TOKEN' ||
+          errorCode === 'TOKEN_EXPIRED'
         ) {
           setError(
             'This password reset link has expired or is invalid. Please request a new password reset.',
           );
-        } else if (error instanceof Error && error.message?.includes('Password')) {
+        } else if (errorMessage.includes('Password')) {
           setError('Password does not meet the requirements. Please check the password criteria.');
         } else {
           setError('Password reset failed. Please try again or request a new reset link.');
@@ -138,47 +153,22 @@ function ResetPasswordPage() {
 
   if (success) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-md w-full space-y-8">
-          <div className="text-center">
-            <div className="flex justify-center mb-4">
-              <Link
-                to="/"
-                className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-              >
-                <img
-                  src="/android-chrome-192x192.png"
-                  alt="TanStack Start Template Logo"
-                  className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
-                />
-              </Link>
+      <AuthRouteShell>
+        <Card className="w-full max-w-sm">
+          <CardContent className="space-y-4 px-8 py-10 text-center">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/10">
+              <CheckCircle2 className="h-7 w-7 text-primary" aria-hidden="true" />
             </div>
-            <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-primary/10">
-              <svg
-                className="h-6 w-6 text-primary"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <title>Password reset successful</title>
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M5 13l4 4L19 7"
-                />
-              </svg>
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-foreground">Password Reset Successful</h2>
+              <p className="text-sm text-muted-foreground">
+                Your password has been updated. You are now signed in and will be redirected to
+                your dashboard.
+              </p>
             </div>
-            <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
-              Password Reset Successful
-            </h2>
-            <p className="mt-2 text-center text-sm text-muted-foreground">
-              Your password has been successfully updated. You are now signed in and will be
-              redirected to your dashboard...
-            </p>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
+      </AuthRouteShell>
     );
   }
 

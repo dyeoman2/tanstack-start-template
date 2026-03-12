@@ -1,7 +1,5 @@
-import { api } from '@convex/_generated/api';
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
-import { LogOut, Shield, User } from 'lucide-react';
+import { Building2, LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
 import { ThemeToggle } from '~/components/theme-toggle';
 import {
@@ -12,13 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { navigationMenuTriggerStyle } from '~/components/ui/navigation-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -81,6 +72,15 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>
+            <Link
+              to="/app/organizations"
+              className="flex items-center gap-2 w-full cursor-pointer"
+            >
+              <Building2 className="w-4 h-4" />
+              Organizations
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
             <Link to="/app/profile" className="flex items-center gap-2 w-full cursor-pointer">
               <User className="w-4 h-4" />
               Profile
@@ -125,9 +125,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
  */
 export function AppNavigation() {
   const location = useLocation();
-  const { isAuthenticated, user } = useAuth();
-  const organizationList = useQuery(api.orgs.listMyOrganizations, isAuthenticated ? {} : 'skip');
-  const setActiveOrganization = useMutation(api.orgs.setActiveOrganization);
+  const { isAuthenticated } = useAuth();
 
   return (
     <nav className="bg-card shadow-sm border-b">
@@ -181,13 +179,6 @@ export function AppNavigation() {
                 >
                   AI Playground
                 </Link>
-                <Link
-                  to="/app/teams"
-                  preload="intent"
-                  className={cn(navigationMenuTriggerStyle(), 'no-underline')}
-                >
-                  Organizations
-                </Link>
               </div>
             )}
           </div>
@@ -203,28 +194,6 @@ export function AppNavigation() {
             <div className="hidden md:block mr-2">
               <ThemeToggle />
             </div>
-
-            {isAuthenticated && organizationList && organizationList.organizations.length > 0 && (
-              <div className="hidden md:block mr-3 min-w-[180px]">
-                <Select
-                  value={organizationList.currentOrganizationId ?? undefined}
-                  onValueChange={(value) =>
-                    void setActiveOrganization({ organizationId: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={user?.currentOrganization?.name ?? 'Select organization'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {organizationList.organizations.map((organization) => (
-                      <SelectItem key={organization.id} value={organization.id}>
-                        {organization.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             {/* Desktop Auth Navigation */}
             <div className="hidden md:block">
