@@ -10,11 +10,15 @@ import { USER_ROLES } from '../../auth/types';
 import { useUserImpersonation } from '../hooks/useUserImpersonation';
 import { listAdminUsersServerFn } from '../server/admin-management';
 import type { User as AdminUser } from '../types';
+import { UserBanDialog } from './UserBanDialog';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
+import { UserPasswordResetDialog } from './UserPasswordResetDialog';
+import { UserSessionsDialog } from './UserSessionsDialog';
 import { UserTable } from './UserTable';
 
 type UserRoleFilterValue = 'all' | UserRole;
+type AdminDialog = 'edit' | 'delete' | 'ban' | 'sessions' | 'password' | null;
 
 const ROLE_FILTER_OPTIONS: TableFilterOption<UserRoleFilterValue>[] = [
   { label: 'All roles', value: 'all' },
@@ -30,10 +34,8 @@ export function UserManagement() {
   const searchTerm = search.search ?? '';
   const roleFilter = (search.role ?? 'all') as UserRoleFilterValue;
 
+  const [activeDialog, setActiveDialog] = useState<AdminDialog>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
-  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
   const { impersonateUser, pendingUserId } = useUserImpersonation();
 
   const adminUsersSearchParams = useMemo(
@@ -66,19 +68,33 @@ export function UserManagement() {
 
   const handleEditUser = (user: AdminUser) => {
     setSelectedUser(user);
-    setShowEditDialog(true);
+    setActiveDialog('edit');
   };
 
   const handleDeleteUser = (userId: string) => {
-    setSelectedUserId(userId);
-    setShowDeleteDialog(true);
+    const user = users.find((candidate) => candidate.id === userId) ?? null;
+    setSelectedUser(user);
+    setActiveDialog('delete');
+  };
+
+  const handleManageBan = (user: AdminUser) => {
+    setSelectedUser(user);
+    setActiveDialog('ban');
+  };
+
+  const handleManageSessions = (user: AdminUser) => {
+    setSelectedUser(user);
+    setActiveDialog('sessions');
+  };
+
+  const handleResetPassword = (user: AdminUser) => {
+    setSelectedUser(user);
+    setActiveDialog('password');
   };
 
   const handleCloseDialogs = () => {
-    setShowDeleteDialog(false);
-    setShowEditDialog(false);
+    setActiveDialog(null);
     setSelectedUser(null);
-    setSelectedUserId(null);
   };
 
   const handleSearchChange = useCallback(
@@ -153,16 +169,41 @@ export function UserManagement() {
           isFetching={isFetching}
           onEditUser={handleEditUser}
           onDeleteUser={handleDeleteUser}
+          onManageBan={handleManageBan}
+          onManageSessions={handleManageSessions}
           onImpersonateUser={impersonateUser}
+          onResetPassword={handleResetPassword}
           pendingImpersonationUserId={pendingUserId}
         />
       </div>
 
-      <UserEditDialog open={showEditDialog} user={selectedUser} onClose={handleCloseDialogs} />
+      <UserEditDialog
+        open={activeDialog === 'edit'}
+        user={selectedUser}
+        onClose={handleCloseDialogs}
+      />
+
+      <UserBanDialog
+        open={activeDialog === 'ban'}
+        user={selectedUser}
+        onClose={handleCloseDialogs}
+      />
+
+      <UserSessionsDialog
+        open={activeDialog === 'sessions'}
+        user={selectedUser}
+        onClose={handleCloseDialogs}
+      />
+
+      <UserPasswordResetDialog
+        open={activeDialog === 'password'}
+        user={selectedUser}
+        onClose={handleCloseDialogs}
+      />
 
       <UserDeleteDialog
-        open={showDeleteDialog}
-        userId={selectedUserId}
+        open={activeDialog === 'delete'}
+        userId={selectedUser?.id ?? null}
         onClose={handleCloseDialogs}
       />
     </div>

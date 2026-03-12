@@ -1,16 +1,17 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Shield } from 'lucide-react';
+import { Ban, Clock3, Edit3, LogIn, MoreHorizontal, Shield, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
-import {
-  createSortableHeader,
-  DataTable,
-  DeleteActionButton,
-  EditActionButton,
-  formatTableDate,
-  ImpersonateActionButton,
-} from '~/components/data-table';
+import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
+import { Button } from '~/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
 import type { User as AdminUser } from '../types';
 
@@ -39,6 +40,9 @@ interface UserTableProps {
   isFetching?: boolean;
   onEditUser: (user: UserRow) => void;
   onDeleteUser: (userId: string) => void;
+  onManageBan: (user: UserRow) => void;
+  onManageSessions: (user: UserRow) => void;
+  onResetPassword: (user: UserRow) => void;
   onImpersonateUser: (userId: string) => void;
   pendingImpersonationUserId: string | null;
 }
@@ -52,6 +56,9 @@ export function UserTable({
   isFetching = false,
   onEditUser,
   onDeleteUser,
+  onManageBan,
+  onManageSessions,
+  onResetPassword,
   onImpersonateUser,
   pendingImpersonationUserId,
 }: UserTableProps) {
@@ -140,11 +147,26 @@ export function UserTable({
       {
         accessorKey: 'emailVerified',
         header: createSortableHeader('Status', 'emailVerified', searchParams, handleSorting),
-        cell: ({ row }) => (
-          <Badge variant={row.original.emailVerified ? 'default' : 'outline'}>
-            {row.original.emailVerified ? 'Verified' : 'Unverified'}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          if (row.original.banned) {
+            return (
+              <div className="space-y-1">
+                <Badge variant="destructive">Banned</Badge>
+                {row.original.banExpires ? (
+                  <p className="text-xs text-muted-foreground">
+                    Until {formatTableDate(row.original.banExpires)}
+                  </p>
+                ) : null}
+              </div>
+            );
+          }
+
+          return (
+            <Badge variant={row.original.emailVerified ? 'default' : 'outline'}>
+              {row.original.emailVerified ? 'Verified' : 'Unverified'}
+            </Badge>
+          );
+        },
       },
       {
         accessorKey: 'createdAt',
@@ -161,18 +183,59 @@ export function UserTable({
         cell: ({ row }) => {
           const canImpersonate =
             row.original.role !== USER_ROLES.ADMIN && row.original.id !== currentUserId;
+          const isCurrentUser = row.original.id === currentUserId;
+          const canManageDangerousActions = !isCurrentUser;
 
           return (
             <div className="text-right">
-              <div className="flex items-center justify-end gap-2">
-                {canImpersonate ? (
-                  <ImpersonateActionButton
-                    onClick={() => onImpersonateUser(row.original.id)}
-                    disabled={pendingImpersonationUserId === row.original.id}
-                  />
-                ) : null}
-                <EditActionButton onClick={() => onEditUser(row.original)} />
-                <DeleteActionButton onClick={() => onDeleteUser(row.original.id)} />
+              <div className="flex items-center justify-end">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <MoreHorizontal className="h-4 w-4" />
+                      <span className="sr-only">More actions</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onSelect={() => onEditUser(row.original)}>
+                      <Edit3 className="size-4" />
+                      Edit user
+                    </DropdownMenuItem>
+                    {canImpersonate ? (
+                      <DropdownMenuItem
+                        onSelect={() => onImpersonateUser(row.original.id)}
+                        disabled={pendingImpersonationUserId === row.original.id}
+                      >
+                        <LogIn className="size-4" />
+                        Impersonate user
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem
+                      onSelect={() => onManageBan(row.original)}
+                      disabled={!canManageDangerousActions}
+                    >
+                      <Ban className="size-4" />
+                      {row.original.banned ? 'Unban user' : 'Ban user'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onManageSessions(row.original)}>
+                      <Clock3 className="size-4" />
+                      Manage sessions
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => onResetPassword(row.original)}>
+                      <Edit3 className="size-4" />
+                      Reset password
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      variant="destructive"
+                      onSelect={() => onDeleteUser(row.original.id)}
+                      disabled={!canManageDangerousActions}
+                    >
+                      <Trash2 className="size-4" />
+                      Delete user
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           );
@@ -184,7 +247,10 @@ export function UserTable({
       handleSorting,
       onDeleteUser,
       onEditUser,
+      onManageBan,
+      onManageSessions,
       onImpersonateUser,
+      onResetPassword,
       pendingImpersonationUserId,
       searchParams,
     ],
