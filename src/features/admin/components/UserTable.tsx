@@ -182,7 +182,9 @@ export function UserTable({
         header: () => <div className="text-right">Actions</div>,
         cell: ({ row }) => {
           const canImpersonate =
-            row.original.role !== USER_ROLES.ADMIN && row.original.id !== currentUserId;
+            row.original.role !== USER_ROLES.ADMIN &&
+            row.original.id !== currentUserId &&
+            !row.original.banned;
           const isCurrentUser = row.original.id === currentUserId;
           const canManageDangerousActions = !isCurrentUser;
 

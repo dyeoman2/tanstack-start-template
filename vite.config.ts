@@ -5,12 +5,25 @@ import { tanstackStart } from '@tanstack/react-start/plugin/vite';
 import react from '@vitejs/plugin-react';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { defineConfig } from 'vite';
-import tsConfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig((env) => {
   const isDev = env.mode === 'development';
 
   return {
+    optimizeDeps: {
+      include: [
+        '@better-auth/core/env',
+        '@better-auth/core/error',
+        '@better-auth/core/utils/error-codes',
+        '@better-auth/core/utils/string',
+        '@better-fetch/fetch',
+        '@tanstack/router-core',
+        '@tanstack/router-core/ssr/client',
+      ],
+    },
+    resolve: {
+      tsconfigPaths: true,
+    },
     server: {
       port: 3000,
       host: true,
@@ -23,7 +36,6 @@ export default defineConfig((env) => {
       global: 'globalThis',
     },
     plugins: [
-      tsConfigPaths({ projects: ['./tsconfig.json'] }),
       tailwindcss(),
       // TanStack Router plugin (via Start) must run before React
       tanstackStart(),

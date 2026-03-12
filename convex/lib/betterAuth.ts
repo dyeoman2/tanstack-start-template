@@ -52,12 +52,70 @@ export type BetterAuthInvitation = BetterAuthRecord & {
   expiresAt?: Date | string | number;
 };
 
+function toTimestamp(value: string | number | Date | undefined | null): number {
+  if (!value) {
+    return Date.now();
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  return new Date(value).getTime();
+}
+
+function normalizeRole(role: string | string[] | undefined): 'user' | 'admin' {
+  if (Array.isArray(role)) {
+    return role.includes('admin') ? 'admin' : 'user';
+  }
+
+  return role === 'admin' ? 'admin' : 'user';
+}
+
+export function normalizeBetterAuthUserProfile(authUser: BetterAuthUser) {
+  const authUserId = assertUserId(authUser, 'Better Auth user missing id');
+  const email = authUser.email ?? '';
+  const name = authUser.name ?? null;
+
+  return {
+    authUserId,
+    email,
+    emailLower: email.toLowerCase(),
+    name,
+    nameLower: name ? name.toLowerCase() : null,
+    phoneNumber: authUser.phoneNumber ?? null,
+    role: normalizeRole(authUser.role),
+    isSiteAdmin: normalizeRole(authUser.role) === 'admin',
+    emailVerified: authUser.emailVerified ?? false,
+    banned: authUser.banned === true,
+    banReason: authUser.banReason ?? null,
+    banExpires: authUser.banExpires ? toTimestamp(authUser.banExpires) : null,
+    createdAt: toTimestamp(authUser.createdAt),
+    updatedAt: toTimestamp(authUser.updatedAt),
+  };
+}
+
 async function fetchAllRecords<T extends BetterAuthRecord>(
   ctx: GenericCtx<DataModel>,
   model: BetterAuthModel,
   where?: Array<{
     field: string;
-    operator?: 'lt' | 'lte' | 'gt' | 'gte' | 'eq' | 'in' | 'not_in' | 'ne' | 'contains' | 'starts_with' | 'ends_with';
+    operator?:
+      | 'lt'
+      | 'lte'
+      | 'gt'
+      | 'gte'
+      | 'eq'
+      | 'in'
+      | 'not_in'
+      | 'ne'
+      | 'contains'
+      | 'starts_with'
+      | 'ends_with';
     value: string | number | boolean | string[] | number[] | null;
     connector?: 'AND' | 'OR';
   }>,

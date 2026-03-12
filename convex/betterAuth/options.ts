@@ -6,6 +6,7 @@ import { getBetterAuthTrustedOrigins, getSiteUrl } from '../../src/lib/server/en
 import authConfig from '../auth.config';
 
 const siteUrl = getSiteUrl();
+const ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS = 30 * 60;
 
 export const options = {
   database: convexAdapter({} as never, {} as never),
@@ -31,6 +32,8 @@ export const options = {
     admin({
       defaultRole: 'user',
       adminRoles: ['admin'],
+      allowImpersonatingAdmins: false,
+      impersonationSessionDuration: ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS,
     }),
     organization({
       allowUserToCreateOrganization: true,

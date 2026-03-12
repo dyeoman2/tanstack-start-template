@@ -2,6 +2,11 @@ import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
+import {
+  normalizeRole,
+  shapeAdminUsers,
+  type AdminUserSearchParams,
+} from '~/features/admin/lib/admin-user-shaping';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import type { UserRole } from '~/features/auth/types';
@@ -130,14 +135,6 @@ function toTimestamp(value: string | number | Date | undefined | null): number {
   return new Date(value).getTime();
 }
 
-function normalizeRole(role: string | string[] | undefined): UserRole {
-  if (Array.isArray(role)) {
-    return role.includes(USER_ROLES.ADMIN) ? USER_ROLES.ADMIN : USER_ROLES.USER;
-  }
-
-  return role === USER_ROLES.ADMIN ? USER_ROLES.ADMIN : USER_ROLES.USER;
-}
-
 export function normalizeAdminUser(user: RawAdminUser): AdminUser {
   const id = user.id ?? user._id;
   if (!id) {
@@ -172,86 +169,7 @@ function normalizeAdminSession(session: RawAdminSession): AdminUserSession {
   };
 }
 
-type UserSortField = z.infer<typeof userSearchSchema>['sortBy'];
-type SortDirection = z.infer<typeof userSearchSchema>['sortOrder'];
-
-function compareValues(left: string | number, right: string | number, direction: SortDirection) {
-  if (left === right) {
-    return 0;
-  }
-
-  if (direction === 'asc') {
-    return left > right ? 1 : -1;
-  }
-
-  return left < right ? 1 : -1;
-}
-
-function sortValue(user: AdminUser, field: UserSortField): string | number {
-  switch (field) {
-    case 'name':
-      return user.name?.toLowerCase() ?? '';
-    case 'email':
-      return user.email.toLowerCase();
-    case 'role':
-      return user.role;
-    case 'emailVerified':
-      return user.emailVerified ? 1 : 0;
-    default:
-      return user.createdAt;
-  }
-}
-
-export function shapeAdminUsers(users: AdminUser[], params: z.infer<typeof userSearchSchema>) {
-  const searchValue = params.search.trim().toLowerCase();
-  let filtered = users;
-
-  if (params.role !== 'all') {
-    filtered = filtered.filter((user) => user.role === params.role);
-  }
-
-  if (searchValue) {
-    filtered = filtered.filter(
-      (user) =>
-        user.email.toLowerCase().includes(searchValue) ||
-        (user.name?.toLowerCase().includes(searchValue) ?? false),
-    );
-  }
-
-  filtered = [...filtered].sort((left, right) => {
-    const primary = compareValues(
-      sortValue(left, params.sortBy),
-      sortValue(right, params.sortBy),
-      params.sortOrder,
-    );
-
-    if (primary !== 0) {
-      return primary;
-    }
-
-    return compareValues(
-      sortValue(left, params.secondarySortBy),
-      sortValue(right, params.secondarySortBy),
-      params.secondarySortOrder,
-    );
-  });
-
-  const total = filtered.length;
-  const start = Math.max(0, (params.page - 1) * params.pageSize);
-  const end = start + params.pageSize;
-
-  return {
-    users: filtered.slice(start, end),
-    pagination: {
-      page: params.page,
-      pageSize: params.pageSize,
-      total,
-      totalPages: Math.ceil(total / params.pageSize),
-      hasNextPage: end < total,
-      nextCursor: end < total ? String(params.page + 1) : null,
-    },
-  };
-}
+export { shapeAdminUsers };
 
 function normalizeAuthErrorMessage(
   code: string | undefined,
@@ -459,8 +377,11 @@ export const listAdminUsersServerFn = createServerFn({ method: 'GET' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const users = await listAllAdminUsers();
-      return shapeAdminUsers(users, data);
+      await convexAuthReactStart.fetchAuthAction(api.admin.ensureUserIndex, {});
+      return await convexAuthReactStart.fetchAuthQuery(
+        api.admin.listUsers,
+        data as AdminUserSearchParams,
+      );
     } catch (error) {
       throw handleServerError(error, 'List admin users');
     }
@@ -528,6 +449,9 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
       }
 
       await Promise.all(operations);
+      await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
+        userId: data.userId,
+      });
 
       return await getAdminUserById(data.userId);
     } catch (error) {
@@ -547,6 +471,9 @@ export const banAdminUserServerFn = createServerFn({ method: 'POST' })
           body: data,
         },
       );
+      await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
+        userId: data.userId,
+      });
 
       return normalizeAdminUser(response.user);
     } catch (error) {
@@ -566,6 +493,9 @@ export const unbanAdminUserServerFn = createServerFn({ method: 'POST' })
           body: data,
         },
       );
+      await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
+        userId: data.userId,
+      });
 
       return normalizeAdminUser(response.user);
     } catch (error) {
@@ -654,10 +584,17 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       });
 
       try {
-        return await callBetterAuthAdmin<{ success: boolean }>('/api/auth/admin/remove-user', {
-          method: 'POST',
-          body: data,
+        const result = await callBetterAuthAdmin<{ success: boolean }>(
+          '/api/auth/admin/remove-user',
+          {
+            method: 'POST',
+            body: data,
+          },
+        );
+        await convexAuthReactStart.fetchAuthMutation(api.admin.deleteUserIndexEntry, {
+          userId: data.userId,
         });
+        return result;
       } catch (error) {
         throw new ServerError(
           'App cleanup completed, but removing the auth user failed. Manual reconciliation is required.',

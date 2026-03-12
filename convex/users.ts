@@ -19,10 +19,12 @@ import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
 import {
   type BetterAuthOrganization,
+  type BetterAuthUser,
   createBetterAuthMember,
   createBetterAuthOrganization,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
+  normalizeBetterAuthUserProfile,
 } from './lib/betterAuth';
 
 type EnsureUserContextArgs = {
@@ -189,11 +191,51 @@ async function ensureUserContextRecord(
   }
 
   await patchAiOwnershipToOrganization(ctx, args.authUserId, organizationId);
+  await syncUserProfileByAuthUserId(ctx, args.authUserId);
 
   return {
     userId: user._id,
     organizationId,
   };
+}
+
+async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUser) {
+  const profile = normalizeBetterAuthUserProfile(authUser);
+  const existing = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', profile.authUserId))
+    .first();
+
+  const nextValue = {
+    ...profile,
+    lastSyncedAt: Date.now(),
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, nextValue);
+    return;
+  }
+
+  await ctx.db.insert('userProfiles', nextValue);
+}
+
+async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string) {
+  const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'user',
+    where: [
+      {
+        field: '_id',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+  });
+
+  if (!authUser) {
+    return;
+  }
+
+  await upsertUserProfileRecord(ctx, authUser as BetterAuthUser);
 }
 
 export const getUserCount = query({
@@ -231,6 +273,112 @@ export const ensureUserContextForAuthUser = internalMutation({
   },
   handler: async (ctx, args) => {
     return await ensureUserContextRecord(ctx, args);
+  },
+});
+
+export const syncAuthUserProfile = internalMutation({
+  args: {
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await syncUserProfileByAuthUserId(ctx, args.authUserId);
+    return { success: true };
+  },
+});
+
+export const deleteAuthUserProfile = internalMutation({
+  args: {
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+      .first();
+
+    if (existing) {
+      await ctx.db.delete(existing._id);
+    }
+
+    return { success: true };
+  },
+});
+
+export const syncUserProfilesSnapshot = internalMutation({
+  args: {
+    users: v.array(
+      v.object({
+        authUserId: v.string(),
+        email: v.string(),
+        emailLower: v.string(),
+        name: v.union(v.string(), v.null()),
+        nameLower: v.union(v.string(), v.null()),
+        phoneNumber: v.union(v.string(), v.null()),
+        role: v.union(v.literal('user'), v.literal('admin')),
+        isSiteAdmin: v.boolean(),
+        emailVerified: v.boolean(),
+        banned: v.boolean(),
+        banReason: v.union(v.string(), v.null()),
+        banExpires: v.union(v.number(), v.null()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const existingProfiles = await ctx.db.query('userProfiles').collect();
+    const existingByAuthUserId = new Map(
+      existingProfiles.map((profile) => [profile.authUserId, profile]),
+    );
+    const activeAuthUserIds = new Set(args.users.map((user) => user.authUserId));
+    const syncTimestamp = Date.now();
+
+    for (const user of args.users) {
+      const existing = existingByAuthUserId.get(user.authUserId);
+      const nextValue = {
+        ...user,
+        lastSyncedAt: syncTimestamp,
+      };
+
+      if (existing) {
+        await ctx.db.patch(existing._id, nextValue);
+        existingByAuthUserId.delete(user.authUserId);
+        continue;
+      }
+
+      await ctx.db.insert('userProfiles', nextValue);
+    }
+
+    for (const staleProfile of existingByAuthUserId.values()) {
+      if (activeAuthUserIds.has(staleProfile.authUserId)) {
+        continue;
+      }
+
+      await ctx.db.delete(staleProfile._id);
+    }
+
+    const syncState = await ctx.db
+      .query('userProfileSyncState')
+      .withIndex('by_key', (q) => q.eq('key', 'global'))
+      .first();
+
+    if (syncState) {
+      await ctx.db.patch(syncState._id, {
+        lastFullSyncAt: syncTimestamp,
+        totalUsers: args.users.length,
+      });
+    } else {
+      await ctx.db.insert('userProfileSyncState', {
+        key: 'global',
+        lastFullSyncAt: syncTimestamp,
+        totalUsers: args.users.length,
+      });
+    }
+
+    return {
+      success: true,
+      totalUsers: args.users.length,
+    };
   },
 });
 
@@ -343,6 +491,8 @@ export const updateCurrentUserProfile = mutation({
         id: 0,
       },
     });
+
+    await syncUserProfileByAuthUserId(ctx, userId);
 
     return { success: true };
   },

@@ -15,6 +15,34 @@ export default defineSchema({
     .index('by_auth_user_id', ['authUserId'])
     .index('by_last_active_organization_id', ['lastActiveOrganizationId']),
 
+  userProfiles: defineTable({
+    authUserId: v.string(),
+    email: v.string(),
+    emailLower: v.string(),
+    name: v.union(v.string(), v.null()),
+    nameLower: v.union(v.string(), v.null()),
+    phoneNumber: v.union(v.string(), v.null()),
+    role: v.union(v.literal('user'), v.literal('admin')),
+    isSiteAdmin: v.boolean(),
+    emailVerified: v.boolean(),
+    banned: v.boolean(),
+    banReason: v.union(v.string(), v.null()),
+    banExpires: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastSyncedAt: v.number(),
+  })
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_role', ['role'])
+    .index('by_email_lower', ['emailLower'])
+    .index('by_created_at', ['createdAt']),
+
+  userProfileSyncState: defineTable({
+    key: v.string(),
+    lastFullSyncAt: v.number(),
+    totalUsers: v.number(),
+  }).index('by_key', ['key']),
+
   auditLogs: defineTable({
     id: v.string(),
     userId: v.string(), // References Better Auth user.id

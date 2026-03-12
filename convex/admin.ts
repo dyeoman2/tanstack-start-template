@@ -1,18 +1,22 @@
 import { v } from 'convex/values';
 import { assertUserId } from '../src/lib/shared/user-id';
+import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
 import { internal } from './_generated/api';
-import type { MutationCtx, QueryCtx } from './_generated/server';
-import { action, mutation, query } from './_generated/server';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
+import { action, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 import { isAdminRole } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
   fetchAllBetterAuthUsers,
   findBetterAuthUserByEmail,
+  normalizeBetterAuthUserProfile,
   updateBetterAuthUserRecord,
 } from './lib/betterAuth';
 
-async function requireSiteAdmin(ctx: QueryCtx | MutationCtx) {
+const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
+
+async function requireSiteAdmin(ctx: QueryCtx | MutationCtx | ActionCtx) {
   const authUser = await authComponent.getAuthUser(ctx);
   if (!authUser) {
     throwConvexError('UNAUTHENTICATED', 'Not authenticated');
@@ -40,6 +44,129 @@ function toTimestamp(value: string | number | Date | undefined) {
 
   return new Date(value).getTime();
 }
+
+export const listUsers = query({
+  args: {
+    page: v.number(),
+    pageSize: v.number(),
+    sortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('role'),
+      v.literal('emailVerified'),
+      v.literal('createdAt'),
+    ),
+    sortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    secondarySortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('role'),
+      v.literal('emailVerified'),
+      v.literal('createdAt'),
+    ),
+    secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    search: v.string(),
+    role: v.union(v.literal('all'), v.literal('admin'), v.literal('user')),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
+
+    const profiles =
+      args.role === 'all'
+        ? await ctx.db.query('userProfiles').collect()
+        : await ctx.db
+            .query('userProfiles')
+            .withIndex('by_role', (q) => q.eq('role', args.role === 'admin' ? 'admin' : 'user'))
+            .collect();
+
+    return shapeAdminUsers(
+      profiles.map((profile) => ({
+        id: profile.authUserId,
+        email: profile.email,
+        name: profile.name,
+        role: profile.role,
+        emailVerified: profile.emailVerified,
+        banned: profile.banned,
+        banReason: profile.banReason,
+        banExpires: profile.banExpires,
+        createdAt: profile.createdAt,
+        updatedAt: profile.updatedAt,
+      })),
+      args,
+    );
+  },
+});
+
+export const ensureUserIndex = action({
+  args: {
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ success: true; synced: boolean; totalUsers: number }> => {
+    await requireSiteAdmin(ctx);
+
+    const syncState = await ctx.runQuery(internal.admin.getUserIndexSyncStateInternal, {});
+    const shouldSync =
+      args.force === true ||
+      !syncState ||
+      Date.now() - syncState.lastFullSyncAt >= ADMIN_USER_INDEX_SYNC_INTERVAL_MS;
+
+    if (!shouldSync) {
+      return {
+        success: true,
+        synced: false,
+        totalUsers: syncState.totalUsers,
+      };
+    }
+
+    const users = await fetchAllBetterAuthUsers(ctx);
+    const normalizedUsers = users.map(normalizeBetterAuthUserProfile);
+
+    const result = await ctx.runMutation(internal.users.syncUserProfilesSnapshot, {
+      users: normalizedUsers,
+    });
+
+    return {
+      success: true,
+      synced: true,
+      totalUsers: result.totalUsers,
+    };
+  },
+});
+
+export const getUserIndexSyncStateInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db
+      .query('userProfileSyncState')
+      .withIndex('by_key', (q) => q.eq('key', 'global'))
+      .first();
+  },
+});
+
+export const syncUserIndexEntry = mutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    await requireSiteAdmin(ctx);
+    return await ctx.runMutation(internal.users.syncAuthUserProfile, {
+      authUserId: args.userId,
+    });
+  },
+});
+
+export const deleteUserIndexEntry = mutation({
+  args: {
+    userId: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    await requireSiteAdmin(ctx);
+    return await ctx.runMutation(internal.users.deleteAuthUserProfile, {
+      authUserId: args.userId,
+    });
+  },
+});
 
 export const getSystemStats = query({
   args: {},

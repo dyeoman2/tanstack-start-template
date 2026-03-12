@@ -20,7 +20,7 @@ describe('setupClaimRefresh', () => {
     vi.restoreAllMocks();
   });
 
-  it('refreshes stale claims immediately and again on focus', async () => {
+  it('refreshes stale claims on focus', async () => {
     getSessionMock.mockResolvedValue({
       user: {
         lastRefreshedAt: Date.now() - 21 * 60_000,
@@ -30,12 +30,11 @@ describe('setupClaimRefresh', () => {
     const { setupClaimRefresh } = await import('~/lib/roleRefresh');
     const cleanup = setupClaimRefresh();
 
-    await vi.runAllTimersAsync();
-    expect(getSessionMock).toHaveBeenCalledTimes(2);
+    expect(getSessionMock).not.toHaveBeenCalled();
 
     window.dispatchEvent(new Event('focus'));
     await vi.runAllTimersAsync();
-    expect(getSessionMock).toHaveBeenCalledTimes(4);
+    expect(getSessionMock).toHaveBeenCalledTimes(2);
 
     cleanup();
   });
@@ -50,6 +49,9 @@ describe('setupClaimRefresh', () => {
     const { setupClaimRefresh } = await import('~/lib/roleRefresh');
     const cleanup = setupClaimRefresh();
 
+    expect(getSessionMock).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event('focus'));
     await vi.runAllTimersAsync();
     expect(getSessionMock).toHaveBeenCalledTimes(1);
 
@@ -63,6 +65,7 @@ describe('setupClaimRefresh', () => {
     const { setupClaimRefresh } = await import('~/lib/roleRefresh');
     const cleanup = setupClaimRefresh();
 
+    window.dispatchEvent(new Event('focus'));
     await vi.runAllTimersAsync();
     expect(warnSpy).toHaveBeenCalled();
 
