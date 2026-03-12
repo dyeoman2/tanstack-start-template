@@ -1,5 +1,5 @@
 import { useLocation } from '@tanstack/react-router';
-import { Bot, LayoutDashboard } from 'lucide-react';
+import { Bot, LayoutDashboard, MessageSquare } from 'lucide-react';
 import * as React from 'react';
 import { NavMain, type NavMainItem } from '~/components/sidebar/NavMain';
 import { NavUser } from '~/components/sidebar/NavUser';
@@ -13,6 +13,7 @@ import {
 } from '~/components/ui/sidebar';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { ChatSidebarGroup } from '~/features/chat/components/ChatSidebarGroup';
 
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
@@ -28,6 +29,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         isActive:
           location.pathname === '/app' ||
           location.pathname === '/app/profile',
+      },
+      {
+        title: 'Chat',
+        to: '/app/chat',
+        icon: MessageSquare,
+        isActive:
+          location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/'),
       },
       {
         title: 'Playground',
@@ -56,6 +64,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />
+        <ChatSidebarGroup />
       </SidebarContent>
       <SidebarFooter>
         <NavUser

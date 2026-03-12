@@ -16,6 +16,8 @@ import type * as auth_access from "../auth/access.js";
 import type * as auth_authorized from "../auth/authorized.js";
 import type * as auth_errors from "../auth/errors.js";
 import type * as autumn from "../autumn.js";
+import type * as chat from "../chat.js";
+import type * as chatActions from "../chatActions.js";
 import type * as cloudflareAi from "../cloudflareAi.js";
 import type * as dashboard from "../dashboard.js";
 import type * as dashboardStats from "../dashboardStats.js";
@@ -43,6 +45,8 @@ declare const fullApi: ApiFromModules<{
   "auth/authorized": typeof auth_authorized;
   "auth/errors": typeof auth_errors;
   autumn: typeof autumn;
+  chat: typeof chat;
+  chatActions: typeof chatActions;
   cloudflareAi: typeof cloudflareAi;
   dashboard: typeof dashboard;
   dashboardStats: typeof dashboardStats;

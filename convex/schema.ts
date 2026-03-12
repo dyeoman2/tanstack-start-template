@@ -1,6 +1,47 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
+const parsedPdfImageValidator = v.object({
+  pageNumber: v.number(),
+  name: v.string(),
+  width: v.number(),
+  height: v.number(),
+  dataUrl: v.string(),
+});
+
+const aiMessagePartValidator = v.union(
+  v.object({
+    type: v.literal('text'),
+    text: v.string(),
+  }),
+  v.object({
+    type: v.literal('image'),
+    image: v.string(),
+    mimeType: v.optional(v.string()),
+    name: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal('document'),
+    name: v.string(),
+    content: v.string(),
+    mimeType: v.string(),
+    images: v.optional(v.array(parsedPdfImageValidator)),
+  }),
+  v.object({
+    type: v.literal('source-url'),
+    sourceId: v.string(),
+    url: v.string(),
+    title: v.optional(v.string()),
+  }),
+  v.object({
+    type: v.literal('source-document'),
+    sourceId: v.string(),
+    mediaType: v.string(),
+    title: v.string(),
+    filename: v.optional(v.string()),
+  }),
+);
+
 export default defineSchema({
   // Note: Better Auth manages its own tables via the betterAuth component
   // Those tables are in the 'betterAuth' namespace (user, session, account, verification, etc.)
@@ -86,6 +127,56 @@ export default defineSchema({
   })
     .index('by_userId', ['userId'])
     .index('by_organizationId', ['organizationId']),
+
+  aiThreads: defineTable({
+    userId: v.string(),
+    organizationId: v.string(),
+    title: v.string(),
+    pinned: v.boolean(),
+    personaId: v.optional(v.id('aiPersonas')),
+    titleManuallyEdited: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastMessageAt: v.number(),
+  })
+    .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
+    .index('by_organizationId_and_pinned', ['organizationId', 'pinned'])
+    .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt']),
+
+  aiMessages: defineTable({
+    threadId: v.id('aiThreads'),
+    userId: v.string(),
+    organizationId: v.string(),
+    role: v.union(v.literal('assistant'), v.literal('user')),
+    parts: v.array(aiMessagePartValidator),
+    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
+    provider: v.optional(v.string()),
+    model: v.optional(v.string()),
+    usage: v.optional(
+      v.object({
+        totalTokens: v.optional(v.number()),
+        inputTokens: v.optional(v.number()),
+        outputTokens: v.optional(v.number()),
+      }),
+    ),
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    clientMessageId: v.optional(v.string()),
+  })
+    .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+
+  aiPersonas: defineTable({
+    userId: v.string(),
+    organizationId: v.string(),
+    name: v.string(),
+    prompt: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_userId_and_createdAt', ['userId', 'createdAt']),
 
   aiResponses: defineTable({
     userId: v.string(),

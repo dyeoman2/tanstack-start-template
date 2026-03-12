@@ -21,6 +21,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/s
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { toThreadId } from '~/features/chat/lib/ids';
 import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
@@ -32,6 +33,7 @@ type BreadcrumbPart = {
 const routeLabels = new Map<string, string>([
   ['admin', 'Admin'],
   ['ai-playground', 'AI Playground'],
+  ['chat', 'Chat'],
   ['members', 'Members'],
   ['organizations', 'Organizations'],
   ['profile', 'Profile'],
@@ -68,7 +70,7 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
       const href = `/app/${childSegments.slice(0, index + 1).join('/')}`;
       const isLast = index === childSegments.length - 1;
       const previousSegment = childSegments[index - 1];
-      const fallbackLabel = formatSegment(segment);
+      const fallbackLabel = previousSegment === 'chat' ? 'Conversation' : formatSegment(segment);
 
       return {
         key: href,
@@ -76,6 +78,8 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
         label:
           previousSegment === 'organizations' ? (
             <OrganizationBreadcrumbLabel slug={segment} fallback={fallbackLabel} />
+          ) : previousSegment === 'chat' ? (
+            <ChatThreadBreadcrumbLabel threadId={segment} fallback={fallbackLabel} />
           ) : (
             fallbackLabel
           ),
@@ -88,6 +92,18 @@ function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slu
   const organization = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
 
   return organization?.organization.name ?? fallback;
+}
+
+function ChatThreadBreadcrumbLabel({
+  fallback,
+  threadId,
+}: {
+  fallback: string;
+  threadId: string;
+}) {
+  const thread = useQuery(api.chat.getThread, { threadId: toThreadId(threadId) });
+
+  return thread?.title ?? fallback;
 }
 
 function AppBreadcrumbs() {
