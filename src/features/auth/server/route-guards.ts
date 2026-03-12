@@ -24,7 +24,7 @@ export async function routeAdminGuard({
           path: location.pathname,
         });
       }
-      throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
+      throw redirect({ to: '/login', search: { reset: '', redirectTo: location.href } });
     }
 
     return { authenticated: true as const, user };
@@ -44,7 +44,7 @@ export async function routeAdminGuard({
     }
 
     // For other errors, redirect to login
-    throw redirect({ to: '/login', search: { redirect: location.href } });
+    throw redirect({ to: '/login', search: { redirectTo: location.href } });
   }
 }
 

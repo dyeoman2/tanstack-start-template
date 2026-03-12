@@ -199,7 +199,7 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
   };
 
   if (existing) {
-    // Reinsert to drop legacy fields like `isSiteAdmin` from older projections.
+    // Reinsert so persisted profile documents match the current schema exactly.
     await ctx.db.delete(existing._id);
     await ctx.db.insert('userProfiles', nextValue);
     return;

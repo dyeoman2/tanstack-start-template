@@ -23,7 +23,7 @@ export function Dashboard({ data, isLoading }: DashboardProps) {
       await signOut();
     } finally {
       setIsSigningOut(false);
-      await router.navigate({ to: '/login', search: { redirect: '/app' } });
+      await router.navigate({ to: '/login', search: { redirectTo: '/app' } });
     }
   }
 

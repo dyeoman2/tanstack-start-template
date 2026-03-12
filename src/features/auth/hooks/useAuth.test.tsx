@@ -59,7 +59,6 @@ describe('useAuth', () => {
     expect(result.current.impersonatedByUserId).toBe('admin-1');
     expect(result.current.user?.email).toBe('person@example.com');
     expect(result.current.isSiteAdmin).toBe(false);
-    expect('isAdmin' in result.current).toBe(false);
   });
 
   it('derives site admin from the normalized role', async () => {

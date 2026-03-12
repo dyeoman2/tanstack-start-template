@@ -47,7 +47,7 @@ export function ProfilePage() {
         await signOut();
       } finally {
         setIsSigningOut(false);
-        router.navigate({ to: '/login', search: { redirect: '/app/profile' } });
+        router.navigate({ to: '/login', search: { redirectTo: '/app/profile' } });
       }
     };
 

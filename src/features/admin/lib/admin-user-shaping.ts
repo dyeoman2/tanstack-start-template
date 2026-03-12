@@ -1,4 +1,3 @@
-import { normalizeUserRole } from '../../auth/lib/user-role';
 import type { UserRole } from '../../auth/types';
 
 export type AdminUserSortField = 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';

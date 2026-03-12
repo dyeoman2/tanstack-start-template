@@ -104,7 +104,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
       <Link
         to="/login"
         preload="intent"
-        search={{ reset: '', redirect: currentPath }}
+        search={{ reset: '', redirectTo: currentPath }}
         className="text-sm text-muted-foreground hover:text-foreground"
       >
         Sign in

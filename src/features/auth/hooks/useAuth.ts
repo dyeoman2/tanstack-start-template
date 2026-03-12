@@ -8,7 +8,7 @@ import { DEFAULT_ROLE, USER_ROLES } from '../types';
 import { useAuthState } from './useAuthState';
 
 export interface AuthOptions {
-  /** Whether to fetch role data from the database. Defaults to true for backward compatibility. */
+  /** Whether to fetch role data from the database. Defaults to true. */
   fetchRole?: boolean;
 }
 

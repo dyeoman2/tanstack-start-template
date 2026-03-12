@@ -173,7 +173,7 @@ export function MobileNavigation() {
                 <Link
                   to="/login"
                   preload="intent"
-                  search={{ reset: '', redirect: location.pathname }}
+                  search={{ reset: '', redirectTo: location.pathname }}
                   onClick={handleLinkClick}
                   className="block w-full px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
                 >
