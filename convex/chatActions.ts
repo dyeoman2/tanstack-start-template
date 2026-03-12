@@ -9,6 +9,7 @@ import {
   DEFAULT_CHAT_MODEL_ID,
   type ChatModelCatalogEntry,
 } from '../src/lib/shared/chat-models';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { type ActionCtx, action } from './_generated/server';
@@ -269,7 +270,7 @@ async function getAuthenticatedContext(ctx: ActionCtx) {
   return {
     userId: profile.id,
     organizationId: profile.currentOrganization.id,
-    isSiteAdmin: profile.isSiteAdmin === true,
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(profile.role)),
   };
 }
 

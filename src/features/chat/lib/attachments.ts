@@ -1,15 +1,15 @@
 import type { ChatMessagePart } from '~/features/chat/types';
 import type { ParsedFile } from '~/features/chat/lib/file-parser';
 
-export const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
-export const SUPPORTED_DOCUMENT_MIME_TYPES = [
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
+const SUPPORTED_DOCUMENT_MIME_TYPES = [
   'text/plain',
   'text/csv',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-excel',
 ];
-export const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf', '.xlsx', '.xls'];
+const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf', '.xlsx', '.xls'];
 
 export type UploadedImage = { image: string; mimeType: string; name?: string };
 export type UploadedDocument = ParsedFile;

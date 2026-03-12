@@ -226,7 +226,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
           }
         : null,
       isAuthenticated: authState.isAuthenticated,
-      isAdmin: role === USER_ROLES.ADMIN,
+      isSiteAdmin: role === USER_ROLES.ADMIN,
       isPending,
       error,
     }),
@@ -409,10 +409,10 @@ async function resolveRole(ctx, cap: Capability) {
 ```tsx
 // Navigation components use direct admin checks
 const authState = useAuthState(); // No DB calls
-const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
+const { isSiteAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
-// Conditional rendering using isAdmin
-{isAdmin && <AdminButton />}
+// Conditional rendering using the derived global-admin flag
+{isSiteAdmin && <AdminButton />}
 ```
 
 **Performance Optimization:**
@@ -426,24 +426,26 @@ const { isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
 **Admin Operations:**
 
-`convex/admin.ts` keeps all privileged flows behind the guard wrappers. For example, `getAllUsers` calls `guarded.query('route:/app/admin.users', …)` and then:
+`convex/admin.ts` keeps privileged flows behind a single site-admin check derived from the Better Auth top-level `role`. The `userProfiles` table stores the normalized `role` projection for filtering and indexing, while `isSiteAdmin` is derived at read time for client convenience.
 
-- Pages through `userProfiles` using indexed queries (`by_role_createdAt`) to minimise scans.
+`listUsers` then:
+
+- Pages through `userProfiles` using the role index (`by_role`) to minimise scans for admin/user filtering.
 - Fetches the matching Better Auth documents for the current page only (`fetchBetterAuthUsersByIds`).
 - Merges the two data sources and applies in-memory sort/search before returning pagination metadata.
 
-`updateBetterAuthUser` follows the same pattern with `guarded.mutation('user.write', …)` to ensure only admins can update Better Auth user records.
+`updateAdminUserServerFn` updates Better Auth first and then resyncs the app projection so the Convex index stays consistent with the authoritative Better Auth role.
 
 **Bootstrap Operations:**
 
-`convex/users.ts` uses `guarded.mutation('user.bootstrap', …)` for bootstrap logic so we can allow the first profile to be created without an authenticated admin while still requiring admin role for subsequent changes.
+`convex/users.ts` bootstraps the app-side user context and keeps the `userProfiles` projection synchronized from Better Auth. The projection is intentionally derived data rather than a separate permission source.
 
-`convex/dashboard.ts` keeps `getDashboardData` as a plain Convex `query` so non-admin callers receive `null` instead of a thrown authorization error—the dashboard UI listens for that `null` and shows a friendly fallback. The capability map still marks `dashboard.read` as admin-only so client UI can hide admin affordances.
+`convex/dashboard.ts` keeps `getDashboardData` as a plain Convex `query` so non-admin callers receive a structured access state instead of a thrown authorization error—the dashboard UI listens for that state and shows a friendly fallback.
 
 
 ### 5.6 Route Guards
 
-Server-side route guards use capability-based validation before page loads.
+Server-side route guards use the derived `isSiteAdmin` flag before page loads.
 
 ```ts
 // src/features/auth/server/route-guards.ts
@@ -455,10 +457,7 @@ export async function routeAdminGuard({
   try {
     const { user } = await getCurrentUserServerFn();
 
-    // Use capability-based checking for consistency with the RBAC system
-    const adminCapability: Capability = 'route:/app/admin';
-    const allowedRoles = Caps[adminCapability] ?? [];
-    if (!user?.role || !(allowedRoles as readonly string[]).includes(user.role)) {
+    if (!user?.isSiteAdmin) {
       throw redirect({ to: '/login', search: { reset: '', redirect: location.href } });
     }
 
@@ -471,7 +470,7 @@ export async function routeAdminGuard({
 // Usage in admin routes
 // src/routes/app/admin/_layout.tsx
 export const Route = createFileRoute('/app/admin/_layout')({
-  beforeLoad: routeAdminGuard, // Uses capability-based checking
+  beforeLoad: routeAdminGuard,
 });
 ```
 
@@ -495,12 +494,12 @@ The application uses two different redirect patterns depending on the context:
 
 Choose the pattern based on whether you want immediate blocking (throwing) or smooth UX transitions (effect-driven).
 
-## Adding New Capabilities
+## Adding New Admin-Only Surfaces
 
-1. Extend the `Capability` union in `convex/authz/policy.map.ts` and update the `Caps` mapping with the roles that should gain access. Only add entries to `PublicCaps` when the capability should bypass authentication entirely.
-2. Wrap new Convex handlers with the appropriate `guarded.query/mutation/action` helper so role resolution stays centralised.
-3. If a route requires the new capability, create a server guard that mirrors `routeAdminGuard` (`requireAuth` + capability check) and attach it via `beforeLoad`.
-4. Use direct role checks (e.g., `isAdmin` from `useAuth()`) so the UI reflects the same capability decisions on the client.
+1. Keep Better Auth `role` as the only global admin source of truth.
+2. Reuse the shared role helpers so `isSiteAdmin` stays a derived flag instead of becoming stored state again.
+3. If a route requires global admin access, attach `routeAdminGuard` via `beforeLoad`.
+4. In the UI, use `isSiteAdmin` from `useAuth()` or `user.role === 'admin'` where the role value itself matters.
 
 ## Performance Characteristics
 
@@ -737,13 +736,8 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
       // ... user creation
     });
 
-    // 3. Set role via Convex (admin for first user, user for others)
-    const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
-    await fetchMutation(api.users.setUserRole, {
-      userId: signUpResult.user.id,
-      role: roleToSet,
-      allowBootstrap: isFirstUser, // Bootstrap flag for first admin
-    });
+    // 3. Ensure the app-side user context exists after Better Auth signup
+    await fetchMutation(api.users.ensureCurrentUserContext, {});
   });
 ```
 
@@ -751,26 +745,18 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 
 ```ts
 // convex/users.ts
-export const setUserRole = guarded.mutation('user.bootstrap', { ... }, async (ctx, args, role) => {
-  if (!args.allowBootstrap) {
-    // Non-bootstrap: require admin role
-    if (role !== 'admin') {
-      throw new Error('Admin privileges required for role management');
-    }
-  } else {
-    // BOOTSTRAP: Allow only when no other user profiles exist
-    const existingProfiles = await ctx.db.query('userProfiles').collect();
-    const nonBootstrapProfile = existingProfiles.find(
-      (profile) => profile.userId !== args.userId,
-    );
-
-    if (nonBootstrapProfile) {
-      throw new Error('Bootstrap not allowed - another user profile already exists');
-    }
-  }
-
-  // Create/update user profile with role
-  // ...
+export const bootstrapUserContext = action({
+  args: {
+    token: v.string(),
+    authUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    // Secret-gated bootstrap used by setup flows.
+    // Better Auth keeps the authoritative global role.
+    // Convex initializes the app-side user context and syncs the role projection.
+  },
 });
 ```
 

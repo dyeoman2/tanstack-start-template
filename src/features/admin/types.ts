@@ -6,7 +6,7 @@ import type { UserRole } from '../auth/types';
  */
 
 /**
- * User type matching Convex admin.getAllUsers return type
+ * User type matching the admin user listing payload
  */
 export interface User {
   id: string;

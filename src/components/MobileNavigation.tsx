@@ -26,7 +26,7 @@ export function MobileNavigation() {
   const {
     user,
     isAuthenticated,
-    isAdmin,
+    isSiteAdmin,
     isPending: isLoading,
   } = useAuth({ fetchRole: authState.isAuthenticated });
   const session = { user: isAuthenticated ? user : null };
@@ -130,7 +130,7 @@ export function MobileNavigation() {
               <div className="px-3 py-2 text-sm text-muted-foreground">Loading...</div>
             ) : session?.user ? (
               <div className="space-y-2">
-                {isAdmin && (
+                {isSiteAdmin && (
                   <Link
                     to="/app/admin"
                     preload="intent"

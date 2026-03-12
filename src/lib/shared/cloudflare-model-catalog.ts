@@ -59,7 +59,7 @@ function getNumberProperty(entry: CloudflareCatalogModel, propertyId: string): n
   return undefined;
 }
 
-export function getCloudflareModelPrices(entry: CloudflareCatalogModel): ChatModelPrice[] {
+function getCloudflareModelPrices(entry: CloudflareCatalogModel): ChatModelPrice[] {
   const value = getProperty(entry, 'price');
   if (!Array.isArray(value)) {
     return [];
@@ -88,7 +88,7 @@ export function getCloudflareModelPrices(entry: CloudflareCatalogModel): ChatMod
   });
 }
 
-export function formatCloudflarePriceLabel(prices: ChatModelPrice[]): string | undefined {
+function formatCloudflarePriceLabel(prices: ChatModelPrice[]): string | undefined {
   if (prices.length === 0) {
     return undefined;
   }

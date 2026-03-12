@@ -91,8 +91,3 @@ export type ChatMessage = {
   updatedAt: number;
   clientMessageId?: string;
 };
-
-export type ComposerPayload = {
-  text: string;
-  parts: ChatMessagePart[];
-};

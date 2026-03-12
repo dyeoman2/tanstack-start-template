@@ -16,7 +16,7 @@ export function sortThreads(threads: ChatThread[]) {
   });
 }
 
-export function getTextFromParts(parts: ChatMessagePart[]) {
+function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
     .map((part) => {
       if (part.type === 'text') {
@@ -33,11 +33,11 @@ export function getTextFromParts(parts: ChatMessagePart[]) {
     .join(' ');
 }
 
-export function truncateWords(text: string, maxWords: number) {
+function truncateWords(text: string, maxWords: number) {
   return text.trim().split(WORD_SPLIT_REGEX).slice(0, maxWords).join(' ');
 }
 
-export function stripHtmlTags(text: string) {
+function stripHtmlTags(text: string) {
   return text.replace(BR_TAG_REGEX, ' ').replace(HTML_TAG_REGEX, '');
 }
 

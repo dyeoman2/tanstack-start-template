@@ -27,7 +27,7 @@ export interface ParsedFile {
   images?: ParsedPdfImage[];
 }
 
-export async function parsePDF(file: File): Promise<ParsedFile> {
+async function parsePDF(file: File): Promise<ParsedFile> {
   if (file.size > MAX_PDF_SIZE) {
     const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
     throw new Error(`File size (${sizeMB}MB) exceeds the maximum allowed size of 10MB`);
@@ -68,7 +68,7 @@ export async function parsePDF(file: File): Promise<ParsedFile> {
   };
 }
 
-export async function parseTXT(file: File): Promise<ParsedFile> {
+async function parseTXT(file: File): Promise<ParsedFile> {
   return {
     name: file.name,
     content: await file.text(),
@@ -76,7 +76,7 @@ export async function parseTXT(file: File): Promise<ParsedFile> {
   };
 }
 
-export async function parseCSV(file: File): Promise<ParsedFile> {
+async function parseCSV(file: File): Promise<ParsedFile> {
   const Papa = await import('papaparse');
   const csvText = await file.text();
 
@@ -100,7 +100,7 @@ export async function parseCSV(file: File): Promise<ParsedFile> {
   });
 }
 
-export async function parseExcel(file: File): Promise<ParsedFile> {
+async function parseExcel(file: File): Promise<ParsedFile> {
   const [arrayBuffer, XLSX] = await Promise.all([file.arrayBuffer(), import('xlsx')]);
   const workbook = XLSX.read(arrayBuffer, { type: 'array' });
 

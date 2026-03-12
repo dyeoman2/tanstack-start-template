@@ -18,7 +18,7 @@ import { ChatSidebarGroup } from '~/features/chat/components/ChatSidebarGroup';
 export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   const location = useLocation();
   const authState = useAuthState();
-  const { user, isAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
+  const { user, isSiteAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
   const navMain = React.useMemo<NavMainItem[]>(() => {
     const items: NavMainItem[] = [
@@ -62,7 +62,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
       </SidebarContent>
       <SidebarFooter>
         <NavUser
-          showAdmin={isAdmin}
+          showAdmin={isSiteAdmin}
           user={{
             name: user?.name || 'Authenticated user',
             email: user?.email || 'Signed in',

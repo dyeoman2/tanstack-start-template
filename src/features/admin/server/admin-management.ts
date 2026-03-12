@@ -3,10 +3,10 @@ import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import {
-  normalizeRole,
   shapeAdminUsers,
   type AdminUserSearchParams,
 } from '~/features/admin/lib/admin-user-shaping';
+import { normalizeUserRole } from '~/features/auth/lib/user-role';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import type { UserRole } from '~/features/auth/types';
@@ -145,7 +145,7 @@ export function normalizeAdminUser(user: RawAdminUser): AdminUser {
     id,
     email: user.email,
     name: user.name ?? null,
-    role: normalizeRole(user.role),
+    role: normalizeUserRole(user.role),
     emailVerified: user.emailVerified ?? false,
     banned: user.banned === true,
     banReason: user.banReason ?? null,
@@ -384,17 +384,6 @@ export const listAdminUsersServerFn = createServerFn({ method: 'GET' })
       );
     } catch (error) {
       throw handleServerError(error, 'List admin users');
-    }
-  });
-
-export const getAdminUserServerFn = createServerFn({ method: 'GET' })
-  .inputValidator(userIdSchema)
-  .handler(async ({ data }) => {
-    try {
-      await requireAdmin();
-      return await getAdminUserById(data.userId);
-    } catch (error) {
-      throw handleServerError(error, 'Get admin user');
     }
   });
 

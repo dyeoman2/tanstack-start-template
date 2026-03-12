@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
 import {
@@ -10,7 +11,6 @@ import { internal } from './_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
-import { isAdminRole } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
   fetchAllBetterAuthMembers,
@@ -55,7 +55,7 @@ async function requireSiteAdmin(ctx: QueryCtx | MutationCtx | ActionCtx) {
     throwConvexError('UNAUTHENTICATED', 'Not authenticated');
   }
 
-  if (!isAdminRole((authUser as { role?: string | string[] }).role)) {
+  if (!deriveIsSiteAdmin(normalizeUserRole((authUser as { role?: string | string[] }).role))) {
     throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
   }
 
@@ -328,7 +328,7 @@ export const getSystemStats = query({
     const users = await fetchAllBetterAuthUsers(ctx);
     return {
       users: users.length,
-      admins: users.filter((user) => isAdminRole(user.role)).length,
+      admins: users.filter((user) => deriveIsSiteAdmin(normalizeUserRole(user.role))).length,
     };
   },
 });

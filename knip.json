@@ -9,17 +9,7 @@
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "convex/**/*.{ts,js}"],
   "ignore": [
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/.output/**",
-    "**/*.d.ts",
-    "src/routeTree.gen.ts",
     "src/components/ui/**/*",
-    "src/lib/schemas.ts",
-    "src/lib/seeds/**/*",
-    "src/lib/auth-client.ts",
-    "src/lib/auth-utils.ts",
-    "src/features/auth/schemas.ts",
     "src/router.tsx"
   ],
   "rules": {
@@ -36,10 +26,14 @@
     "enumMembers": "error",
     "classMembers": "error"
   },
-  "ignoreDependencies": ["tailwindcss", "tailwindcss-animate"],
+  "ignoreDependencies": [
+    "@napi-rs/canvas",
+    "pdf-parse",
+    "tailwindcss-animate"
+  ],
+  "ignoreBinaries": ["vite-bundle-analyzer"],
   "ignoreExportsUsedInFile": {
     "interface": true,
     "type": true
-  },
-  "ignoreMembers": ["useQuery.queryFn", "useMutation.mutationFn"]
+  }
 }

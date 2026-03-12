@@ -36,8 +36,7 @@ export type ChatModelOption = {
 
 export const DEFAULT_CHAT_MODEL_ID = '@cf/nvidia/nemotron-3-120b-a12b';
 export const DEFAULT_CHAT_MODEL_LABEL = 'Nemotron 3 120B';
-export const DEFAULT_CHAT_MODEL_DESCRIPTION =
-  'Free Cloudflare text-generation model for everyday chat.';
+const DEFAULT_CHAT_MODEL_DESCRIPTION = 'Free Cloudflare text-generation model for everyday chat.';
 
 export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatModelCatalogEntry {
   return {
@@ -57,10 +56,6 @@ export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatMo
   };
 }
 
-export function isPublicChatModel(modelId: string): boolean {
-  return modelId === DEFAULT_CHAT_MODEL_ID;
-}
-
 export function formatChatModelLabel(modelId: string): string {
   if (modelId === DEFAULT_CHAT_MODEL_ID) {
     return DEFAULT_CHAT_MODEL_LABEL;
@@ -73,7 +68,7 @@ export function formatChatModelLabel(modelId: string): string {
     .join(' ');
 }
 
-export function isChatModelSelectable(
+function isChatModelSelectable(
   access: ChatModelAccess,
   isSiteAdmin: boolean,
 ): boolean {
@@ -119,13 +114,6 @@ export function getChatModelOption(
   }
 
   return toChatModelOption(getDefaultChatModelCatalogEntry(), true);
-}
-
-export function isChatModelKnown(
-  modelId: string,
-  models: ChatModelCatalogEntry[],
-): boolean {
-  return models.some((model) => model.modelId === modelId);
 }
 
 export function getAuthorizedChatModel(

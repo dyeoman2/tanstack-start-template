@@ -1,6 +1,7 @@
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
-import { getCurrentAuthUserOrNull, isAdminRole } from './auth/access';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { getCurrentAuthUserOrNull } from './auth/access';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,7 +29,7 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
  * Returns user stats for the dashboard cards
  * OPTIMIZED: No longer fetches ALL users for stats - uses userProfiles table for counts
  *
- * NOTE: We intentionally keep this as a plain `query` instead of `guarded.query`.
+ * NOTE: We intentionally keep this as a plain `query`.
  * Returning explicit access states lets the client render a friendly fallback
  * instead of hitting the route error boundary on authorization failures.
  */
@@ -43,7 +44,7 @@ export const getDashboardData = query({
       };
     }
 
-    if (!isAdminRole((currentUser as { role?: string | string[] }).role)) {
+    if (!deriveIsSiteAdmin(normalizeUserRole((currentUser as { role?: string | string[] }).role))) {
       return {
         status: 'forbidden' as const,
       };
