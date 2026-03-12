@@ -6,6 +6,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import { useAutumnBilling } from '~/components/AutumnProvider';
+import { PageHeader } from '~/components/PageHeader';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Button } from '~/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
@@ -226,16 +227,11 @@ function CloudflareAIDemo() {
   const hasResults = combinedEntries.length > 0;
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold flex items-center gap-3">AI Playground</h1>
-        <p className="text-muted-foreground">
-          Interactive demo for streaming AI text generation and structured output. Built with the
-          Cloudflare Workers AI for inference, Cloudflare AI Gateway for request monitoring and
-          analytics, Autumn for usage-based billing and credit management, and AI SDK for unified AI
-          interfaces.
-        </p>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="AI Playground"
+        description="Interactive demo for streaming AI text generation and structured output. Built with the Cloudflare Workers AI for inference, Cloudflare AI Gateway for request monitoring and analytics, Autumn for usage-based billing and credit management, and AI SDK for unified AI interfaces."
+      />
 
       {/* Setup Instructions */}
       {envVarsMissing && activeTab !== 'firecrawl' && <CloudflareSetupCard />}
