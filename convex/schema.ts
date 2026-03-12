@@ -64,6 +64,7 @@ export default defineSchema({
     nameLower: v.union(v.string(), v.null()),
     phoneNumber: v.union(v.string(), v.null()),
     role: v.union(v.literal('user'), v.literal('admin')),
+    isSiteAdmin: v.boolean(),
     emailVerified: v.boolean(),
     banned: v.boolean(),
     banReason: v.union(v.string(), v.null()),

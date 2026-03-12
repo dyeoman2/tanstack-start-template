@@ -4,6 +4,7 @@ import {
   normalizeAdapterFindManyResult,
 } from '../../src/lib/server/better-auth/adapter-utils';
 import {
+  deriveIsSiteAdmin,
   normalizeUserRole,
 } from '../../src/features/auth/lib/user-role';
 import { assertUserId } from '../../src/lib/shared/user-id';
@@ -85,6 +86,7 @@ export function normalizeBetterAuthUserProfile(authUser: BetterAuthUser) {
     nameLower: name ? name.toLowerCase() : null,
     phoneNumber: authUser.phoneNumber ?? null,
     role,
+    isSiteAdmin: deriveIsSiteAdmin(role),
     emailVerified: authUser.emailVerified ?? false,
     banned: authUser.banned === true,
     banReason: authUser.banReason ?? null,
