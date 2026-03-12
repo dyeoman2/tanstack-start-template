@@ -1,3 +1,4 @@
+import { useCurrentOrganization } from '@daveyplate/better-auth-ui';
 import { Link, useLocation } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { AppSidebar } from '~/components/AppSidebar';
@@ -16,7 +17,8 @@ import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
   href?: string;
-  label: string;
+  key: string;
+  label: ReactNode;
 };
 
 const routeLabels = new Map<string, string>([
@@ -49,21 +51,35 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
   }
 
   if (segments.length === 1) {
-    return [{ label: 'Dashboard' }];
+    return [{ key: 'dashboard', label: 'Dashboard' }];
   }
 
   return [
-    { href: '/app', label: 'Dashboard' },
+    { href: '/app', key: 'dashboard', label: 'Dashboard' },
     ...segments.slice(1).map((segment, index, childSegments) => {
       const href = `/app/${childSegments.slice(0, index + 1).join('/')}`;
       const isLast = index === childSegments.length - 1;
+      const previousSegment = childSegments[index - 1];
+      const fallbackLabel = formatSegment(segment);
 
       return {
+        key: href,
         href: isLast ? undefined : href,
-        label: formatSegment(segment),
+        label:
+          previousSegment === 'organizations' ? (
+            <OrganizationBreadcrumbLabel slug={segment} fallback={fallbackLabel} />
+          ) : (
+            fallbackLabel
+          ),
       };
     }),
   ];
+}
+
+function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slug: string }) {
+  const { data: organization } = useCurrentOrganization({ slug });
+
+  return organization?.name ?? fallback;
 }
 
 function AppBreadcrumbs() {
@@ -77,16 +93,21 @@ function AppBreadcrumbs() {
           const isLast = index === items.length - 1;
 
           return (
-            <BreadcrumbItem key={`${item.label}-${item.href ?? 'current'}`}>
+            <BreadcrumbItem key={item.key}>
               {item.href && !isLast ? (
-                <BreadcrumbLink asChild className={cn(index < items.length - 2 && 'hidden md:inline')}>
+                <BreadcrumbLink
+                  asChild
+                  className={cn(index < items.length - 2 && 'hidden md:inline')}
+                >
                   <Link to={item.href}>{item.label}</Link>
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>{item.label}</BreadcrumbPage>
               )}
               {!isLast && (
-                <BreadcrumbSeparator className={cn(index < items.length - 2 && 'hidden md:inline-flex')} />
+                <BreadcrumbSeparator
+                  className={cn(index < items.length - 2 && 'hidden md:inline-flex')}
+                />
               )}
             </BreadcrumbItem>
           );

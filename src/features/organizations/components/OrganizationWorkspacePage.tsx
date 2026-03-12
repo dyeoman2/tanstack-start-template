@@ -1,7 +1,6 @@
 import {
   OrganizationInvitationsCard,
   OrganizationMembersCard,
-  OrganizationSettingsCards,
   useCurrentOrganization,
 } from '@daveyplate/better-auth-ui';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -10,6 +9,7 @@ import { useEffect } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { OrganizationSettingsCards } from '~/features/organizations/components/OrganizationSettingsCards';
 import { cn } from '~/lib/utils';
 
 type OrganizationWorkspaceView = 'MEMBERS' | 'SETTINGS';
@@ -19,10 +19,7 @@ interface OrganizationWorkspacePageProps {
   view: OrganizationWorkspaceView;
 }
 
-export function OrganizationWorkspacePage({
-  slug,
-  view,
-}: OrganizationWorkspacePageProps) {
+export function OrganizationWorkspacePage({ slug, view }: OrganizationWorkspacePageProps) {
   const navigate = useNavigate();
   const { data: organization, isPending } = useCurrentOrganization({ slug });
 
@@ -38,7 +35,9 @@ export function OrganizationWorkspacePage({
     return (
       <div className="mx-auto w-full max-w-6xl space-y-2">
         <p className="text-sm text-muted-foreground">Organizations</p>
-        <h1 className="text-3xl font-semibold tracking-tight text-foreground">Loading organization</h1>
+        <h1 className="text-3xl font-semibold tracking-tight text-foreground">
+          Loading organization
+        </h1>
         <p className="text-base text-muted-foreground">Preparing the organization settings.</p>
       </div>
     );
@@ -125,9 +124,7 @@ function NavLink({
   view: OrganizationWorkspaceView;
 }) {
   const href =
-    view === 'SETTINGS'
-      ? '/app/organizations/$slug/settings'
-      : '/app/organizations/$slug/members';
+    view === 'SETTINGS' ? '/app/organizations/$slug/settings' : '/app/organizations/$slug/members';
 
   return (
     <Button

@@ -1,13 +1,14 @@
-import { CreateOrganizationDialog, UserInvitationsCard } from '@daveyplate/better-auth-ui';
+import { UserInvitationsCard } from '@daveyplate/better-auth-ui';
+import { Link } from '@tanstack/react-router';
 import type { Organization } from 'better-auth/plugins/organization';
 import { Building2, Plus, Settings, Users } from 'lucide-react';
 import { useState } from 'react';
-import { Link } from '@tanstack/react-router';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
 import { authHooks } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { CreateOrganizationDialog } from '~/features/organizations/components/CreateOrganizationDialog';
 
 export function OrganizationDirectoryPage() {
   const authState = useAuthState();
@@ -32,36 +33,33 @@ export function OrganizationDirectoryPage() {
           }
         />
 
-          <div className="space-y-4">
-            {authState.isPending || isPending ? (
-              <>
-                <OrganizationRowSkeleton />
-                <OrganizationRowSkeleton />
-              </>
-            ) : organizations && organizations.length > 0 ? (
-              organizations.map((organization) => (
-                <OrganizationRow key={organization.id} organization={organization} />
-              ))
-            ) : (
-              <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
-                <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
-                  <Building2 className="size-6" />
-                </div>
-                <h2 className="text-lg font-semibold">No organizations yet</h2>
-                <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                  Create your first organization to collaborate with teammates and manage access from a shared home.
-                </p>
-                <Button
-                  onClick={() => setCreateDialogOpen(true)}
-                  className="mt-5"
-                  size="sm"
-                >
-                  <Plus className="size-4" />
-                  Create organization
-                </Button>
+        <div className="space-y-4">
+          {authState.isPending || isPending ? (
+            <>
+              <OrganizationRowSkeleton />
+              <OrganizationRowSkeleton />
+            </>
+          ) : organizations && organizations.length > 0 ? (
+            organizations.map((organization) => (
+              <OrganizationRow key={organization.id} organization={organization} />
+            ))
+          ) : (
+            <div className="rounded-xl border border-dashed border-border bg-muted/20 p-8 text-center">
+              <div className="mx-auto mb-4 flex size-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                <Building2 className="size-6" />
               </div>
-            )}
-          </div>
+              <h2 className="text-lg font-semibold">No organizations yet</h2>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                Create your first organization to collaborate with teammates and manage access from
+                a shared home.
+              </p>
+              <Button onClick={() => setCreateDialogOpen(true)} className="mt-5" size="sm">
+                <Plus className="size-4" />
+                Create organization
+              </Button>
+            </div>
+          )}
+        </div>
 
         <UserInvitationsCard
           classNames={{
