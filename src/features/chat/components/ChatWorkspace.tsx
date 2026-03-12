@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
@@ -86,6 +86,24 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         }
       : undefined;
   const showEmptyState = currentMessages.length === 0 && !pendingPreview;
+  const alignPendingMessageToTop = useCallback(() => {
+    const viewportNode = messageViewportRef.current;
+    const targetNode = scrollTargetMessageRef.current;
+
+    if (!viewportNode || !targetNode) {
+      return;
+    }
+
+    const topOffset = 24;
+    const viewportRect = viewportNode.getBoundingClientRect();
+    const targetRect = targetNode.getBoundingClientRect();
+    const nextTop = viewportNode.scrollTop + (targetRect.top - viewportRect.top) - topOffset;
+
+    viewportNode.scrollTo({
+      top: Math.max(0, nextTop),
+      behavior: 'auto',
+    });
+  }, []);
 
   useEffect(() => {
     if (!threadId || !pendingSubmission || !messages) {
@@ -138,24 +156,30 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }, [messages, threadId]);
 
   useEffect(() => {
-    const viewportNode = messageViewportRef.current;
-    const targetNode = scrollTargetMessageRef.current;
-    if (!viewportNode || !targetNode || !pendingSubmission?.clientMessageId) {
+    if (!pendingSubmission?.clientMessageId) {
       return;
     }
 
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const topOffset = 24;
-        const nextTop =
-          targetNode.offsetTop - viewportNode.offsetTop + viewportNode.scrollTop - topOffset;
-        viewportNode.scrollTo({
-          top: Math.max(0, nextTop),
-          behavior: 'auto',
-        });
+    let outerFrame = 0;
+    let innerFrame = 0;
+
+    outerFrame = requestAnimationFrame(() => {
+      innerFrame = requestAnimationFrame(() => {
+        alignPendingMessageToTop();
       });
     });
-  }, [pendingSubmission?.clientMessageId]);
+
+    return () => {
+      cancelAnimationFrame(outerFrame);
+      cancelAnimationFrame(innerFrame);
+    };
+  }, [
+    alignPendingMessageToTop,
+    messages?.length,
+    pendingPreview?.showAssistantPlaceholder,
+    pendingPreview?.showUserMessage,
+    pendingSubmission?.clientMessageId,
+  ]);
 
   if (threadId && thread === null) {
     return (

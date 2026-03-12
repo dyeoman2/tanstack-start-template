@@ -455,24 +455,19 @@ export function ChatComposer({
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={disabled}
-                    className="max-w-44 gap-2 rounded-full px-3 text-[#403d39] shadow-none hover:bg-black/5 hover:text-[#24211d]"
-                    aria-label={`Choose model: ${selectedModel.label}`}
-                  >
-                    <span className="max-w-24 truncate text-xs">{selectedModel.label}</span>
-                    <ChevronDown className="size-3.5 opacity-60" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </TooltipTrigger>
-              <TooltipContent>{`Model: ${selectedModel.label}`}</TooltipContent>
-            </Tooltip>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                className="max-w-44 gap-2 rounded-full px-3 text-[#403d39] shadow-none hover:bg-black/5 hover:text-[#24211d]"
+                aria-label={`Choose model: ${selectedModel.label}`}
+              >
+                <span className="max-w-32 truncate text-xs">{selectedModel.label}</span>
+                <ChevronDown className="size-3.5 opacity-60" />
+              </Button>
+            </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel>Model</DropdownMenuLabel>
               <DropdownMenuRadioGroup
