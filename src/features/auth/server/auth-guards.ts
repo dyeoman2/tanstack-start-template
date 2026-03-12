@@ -11,6 +11,7 @@ export interface AuthenticatedUser {
   id: UserId;
   email: string;
   role: UserRole;
+  isSiteAdmin: boolean;
   name?: string;
 }
 
@@ -56,6 +57,7 @@ async function getCurrentUser(): Promise<AuthenticatedUser | null> {
       id: sessionUserId,
       email: sessionUserEmail,
       role: profile?.role === USER_ROLES.ADMIN ? USER_ROLES.ADMIN : USER_ROLES.USER,
+      isSiteAdmin: profile?.isSiteAdmin === true,
       name: typeof profile?.name === 'string' ? profile.name : undefined,
     };
   } catch {
@@ -74,4 +76,13 @@ export async function requireAuth(): Promise<AuthResult> {
   }
 
   return { user };
+}
+
+export async function requireAdmin(): Promise<AuthResult> {
+  const result = await requireAuth();
+  if (!result.user.isSiteAdmin) {
+    throw redirect({ to: '/login' });
+  }
+
+  return result;
 }

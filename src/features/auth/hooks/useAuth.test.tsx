@@ -1,0 +1,63 @@
+import { renderHook } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const useSessionMock = vi.fn();
+const useAuthStateMock = vi.fn();
+const useQueryMock = vi.fn();
+
+vi.mock('~/features/auth/auth-client', () => ({
+  useSession: useSessionMock,
+}));
+
+vi.mock('./useAuthState', () => ({
+  useAuthState: useAuthStateMock,
+}));
+
+vi.mock('convex/react', () => ({
+  useQuery: useQueryMock,
+}));
+
+describe('useAuth', () => {
+  beforeEach(() => {
+    useSessionMock.mockReset();
+    useAuthStateMock.mockReset();
+    useQueryMock.mockReset();
+  });
+
+  it('reports impersonation metadata from the Better Auth session', async () => {
+    useAuthStateMock.mockReturnValue({
+      isAuthenticated: true,
+      isPending: false,
+      error: null,
+      userId: 'admin-1',
+    });
+    useSessionMock.mockReturnValue({
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          name: 'Person Example',
+        },
+        session: {
+          impersonatedBy: 'admin-1',
+        },
+      },
+      isPending: false,
+      error: null,
+    });
+    useQueryMock.mockReturnValue({
+      role: 'user',
+      isSiteAdmin: false,
+      phoneNumber: null,
+      currentOrganization: null,
+    });
+
+    const { useAuth } = await import('./useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.isImpersonating).toBe(true);
+    expect(result.current.impersonatedByUserId).toBe('admin-1');
+    expect(result.current.user?.email).toBe('person@example.com');
+    expect(result.current.isAdmin).toBe(false);
+  });
+});

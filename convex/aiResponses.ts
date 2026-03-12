@@ -1,8 +1,7 @@
 import { v } from 'convex/values';
-import { assertUserId } from '../src/lib/shared/user-id';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, mutation, query } from './_generated/server';
-import { authComponent } from './auth';
+import { getCurrentUserOrNull, getCurrentUserOrThrow } from './auth/access';
 
 const usageShape = v.object({
   totalTokens: v.optional(v.number()),
@@ -32,6 +31,7 @@ const buildPatch = (
 export const createResponse = internalMutation({
   args: {
     userId: v.string(),
+    organizationId: v.string(),
     requestKey: v.string(),
     method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
     provider: v.optional(v.string()),
@@ -42,6 +42,7 @@ export const createResponse = internalMutation({
 
     const responseId = await ctx.db.insert('aiResponses', {
       userId: args.userId,
+      organizationId: args.organizationId,
       requestKey: args.requestKey,
       method: args.method,
       response: '',
@@ -171,16 +172,16 @@ export const markError = internalMutation({
 export const listUserResponses = query({
   args: {},
   handler: async (ctx) => {
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
       return [];
     }
 
-    const userId = assertUserId(authUser, 'Unable to resolve user id.');
-
     return ctx.db
       .query('aiResponses')
-      .withIndex('by_userId_createdAt', (q) => q.eq('userId', userId))
+      .withIndex('by_organizationId_createdAt', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
       .order('desc')
       .take(20);
   },
@@ -189,16 +190,12 @@ export const listUserResponses = query({
 export const deleteAllUserResponses = mutation({
   args: {},
   handler: async (ctx) => {
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
-      throw new Error('Unauthorized');
-    }
-
-    const userId = assertUserId(authUser, 'Unable to resolve user id.');
-
+    const user = await getCurrentUserOrThrow(ctx);
     const responses = await ctx.db
       .query('aiResponses')
-      .withIndex('by_userId_createdAt', (q) => q.eq('userId', userId))
+      .withIndex('by_organizationId_createdAt', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
       .collect();
 
     await Promise.all(responses.map((response) => ctx.db.delete(response._id)));

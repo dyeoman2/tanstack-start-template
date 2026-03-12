@@ -18,9 +18,18 @@ export interface AuthResult {
     name?: string;
     phoneNumber?: string | null;
     role: UserRole;
+    isSiteAdmin: boolean;
+    currentOrganization?: {
+      id: string;
+      name: string;
+      role: string;
+    } | null;
   } | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isSiteAdmin: boolean;
+  isImpersonating: boolean;
+  impersonatedByUserId?: string;
   isPending: boolean;
   error: Error | null;
 }
@@ -40,6 +49,11 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
+  const impersonatedByUserId =
+    typeof session?.session?.impersonatedBy === 'string' && session.session.impersonatedBy.length > 0
+      ? session.session.impersonatedBy
+      : undefined;
+  const isImpersonating = impersonatedByUserId !== undefined;
 
   const isPending =
     sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined);
@@ -51,6 +65,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       ? USER_ROLES.ADMIN
       : USER_ROLES.USER
     : DEFAULT_ROLE;
+  const isSiteAdmin = shouldFetchProfile ? profile?.isSiteAdmin === true : false;
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -59,19 +74,28 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
         ? {
             ...session.user,
             role,
+            isSiteAdmin,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
+            currentOrganization: shouldFetchProfile ? profile?.currentOrganization ?? null : null,
           }
         : null,
       isAuthenticated: authState.isAuthenticated,
-      isAdmin: role === USER_ROLES.ADMIN,
+      isAdmin: isSiteAdmin,
+      isSiteAdmin,
+      isImpersonating,
+      impersonatedByUserId,
       isPending,
       error,
     }),
     [
       session?.user,
       role,
+      isSiteAdmin,
+      profile?.currentOrganization,
       profile?.phoneNumber,
       authState.isAuthenticated,
+      isImpersonating,
+      impersonatedByUserId,
       isPending,
       error,
       shouldFetchProfile,

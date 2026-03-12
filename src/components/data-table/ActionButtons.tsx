@@ -1,4 +1,4 @@
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, LogIn, Trash2 } from 'lucide-react';
 import { Button } from '~/components/ui/button';
 
 interface EditActionButtonProps {
@@ -35,6 +35,32 @@ export function DeleteActionButton({ onClick, className }: DeleteActionButtonPro
     >
       <Trash2 className="h-4 w-4" />
       <span className="sr-only">Delete</span>
+    </Button>
+  );
+}
+
+interface ImpersonateActionButtonProps {
+  onClick: () => void;
+  className?: string;
+  disabled?: boolean;
+}
+
+export function ImpersonateActionButton({
+  onClick,
+  className,
+  disabled = false,
+}: ImpersonateActionButtonProps) {
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={onClick}
+      disabled={disabled}
+      className={`h-8 w-8 p-0 ${className || ''}`}
+      title="Impersonate user"
+    >
+      <LogIn className="h-4 w-4" />
+      <span className="sr-only">Impersonate</span>
     </Button>
   );
 }

@@ -1,8 +1,10 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-import { betterAuth, type Auth } from 'better-auth';
+import { betterAuth } from 'better-auth';
+import { admin, organization } from 'better-auth/plugins';
 import { v } from 'convex/values';
-import { getBetterAuthSecret, getSiteUrl } from '../src/lib/server/env.server';
+import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '../src/lib/server/env.server';
+import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import { action, query } from './_generated/server';
@@ -10,13 +12,18 @@ import authConfig from './auth.config';
 
 const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
+const trustedOrigins = getBetterAuthTrustedOrigins(siteUrl);
 
-export const authComponent = createClient<DataModel>(components.betterAuth);
+export const authComponent = createClient<DataModel, typeof betterAuthSchema>(components.betterAuth, {
+  local: {
+    schema: betterAuthSchema,
+  },
+});
 
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
-): Auth => {
+) => {
   return betterAuth({
     logger: {
       disabled: optionsOnly,
@@ -113,7 +120,41 @@ export const createAuth = (
         },
       },
     },
+    trustedOrigins,
     plugins: [
+      admin({
+        defaultRole: 'user',
+        adminRoles: ['admin'],
+      }),
+      organization({
+        allowUserToCreateOrganization: true,
+        invitationExpiresIn: 7 * 24 * 60 * 60,
+        cancelPendingInvitationsOnReInvite: true,
+        sendInvitationEmail: async (data) => {
+          const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
+            scheduler?: {
+              runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
+            };
+          };
+
+          if (!ctxWithScheduler.scheduler) {
+            throw new Error('Cannot send organization invitation email: scheduler not available');
+          }
+
+          const inviteUrl = `${siteUrl}/invite/${data.id}`;
+          await ctxWithScheduler.scheduler.runAfter(
+            0,
+            internal.emails.sendOrganizationInviteEmailMutation,
+            {
+              email: data.email,
+              inviteUrl,
+              inviterName: data.inviter.user.name ?? data.inviter.user.email,
+              organizationName: data.organization.name,
+              role: data.role,
+            },
+          );
+        },
+      }),
       convex({
         authConfig,
         jwks: process.env.JWKS,
@@ -129,6 +170,45 @@ const internalRateLimitToken = process.env.BETTER_AUTH_SECRET;
 if (!internalRateLimitToken) {
   throw new Error('BETTER_AUTH_SECRET environment variable is required');
 }
+
+type RotatedJwk = {
+  alg?: string;
+  createdAt?: Date | number | string;
+  expiresAt?: Date | number | string;
+  id: string;
+  privateKey: string;
+  publicKey: string;
+};
+
+const isRotatedJwk = (value: unknown): value is RotatedJwk => {
+  if (typeof value !== 'object' || value === null) {
+    return false;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  const isTimestampLike = (timestamp: unknown) =>
+    timestamp === undefined ||
+    typeof timestamp === 'string' ||
+    typeof timestamp === 'number' ||
+    timestamp instanceof Date;
+
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.privateKey === 'string' &&
+    typeof candidate.publicKey === 'string' &&
+    (candidate.alg === undefined || typeof candidate.alg === 'string') &&
+    isTimestampLike(candidate.createdAt) &&
+    isTimestampLike(candidate.expiresAt)
+  );
+};
+
+const parseRotatedJwks = (value: unknown): RotatedJwk[] => {
+  if (!Array.isArray(value) || !value.every(isRotatedJwk)) {
+    throw new Error('Invalid JWKS response from Better Auth');
+  }
+
+  return value;
+};
 
 // Action wrapper for rate limiting (callable from server functions)
 export const rateLimitAction = action({
@@ -158,6 +238,32 @@ export const rateLimitAction = action({
 
     const { token: _token, ...rateLimitArgs } = args;
     return await ctx.runMutation(components.rateLimiter.lib.rateLimit, rateLimitArgs);
+  },
+});
+
+export const rotateKeys = action({
+  args: {
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    if (args.token !== internalRateLimitToken) {
+      throw new Error('Unauthorized key rotation access');
+    }
+
+    const auth = createAuth(ctx);
+    const jwksResult: unknown = await auth.api.rotateKeys();
+    const jwks = parseRotatedJwks(jwksResult);
+    return JSON.stringify(
+      jwks.map((key: RotatedJwk) => ({
+        ...key,
+        createdAt:
+          key.createdAt instanceof Date ? key.createdAt.getTime() : (key.createdAt ?? Date.now()),
+        expiresAt:
+          key.expiresAt instanceof Date
+            ? key.expiresAt.getTime()
+            : (key.expiresAt ?? undefined),
+      })),
+    );
   },
 });
 

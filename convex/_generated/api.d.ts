@@ -12,7 +12,9 @@ import type * as admin from "../admin.js";
 import type * as ai from "../ai.js";
 import type * as aiResponses from "../aiResponses.js";
 import type * as auth from "../auth.js";
-import type * as authz_guardFactory from "../authz/guardFactory.js";
+import type * as auth_access from "../auth/access.js";
+import type * as auth_authorized from "../auth/authorized.js";
+import type * as auth_errors from "../auth/errors.js";
 import type * as autumn from "../autumn.js";
 import type * as cloudflareAi from "../cloudflareAi.js";
 import type * as dashboard from "../dashboard.js";
@@ -22,6 +24,8 @@ import type * as emails from "../emails.js";
 import type * as firecrawl from "../firecrawl.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
+import type * as lib_betterAuth from "../lib/betterAuth.js";
+import type * as organizationManagement from "../organizationManagement.js";
 import type * as users from "../users.js";
 
 import type {
@@ -35,7 +39,9 @@ declare const fullApi: ApiFromModules<{
   ai: typeof ai;
   aiResponses: typeof aiResponses;
   auth: typeof auth;
-  "authz/guardFactory": typeof authz_guardFactory;
+  "auth/access": typeof auth_access;
+  "auth/authorized": typeof auth_authorized;
+  "auth/errors": typeof auth_errors;
   autumn: typeof autumn;
   cloudflareAi: typeof cloudflareAi;
   dashboard: typeof dashboard;
@@ -45,6 +51,8 @@ declare const fullApi: ApiFromModules<{
   firecrawl: typeof firecrawl;
   health: typeof health;
   http: typeof http;
+  "lib/betterAuth": typeof lib_betterAuth;
+  organizationManagement: typeof organizationManagement;
   users: typeof users;
 }>;
 
@@ -84,6 +92,9 @@ export declare const components: {
           input:
             | {
                 data: {
+                  banExpires?: null | number;
+                  banReason?: null | string;
+                  banned?: null | boolean;
                   createdAt: number;
                   displayUsername?: null | string;
                   email: string;
@@ -93,6 +104,7 @@ export declare const components: {
                   name: string;
                   phoneNumber?: null | string;
                   phoneNumberVerified?: null | boolean;
+                  role?: null | string;
                   twoFactorEnabled?: null | boolean;
                   updatedAt: number;
                   userId?: null | string;
@@ -102,8 +114,10 @@ export declare const components: {
               }
             | {
                 data: {
+                  activeOrganizationId?: null | string;
                   createdAt: number;
                   expiresAt: number;
+                  impersonatedBy?: null | string;
                   ipAddress?: null | string;
                   token: string;
                   updatedAt: number;
@@ -209,6 +223,37 @@ export declare const components: {
               }
             | {
                 data: {
+                  createdAt: number;
+                  logo?: null | string;
+                  metadata?: null | string;
+                  name: string;
+                  slug: string;
+                };
+                model: "organization";
+              }
+            | {
+                data: {
+                  createdAt: number;
+                  organizationId: string;
+                  role: string;
+                  userId: string;
+                };
+                model: "member";
+              }
+            | {
+                data: {
+                  createdAt: number;
+                  email: string;
+                  expiresAt: number;
+                  inviterId: string;
+                  organizationId: string;
+                  role: string;
+                  status: "pending" | "accepted" | "rejected" | "canceled";
+                };
+                model: "invitation";
+              }
+            | {
+                data: {
                   count?: null | number;
                   key?: null | string;
                   lastRequest?: null | number;
@@ -243,6 +288,10 @@ export declare const components: {
                     | "phoneNumber"
                     | "phoneNumberVerified"
                     | "userId"
+                    | "role"
+                    | "banned"
+                    | "banReason"
+                    | "banExpires"
                     | "_id";
                   operator?:
                     | "lt"
@@ -277,6 +326,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
+                    | "impersonatedBy"
+                    | "activeOrganizationId"
                     | "_id";
                   operator?:
                     | "lt"
@@ -545,6 +596,103 @@ export declare const components: {
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "publicKey" | "privateKey" | "createdAt" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "organization";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "name"
+                    | "slug"
+                    | "logo"
+                    | "metadata"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "member";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "userId"
+                    | "role"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invitation";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "email"
+                    | "role"
+                    | "status"
+                    | "inviterId"
+                    | "expiresAt"
+                    | "createdAt"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -627,6 +775,10 @@ export declare const components: {
                     | "phoneNumber"
                     | "phoneNumberVerified"
                     | "userId"
+                    | "role"
+                    | "banned"
+                    | "banReason"
+                    | "banExpires"
                     | "_id";
                   operator?:
                     | "lt"
@@ -661,6 +813,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
+                    | "impersonatedBy"
+                    | "activeOrganizationId"
                     | "_id";
                   operator?:
                     | "lt"
@@ -951,6 +1105,103 @@ export declare const components: {
                 }>;
               }
             | {
+                model: "organization";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "name"
+                    | "slug"
+                    | "logo"
+                    | "metadata"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "member";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "userId"
+                    | "role"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invitation";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "email"
+                    | "role"
+                    | "status"
+                    | "inviterId"
+                    | "expiresAt"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
                 model: "rateLimit";
                 where?: Array<{
                   connector?: "AND" | "OR";
@@ -997,6 +1248,9 @@ export declare const components: {
             | "oauthAccessToken"
             | "oauthConsent"
             | "jwks"
+            | "organization"
+            | "member"
+            | "invitation"
             | "rateLimit";
           offset?: number;
           paginationOpts: {
@@ -1007,6 +1261,7 @@ export declare const components: {
             maximumRowsRead?: number;
             numItems: number;
           };
+          select?: Array<string>;
           sortBy?: { direction: "asc" | "desc"; field: string };
           where?: Array<{
             connector?: "AND" | "OR";
@@ -1050,6 +1305,9 @@ export declare const components: {
             | "oauthAccessToken"
             | "oauthConsent"
             | "jwks"
+            | "organization"
+            | "member"
+            | "invitation"
             | "rateLimit";
           select?: Array<string>;
           where?: Array<{
@@ -1086,6 +1344,9 @@ export declare const components: {
             | {
                 model: "user";
                 update: {
+                  banExpires?: null | number;
+                  banReason?: null | string;
+                  banned?: null | boolean;
                   createdAt?: number;
                   displayUsername?: null | string;
                   email?: string;
@@ -1095,6 +1356,7 @@ export declare const components: {
                   name?: string;
                   phoneNumber?: null | string;
                   phoneNumberVerified?: null | boolean;
+                  role?: null | string;
                   twoFactorEnabled?: null | boolean;
                   updatedAt?: number;
                   userId?: null | string;
@@ -1116,6 +1378,10 @@ export declare const components: {
                     | "phoneNumber"
                     | "phoneNumberVerified"
                     | "userId"
+                    | "role"
+                    | "banned"
+                    | "banReason"
+                    | "banExpires"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1141,8 +1407,10 @@ export declare const components: {
             | {
                 model: "session";
                 update: {
+                  activeOrganizationId?: null | string;
                   createdAt?: number;
                   expiresAt?: number;
+                  impersonatedBy?: null | string;
                   ipAddress?: null | string;
                   token?: string;
                   updatedAt?: number;
@@ -1159,6 +1427,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
+                    | "impersonatedBy"
+                    | "activeOrganizationId"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1502,6 +1772,125 @@ export declare const components: {
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "publicKey" | "privateKey" | "createdAt" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "organization";
+                update: {
+                  createdAt?: number;
+                  logo?: null | string;
+                  metadata?: null | string;
+                  name?: string;
+                  slug?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "name"
+                    | "slug"
+                    | "logo"
+                    | "metadata"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "member";
+                update: {
+                  createdAt?: number;
+                  organizationId?: string;
+                  role?: string;
+                  userId?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "userId"
+                    | "role"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invitation";
+                update: {
+                  createdAt?: number;
+                  email?: string;
+                  expiresAt?: number;
+                  inviterId?: string;
+                  organizationId?: string;
+                  role?: string;
+                  status?: "pending" | "accepted" | "rejected" | "canceled";
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "email"
+                    | "role"
+                    | "status"
+                    | "inviterId"
+                    | "expiresAt"
+                    | "createdAt"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -1574,6 +1963,9 @@ export declare const components: {
             | {
                 model: "user";
                 update: {
+                  banExpires?: null | number;
+                  banReason?: null | string;
+                  banned?: null | boolean;
                   createdAt?: number;
                   displayUsername?: null | string;
                   email?: string;
@@ -1583,6 +1975,7 @@ export declare const components: {
                   name?: string;
                   phoneNumber?: null | string;
                   phoneNumberVerified?: null | boolean;
+                  role?: null | string;
                   twoFactorEnabled?: null | boolean;
                   updatedAt?: number;
                   userId?: null | string;
@@ -1604,6 +1997,10 @@ export declare const components: {
                     | "phoneNumber"
                     | "phoneNumberVerified"
                     | "userId"
+                    | "role"
+                    | "banned"
+                    | "banReason"
+                    | "banExpires"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1629,8 +2026,10 @@ export declare const components: {
             | {
                 model: "session";
                 update: {
+                  activeOrganizationId?: null | string;
                   createdAt?: number;
                   expiresAt?: number;
+                  impersonatedBy?: null | string;
                   ipAddress?: null | string;
                   token?: string;
                   updatedAt?: number;
@@ -1647,6 +2046,8 @@ export declare const components: {
                     | "ipAddress"
                     | "userAgent"
                     | "userId"
+                    | "impersonatedBy"
+                    | "activeOrganizationId"
                     | "_id";
                   operator?:
                     | "lt"
@@ -2012,6 +2413,125 @@ export declare const components: {
                 }>;
               }
             | {
+                model: "organization";
+                update: {
+                  createdAt?: number;
+                  logo?: null | string;
+                  metadata?: null | string;
+                  name?: string;
+                  slug?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "name"
+                    | "slug"
+                    | "logo"
+                    | "metadata"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "member";
+                update: {
+                  createdAt?: number;
+                  organizationId?: string;
+                  role?: string;
+                  userId?: string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "userId"
+                    | "role"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "invitation";
+                update: {
+                  createdAt?: number;
+                  email?: string;
+                  expiresAt?: number;
+                  inviterId?: string;
+                  organizationId?: string;
+                  role?: string;
+                  status?: "pending" | "accepted" | "rejected" | "canceled";
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "organizationId"
+                    | "email"
+                    | "role"
+                    | "status"
+                    | "inviterId"
+                    | "expiresAt"
+                    | "createdAt"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
                 model: "rateLimit";
                 update: {
                   count?: null | number;
@@ -2046,10 +2566,6 @@ export declare const components: {
         },
         any
       >;
-    };
-    adapterTest: {
-      runCustomTests: FunctionReference<"action", "internal", any, any>;
-      runTests: FunctionReference<"action", "internal", any, any>;
     };
   };
   resend: {

@@ -126,9 +126,7 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
 
       const signUpResult = await signUpResponse.json();
 
-      // Create user profile with role AFTER Better Auth user creation
-      // Better Auth manages user auth data in betterAuth.user table
-      // We store app-specific data (like role) in app.userProfiles table
+      // Bootstrap Better Auth role + Convex app user context after auth user creation.
       if (signUpResult?.user?.id) {
         const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
 
@@ -136,18 +134,15 @@ export const signUpWithFirstAdminServerFn = createServerFn({ method: 'POST' })
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         try {
-          // Store role in userProfiles table (app-specific data)
-          // Use allowBootstrap flag for first admin user creation
-          await convexAuthReactStart.fetchAuthMutation(api.users.setUserRole, {
-            userId: signUpResult.user.id,
+          await convexAuthReactStart.fetchAuthAction(api.users.bootstrapUserContext, {
+            token: rateLimitToken,
+            authUserId: signUpResult.user.id,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
             role: roleToSet,
-            allowBootstrap: isFirstUser, // Allow bootstrap for first admin
           });
         } catch (roleError) {
-          // Log but don't fail signup if role update fails
-          // Role can be set manually later if needed
-          console.warn('[Signup] Failed to set user role after creation:', roleError);
-          // Continue with signup success - role update is non-critical
+          console.warn('[Signup] Failed to bootstrap user context after creation:', roleError);
         }
       }
 

@@ -158,7 +158,13 @@ async function ensureAuthenticatedUser(ctx: ActionCtx) {
   }
 
   const userId = assertUserId(authUser, 'Unable to resolve user id.');
-  return { authUser, userId };
+  const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
+  const currentOrganization = profile?.currentOrganization ?? null;
+  if (!currentOrganization) {
+    throw new Error('Active organization not initialized for this user.');
+  }
+
+  return { authUser, userId, organizationId: currentOrganization.id };
 }
 
 type StreamHandlers = {
@@ -394,7 +400,7 @@ export const streamWithWorkersAI = action({
   ): Promise<{
     responseId: Id<'aiResponses'>;
   }> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { userId, organizationId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: { provider: 'cloudflare-workers-ai', model: args.model },
@@ -406,6 +412,7 @@ export const streamWithWorkersAI = action({
 
     const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
       userId,
+      organizationId,
       requestKey: args.requestId,
       method: 'direct',
       provider: 'cloudflare-workers-ai',
@@ -536,7 +543,7 @@ export const streamWithGateway = action({
   ): Promise<{
     responseId: Id<'aiResponses'>;
   }> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { userId, organizationId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: { provider: 'cloudflare-gateway-workers-ai', model: args.model },
@@ -548,6 +555,7 @@ export const streamWithGateway = action({
 
     const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
       userId,
+      organizationId,
       requestKey: args.requestId,
       method: 'gateway',
       provider: 'cloudflare-gateway',
@@ -682,7 +690,7 @@ export const streamStructuredResponse = action({
   ): Promise<{
     responseId: Id<'aiResponses'>;
   }> => {
-    const { userId } = await ensureAuthenticatedUser(ctx);
+    const { userId, organizationId } = await ensureAuthenticatedUser(ctx);
 
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: {
@@ -699,6 +707,7 @@ export const streamStructuredResponse = action({
 
     const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
       userId,
+      organizationId,
       requestKey: args.requestId,
       method: 'structured',
       provider: 'cloudflare-workers-ai-structured',

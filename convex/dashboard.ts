@@ -1,7 +1,6 @@
-import { assertUserId } from '../src/lib/shared/user-id';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
-import { authComponent } from './auth';
+import { getCurrentAuthUserOrNull, isAdminRole } from './auth/access';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -37,21 +36,14 @@ export const getDashboardData = query({
   args: {},
   handler: async (ctx) => {
     // Return explicit access states so the client can render one stable branch.
-    const currentUser = await authComponent.getAuthUser(ctx);
+    const currentUser = await getCurrentAuthUserOrNull(ctx);
     if (!currentUser) {
       return {
         status: 'unauthenticated' as const,
       };
     }
 
-    const currentUserId = assertUserId(currentUser, 'User ID not found');
-
-    const currentProfile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', currentUserId))
-      .first();
-
-    if (currentProfile?.role !== 'admin') {
+    if (!isAdminRole((currentUser as { role?: string | string[] }).role)) {
       return {
         status: 'forbidden' as const,
       };
@@ -76,8 +68,8 @@ export const getDashboardData = query({
       totalUsers = statsDoc.totalUsers;
       activeUsers = statsDoc.activeUsers;
     } else {
-      const profiles = await ctx.db.query('userProfiles').collect();
-      totalUsers = profiles.length;
+      const users = await ctx.db.query('users').collect();
+      totalUsers = users.length;
       activeUsers = totalUsers; // TODO: Implement proper active user logic
     }
 

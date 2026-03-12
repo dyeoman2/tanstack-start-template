@@ -1,11 +1,12 @@
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
-import tsConfigPaths from 'vite-tsconfig-paths';
 
 export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+  },
   plugins: [
-    tsConfigPaths({ projects: ['./tsconfig.json'] }),
     tanstackRouter({ target: 'react' }),
     react(),
   ],

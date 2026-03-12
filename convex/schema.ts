@@ -6,17 +6,42 @@ export default defineSchema({
   // Those tables are in the 'betterAuth' namespace (user, session, account, verification, etc.)
   // We should NOT duplicate them here. Access Better Auth users via Better Auth APIs.
 
-  // Application-specific tables only
-  // User profiles table - stores app-specific user data that references Better Auth user IDs
-  userProfiles: defineTable({
-    userId: v.string(), // References Better Auth user.id
-    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum for data integrity
-    // Add other app-specific user fields here as needed
+  users: defineTable({
+    authUserId: v.string(),
+    lastActiveOrganizationId: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_userId', ['userId'])
-    .index('by_role_createdAt', ['role', 'createdAt']),
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_last_active_organization_id', ['lastActiveOrganizationId']),
+
+  userProfiles: defineTable({
+    authUserId: v.string(),
+    email: v.string(),
+    emailLower: v.string(),
+    name: v.union(v.string(), v.null()),
+    nameLower: v.union(v.string(), v.null()),
+    phoneNumber: v.union(v.string(), v.null()),
+    role: v.union(v.literal('user'), v.literal('admin')),
+    isSiteAdmin: v.boolean(),
+    emailVerified: v.boolean(),
+    banned: v.boolean(),
+    banReason: v.union(v.string(), v.null()),
+    banExpires: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    lastSyncedAt: v.number(),
+  })
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_role', ['role'])
+    .index('by_email_lower', ['emailLower'])
+    .index('by_created_at', ['createdAt']),
+
+  userProfileSyncState: defineTable({
+    key: v.string(),
+    lastFullSyncAt: v.number(),
+    totalUsers: v.number(),
+  }).index('by_key', ['key']),
 
   auditLogs: defineTable({
     id: v.string(),
@@ -51,16 +76,20 @@ export default defineSchema({
 
   aiMessageUsage: defineTable({
     userId: v.string(),
+    organizationId: v.string(),
     messagesUsed: v.number(),
     pendingMessages: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastReservedAt: v.optional(v.number()),
     lastCompletedAt: v.optional(v.number()),
-  }).index('by_userId', ['userId']),
+  })
+    .index('by_userId', ['userId'])
+    .index('by_organizationId', ['organizationId']),
 
   aiResponses: defineTable({
     userId: v.string(),
+    organizationId: v.string(),
     requestKey: v.string(),
     method: v.union(v.literal('direct'), v.literal('gateway'), v.literal('structured')),
     provider: v.optional(v.string()),
@@ -91,5 +120,6 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_userId_createdAt', ['userId', 'createdAt'])
+    .index('by_organizationId_createdAt', ['organizationId', 'createdAt'])
     .index('by_requestKey', ['requestKey']),
 });

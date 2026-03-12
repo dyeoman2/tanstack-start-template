@@ -15,6 +15,7 @@ export function AppShell() {
   const router = useRouter();
   const { authContext } = useAuthContext();
   const prevLocationRef = useRef<string | undefined>(undefined);
+  const isAppRoute = location.pathname === '/app' || location.pathname.startsWith('/app/');
 
   // Track navigation events with more detail
   useEffect(() => {
@@ -53,12 +54,20 @@ export function AppShell() {
   return (
     <>
       <div className="min-h-screen bg-background">
-        {!isAuthRoute && <AppNavigation />}
-        <main
-          className={`max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 ${isAuthRoute ? 'pt-12' : ''}`}
-        >
+        {isAppRoute ? (
           <Outlet />
-        </main>
+        ) : (
+          <>
+            {!isAuthRoute && <AppNavigation />}
+            <main
+              className={`max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 ${
+                isAuthRoute ? 'pt-12' : ''
+              }`}
+            >
+              <Outlet />
+            </main>
+          </>
+        )}
       </div>
       {import.meta.env.DEV && (
         <ClientOnly>

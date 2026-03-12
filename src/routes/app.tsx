@@ -1,5 +1,6 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router';
 import { useEffect, useRef } from 'react';
+import { AuthenticatedAppShell } from '~/components/AuthenticatedAppShell';
 import { NotFound } from '~/components/NotFound';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Spinner } from '~/components/ui/spinner';
@@ -43,7 +44,11 @@ function AppLayout() {
     return <AppLayoutSkeleton />;
   }
 
-  return <Outlet />;
+  return (
+    <AuthenticatedAppShell>
+      <Outlet />
+    </AuthenticatedAppShell>
+  );
 }
 
 function AppLayoutSkeleton() {

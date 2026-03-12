@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
-import { LogOut, Shield, User } from 'lucide-react';
+import { Building2, LogOut, Shield, User } from 'lucide-react';
 import { MobileNavigation } from '~/components/MobileNavigation';
 import { ThemeToggle } from '~/components/theme-toggle';
 import {
@@ -71,6 +71,15 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
               </Link>
             </DropdownMenuItem>
           )}
+          <DropdownMenuItem asChild>
+            <Link
+              to="/app/organizations"
+              className="flex items-center gap-2 w-full cursor-pointer"
+            >
+              <Building2 className="w-4 h-4" />
+              Organizations
+            </Link>
+          </DropdownMenuItem>
           <DropdownMenuItem asChild>
             <Link to="/app/profile" className="flex items-center gap-2 w-full cursor-pointer">
               <User className="w-4 h-4" />

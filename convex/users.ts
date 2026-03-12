@@ -5,29 +5,249 @@ import {
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import { internalQuery, mutation, query } from './_generated/server';
+import type { Id } from './_generated/dataModel';
+import type { MutationCtx } from './_generated/server';
+import { action, internalMutation, mutation, query } from './_generated/server';
+import {
+  type CurrentUserProfile,
+  buildCurrentUserProfile,
+  getCurrentAuthUserOrNull,
+  getCurrentUserOrNull,
+  isAdminRole,
+} from './auth/access';
+import { throwConvexError } from './auth/errors';
 import { authComponent } from './auth';
-import { guarded } from './authz/guardFactory';
+import {
+  type BetterAuthOrganization,
+  type BetterAuthUser,
+  createBetterAuthMember,
+  createBetterAuthOrganization,
+  fetchBetterAuthMembersByUserId,
+  fetchBetterAuthOrganizationsByIds,
+  normalizeBetterAuthUserProfile,
+} from './lib/betterAuth';
 
-/**
- * Check if there are any users in the system (for determining first admin)
- * Queries Better Auth's user table directly for accurate count.
- *
- * Intentionally left unguarded so bootstrap flows and health checks can run
- * before an authenticated session exists.
- */
+type EnsureUserContextArgs = {
+  authUserId: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type EnsureUserContextResult = {
+  userId: Id<'users'>;
+  organizationId: string;
+};
+
+function slugify(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+}
+
+async function resolveActiveOrganizationForUser(
+  ctx: MutationCtx,
+  authUserId: string,
+  preferredOrganizationId?: string,
+) {
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  if (memberships.length === 0) {
+    const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
+    const organizationId = organization._id ?? organization.id;
+    if (!organizationId) {
+      throw new Error('Failed to initialize default organization');
+    }
+
+    return {
+      organization,
+      organizationId,
+    };
+  }
+
+  const organizations = await fetchBetterAuthOrganizationsByIds(
+    ctx,
+    memberships.map((membership) => membership.organizationId),
+  );
+  const organizationsById = new Map(
+    organizations.map((organization) => [organization._id ?? organization.id, organization]),
+  );
+
+  if (preferredOrganizationId) {
+    const preferredOrganization = organizationsById.get(preferredOrganizationId);
+    if (preferredOrganization) {
+      return {
+        organization: preferredOrganization,
+        organizationId: preferredOrganization._id ?? preferredOrganizationId,
+      };
+    }
+  }
+
+  for (const membership of memberships) {
+    const organization = organizationsById.get(membership.organizationId);
+    if (organization) {
+      return {
+        organization,
+        organizationId: organization._id ?? membership.organizationId,
+      };
+    }
+  }
+
+  const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
+  const organizationId = organization._id ?? organization.id;
+  if (!organizationId) {
+    throw new Error('Failed to initialize default organization');
+  }
+
+  return {
+    organization,
+    organizationId,
+  };
+}
+
+async function patchAiOwnershipToOrganization(
+  ctx: MutationCtx,
+  authUserId: string,
+  organizationId: string,
+) {
+  const [usageDocs, responseDocs] = await Promise.all([
+    ctx.db
+      .query('aiMessageUsage')
+      .withIndex('by_userId', (q) => q.eq('userId', authUserId))
+      .collect(),
+    ctx.db
+      .query('aiResponses')
+      .withIndex('by_userId_createdAt', (q) => q.eq('userId', authUserId))
+      .collect(),
+  ]);
+
+  await Promise.all([
+    ...usageDocs
+      .filter((doc) => doc.organizationId !== organizationId)
+      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
+    ...responseDocs
+      .filter((doc) => doc.organizationId !== organizationId)
+      .map((doc) => ctx.db.patch(doc._id, { organizationId, updatedAt: Date.now() })),
+  ]);
+}
+
+async function createDefaultOrganization(
+  ctx: MutationCtx,
+  authUserId: string,
+  now: number,
+): Promise<BetterAuthOrganization> {
+  const slug = `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`;
+  const organization = await createBetterAuthOrganization(ctx, {
+    name: 'New Organization',
+    slug,
+    createdAt: now,
+  });
+
+  await createBetterAuthMember(ctx, {
+    organizationId: organization._id ?? organization.id,
+    userId: authUserId,
+    role: 'owner',
+    createdAt: now,
+  });
+
+  return organization;
+}
+
+async function ensureUserContextRecord(
+  ctx: MutationCtx,
+  args: EnsureUserContextArgs,
+): Promise<EnsureUserContextResult> {
+  const now = Date.now();
+  let user = await ctx.db
+    .query('users')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+    .first();
+
+  const resolvedOrganization = await resolveActiveOrganizationForUser(
+    ctx,
+    args.authUserId,
+    user?.lastActiveOrganizationId,
+  );
+  const organizationId = resolvedOrganization.organizationId;
+
+  if (!user) {
+    const userId = await ctx.db.insert('users', {
+      authUserId: args.authUserId,
+      lastActiveOrganizationId: organizationId,
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt,
+    });
+    user = await ctx.db.get(userId);
+  } else if (user.lastActiveOrganizationId !== organizationId) {
+    await ctx.db.patch(user._id, {
+      lastActiveOrganizationId: organizationId,
+      updatedAt: now,
+    });
+  }
+
+  if (!user) {
+    throw new Error('Failed to initialize user context');
+  }
+
+  await patchAiOwnershipToOrganization(ctx, args.authUserId, organizationId);
+  await syncUserProfileByAuthUserId(ctx, args.authUserId);
+
+  return {
+    userId: user._id,
+    organizationId,
+  };
+}
+
+async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUser) {
+  const profile = normalizeBetterAuthUserProfile(authUser);
+  const existing = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', profile.authUserId))
+    .first();
+
+  const nextValue = {
+    ...profile,
+    lastSyncedAt: Date.now(),
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, nextValue);
+    return;
+  }
+
+  await ctx.db.insert('userProfiles', nextValue);
+}
+
+async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string) {
+  const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'user',
+    where: [
+      {
+        field: '_id',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+  });
+
+  if (!authUser) {
+    return;
+  }
+
+  await upsertUserProfileRecord(ctx, authUser as BetterAuthUser);
+}
+
 export const getUserCount = query({
   args: {},
   handler: async (ctx) => {
-    // Use Better Auth component's findMany query to get all users
     let allUsers: BetterAuthAdapterUserDoc[] = [];
     try {
-      // Query all users using component's findMany query
       const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
         paginationOpts: {
           cursor: null,
-          numItems: 1000, // Get all users (assuming less than 1000 for user count)
+          numItems: 1000,
           id: 0,
         },
       });
@@ -36,107 +256,207 @@ export const getUserCount = query({
       allUsers = normalized.page;
     } catch (error) {
       console.error('Failed to query Better Auth users:', error);
-      allUsers = [];
     }
 
-    const totalUsers = allUsers.length;
-    const isFirstUser = totalUsers === 0;
-
     return {
-      totalUsers,
-      isFirstUser,
+      totalUsers: allUsers.length,
+      isFirstUser: allUsers.length === 0,
     };
   },
 });
 
-/**
- * Create or update a user profile with role
- * This stores app-specific user data separate from Better Auth's user table
- */
-export const setUserRole = guarded.mutation(
-  'user.bootstrap', // Public capability but with strict bootstrap logic
-  {
-    userId: v.string(), // Better Auth user ID
-    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum
-    allowBootstrap: v.optional(v.boolean()), // Special flag for first user signup
+export const ensureUserContextForAuthUser = internalMutation({
+  args: {
+    authUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
   },
-  async (ctx, args, role) => {
-    // Role validation is now handled by the Convex schema enum
+  handler: async (ctx, args) => {
+    return await ensureUserContextRecord(ctx, args);
+  },
+});
 
-    // Check if this is a bootstrap operation (first user creation)
-    // Allow bootstrap without admin authentication for initial setup
-    if (!args.allowBootstrap) {
-      // For non-bootstrap operations, ensure caller has admin role
-      if (role !== 'admin') {
-        throw new Error('Admin privileges required for role management');
-      }
-    } else {
-      // BOOTSTRAP: Allow only when no other user profiles exist (idempotent for the same user)
-      const existingProfiles = await ctx.db.query('userProfiles').collect();
-      const nonBootstrapProfile = existingProfiles.find(
-        (profile) => profile.userId !== args.userId,
-      );
+export const syncAuthUserProfile = internalMutation({
+  args: {
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await syncUserProfileByAuthUserId(ctx, args.authUserId);
+    return { success: true };
+  },
+});
 
-      if (nonBootstrapProfile) {
-        throw new Error('Bootstrap not allowed - another user profile already exists');
-      }
-    }
-
-    // Check if profile already exists
-    const existingProfile = await ctx.db
+export const deleteAuthUserProfile = internalMutation({
+  args: {
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
       .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
       .first();
 
-    const now = Date.now();
-
-    if (existingProfile) {
-      // Update existing profile
-      await ctx.db.patch(existingProfile._id, {
-        role: args.role,
-        updatedAt: now,
-      });
-    } else {
-      // Create new profile
-      await ctx.db.insert('userProfiles', {
-        userId: args.userId,
-        role: args.role,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      await ctx.runMutation(internal.dashboardStats.adjustUserCounts, {
-        totalDelta: 1,
-      });
+    if (existing) {
+      await ctx.db.delete(existing._id);
     }
 
     return { success: true };
   },
-);
+});
 
-/**
- * Update current user's profile (name, phoneNumber)
- * Uses Better Auth component adapter's updateMany mutation
- * Only allows users to update their own profile.
- *
- * Authorization is enforced by Better Auth's `getAuthUser`, so this remains a
- * plain mutation rather than `guarded.mutation('profile.write', ...)`.
- */
+export const syncUserProfilesSnapshot = internalMutation({
+  args: {
+    users: v.array(
+      v.object({
+        authUserId: v.string(),
+        email: v.string(),
+        emailLower: v.string(),
+        name: v.union(v.string(), v.null()),
+        nameLower: v.union(v.string(), v.null()),
+        phoneNumber: v.union(v.string(), v.null()),
+        role: v.union(v.literal('user'), v.literal('admin')),
+        isSiteAdmin: v.boolean(),
+        emailVerified: v.boolean(),
+        banned: v.boolean(),
+        banReason: v.union(v.string(), v.null()),
+        banExpires: v.union(v.number(), v.null()),
+        createdAt: v.number(),
+        updatedAt: v.number(),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const existingProfiles = await ctx.db.query('userProfiles').collect();
+    const existingByAuthUserId = new Map(
+      existingProfiles.map((profile) => [profile.authUserId, profile]),
+    );
+    const activeAuthUserIds = new Set(args.users.map((user) => user.authUserId));
+    const syncTimestamp = Date.now();
+
+    for (const user of args.users) {
+      const existing = existingByAuthUserId.get(user.authUserId);
+      const nextValue = {
+        ...user,
+        lastSyncedAt: syncTimestamp,
+      };
+
+      if (existing) {
+        await ctx.db.patch(existing._id, nextValue);
+        existingByAuthUserId.delete(user.authUserId);
+        continue;
+      }
+
+      await ctx.db.insert('userProfiles', nextValue);
+    }
+
+    for (const staleProfile of existingByAuthUserId.values()) {
+      if (activeAuthUserIds.has(staleProfile.authUserId)) {
+        continue;
+      }
+
+      await ctx.db.delete(staleProfile._id);
+    }
+
+    const syncState = await ctx.db
+      .query('userProfileSyncState')
+      .withIndex('by_key', (q) => q.eq('key', 'global'))
+      .first();
+
+    if (syncState) {
+      await ctx.db.patch(syncState._id, {
+        lastFullSyncAt: syncTimestamp,
+        totalUsers: args.users.length,
+      });
+    } else {
+      await ctx.db.insert('userProfileSyncState', {
+        key: 'global',
+        lastFullSyncAt: syncTimestamp,
+        totalUsers: args.users.length,
+      });
+    }
+
+    return {
+      success: true,
+      totalUsers: args.users.length,
+    };
+  },
+});
+
+export const bootstrapUserContext = action({
+  args: {
+    token: v.string(),
+    authUserId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    role: v.optional(v.union(v.literal('user'), v.literal('admin'))),
+  },
+  handler: async (ctx, args): Promise<EnsureUserContextResult> => {
+    const secret = process.env.BETTER_AUTH_SECRET;
+    if (!secret || args.token !== secret) {
+      throw new Error('Unauthorized bootstrap access');
+    }
+
+    if (args.role) {
+      await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+        input: {
+          model: 'user',
+          update: {
+            updatedAt: Date.now(),
+            role: args.role,
+          },
+          where: [
+            {
+              field: '_id',
+              operator: 'eq',
+              value: args.authUserId,
+            },
+          ],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+          id: 0,
+        },
+      });
+    }
+
+    return await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+      authUserId: args.authUserId,
+      createdAt: args.createdAt,
+      updatedAt: args.updatedAt,
+    });
+  },
+});
+
+export const ensureCurrentUserContext = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const authUser = await authComponent.getAuthUser(ctx);
+    if (!authUser) {
+      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+    }
+
+    const authUserId = assertUserId(authUser, 'User ID not found in auth user');
+    return await ensureUserContextRecord(ctx, {
+      authUserId,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const updateCurrentUserProfile = mutation({
   args: {
     name: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Get current user
     const authUser = await authComponent.getAuthUser(ctx);
     if (!authUser) {
-      throw new Error('User not authenticated');
+      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
     }
 
     const userId = assertUserId(authUser, 'User ID not found in auth user');
-
-    // Build update object - only include fields that are provided
     const updateData: {
       name?: string;
       phoneNumber?: string | null;
@@ -153,7 +473,6 @@ export const updateCurrentUserProfile = mutation({
       updateData.phoneNumber = args.phoneNumber || null;
     }
 
-    // Use Better Auth component adapter's updateMany mutation
     await ctx.runMutation(components.betterAuth.adapter.updateMany, {
       input: {
         model: 'user',
@@ -168,125 +487,54 @@ export const updateCurrentUserProfile = mutation({
       },
       paginationOpts: {
         cursor: null,
-        numItems: 1, // Only updating one user
-        id: 0, // Not used but required
+        numItems: 1,
+        id: 0,
       },
     });
 
+    await syncUserProfileByAuthUserId(ctx, userId);
+
     return { success: true };
   },
 });
 
-/**
- * Get user profile by user ID
- * Internal-only so profiles can't be fetched directly from clients
- */
-export const getUserProfile = internalQuery({
-  args: {
-    userId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
-      .first();
-  },
-});
-
-/**
- * Get current user profile (Better Auth user data + app-specific role).
- * Returns `null` for unauthenticated callers so client hooks can handle the
- * signed-out state without throwing.
- */
 export const getCurrentUserProfile = query({
   args: {},
-  handler: async (ctx) => {
-    // Get Better Auth user via authComponent
-    // Note: This should be cached by Convex since we're in an authenticated context
-    let authUser: unknown;
-    try {
-      authUser = await authComponent.getAuthUser(ctx);
-    } catch {
-      // Better Auth throws "Unauthenticated" error when session is invalid
-      // Return null to allow conditional usage in useAuth hook
-      return null;
-    }
-
+  handler: async (ctx): Promise<CurrentUserProfile | null> => {
+    const authUser = await getCurrentAuthUserOrNull(ctx);
     if (!authUser) {
-      // Return null instead of throwing to allow conditional usage in useAuth hook
       return null;
     }
 
-    // Better Auth Convex adapter returns the Convex document with _id
-    const userId = assertUserId(authUser, 'User ID not found in auth user');
+    const user = await getCurrentUserOrNull(ctx);
+    if (!user) {
+      const authUserId = assertUserId(authUser, 'User ID not found in auth user');
+      const isSiteAdmin = isAdminRole(
+        (authUser as BetterAuthAdapterUserDoc & { role?: string | string[] }).role,
+      );
 
-    // Get role from userProfiles - this is a fast indexed query
-    const profile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', userId))
-      .first();
+      return {
+        id: authUserId,
+        email: authUser.email ?? '',
+        name: authUser.name ?? null,
+        phoneNumber: authUser.phoneNumber ?? null,
+        role: isSiteAdmin ? 'admin' : 'user',
+        isSiteAdmin,
+        emailVerified: authUser.emailVerified ?? false,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        currentOrganization: null,
+        organizations: [],
+      };
+    }
 
-    // Convert Better Auth timestamps (ISO strings or numbers) to Unix timestamps
-    const authUserTyped = authUser as {
-      createdAt?: string | number;
-      updatedAt?: string | number;
-      email?: string;
-      name?: string;
-      phoneNumber?: string;
-      emailVerified?: boolean;
-    };
-    const createdAt = authUserTyped.createdAt
-      ? typeof authUserTyped.createdAt === 'string'
-        ? new Date(authUserTyped.createdAt).getTime()
-        : authUserTyped.createdAt
-      : Date.now();
-    const updatedAt = authUserTyped.updatedAt
-      ? typeof authUserTyped.updatedAt === 'string'
-        ? new Date(authUserTyped.updatedAt).getTime()
-        : authUserTyped.updatedAt
-      : Date.now();
-
-    return {
-      id: userId, // Better Auth user ID
-      email: authUserTyped.email || '',
-      name: authUserTyped.name || null,
-      phoneNumber: authUserTyped.phoneNumber || null,
-      role: profile?.role || 'user', // Default to 'user' if no profile exists
-      emailVerified: authUserTyped.emailVerified || false,
-      createdAt,
-      updatedAt,
-    };
+    return await buildCurrentUserProfile(ctx, user);
   },
 });
 
-/**
- * Update user role (for admin operations)
- * SECURITY: Requires authenticated admin caller
- */
-export const updateUserRole = guarded.mutation(
-  'user.write',
-  {
-    userId: v.string(),
-    role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum
+export const getCurrentAppUser = query({
+  args: {},
+  handler: async (ctx) => {
+    return await getCurrentUserOrNull(ctx);
   },
-  async (ctx, args, _role) => {
-    // Role validation is now handled by the Convex schema enum
-
-    // Update role in userProfiles
-    const profile = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
-      .first();
-
-    if (!profile) {
-      throw new Error('User profile not found');
-    }
-
-    await ctx.db.patch(profile._id, {
-      role: args.role,
-      updatedAt: Date.now(),
-    });
-
-    return { success: true };
-  },
-);
+});

@@ -1,7 +1,7 @@
-import { api } from '@convex/_generated/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
-import { useOptimisticMutation } from '../hooks/useOptimisticUpdates';
+import { deleteAdminUserServerFn } from '../server/admin-management';
 
 interface UserDeleteDialogProps {
   open: boolean;
@@ -10,19 +10,9 @@ interface UserDeleteDialogProps {
 }
 
 export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProps) {
+  const queryClient = useQueryClient();
   const [isDeleting, setIsDeleting] = useState(false);
   const [error, setError] = useState<string | undefined>(undefined);
-
-  // Optimistic mutation with automatic rollback on error
-  const deleteUserOptimistic = useOptimisticMutation(api.admin.deleteUser, {
-    onSuccess: () => {
-      // User deleted successfully - dialog will close
-    },
-    onError: (error) => {
-      console.error('Delete user failed:', error);
-      setError(error.message);
-    },
-  });
 
   const handleConfirm = async () => {
     if (!userId) return;
@@ -31,13 +21,12 @@ export function UserDeleteDialog({ open, userId, onClose }: UserDeleteDialogProp
     setError(undefined);
 
     try {
-      // Optimistic delete - Convex automatically removes from cache and updates queries
-      await deleteUserOptimistic({ userId });
-      // Convex queries update automatically - no manual cache invalidation needed!
+      await deleteAdminUserServerFn({ data: { userId } });
+      await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
       onClose();
     } catch (err) {
-      // Error handling is done in the onError callback above
       console.error('Delete user failed:', err);
+      setError(err instanceof Error ? err.message : 'Delete user failed');
     } finally {
       setIsDeleting(false);
     }

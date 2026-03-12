@@ -32,10 +32,11 @@ export function setupClaimRefresh(maxAgeMs = 20 * 60_000) {
     }
   };
 
-  window.addEventListener('focus', maybeRefresh);
-  setTimeout(() => {
+  const handleFocus = () => {
     void maybeRefresh();
-  }, 0);
+  };
 
-  return () => window.removeEventListener('focus', maybeRefresh);
+  window.addEventListener('focus', handleFocus);
+
+  return () => window.removeEventListener('focus', handleFocus);
 }

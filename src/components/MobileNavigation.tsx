@@ -1,7 +1,14 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
+import { Building2, Cloud, LogOut, type LucideIcon, Menu, Shield, User } from 'lucide-react';
 import { useState } from 'react';
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '~/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '~/components/ui/sheet';
 import { signOut } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -80,6 +87,9 @@ export function MobileNavigation() {
             </Link>
             <SheetTitle>TanStack Start Template</SheetTitle>
           </div>
+          <SheetDescription className="sr-only">
+            Open primary navigation links and account actions.
+          </SheetDescription>
         </SheetHeader>
         <div className="flex flex-col mx-2">
           {/* Main Navigation */}
@@ -131,6 +141,15 @@ export function MobileNavigation() {
                     Admin
                   </Link>
                 )}
+                <Link
+                  to="/app/organizations"
+                  preload="intent"
+                  onClick={handleLinkClick}
+                  className="flex items-center gap-2 px-3 py-2 text-sm text-foreground hover:text-foreground hover:bg-accent rounded-md transition-colors"
+                >
+                  <Building2 className="h-4 w-4" />
+                  Organizations
+                </Link>
                 <Link
                   to="/app/profile"
                   preload="intent"

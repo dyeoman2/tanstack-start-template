@@ -221,6 +221,14 @@ npx convex dashboard # Open Convex dashboard
 - Server-only files (`.server.ts`) never ship to client.
 - **Database workflow**: Edit `convex/schema.ts` → Convex auto-deploys schema changes.
 
+### Browser Testing
+
+- When using Playwright MCP against the local app, prefer authenticating through `POST /api/test/e2e-auth` instead of filling the sign-in form manually.
+- Read `E2E_TEST_SECRET`, `E2E_USER_EMAIL`, and `E2E_USER_PASSWORD` from `.env.local` when needed.
+- Default to the `user` principal for normal authenticated coverage. Use the `admin` principal only when validating admin-only behavior.
+- After calling `/api/test/e2e-auth`, add the returned cookies to the Playwright browser context before navigating to authenticated routes.
+- Only use manual UI login as a fallback when the auth route is not suitable for the specific test.
+
 ### Security
 
 - Never expose secrets to client-side code.
