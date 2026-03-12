@@ -31,7 +31,7 @@ export function useInferenceForm({
 
   const handleSubmit = async (data: {
     prompt: string;
-    model: 'llama' | 'falcon';
+    model: 'nemotron';
     method: InferenceMethod;
   }) => {
     if (envVarsMissing) {

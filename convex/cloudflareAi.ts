@@ -49,8 +49,8 @@ export const isCloudflareConfigured = action({
 
 // Cached providers to avoid re-initialization
 let workersaiProvider: ReturnType<typeof createWorkersAI> | null = null;
-let llamaModel: ReturnType<ReturnType<typeof createWorkersAI>> | null = null;
-let falconModel: ReturnType<ReturnType<typeof createWorkersAI>> | null = null;
+let nemotronModel: ReturnType<ReturnType<typeof createWorkersAI>> | null = null;
+const DEFAULT_CLOUDFLARE_MODEL_ID = '@cf/nvidia/nemotron-3-120b-a12b' as const;
 
 function getWorkersAIProvider() {
   if (!workersaiProvider) {
@@ -62,16 +62,15 @@ function getWorkersAIProvider() {
     });
 
     if (workersaiProvider) {
-      llamaModel = workersaiProvider('@cf/meta/llama-3.1-8b-instruct');
-      falconModel = workersaiProvider('@cf/tiiuae/falcon-7b-instruct');
+      nemotronModel = workersaiProvider(DEFAULT_CLOUDFLARE_MODEL_ID);
     }
   }
 
-  if (!llamaModel || !falconModel) {
+  if (!nemotronModel) {
     throw new Error('Failed to initialize AI models');
   }
 
-  return { llamaModel, falconModel };
+  return { nemotronModel };
 }
 
 interface AiUsageMetadata {
@@ -187,20 +186,19 @@ const STREAMING_FLUSH_INTERVAL_MS = 100;
 
 async function streamWithWorkersAIHelper(
   prompt: string,
-  model: 'llama' | 'falcon' = 'llama',
+  _model: 'nemotron' = 'nemotron',
   handlers: StreamHandlers = {},
 ) {
-  const { llamaModel, falconModel } = getWorkersAIProvider();
-  const selectedModel = model === 'llama' ? llamaModel : falconModel;
+  const { nemotronModel } = getWorkersAIProvider();
 
   const result = await streamText({
-    model: selectedModel,
+    model: nemotronModel,
     prompt,
   });
 
   const metadataChunk = {
     provider: 'cloudflare-workers-ai',
-    model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
+    model: DEFAULT_CLOUDFLARE_MODEL_ID,
   };
 
   await handlers.onMetadata?.(metadataChunk);
@@ -236,7 +234,7 @@ async function streamWithWorkersAIHelper(
 
 async function streamWithGatewayHelper(
   prompt: string,
-  model: 'llama' | 'falcon' = 'llama',
+  _model: 'nemotron' = 'nemotron',
   handlers: StreamHandlers = {},
 ) {
   const config = getCloudflareConfig();
@@ -261,10 +259,7 @@ async function streamWithGatewayHelper(
     },
   });
 
-  const selectedModel =
-    model === 'llama'
-      ? gatewayWorkersAI('@cf/meta/llama-3.1-8b-instruct')
-      : gatewayWorkersAI('@cf/tiiuae/falcon-7b-instruct');
+  const selectedModel = gatewayWorkersAI(DEFAULT_CLOUDFLARE_MODEL_ID);
 
   const result = await streamText({
     model: selectedModel,
@@ -273,7 +268,7 @@ async function streamWithGatewayHelper(
 
   const metadataChunk = {
     provider: 'cloudflare-gateway',
-    model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
+    model: DEFAULT_CLOUDFLARE_MODEL_ID,
   };
 
   await handlers.onMetadata?.(metadataChunk);
@@ -307,12 +302,11 @@ async function streamWithGatewayHelper(
   });
 }
 
-async function generateWithWorkersAIHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
-  const { llamaModel, falconModel } = getWorkersAIProvider();
-  const selectedModel = model === 'llama' ? llamaModel : falconModel;
+async function generateWithWorkersAIHelper(prompt: string, _model: 'nemotron' = 'nemotron') {
+  const { nemotronModel } = getWorkersAIProvider();
 
   const result = await generateText({
-    model: selectedModel,
+    model: nemotronModel,
     prompt,
   });
 
@@ -328,14 +322,14 @@ async function generateWithWorkersAIHelper(prompt: string, model: 'llama' | 'fal
 
   return {
     provider: 'cloudflare-workers-ai',
-    model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
+    model: DEFAULT_CLOUDFLARE_MODEL_ID,
     response: result.text,
     usage: estimatedUsage,
     finishReason: result.finishReason || 'stop',
   };
 }
 
-async function generateWithGatewayHelper(prompt: string, model: 'llama' | 'falcon' = 'llama') {
+async function generateWithGatewayHelper(prompt: string, _model: 'nemotron' = 'nemotron') {
   const config = getCloudflareConfig();
 
   if (!config.gatewayId) {
@@ -358,10 +352,7 @@ async function generateWithGatewayHelper(prompt: string, model: 'llama' | 'falco
     },
   });
 
-  const selectedModel =
-    model === 'llama'
-      ? gatewayWorkersAI('@cf/meta/llama-3.1-8b-instruct')
-      : gatewayWorkersAI('@cf/tiiuae/falcon-7b-instruct');
+  const selectedModel = gatewayWorkersAI(DEFAULT_CLOUDFLARE_MODEL_ID);
 
   const result = await generateText({
     model: selectedModel,
@@ -380,7 +371,7 @@ async function generateWithGatewayHelper(prompt: string, model: 'llama' | 'falco
 
   return {
     provider: 'cloudflare-gateway-workers-ai',
-    model: model === 'llama' ? '@cf/meta/llama-3.1-8b-instruct' : '@cf/tiiuae/falcon-7b-instruct',
+    model: DEFAULT_CLOUDFLARE_MODEL_ID,
     response: result.text,
     usage: estimatedUsage,
     finishReason: result.finishReason || 'stop',
@@ -391,7 +382,7 @@ async function generateWithGatewayHelper(prompt: string, model: 'llama' | 'falco
 export const streamWithWorkersAI = action({
   args: {
     prompt: v.string(),
-    model: v.union(v.literal('llama'), v.literal('falcon')),
+    model: v.literal('nemotron'),
     requestId: v.string(),
   },
   handler: async (
@@ -534,7 +525,7 @@ export const streamWithWorkersAI = action({
 export const streamWithGateway = action({
   args: {
     prompt: v.string(),
-    model: v.union(v.literal('llama'), v.literal('falcon')),
+    model: v.literal('nemotron'),
     requestId: v.string(),
   },
   handler: async (
@@ -695,7 +686,7 @@ export const streamStructuredResponse = action({
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: {
         provider: 'cloudflare-workers-ai-structured',
-        model: '@cf/meta/llama-3.1-8b-instruct',
+        model: DEFAULT_CLOUDFLARE_MODEL_ID,
       },
     });
 
@@ -703,7 +694,7 @@ export const streamStructuredResponse = action({
       throw buildReservationError(reservation);
     }
 
-    const modelName = '@cf/meta/llama-3.1-8b-instruct';
+    const modelName = DEFAULT_CLOUDFLARE_MODEL_ID;
 
     const { responseId } = (await ctx.runMutation(internal.aiResponses.createResponse, {
       userId,
@@ -735,11 +726,11 @@ export const streamStructuredResponse = action({
     };
 
     try {
-      const { llamaModel } = getWorkersAIProvider();
+      const { nemotronModel } = getWorkersAIProvider();
       const prompt = `Generate a structured explanation about "${args.topic}" in a ${args.style} style. Return ONLY valid JSON with this exact structure: {"title": "string", "summary": "string", "keyPoints": ["string1", "string2"], "category": "string", "difficulty": "beginner|intermediate|advanced"}`;
 
       const result = await streamText({
-        model: llamaModel,
+        model: nemotronModel,
         prompt,
       });
 
@@ -883,7 +874,7 @@ export const testGatewayConnectivity = action({
     const reservation = await ctx.runAction(api.ai.reserveAiMessage, {
       metadata: {
         provider: 'cloudflare-gateway-connectivity-test',
-        model: '@cf/meta/llama-3.1-8b-instruct',
+        model: DEFAULT_CLOUDFLARE_MODEL_ID,
       },
     });
 
@@ -931,7 +922,7 @@ export const testGatewayConnectivity = action({
       });
 
       // Try to create a model and make a simple request
-      const testModel = testWorkersAI('@cf/meta/llama-3.1-8b-instruct');
+      const testModel = testWorkersAI(DEFAULT_CLOUDFLARE_MODEL_ID);
 
       try {
         const result = await generateText({
@@ -945,7 +936,7 @@ export const testGatewayConnectivity = action({
             metadata: extractUsageMetadata(
               result.usage ?? null,
               'cloudflare-gateway-connectivity-test',
-              '@cf/meta/llama-3.1-8b-instruct',
+              DEFAULT_CLOUDFLARE_MODEL_ID,
             ),
           });
           usageFinalized = true;
@@ -986,7 +977,7 @@ export const testGatewayConnectivity = action({
 export const compareInferenceMethods = action({
   args: {
     prompt: v.string(),
-    model: v.union(v.literal('llama'), v.literal('falcon')),
+    model: v.literal('nemotron'),
   },
   handler: async (ctx: ActionCtx, args) => {
     await ensureAuthenticatedUser(ctx);

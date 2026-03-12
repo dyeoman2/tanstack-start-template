@@ -18,7 +18,7 @@ import type { InferenceMethod } from '~/features/ai/types';
 interface InferenceFormProps {
   onSubmit: (data: {
     prompt: string;
-    model: 'llama' | 'falcon';
+    model: 'nemotron';
     method: InferenceMethod;
   }) => Promise<void>;
   envVarsMissing: boolean;
@@ -74,7 +74,7 @@ export function InferenceForm({
   const form = useForm({
     defaultValues: {
       prompt: 'Explain how neural networks work in simple terms.',
-      model: 'llama' as 'llama' | 'falcon',
+      model: 'nemotron' as const,
       method: 'direct' as InferenceMethod,
     },
     onSubmit: async ({ value }) => {
@@ -106,14 +106,13 @@ export function InferenceForm({
                   <FieldLabel>Model</FieldLabel>
                   <Select
                     value={field.state.value}
-                    onValueChange={(value) => field.handleChange(value as 'llama' | 'falcon')}
+                    onValueChange={(value) => field.handleChange(value as 'nemotron')}
                   >
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="llama">Llama 3.1 8B Instruct</SelectItem>
-                      <SelectItem value="falcon">Falcon 7B Instruct</SelectItem>
+                      <SelectItem value="nemotron">NVIDIA Nemotron 3 120B A12B</SelectItem>
                     </SelectContent>
                   </Select>
                 </Field>

@@ -1,13 +1,8 @@
 export const CHAT_MODEL_OPTIONS = [
   {
-    id: '@cf/meta/llama-3.1-8b-instruct',
-    label: 'Llama 3.1 8B',
-    description: 'Balanced default for everyday chat prompts.',
-  },
-  {
-    id: '@cf/tiiuae/falcon-7b-instruct',
-    label: 'Falcon 7B',
-    description: 'Smaller model for lighter, faster responses.',
+    id: '@cf/nvidia/nemotron-3-120b-a12b',
+    label: 'Nemotron 3 120B',
+    description: 'Free Cloudflare text-generation model for chat and playground requests.',
   },
 ] as const;
 
