@@ -21,7 +21,6 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/s
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
-import { toThreadId } from '~/features/chat/lib/ids';
 import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
@@ -101,7 +100,8 @@ function ChatThreadBreadcrumbLabel({
   fallback: string;
   threadId: string;
 }) {
-  const thread = useQuery(api.chat.getThread, { threadId: toThreadId(threadId) });
+  const threads = useQuery(api.chat.listThreads, {});
+  const thread = threads?.find((item) => item._id === threadId);
 
   return thread?.title ?? fallback;
 }
@@ -150,6 +150,7 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { isImpersonating, isPending, isSiteAdmin, user } = useAuth();
   const [isStoppingImpersonation, setIsStoppingImpersonation] = useState(false);
   const [isRestoringAdminContext, setIsRestoringAdminContext] = useState(false);
+  const isChatRoute = location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/');
 
   useEffect(() => {
     if (!isRestoringAdminContext || isPending || isImpersonating || !isSiteAdmin) {
@@ -203,7 +204,7 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   return (
     <SidebarProvider defaultOpen>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="h-svh overflow-hidden">
         {isImpersonating ? (
           <div className="border-b border-amber-200 bg-amber-50 px-4 py-3 text-amber-950">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -235,8 +236,13 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
             </div>
           </div>
         </header>
-        <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-x-hidden p-4 pt-0">
-          {children}
+        <div
+          className={cn(
+            'flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-x-hidden p-4 pt-0',
+            isChatRoute ? 'overflow-hidden' : 'overflow-y-auto',
+          )}
+        >
+          {isChatRoute ? <div className="flex min-h-0 flex-1 flex-col">{children}</div> : children}
         </div>
       </SidebarInset>
     </SidebarProvider>

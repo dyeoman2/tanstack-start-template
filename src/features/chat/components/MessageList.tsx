@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useAction } from 'convex/react';
 import { Check, Copy, ExternalLink, FileText, Pencil, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { Markdown } from '~/features/chat/components/Markdown';
@@ -435,6 +435,8 @@ export function MessageList({
   messages,
   isStreaming,
   pendingSubmission,
+  scrollTargetClientMessageId,
+  scrollTargetMessageRef,
 }: {
   messages: ChatMessage[];
   isStreaming: boolean;
@@ -443,6 +445,8 @@ export function MessageList({
     showUserMessage: boolean;
     showAssistantPlaceholder: boolean;
   };
+  scrollTargetClientMessageId?: string;
+  scrollTargetMessageRef?: RefObject<HTMLDivElement | null>;
 }) {
   const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
   const { showToast } = useToast();
@@ -516,40 +520,48 @@ export function MessageList({
     <div className="space-y-4">
       {visibleMessages.map((message) =>
         message.role === 'user' ? (
-          <EditableUserMessage
+          <div
             key={message._id}
-            message={message}
-            isEditing={editingMessageId === message._id}
-            isRegenerating={regeneratingMessageId === message._id}
-            onStartEdit={() => setEditingMessageId(message._id)}
-            onCancelEdit={() => setEditingMessageId(null)}
-            onSaveEdit={async (text) => {
-              try {
-                setOptimisticEdits((current) => ({
-                  ...current,
-                  [message._id]: text,
-                }));
-                setRegeneratingMessageId(message._id);
-                setEditingMessageId(null);
-                await editUserMessageAndRegenerate({
-                  messageId: message._id,
-                  text,
-                });
-              } catch (error) {
-                setOptimisticEdits((current) => {
-                  const next = { ...current };
-                  delete next[message._id];
-                  return next;
-                });
-                showToast(
-                  error instanceof Error ? error.message : 'Failed to edit message.',
-                  'error',
-                );
-              } finally {
-                setRegeneratingMessageId(null);
-              }
-            }}
-          />
+            ref={
+              scrollTargetClientMessageId && message.clientMessageId === scrollTargetClientMessageId
+                ? scrollTargetMessageRef
+                : undefined
+            }
+          >
+            <EditableUserMessage
+              message={message}
+              isEditing={editingMessageId === message._id}
+              isRegenerating={regeneratingMessageId === message._id}
+              onStartEdit={() => setEditingMessageId(message._id)}
+              onCancelEdit={() => setEditingMessageId(null)}
+              onSaveEdit={async (text) => {
+                try {
+                  setOptimisticEdits((current) => ({
+                    ...current,
+                    [message._id]: text,
+                  }));
+                  setRegeneratingMessageId(message._id);
+                  setEditingMessageId(null);
+                  await editUserMessageAndRegenerate({
+                    messageId: message._id,
+                    text,
+                  });
+                } catch (error) {
+                  setOptimisticEdits((current) => {
+                    const next = { ...current };
+                    delete next[message._id];
+                    return next;
+                  });
+                  showToast(
+                    error instanceof Error ? error.message : 'Failed to edit message.',
+                    'error',
+                  );
+                } finally {
+                  setRegeneratingMessageId(null);
+                }
+              }}
+            />
+          </div>
         ) : (
           <AssistantMessage
             key={message._id}
@@ -573,7 +585,9 @@ export function MessageList({
         />
       ) : null}
       {pendingSubmission?.showUserMessage ? (
-        <StaticUserMessage parts={pendingSubmission.submission.parts} />
+        <div ref={scrollTargetMessageRef}>
+          <StaticUserMessage parts={pendingSubmission.submission.parts} />
+        </div>
       ) : null}
       {pendingSubmission?.showAssistantPlaceholder ? (
         <PendingAssistantMessage

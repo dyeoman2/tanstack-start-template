@@ -1,4 +1,14 @@
-import { AlertCircle, ArrowUp, Bot, FileText, Mic, MicOff, Paperclip, X } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowUp,
+  Bot,
+  ChevronDown,
+  FileText,
+  Mic,
+  MicOff,
+  Paperclip,
+  X,
+} from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import {
@@ -29,13 +39,22 @@ import type {
   SpeechRecognitionEvent,
   SpeechRecognitionInstance,
 } from '~/features/chat/types/speech-recognition';
+import {
+  CHAT_MODEL_OPTIONS,
+  type ChatModelId,
+  DEFAULT_CHAT_MODEL_ID,
+  getChatModelOption,
+  isChatModelId,
+} from '~/lib/shared/chat-models';
 
 type ChatComposerProps = {
   disabled?: boolean;
   isSending: boolean;
   personas?: ChatPersona[];
+  selectedModelId?: ChatModelId;
   selectedPersonaId?: string;
   selectedPersonaLabel?: string;
+  onSelectModel?: (modelId: ChatModelId) => void;
   onSelectPersona?: (personaId?: string) => void;
   onManagePersonas?: () => void;
   onSend: (payload: {
@@ -49,8 +68,10 @@ export function ChatComposer({
   disabled = false,
   isSending,
   personas = [],
+  selectedModelId = DEFAULT_CHAT_MODEL_ID,
   selectedPersonaId,
   selectedPersonaLabel,
+  onSelectModel,
   onSelectPersona,
   onManagePersonas,
   onSend,
@@ -76,6 +97,7 @@ export function ChatComposer({
   const isDefaultPersona = !selectedPersonaId;
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
+  const selectedModel = getChatModelOption(selectedModelId);
 
   const clearComposer = useCallback(() => {
     setMessage('');
@@ -238,18 +260,18 @@ export function ChatComposer({
   }, [clearComposer, message, onSend, uploadedDocuments, uploadedImages]);
 
   return (
-    <div className="rounded-3xl border border-border/60 bg-card/80 p-3 shadow-sm backdrop-blur">
-      <div className="flex flex-wrap gap-2 pb-0.5">
+    <div className="rounded-[20px] border border-[#e3e1dc] bg-white px-5 py-2 shadow-[0_1px_4px_rgba(0,0,0,0.05)]">
+      <div className="flex flex-wrap gap-2 pb-1.5">
         {uploadedImages.map((image, index) => (
           <div key={`${image.name || 'image'}-${image.image.slice(0, 32)}`} className="relative">
             <img
               src={image.image}
               alt={image.name || 'Upload'}
-              className="h-16 w-16 rounded-xl object-cover"
+              className="h-16 w-16 rounded-2xl object-cover"
             />
             <button
               type="button"
-              className="absolute -top-2 -right-2 rounded-full bg-background p-1 shadow"
+              className="absolute -top-2 -right-2 rounded-full bg-white/95 p-1 text-[#6f6c66] shadow-sm"
               onClick={() => {
                 setUploadedImages((previous) =>
                   previous.filter((_, itemIndex) => itemIndex !== index),
@@ -263,12 +285,13 @@ export function ChatComposer({
         {uploadedDocuments.map((document, index) => (
           <div
             key={`${document.name}-${document.content.slice(0, 32)}`}
-            className="flex items-center gap-2 rounded-xl border border-border/60 bg-background px-3 py-2 text-sm"
+            className="flex items-center gap-2 rounded-2xl border border-[#ddd9d2] bg-white/80 px-3 py-2 text-sm text-[#403d39]"
           >
             <FileText className="size-4" />
             <span className="max-w-[180px] truncate">{document.name}</span>
             <button
               type="button"
+              className="rounded-full p-0.5 text-[#7c7871] transition hover:bg-black/5 hover:text-[#403d39]"
               onClick={() => {
                 setUploadedDocuments((previous) =>
                   previous.filter((_, itemIndex) => itemIndex !== index),
@@ -334,10 +357,10 @@ export function ChatComposer({
         }}
         disabled={disabled}
         placeholder="Ask anything"
-        className="min-h-20 w-full resize-none bg-transparent text-base outline-none placeholder:text-muted-foreground"
+        className="min-h-[58px] w-full resize-none bg-transparent px-1 pt-0 text-[15px] leading-6 text-[#403d39] outline-none placeholder:font-normal placeholder:text-[#b8b5af]"
       />
       {interimTranscript ? (
-        <p className="pb-2 text-sm text-muted-foreground">{interimTranscript}</p>
+        <p className="pb-1.5 text-sm text-[#6f6c66]">{interimTranscript}</p>
       ) : null}
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -359,21 +382,12 @@ export function ChatComposer({
                 size="icon"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled}
+                className="size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]"
               >
                 <Paperclip className="size-4" />
               </Button>
             </TooltipTrigger>
             <TooltipContent>Attach files</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button type="button" variant="ghost" size="icon" onClick={toggleVoiceInput}>
-                {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {isListening ? 'Stop voice input' : 'Start voice input'}
-            </TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <Tooltip>
@@ -385,7 +399,9 @@ export function ChatComposer({
                     size={personaButtonLabel ? 'sm' : 'icon'}
                     disabled={disabled}
                     className={
-                      personaButtonLabel ? 'max-w-44 gap-2 rounded-full pl-3 pr-3' : undefined
+                      personaButtonLabel
+                        ? 'max-w-44 gap-2 rounded-full pl-3 pr-3 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
+                        : 'size-9 rounded-full text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
                     }
                     aria-label={`Choose persona${selectedPersonaLabel ? `: ${selectedPersonaLabel}` : ''}`}
                   >
@@ -438,18 +454,78 @@ export function ChatComposer({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={disabled}
+                    className="max-w-44 gap-2 rounded-full px-3 text-[#403d39] shadow-none hover:bg-black/5 hover:text-[#24211d]"
+                    aria-label={`Choose model: ${selectedModel.label}`}
+                  >
+                    <span className="max-w-24 truncate text-xs">{selectedModel.label}</span>
+                    <ChevronDown className="size-3.5 opacity-60" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>{`Model: ${selectedModel.label}`}</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="start" className="w-72">
+              <DropdownMenuLabel>Model</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={selectedModel.id}
+                onValueChange={(value) => {
+                  if (isChatModelId(value)) {
+                    onSelectModel?.(value);
+                  }
+                }}
+              >
+                {CHAT_MODEL_OPTIONS.map((model) => (
+                  <DropdownMenuRadioItem key={model.id} value={model.id}>
+                    <div className="flex min-w-0 flex-col">
+                      <span className="truncate">{model.label}</span>
+                      <span className="text-muted-foreground truncate text-xs">
+                        {model.description}
+                      </span>
+                    </div>
+                  </DropdownMenuRadioItem>
+                ))}
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
-        <Button
-          type="button"
-          size="icon"
-          onClick={() => {
-            void handleSubmit();
-          }}
-          disabled={disabled || isSending || !hasContent}
-          className="rounded-full"
-        >
-          <ArrowUp className="size-4" />
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleVoiceInput}
+                className="size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]"
+              >
+                {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {isListening ? 'Stop voice input' : 'Start voice input'}
+            </TooltipContent>
+          </Tooltip>
+          <Button
+            type="button"
+            size="icon"
+            onClick={() => {
+              void handleSubmit();
+            }}
+            disabled={disabled || isSending || !hasContent}
+            className="rounded-full"
+          >
+            <ArrowUp className="size-4" />
+          </Button>
+        </div>
       </div>
       {error ? (
         <div className="mt-3 flex items-center gap-2 text-sm text-destructive">

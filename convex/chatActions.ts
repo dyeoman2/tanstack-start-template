@@ -1,11 +1,16 @@
 'use node';
 
-import { streamText, type LanguageModelUsage, type ModelMessage } from 'ai';
+import { type LanguageModelUsage, type ModelMessage, streamText } from 'ai';
 import { ConvexError, v } from 'convex/values';
 import { createWorkersAI } from 'workers-ai-provider';
+import {
+  type ChatModelId,
+  DEFAULT_CHAT_MODEL_ID,
+  isChatModelId,
+} from '../src/lib/shared/chat-models';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { action, type ActionCtx } from './_generated/server';
+import { type ActionCtx, action } from './_generated/server';
 import { authComponent } from './auth';
 
 type ChatMessagePart =
@@ -94,10 +99,9 @@ const messagePartValidator = v.union(
 
 const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find information.';
 const DEFAULT_THREAD_TITLE = 'New Chat';
-const DEFAULT_MODEL_ID = '@cf/meta/llama-3.1-8b-instruct';
 
 let workersProvider: ReturnType<typeof createWorkersAI> | null = null;
-let defaultModel: ReturnType<ReturnType<typeof createWorkersAI>> | null = null;
+const modelCache = new Map<ChatModelId, ReturnType<ReturnType<typeof createWorkersAI>>>();
 
 function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
@@ -195,21 +199,46 @@ function getProviderConfig() {
   return { apiToken, accountId };
 }
 
-function getDefaultModel() {
-  if (!workersProvider || !defaultModel) {
+function getWorkersProvider() {
+  if (!workersProvider) {
     const config = getProviderConfig();
     workersProvider = createWorkersAI({
       accountId: config.accountId,
       apiKey: config.apiToken,
     });
-    defaultModel = workersProvider(DEFAULT_MODEL_ID);
   }
 
-  if (!defaultModel) {
-    throw new Error('Failed to initialize Cloudflare AI model.');
+  return workersProvider;
+}
+
+function getChatModel(modelId: ChatModelId) {
+  const cachedModel = modelCache.get(modelId);
+  if (cachedModel) {
+    return cachedModel;
   }
 
-  return defaultModel;
+  const nextModel = getWorkersProvider()(modelId);
+  modelCache.set(modelId, nextModel);
+  return nextModel;
+}
+
+function resolveChatModelId(modelId: string | undefined, messages: AiMessageDoc[]): ChatModelId {
+  if (modelId) {
+    if (!isChatModelId(modelId)) {
+      throw new ConvexError('Unsupported chat model.');
+    }
+
+    return modelId;
+  }
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.role === 'assistant' && message.model && isChatModelId(message.model)) {
+      return message.model;
+    }
+  }
+
+  return DEFAULT_CHAT_MODEL_ID;
 }
 
 async function getAuthenticatedContext(ctx: ActionCtx) {
@@ -250,6 +279,7 @@ async function streamAssistantReply(
     organizationId: string;
     thread: AiThreadDoc;
     messages: AiMessageDoc[];
+    modelId: ChatModelId;
   },
 ) {
   const prompt = await getPersonaPrompt(ctx, args.thread, args.organizationId);
@@ -264,7 +294,7 @@ async function streamAssistantReply(
 
   try {
     const result = await streamText({
-      model: getDefaultModel(),
+      model: getChatModel(args.modelId),
       messages: [
         { role: 'system', content: prompt },
         ...args.messages.map((message: AiMessageDoc) => toModelMessage(message)),
@@ -283,7 +313,7 @@ async function streamAssistantReply(
     await ctx.runMutation(internal.chat.markAssistantCompleteInternal, {
       messageId: assistantMessageId,
       provider: 'cloudflare-workers-ai',
-      model: DEFAULT_MODEL_ID,
+      model: args.modelId,
       usage: buildUsageMetadata(usage),
     });
 
@@ -302,6 +332,7 @@ export const sendChatMessage = action({
   args: {
     threadId: v.optional(v.id('aiThreads')),
     personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
     parts: v.array(messagePartValidator),
     clientMessageId: v.optional(v.string()),
   },
@@ -345,30 +376,30 @@ export const sendChatMessage = action({
       threadId,
       parts: args.parts,
       titleFallback: thread.personaId
-        ? (await ctx.runQuery(internal.chat.getPersonaByIdInternal, {
-            personaId: thread.personaId,
-            organizationId,
-          }))?.name ?? DEFAULT_THREAD_TITLE
+        ? ((
+            await ctx.runQuery(internal.chat.getPersonaByIdInternal, {
+              personaId: thread.personaId,
+              organizationId,
+            })
+          )?.name ?? DEFAULT_THREAD_TITLE)
         : DEFAULT_THREAD_TITLE,
     });
 
     const messages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    try {
-      const assistantMessageId = await streamAssistantReply(ctx, {
-        threadId,
-        userId,
-        organizationId,
-        thread,
-        messages,
-      });
+    const modelId = resolveChatModelId(args.model, messages);
+    const assistantMessageId = await streamAssistantReply(ctx, {
+      threadId,
+      userId,
+      organizationId,
+      thread,
+      messages,
+      modelId,
+    });
 
-      return {
-        threadId,
-        assistantMessageId,
-      };
-    } catch (error) {
-      throw error;
-    }
+    return {
+      threadId,
+      assistantMessageId,
+    };
   },
 });
 
@@ -376,8 +407,12 @@ export const editUserMessageAndRegenerate = action({
   args: {
     messageId: v.id('aiMessages'),
     text: v.string(),
+    model: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ threadId: Id<'aiThreads'>; assistantMessageId: Id<'aiMessages'> }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: Id<'aiThreads'>; assistantMessageId: Id<'aiMessages'> }> => {
     const { userId, organizationId } = await getAuthenticatedContext(ctx);
     const threadId = await ctx.runMutation(internal.chat.updateUserMessageTextInternal, {
       messageId: args.messageId,
@@ -411,12 +446,14 @@ export const editUserMessageAndRegenerate = action({
     });
 
     const regeneratedMessages = await ctx.runQuery(api.chat.listMessages, { threadId });
+    const modelId = resolveChatModelId(args.model, regeneratedMessages);
     const assistantMessageId = await streamAssistantReply(ctx, {
       threadId,
       userId,
       organizationId,
       thread,
       messages: regeneratedMessages,
+      modelId,
     });
 
     return {
