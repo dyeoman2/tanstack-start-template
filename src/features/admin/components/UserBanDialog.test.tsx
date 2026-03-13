@@ -39,6 +39,8 @@ describe('UserBanDialog', () => {
       banned: false,
       banReason: null,
       banExpires: null,
+      onboardingStatus: 'not_started',
+      onboardingDeliveryError: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
@@ -70,6 +72,8 @@ describe('UserBanDialog', () => {
       banned: true,
       banReason: 'Repeated abuse',
       banExpires: null,
+      onboardingStatus: 'not_started',
+      onboardingDeliveryError: null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });

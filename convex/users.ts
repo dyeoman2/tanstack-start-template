@@ -4,8 +4,9 @@ import {
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
 import { assertUserId } from '../src/lib/shared/user-id';
+import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { action, internalMutation, mutation, query } from './_generated/server';
 import {
@@ -40,6 +41,38 @@ type EnsureUserContextResult = {
   userId: Id<'users'>;
   organizationId: string;
 };
+
+type UserProfileDocument = Doc<'userProfiles'>;
+
+type OnboardingStatePatch = {
+  onboardingStatus?: OnboardingStatus;
+  onboardingEmailId?: string | undefined;
+  onboardingEmailMessageId?: string | undefined;
+  onboardingEmailLastSentAt?: number | undefined;
+  onboardingCompletedAt?: number | undefined;
+  onboardingDeliveryUpdatedAt?: number | undefined;
+  onboardingDeliveryError?: string | null | undefined;
+};
+
+function buildPersistedOnboardingState(
+  existing: UserProfileDocument | null,
+  patch?: OnboardingStatePatch,
+) {
+  return {
+    onboardingStatus:
+      patch?.onboardingStatus ?? existing?.onboardingStatus ?? 'not_started',
+    onboardingEmailId: patch?.onboardingEmailId ?? existing?.onboardingEmailId,
+    onboardingEmailMessageId:
+      patch?.onboardingEmailMessageId ?? existing?.onboardingEmailMessageId,
+    onboardingEmailLastSentAt:
+      patch?.onboardingEmailLastSentAt ?? existing?.onboardingEmailLastSentAt,
+    onboardingCompletedAt: patch?.onboardingCompletedAt ?? existing?.onboardingCompletedAt,
+    onboardingDeliveryUpdatedAt:
+      patch?.onboardingDeliveryUpdatedAt ?? existing?.onboardingDeliveryUpdatedAt,
+    onboardingDeliveryError:
+      patch?.onboardingDeliveryError ?? existing?.onboardingDeliveryError ?? null,
+  };
+}
 
 function slugify(value: string): string {
   return value
@@ -195,7 +228,7 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
 
   const nextValue = {
     ...profile,
-    needsOnboardingEmail: existing?.needsOnboardingEmail ?? false,
+    ...buildPersistedOnboardingState(existing),
     lastSyncedAt: Date.now(),
   };
 
@@ -279,7 +312,23 @@ export const syncAuthUserProfile = internalMutation({
 export const setAuthUserOnboardingState = internalMutation({
   args: {
     authUserId: v.string(),
-    needsOnboardingEmail: v.boolean(),
+    onboardingStatus: v.optional(
+      v.union(
+        v.literal('not_started'),
+        v.literal('email_pending'),
+        v.literal('email_sent'),
+        v.literal('delivered'),
+        v.literal('delivery_delayed'),
+        v.literal('bounced'),
+        v.literal('completed'),
+      ),
+    ),
+    onboardingEmailId: v.optional(v.string()),
+    onboardingEmailMessageId: v.optional(v.string()),
+    onboardingEmailLastSentAt: v.optional(v.number()),
+    onboardingCompletedAt: v.optional(v.number()),
+    onboardingDeliveryUpdatedAt: v.optional(v.number()),
+    onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args) => {
     const existing = await ctx.db
@@ -292,7 +341,7 @@ export const setAuthUserOnboardingState = internalMutation({
     }
 
     await ctx.db.patch(existing._id, {
-      needsOnboardingEmail: args.needsOnboardingEmail,
+      ...buildPersistedOnboardingState(existing, args),
       lastSyncedAt: Date.now(),
     });
 
@@ -334,7 +383,23 @@ export const syncUserProfilesSnapshot = internalMutation({
         banned: v.boolean(),
         banReason: v.union(v.string(), v.null()),
         banExpires: v.union(v.number(), v.null()),
-        needsOnboardingEmail: v.optional(v.boolean()),
+        onboardingStatus: v.optional(
+          v.union(
+            v.literal('not_started'),
+            v.literal('email_pending'),
+            v.literal('email_sent'),
+            v.literal('delivered'),
+            v.literal('delivery_delayed'),
+            v.literal('bounced'),
+            v.literal('completed'),
+          ),
+        ),
+        onboardingEmailId: v.optional(v.string()),
+        onboardingEmailMessageId: v.optional(v.string()),
+        onboardingEmailLastSentAt: v.optional(v.number()),
+        onboardingCompletedAt: v.optional(v.number()),
+        onboardingDeliveryUpdatedAt: v.optional(v.number()),
+        onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
         createdAt: v.number(),
         updatedAt: v.number(),
       }),
@@ -352,7 +417,7 @@ export const syncUserProfilesSnapshot = internalMutation({
       const existing = existingByAuthUserId.get(user.authUserId);
       const nextValue = {
         ...user,
-        needsOnboardingEmail: existing?.needsOnboardingEmail ?? user.needsOnboardingEmail ?? false,
+        ...buildPersistedOnboardingState(existing ?? null, user),
         lastSyncedAt: syncTimestamp,
       };
 
@@ -512,6 +577,39 @@ export const updateCurrentUserProfile = mutation({
     await syncUserProfileByAuthUserId(ctx, userId);
 
     return { success: true };
+  },
+});
+
+export const markCurrentUserOnboardingComplete = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const authUser = await getCurrentAuthUserOrNull(ctx);
+    if (!authUser) {
+      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+    }
+    const authUserId = assertUserId(authUser, 'User ID not found in auth user');
+
+    const existing = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+      .first();
+
+    if (!existing) {
+      return { success: false };
+    }
+
+    const onboardingCompletedAt = existing.onboardingCompletedAt ?? Date.now();
+    await ctx.db.patch(existing._id, {
+      onboardingStatus: 'completed',
+      onboardingCompletedAt,
+      onboardingDeliveryError: null,
+      lastSyncedAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      onboardingCompletedAt,
+    };
   },
 });
 

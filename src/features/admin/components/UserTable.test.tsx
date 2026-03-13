@@ -76,7 +76,8 @@ describe('UserTable', () => {
         banned: false,
         banReason: null,
         banExpires: null,
-        needsOnboardingEmail: false,
+        onboardingStatus: 'not_started',
+        onboardingDeliveryError: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [],
@@ -103,7 +104,8 @@ describe('UserTable', () => {
           banned: false,
           banReason: null,
           banExpires: null,
-          needsOnboardingEmail: false,
+          onboardingStatus: 'not_started',
+          onboardingDeliveryError: null,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           organizations: [],
@@ -131,7 +133,8 @@ describe('UserTable', () => {
         banned: true,
         banReason: 'Abuse',
         banExpires: null,
-        needsOnboardingEmail: false,
+        onboardingStatus: 'not_started',
+        onboardingDeliveryError: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [],
@@ -156,7 +159,8 @@ describe('UserTable', () => {
         banned: false,
         banReason: null,
         banExpires: null,
-        needsOnboardingEmail: false,
+        onboardingStatus: 'delivered',
+        onboardingDeliveryError: null,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [
@@ -176,7 +180,7 @@ describe('UserTable', () => {
     );
   });
 
-  it('shows resend onboarding email when a user needs onboarding follow-up', async () => {
+  it('shows resend onboarding email for retryable onboarding states', async () => {
     const user = userEvent.setup();
 
     renderTable([
@@ -189,7 +193,8 @@ describe('UserTable', () => {
         banned: false,
         banReason: null,
         banExpires: null,
-        needsOnboardingEmail: true,
+        onboardingStatus: 'bounced',
+        onboardingDeliveryError: 'Mailbox not found',
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [],
@@ -200,5 +205,36 @@ describe('UserTable', () => {
     await user.click(within(row).getByRole('button', { name: 'More actions' }));
 
     expect(screen.getByRole('menuitem', { name: /resend onboarding email/i })).toBeInTheDocument();
+  });
+
+  it('does not offer resend onboarding email for completed users', async () => {
+    const user = userEvent.setup();
+
+    renderTable([
+      {
+        id: 'user-5',
+        email: 'completed@example.com',
+        name: 'Completed User',
+        role: USER_ROLES.USER,
+        emailVerified: true,
+        banned: false,
+        banReason: null,
+        banExpires: null,
+        onboardingStatus: 'completed',
+        onboardingDeliveryError: null,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        organizations: [],
+      },
+    ]);
+
+    const row = screen.getByRole('row', { name: /completed user completed@example.com/i });
+    expect(within(row).getByText('Completed')).toBeInTheDocument();
+
+    await user.click(within(row).getByRole('button', { name: 'More actions' }));
+
+    expect(
+      screen.queryByRole('menuitem', { name: /resend onboarding email/i }),
+    ).not.toBeInTheDocument();
   });
 });

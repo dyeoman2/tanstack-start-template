@@ -12,6 +12,7 @@ import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { markCurrentUserOnboardingCompleteServerFn } from '~/features/auth/server/onboarding.server';
 
 export const Route = createFileRoute('/reset-password')({
   staticData: true,
@@ -84,6 +85,8 @@ function ResetPasswordPage() {
           newPassword: value.password,
           fetchOptions: { throw: true },
         });
+
+        await markCurrentUserOnboardingCompleteServerFn();
 
         setSuccess(true);
 

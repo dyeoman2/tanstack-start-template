@@ -27,6 +27,8 @@ function renderDialog() {
           banned: false,
           banReason: null,
           banExpires: null,
+          onboardingStatus: 'not_started',
+          onboardingDeliveryError: null,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         }}

@@ -15,6 +15,10 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
+import {
+  getOnboardingStatusLabel,
+  isRetryableOnboardingStatus,
+} from '~/lib/shared/onboarding';
 import type { User as AdminUser } from '../types';
 
 type UserRow = AdminUser;
@@ -212,8 +216,18 @@ export function UserTable({
               <Badge variant={row.original.emailVerified ? 'default' : 'outline'}>
                 {row.original.emailVerified ? 'Verified' : 'Unverified'}
               </Badge>
-              {row.original.needsOnboardingEmail ? (
-                <p className="text-xs text-amber-700">Onboarding email pending</p>
+              {row.original.onboardingStatus && row.original.onboardingStatus !== 'not_started' ? (
+                <Badge
+                  variant={
+                    row.original.onboardingStatus === 'completed'
+                      ? 'default'
+                      : row.original.onboardingStatus === 'bounced'
+                        ? 'destructive'
+                        : 'secondary'
+                  }
+                >
+                  {getOnboardingStatusLabel(row.original.onboardingStatus)}
+                </Badge>
               ) : null}
             </div>
           );
@@ -238,7 +252,9 @@ export function UserTable({
             !row.original.banned;
           const isCurrentUser = row.original.id === currentUserId;
           const canManageDangerousActions = !isCurrentUser;
-          const canResendOnboardingEmail = row.original.needsOnboardingEmail === true;
+          const canResendOnboardingEmail = isRetryableOnboardingStatus(
+            row.original.onboardingStatus ?? 'not_started',
+          );
 
           return (
             <div className="text-right">

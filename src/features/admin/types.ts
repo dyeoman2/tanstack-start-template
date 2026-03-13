@@ -1,4 +1,5 @@
 import type { UserRole } from '../auth/types';
+import type { OnboardingStatus } from '../../lib/shared/onboarding';
 
 /**
  * Admin feature types
@@ -17,7 +18,13 @@ export interface User {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
-  needsOnboardingEmail?: boolean;
+  onboardingStatus: OnboardingStatus;
+  onboardingEmailId?: string;
+  onboardingEmailMessageId?: string;
+  onboardingEmailLastSentAt?: number;
+  onboardingCompletedAt?: number;
+  onboardingDeliveryUpdatedAt?: number;
+  onboardingDeliveryError: string | null;
   createdAt: number; // Unix timestamp from Convex
   updatedAt: number; // Unix timestamp from Convex
   organizations?: Array<{

@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
+import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import {
   normalizeCloudflareTextGenerationModels,
   type CloudflareCatalogModel,
@@ -242,7 +243,13 @@ export const listUsers = query({
         banned: profile.banned,
         banReason: profile.banReason,
         banExpires: profile.banExpires,
-        needsOnboardingEmail: profile.needsOnboardingEmail ?? false,
+        onboardingStatus: profile.onboardingStatus ?? 'not_started',
+        onboardingEmailId: profile.onboardingEmailId,
+        onboardingEmailMessageId: profile.onboardingEmailMessageId,
+        onboardingEmailLastSentAt: profile.onboardingEmailLastSentAt,
+        onboardingCompletedAt: profile.onboardingCompletedAt,
+        onboardingDeliveryUpdatedAt: profile.onboardingDeliveryUpdatedAt,
+        onboardingDeliveryError: profile.onboardingDeliveryError ?? null,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
         organizations: membershipsByUserId.get(profile.authUserId) ?? [],
@@ -313,13 +320,35 @@ export const syncUserIndexEntry = mutation({
 export const setUserOnboardingStatus = mutation({
   args: {
     userId: v.string(),
-    needsOnboardingEmail: v.boolean(),
+    onboardingStatus: v.optional(
+      v.union(
+        v.literal('not_started'),
+        v.literal('email_pending'),
+        v.literal('email_sent'),
+        v.literal('delivered'),
+        v.literal('delivery_delayed'),
+        v.literal('bounced'),
+        v.literal('completed'),
+      ),
+    ),
+    onboardingEmailId: v.optional(v.string()),
+    onboardingEmailMessageId: v.optional(v.string()),
+    onboardingEmailLastSentAt: v.optional(v.number()),
+    onboardingCompletedAt: v.optional(v.number()),
+    onboardingDeliveryUpdatedAt: v.optional(v.number()),
+    onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
   },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
       authUserId: args.userId,
-      needsOnboardingEmail: args.needsOnboardingEmail,
+      onboardingStatus: args.onboardingStatus as OnboardingStatus | undefined,
+      onboardingEmailId: args.onboardingEmailId,
+      onboardingEmailMessageId: args.onboardingEmailMessageId,
+      onboardingEmailLastSentAt: args.onboardingEmailLastSentAt,
+      onboardingCompletedAt: args.onboardingCompletedAt,
+      onboardingDeliveryUpdatedAt: args.onboardingDeliveryUpdatedAt,
+      onboardingDeliveryError: args.onboardingDeliveryError,
     });
   },
 });

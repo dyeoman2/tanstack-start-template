@@ -42,6 +42,16 @@ const aiMessagePartValidator = v.union(
   }),
 );
 
+const onboardingStatusValidator = v.union(
+  v.literal('not_started'),
+  v.literal('email_pending'),
+  v.literal('email_sent'),
+  v.literal('delivered'),
+  v.literal('delivery_delayed'),
+  v.literal('bounced'),
+  v.literal('completed'),
+);
+
 export default defineSchema({
   // Note: Better Auth manages its own tables via the betterAuth component
   // Those tables are in the 'betterAuth' namespace (user, session, account, verification, etc.)
@@ -69,7 +79,13 @@ export default defineSchema({
     banned: v.boolean(),
     banReason: v.union(v.string(), v.null()),
     banExpires: v.union(v.number(), v.null()),
-    needsOnboardingEmail: v.optional(v.boolean()),
+    onboardingStatus: onboardingStatusValidator,
+    onboardingEmailId: v.optional(v.string()),
+    onboardingEmailMessageId: v.optional(v.string()),
+    onboardingEmailLastSentAt: v.optional(v.number()),
+    onboardingCompletedAt: v.optional(v.number()),
+    onboardingDeliveryUpdatedAt: v.optional(v.number()),
+    onboardingDeliveryError: v.union(v.string(), v.null()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastSyncedAt: v.number(),
@@ -77,6 +93,8 @@ export default defineSchema({
     .index('by_auth_user_id', ['authUserId'])
     .index('by_role', ['role'])
     .index('by_email_lower', ['emailLower'])
+    .index('by_onboarding_email_id', ['onboardingEmailId'])
+    .index('by_onboarding_email_message_id', ['onboardingEmailMessageId'])
     .index('by_created_at', ['createdAt']),
 
   userProfileSyncState: defineTable({
@@ -84,6 +102,22 @@ export default defineSchema({
     lastFullSyncAt: v.number(),
     totalUsers: v.number(),
   }).index('by_key', ['key']),
+
+  emailLifecycleEvents: defineTable({
+    messageId: v.string(),
+    emailId: v.optional(v.string()),
+    authUserId: v.optional(v.string()),
+    email: v.string(),
+    category: v.literal('onboarding'),
+    eventType: v.string(),
+    rawPayload: v.string(),
+    occurredAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_message_id', ['messageId'])
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_email_id', ['emailId'])
+    .index('by_occurred_at', ['occurredAt']),
 
   auditLogs: defineTable({
     id: v.string(),

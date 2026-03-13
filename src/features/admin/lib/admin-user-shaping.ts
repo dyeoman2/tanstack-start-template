@@ -1,4 +1,5 @@
 import type { UserRole } from '../../auth/types';
+import type { OnboardingStatus } from '../../../lib/shared/onboarding';
 
 export type AdminUserSortField = 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
 export type AdminUserSortDirection = 'asc' | 'desc';
@@ -24,7 +25,13 @@ export type AdminListUser = {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
-  needsOnboardingEmail?: boolean;
+  onboardingStatus: OnboardingStatus;
+  onboardingEmailId?: string;
+  onboardingEmailMessageId?: string;
+  onboardingEmailLastSentAt?: number;
+  onboardingCompletedAt?: number;
+  onboardingDeliveryUpdatedAt?: number;
+  onboardingDeliveryError: string | null;
   createdAt: number;
   updatedAt: number;
   organizations?: Array<{

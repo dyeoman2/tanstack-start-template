@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { USER_ROLES } from '~/features/auth/types';
+import type { AdminListUser } from '../lib/admin-user-shaping';
 import { normalizeAdminUser, shapeAdminUsers } from './admin-management';
 
 describe('normalizeAdminUser', () => {
@@ -33,7 +34,7 @@ describe('normalizeAdminUser', () => {
 });
 
 describe('shapeAdminUsers', () => {
-  const users = [
+  const users: AdminListUser[] = [
     {
       id: '1',
       email: 'zoe@example.com',
@@ -43,6 +44,8 @@ describe('shapeAdminUsers', () => {
       banned: false,
       banReason: null,
       banExpires: null,
+      onboardingStatus: 'not_started',
+      onboardingDeliveryError: null,
       createdAt: 3,
       updatedAt: 3,
     },
@@ -55,6 +58,8 @@ describe('shapeAdminUsers', () => {
       banned: false,
       banReason: null,
       banExpires: null,
+      onboardingStatus: 'not_started',
+      onboardingDeliveryError: null,
       createdAt: 1,
       updatedAt: 1,
     },
@@ -67,6 +72,8 @@ describe('shapeAdminUsers', () => {
       banned: false,
       banReason: null,
       banExpires: null,
+      onboardingStatus: 'not_started',
+      onboardingDeliveryError: null,
       createdAt: 2,
       updatedAt: 2,
     },

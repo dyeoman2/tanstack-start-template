@@ -187,6 +187,18 @@ pnpm run agent:auth -- --session-name codex-demo --principal user --redirect-to 
 
 That command loads `.env.local`, authenticates the named `agent-browser` session through `/api/test/agent-auth`, and opens the requested page in the same browser session.
 
+For the common "authenticate, wait, and inspect" flow:
+
+```bash
+pnpm run agent:inspect -- --session-name codex-demo --principal user --redirect-to /app
+```
+
+You can override the target origin when needed:
+
+```bash
+pnpm run agent:inspect -- --session-name codex-demo --base-url http://127.0.0.1:3100 --principal user --redirect-to /app
+```
+
 Admin flow:
 
 ```bash
@@ -200,6 +212,14 @@ For reliable browser automation in local development:
 - After opening a new page, wait for `networkidle` before the first snapshot.
 - Re-snapshot after every navigation or DOM-changing interaction.
 - Close the named session when done so stale browser state does not leak into later runs.
+
+To close a named session explicitly:
+
+```bash
+pnpm run agent:close -- --session-name codex-demo
+```
+
+See [Agent Browser Workflows](docs/AGENT_BROWSER_WORKFLOWS.md) for copy-paste patterns covering authenticated snapshots, admin checks, screenshots, and cleanup.
 
 ### 🔗 Link Your Local Project to Netlify (Optional)
 

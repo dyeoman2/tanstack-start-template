@@ -39,6 +39,8 @@
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:server": "tsx scripts/e2e-dev.ts",
     "agent:auth": "tsx scripts/agent-browser-auth.ts",
+    "agent:close": "tsx scripts/agent-browser-close.ts",
+    "agent:inspect": "tsx scripts/agent-browser-inspect.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write .",

@@ -228,7 +228,9 @@ npx convex dashboard # Open Convex dashboard
 - Prefer authenticating browser agents through `POST /api/test/agent-auth` instead of filling the sign-in form manually.
 - `POST /api/test/agent-auth` accepts `{ "principal": "user" | "admin", "redirectTo"?: "/app" }`, requires the `x-e2e-test-secret` header, forwards Better Auth cookies, and redirects inside the same browser session.
 - Prefer `pnpm run agent:auth -- --session-name <name> --principal user --redirect-to /app` when the agent can invoke repo scripts. It authenticates a named `agent-browser` session through the route above and opens the requested page.
+- Prefer `pnpm run agent:inspect -- --session-name <name> --principal user --redirect-to /app` for the common "authenticate, wait, snapshot" workflow.
 - Admin example: `pnpm run agent:auth -- --session-name admin-check --principal admin --redirect-to /app/admin`
+- Close sessions with `pnpm run agent:close -- --session-name <name>` when browser work is complete.
 - Use `POST /api/test/e2e-auth` only when a tool needs cookie JSON for manual injection, such as Playwright storage-state setup.
 - Read `E2E_TEST_SECRET`, `E2E_USER_EMAIL`, and `E2E_USER_PASSWORD` from `.env.local` when needed.
 - Default to the `user` principal for normal authenticated coverage. Use the `admin` principal only when validating admin-only behavior.
@@ -236,6 +238,7 @@ npx convex dashboard # Open Convex dashboard
 - Use `http://127.0.0.1:3000`, not `http://localhost:3000`, for local browser automation so the origin stays consistent with the E2E server setup.
 - Always use a named `agent-browser` session for app work, wait for `networkidle` before the first snapshot on a new page, and re-snapshot after every navigation or form submit.
 - Close the named browser session when done to avoid leaked daemon/browser state between agent runs.
+- Copy-paste workflows live in `docs/AGENT_BROWSER_WORKFLOWS.md`.
 - Only use manual UI login as a fallback when the auth route is not suitable for the specific test.
 
 ### Security

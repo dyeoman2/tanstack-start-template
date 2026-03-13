@@ -12,6 +12,7 @@ import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import type { UserRole } from '~/features/auth/types';
 import { USER_ROLES } from '~/features/auth/types';
+import type { OnboardingStatus } from '~/lib/shared/onboarding';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 
 const userSearchSchema = z.object({
@@ -65,6 +66,11 @@ type CreateAdminUserResult = {
   user: AdminUser;
 };
 
+type SendAdminOnboardingEmailResult = {
+  success: boolean;
+  onboardingStatus: OnboardingStatus;
+};
+
 type RawAdminUser = {
   id?: string;
   _id?: string;
@@ -107,7 +113,13 @@ export type AdminUser = {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
-  needsOnboardingEmail?: boolean;
+  onboardingStatus: OnboardingStatus;
+  onboardingEmailId?: string;
+  onboardingEmailMessageId?: string;
+  onboardingEmailLastSentAt?: number;
+  onboardingCompletedAt?: number;
+  onboardingDeliveryUpdatedAt?: number;
+  onboardingDeliveryError: string | null;
   createdAt: number;
   updatedAt: number;
 };
@@ -164,6 +176,13 @@ export function normalizeAdminUser(user: RawAdminUser): AdminUser {
     banned: user.banned === true,
     banReason: user.banReason ?? null,
     banExpires: user.banExpires ? toTimestamp(user.banExpires) : null,
+    onboardingStatus: 'not_started',
+    onboardingEmailId: undefined,
+    onboardingEmailMessageId: undefined,
+    onboardingEmailLastSentAt: undefined,
+    onboardingCompletedAt: undefined,
+    onboardingDeliveryUpdatedAt: undefined,
+    onboardingDeliveryError: null,
     createdAt: toTimestamp(user.createdAt),
     updatedAt: toTimestamp(user.updatedAt),
   };
@@ -421,6 +440,22 @@ async function requestOnboardingEmail(email: string) {
   );
 }
 
+async function updateAdminUserOnboardingState(
+  userId: string,
+  state: {
+    onboardingStatus?: OnboardingStatus;
+    onboardingEmailLastSentAt?: number;
+    onboardingDeliveryError?: string | null;
+  },
+) {
+  await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
+    userId,
+    onboardingStatus: state.onboardingStatus,
+    onboardingEmailLastSentAt: state.onboardingEmailLastSentAt,
+    onboardingDeliveryError: state.onboardingDeliveryError,
+  });
+}
+
 export const createAdminUserServerFn = createServerFn({ method: 'POST' })
   .inputValidator(createUserSchema)
   .handler(async ({ data }): Promise<CreateAdminUserResult> => {
@@ -461,28 +496,39 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
       });
       try {
         await requestOnboardingEmail(email);
-        await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
-          userId: createdUserId,
-          needsOnboardingEmail: false,
+        const onboardingEmailLastSentAt = Date.now();
+        await updateAdminUserOnboardingState(createdUserId, {
+          onboardingStatus: 'email_sent',
+          onboardingEmailLastSentAt,
+          onboardingDeliveryError: null,
         });
 
         return {
           user: {
             ...normalizeAdminUser(created.user),
-            needsOnboardingEmail: false,
+            onboardingStatus: 'email_sent',
+            onboardingEmailLastSentAt,
+            onboardingDeliveryError: null,
           },
           onboardingEmailSent: true,
         };
       } catch (emailError) {
-        await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
-          userId: createdUserId,
-          needsOnboardingEmail: true,
+        await updateAdminUserOnboardingState(createdUserId, {
+          onboardingStatus: 'email_pending',
+          onboardingDeliveryError:
+            emailError instanceof Error
+              ? emailError.message
+              : 'User created, but sending the onboarding email failed.',
         });
 
         return {
           user: {
             ...normalizeAdminUser(created.user),
-            needsOnboardingEmail: true,
+            onboardingStatus: 'email_pending',
+            onboardingDeliveryError:
+              emailError instanceof Error
+                ? emailError.message
+                : 'User created, but sending the onboarding email failed.',
           },
           onboardingEmailSent: false,
           onboardingErrorMessage:
@@ -498,7 +544,7 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
 
 export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'POST' })
   .inputValidator(userIdSchema)
-  .handler(async ({ data }) => {
+  .handler(async ({ data }): Promise<SendAdminOnboardingEmailResult> => {
     try {
       await requireAdmin();
       const user = await getAdminUserById(data.userId);
@@ -507,13 +553,27 @@ export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'PO
       }
 
       await requestOnboardingEmail(user.email);
-      await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
-        userId: data.userId,
-        needsOnboardingEmail: false,
+      await updateAdminUserOnboardingState(data.userId, {
+        onboardingStatus: 'email_sent',
+        onboardingEmailLastSentAt: Date.now(),
+        onboardingDeliveryError: null,
       });
 
-      return { success: true };
+      return { success: true, onboardingStatus: 'email_sent' };
     } catch (error) {
+      try {
+        const user = await getAdminUserById(data.userId);
+        if (user && user.onboardingStatus !== 'completed') {
+          await updateAdminUserOnboardingState(data.userId, {
+            onboardingStatus: user.onboardingStatus,
+            onboardingDeliveryError:
+              error instanceof Error ? error.message : 'Failed to send onboarding email',
+          });
+        }
+      } catch {
+        // Preserve the original server error if the follow-up state update also fails.
+      }
+
       throw handleServerError(error, 'Send admin onboarding email');
     }
   });
