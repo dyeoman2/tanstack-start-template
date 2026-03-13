@@ -41,7 +41,7 @@ export function OrganizationDirectoryPage() {
               <OrganizationRowSkeleton />
             </>
           ) : organizations && organizations.length > 0 ? (
-            organizations.map((organization) => (
+            organizations.map((organization: DirectoryOrganization) => (
               <OrganizationRow key={organization.id} organization={organization} />
             ))
           ) : (
@@ -70,18 +70,20 @@ export function OrganizationDirectoryPage() {
   );
 }
 
+type DirectoryOrganization = {
+  id: string;
+  slug: string;
+  name: string;
+  logo: string | null;
+  viewerRole: 'site-admin' | 'owner' | 'admin' | 'member';
+  canManage: boolean;
+  isSiteAdminView: boolean;
+};
+
 function OrganizationRow({
   organization,
 }: {
-  organization: {
-    id: string;
-    slug: string;
-    name: string;
-    logo: string | null;
-    viewerRole: 'site-admin' | 'owner' | 'admin' | 'member';
-    canManage: boolean;
-    isSiteAdminView: boolean;
-  };
+  organization: DirectoryOrganization;
 }) {
   const slug = organization.slug;
 

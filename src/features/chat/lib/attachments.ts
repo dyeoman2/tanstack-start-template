@@ -1,4 +1,4 @@
-import type { ChatMessagePart } from '~/features/chat/types';
+import type { ChatAttachmentKind, ChatComposerPart } from '~/features/chat/types';
 import type { ParsedFile } from '~/features/chat/lib/file-parser';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
@@ -7,9 +7,24 @@ const SUPPORTED_DOCUMENT_MIME_TYPES = [
   'text/csv',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  'application/vnd.ms-excel',
 ];
-const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf', '.xlsx', '.xls'];
+const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf', '.xlsx'];
+const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.png', 'image/png'],
+  ['.gif', 'image/gif'],
+  ['.webp', 'image/webp'],
+  ['.heic', 'image/heic'],
+  ['.heif', 'image/heif'],
+  ['.txt', 'text/plain'],
+  ['.csv', 'text/csv'],
+  ['.pdf', 'application/pdf'],
+  [
+    '.xlsx',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ],
+]);
 
 export type UploadedImage = { image: string; mimeType: string; name?: string };
 export type UploadedDocument = ParsedFile;
@@ -38,12 +53,42 @@ export function isDocumentFile(file: File) {
   );
 }
 
+export function getChatAttachmentKind(file: File): ChatAttachmentKind | null {
+  if (isImageFile(file)) {
+    return 'image';
+  }
+
+  if (isDocumentFile(file)) {
+    return 'document';
+  }
+
+  return null;
+}
+
+export function inferChatAttachmentMimeType(file: File) {
+  const normalizedType = file.type.trim().toLowerCase();
+  if (normalizedType) {
+    return normalizedType;
+  }
+
+  const fileName = file.name.toLowerCase();
+  const matchedEntry = [...EXTENSION_TO_MIME_TYPE.entries()].find(([extension]) =>
+    fileName.endsWith(extension),
+  );
+
+  if (matchedEntry) {
+    return matchedEntry[1];
+  }
+
+  return isImageFile(file) ? 'image/png' : 'application/octet-stream';
+}
+
 export function buildComposerParts(
   text: string,
   uploadedImages: UploadedImage[],
   uploadedDocuments: UploadedDocument[],
 ) {
-  const parts: ChatMessagePart[] = [];
+  const parts: ChatComposerPart[] = [];
 
   if (text.trim()) {
     parts.push({ type: 'text', text });

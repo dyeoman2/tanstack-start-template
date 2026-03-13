@@ -31,6 +31,7 @@ describe('ChatComposer', () => {
                 supportsWebSearch: true,
               },
             ]}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
             onSend={vi.fn().mockResolvedValue(undefined)}
           />
         </TooltipProvider>
@@ -58,6 +59,7 @@ describe('ChatComposer', () => {
               },
             ]}
             onToggleWebSearch={vi.fn()}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
             onSend={vi.fn().mockResolvedValue(undefined)}
           />
         </TooltipProvider>
@@ -88,6 +90,7 @@ describe('ChatComposer', () => {
             editingMessage={{ messageId: 'message-1', text: 'tell me more' }}
             onCancelEdit={vi.fn()}
             onSubmitEdit={onSubmitEdit}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
             onSend={vi.fn().mockResolvedValue(undefined)}
           />
         </TooltipProvider>

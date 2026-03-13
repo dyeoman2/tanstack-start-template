@@ -9,7 +9,7 @@ vi.mock('next-themes', () => ({
 }));
 
 describe('MessageList', () => {
-  it('renders pending assistant output as plain text while streaming', () => {
+  it('renders pending assistant draft output as plain text while streaming', () => {
     render(
       <MessageList
         messages={[
@@ -17,12 +17,20 @@ describe('MessageList', () => {
             _id: 'assistant-1' as never,
             threadId: 'thread-1' as never,
             role: 'assistant',
-            parts: [{ type: 'text', text: '# Streaming title' }],
+            parts: [{ type: 'text', text: '' }],
             status: 'pending',
             createdAt: 1,
             updatedAt: 1,
           },
         ]}
+        activeDraft={{
+          _id: 'draft-1' as never,
+          messageId: 'assistant-1' as never,
+          threadId: 'thread-1' as never,
+          text: '# Streaming title',
+          createdAt: 1,
+          updatedAt: 2,
+        }}
       />,
     );
 

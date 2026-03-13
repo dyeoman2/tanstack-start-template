@@ -1,7 +1,11 @@
 import type { ParseResult } from 'papaparse';
+import type { Row } from 'read-excel-file/browser';
 import type { ParsedPdfImage } from '~/features/chat/types';
 
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
+const MAX_SPREADSHEET_SIZE = 10 * 1024 * 1024;
+const MAX_SPREADSHEET_SHEETS = 10;
+const MAX_SPREADSHEET_ROWS = 5_000;
 
 function formatRowsAsTable(rows: unknown[][], addSeparatorAfterHeader = true) {
   let content = '';
@@ -18,6 +22,22 @@ function formatRowsAsTable(rows: unknown[][], addSeparatorAfterHeader = true) {
   });
 
   return content;
+}
+
+function formatCellValue(cell: Row[number]) {
+  if (cell === null || cell === undefined) {
+    return '';
+  }
+
+  if (cell instanceof Date) {
+    return cell.toISOString();
+  }
+
+  return String(cell);
+}
+
+function normalizeRows(rows: Row[]) {
+  return rows.map((row) => row.map((cell) => formatCellValue(cell)));
 }
 
 export interface ParsedFile {
@@ -101,23 +121,41 @@ async function parseCSV(file: File): Promise<ParsedFile> {
 }
 
 async function parseExcel(file: File): Promise<ParsedFile> {
-  const [arrayBuffer, XLSX] = await Promise.all([file.arrayBuffer(), import('xlsx')]);
-  const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+  if (file.size > MAX_SPREADSHEET_SIZE) {
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+    throw new Error(`File size (${sizeMB}MB) exceeds the maximum allowed size of 10MB`);
+  }
+
+  const [{ default: readXlsxFile, readSheetNames }] = await Promise.all([
+    import('read-excel-file/browser'),
+  ]);
+  const sheetNames = await readSheetNames(file);
+
+  if (sheetNames.length > MAX_SPREADSHEET_SHEETS) {
+    throw new Error(`Spreadsheet has too many sheets. Maximum allowed is ${MAX_SPREADSHEET_SHEETS}.`);
+  }
 
   let content = `[Excel File: ${file.name}]\n\n`;
+  let totalRows = 0;
 
-  workbook.SheetNames.forEach((sheetName, index) => {
-    const worksheet = workbook.Sheets[sheetName];
-    const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as unknown[][];
+  for (const [index, sheetName] of sheetNames.entries()) {
+    const rows = await readXlsxFile(file, { sheet: sheetName });
+    totalRows += rows.length;
+
+    if (totalRows > MAX_SPREADSHEET_ROWS) {
+      throw new Error(`Spreadsheet has too many rows. Maximum allowed is ${MAX_SPREADSHEET_ROWS}.`);
+    }
+
+    const normalizedRows = normalizeRows(rows);
 
     content += `Sheet: ${sheetName}\n`;
     content += `${'-'.repeat(50)}\n`;
-    content += formatRowsAsTable(jsonData);
+    content += formatRowsAsTable(normalizedRows);
 
-    if (index < workbook.SheetNames.length - 1) {
+    if (index < sheetNames.length - 1) {
       content += '\n';
     }
-  });
+  }
 
   return {
     name: file.name,
@@ -141,9 +179,7 @@ const fileTypeParsers: Array<{ test: (type: string, name: string) => boolean; pa
     {
       test: (type, name) =>
         type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        type === 'application/vnd.ms-excel' ||
-        name.endsWith('.xlsx') ||
-        name.endsWith('.xls'),
+        name.endsWith('.xlsx'),
       parse: parseExcel,
     },
     {

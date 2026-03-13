@@ -40,6 +40,21 @@ const documentPartValidator = v.object({
   images: v.optional(v.array(parsedPdfImageValidator)),
 });
 
+const attachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
+const attachmentStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('ready'),
+  v.literal('error'),
+);
+
+const attachmentPartValidator = v.object({
+  type: v.literal('attachment'),
+  attachmentId: v.id('aiAttachments'),
+  kind: attachmentKindValidator,
+  name: v.string(),
+  mimeType: v.string(),
+});
+
 const sourceUrlPartValidator = v.object({
   type: v.literal('source-url'),
   sourceId: v.string(),
@@ -59,6 +74,7 @@ const messagePartValidator = v.union(
   textPartValidator,
   imagePartValidator,
   documentPartValidator,
+  attachmentPartValidator,
   sourceUrlPartValidator,
   sourceDocumentPartValidator,
 );
@@ -69,7 +85,7 @@ const usageValidator = v.object({
   outputTokens: v.optional(v.number()),
 });
 
-type ChatMessagePart =
+type StoredChatMessagePart =
   | {
       type: 'text';
       text: string;
@@ -94,6 +110,13 @@ type ChatMessagePart =
       }>;
     }
   | {
+      type: 'attachment';
+      attachmentId: Id<'aiAttachments'>;
+      kind: 'image' | 'document';
+      name: string;
+      mimeType: string;
+    }
+  | {
       type: 'source-url';
       sourceId: string;
       url: string;
@@ -108,17 +131,19 @@ type ChatMessagePart =
     };
 
 type AiThreadDoc = Doc<'aiThreads'>;
+type AiAttachmentDoc = Doc<'aiAttachments'>;
 
 const DEFAULT_THREAD_TITLE = 'New Chat';
+const MISSING_ATTACHMENT_SUMMARY = 'Attachment unavailable.';
 
-function getTextFromParts(parts: ChatMessagePart[]) {
+function getTitleTextFromParts(parts: StoredChatMessagePart[]) {
   return parts
     .map((part) => {
       if (part.type === 'text') {
         return part.text;
       }
 
-      if (part.type === 'document') {
+      if (part.type === 'attachment' || part.type === 'document') {
         return part.name;
       }
 
@@ -132,8 +157,8 @@ function stripHtmlTags(text: string) {
   return text.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '');
 }
 
-function deriveThreadTitle(parts: ChatMessagePart[], fallback = DEFAULT_THREAD_TITLE) {
-  const candidate = stripHtmlTags(getTextFromParts(parts)).trim();
+function deriveThreadTitle(parts: StoredChatMessagePart[], fallback = DEFAULT_THREAD_TITLE) {
+  const candidate = stripHtmlTags(getTitleTextFromParts(parts)).trim();
 
   if (!candidate) {
     return fallback;
@@ -151,6 +176,27 @@ function sortThreads<T extends AiThreadDoc>(threads: T[]) {
 
     return b.updatedAt - a.updatedAt;
   });
+}
+
+function buildUserMessageParts(text: string, attachments: AiAttachmentDoc[]): StoredChatMessagePart[] {
+  const parts: StoredChatMessagePart[] = [];
+  const trimmedText = text.trim();
+
+  if (trimmedText) {
+    parts.push({ type: 'text', text: trimmedText });
+  }
+
+  for (const attachment of attachments) {
+    parts.push({
+      type: 'attachment',
+      attachmentId: attachment._id,
+      kind: attachment.kind,
+      name: attachment.name,
+      mimeType: attachment.mimeType,
+    });
+  }
+
+  return parts;
 }
 
 async function getThreadForUser(
@@ -181,6 +227,154 @@ async function getPersonaForUser(
   return persona;
 }
 
+async function getValidatedAttachmentsForSend(
+  ctx: MutationCtx,
+  args: {
+    attachmentIds: Id<'aiAttachments'>[];
+    userId: string;
+    organizationId: string;
+  },
+) {
+  const attachments = await Promise.all(
+    args.attachmentIds.map(async (attachmentId) => {
+      const attachment = await ctx.db.get(attachmentId);
+
+      if (
+        !attachment ||
+        attachment.userId !== args.userId ||
+        attachment.organizationId !== args.organizationId
+      ) {
+        throwConvexError('NOT_FOUND', 'Attachment not found');
+      }
+
+      if (attachment.status !== 'ready') {
+        throwConvexError('FORBIDDEN', 'Attachment is still processing');
+      }
+
+      if (attachment.messageId || attachment.threadId) {
+        throwConvexError('FORBIDDEN', 'Attachment has already been sent');
+      }
+
+      return attachment;
+    }),
+  );
+
+  return attachments;
+}
+
+async function updateThreadAfterUserMessage(
+  ctx: MutationCtx,
+  args: {
+    thread: AiThreadDoc;
+    parts: StoredChatMessagePart[];
+  },
+) {
+  const now = Date.now();
+  const patch: Partial<AiThreadDoc> = {
+    updatedAt: now,
+    lastMessageAt: now,
+  };
+
+  if (
+    !args.thread.personaId &&
+    !args.thread.titleManuallyEdited &&
+    args.thread.title === DEFAULT_THREAD_TITLE
+  ) {
+    patch.title = deriveThreadTitle(args.parts, args.thread.title);
+  }
+
+  await ctx.db.patch(args.thread._id, patch);
+}
+
+async function loadThreadAttachments(ctx: QueryCtx, threadId: Id<'aiThreads'>) {
+  return await ctx.db
+    .query('aiAttachments')
+    .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', threadId))
+    .collect();
+}
+
+async function resolvePreviewUrls(ctx: QueryCtx, attachments: AiAttachmentDoc[]) {
+  const entries = await Promise.all(
+    attachments
+      .filter((attachment) => attachment.kind === 'image')
+      .map(async (attachment) => [
+        attachment._id,
+        attachment.rawStorageId ? await ctx.storage.getUrl(attachment.rawStorageId) : null,
+      ] as const),
+  );
+
+  return new Map(entries);
+}
+
+function getAttachmentMap(attachments: AiAttachmentDoc[]) {
+  return new Map(attachments.map((attachment) => [attachment._id, attachment] as const));
+}
+
+async function hydrateMessageParts(
+  _ctx: QueryCtx,
+  parts: StoredChatMessagePart[],
+  attachments: Map<Id<'aiAttachments'>, AiAttachmentDoc>,
+  previewUrls: Map<Id<'aiAttachments'>, string | null>,
+) {
+  return await Promise.all(
+    parts.map(async (part) => {
+      if (part.type !== 'attachment') {
+        return part;
+      }
+
+      const attachment = attachments.get(part.attachmentId);
+      if (!attachment) {
+        return {
+          ...part,
+          status: 'error' as const,
+          previewUrl: null,
+          promptSummary: MISSING_ATTACHMENT_SUMMARY,
+          errorMessage: 'Attachment not found.',
+        };
+      }
+
+      return {
+        ...part,
+        status: attachment.status,
+        previewUrl: previewUrls.get(attachment._id) ?? null,
+        promptSummary: attachment.promptSummary,
+        errorMessage: attachment.errorMessage,
+      };
+    }),
+  );
+}
+
+async function deleteArtifactsForMessages(
+  ctx: MutationCtx,
+  args: {
+    threadId: Id<'aiThreads'>;
+    messageIds: Id<'aiMessages'>[];
+  },
+) {
+  if (args.messageIds.length === 0) {
+    return;
+  }
+
+  const drafts = await ctx.db
+    .query('aiMessageDrafts')
+    .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+    .collect();
+  const attachments = await ctx.db
+    .query('aiAttachments')
+    .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+    .collect();
+  const messageIdSet = new Set(args.messageIds);
+
+  await Promise.all([
+    ...drafts
+      .filter((draft) => messageIdSet.has(draft.messageId))
+      .map((draft) => ctx.db.delete(draft._id)),
+    ...attachments
+      .filter((attachment) => attachment.messageId && messageIdSet.has(attachment.messageId))
+      .map((attachment) => ctx.db.delete(attachment._id)),
+  ]);
+}
+
 export const listThreads = query({
   args: {},
   handler: async (ctx) => {
@@ -193,6 +387,22 @@ export const listThreads = query({
       .collect();
 
     return sortThreads(threads);
+  },
+});
+
+export const getLatestThreadId = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    const latestThread = await ctx.db
+      .query('aiThreads')
+      .withIndex('by_organizationId_and_lastMessageAt', (q) =>
+        q.eq('organizationId', user.lastActiveOrganizationId),
+      )
+      .order('desc')
+      .first();
+
+    return latestThread?._id ?? null;
   },
 });
 
@@ -230,10 +440,56 @@ export const listMessages = query({
       return [];
     }
 
-    return await ctx.db
-      .query('aiMessages')
-      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+    const [messages, attachments] = await Promise.all([
+      ctx.db
+        .query('aiMessages')
+        .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+        .collect(),
+      loadThreadAttachments(ctx, args.threadId),
+    ]);
+    const attachmentMap = getAttachmentMap(attachments);
+    const previewUrls = await resolvePreviewUrls(ctx, attachments);
+
+    return await Promise.all(
+      messages.map(async (message) => ({
+        ...message,
+        parts: await hydrateMessageParts(
+          ctx,
+          message.parts as StoredChatMessagePart[],
+          attachmentMap,
+          previewUrls,
+        ),
+      })),
+    );
+  },
+});
+
+export const getActiveAssistantDraft = query({
+  args: {
+    threadId: v.id('aiThreads'),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    const thread = await getThreadForUser(ctx, args.threadId, user.lastActiveOrganizationId);
+
+    if (!thread) {
+      return null;
+    }
+
+    const drafts = await ctx.db
+      .query('aiMessageDrafts')
+      .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
       .collect();
+
+    return drafts.sort((left, right) => right.updatedAt - left.updatedAt)[0] ?? null;
+  },
+});
+
+export const generateChatAttachmentUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await getCurrentUserOrThrow(ctx);
+    return await ctx.storage.generateUploadUrl();
   },
 });
 
@@ -375,12 +631,26 @@ export const deleteThread = mutation({
       throwConvexError('NOT_FOUND', 'Thread not found');
     }
 
-    const messages = await ctx.db
-      .query('aiMessages')
-      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
-      .collect();
+    const [messages, drafts, attachments] = await Promise.all([
+      ctx.db
+        .query('aiMessages')
+        .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+        .collect(),
+      ctx.db
+        .query('aiMessageDrafts')
+        .withIndex('by_threadId', (q) => q.eq('threadId', args.threadId))
+        .collect(),
+      ctx.db
+        .query('aiAttachments')
+        .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+        .collect(),
+    ]);
 
-    await Promise.all(messages.map((message) => ctx.db.delete(message._id)));
+    await Promise.all([
+      ...messages.map((message) => ctx.db.delete(message._id)),
+      ...drafts.map((draft) => ctx.db.delete(draft._id)),
+      ...attachments.map((attachment) => ctx.db.delete(attachment._id)),
+    ]);
     await ctx.db.delete(args.threadId);
   },
 });
@@ -456,6 +726,10 @@ export const deleteMessagesAfterInternal = internalMutation({
       .collect();
 
     const toDelete = messages.filter((message) => message.createdAt > args.createdAt);
+    await deleteArtifactsForMessages(ctx, {
+      threadId: args.threadId,
+      messageIds: toDelete.map((message) => message._id),
+    });
     await Promise.all(toDelete.map((message) => ctx.db.delete(message._id)));
   },
 });
@@ -558,6 +832,125 @@ export const getPersonaByIdInternal = internalQuery({
   },
 });
 
+export const getAttachmentsByIdsInternal = internalQuery({
+  args: {
+    attachmentIds: v.array(v.id('aiAttachments')),
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await Promise.all(
+      args.attachmentIds.map(async (attachmentId) => {
+        const attachment = await ctx.db.get(attachmentId);
+        if (!attachment || attachment.organizationId !== args.organizationId) {
+          return null;
+        }
+
+        return attachment;
+      }),
+    );
+  },
+});
+
+export const createAttachmentInternal = internalMutation({
+  args: {
+    messageId: v.optional(v.id('aiMessages')),
+    threadId: v.optional(v.id('aiThreads')),
+    userId: v.string(),
+    organizationId: v.string(),
+    kind: attachmentKindValidator,
+    name: v.string(),
+    mimeType: v.string(),
+    sizeBytes: v.number(),
+    rawStorageId: v.optional(v.id('_storage')),
+    extractedTextStorageId: v.optional(v.id('_storage')),
+    promptSummary: v.string(),
+    status: attachmentStatusValidator,
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    return await ctx.db.insert('aiAttachments', {
+      ...args,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const updateAttachmentInternal = internalMutation({
+  args: {
+    attachmentId: v.id('aiAttachments'),
+    messageId: v.optional(v.id('aiMessages')),
+    threadId: v.optional(v.id('aiThreads')),
+    rawStorageId: v.optional(v.id('_storage')),
+    extractedTextStorageId: v.optional(v.id('_storage')),
+    promptSummary: v.optional(v.string()),
+    status: v.optional(attachmentStatusValidator),
+    errorMessage: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const attachment = await ctx.db.get(args.attachmentId);
+    if (!attachment) {
+      return null;
+    }
+
+    const patch: Partial<AiAttachmentDoc> = {
+      updatedAt: Date.now(),
+    };
+
+    if ('messageId' in args) {
+      patch.messageId = args.messageId;
+    }
+
+    if ('threadId' in args) {
+      patch.threadId = args.threadId;
+    }
+
+    if ('rawStorageId' in args) {
+      patch.rawStorageId = args.rawStorageId;
+    }
+
+    if ('extractedTextStorageId' in args) {
+      patch.extractedTextStorageId = args.extractedTextStorageId;
+    }
+
+    if ('promptSummary' in args) {
+      patch.promptSummary = args.promptSummary;
+    }
+
+    if ('status' in args) {
+      patch.status = args.status;
+    }
+
+    if ('errorMessage' in args) {
+      patch.errorMessage = args.errorMessage;
+    }
+
+    await ctx.db.patch(args.attachmentId, patch);
+    return args.attachmentId;
+  },
+});
+
+export const replaceMessagePartsInternal = internalMutation({
+  args: {
+    messageId: v.id('aiMessages'),
+    parts: v.array(messagePartValidator),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+    if (!message) {
+      return null;
+    }
+
+    await ctx.db.patch(args.messageId, {
+      parts: args.parts,
+      updatedAt: Date.now(),
+    });
+
+    return args.messageId;
+  },
+});
+
 export const getCurrentChatUserContextInternal = internalQuery({
   args: {},
   handler: async (ctx) => {
@@ -604,10 +997,29 @@ export const prepareMessageSendInternal = internalMutation({
     model: v.optional(v.string()),
     userId: v.string(),
     organizationId: v.string(),
-    parts: v.array(messagePartValidator),
+    text: v.optional(v.string()),
+    attachmentIds: v.optional(v.array(v.id('aiAttachments'))),
+    parts: v.optional(v.array(messagePartValidator)),
     clientMessageId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const trimmedText = args.text?.trim() ?? '';
+    const attachmentIds = args.attachmentIds ?? [];
+    const providedParts = args.parts;
+
+    if (!providedParts && !trimmedText && attachmentIds.length === 0) {
+      throwConvexError('VALIDATION', 'Message content is required');
+    }
+
+    const attachments =
+      attachmentIds.length > 0
+        ? await getValidatedAttachmentsForSend(ctx, {
+            attachmentIds,
+            userId: args.userId,
+            organizationId: args.organizationId,
+          })
+        : [];
+
     let threadId = args.threadId;
     let thread = threadId ? await getThreadForUser(ctx, threadId, args.organizationId) : null;
 
@@ -633,7 +1045,7 @@ export const prepareMessageSendInternal = internalMutation({
         title,
         pinned: false,
         personaId: args.personaId,
-        model: args.model,
+        model: undefined,
         titleManuallyEdited: false,
         createdAt: now,
         updatedAt: now,
@@ -647,18 +1059,29 @@ export const prepareMessageSendInternal = internalMutation({
       throw new Error('Failed to initialize chat thread.');
     }
 
+    const parts = providedParts ?? buildUserMessageParts(trimmedText, attachments);
     const now = Date.now();
-    await ctx.db.insert('aiMessages', {
+    const userMessageId = await ctx.db.insert('aiMessages', {
       threadId,
       userId: args.userId,
       organizationId: args.organizationId,
       role: 'user',
-      parts: args.parts,
+      parts,
       status: 'complete',
       createdAt: now,
       updatedAt: now,
       clientMessageId: args.clientMessageId,
     });
+
+    await Promise.all(
+      attachments.map((attachment) =>
+        ctx.db.patch(attachment._id, {
+          messageId: userMessageId,
+          threadId,
+          updatedAt: now,
+        }),
+      ),
+    );
 
     const assistantMessageId = await ctx.db.insert('aiMessages', {
       threadId,
@@ -670,6 +1093,17 @@ export const prepareMessageSendInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+
+    await ctx.db.insert('aiMessageDrafts', {
+      messageId: assistantMessageId,
+      threadId,
+      organizationId: args.organizationId,
+      text: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await updateThreadAfterUserMessage(ctx, { thread, parts });
 
     return { threadId, assistantMessageId };
   },
@@ -709,6 +1143,10 @@ export const prepareRegenerateMessageInternal = internalMutation({
       .collect();
 
     const toDelete = messages.filter((candidate) => candidate.createdAt > message.createdAt);
+    await deleteArtifactsForMessages(ctx, {
+      threadId: message.threadId,
+      messageIds: toDelete.map((candidate) => candidate._id),
+    });
     await Promise.all(toDelete.map((candidate) => ctx.db.delete(candidate._id)));
 
     await ctx.db.patch(args.messageId, {
@@ -716,6 +1154,7 @@ export const prepareRegenerateMessageInternal = internalMutation({
       updatedAt: Date.now(),
     });
 
+    const now = Date.now();
     const assistantMessageId = await ctx.db.insert('aiMessages', {
       threadId: message.threadId,
       userId: args.userId,
@@ -723,81 +1162,44 @@ export const prepareRegenerateMessageInternal = internalMutation({
       role: 'assistant',
       parts: [{ type: 'text', text: '' }],
       status: 'pending',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.insert('aiMessageDrafts', {
+      messageId: assistantMessageId,
+      threadId: message.threadId,
+      organizationId: args.organizationId,
+      text: '',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    await ctx.db.patch(message.threadId, {
+      updatedAt: now,
+      lastMessageAt: now,
     });
 
     return { threadId: message.threadId, assistantMessageId };
   },
 });
 
-export const createUserMessageInternal = internalMutation({
-  args: {
-    threadId: v.id('aiThreads'),
-    userId: v.string(),
-    organizationId: v.string(),
-    parts: v.array(messagePartValidator),
-    clientMessageId: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    return await ctx.db.insert('aiMessages', {
-      threadId: args.threadId,
-      userId: args.userId,
-      organizationId: args.organizationId,
-      role: 'user',
-      parts: args.parts,
-      status: 'complete',
-      createdAt: now,
-      updatedAt: now,
-      clientMessageId: args.clientMessageId,
-    });
-  },
-});
-
-export const createPendingAssistantMessageInternal = internalMutation({
-  args: {
-    threadId: v.id('aiThreads'),
-    userId: v.string(),
-    organizationId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    return await ctx.db.insert('aiMessages', {
-      threadId: args.threadId,
-      userId: args.userId,
-      organizationId: args.organizationId,
-      role: 'assistant',
-      parts: [{ type: 'text', text: '' }],
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    });
-  },
-});
-
-export const appendAssistantChunkInternal = internalMutation({
+export const appendAssistantDraftInternal = internalMutation({
   args: {
     messageId: v.id('aiMessages'),
     content: v.string(),
   },
   handler: async (ctx, args) => {
-    const message = await ctx.db.get(args.messageId);
-    if (!message || message.role !== 'assistant') {
+    const draft = await ctx.db
+      .query('aiMessageDrafts')
+      .withIndex('by_messageId', (q) => q.eq('messageId', args.messageId))
+      .first();
+    if (!draft) {
       return;
     }
 
-    const nextParts = [...message.parts] as ChatMessagePart[];
-    const firstTextPart = nextParts.find((part) => part.type === 'text');
-
-    if (firstTextPart?.type === 'text') {
-      firstTextPart.text += args.content;
-    } else {
-      nextParts.unshift({ type: 'text', text: args.content });
-    }
-
-    await ctx.db.patch(args.messageId, {
-      parts: nextParts,
+    await ctx.db.patch(draft._id, {
+      text: `${draft.text}${args.content}`,
       updatedAt: Date.now(),
     });
   },
@@ -806,6 +1208,7 @@ export const appendAssistantChunkInternal = internalMutation({
 export const markAssistantCompleteInternal = internalMutation({
   args: {
     messageId: v.id('aiMessages'),
+    text: v.string(),
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
     usage: v.optional(usageValidator),
@@ -817,10 +1220,15 @@ export const markAssistantCompleteInternal = internalMutation({
       return;
     }
 
-    const nextParts =
-      args.sourceParts && args.sourceParts.length > 0
-        ? [...message.parts, ...args.sourceParts]
-        : message.parts;
+    const draft = await ctx.db
+      .query('aiMessageDrafts')
+      .withIndex('by_messageId', (q) => q.eq('messageId', args.messageId))
+      .first();
+
+    const nextParts: StoredChatMessagePart[] = [{ type: 'text', text: args.text }];
+    if (args.sourceParts && args.sourceParts.length > 0) {
+      nextParts.push(...(args.sourceParts as StoredChatMessagePart[]));
+    }
 
     await ctx.db.patch(args.messageId, {
       parts: nextParts,
@@ -830,6 +1238,10 @@ export const markAssistantCompleteInternal = internalMutation({
       usage: args.usage,
       updatedAt: Date.now(),
     });
+
+    if (draft) {
+      await ctx.db.delete(draft._id);
+    }
   },
 });
 
@@ -844,20 +1256,29 @@ export const markAssistantErrorInternal = internalMutation({
       return;
     }
 
+    const draft = await ctx.db
+      .query('aiMessageDrafts')
+      .withIndex('by_messageId', (q) => q.eq('messageId', args.messageId))
+      .first();
+
     await ctx.db.patch(args.messageId, {
+      parts: [{ type: 'text', text: draft?.text ?? '' }],
       status: 'error',
       errorMessage: args.errorMessage,
       updatedAt: Date.now(),
     });
+
+    if (draft) {
+      await ctx.db.delete(draft._id);
+    }
   },
 });
 
-export const updateThreadAfterMessageInternal = internalMutation({
+export const setThreadContextSummaryInternal = internalMutation({
   args: {
     threadId: v.id('aiThreads'),
-    parts: v.array(messagePartValidator),
-    titleFallback: v.string(),
-    model: v.optional(v.string()),
+    summary: v.string(),
+    throughMessageId: v.optional(v.id('aiMessages')),
   },
   handler: async (ctx, args) => {
     const thread = await ctx.db.get(args.threadId);
@@ -865,17 +1286,42 @@ export const updateThreadAfterMessageInternal = internalMutation({
       return;
     }
 
-    const now = Date.now();
-    const patch: Partial<AiThreadDoc> = {
-      updatedAt: now,
-      lastMessageAt: now,
-      ...(args.model ? { model: args.model } : {}),
-    };
-
-    if (!thread.personaId && !thread.titleManuallyEdited && thread.title === DEFAULT_THREAD_TITLE) {
-      patch.title = deriveThreadTitle(args.parts as ChatMessagePart[], args.titleFallback);
-    }
-
-    await ctx.db.patch(args.threadId, patch);
+    await ctx.db.patch(args.threadId, {
+      contextSummary: args.summary,
+      contextSummaryThroughMessageId: args.throughMessageId,
+      contextSummaryUpdatedAt: Date.now(),
+    });
   },
 });
+
+export const updateThreadAfterMessageInternal = internalMutation({
+  args: {
+    threadId: v.id('aiThreads'),
+    model: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || !args.model) {
+      return;
+    }
+
+    await ctx.db.patch(args.threadId, {
+      model: args.model,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const chatValidators = {
+  attachmentKindValidator,
+  attachmentStatusValidator,
+  attachmentPartValidator,
+  documentPartValidator,
+  imagePartValidator,
+  messagePartValidator,
+  parsedPdfImageValidator,
+  sourceDocumentPartValidator,
+  sourceUrlPartValidator,
+  textPartValidator,
+  usageValidator,
+};

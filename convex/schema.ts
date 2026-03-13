@@ -9,6 +9,13 @@ const parsedPdfImageValidator = v.object({
   dataUrl: v.string(),
 });
 
+const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
+const chatAttachmentStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('ready'),
+  v.literal('error'),
+);
+
 const aiMessagePartValidator = v.union(
   v.object({
     type: v.literal('text'),
@@ -26,6 +33,13 @@ const aiMessagePartValidator = v.union(
     content: v.string(),
     mimeType: v.string(),
     images: v.optional(v.array(parsedPdfImageValidator)),
+  }),
+  v.object({
+    type: v.literal('attachment'),
+    attachmentId: v.id('aiAttachments'),
+    kind: chatAttachmentKindValidator,
+    name: v.string(),
+    mimeType: v.string(),
   }),
   v.object({
     type: v.literal('source-url'),
@@ -158,6 +172,9 @@ export default defineSchema({
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
+    contextSummary: v.optional(v.string()),
+    contextSummaryThroughMessageId: v.optional(v.id('aiMessages')),
+    contextSummaryUpdatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastMessageAt: v.number(),
@@ -189,6 +206,40 @@ export default defineSchema({
   })
     .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+
+  aiAttachments: defineTable({
+    messageId: v.optional(v.id('aiMessages')),
+    threadId: v.optional(v.id('aiThreads')),
+    userId: v.string(),
+    organizationId: v.string(),
+    kind: chatAttachmentKindValidator,
+    name: v.string(),
+    mimeType: v.string(),
+    sizeBytes: v.number(),
+    rawStorageId: v.optional(v.id('_storage')),
+    extractedTextStorageId: v.optional(v.id('_storage')),
+    promptSummary: v.string(),
+    status: chatAttachmentStatusValidator,
+    errorMessage: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_messageId', ['messageId'])
+    .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
+    .index('by_userId_and_createdAt', ['userId', 'createdAt'])
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+
+  aiMessageDrafts: defineTable({
+    messageId: v.id('aiMessages'),
+    threadId: v.id('aiThreads'),
+    organizationId: v.string(),
+    text: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_messageId', ['messageId'])
+    .index('by_threadId', ['threadId'])
+    .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt']),
 
   aiPersonas: defineTable({
     userId: v.string(),

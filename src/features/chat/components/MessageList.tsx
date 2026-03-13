@@ -9,7 +9,7 @@ import {
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
 import type { PendingThreadSubmission } from '~/features/chat/lib/pending-thread-submission';
-import type { ChatMessage, ChatMessagePart } from '~/features/chat/types';
+import type { ChatMessage, ChatMessageDraft, ChatMessagePart } from '~/features/chat/types';
 import { cn } from '~/lib/utils';
 
 type ChatMessageSource =
@@ -21,6 +21,10 @@ function getTextFromParts(parts: ChatMessagePart[]) {
     .map((part) => {
       if (part.type === 'text') {
         return part.text;
+      }
+
+      if (part.type === 'attachment') {
+        return part.kind === 'document' ? part.promptSummary : part.name;
       }
 
       if (part.type === 'document') {
@@ -187,11 +191,11 @@ function getUserPartKey(part: ChatMessagePart) {
     return `${part.type}-${part.url}`;
   }
 
-  return `${part.type}-${part.sourceId}`;
-}
+  if (part.type === 'source-document') {
+    return `${part.type}-${part.sourceId}`;
+  }
 
-function areMessagePartsEqual(left: ChatMessagePart[], right: ChatMessagePart[]) {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return `${part.type}-${part.attachmentId}`;
 }
 
 function Sources({ sources }: { sources: ChatMessageSource[] }) {
@@ -292,6 +296,46 @@ function UserPart({ part }: { part: ChatMessagePart }) {
     );
   }
 
+  if (part.type === 'attachment') {
+    if (part.kind === 'image' && part.previewUrl) {
+      return (
+        <div className="mt-2">
+          <img
+            src={part.previewUrl}
+            alt={part.name || 'Uploaded image'}
+            className="max-h-[320px] max-w-full rounded-xl object-contain"
+          />
+          {part.status !== 'ready' ? (
+            <p className="mt-2 text-xs text-primary-foreground/80">
+              {part.status === 'error'
+                ? part.errorMessage ?? 'Attachment failed.'
+                : 'Uploading attachment...'}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-2 rounded-xl border border-border/60 bg-background/60 p-3">
+        <div className="mb-2 flex items-center gap-2 text-sm font-medium">
+          <FileText className="size-4" />
+          <span>{part.name}</span>
+        </div>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+          {part.promptSummary}
+        </p>
+        {part.status !== 'ready' ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            {part.status === 'error'
+              ? part.errorMessage ?? 'Attachment failed.'
+              : 'Attachment is still processing.'}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
+
   if (part.type !== 'document') {
     return null;
   }
@@ -336,7 +380,9 @@ function EditableUserMessage({
                     ? `${message._id}-${part.type}-${part.name}-${part.content.slice(0, 24)}`
                     : part.type === 'source-url'
                       ? `${message._id}-${part.type}-${part.url}`
-                      : `${message._id}-${part.type}-${part.sourceId}`
+                      : part.type === 'source-document'
+                        ? `${message._id}-${part.type}-${part.sourceId}`
+                        : `${message._id}-${part.type}-${part.attachmentId}`
             }
             part={part}
           />
@@ -372,11 +418,24 @@ function EditableUserMessage({
   );
 }
 
-function AssistantMessage({ message, thinking }: { message: ChatMessage; thinking?: boolean }) {
+function AssistantMessage({
+  message,
+  draftText,
+  thinking,
+}: {
+  message: ChatMessage;
+  draftText?: string;
+  draftUpdatedAt?: number;
+  thinking?: boolean;
+}) {
   const sources = useMemo(() => getSourcesFromParts(message.parts), [message.parts]);
+  const rawText = draftText ?? getTextFromParts(message.parts);
   const text = useMemo(
-    () => stripTrailingSourceMarkdownLinks(getTextFromParts(message.parts), sources),
-    [message.parts, sources],
+    () =>
+      message.status === 'pending'
+        ? rawText
+        : stripTrailingSourceMarkdownLinks(rawText, sources),
+    [message.status, rawText, sources],
   );
   const showActions = message.status !== 'pending';
   const { copy, copied } = useCopyToClipboard();
@@ -458,7 +517,8 @@ const MemoAssistantMessage = memo(
     previous.message.status === next.message.status &&
     previous.message.updatedAt === next.message.updatedAt &&
     previous.message.errorMessage === next.message.errorMessage &&
-    areMessagePartsEqual(previous.message.parts, next.message.parts),
+    previous.draftText === next.draftText &&
+    previous.draftUpdatedAt === next.draftUpdatedAt,
 );
 
 function StaticUserMessage({ parts }: { parts: ChatMessagePart[] }) {
@@ -497,6 +557,7 @@ function PendingAssistantMessage({
 
 export function MessageList({
   messages,
+  activeDraft,
   pendingSubmission,
   regeneratingMessageId,
   optimisticEdits = {},
@@ -505,6 +566,7 @@ export function MessageList({
   scrollTargetMessageRef,
 }: {
   messages: ChatMessage[];
+  activeDraft?: ChatMessageDraft | null;
   pendingSubmission?: {
     submission: PendingThreadSubmission;
     showUserMessage: boolean;
@@ -550,6 +612,9 @@ export function MessageList({
 
     return optimisticMessages.slice(0, cutoffIndex + 1);
   }, [optimisticMessages, regeneratingMessageId]);
+  const hasRenderedActiveDraft = Boolean(
+    activeDraft && visibleMessages.some((message) => message._id === activeDraft.messageId),
+  );
 
   return (
     <div className="space-y-4">
@@ -574,10 +639,30 @@ export function MessageList({
           <MemoAssistantMessage
             key={message._id}
             message={message}
+            draftText={activeDraft?.messageId === message._id ? activeDraft.text : undefined}
+            draftUpdatedAt={
+              activeDraft?.messageId === message._id ? activeDraft.updatedAt : undefined
+            }
             thinking={message.status === 'pending'}
           />
         ),
       )}
+      {activeDraft && !hasRenderedActiveDraft ? (
+        <MemoAssistantMessage
+          message={{
+            _id: activeDraft.messageId,
+            threadId: activeDraft.threadId,
+            role: 'assistant',
+            parts: [{ type: 'text', text: '' }],
+            status: 'pending',
+            createdAt: activeDraft.createdAt,
+            updatedAt: activeDraft.updatedAt,
+          }}
+          draftText={activeDraft.text}
+          draftUpdatedAt={activeDraft.updatedAt}
+          thinking
+        />
+      ) : null}
       {regeneratingMessageId ? (
         <MemoAssistantMessage
           message={{

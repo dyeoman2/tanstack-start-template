@@ -1,21 +1,22 @@
 import { api } from '@convex/_generated/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
 import { MessageList } from '~/features/chat/components/MessageList';
 import { PersonaDialog } from '~/features/chat/components/PersonaDialog';
+import { inferChatAttachmentMimeType } from '~/features/chat/lib/attachments';
 import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants';
-import { toPersonaId, toThreadId } from '~/features/chat/lib/ids';
+import { toPersonaId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
 import {
   clearPendingThreadSubmission,
   setPendingThreadSubmission,
   updatePendingThreadSubmission,
   usePendingThreadSubmission,
 } from '~/features/chat/lib/pending-thread-submission';
-import type { ChatMessagePart } from '~/features/chat/types';
+import type { ChatAttachment, ChatMessage, ChatMessagePart, ChatPersona } from '~/features/chat/types';
 import { resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
   type ChatModelId,
@@ -62,6 +63,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
+  const [settledViewportSpacerHeight, setSettledViewportSpacerHeight] = useState(0);
   const [settledScrollBottomLimit, setSettledScrollBottomLimit] = useState<number | null>(null);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
@@ -77,10 +79,16 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     api.chat.listMessages,
     typedThreadId ? { threadId: typedThreadId } : 'skip',
   );
+  const activeDraft = useQuery(
+    api.chat.getActiveAssistantDraft,
+    typedThreadId ? { threadId: typedThreadId } : 'skip',
+  );
   const personas = useQuery(api.chat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const sendChatMessage = useAction(api.chatActions.sendChatMessage);
   const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
+  const createChatAttachmentFromUpload = useAction(api.chatActions.createChatAttachmentFromUpload);
+  const generateChatAttachmentUploadUrl = useMutation(api.chat.generateChatAttachmentUploadUrl);
   const createPersona = useMutation(api.chat.createPersona);
   const updatePersona = useMutation(api.chat.updatePersona);
   const deletePersona = useMutation(api.chat.deletePersona);
@@ -91,6 +99,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   );
   const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
+  const personasList = personas ?? [];
+  const availableModelOptions = modelOptions ?? [];
 
   const effectivePersonaId = thread?.personaId ?? draftPersonaId;
   const currentPersonaLabel = useMemo(() => {
@@ -98,9 +108,12 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return DEFAULT_CHAT_PERSONA.name;
     }
 
-    return personas?.find((persona) => persona._id === effectivePersonaId)?.name ?? 'Persona';
-  }, [effectivePersonaId, personas]);
-  const currentMessages = messages ?? [];
+    return (
+      personasList.find((persona: ChatPersona) => persona._id === effectivePersonaId)?.name ??
+      'Persona'
+    );
+  }, [effectivePersonaId, personasList]);
+  const currentMessages: ChatMessage[] = messages ?? [];
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
       const message = currentMessages[index];
@@ -119,7 +132,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     pendingSubmissionModelId: pendingSubmission?.modelId,
     inferredThreadModelId,
   });
-  const selectedModelOption = getChatModelOption(modelOptions ?? [], requestedModelId);
+  const selectedModelOption = getChatModelOption(availableModelOptions, requestedModelId);
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
     : DEFAULT_CHAT_MODEL_ID;
@@ -176,6 +189,22 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
     return requiredSpacer;
   }, []);
+
+  const handleMessageViewportScroll = useCallback(
+    (event: UIEvent<HTMLDivElement>) => {
+      if (settledScrollBottomLimit === null) {
+        return;
+      }
+
+      const viewportNode = event.currentTarget;
+      if (viewportNode.scrollTop <= settledScrollBottomLimit) {
+        return;
+      }
+
+      viewportNode.scrollTop = settledScrollBottomLimit;
+    },
+    [settledScrollBottomLimit],
+  );
 
   useEffect(() => {
     setOptimisticEdits((current) => {
@@ -240,58 +269,19 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return;
     }
 
-    let frameId = 0;
-    const requiredSpacer = alignPendingMessageToTop();
-    const nextSpacer = Math.max(scrollSpacerHeight, requiredSpacer);
-    setScrollSpacerHeight((current) => Math.max(current, requiredSpacer));
-    setSettledScrollBottomLimit(null);
+    if (scrollSpacerHeight <= 0) {
+      return;
+    }
 
-    frameId = requestAnimationFrame(() => {
-      const stabilizedSpacer = alignPendingMessageToTop();
-      const finalSpacer = Math.max(nextSpacer, stabilizedSpacer);
-      setScrollSpacerHeight((current) => Math.max(current, stabilizedSpacer));
-      setSettledScrollBottomLimit(
-        finalSpacer > 0 && messageViewportRef.current
-          ? messageViewportRef.current.scrollTop
-          : null,
-      );
-    });
-
-    return () => {
-      cancelAnimationFrame(frameId);
-    };
+    setSettledScrollBottomLimit(messageViewportRef.current?.scrollTop ?? null);
+    setSettledViewportSpacerHeight((current) => Math.max(current, scrollSpacerHeight));
+    setScrollSpacerHeight(0);
   }, [
-    alignPendingMessageToTop,
     hasPendingAssistantResponse,
     pendingSubmission,
     scrollAnchorClientMessageId,
     scrollSpacerHeight,
   ]);
-
-  useEffect(() => {
-    const viewportNode = messageViewportRef.current;
-    if (!viewportNode || settledScrollBottomLimit === null) {
-      return;
-    }
-
-    const clampScroll = () => {
-      if (viewportNode.scrollTop <= settledScrollBottomLimit) {
-        return;
-      }
-
-      viewportNode.scrollTo({
-        top: settledScrollBottomLimit,
-        behavior: 'auto',
-      });
-    };
-
-    clampScroll();
-    viewportNode.addEventListener('scroll', clampScroll, { passive: true });
-
-    return () => {
-      viewportNode.removeEventListener('scroll', clampScroll);
-    };
-  }, [settledScrollBottomLimit]);
 
   useEffect(() => {
     if (!threadId || !pendingSubmission || !messages) {
@@ -376,8 +366,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }, [
     alignPendingMessageToTop,
     hasPendingAssistantResponse,
-    pendingPreview?.showUserMessage,
     pendingScrollTargetVisible,
+    pendingSubmission,
   ]);
 
   if (threadId && thread === null) {
@@ -394,15 +384,87 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     );
   }
 
-  if (personas === undefined || modelOptions === undefined) {
-    return <ChatWorkspaceSkeleton />;
-  }
+  const handleSelectModel = (modelId: ChatModelId) => {
+    if (threadId) {
+      setThreadModelOverrides((previous) => ({
+        ...previous,
+        [threadId]: modelId,
+      }));
+      return;
+    }
 
-  const handleSend = async ({ parts, clear }: { parts: ChatMessagePart[]; clear: () => void }) => {
+    setDraftModelId(modelId);
+  };
+
+  const handleSelectPersona = (personaId?: string) => {
+    if (threadId) {
+      void setThreadPersona({
+        threadId: toThreadId(threadId),
+        personaId: personaId ? toPersonaId(personaId) : undefined,
+      }).catch((error) => {
+        showToast(error instanceof Error ? error.message : 'Failed to update persona.', 'error');
+      });
+      return;
+    }
+
+    setDraftPersonaId(personaId);
+  };
+
+  const handleUploadAttachment = async (file: File): Promise<ChatAttachment> => {
+    const uploadUrl = await generateChatAttachmentUploadUrl({});
+    const mimeType = inferChatAttachmentMimeType(file);
+    const uploadResponse = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': mimeType,
+      },
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Failed to upload ${file.name}.`);
+    }
+
+    const uploadPayload: unknown = await uploadResponse.json();
+    if (
+      !uploadPayload ||
+      typeof uploadPayload !== 'object' ||
+      !('storageId' in uploadPayload) ||
+      typeof uploadPayload.storageId !== 'string'
+    ) {
+      throw new Error('Upload did not return a storage identifier.');
+    }
+
+    const attachment = await createChatAttachmentFromUpload({
+      storageId: toStorageId(uploadPayload.storageId),
+      name: file.name,
+      mimeType,
+      sizeBytes: file.size,
+    });
+
+    if (!attachment) {
+      throw new Error('Attachment processing did not return a result.');
+    }
+
+    return attachment;
+  };
+
+  const handleSend = async ({
+    text,
+    attachmentIds,
+    parts,
+    clear,
+  }: {
+    text: string;
+    attachmentIds: ChatAttachment['_id'][];
+    parts: ChatMessagePart[];
+    clear: () => void;
+  }) => {
     const clientMessageId =
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setScrollAnchorClientMessageId(clientMessageId);
     setIsSending(true);
+    setSettledViewportSpacerHeight(0);
     setSettledScrollBottomLimit(null);
 
     try {
@@ -429,7 +491,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         personaId,
         model: effectiveModelId,
         useWebSearch,
-        parts,
+        text,
+        attachmentIds,
         clientMessageId,
       });
 
@@ -481,39 +544,19 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                 <ChatComposer
                   disabled={composerDisabled}
                   isSending={isSending}
-                  modelOptions={modelOptions}
-                  personas={personas ?? []}
+                  modelOptions={availableModelOptions}
+                  modelsReady={modelOptions !== undefined}
+                  personas={personasList}
+                  personasReady={personas !== undefined}
                   selectedModelId={effectiveModelId}
                   useWebSearch={useWebSearch}
                   selectedPersonaId={effectivePersonaId}
                   selectedPersonaLabel={currentPersonaLabel}
-                  onSelectModel={(modelId) => {
-                    if (threadId) {
-                      setThreadModelOverrides((previous) => ({
-                        ...previous,
-                        [threadId]: modelId,
-                      }));
-                    } else {
-                      setDraftModelId(modelId);
-                    }
-                  }}
-                  onSelectPersona={(personaId) => {
-                    if (threadId) {
-                      void setThreadPersona({
-                        threadId: toThreadId(threadId),
-                        personaId: personaId ? toPersonaId(personaId) : undefined,
-                      }).catch((error) => {
-                        showToast(
-                          error instanceof Error ? error.message : 'Failed to update persona.',
-                          'error',
-                        );
-                      });
-                    } else {
-                      setDraftPersonaId(personaId);
-                    }
-                  }}
+                  onSelectModel={handleSelectModel}
+                  onSelectPersona={handleSelectPersona}
                   onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                   onManagePersonas={() => setPersonaDialogOpen(true)}
+                  onUploadAttachment={handleUploadAttachment}
                   onSend={handleSend}
                 />
               </div>
@@ -525,11 +568,13 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               ) : (
                 <div
                   ref={messageViewportRef}
+                  onScroll={handleMessageViewportScroll}
                   className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6"
                 >
                   <div className="mx-auto w-full max-w-5xl">
                     <MessageList
                       messages={currentMessages}
+                      activeDraft={activeDraft ?? null}
                       pendingSubmission={pendingPreview}
                       regeneratingMessageId={regeneratingMessageId}
                       optimisticEdits={optimisticEdits}
@@ -555,44 +600,31 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   </div>
                 </div>
               )}
+              {settledViewportSpacerHeight > 0 ? (
+                <div
+                  aria-hidden="true"
+                  className="shrink-0"
+                  style={{ height: settledViewportSpacerHeight }}
+                />
+              ) : null}
               <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6 md:px-6">
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
                     disabled={composerDisabled}
                     isSending={isSending}
-                    modelOptions={modelOptions}
-                    personas={personas ?? []}
+                    modelOptions={availableModelOptions}
+                    modelsReady={modelOptions !== undefined}
+                    personas={personasList}
+                    personasReady={personas !== undefined}
                     selectedModelId={effectiveModelId}
                     useWebSearch={useWebSearch}
                     selectedPersonaId={effectivePersonaId}
                     selectedPersonaLabel={currentPersonaLabel}
-                    onSelectModel={(modelId) => {
-                      if (threadId) {
-                        setThreadModelOverrides((previous) => ({
-                          ...previous,
-                          [threadId]: modelId,
-                        }));
-                      } else {
-                        setDraftModelId(modelId);
-                      }
-                    }}
-                    onSelectPersona={(personaId) => {
-                      if (threadId) {
-                        void setThreadPersona({
-                          threadId: toThreadId(threadId),
-                          personaId: personaId ? toPersonaId(personaId) : undefined,
-                        }).catch((error) => {
-                          showToast(
-                            error instanceof Error ? error.message : 'Failed to update persona.',
-                            'error',
-                          );
-                        });
-                      } else {
-                        setDraftPersonaId(personaId);
-                      }
-                    }}
+                    onSelectModel={handleSelectModel}
+                    onSelectPersona={handleSelectPersona}
                     onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                     onManagePersonas={() => setPersonaDialogOpen(true)}
+                    onUploadAttachment={handleUploadAttachment}
                     editingMessage={editingMessage ?? undefined}
                     isSavingEdit={Boolean(regeneratingMessageId)}
                     onCancelEdit={() => setEditingMessage(null)}
@@ -637,23 +669,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       <PersonaDialog
         open={personaDialogOpen}
         onOpenChange={setPersonaDialogOpen}
-        personas={personas ?? []}
+        personas={personasList}
         selectedPersonaId={effectivePersonaId}
-        onSelectPersona={(personaId) => {
-          if (threadId) {
-            void setThreadPersona({
-              threadId: toThreadId(threadId),
-              personaId: personaId ? toPersonaId(personaId) : undefined,
-            }).catch((error) => {
-              showToast(
-                error instanceof Error ? error.message : 'Failed to update persona.',
-                'error',
-              );
-            });
-          } else {
-            setDraftPersonaId(personaId);
-          }
-        }}
+        onSelectPersona={handleSelectPersona}
         onCreatePersona={async (values) => {
           await createPersona(values);
         }}

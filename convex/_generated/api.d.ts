@@ -24,6 +24,7 @@ import type * as emails from "../emails.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
+import type * as lib_chatAttachments from "../lib/chatAttachments.js";
 import type * as migrations from "../migrations.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as users from "../users.js";
@@ -51,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   health: typeof health;
   http: typeof http;
   "lib/betterAuth": typeof lib_betterAuth;
+  "lib/chatAttachments": typeof lib_chatAttachments;
   migrations: typeof migrations;
   organizationManagement: typeof organizationManagement;
   users: typeof users;

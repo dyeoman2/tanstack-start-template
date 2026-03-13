@@ -74,7 +74,7 @@ export function UserManagement() {
     placeholderData: keepPreviousData,
   });
 
-  const users = useMemo(() => data?.users ?? [], [data]);
+  const users = useMemo<AdminUser[]>(() => data?.users ?? [], [data]);
   const pagination = data?.pagination;
 
   const handleEditUser = (user: AdminUser) => {
@@ -83,7 +83,7 @@ export function UserManagement() {
   };
 
   const handleDeleteUser = (userId: string) => {
-    const user = users.find((candidate) => candidate.id === userId) ?? null;
+    const user = users.find((candidate: AdminUser) => candidate.id === userId) ?? null;
     setSelectedUser(user);
     setActiveDialog('delete');
   };

@@ -26,16 +26,17 @@ import {
 import { useToast } from '~/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import {
-  buildComposerParts,
-  isDocumentFile,
-  isImageFile,
-  readFileAsDataUrl,
-  type UploadedDocument,
-  type UploadedImage,
+  getChatAttachmentKind,
+  inferChatAttachmentMimeType,
 } from '~/features/chat/lib/attachments';
 import { DEFAULT_CHAT_PERSONA, DEFAULT_CHAT_PERSONA_ID } from '~/features/chat/lib/constants';
-import { parseFile } from '~/features/chat/lib/file-parser';
-import type { ChatPersona } from '~/features/chat/types';
+import type {
+  ChatAttachment,
+  ChatAttachmentKind,
+  ChatAttachmentPart,
+  ChatMessagePart,
+  ChatPersona,
+} from '~/features/chat/types';
 import type {
   SpeechRecognitionErrorEvent,
   SpeechRecognitionEvent,
@@ -48,11 +49,25 @@ import {
   getChatModelOption,
 } from '~/lib/shared/chat-models';
 
+type ComposerAttachmentDraft = {
+  localId: string;
+  attachmentId?: ChatAttachment['_id'];
+  kind: ChatAttachmentKind;
+  name: string;
+  mimeType: string;
+  promptSummary: string;
+  previewUrl?: string | null;
+  status: 'uploading' | ChatAttachment['status'];
+  errorMessage?: string;
+};
+
 type ChatComposerProps = {
   disabled?: boolean;
   isSending: boolean;
-  modelOptions: ChatModelOption[];
+  modelOptions?: ChatModelOption[];
+  modelsReady?: boolean;
   personas?: ChatPersona[];
+  personasReady?: boolean;
   selectedModelId?: ChatModelId;
   useWebSearch?: boolean;
   selectedPersonaId?: string;
@@ -61,6 +76,7 @@ type ChatComposerProps = {
   onToggleWebSearch?: () => void;
   onSelectPersona?: (personaId?: string) => void;
   onManagePersonas?: () => void;
+  onUploadAttachment: (file: File) => Promise<ChatAttachment>;
   editingMessage?: {
     messageId: string;
     text: string;
@@ -70,16 +86,43 @@ type ChatComposerProps = {
   onSubmitEdit?: (payload: { messageId: string; text: string; clear: () => void }) => Promise<void>;
   onSend: (payload: {
     text: string;
-    parts: ReturnType<typeof buildComposerParts>;
+    attachmentIds: ChatAttachment['_id'][];
+    parts: ChatMessagePart[];
     clear: () => void;
   }) => Promise<void>;
 };
 
+function createComposerAttachmentId() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function toComposerAttachmentPart(
+  attachment: ComposerAttachmentDraft,
+): ChatAttachmentPart | null {
+  if (!attachment.attachmentId || attachment.status !== 'ready') {
+    return null;
+  }
+
+  return {
+    type: 'attachment',
+    attachmentId: attachment.attachmentId,
+    kind: attachment.kind,
+    name: attachment.name,
+    mimeType: attachment.mimeType,
+    status: attachment.status,
+    previewUrl: attachment.previewUrl ?? null,
+    promptSummary: attachment.promptSummary,
+    errorMessage: attachment.errorMessage,
+  };
+}
+
 export function ChatComposer({
   disabled = false,
   isSending,
-  modelOptions,
+  modelOptions = [],
+  modelsReady = true,
   personas = [],
+  personasReady = true,
   selectedModelId = DEFAULT_CHAT_MODEL_ID,
   useWebSearch = false,
   selectedPersonaId,
@@ -88,6 +131,7 @@ export function ChatComposer({
   onToggleWebSearch,
   onSelectPersona,
   onManagePersonas,
+  onUploadAttachment,
   editingMessage,
   isSavingEdit = false,
   onCancelEdit,
@@ -96,8 +140,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { showToast } = useToast();
   const [message, setMessage] = useState('');
-  const [uploadedImages, setUploadedImages] = useState<UploadedImage[]>([]);
-  const [uploadedDocuments, setUploadedDocuments] = useState<UploadedDocument[]>([]);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<ComposerAttachmentDraft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState('');
@@ -106,40 +149,66 @@ export function ChatComposer({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const isListeningRef = useRef(false);
   const isManualStopRef = useRef(false);
+  const messageRef = useRef(message);
+  const attachmentDraftsRef = useRef(attachmentDrafts);
   const preEditDraftRef = useRef<{
     message: string;
-    uploadedImages: UploadedImage[];
-    uploadedDocuments: UploadedDocument[];
+    attachmentDrafts: ComposerAttachmentDraft[];
   } | null>(null);
   const activeEditMessageIdRef = useRef<string | null>(null);
   const inputId = useId();
   const isEditing = Boolean(editingMessage);
-
+  const hasBlockingAttachmentState = useMemo(
+    () => attachmentDrafts.some((attachment) => attachment.status !== 'ready'),
+    [attachmentDrafts],
+  );
+  const readyAttachmentParts = useMemo(
+    () =>
+      attachmentDrafts
+        .map(toComposerAttachmentPart)
+        .filter((attachment): attachment is ChatAttachmentPart => attachment !== null),
+    [attachmentDrafts],
+  );
+  const readyAttachmentIds = useMemo(
+    () => readyAttachmentParts.map((attachment) => attachment.attachmentId),
+    [readyAttachmentParts],
+  );
   const hasContent = useMemo(
-    () => message.trim() || uploadedImages.length > 0 || uploadedDocuments.length > 0,
-    [message, uploadedDocuments.length, uploadedImages.length],
+    () => message.trim() || attachmentDrafts.length > 0,
+    [attachmentDrafts.length, message],
   );
   const isDefaultPersona = !selectedPersonaId;
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
   const selectedModel = getChatModelOption(modelOptions, selectedModelId);
+  const selectedModelLabel = modelsReady ? selectedModel.label : 'Loading models...';
+  const personaControlDisabled = disabled || isEditing || !personasReady;
+  const modelControlDisabled = disabled || isEditing || !modelsReady;
+  const editingMessageId = editingMessage?.messageId ?? null;
+  const editingMessageText = editingMessage?.text ?? '';
 
   const clearComposer = useCallback(() => {
     setMessage('');
-    setUploadedImages([]);
-    setUploadedDocuments([]);
+    setAttachmentDrafts([]);
     setError(null);
     setInterimTranscript('');
   }, []);
 
   useEffect(() => {
-    if (!editingMessage) {
+    messageRef.current = message;
+  }, [message]);
+
+  useEffect(() => {
+    attachmentDraftsRef.current = attachmentDrafts;
+  }, [attachmentDrafts]);
+
+  useEffect(() => {
+    if (!editingMessageId) {
       if (activeEditMessageIdRef.current !== null) {
         const draft = preEditDraftRef.current;
         if (draft) {
           setMessage(draft.message);
-          setUploadedImages(draft.uploadedImages);
-          setUploadedDocuments(draft.uploadedDocuments);
+          setAttachmentDrafts(draft.attachmentDrafts);
         }
         preEditDraftRef.current = null;
         activeEditMessageIdRef.current = null;
@@ -151,41 +220,36 @@ export function ChatComposer({
     }
 
     const isNewEditSession = activeEditMessageIdRef.current === null;
-    const isSameMessage = activeEditMessageIdRef.current === editingMessage.messageId;
+    const isSameMessage = activeEditMessageIdRef.current === editingMessageId;
 
     if (isNewEditSession) {
       preEditDraftRef.current = {
-        message,
-        uploadedImages,
-        uploadedDocuments,
+        message: messageRef.current,
+        attachmentDrafts: attachmentDraftsRef.current,
       };
     }
 
     if (!isSameMessage && !isNewEditSession) {
-      activeEditMessageIdRef.current = editingMessage.messageId;
-      setMessage(editingMessage.text);
-      setUploadedImages([]);
-      setUploadedDocuments([]);
+      activeEditMessageIdRef.current = editingMessageId;
+      setMessage(editingMessageText);
+      setAttachmentDrafts([]);
       setError(null);
       setInterimTranscript('');
       textAreaRef.current?.focus();
       return;
     }
 
-    activeEditMessageIdRef.current = editingMessage.messageId;
-    if (message !== editingMessage.text) {
-      setMessage(editingMessage.text);
+    activeEditMessageIdRef.current = editingMessageId;
+    if (messageRef.current !== editingMessageText) {
+      setMessage(editingMessageText);
     }
-    if (uploadedImages.length > 0) {
-      setUploadedImages([]);
-    }
-    if (uploadedDocuments.length > 0) {
-      setUploadedDocuments([]);
+    if (attachmentDraftsRef.current.length > 0) {
+      setAttachmentDrafts([]);
     }
     setError(null);
     setInterimTranscript('');
     textAreaRef.current?.focus();
-  }, [editingMessage?.messageId, editingMessage?.text]);
+  }, [editingMessageId, editingMessageText]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -258,36 +322,63 @@ export function ChatComposer({
     };
   }, [showToast]);
 
-  const handleFileUpload = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
-      const files = event.target.files;
-      if (!files?.length) {
-        return;
-      }
-
-      for (const file of Array.from(files)) {
-        try {
-          if (isImageFile(file)) {
-            const image = await readFileAsDataUrl(file);
-            setUploadedImages((previous) => [
-              ...previous,
-              { image, mimeType: file.type || 'image/png', name: file.name },
-            ]);
-            continue;
-          }
-
-          if (isDocumentFile(file)) {
-            const parsed = await parseFile(file);
-            setUploadedDocuments((previous) => [...previous, parsed]);
-            continue;
-          }
-
+  const uploadFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        const kind = getChatAttachmentKind(file);
+        if (!kind) {
           showToast(`Unsupported file type: ${file.name}`, 'error');
-        } catch (uploadError) {
-          showToast(
-            uploadError instanceof Error ? uploadError.message : `Failed to parse ${file.name}`,
-            'error',
+          continue;
+        }
+
+        const localId = createComposerAttachmentId();
+        setAttachmentDrafts((previous) => [
+          ...previous,
+          {
+            localId,
+            kind,
+            name: file.name,
+            mimeType: inferChatAttachmentMimeType(file),
+            promptSummary: '',
+            previewUrl: null,
+            status: 'uploading',
+          },
+        ]);
+
+        try {
+          const uploadedAttachment = await onUploadAttachment(file);
+          setAttachmentDrafts((previous) =>
+            previous.map((attachment) =>
+              attachment.localId === localId
+                ? {
+                    localId,
+                    attachmentId: uploadedAttachment._id,
+                    kind: uploadedAttachment.kind,
+                    name: uploadedAttachment.name,
+                    mimeType: uploadedAttachment.mimeType,
+                    promptSummary: uploadedAttachment.promptSummary,
+                    previewUrl: uploadedAttachment.previewUrl ?? null,
+                    status: uploadedAttachment.status,
+                    errorMessage: uploadedAttachment.errorMessage,
+                  }
+                : attachment,
+            ),
           );
+        } catch (uploadError) {
+          const message =
+            uploadError instanceof Error ? uploadError.message : `Failed to upload ${file.name}`;
+          setAttachmentDrafts((previous) =>
+            previous.map((attachment) =>
+              attachment.localId === localId
+                ? {
+                    ...attachment,
+                    status: 'error',
+                    errorMessage: message,
+                  }
+                : attachment,
+            ),
+          );
+          showToast(message, 'error');
         }
       }
 
@@ -295,7 +386,7 @@ export function ChatComposer({
         fileInputRef.current.value = '';
       }
     },
-    [showToast],
+    [onUploadAttachment, showToast],
   );
 
   const toggleVoiceInput = useCallback(() => {
@@ -345,7 +436,17 @@ export function ChatComposer({
       return;
     }
 
-    const parts = buildComposerParts(message, uploadedImages, uploadedDocuments);
+    if (hasBlockingAttachmentState) {
+      setError('Please wait for attachments to finish uploading, or remove failed files.');
+      return;
+    }
+
+    const parts: ChatMessagePart[] = [];
+    if (message.trim()) {
+      parts.push({ type: 'text', text: message });
+    }
+    parts.push(...readyAttachmentParts);
+
     if (parts.length === 0) {
       setError('Please enter a message or upload a file to continue.');
       return;
@@ -354,10 +455,20 @@ export function ChatComposer({
     setError(null);
     await onSend({
       text: message,
+      attachmentIds: readyAttachmentIds,
       parts,
       clear: clearComposer,
     });
-  }, [clearComposer, editingMessage, message, onSend, onSubmitEdit, uploadedDocuments, uploadedImages]);
+  }, [
+    clearComposer,
+    editingMessage,
+    hasBlockingAttachmentState,
+    message,
+    onSend,
+    onSubmitEdit,
+    readyAttachmentIds,
+    readyAttachmentParts,
+  ]);
 
   return (
     <div className="rounded-[20px] border border-[#e3e1dc] bg-white px-5 py-2 shadow-[0_1px_4px_rgba(0,0,0,0.05)]">
@@ -380,46 +491,71 @@ export function ChatComposer({
         </div>
       ) : null}
       <div className="flex flex-wrap gap-2 pb-1.5">
-        {uploadedImages.map((image, index) => (
-          <div key={`${image.name || 'image'}-${image.image.slice(0, 32)}`} className="relative">
-            <img
-              src={image.image}
-              alt={image.name || 'Upload'}
-              className="h-16 w-16 rounded-2xl object-cover"
-            />
-            <button
-              type="button"
-              className="absolute -top-2 -right-2 rounded-full bg-white/95 p-1 text-[#6f6c66] shadow-sm"
-              onClick={() => {
-                setUploadedImages((previous) =>
-                  previous.filter((_, itemIndex) => itemIndex !== index),
-                );
-              }}
+        {attachmentDrafts.map((attachment) =>
+          attachment.kind === 'image' && attachment.previewUrl ? (
+            <div key={attachment.localId} className="relative">
+              <img
+                src={attachment.previewUrl}
+                alt={attachment.name || 'Upload'}
+                className="h-16 w-16 rounded-2xl object-cover"
+              />
+              <div className="absolute right-2 bottom-2 rounded-full bg-black/65 px-2 py-0.5 text-[10px] font-medium text-white">
+                {attachment.status === 'uploading'
+                  ? 'Uploading'
+                  : attachment.status === 'error'
+                    ? 'Failed'
+                    : 'Ready'}
+              </div>
+              <button
+                type="button"
+                className="absolute -top-2 -right-2 rounded-full bg-white/95 p-1 text-[#6f6c66] shadow-sm"
+                onClick={() => {
+                  setAttachmentDrafts((previous) =>
+                    previous.filter((candidate) => candidate.localId !== attachment.localId),
+                  );
+                }}
+              >
+                <X className="size-3" />
+              </button>
+            </div>
+          ) : (
+            <div
+              key={attachment.localId}
+              className="flex items-center gap-2 rounded-2xl border border-[#ddd9d2] bg-white/80 px-3 py-2 text-sm text-[#403d39]"
             >
-              <X className="size-3" />
-            </button>
-          </div>
-        ))}
-        {uploadedDocuments.map((document, index) => (
-          <div
-            key={`${document.name}-${document.content.slice(0, 32)}`}
-            className="flex items-center gap-2 rounded-2xl border border-[#ddd9d2] bg-white/80 px-3 py-2 text-sm text-[#403d39]"
-          >
-            <FileText className="size-4" />
-            <span className="max-w-[180px] truncate">{document.name}</span>
-            <button
-              type="button"
-              className="rounded-full p-0.5 text-[#7c7871] transition hover:bg-black/5 hover:text-[#403d39]"
-              onClick={() => {
-                setUploadedDocuments((previous) =>
-                  previous.filter((_, itemIndex) => itemIndex !== index),
-                );
-              }}
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
-        ))}
+              <FileText className="size-4" />
+              <div className="min-w-0">
+                <div className="max-w-[180px] truncate">{attachment.name}</div>
+                <div
+                  className={
+                    attachment.status === 'error'
+                      ? 'text-xs text-destructive'
+                      : 'text-xs text-[#7c7871]'
+                  }
+                >
+                  {attachment.status === 'uploading'
+                    ? 'Uploading...'
+                    : attachment.status === 'error'
+                      ? attachment.errorMessage ?? 'Upload failed'
+                      : attachment.kind === 'image'
+                        ? 'Image attached'
+                        : 'Document ready'}
+                </div>
+              </div>
+              <button
+                type="button"
+                className="rounded-full p-0.5 text-[#7c7871] transition hover:bg-black/5 hover:text-[#403d39]"
+                onClick={() => {
+                  setAttachmentDrafts((previous) =>
+                    previous.filter((candidate) => candidate.localId !== attachment.localId),
+                  );
+                }}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+          ),
+        )}
       </div>
       <label htmlFor={inputId} className="sr-only">
         Message
@@ -437,7 +573,7 @@ export function ChatComposer({
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
 
-            if (disabled || isSending || !hasContent) {
+            if (disabled || isSending || !hasContent || hasBlockingAttachmentState) {
               return;
             }
 
@@ -461,16 +597,7 @@ export function ChatComposer({
               continue;
             }
 
-            void readFileAsDataUrl(file).then((image) => {
-              setUploadedImages((previous) => [
-                ...previous,
-                {
-                  image,
-                  mimeType: file.type,
-                  name: file.name,
-                },
-              ]);
-            });
+            void uploadFiles([file]);
           }
         }}
         disabled={disabled}
@@ -487,9 +614,14 @@ export function ChatComposer({
             type="file"
             className="hidden"
             multiple
-            accept="image/*,.heic,.heif,.txt,.csv,.pdf,.xlsx,.xls,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+            accept="image/*,.heic,.heif,.txt,.csv,.pdf,.xlsx,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             onChange={(event) => {
-              void handleFileUpload(event);
+              const files = event.target.files;
+              if (!files?.length) {
+                return;
+              }
+
+              void uploadFiles(Array.from(files));
             }}
           />
           <Tooltip>
@@ -540,7 +672,7 @@ export function ChatComposer({
                     type="button"
                     variant="ghost"
                     size={personaButtonLabel ? 'sm' : 'icon'}
-                    disabled={disabled || isEditing}
+                    disabled={personaControlDisabled}
                     className={
                       personaButtonLabel
                         ? 'max-w-44 gap-2 rounded-full pl-3 pr-3 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
@@ -556,45 +688,55 @@ export function ChatComposer({
                 </DropdownMenuTrigger>
               </TooltipTrigger>
               <TooltipContent>
-                {selectedPersonaLabel ? `Persona: ${selectedPersonaLabel}` : 'Choose persona'}
+                {!personasReady
+                  ? 'Loading personas...'
+                  : selectedPersonaLabel
+                    ? `Persona: ${selectedPersonaLabel}`
+                    : 'Choose persona'}
               </TooltipContent>
             </Tooltip>
             <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel>Persona</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={selectedPersonaId ?? DEFAULT_CHAT_PERSONA_ID}
-                onValueChange={(value) => {
-                  onSelectPersona?.(value === DEFAULT_CHAT_PERSONA_ID ? undefined : value);
-                }}
-              >
-                <DropdownMenuRadioItem value={DEFAULT_CHAT_PERSONA_ID}>
-                  <div className="flex min-w-0 flex-col">
-                    <span>{DEFAULT_CHAT_PERSONA.name}</span>
-                    <span className="text-muted-foreground truncate text-xs">
-                      {DEFAULT_CHAT_PERSONA.prompt}
-                    </span>
-                  </div>
-                </DropdownMenuRadioItem>
-                {personas.map((persona) => (
-                  <DropdownMenuRadioItem key={persona._id} value={persona._id}>
-                    <div className="flex min-w-0 flex-col">
-                      <span className="truncate">{persona.name}</span>
-                      <span className="text-muted-foreground truncate text-xs">
-                        {persona.prompt}
-                      </span>
-                    </div>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onSelect={(event) => {
-                  event.preventDefault();
-                  onManagePersonas?.();
-                }}
-              >
-                Manage personas
-              </DropdownMenuItem>
+              {personasReady ? (
+                <>
+                  <DropdownMenuRadioGroup
+                    value={selectedPersonaId ?? DEFAULT_CHAT_PERSONA_ID}
+                    onValueChange={(value) => {
+                      onSelectPersona?.(value === DEFAULT_CHAT_PERSONA_ID ? undefined : value);
+                    }}
+                  >
+                    <DropdownMenuRadioItem value={DEFAULT_CHAT_PERSONA_ID}>
+                      <div className="flex min-w-0 flex-col">
+                        <span>{DEFAULT_CHAT_PERSONA.name}</span>
+                        <span className="text-muted-foreground truncate text-xs">
+                          {DEFAULT_CHAT_PERSONA.prompt}
+                        </span>
+                      </div>
+                    </DropdownMenuRadioItem>
+                    {personas.map((persona) => (
+                      <DropdownMenuRadioItem key={persona._id} value={persona._id}>
+                        <div className="flex min-w-0 flex-col">
+                          <span className="truncate">{persona.name}</span>
+                          <span className="text-muted-foreground truncate text-xs">
+                            {persona.prompt}
+                          </span>
+                        </div>
+                      </DropdownMenuRadioItem>
+                    ))}
+                  </DropdownMenuRadioGroup>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={(event) => {
+                      event.preventDefault();
+                      onManagePersonas?.();
+                    }}
+                  >
+                    Manage personas
+                  </DropdownMenuItem>
+                </>
+              ) : (
+                <DropdownMenuItem disabled>Loading personas...</DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
           <DropdownMenu>
@@ -603,44 +745,50 @@ export function ChatComposer({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={disabled || isEditing}
+                disabled={modelControlDisabled}
                 className="max-w-44 gap-2 rounded-full px-3 text-[#403d39] shadow-none hover:bg-black/5 hover:text-[#24211d]"
-                aria-label={`Choose model: ${selectedModel.label}`}
+                aria-label={`Choose model: ${selectedModelLabel}`}
               >
-                <span className="max-w-32 truncate text-xs">{selectedModel.label}</span>
+                <span className="max-w-32 truncate text-xs">{selectedModelLabel}</span>
                 <ChevronDown className="size-3.5 opacity-60" />
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-72">
               <DropdownMenuLabel>Model</DropdownMenuLabel>
-              <DropdownMenuRadioGroup
-                value={selectedModel.id}
-                onValueChange={(value) => {
-                  onSelectModel?.(value);
-                }}
-              >
-                {modelOptions.map((model) => (
-                  <DropdownMenuRadioItem
-                    key={model.id}
-                    value={model.id}
-                    disabled={!model.selectable}
-                  >
-                    <div className="flex min-w-0 flex-col">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate">{model.label}</span>
-                        {model.badge ? (
-                          <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                            {model.badge}
-                          </span>
-                        ) : null}
+              {modelsReady ? (
+                <DropdownMenuRadioGroup
+                  value={selectedModel.id}
+                  onValueChange={(value) => {
+                    onSelectModel?.(value);
+                  }}
+                >
+                  {modelOptions.map((model) => (
+                    <DropdownMenuRadioItem
+                      key={model.id}
+                      value={model.id}
+                      disabled={!model.selectable}
+                    >
+                      <div className="flex min-w-0 flex-col">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">{model.label}</span>
+                          {model.badge ? (
+                            <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {model.badge}
+                            </span>
+                          ) : null}
+                        </div>
+                        <span className="text-muted-foreground truncate text-xs">
+                          {model.priceLabel
+                            ? `${model.description} • ${model.priceLabel}`
+                            : model.description}
+                        </span>
                       </div>
-                      <span className="text-muted-foreground truncate text-xs">
-                        {model.priceLabel ? `${model.description} • ${model.priceLabel}` : model.description}
-                      </span>
-                    </div>
-                  </DropdownMenuRadioItem>
-                ))}
-              </DropdownMenuRadioGroup>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              ) : (
+                <DropdownMenuItem disabled>Loading models...</DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
@@ -668,7 +816,13 @@ export function ChatComposer({
             onClick={() => {
               void handleSubmit();
             }}
-            disabled={disabled || isSending || isSavingEdit || !hasContent}
+            disabled={
+              disabled ||
+              isSending ||
+              isSavingEdit ||
+              !hasContent ||
+              hasBlockingAttachmentState
+            }
             className="rounded-full"
             aria-label={editingMessage ? 'Save edit' : 'Send message'}
           >

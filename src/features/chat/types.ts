@@ -8,6 +8,9 @@ export type ParsedPdfImage = {
   dataUrl: string;
 };
 
+export type ChatAttachmentKind = 'image' | 'document';
+export type ChatAttachmentStatus = 'pending' | 'ready' | 'error';
+
 export type ChatTextPart = {
   type: 'text';
   text: string;
@@ -26,6 +29,18 @@ export type ChatDocumentPart = {
   content: string;
   mimeType: string;
   images?: ParsedPdfImage[];
+};
+
+export type ChatAttachmentPart = {
+  type: 'attachment';
+  attachmentId: Id<'aiAttachments'>;
+  kind: ChatAttachmentKind;
+  name: string;
+  mimeType: string;
+  status: ChatAttachmentStatus;
+  previewUrl?: string | null;
+  promptSummary: string;
+  errorMessage?: string;
 };
 
 export type ChatSourceUrlPart = {
@@ -47,8 +62,11 @@ export type ChatMessagePart =
   | ChatTextPart
   | ChatImagePart
   | ChatDocumentPart
+  | ChatAttachmentPart
   | ChatSourceUrlPart
   | ChatSourceDocumentPart;
+
+export type ChatComposerPart = ChatTextPart | ChatImagePart | ChatDocumentPart;
 
 export type ChatMessageStatus = 'pending' | 'complete' | 'error';
 
@@ -61,6 +79,9 @@ export type ChatThread = {
   personaId?: Id<'aiPersonas'>;
   model?: string;
   titleManuallyEdited: boolean;
+  contextSummary?: string;
+  contextSummaryThroughMessageId?: Id<'aiMessages'>;
+  contextSummaryUpdatedAt?: number;
   createdAt: number;
   updatedAt: number;
   lastMessageAt: number;
@@ -91,4 +112,29 @@ export type ChatMessage = {
   createdAt: number;
   updatedAt: number;
   clientMessageId?: string;
+};
+
+export type ChatMessageDraft = {
+  _id: Id<'aiMessageDrafts'>;
+  messageId: Id<'aiMessages'>;
+  threadId: Id<'aiThreads'>;
+  text: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type ChatAttachment = {
+  _id: Id<'aiAttachments'>;
+  messageId?: Id<'aiMessages'>;
+  threadId?: Id<'aiThreads'>;
+  kind: ChatAttachmentKind;
+  name: string;
+  mimeType: string;
+  sizeBytes: number;
+  promptSummary: string;
+  status: ChatAttachmentStatus;
+  previewUrl?: string | null;
+  errorMessage?: string;
+  createdAt: number;
+  updatedAt: number;
 };

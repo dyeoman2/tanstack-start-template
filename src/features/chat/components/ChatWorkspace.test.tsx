@@ -12,6 +12,7 @@ const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
 const sendChatMessageMock = vi.fn();
 const editMessageMock = vi.fn();
+const uploadAttachmentMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
@@ -36,35 +37,21 @@ describe('ChatWorkspace', () => {
       threadId: 'thread-123',
       assistantMessageId: 'assistant-123',
     });
-
-    let queryCallIndex = 0;
-    useQueryMock.mockImplementation(() => {
-      queryCallIndex += 1;
-      const position = ((queryCallIndex - 1) % 4) + 1;
-
-      if (position <= 2) {
-        return undefined;
-      }
-
-      if (position === 3) {
-        return [];
-      }
-
-      return [
-        {
-          id: 'openai/gpt-4o-mini',
-          label: 'GPT-4o Mini',
-          description: 'Default model',
-          access: 'public',
-          selectable: true,
-        },
-      ];
-    });
+    uploadAttachmentMock.mockResolvedValue(null);
+    useQueryMock.mockReturnValue(undefined);
 
     let actionCallIndex = 0;
     useActionMock.mockImplementation(() => {
       actionCallIndex += 1;
-      return actionCallIndex === 1 ? sendChatMessageMock : editMessageMock;
+      if (actionCallIndex === 1) {
+        return sendChatMessageMock;
+      }
+
+      if (actionCallIndex === 2) {
+        return editMessageMock;
+      }
+
+      return uploadAttachmentMock;
     });
 
     useMutationMock.mockReturnValue(vi.fn());
@@ -90,7 +77,8 @@ describe('ChatWorkspace', () => {
         personaId: undefined,
         model: 'openai/gpt-4o-mini',
         useWebSearch: false,
-        parts: [{ type: 'text', text: 'Start a new conversation' }],
+        text: 'Start a new conversation',
+        attachmentIds: [],
         clientMessageId: expect.any(String),
       });
     });
