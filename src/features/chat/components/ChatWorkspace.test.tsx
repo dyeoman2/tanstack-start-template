@@ -35,6 +35,7 @@ vi.mock('convex/react', () => ({
 
 vi.mock('~/features/chat/hooks/useChatStream', () => ({
   useChatStream: () => ({
+    ownerSessionId: 'session-1',
     activeStream: null,
     startStream: startStreamMock,
     stopStream: vi.fn(),

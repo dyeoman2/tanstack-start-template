@@ -19,7 +19,12 @@ import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
 import { useSmoothStreamText } from '~/features/chat/hooks/useSmoothStreamText';
 import type { PendingThreadSubmission } from '~/features/chat/lib/pending-thread-submission';
-import type { ChatActiveStream, ChatMessage, ChatMessagePart } from '~/features/chat/types';
+import type {
+  ChatActiveStream,
+  ChatMessage,
+  ChatMessagePart,
+  ChatPassiveStream,
+} from '~/features/chat/types';
 import { cn } from '~/lib/utils';
 
 type ChatMessageSource =
@@ -525,8 +530,14 @@ function AssistantMessage({
         ) : (
           <Markdown>{finalText}</Markdown>
         )}
-        {showActions ? (
-          <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+        <div
+          className={cn(
+            'mt-1 flex min-h-8 items-center gap-1.5 text-muted-foreground',
+            !showActions && 'pointer-events-none invisible',
+          )}
+          aria-hidden={!showActions}
+        >
+          {showActions ? (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -537,21 +548,23 @@ function AssistantMessage({
             >
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             </Button>
-            {canRetry ? (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="rounded-full"
-                onClick={() => {
-                  if (retryRunId) {
-                    onRetry?.(message._id, retryRunId);
-                  }
-                }}
-                aria-label="Retry response"
-              >
-                <RotateCcw className="size-4" />
-              </Button>
-            ) : null}
+          ) : null}
+          {showActions && canRetry ? (
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => {
+                if (retryRunId) {
+                  onRetry?.(message._id, retryRunId);
+                }
+              }}
+              aria-label="Retry response"
+            >
+              <RotateCcw className="size-4" />
+            </Button>
+          ) : null}
+          {showActions ? (
             <Button
               size="icon-sm"
               variant="ghost"
@@ -562,9 +575,9 @@ function AssistantMessage({
             >
               {isSpeaking ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
             </Button>
-            {sources.length > 0 ? <Sources sources={sources} /> : null}
-          </div>
-        ) : null}
+          ) : null}
+          {showActions && sources.length > 0 ? <Sources sources={sources} /> : null}
+        </div>
         {message.status === 'error' && message.errorMessage ? (
           <p className="mt-3 text-sm text-destructive">{message.errorMessage}</p>
         ) : null}
@@ -631,30 +644,34 @@ function PendingAssistantMessage({
 
 function buildSyntheticAssistantMessage(
   baseThreadId: string,
-  activeStream: ChatActiveStream,
+  stream: Pick<
+    ChatActiveStream | ChatPassiveStream,
+    'assistantMessageId' | 'threadId' | 'status' | 'errorMessage' | 'startedAt'
+  >,
 ): ChatMessage {
   return {
-    _id: activeStream.assistantMessageId,
+    _id: stream.assistantMessageId,
     threadId: baseThreadId,
     order: Number.MAX_SAFE_INTEGER - 1,
     stepOrder: 0,
     role: 'assistant',
     parts: [{ type: 'text', text: '' }],
     status:
-      activeStream.status === 'streaming'
+      stream.status === 'streaming'
         ? 'streaming'
-        : activeStream.status === 'complete'
+        : stream.status === 'complete'
           ? 'complete'
           : 'error',
-    errorMessage: activeStream.errorMessage,
-    createdAt: activeStream.startedAt,
-    updatedAt: activeStream.startedAt,
+    errorMessage: stream.errorMessage,
+    createdAt: stream.startedAt,
+    updatedAt: stream.startedAt,
   };
 }
 
 export function MessageList({
   messages,
   activeStream,
+  passiveStream,
   fallbackDraftTextByMessageId = {},
   isRegenerationPending = false,
   retryRunIdByMessageId = {},
@@ -668,6 +685,7 @@ export function MessageList({
 }: {
   messages: ChatMessage[];
   activeStream?: ChatActiveStream | null;
+  passiveStream?: ChatPassiveStream | null;
   fallbackDraftTextByMessageId?: Record<string, string>;
   isRegenerationPending?: boolean;
   retryRunIdByMessageId?: Record<string, string>;
@@ -725,23 +743,30 @@ export function MessageList({
   const hasRenderedActiveStream = Boolean(
     activeStream && visibleMessages.some((message) => message._id === activeStream.assistantMessageId),
   );
+  const hasRenderedPassiveStream = Boolean(
+    passiveStream &&
+      visibleMessages.some((message) => message._id === passiveStream.assistantMessageId),
+  );
   const hasVisibleRegeneratingMessage = Boolean(
     regeneratingTarget &&
       visibleMessages.some((message) => message._id === regeneratingTarget.messageId),
   );
+  const streamForSyntheticMessage = activeStream ?? passiveStream ?? null;
 
   const syntheticStreamMessage =
-    activeStream && !hasRenderedActiveStream
+    streamForSyntheticMessage &&
+    !hasRenderedActiveStream &&
+    !hasRenderedPassiveStream
       ? buildSyntheticAssistantMessage(
-          visibleMessages[visibleMessages.length - 1]?.threadId ?? activeStream.threadId,
-          activeStream,
+          visibleMessages[visibleMessages.length - 1]?.threadId ?? streamForSyntheticMessage.threadId,
+          streamForSyntheticMessage,
         )
       : null;
   const showSyntheticStreamMessage = Boolean(
     syntheticStreamMessage &&
-      (activeStream?.text.trim() ||
+      ((activeStream?.text ?? passiveStream?.text ?? '').trim() ||
         (regeneratingTarget &&
-          activeStream?.assistantMessageId === regeneratingTarget.messageId &&
+          streamForSyntheticMessage?.assistantMessageId === regeneratingTarget.messageId &&
           !hasVisibleRegeneratingMessage)),
   );
   const missingRetryFallbackText = regeneratingTarget
@@ -773,7 +798,11 @@ export function MessageList({
         }
 
         const streamForMessage =
-          activeStream?.assistantMessageId === message._id ? activeStream : null;
+          activeStream?.assistantMessageId === message._id
+            ? activeStream
+            : passiveStream?.assistantMessageId === message._id
+              ? passiveStream
+              : null;
         const isRegeneratingMessage =
           regeneratingTarget?.messageId === message._id && isRegenerationPending;
         const completedFallbackDraftText =
@@ -847,9 +876,9 @@ export function MessageList({
       {showSyntheticStreamMessage && syntheticStreamMessage ? (
         <MemoAssistantMessage
           message={syntheticStreamMessage}
-          draftText={activeStream?.text}
-          retryRunId={activeStream?.runId}
-          thinking={!activeStream?.text.trim()}
+          draftText={activeStream?.text ?? passiveStream?.text}
+          retryRunId={activeStream?.runId ?? passiveStream?.runId}
+          thinking={!(activeStream?.text ?? passiveStream?.text ?? '').trim()}
           onRetry={onRetryMessage}
         />
       ) : null}

@@ -79,6 +79,25 @@ function getOwnerSessionId() {
 async function readErrorMessage(response: Response) {
   try {
     const text = await response.text();
+    if (!text.trim()) {
+      return `Request failed with status ${response.status}.`;
+    }
+
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (
+        parsed &&
+        typeof parsed === 'object' &&
+        'errorMessage' in parsed &&
+        typeof parsed.errorMessage === 'string' &&
+        parsed.errorMessage.trim()
+      ) {
+        return parsed.errorMessage;
+      }
+    } catch {
+      // Fall back to the raw text body.
+    }
+
     return text.trim() || `Request failed with status ${response.status}.`;
   } catch {
     return `Request failed with status ${response.status}.`;

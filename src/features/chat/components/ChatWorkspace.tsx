@@ -20,7 +20,13 @@ import {
   usePendingThreadSubmission,
 } from '~/features/chat/lib/pending-thread-submission';
 import { useChatStream } from '~/features/chat/hooks/useChatStream';
-import type { ChatAttachment, ChatMessage, ChatMessagePart, ChatPersona } from '~/features/chat/types';
+import type {
+  ChatAttachment,
+  ChatMessage,
+  ChatMessagePart,
+  ChatPassiveStream,
+  ChatPersona,
+} from '~/features/chat/types';
 import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
   type ChatModelId,
@@ -165,7 +171,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const updatePersona = useMutation(api.agentChat.updatePersona);
   const deletePersona = useMutation(api.agentChat.deletePersona);
   const setThreadPersona = useMutation(api.agentChat.setThreadPersona);
-  const { activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
+  const { ownerSessionId, activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
   const pendingSubmission = usePendingThreadSubmission(threadId);
   const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
     null,
@@ -181,6 +187,38 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const personasList = personas ?? [];
   const availableModelOptions = modelOptions ?? [];
+  const passiveStreamQuery = useQuery(
+    api.agentChat.getPassiveStream,
+    typedThreadId ? { threadId: typedThreadId } : 'skip',
+  );
+  const passiveStream: ChatPassiveStream | null = useMemo(() => {
+    if (!passiveStreamQuery) {
+      return null;
+    }
+
+    if (passiveStreamQuery.status !== 'streaming') {
+      return null;
+    }
+
+    if (passiveStreamQuery.ownerSessionId === ownerSessionId) {
+      return null;
+    }
+
+    if (activeStream && activeStream.runId === passiveStreamQuery.runId) {
+      return null;
+    }
+
+    return {
+      runId: passiveStreamQuery.runId,
+      threadId: passiveStreamQuery.threadId,
+      assistantMessageId: passiveStreamQuery.assistantMessageId,
+      ownerSessionId: passiveStreamQuery.ownerSessionId,
+      text: passiveStreamQuery.text,
+      status: 'streaming',
+      errorMessage: passiveStreamQuery.errorMessage,
+      startedAt: passiveStreamQuery.startedAt,
+    };
+  }, [activeStream, ownerSessionId, passiveStreamQuery]);
 
   const effectivePersonaId = thread?.personaId ?? draftPersonaId;
   const currentPersonaLabel = useMemo(() => {
@@ -228,14 +266,16 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
             (message) => matchesPendingSubmission(message, pendingSubmission),
           ),
           showAssistantPlaceholder:
-            (!activeStream?.text.trim() || pendingSubmission.stage === 'error') &&
+            (!(activeStream?.text ?? passiveStream?.text ?? '').trim() ||
+              pendingSubmission.stage === 'error') &&
             !currentMessages.some(
               (message) =>
                 message.role === 'assistant' && message.createdAt >= pendingSubmission.submittedAt,
             ),
         }
       : undefined;
-  const showEmptyState = currentMessages.length === 0 && !pendingSubmission && !activeStream;
+  const showEmptyState =
+    currentMessages.length === 0 && !pendingSubmission && !activeStream && !passiveStream;
   const isThreadPending = Boolean(
     threadId &&
       !pendingSubmission &&
@@ -248,7 +288,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       (message) => message.role === 'assistant' && message.status === 'streaming',
     ) ||
     activeRun?.status === 'streaming' ||
-    activeStream?.status === 'streaming';
+    activeStream?.status === 'streaming' ||
+    passiveStream?.status === 'streaming';
   const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
   const pendingScrollTargetVisible = Boolean(
     targetClientMessageId &&
@@ -874,6 +915,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     <MessageList
                       messages={currentMessages}
                       activeStream={activeStream}
+                      passiveStream={passiveStream}
                       retryRunIdByMessageId={retryableRunIds ?? {}}
                       onRetryMessage={(messageId, runId) => {
                         void handleRetryRun(messageId, runId);

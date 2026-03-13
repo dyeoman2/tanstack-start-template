@@ -8,11 +8,12 @@ import {
   serializeMessage,
   storeFile,
 } from '@convex-dev/agent';
+import { generateText } from 'ai';
 import { ConvexError, v } from 'convex/values';
 import type { ModelMessage } from 'ai';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { action, type ActionCtx } from './_generated/server';
+import { action, internalAction, type ActionCtx } from './_generated/server';
 import {
   buildAttachmentPromptSummary,
   extractDocumentText,
@@ -22,11 +23,13 @@ import {
   DEFAULT_CHAT_AGENT_NAME,
   DEFAULT_PERSONA_PROMPT,
   deriveThreadTitle,
+  getChatLanguageModel,
   resolveChatModelId,
   serializeMessagesForTransport,
   type ChatAttachmentDoc,
   type ChatThreadDoc,
 } from './lib/agentChat';
+import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 
 type PreparedStreamPayload = {
   preparedMessages: unknown[];
@@ -228,7 +231,6 @@ async function preparePendingAssistantRun(
   ctx: ActionCtx,
   args: {
     thread: ChatThreadDoc;
-    userId: string;
     organizationId: string;
     ownerSessionId: string;
     promptMessageId: string;
@@ -464,7 +466,12 @@ async function abortRun(
     return false;
   }
 
-  const partialText = args.partialText?.trim();
+  const partialText =
+    args.partialText?.trim() ||
+    ((await ctx.runQuery(internal.agentChat.getRunDeltaTextInternal, {
+      runId: run._id,
+    })) as string)
+      .trim();
   if (run.activeAssistantMessageId) {
     if (partialText) {
       await saveMessages(ctx, components.agent, {
@@ -501,6 +508,9 @@ async function abortRun(
       errorMessage: args.reason,
     },
   });
+  await ctx.runMutation(internal.agentChat.clearRunDeltasInternal, {
+    runId: run._id,
+  });
   await ctx.runMutation(internal.agentChat.patchThreadInternal, {
     threadId: run.threadId,
     patch: {
@@ -511,6 +521,34 @@ async function abortRun(
 
   return true;
 }
+
+export const appendStreamDelta = action({
+  args: {
+    runId: v.id('chatRuns'),
+    threadId: v.id('chatThreads'),
+    assistantMessageId: v.string(),
+    sequence: v.number(),
+    text: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { organizationId } = await getAuthenticatedContext(ctx);
+    const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
+      runId: args.runId,
+      organizationId,
+    })) as Doc<'chatRuns'> | null;
+
+    if (!run || run.status !== 'streaming') {
+      return false;
+    }
+
+    await ctx.runMutation(internal.agentChat.appendRunDeltaInternal, {
+      ...args,
+      organizationId,
+      createdAt: Date.now(),
+    });
+    return true;
+  },
+});
 
 export const prepareStream = action({
   args: {
@@ -600,7 +638,6 @@ export const prepareStream = action({
 
     return await preparePendingAssistantRun(ctx, {
       thread,
-      userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: promptMessage._id,
@@ -708,7 +745,6 @@ export const prepareEditedStream = action({
 
     return await preparePendingAssistantRun(ctx, {
       thread,
-      userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: args.messageId,
@@ -776,7 +812,6 @@ export const prepareRetryStream = action({
 
     return await preparePendingAssistantRun(ctx, {
       thread,
-      userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: run.promptMessageId,
@@ -860,6 +895,12 @@ export const finalizeStream = action({
         lastMessageAt: Date.now(),
       },
     });
+    await ctx.runMutation(internal.agentChat.clearRunDeltasInternal, {
+      runId: run._id,
+    });
+    await ctx.scheduler.runAfter(0, internal.agentChatActions.runPostCompletionJobs, {
+      runId: run._id,
+    });
   },
 });
 
@@ -885,5 +926,108 @@ export const stopRun = action({
       reason: 'Stopped by user.',
       status: 'aborted',
     });
+  },
+});
+
+export const runPostCompletionJobs = internalAction({
+  args: {
+    runId: v.id('chatRuns'),
+  },
+  handler: async (ctx, args) => {
+    const run = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
+      runId: args.runId,
+    })) as Doc<'chatRuns'> | null;
+
+    if (!run) {
+      return;
+    }
+
+    const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
+      threadId: run.threadId,
+    })) as ChatThreadDoc | null;
+    if (!thread) {
+      return;
+    }
+
+    const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+      threadId: run.agentThreadId,
+      order: 'desc',
+      paginationOpts: { cursor: null, numItems: 8 },
+      excludeToolMessages: true,
+    });
+    const recentMessages = [...messages.page]
+      .reverse()
+      .filter((message) => message.message?.role === 'assistant' || message.message?.role === 'user');
+    const transcript = recentMessages
+      .map((message) => {
+        const role = message.message?.role;
+        if (!role) {
+          return '';
+        }
+
+        const content =
+          typeof message.message?.content === 'string'
+            ? message.message.content
+            : Array.isArray(message.message?.content)
+              ? message.message.content
+                  .filter(
+                    (part): part is { type: 'text'; text: string } =>
+                      typeof part === 'object' &&
+                      part !== null &&
+                      'type' in part &&
+                      part.type === 'text' &&
+                      'text' in part &&
+                      typeof part.text === 'string',
+                  )
+                  .map((part) => part.text)
+                  .join('\n')
+              : '';
+        return `${role}: ${content}`.trim();
+      })
+      .filter(Boolean)
+      .join('\n\n');
+
+    if (!transcript) {
+      return;
+    }
+
+    const model = getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false);
+
+    if (!thread.titleManuallyEdited) {
+      const titleResult = await generateText({
+        model,
+        prompt: `Write a concise title under 60 characters for this chat.\n\n${transcript}`,
+      });
+      const title = titleResult.text.trim().replace(/^["']|["']$/g, '').slice(0, 60);
+      if (title) {
+        const latestThread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
+          threadId: run.threadId,
+        })) as ChatThreadDoc | null;
+        if (latestThread && !latestThread.titleManuallyEdited) {
+          await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+            threadId: run.threadId,
+            patch: {
+              title,
+              updatedAt: Date.now(),
+            },
+          });
+        }
+      }
+    }
+
+    const summaryResult = await generateText({
+      model,
+      prompt: `Summarize this chat in 2 sentences for internal retrieval context.\n\n${transcript}`,
+    });
+    const summary = summaryResult.text.trim().slice(0, 500);
+    if (summary) {
+      await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+        threadId: run.threadId,
+        patch: {
+          summary,
+          summaryUpdatedAt: Date.now(),
+        },
+      });
+    }
   },
 });

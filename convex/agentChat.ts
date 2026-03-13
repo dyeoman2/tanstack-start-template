@@ -194,6 +194,8 @@ export const patchThreadInternal = internalMutation({
       personaId: v.optional(v.union(v.id('aiPersonas'), v.null())),
       model: v.optional(v.union(v.string(), v.null())),
       titleManuallyEdited: v.optional(v.boolean()),
+      summary: v.optional(v.union(v.string(), v.null())),
+      summaryUpdatedAt: v.optional(v.union(v.number(), v.null())),
       updatedAt: v.optional(v.number()),
       lastMessageAt: v.optional(v.number()),
     }),
@@ -211,6 +213,12 @@ export const patchThreadInternal = internalMutation({
     }
     if (args.patch.titleManuallyEdited !== undefined) {
       patch.titleManuallyEdited = args.patch.titleManuallyEdited;
+    }
+    if (args.patch.summary !== undefined) {
+      patch.summary = args.patch.summary ?? undefined;
+    }
+    if (args.patch.summaryUpdatedAt !== undefined) {
+      patch.summaryUpdatedAt = args.patch.summaryUpdatedAt ?? undefined;
     }
     if (args.patch.updatedAt !== undefined) patch.updatedAt = args.patch.updatedAt;
     if (args.patch.lastMessageAt !== undefined) patch.lastMessageAt = args.patch.lastMessageAt;
@@ -376,6 +384,71 @@ export const getRunByIdInternal = internalQuery({
   },
 });
 
+export const getRunByIdAnyInternal = internalQuery({
+  args: {
+    runId: v.id('chatRuns'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.runId);
+  },
+});
+
+export const getThreadByIdInternal = internalQuery({
+  args: {
+    threadId: v.id('chatThreads'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.threadId);
+  },
+});
+
+export const appendRunDeltaInternal = internalMutation({
+  args: {
+    runId: v.id('chatRuns'),
+    threadId: v.id('chatThreads'),
+    organizationId: v.string(),
+    assistantMessageId: v.string(),
+    sequence: v.number(),
+    text: v.string(),
+    createdAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    if (!args.text) {
+      return null;
+    }
+
+    return await ctx.db.insert('chatRunDeltas', args);
+  },
+});
+
+export const clearRunDeltasInternal = internalMutation({
+  args: {
+    runId: v.id('chatRuns'),
+  },
+  handler: async (ctx, args) => {
+    const deltas = await ctx.db
+      .query('chatRunDeltas')
+      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', args.runId))
+      .collect();
+
+    await Promise.all(deltas.map((delta) => ctx.db.delete(delta._id)));
+  },
+});
+
+export const getRunDeltaTextInternal = internalQuery({
+  args: {
+    runId: v.id('chatRuns'),
+  },
+  handler: async (ctx, args) => {
+    const deltas = await ctx.db
+      .query('chatRunDeltas')
+      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', args.runId))
+      .collect();
+
+    return deltas.map((delta) => delta.text).join('');
+  },
+});
+
 export const listThreads = query({
   args: {},
   handler: async (ctx) => {
@@ -513,6 +586,54 @@ export const getRetryableRunIds = query({
     }
 
     return retryableRunIds;
+  },
+});
+
+export const getPassiveStream = query({
+  args: {
+    threadId: v.id('chatThreads'),
+  },
+  handler: async (ctx, args) => {
+    const { organizationId } = await getCurrentChatContext(ctx);
+    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    if (!thread) {
+      return null;
+    }
+
+    const activeRun = (await getChatRunsForThread(ctx, args.threadId)).find(
+      (run) => run.status === 'streaming',
+    );
+    if (!activeRun || !activeRun.activeAssistantMessageId) {
+      return null;
+    }
+
+    const deltas = await ctx.db
+      .query('chatRunDeltas')
+      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', activeRun._id))
+      .collect();
+
+    return {
+      runId: activeRun._id,
+      threadId: activeRun.threadId,
+      assistantMessageId: activeRun.activeAssistantMessageId,
+      ownerSessionId: activeRun.ownerSessionId,
+      text: deltas.map((delta) => delta.text).join(''),
+      status: activeRun.status,
+      errorMessage: activeRun.errorMessage,
+      startedAt: activeRun.startedAt,
+    };
+  },
+});
+
+export const getCurrentRateLimitContext = query({
+  args: {},
+  handler: async (ctx) => {
+    const { userId, organizationId } = await getCurrentChatContext(ctx);
+    return {
+      key: `${organizationId}:${userId}`,
+      organizationId,
+      userId,
+    };
   },
 });
 

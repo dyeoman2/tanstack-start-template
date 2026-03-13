@@ -164,6 +164,8 @@ export type ChatActiveStream = {
   request: ChatStreamRequest;
 };
 
+export type ChatPassiveStream = Omit<ChatActiveStream, 'request'>;
+
 export type ChatAttachment = {
   _id: Id<'chatAttachments'>;
   threadId?: Id<'chatThreads'>;

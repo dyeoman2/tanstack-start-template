@@ -69,6 +69,25 @@ describe('MessageList', () => {
     expect(screen.getByRole('heading', { name: 'Streaming title' })).toBeInTheDocument();
   });
 
+  it('renders passive stream output for non-owner tabs', () => {
+    render(
+      <MessageList
+        messages={[]}
+        passiveStream={{
+          threadId: 'thread-1',
+          runId: 'run-1',
+          assistantMessageId: 'assistant-1',
+          ownerSessionId: 'session-2',
+          text: 'Passive stream text',
+          status: 'streaming',
+          startedAt: 1,
+        }}
+      />,
+    );
+
+    expect(screen.getByText('Passive stream text')).toBeInTheDocument();
+  });
+
   it('renders a retry icon next to copy and calls retry for the active assistant message', async () => {
     const user = userEvent.setup();
     const onRetryMessage = vi.fn();

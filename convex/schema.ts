@@ -132,6 +132,8 @@ export default defineSchema({
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
+    summary: v.optional(v.string()),
+    summaryUpdatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastMessageAt: v.number(),
@@ -159,6 +161,18 @@ export default defineSchema({
     .index('by_threadId_and_startedAt', ['threadId', 'startedAt'])
     .index('by_threadId_and_status', ['threadId', 'status'])
     .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt']),
+
+  chatRunDeltas: defineTable({
+    runId: v.id('chatRuns'),
+    threadId: v.id('chatThreads'),
+    organizationId: v.string(),
+    assistantMessageId: v.string(),
+    sequence: v.number(),
+    text: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_runId_and_sequence', ['runId', 'sequence'])
+    .index('by_threadId_and_createdAt', ['threadId', 'createdAt']),
 
   chatAttachments: defineTable({
     threadId: v.optional(v.id('chatThreads')),
