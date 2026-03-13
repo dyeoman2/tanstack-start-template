@@ -1,16 +1,23 @@
-import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useCallback, useMemo, useState } from 'react';
+import { UserPlus } from 'lucide-react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import { Button } from '~/components/ui/button';
+import { useToast } from '~/components/ui/toast';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import type { UserRole } from '../../auth/types';
 import { USER_ROLES } from '../../auth/types';
 import { useUserImpersonation } from '../hooks/useUserImpersonation';
-import { listAdminUsersServerFn } from '../server/admin-management';
+import {
+  listAdminUsersServerFn,
+  sendAdminUserOnboardingEmailServerFn,
+} from '../server/admin-management';
 import type { User as AdminUser } from '../types';
 import { UserBanDialog } from './UserBanDialog';
+import { UserCreateDialog } from './UserCreateDialog';
 import { UserDeleteDialog } from './UserDeleteDialog';
 import { UserEditDialog } from './UserEditDialog';
 import { UserPasswordResetDialog } from './UserPasswordResetDialog';
@@ -27,15 +34,19 @@ const ROLE_FILTER_OPTIONS: TableFilterOption<UserRoleFilterValue>[] = [
 ];
 
 export function UserManagement() {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
   const search = useSearch({ from: '/app/admin/users' });
   const authState = useAuthState();
   const { user: currentUser } = useAuth({ fetchRole: authState.isAuthenticated });
+  const { showToast } = useToast();
   const searchTerm = search.search ?? '';
   const roleFilter = (search.role ?? 'all') as UserRoleFilterValue;
 
   const [activeDialog, setActiveDialog] = useState<AdminDialog>(null);
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
+  const [pendingOnboardingUserId, setPendingOnboardingUserId] = useState<string | null>(null);
   const { impersonateUser, pendingUserId } = useUserImpersonation();
 
   const adminUsersSearchParams = useMemo(
@@ -97,6 +108,30 @@ export function UserManagement() {
     setSelectedUser(null);
   };
 
+  const handleResendOnboardingEmail = useCallback(
+    async (user: AdminUser) => {
+      setPendingOnboardingUserId(user.id);
+
+      try {
+        await sendAdminUserOnboardingEmailServerFn({
+          data: {
+            userId: user.id,
+          },
+        });
+        showToast(`Onboarding email sent to ${user.email}.`, 'success');
+        await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : 'Failed to send onboarding email',
+          'error',
+        );
+      } finally {
+        setPendingOnboardingUserId(null);
+      }
+    },
+    [queryClient, showToast],
+  );
+
   const handleSearchChange = useCallback(
     (term: string) => {
       const normalizedTerm = term.trim();
@@ -139,6 +174,12 @@ export function UserManagement() {
       <PageHeader
         title="User Management"
         description="Manage user accounts, roles, and permissions."
+        actions={
+          <Button type="button" size="sm" onClick={() => setIsCreateDialogOpen(true)}>
+            <UserPlus className="size-4" />
+            Create user
+          </Button>
+        }
       />
 
       <div className="mt-4 space-y-4">
@@ -173,7 +214,9 @@ export function UserManagement() {
           onManageSessions={handleManageSessions}
           onImpersonateUser={impersonateUser}
           onResetPassword={handleResetPassword}
+          onResendOnboardingEmail={handleResendOnboardingEmail}
           pendingImpersonationUserId={pendingUserId}
+          pendingOnboardingUserId={pendingOnboardingUserId}
         />
       </div>
 
@@ -205,6 +248,23 @@ export function UserManagement() {
         open={activeDialog === 'delete'}
         userId={selectedUser?.id ?? null}
         onClose={handleCloseDialogs}
+      />
+
+      <UserCreateDialog
+        open={isCreateDialogOpen}
+        onClose={() => setIsCreateDialogOpen(false)}
+        onCreated={(result) => {
+          if (result.onboardingEmailSent) {
+            showToast('User created and onboarding email sent.', 'success');
+            return;
+          }
+
+          showToast(
+            result.onboardingErrorMessage ??
+              'User created, but sending the onboarding email failed.',
+            'error',
+          );
+        }}
       />
     </div>
   );

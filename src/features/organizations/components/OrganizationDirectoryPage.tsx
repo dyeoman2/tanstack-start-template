@@ -1,4 +1,3 @@
-import { UserInvitationsCard } from '@daveyplate/better-auth-ui';
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { Link } from '@tanstack/react-router';
@@ -9,6 +8,7 @@ import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { CreateOrganizationDialog } from '~/features/organizations/components/CreateOrganizationDialog';
+import { UserInvitationInbox } from '~/features/organizations/components/UserInvitationInbox';
 
 export function OrganizationDirectoryPage() {
   const authState = useAuthState();
@@ -62,18 +62,7 @@ export function OrganizationDirectoryPage() {
           )}
         </div>
 
-        <UserInvitationsCard
-          classNames={{
-            base: 'overflow-hidden rounded-xl border border-border shadow-sm py-6',
-            header: 'px-6 pb-4',
-            title: 'text-base font-semibold',
-            description: 'text-sm leading-6 text-muted-foreground',
-            content: 'px-6',
-            cell: 'rounded-lg border border-border bg-background px-4 py-3',
-            button: '',
-            outlineButton: '',
-          }}
-        />
+        <UserInvitationInbox />
       </div>
 
       <CreateOrganizationDialog open={createDialogOpen} onOpenChange={setCreateDialogOpen} />

@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Ban, Clock3, Edit3, LogIn, MoreHorizontal, Shield, Trash2 } from 'lucide-react';
+import { Ban, Clock3, Edit3, LogIn, MailWarning, MoreHorizontal, Shield, Trash2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar';
@@ -45,8 +45,10 @@ interface UserTableProps {
   onManageBan: (user: UserRow) => void;
   onManageSessions: (user: UserRow) => void;
   onResetPassword: (user: UserRow) => void;
+  onResendOnboardingEmail: (user: UserRow) => void;
   onImpersonateUser: (userId: string) => void;
   pendingImpersonationUserId: string | null;
+  pendingOnboardingUserId: string | null;
 }
 
 export function UserTable({
@@ -61,8 +63,10 @@ export function UserTable({
   onManageBan,
   onManageSessions,
   onResetPassword,
+  onResendOnboardingEmail,
   onImpersonateUser,
   pendingImpersonationUserId,
+  pendingOnboardingUserId,
 }: UserTableProps) {
   const navigate = useNavigate();
 
@@ -204,9 +208,14 @@ export function UserTable({
           }
 
           return (
-            <Badge variant={row.original.emailVerified ? 'default' : 'outline'}>
-              {row.original.emailVerified ? 'Verified' : 'Unverified'}
-            </Badge>
+            <div className="space-y-1">
+              <Badge variant={row.original.emailVerified ? 'default' : 'outline'}>
+                {row.original.emailVerified ? 'Verified' : 'Unverified'}
+              </Badge>
+              {row.original.needsOnboardingEmail ? (
+                <p className="text-xs text-amber-700">Onboarding email pending</p>
+              ) : null}
+            </div>
           );
         },
       },
@@ -229,6 +238,7 @@ export function UserTable({
             !row.original.banned;
           const isCurrentUser = row.original.id === currentUserId;
           const canManageDangerousActions = !isCurrentUser;
+          const canResendOnboardingEmail = row.original.needsOnboardingEmail === true;
 
           return (
             <div className="text-right">
@@ -269,6 +279,15 @@ export function UserTable({
                       <Edit3 className="size-4" />
                       Reset password
                     </DropdownMenuItem>
+                    {canResendOnboardingEmail ? (
+                      <DropdownMenuItem
+                        onSelect={() => onResendOnboardingEmail(row.original)}
+                        disabled={pendingOnboardingUserId === row.original.id}
+                      >
+                        <MailWarning className="size-4" />
+                        Resend onboarding email
+                      </DropdownMenuItem>
+                    ) : null}
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       variant="destructive"
@@ -294,7 +313,9 @@ export function UserTable({
       onManageBan,
       onManageSessions,
       onImpersonateUser,
+      onResendOnboardingEmail,
       onResetPassword,
+      pendingOnboardingUserId,
       pendingImpersonationUserId,
       searchParams,
     ],

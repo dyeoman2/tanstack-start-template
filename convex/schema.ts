@@ -69,6 +69,7 @@ export default defineSchema({
     banned: v.boolean(),
     banReason: v.union(v.string(), v.null()),
     banExpires: v.union(v.number(), v.null()),
+    needsOnboardingEmail: v.optional(v.boolean()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastSyncedAt: v.number(),

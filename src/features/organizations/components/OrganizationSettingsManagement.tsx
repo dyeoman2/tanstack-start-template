@@ -1,5 +1,6 @@
 import { api } from '@convex/_generated/api';
-import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useMutation, useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -10,9 +11,13 @@ import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-di
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
+import { authClient } from '~/features/auth/auth-client';
+import { leaveOrganizationServerFn } from '~/features/organizations/server/organization-membership';
 
 export function OrganizationSettingsManagement({ slug }: { slug: string }) {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
   const { showToast } = useToast();
   const settings = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
   const updateSettings = useMutation(api.organizationManagement.updateOrganizationSettings);
@@ -25,6 +30,9 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+  const [leaveError, setLeaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!settings) {
@@ -62,6 +70,7 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
   }
 
   const canManage = settings.canManage;
+  const canLeaveOrganization = settings.isMember;
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -100,6 +109,35 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
       showToast(message, 'error');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleLeave = async () => {
+    setIsLeaving(true);
+    setLeaveError(null);
+
+    try {
+      await leaveOrganizationServerFn({
+        data: {
+          organizationId: settings.organization.id,
+        },
+      });
+      authClient.$store.notify('$activeOrgSignal');
+      authClient.$store.notify('$sessionSignal');
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['organizations'] }),
+        queryClient.invalidateQueries({ queryKey: ['active-organization'] }),
+      ]);
+      setIsLeaveDialogOpen(false);
+      showToast('You left the organization.', 'success');
+      await navigate({ to: '/app/organizations' });
+      await router.invalidate();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to leave organization';
+      setLeaveError(message);
+      showToast(message, 'error');
+    } finally {
+      setIsLeaving(false);
     }
   };
 
@@ -192,6 +230,23 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
         </Card>
       )}
 
+      {canLeaveOrganization ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Leave organization</CardTitle>
+            <CardDescription>
+              Remove your membership from this organization and switch back to your remaining
+              workspace.
+            </CardDescription>
+          </CardHeader>
+          <div className="px-6 pb-6">
+            <Button type="button" variant="outline" onClick={() => setIsLeaveDialogOpen(true)}>
+              Leave organization
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
       <DeleteConfirmationDialog
         open={isDeleteDialogOpen}
         onClose={() => {
@@ -206,6 +261,24 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
         isDeleting={isDeleting}
         error={deleteError ?? undefined}
         onConfirm={handleDelete}
+        variant="danger"
+      />
+
+      <DeleteConfirmationDialog
+        open={isLeaveDialogOpen}
+        onClose={() => {
+          setIsLeaveDialogOpen(false);
+          setLeaveError(null);
+        }}
+        title="Leave organization"
+        description={`Leave ${settings.organization.name}. You will lose access to its members, invitations, and organization-scoped data.`}
+        confirmationPhrase={settings.organization.name}
+        confirmationPlaceholder={settings.organization.name}
+        deleteText="Leave organization"
+        cancelText="Stay"
+        isDeleting={isLeaving}
+        error={leaveError ?? undefined}
+        onConfirm={handleLeave}
         variant="danger"
       />
     </div>

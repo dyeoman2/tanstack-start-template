@@ -4,21 +4,57 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationSettingsManagement } from './OrganizationSettingsManagement';
 
-const navigateMock = vi.fn();
-const showToastMock = vi.fn();
-const updateSettingsMock = vi.fn();
-const deleteOrganizationMock = vi.fn();
-const useQueryMock = vi.fn();
-const useMutationMock = vi.fn();
+const {
+  navigateMock,
+  routerInvalidateMock,
+  showToastMock,
+  updateSettingsMock,
+  deleteOrganizationMock,
+  leaveOrganizationMock,
+  invalidateQueriesMock,
+  useQueryMock,
+  useMutationMock,
+  notifyMock,
+} = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  routerInvalidateMock: vi.fn(),
+  showToastMock: vi.fn(),
+  updateSettingsMock: vi.fn(),
+  deleteOrganizationMock: vi.fn(),
+  leaveOrganizationMock: vi.fn(),
+  invalidateQueriesMock: vi.fn(),
+  useQueryMock: vi.fn(),
+  useMutationMock: vi.fn(),
+  notifyMock: vi.fn(),
+}));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
   Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+  }),
 }));
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+}));
+
+vi.mock('~/features/auth/auth-client', () => ({
+  authClient: {
+    $store: {
+      notify: notifyMock,
+    },
+  },
+}));
+
+vi.mock('~/features/organizations/server/organization-membership', () => ({
+  leaveOrganizationServerFn: (...args: unknown[]) => leaveOrganizationMock(...args),
 }));
 
 vi.mock('~/components/ui/toast', () => ({
@@ -54,6 +90,7 @@ describe('OrganizationSettingsManagement', () => {
         view: true,
         siteAdmin: false,
       },
+      isMember: true,
       viewerRole: 'member',
       canManage: false,
     });
@@ -81,6 +118,7 @@ describe('OrganizationSettingsManagement', () => {
         view: true,
         siteAdmin: true,
       },
+      isMember: true,
       viewerRole: 'site-admin',
       canManage: true,
     });
@@ -112,5 +150,47 @@ describe('OrganizationSettingsManagement', () => {
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Organization deleted.', 'success');
+  });
+
+  it('allows members to leave an organization from settings', async () => {
+    const user = userEvent.setup();
+
+    useQueryMock.mockReturnValue({
+      organization: {
+        id: 'org-1',
+        slug: 'cottage-hospital',
+        name: 'Cottage Hospital',
+        logo: null,
+      },
+      access: {
+        admin: false,
+        delete: false,
+        edit: true,
+        view: true,
+        siteAdmin: false,
+      },
+      isMember: true,
+      viewerRole: 'member',
+      canManage: false,
+    });
+    leaveOrganizationMock.mockResolvedValueOnce({
+      success: true,
+      nextOrganizationId: 'org-2',
+    });
+
+    render(<OrganizationSettingsManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('button', { name: /leave organization/i }));
+    await user.type(screen.getByPlaceholderText('Cottage Hospital'), 'Cottage Hospital');
+    await user.click(screen.getByRole('button', { name: /^leave organization$/i }));
+
+    await waitFor(() => {
+      expect(leaveOrganizationMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+        },
+      });
+    });
+    expect(showToastMock).toHaveBeenCalledWith('You left the organization.', 'success');
   });
 });

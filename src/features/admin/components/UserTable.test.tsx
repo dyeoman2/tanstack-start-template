@@ -46,8 +46,10 @@ const baseProps = {
   onManageBan: vi.fn(),
   onManageSessions: vi.fn(),
   onResetPassword: vi.fn(),
+  onResendOnboardingEmail: vi.fn(),
   onImpersonateUser: vi.fn(),
   pendingImpersonationUserId: null,
+  pendingOnboardingUserId: null,
 };
 
 function renderTable(users: Parameters<typeof UserTable>[0]['users'], currentUserId?: string) {
@@ -74,6 +76,7 @@ describe('UserTable', () => {
         banned: false,
         banReason: null,
         banExpires: null,
+        needsOnboardingEmail: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [],
@@ -100,6 +103,7 @@ describe('UserTable', () => {
           banned: false,
           banReason: null,
           banExpires: null,
+          needsOnboardingEmail: false,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           organizations: [],
@@ -127,6 +131,7 @@ describe('UserTable', () => {
         banned: true,
         banReason: 'Abuse',
         banExpires: null,
+        needsOnboardingEmail: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [],
@@ -151,6 +156,7 @@ describe('UserTable', () => {
         banned: false,
         banReason: null,
         banExpires: null,
+        needsOnboardingEmail: false,
         createdAt: Date.now(),
         updatedAt: Date.now(),
         organizations: [
@@ -168,5 +174,31 @@ describe('UserTable', () => {
       'href',
       '/app/organizations/cottage-hospital/settings',
     );
+  });
+
+  it('shows resend onboarding email when a user needs onboarding follow-up', async () => {
+    const user = userEvent.setup();
+
+    renderTable([
+      {
+        id: 'user-4',
+        email: 'newhire@example.com',
+        name: 'New Hire',
+        role: USER_ROLES.USER,
+        emailVerified: false,
+        banned: false,
+        banReason: null,
+        banExpires: null,
+        needsOnboardingEmail: true,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        organizations: [],
+      },
+    ]);
+
+    const row = screen.getByRole('row', { name: /new hire newhire@example.com/i });
+    await user.click(within(row).getByRole('button', { name: 'More actions' }));
+
+    expect(screen.getByRole('menuitem', { name: /resend onboarding email/i })).toBeInTheDocument();
   });
 });

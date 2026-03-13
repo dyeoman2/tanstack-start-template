@@ -242,6 +242,7 @@ export const listUsers = query({
         banned: profile.banned,
         banReason: profile.banReason,
         banExpires: profile.banExpires,
+        needsOnboardingEmail: profile.needsOnboardingEmail ?? false,
         createdAt: profile.createdAt,
         updatedAt: profile.updatedAt,
         organizations: membershipsByUserId.get(profile.authUserId) ?? [],
@@ -305,6 +306,20 @@ export const syncUserIndexEntry = mutation({
     await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.syncAuthUserProfile, {
       authUserId: args.userId,
+    });
+  },
+});
+
+export const setUserOnboardingStatus = mutation({
+  args: {
+    userId: v.string(),
+    needsOnboardingEmail: v.boolean(),
+  },
+  handler: async (ctx, args): Promise<{ success: boolean }> => {
+    await requireSiteAdmin(ctx);
+    return await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
+      authUserId: args.userId,
+      needsOnboardingEmail: args.needsOnboardingEmail,
     });
   },
 });

@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { getRequest } from '@tanstack/react-start/server';
@@ -37,6 +38,12 @@ const updateUserSchema = z.object({
   role: z.enum([USER_ROLES.ADMIN, USER_ROLES.USER]).optional(),
 });
 
+const createUserSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  role: z.enum([USER_ROLES.ADMIN, USER_ROLES.USER]),
+});
+
 const banUserSchema = z.object({
   userId: z.string().min(1),
   banReason: z.string().optional(),
@@ -51,6 +58,12 @@ const setPasswordSchema = z.object({
 const sessionTokenSchema = z.object({
   sessionToken: z.string().min(1),
 });
+
+type CreateAdminUserResult = {
+  onboardingEmailSent: boolean;
+  onboardingErrorMessage?: string;
+  user: AdminUser;
+};
 
 type RawAdminUser = {
   id?: string;
@@ -94,6 +107,7 @@ export type AdminUser = {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
+  needsOnboardingEmail?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -212,7 +226,7 @@ async function readResponsePayload(response: Response) {
   }
 }
 
-async function callBetterAuthAdmin<TResponse>(
+async function callBetterAuthEndpoint<TResponse>(
   path: string,
   init: {
     method?: 'GET' | 'POST';
@@ -297,7 +311,7 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
   const users: AdminUser[] = [];
 
   while (offset < total) {
-    const response = await callBetterAuthAdmin<AdminListUsersResponse>(
+    const response = await callBetterAuthEndpoint<AdminListUsersResponse>(
       '/api/auth/admin/list-users',
       {
         query: {
@@ -322,7 +336,7 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
 
 async function getAdminUserById(userId: string): Promise<AdminUser | null> {
   try {
-    const response = await callBetterAuthAdmin<RawAdminUser>('/api/auth/admin/get-user', {
+    const response = await callBetterAuthEndpoint<RawAdminUser>('/api/auth/admin/get-user', {
       query: { id: userId },
     });
 
@@ -387,6 +401,123 @@ export const listAdminUsersServerFn = createServerFn({ method: 'GET' })
     }
   });
 
+function createOnboardingPassword() {
+  return `${randomBytes(24).toString('base64url')}Aa1!`;
+}
+
+async function requestOnboardingEmail(email: string) {
+  const request = getCurrentRequest();
+  const redirectTo = new URL('/reset-password', request.url).toString();
+
+  await callBetterAuthEndpoint<{ status: boolean; message: string }>(
+    '/api/auth/request-password-reset',
+    {
+      method: 'POST',
+      body: {
+        email,
+        redirectTo,
+      },
+    },
+  );
+}
+
+export const createAdminUserServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(createUserSchema)
+  .handler(async ({ data }): Promise<CreateAdminUserResult> => {
+    try {
+      await requireAdmin();
+
+      const emailServiceStatus = await convexAuthReactStart.fetchAuthQuery(
+        api.emails.checkEmailServiceConfigured,
+        {},
+      );
+      if (!emailServiceStatus.isConfigured) {
+        throw new ServerError(
+          'Email service is not configured. Admin-created employees require onboarding email delivery.',
+          400,
+        );
+      }
+
+      const name = data.name.trim();
+      const email = data.email.trim().toLowerCase();
+      const password = createOnboardingPassword();
+      const created = await callBetterAuthEndpoint<{ user: RawAdminUser }>('/api/auth/admin/create-user', {
+        method: 'POST',
+        body: {
+          name,
+          email,
+          role: data.role,
+          password,
+        },
+      });
+
+      const createdUserId = created.user.id ?? created.user._id;
+      if (!createdUserId) {
+        throw new Error('Created user is missing an id');
+      }
+
+      await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
+        userId: createdUserId,
+      });
+      try {
+        await requestOnboardingEmail(email);
+        await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
+          userId: createdUserId,
+          needsOnboardingEmail: false,
+        });
+
+        return {
+          user: {
+            ...normalizeAdminUser(created.user),
+            needsOnboardingEmail: false,
+          },
+          onboardingEmailSent: true,
+        };
+      } catch (emailError) {
+        await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
+          userId: createdUserId,
+          needsOnboardingEmail: true,
+        });
+
+        return {
+          user: {
+            ...normalizeAdminUser(created.user),
+            needsOnboardingEmail: true,
+          },
+          onboardingEmailSent: false,
+          onboardingErrorMessage:
+            emailError instanceof Error
+              ? emailError.message
+              : 'User created, but sending the onboarding email failed.',
+        };
+      }
+    } catch (error) {
+      throw handleServerError(error, 'Create admin user');
+    }
+  });
+
+export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(userIdSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAdmin();
+      const user = await getAdminUserById(data.userId);
+      if (!user) {
+        throw new ServerError('User not found', 404);
+      }
+
+      await requestOnboardingEmail(user.email);
+      await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
+        userId: data.userId,
+        needsOnboardingEmail: false,
+      });
+
+      return { success: true };
+    } catch (error) {
+      throw handleServerError(error, 'Send admin onboarding email');
+    }
+  });
+
 export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
   .inputValidator(updateUserSchema)
   .handler(async ({ data }) => {
@@ -415,7 +546,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
 
       if (Object.keys(updateData).length > 0) {
         operations.push(
-          callBetterAuthAdmin<RawAdminUser>('/api/auth/admin/update-user', {
+          callBetterAuthEndpoint<RawAdminUser>('/api/auth/admin/update-user', {
             method: 'POST',
             body: {
               userId: data.userId,
@@ -427,7 +558,7 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
 
       if (data.role !== undefined) {
         operations.push(
-          callBetterAuthAdmin<{ user: RawAdminUser }>('/api/auth/admin/set-role', {
+          callBetterAuthEndpoint<{ user: RawAdminUser }>('/api/auth/admin/set-role', {
             method: 'POST',
             body: {
               userId: data.userId,
@@ -453,7 +584,7 @@ export const banAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthAdmin<{ user: RawAdminUser }>(
+      const response = await callBetterAuthEndpoint<{ user: RawAdminUser }>(
         '/api/auth/admin/ban-user',
         {
           method: 'POST',
@@ -475,7 +606,7 @@ export const unbanAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthAdmin<{ user: RawAdminUser }>(
+      const response = await callBetterAuthEndpoint<{ user: RawAdminUser }>(
         '/api/auth/admin/unban-user',
         {
           method: 'POST',
@@ -497,7 +628,7 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthAdmin<{ sessions: RawAdminSession[] }>(
+      const response = await callBetterAuthEndpoint<{ sessions: RawAdminSession[] }>(
         '/api/auth/admin/list-user-sessions',
         {
           method: 'POST',
@@ -516,7 +647,7 @@ export const revokeAdminUserSessionServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthAdmin<{ success: boolean }>(
+      return await callBetterAuthEndpoint<{ success: boolean }>(
         '/api/auth/admin/revoke-user-session',
         {
           method: 'POST',
@@ -533,7 +664,7 @@ export const revokeAdminUserSessionsServerFn = createServerFn({ method: 'POST' }
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthAdmin<{ success: boolean }>(
+      return await callBetterAuthEndpoint<{ success: boolean }>(
         '/api/auth/admin/revoke-user-sessions',
         {
           method: 'POST',
@@ -550,7 +681,7 @@ export const setAdminUserPasswordServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthAdmin<{ status: boolean }>('/api/auth/admin/set-user-password', {
+      return await callBetterAuthEndpoint<{ status: boolean }>('/api/auth/admin/set-user-password', {
         method: 'POST',
         body: data,
       });
@@ -573,7 +704,7 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       });
 
       try {
-        const result = await callBetterAuthAdmin<{ success: boolean }>(
+        const result = await callBetterAuthEndpoint<{ success: boolean }>(
           '/api/auth/admin/remove-user',
           {
             method: 'POST',

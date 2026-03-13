@@ -195,6 +195,7 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
 
   const nextValue = {
     ...profile,
+    needsOnboardingEmail: existing?.needsOnboardingEmail ?? false,
     lastSyncedAt: Date.now(),
   };
 
@@ -275,6 +276,30 @@ export const syncAuthUserProfile = internalMutation({
   },
 });
 
+export const setAuthUserOnboardingState = internalMutation({
+  args: {
+    authUserId: v.string(),
+    needsOnboardingEmail: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const existing = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+      .first();
+
+    if (!existing) {
+      return { success: false };
+    }
+
+    await ctx.db.patch(existing._id, {
+      needsOnboardingEmail: args.needsOnboardingEmail,
+      lastSyncedAt: Date.now(),
+    });
+
+    return { success: true };
+  },
+});
+
 export const deleteAuthUserProfile = internalMutation({
   args: {
     authUserId: v.string(),
@@ -309,6 +334,7 @@ export const syncUserProfilesSnapshot = internalMutation({
         banned: v.boolean(),
         banReason: v.union(v.string(), v.null()),
         banExpires: v.union(v.number(), v.null()),
+        needsOnboardingEmail: v.optional(v.boolean()),
         createdAt: v.number(),
         updatedAt: v.number(),
       }),
@@ -326,6 +352,7 @@ export const syncUserProfilesSnapshot = internalMutation({
       const existing = existingByAuthUserId.get(user.authUserId);
       const nextValue = {
         ...user,
+        needsOnboardingEmail: existing?.needsOnboardingEmail ?? user.needsOnboardingEmail ?? false,
         lastSyncedAt: syncTimestamp,
       };
 

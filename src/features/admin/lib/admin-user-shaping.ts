@@ -24,6 +24,7 @@ export type AdminListUser = {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
+  needsOnboardingEmail?: boolean;
   createdAt: number;
   updatedAt: number;
   organizations?: Array<{

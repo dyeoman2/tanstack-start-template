@@ -1,4 +1,11 @@
-import { getE2ETestSecret, isE2ETestAuthEnabled } from '~/lib/server/env.server';
+import { api } from '@convex/_generated/api';
+import {
+  getE2EPrincipalConfig,
+  getE2ETestSecret,
+  isE2ETestAuthEnabled,
+  type E2EPrincipalType,
+} from '~/lib/server/env.server';
+import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 
 const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
 
@@ -22,6 +29,138 @@ export function assertE2EAuthRequestAuthorized(request: Request) {
   if (!providedSecret || providedSecret !== getE2ETestSecret()) {
     throw new Response('Unauthorized', { status: 401 });
   }
+}
+
+type AuthRouteResponse = {
+  code?: string;
+  message?: string;
+};
+
+export type EstablishedE2EAuthSession = {
+  authResponse: Response;
+  email: string;
+  principal: E2EPrincipalType;
+  userId: string;
+};
+
+async function readAuthError(response: Response): Promise<AuthRouteResponse> {
+  try {
+    return (await response.json()) as AuthRouteResponse;
+  } catch {
+    const message = await response.text();
+    return { message };
+  }
+}
+
+async function postToAuthEndpoint(
+  request: Request,
+  path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
+  principal: ReturnType<typeof getE2EPrincipalConfig>,
+) {
+  const url = new URL(path, request.url);
+  const origin = new URL(request.url).origin;
+  const body =
+    path === '/api/auth/sign-up/email'
+      ? {
+          email: principal.email,
+          password: principal.password,
+          name: principal.name,
+          rememberMe: true,
+        }
+      : {
+          email: principal.email,
+          password: principal.password,
+          rememberMe: true,
+        };
+
+  return fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Origin: request.headers.get('origin') || origin,
+      Referer: request.headers.get('referer') || `${origin}/`,
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export async function establishE2EAuthSession(
+  request: Request,
+  principalType: E2EPrincipalType,
+): Promise<EstablishedE2EAuthSession> {
+  const principal = getE2EPrincipalConfig(principalType);
+  const secret = getE2ETestSecret();
+
+  let authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
+
+  if (!authResponse.ok) {
+    await convexAuthReactStart.fetchAuthMutation(api.e2e.resetPrincipalByEmail, {
+      secret,
+      email: principal.email,
+    });
+
+    authResponse = await postToAuthEndpoint(request, '/api/auth/sign-up/email', principal);
+
+    if (!authResponse.ok) {
+      const authError = await readAuthError(authResponse);
+      throw new Response(authError.message || 'Failed to provision e2e principal', {
+        status: authResponse.status,
+      });
+    }
+  }
+
+  const roleResult = await convexAuthReactStart.fetchAuthMutation(api.e2e.ensurePrincipalRole, {
+    secret,
+    email: principal.email,
+    role: principal.role,
+  });
+
+  if (!roleResult.found) {
+    throw new Response('Failed to reconcile e2e principal role', { status: 500 });
+  }
+
+  return {
+    authResponse,
+    email: principal.email,
+    principal: principal.role,
+    userId: roleResult.userId,
+  };
+}
+
+export function getSetCookieHeaders(response: Response): string[] {
+  return typeof response.headers.getSetCookie === 'function'
+    ? response.headers.getSetCookie()
+    : response.headers.get('set-cookie')
+      ? [response.headers.get('set-cookie') as string]
+      : [];
+}
+
+export function appendSetCookieHeaders(headers: Headers, setCookies: string[]) {
+  for (const setCookie of setCookies) {
+    headers.append('set-cookie', setCookie);
+  }
+}
+
+export function copySetCookieHeaders(source: Response, target: Headers) {
+  appendSetCookieHeaders(target, getSetCookieHeaders(source));
+}
+
+export function resolveAgentAuthRedirect(request: Request, redirectTo?: string): string {
+  const fallback = '/app';
+  const candidate = redirectTo?.trim() || fallback;
+
+  if (!candidate.startsWith('/')) {
+    throw new Response('redirectTo must be a same-origin relative path', { status: 400 });
+  }
+
+  const requestUrl = new URL(request.url);
+  const resolved = new URL(candidate, requestUrl.origin);
+
+  if (resolved.origin !== requestUrl.origin) {
+    throw new Response('redirectTo must be a same-origin relative path', { status: 400 });
+  }
+
+  return resolved.toString();
 }
 
 function parseExpires(value: string): number | undefined {
@@ -122,14 +261,7 @@ export function getPlaywrightCookiesFromResponse(
   response: Response,
   requestUrl: string,
 ): PlaywrightCookiePayload[] {
-  const setCookies =
-    typeof response.headers.getSetCookie === 'function'
-      ? response.headers.getSetCookie()
-      : response.headers.get('set-cookie')
-        ? [response.headers.get('set-cookie') as string]
-        : [];
-
-  return setCookies
+  return getSetCookieHeaders(response)
     .map((setCookie) => parseSetCookieHeader(setCookie, requestUrl))
     .filter((cookie): cookie is PlaywrightCookiePayload => cookie !== null);
 }

@@ -223,10 +223,19 @@ npx convex dashboard # Open Convex dashboard
 
 ### Browser Testing
 
-- When using Playwright MCP against the local app, prefer authenticating through `POST /api/test/e2e-auth` instead of filling the sign-in form manually.
+- When an AI agent needs to drive the browser, use [`agent-browser`](https://github.com/vercel-labs/agent-browser) instead of Playwright MCP.
+- Prefer the `agent-browser` ref workflow for AI-driven automation: `open` → `snapshot -i` → interact with `@e*` refs → re-snapshot after page changes.
+- Prefer authenticating browser agents through `POST /api/test/agent-auth` instead of filling the sign-in form manually.
+- `POST /api/test/agent-auth` accepts `{ "principal": "user" | "admin", "redirectTo"?: "/app" }`, requires the `x-e2e-test-secret` header, forwards Better Auth cookies, and redirects inside the same browser session.
+- Prefer `pnpm run agent:auth -- --session-name <name> --principal user --redirect-to /app` when the agent can invoke repo scripts. It authenticates a named `agent-browser` session through the route above and opens the requested page.
+- Admin example: `pnpm run agent:auth -- --session-name admin-check --principal admin --redirect-to /app/admin`
+- Use `POST /api/test/e2e-auth` only when a tool needs cookie JSON for manual injection, such as Playwright storage-state setup.
 - Read `E2E_TEST_SECRET`, `E2E_USER_EMAIL`, and `E2E_USER_PASSWORD` from `.env.local` when needed.
 - Default to the `user` principal for normal authenticated coverage. Use the `admin` principal only when validating admin-only behavior.
-- After calling `/api/test/e2e-auth`, add the returned cookies to the Playwright browser context before navigating to authenticated routes.
+- Keep the authentication request and subsequent page interactions inside the same browser session so the returned cookies persist for authenticated routes.
+- Use `http://127.0.0.1:3000`, not `http://localhost:3000`, for local browser automation so the origin stays consistent with the E2E server setup.
+- Always use a named `agent-browser` session for app work, wait for `networkidle` before the first snapshot on a new page, and re-snapshot after every navigation or form submit.
+- Close the named browser session when done to avoid leaked daemon/browser state between agent runs.
 - Only use manual UI login as a fallback when the auth route is not suitable for the specific test.
 
 ### Security

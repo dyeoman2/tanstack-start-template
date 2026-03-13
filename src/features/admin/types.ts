@@ -17,6 +17,7 @@ export interface User {
   banned: boolean;
   banReason: string | null;
   banExpires: number | null;
+  needsOnboardingEmail?: boolean;
   createdAt: number; // Unix timestamp from Convex
   updatedAt: number; // Unix timestamp from Convex
   organizations?: Array<{

@@ -160,6 +160,47 @@ E2E_TEST_SECRET=the-same-shared-secret
 
 `pnpm setup:e2e` handles that sync for the current deployment. You only need to set those deployment vars manually if you are not using the setup script.
 
+### Agent Browser Authentication
+
+For AI-driven browser automation, prefer the test-only agent auth endpoint instead of filling the login form:
+
+```http
+POST /api/test/agent-auth
+x-e2e-test-secret: <E2E_TEST_SECRET>
+Content-Type: application/json
+
+{
+  "principal": "user",
+  "redirectTo": "/app"
+}
+```
+
+Run that request from the same browser session your automation tool will continue using. On success, the endpoint forwards Better Auth `Set-Cookie` headers and redirects to the requested in-app path.
+
+Use `POST /api/test/e2e-auth` only when your tool needs cookie JSON for manual injection, such as Playwright storage state bootstrapping.
+
+If the agent can run repo scripts, the easiest path is:
+
+```bash
+pnpm run agent:auth -- --session-name codex-demo --principal user --redirect-to /app
+```
+
+That command loads `.env.local`, authenticates the named `agent-browser` session through `/api/test/agent-auth`, and opens the requested page in the same browser session.
+
+Admin flow:
+
+```bash
+pnpm run agent:auth -- --session-name codex-admin --principal admin --redirect-to /app/admin
+```
+
+For reliable browser automation in local development:
+
+- Use `http://127.0.0.1:3000` instead of `http://localhost:3000`.
+- Always use a named `agent-browser` session so auth state is isolated per run.
+- After opening a new page, wait for `networkidle` before the first snapshot.
+- Re-snapshot after every navigation or DOM-changing interaction.
+- Close the named session when done so stale browser state does not leak into later runs.
+
 ### 🔗 Link Your Local Project to Netlify (Optional)
 
 After deploying, link your local project to Netlify for easier management:

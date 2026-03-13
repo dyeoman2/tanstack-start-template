@@ -298,6 +298,7 @@ export const getOrganizationSettings = query({
         logo: context.organization.logo ?? null,
       },
       access: context.access,
+      isMember: context.viewerMembership !== null,
       viewerRole: context.viewerRole,
       canManage:
         context.access.siteAdmin ||
