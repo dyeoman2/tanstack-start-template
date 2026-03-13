@@ -60,6 +60,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [draftPersonaId, setDraftPersonaId] = useState<string | undefined>(undefined);
   const [draftModelId, setDraftModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL_ID);
   const [useWebSearch, setUseWebSearch] = useState(false);
+  const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
   >({});
@@ -78,7 +79,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const sendChatMessage = useAction(api.chatActions.sendChatMessage);
   const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
-  const createThread = useMutation(api.chat.createThread);
   const createPersona = useMutation(api.chat.createPersona);
   const updatePersona = useMutation(api.chat.updatePersona);
   const deletePersona = useMutation(api.chat.deletePersona);
@@ -140,6 +140,15 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const isThreadPending = Boolean(threadId && (thread === undefined || messages === undefined));
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled = isThreadPending;
+  const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
+  const pendingScrollTargetVisible = Boolean(
+    targetClientMessageId &&
+      (pendingPreview?.showUserMessage ||
+        currentMessages.some(
+          (message) =>
+            message.role === 'user' && message.clientMessageId === targetClientMessageId,
+        )),
+  );
   const alignPendingMessageToTop = useCallback(() => {
     const viewportNode = messageViewportRef.current;
     const targetNode = scrollTargetMessageRef.current;
@@ -262,24 +271,35 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }, [messages, threadId]);
 
   useEffect(() => {
-    if (!pendingSubmission?.clientMessageId) {
+    if (!pendingScrollTargetVisible) {
       return;
     }
 
-    let outerFrame = 0;
-    let innerFrame = 0;
+    let frameId = 0;
+    let attempts = 0;
 
-    outerFrame = requestAnimationFrame(() => {
-      innerFrame = requestAnimationFrame(() => {
+    const scheduleAlignment = () => {
+      frameId = requestAnimationFrame(() => {
         alignPendingMessageToTop();
+
+        attempts += 1;
+        if (attempts < 6) {
+          scheduleAlignment();
+        }
       });
-    });
+    };
+
+    scheduleAlignment();
 
     return () => {
-      cancelAnimationFrame(outerFrame);
-      cancelAnimationFrame(innerFrame);
+      cancelAnimationFrame(frameId);
     };
-  }, [alignPendingMessageToTop, pendingSubmission?.clientMessageId]);
+  }, [
+    alignPendingMessageToTop,
+    currentMessages,
+    pendingPreview?.showUserMessage,
+    pendingScrollTargetVisible,
+  ]);
 
   if (threadId && thread === null) {
     return (
@@ -302,6 +322,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const handleSend = async ({ parts, clear }: { parts: ChatMessagePart[]; clear: () => void }) => {
     const clientMessageId =
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    setScrollAnchorClientMessageId(clientMessageId);
     setIsSending(true);
 
     try {
@@ -312,54 +333,18 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           ? toPersonaId(draftPersonaId)
           : undefined;
 
-      if (!threadId) {
-        const nextThreadId = await createThread({ personaId, model: effectiveModelId });
-
-        setPendingThreadSubmission(nextThreadId, {
+      const submittedAt = Date.now();
+      if (threadId) {
+        setPendingThreadSubmission(threadId, {
           clientMessageId,
           modelId: effectiveModelId,
           parts,
-          submittedAt: Date.now(),
+          submittedAt,
           stage: 'submitting',
         });
-
-        await navigate({
-          to: '/app/chat/$threadId',
-          params: { threadId: nextThreadId },
-        });
-
-        void sendChatMessage({
-          threadId: nextThreadId,
-          personaId,
-          model: effectiveModelId,
-          useWebSearch,
-          parts,
-          clientMessageId,
-        }).catch((error) => {
-          updatePendingThreadSubmission(nextThreadId, (submission) =>
-            submission
-              ? {
-                  ...submission,
-                  stage: 'error',
-                  errorMessage: error instanceof Error ? error.message : 'Failed to send message.',
-                }
-              : submission,
-          );
-          showToast(error instanceof Error ? error.message : 'Failed to send message.', 'error');
-        });
-
-        return;
       }
 
-      setPendingThreadSubmission(threadId, {
-        clientMessageId,
-        modelId: effectiveModelId,
-        parts,
-        submittedAt: Date.now(),
-        stage: 'submitting',
-      });
-
-      await sendChatMessage({
+      const response = await sendChatMessage({
         threadId: typedThreadId,
         personaId,
         model: effectiveModelId,
@@ -367,6 +352,21 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         parts,
         clientMessageId,
       });
+
+      if (!threadId) {
+        setPendingThreadSubmission(response.threadId, {
+          clientMessageId,
+          modelId: effectiveModelId,
+          parts,
+          submittedAt,
+          stage: 'submitting',
+        });
+
+        await navigate({
+          to: '/app/chat/$threadId',
+          params: { threadId: response.threadId },
+        });
+      }
     } catch (error) {
       if (threadId) {
         updatePendingThreadSubmission(threadId, (submission) =>
@@ -450,7 +450,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   <div className="mx-auto w-full max-w-5xl">
                     <MessageList
                       messages={currentMessages}
-                      isStreaming={isSending}
                       pendingSubmission={pendingPreview}
                       regeneratingMessageId={regeneratingMessageId}
                       optimisticEdits={optimisticEdits}
@@ -468,7 +467,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                           text: optimisticEdits[message._id] ?? message.parts[0].text,
                         });
                       }}
-                      scrollTargetClientMessageId={pendingSubmission?.clientMessageId}
+                      scrollTargetClientMessageId={targetClientMessageId}
                       scrollTargetMessageRef={scrollTargetMessageRef}
                     />
                     <div ref={messageEndRef} aria-hidden="true" />

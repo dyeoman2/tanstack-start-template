@@ -1,12 +1,11 @@
 import { Check, Copy, ExternalLink, FileText, Pencil, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useMemo, useState, type RefObject } from 'react';
+import { memo, useCallback, useMemo, useState, type RefObject } from 'react';
 import { Button } from '~/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
-import { useToast } from '~/components/ui/toast';
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
 import type { PendingThreadSubmission } from '~/features/chat/lib/pending-thread-submission';
@@ -189,6 +188,10 @@ function getUserPartKey(part: ChatMessagePart) {
   }
 
   return `${part.type}-${part.sourceId}`;
+}
+
+function areMessagePartsEqual(left: ChatMessagePart[], right: ChatMessagePart[]) {
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function Sources({ sources }: { sources: ChatMessageSource[] }) {
@@ -406,6 +409,10 @@ function AssistantMessage({ message, thinking }: { message: ChatMessage; thinkin
       <div className="max-w-[95%] px-1 py-1 md:max-w-[88%]">
         {thinking && !text.trim() ? (
           <span className="text-base font-medium text-muted-foreground">Thinking...</span>
+        ) : message.status === 'pending' ? (
+          <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed text-foreground">
+            {text}
+          </pre>
         ) : (
           <Markdown>{text}</Markdown>
         )}
@@ -439,6 +446,17 @@ function AssistantMessage({ message, thinking }: { message: ChatMessage; thinkin
     </div>
   );
 }
+
+const MemoAssistantMessage = memo(
+  AssistantMessage,
+  (previous, next) =>
+    previous.thinking === next.thinking &&
+    previous.message._id === next.message._id &&
+    previous.message.status === next.message.status &&
+    previous.message.updatedAt === next.message.updatedAt &&
+    previous.message.errorMessage === next.message.errorMessage &&
+    areMessagePartsEqual(previous.message.parts, next.message.parts),
+);
 
 function StaticUserMessage({ parts }: { parts: ChatMessagePart[] }) {
   return (
@@ -476,7 +494,6 @@ function PendingAssistantMessage({
 
 export function MessageList({
   messages,
-  isStreaming,
   pendingSubmission,
   regeneratingMessageId,
   optimisticEdits = {},
@@ -485,7 +502,6 @@ export function MessageList({
   scrollTargetMessageRef,
 }: {
   messages: ChatMessage[];
-  isStreaming: boolean;
   pendingSubmission?: {
     submission: PendingThreadSubmission;
     showUserMessage: boolean;
@@ -497,9 +513,6 @@ export function MessageList({
   scrollTargetClientMessageId?: string;
   scrollTargetMessageRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const lastAssistantId = [...messages]
-    .reverse()
-    .find((message) => message.role === 'assistant')?._id;
   const optimisticMessages = useMemo(
     () =>
       messages.map((message) => {
@@ -555,15 +568,15 @@ export function MessageList({
             />
           </div>
         ) : (
-          <AssistantMessage
+          <MemoAssistantMessage
             key={message._id}
             message={message}
-            thinking={(isStreaming && message._id === lastAssistantId) || false}
+            thinking={message.status === 'pending'}
           />
         ),
       )}
       {regeneratingMessageId ? (
-        <AssistantMessage
+        <MemoAssistantMessage
           message={{
             _id: 'regenerating' as never,
             threadId: visibleMessages[0]?.threadId as never,

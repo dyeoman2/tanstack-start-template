@@ -99,10 +99,9 @@ function ChatThreadBreadcrumbLabel({
   fallback: string;
   threadId: string;
 }) {
-  const threads = useQuery(api.chat.listThreads, {});
-  const thread = threads?.find((item) => item._id === threadId);
+  const title = useQuery(api.chat.getThreadTitle, { threadId: threadId as never });
 
-  return thread?.title ?? fallback;
+  return title ?? fallback;
 }
 
 function AppBreadcrumbs() {

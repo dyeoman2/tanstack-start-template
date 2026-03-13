@@ -17,11 +17,9 @@ import {
   toSourceUrlParts,
 } from '../src/features/chat/lib/openrouter-web-search';
 import { getOpenRouterConfig } from '../src/lib/server/openrouter';
-import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { api, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { type ActionCtx, action } from './_generated/server';
-import { authComponent } from './auth';
+import { type ActionCtx, action, internalAction } from './_generated/server';
 
 type ChatMessagePart =
   | {
@@ -108,7 +106,8 @@ const messagePartValidator = v.union(
 );
 
 const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find information.';
-const DEFAULT_THREAD_TITLE = 'New Chat';
+const STREAM_FLUSH_INTERVAL_MS = 150;
+const STREAM_FLUSH_CHAR_THRESHOLD = 750;
 
 let openRouterProvider: ReturnType<typeof createOpenRouter> | null = null;
 const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenRouter>['chat']>>();
@@ -300,21 +299,7 @@ async function getResultSourceParts(
 }
 
 async function getAuthenticatedContext(ctx: ActionCtx) {
-  const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) {
-    throw new Error('Authentication required.');
-  }
-
-  const profile = await ctx.runQuery(api.users.getCurrentUserProfile, {});
-  if (!profile?.currentOrganization) {
-    throw new Error('Active organization not initialized for this user.');
-  }
-
-  return {
-    userId: profile.id,
-    organizationId: profile.currentOrganization.id,
-    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(profile.role)),
-  };
+  return await ctx.runQuery(internal.chat.getCurrentChatUserContextInternal, {});
 }
 
 async function getPersonaPrompt(ctx: ActionCtx, thread: AiThreadDoc, organizationId: string) {
@@ -330,11 +315,72 @@ async function getPersonaPrompt(ctx: ActionCtx, thread: AiThreadDoc, organizatio
   return persona?.prompt ?? DEFAULT_PERSONA_PROMPT;
 }
 
+function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessages'>) {
+  let buffer = '';
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let flushChain = Promise.resolve();
+
+  const flush = async () => {
+    if (!buffer) {
+      return;
+    }
+
+    const content = buffer;
+    buffer = '';
+    flushChain = flushChain.then(async () => {
+      await ctx.runMutation(internal.chat.appendAssistantChunkInternal, {
+        messageId,
+        content,
+      });
+    });
+    await flushChain;
+  };
+
+  const cancelTimer = () => {
+    if (!flushTimer) {
+      return;
+    }
+
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  };
+
+  const scheduleFlush = () => {
+    if (flushTimer) {
+      return;
+    }
+
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void flush();
+    }, STREAM_FLUSH_INTERVAL_MS);
+  };
+
+  return {
+    async push(chunk: string) {
+      buffer += chunk;
+
+      if (buffer.length >= STREAM_FLUSH_CHAR_THRESHOLD) {
+        cancelTimer();
+        await flush();
+        return;
+      }
+
+      scheduleFlush();
+    },
+    async flushAndClose() {
+      cancelTimer();
+      await flush();
+      await flushChain;
+    },
+  };
+}
+
 async function streamAssistantReply(
   ctx: ActionCtx,
   args: {
+    assistantMessageId: Id<'aiMessages'>;
     threadId: Id<'aiThreads'>;
-    userId: string;
     organizationId: string;
     thread: AiThreadDoc;
     messages: AiMessageDoc[];
@@ -343,14 +389,7 @@ async function streamAssistantReply(
   },
 ) {
   const prompt = await getPersonaPrompt(ctx, args.thread, args.organizationId);
-  const assistantMessageId = await ctx.runMutation(
-    internal.chat.createPendingAssistantMessageInternal,
-    {
-      threadId: args.threadId,
-      userId: args.userId,
-      organizationId: args.organizationId,
-    },
-  );
+  const persister = createBufferedAssistantPersister(ctx, args.assistantMessageId);
 
   try {
     const openRouterWebSearchProviderOptions =
@@ -376,18 +415,17 @@ async function streamAssistantReply(
     });
 
     for await (const chunk of result.textStream) {
-      await ctx.runMutation(internal.chat.appendAssistantChunkInternal, {
-        messageId: assistantMessageId,
-        content: chunk,
-      });
+      await persister.push(chunk);
     }
+
+    await persister.flushAndClose();
 
     const usage = await result.usage;
     const sourceParts = await getResultSourceParts(result);
 
     try {
       await ctx.runMutation(internal.chat.markAssistantCompleteInternal, {
-        messageId: assistantMessageId,
+        messageId: args.assistantMessageId,
         provider: 'openrouter',
         model: args.model.modelId,
         usage: buildUsageMetadata(usage),
@@ -400,23 +438,76 @@ async function streamAssistantReply(
 
       console.error('[chat] Failed to persist sources, retrying without them', error);
       await ctx.runMutation(internal.chat.markAssistantCompleteInternal, {
-        messageId: assistantMessageId,
+        messageId: args.assistantMessageId,
         provider: 'openrouter',
         model: args.model.modelId,
         usage: buildUsageMetadata(usage),
       });
     }
-
-    return assistantMessageId;
   } catch (error) {
+    await persister.flushAndClose();
     await ctx.runMutation(internal.chat.markAssistantErrorInternal, {
-      messageId: assistantMessageId,
+      messageId: args.assistantMessageId,
       errorMessage: error instanceof Error ? error.message : 'Streaming failed.',
     });
 
     throw error;
   }
 }
+
+export const streamAssistantReplyInternal = internalAction({
+  args: {
+    assistantMessageId: v.id('aiMessages'),
+    threadId: v.id('aiThreads'),
+    organizationId: v.string(),
+    isSiteAdmin: v.boolean(),
+    model: v.optional(v.string()),
+    useWebSearch: v.boolean(),
+    submittedParts: v.array(messagePartValidator),
+  },
+  handler: async (ctx, args) => {
+    const generationContext = await ctx.runQuery(internal.chat.getThreadGenerationContextInternal, {
+      threadId: args.threadId,
+      organizationId: args.organizationId,
+      excludeMessageId: args.assistantMessageId,
+    });
+
+    if (!generationContext) {
+      await ctx.runMutation(internal.chat.markAssistantErrorInternal, {
+        messageId: args.assistantMessageId,
+        errorMessage: 'Thread not found.',
+      });
+      return;
+    }
+
+    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
+    const modelId = resolveChatModelId(
+      args.model,
+      generationContext.thread.model,
+      generationContext.messages,
+      availableModels,
+      args.isSiteAdmin,
+    );
+    const model = getAuthorizedChatModelEntry(modelId, availableModels, args.isSiteAdmin);
+
+    await ctx.runMutation(internal.chat.updateThreadAfterMessageInternal, {
+      threadId: args.threadId,
+      parts: args.submittedParts,
+      model: modelId,
+      titleFallback: generationContext.thread.title,
+    });
+
+    await streamAssistantReply(ctx, {
+      assistantMessageId: args.assistantMessageId,
+      threadId: args.threadId,
+      organizationId: args.organizationId,
+      thread: generationContext.thread,
+      messages: generationContext.messages,
+      model,
+      useWebSearch: args.useWebSearch,
+    });
+  },
+});
 
 export const sendChatMessage = action({
   args: {
@@ -437,72 +528,39 @@ export const sendChatMessage = action({
       throw new ConvexError('Message content is required.');
     }
 
-    let threadId = args.threadId;
-    let thread = threadId ? await ctx.runQuery(api.chat.getThread, { threadId }) : null;
-
-    if (threadId && !thread) {
-      throw new Error('Thread not found.');
-    }
-
-    if (!thread) {
-      threadId = await ctx.runMutation(api.chat.createThread, {
+    const { threadId, assistantMessageId } = await ctx.runMutation(
+      internal.chat.prepareMessageSendInternal,
+      {
+        threadId: args.threadId,
         personaId: args.personaId,
         model: args.model,
-      });
-      thread = await ctx.runQuery(api.chat.getThread, { threadId });
-    }
-
-    if (!threadId || !thread) {
-      throw new Error('Failed to initialize chat thread.');
-    }
-
-    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
-    const modelId = resolveChatModelId(
-      args.model,
-      thread.model,
-      await ctx.runQuery(api.chat.listMessages, { threadId }),
-      availableModels,
-      isSiteAdmin,
+        userId,
+        organizationId,
+        parts: args.parts,
+        clientMessageId: args.clientMessageId,
+      },
     );
 
-    await ctx.runMutation(internal.chat.createUserMessageInternal, {
-      threadId,
-      userId,
-      organizationId,
-      parts: args.parts,
-      clientMessageId: args.clientMessageId,
-    });
+    try {
+      await ctx.scheduler.runAfter(0, internal.chatActions.streamAssistantReplyInternal, {
+        assistantMessageId,
+        threadId,
+        organizationId,
+        isSiteAdmin,
+        model: args.model,
+        useWebSearch: args.useWebSearch ?? false,
+        submittedParts: args.parts,
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.chat.markAssistantErrorInternal, {
+        messageId: assistantMessageId,
+        errorMessage: error instanceof Error ? error.message : 'Failed to start streaming.',
+      });
 
-    await ctx.runMutation(internal.chat.updateThreadAfterMessageInternal, {
-      threadId,
-      parts: args.parts,
-      model: modelId,
-      titleFallback: thread.personaId
-        ? ((
-            await ctx.runQuery(internal.chat.getPersonaByIdInternal, {
-              personaId: thread.personaId,
-              organizationId,
-            })
-          )?.name ?? DEFAULT_THREAD_TITLE)
-        : DEFAULT_THREAD_TITLE,
-    });
+      throw error;
+    }
 
-    const messages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const model = getAuthorizedChatModelEntry(modelId, availableModels, isSiteAdmin);
-    const assistantMessageId = await streamAssistantReply(ctx, {
-      threadId,
-      userId,
-      organizationId,
-      thread,
-      messages,
-      model,
-      useWebSearch: args.useWebSearch ?? false,
-    });
-
-    return {
-      threadId,
-      assistantMessageId,
-    };
+    return { threadId, assistantMessageId };
   },
 });
 
@@ -518,58 +576,34 @@ export const editUserMessageAndRegenerate = action({
     args,
   ): Promise<{ threadId: Id<'aiThreads'>; assistantMessageId: Id<'aiMessages'> }> => {
     const { userId, organizationId, isSiteAdmin } = await getAuthenticatedContext(ctx);
-    const threadId = await ctx.runMutation(internal.chat.updateUserMessageTextInternal, {
-      messageId: args.messageId,
-      text: args.text,
-    });
-
-    if (!threadId) {
-      throw new Error('Message not found.');
-    }
-
-    const messages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const editedMessage = messages.find((message: AiMessageDoc) => message._id === args.messageId);
-    if (!editedMessage) {
-      throw new Error('Message not found.');
-    }
-
-    await ctx.runMutation(internal.chat.deleteMessagesAfterInternal, {
-      threadId,
-      createdAt: editedMessage.createdAt,
-    });
-
-    const thread = await ctx.runQuery(api.chat.getThread, { threadId });
-    if (!thread) {
-      throw new Error('Thread not found.');
-    }
-
-    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
-    const regeneratedMessages = await ctx.runQuery(api.chat.listMessages, { threadId });
-    const modelId = resolveChatModelId(
-      args.model,
-      thread.model,
-      regeneratedMessages,
-      availableModels,
-      isSiteAdmin,
+    const { threadId, assistantMessageId } = await ctx.runMutation(
+      internal.chat.prepareRegenerateMessageInternal,
+      {
+        messageId: args.messageId,
+        text: args.text,
+        userId,
+        organizationId,
+      },
     );
 
-    await ctx.runMutation(internal.chat.updateThreadAfterMessageInternal, {
-      threadId,
-      parts: [{ type: 'text', text: args.text }],
-      titleFallback: thread.title,
-      model: modelId,
-    });
+    try {
+      await ctx.scheduler.runAfter(0, internal.chatActions.streamAssistantReplyInternal, {
+        assistantMessageId,
+        threadId,
+        organizationId,
+        isSiteAdmin,
+        model: args.model,
+        useWebSearch: args.useWebSearch ?? false,
+        submittedParts: [{ type: 'text', text: args.text }],
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.chat.markAssistantErrorInternal, {
+        messageId: assistantMessageId,
+        errorMessage: error instanceof Error ? error.message : 'Failed to start streaming.',
+      });
 
-    const model = getAuthorizedChatModelEntry(modelId, availableModels, isSiteAdmin);
-    const assistantMessageId = await streamAssistantReply(ctx, {
-      threadId,
-      userId,
-      organizationId,
-      thread,
-      messages: regeneratedMessages,
-      model,
-      useWebSearch: args.useWebSearch ?? false,
-    });
+      throw error;
+    }
 
     return {
       threadId,

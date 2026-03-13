@@ -10,6 +10,7 @@ import {
 } from './_generated/server';
 import { getCurrentUserOrThrow } from './auth/access';
 import { throwConvexError } from './auth/errors';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 
 const textPartValidator = v.object({
   type: v.literal('text'),
@@ -202,6 +203,18 @@ export const getThread = query({
   handler: async (ctx, args) => {
     const user = await getCurrentUserOrThrow(ctx);
     return await getThreadForUser(ctx, args.threadId, user.lastActiveOrganizationId);
+  },
+});
+
+export const getThreadTitle = query({
+  args: {
+    threadId: v.id('aiThreads'),
+  },
+  handler: async (ctx, args) => {
+    const user = await getCurrentUserOrThrow(ctx);
+    const thread = await getThreadForUser(ctx, args.threadId, user.lastActiveOrganizationId);
+
+    return thread?.title ?? null;
   },
 });
 
@@ -542,6 +555,179 @@ export const getPersonaByIdInternal = internalQuery({
   },
   handler: async (ctx, args) => {
     return await getPersonaForUser(ctx, args.personaId, args.organizationId);
+  },
+});
+
+export const getCurrentChatUserContextInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    const user = await getCurrentUserOrThrow(ctx);
+
+    return {
+      userId: user.authUserId,
+      organizationId: user.lastActiveOrganizationId,
+      isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(user.authUser.role)),
+    };
+  },
+});
+
+export const getThreadGenerationContextInternal = internalQuery({
+  args: {
+    threadId: v.id('aiThreads'),
+    organizationId: v.string(),
+    excludeMessageId: v.optional(v.id('aiMessages')),
+  },
+  handler: async (ctx, args) => {
+    const thread = await getThreadForUser(ctx, args.threadId, args.organizationId);
+    if (!thread) {
+      return null;
+    }
+
+    const messages = await ctx.db
+      .query('aiMessages')
+      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+      .collect();
+
+    return {
+      thread,
+      messages: args.excludeMessageId
+        ? messages.filter((message) => message._id !== args.excludeMessageId)
+        : messages,
+    };
+  },
+});
+
+export const prepareMessageSendInternal = internalMutation({
+  args: {
+    threadId: v.optional(v.id('aiThreads')),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+    userId: v.string(),
+    organizationId: v.string(),
+    parts: v.array(messagePartValidator),
+    clientMessageId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    let threadId = args.threadId;
+    let thread = threadId ? await getThreadForUser(ctx, threadId, args.organizationId) : null;
+
+    if (threadId && !thread) {
+      throwConvexError('NOT_FOUND', 'Thread not found');
+    }
+
+    if (!thread) {
+      let title = DEFAULT_THREAD_TITLE;
+
+      if (args.personaId) {
+        const persona = await getPersonaForUser(ctx, args.personaId, args.organizationId);
+        if (!persona) {
+          throwConvexError('NOT_FOUND', 'Persona not found');
+        }
+        title = persona.name;
+      }
+
+      const now = Date.now();
+      threadId = await ctx.db.insert('aiThreads', {
+        userId: args.userId,
+        organizationId: args.organizationId,
+        title,
+        pinned: false,
+        personaId: args.personaId,
+        model: args.model,
+        titleManuallyEdited: false,
+        createdAt: now,
+        updatedAt: now,
+        lastMessageAt: now,
+      });
+
+      thread = await ctx.db.get(threadId);
+    }
+
+    if (!threadId || !thread) {
+      throw new Error('Failed to initialize chat thread.');
+    }
+
+    const now = Date.now();
+    await ctx.db.insert('aiMessages', {
+      threadId,
+      userId: args.userId,
+      organizationId: args.organizationId,
+      role: 'user',
+      parts: args.parts,
+      status: 'complete',
+      createdAt: now,
+      updatedAt: now,
+      clientMessageId: args.clientMessageId,
+    });
+
+    const assistantMessageId = await ctx.db.insert('aiMessages', {
+      threadId,
+      userId: args.userId,
+      organizationId: args.organizationId,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '' }],
+      status: 'pending',
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    return { threadId, assistantMessageId };
+  },
+});
+
+export const prepareRegenerateMessageInternal = internalMutation({
+  args: {
+    messageId: v.id('aiMessages'),
+    text: v.string(),
+    userId: v.string(),
+    organizationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const message = await ctx.db.get(args.messageId);
+    if (!message || message.organizationId !== args.organizationId || message.role !== 'user') {
+      throwConvexError('NOT_FOUND', 'Message not found');
+    }
+
+    const nextText = args.text.trim();
+    if (!nextText) {
+      throwConvexError('VALIDATION', 'Message text is required');
+    }
+
+    const hasNonTextParts = message.parts.some((part) => part.type !== 'text');
+    if (hasNonTextParts) {
+      throwConvexError('FORBIDDEN', 'Only text-only user messages can be edited');
+    }
+
+    const thread = await getThreadForUser(ctx, message.threadId, args.organizationId);
+    if (!thread) {
+      throwConvexError('NOT_FOUND', 'Thread not found');
+    }
+
+    const messages = await ctx.db
+      .query('aiMessages')
+      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', message.threadId))
+      .collect();
+
+    const toDelete = messages.filter((candidate) => candidate.createdAt > message.createdAt);
+    await Promise.all(toDelete.map((candidate) => ctx.db.delete(candidate._id)));
+
+    await ctx.db.patch(args.messageId, {
+      parts: [{ type: 'text', text: nextText }],
+      updatedAt: Date.now(),
+    });
+
+    const assistantMessageId = await ctx.db.insert('aiMessages', {
+      threadId: message.threadId,
+      userId: args.userId,
+      organizationId: args.organizationId,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '' }],
+      status: 'pending',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+
+    return { threadId: message.threadId, assistantMessageId };
   },
 });
 
