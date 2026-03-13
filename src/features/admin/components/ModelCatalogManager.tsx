@@ -29,6 +29,7 @@ type ModelCatalogEntry = {
   label: string;
   description: string;
   access: ChatModelAccess;
+  supportsWebSearch?: boolean;
   priceLabel?: string;
   contextWindow?: number;
   source: string;
@@ -44,6 +45,7 @@ type ModelCatalogPayload = {
   label: string;
   description: string;
   access: ChatModelAccess;
+  supportsWebSearch?: boolean;
   priceLabel?: string;
   contextWindow?: number;
   isActive: boolean;
@@ -67,6 +69,7 @@ const EMPTY_FORM_VALUES: ModelCatalogPayload = {
   label: '',
   description: '',
   access: 'public',
+  supportsWebSearch: true,
   priceLabel: '',
   contextWindow: undefined,
   isActive: true,
@@ -105,6 +108,7 @@ export function ModelCatalogManager({
       label: editingModel.label,
       description: editingModel.description,
       access: editingModel.access,
+      supportsWebSearch: editingModel.supportsWebSearch ?? true,
       priceLabel: editingModel.priceLabel ?? '',
       contextWindow: editingModel.contextWindow,
       isActive: editingModel.isActive,
@@ -124,6 +128,7 @@ export function ModelCatalogManager({
         label: value.label.trim(),
         description: value.description.trim(),
         access: value.access,
+        supportsWebSearch: value.supportsWebSearch ?? true,
         priceLabel: emptyStringToUndefined(value.priceLabel),
         contextWindow: value.contextWindow,
         isActive: value.isActive,
@@ -224,6 +229,7 @@ export function ModelCatalogManager({
                   <div className="space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium">{model.label}</span>
+                      {model.supportsWebSearch ? <Badge variant="info">Web</Badge> : null}
                       {model.beta ? <Badge variant="warning">Beta</Badge> : null}
                       {model.deprecated ? <Badge variant="outline">Deprecated</Badge> : null}
                     </div>
@@ -447,6 +453,29 @@ export function ModelCatalogManager({
             </div>
 
             <div className="grid gap-4 md:grid-cols-3">
+              <form.Field name="supportsWebSearch">
+                {(field) => (
+                  <Field>
+                    <FieldLabel>Web search</FieldLabel>
+                    <Select
+                      value={field.state.value ? 'true' : 'false'}
+                      onValueChange={(value) => field.handleChange(value === 'true')}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="true">Enabled</SelectItem>
+                        <SelectItem value="false">Disabled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FieldDescription>
+                      Enable OpenRouter web search for this model.
+                    </FieldDescription>
+                  </Field>
+                )}
+              </form.Field>
+
               <form.Field name="isActive">
                 {(field) => (
                   <Field>

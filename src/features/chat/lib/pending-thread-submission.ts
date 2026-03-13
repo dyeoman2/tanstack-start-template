@@ -4,6 +4,7 @@ import type { ChatMessagePart } from '~/features/chat/types';
 export type PendingThreadSubmission = {
   clientMessageId: string;
   parts: ChatMessagePart[];
+  modelId?: string;
   submittedAt: number;
   stage: 'submitting' | 'streaming' | 'error';
   errorMessage?: string;

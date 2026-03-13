@@ -153,6 +153,7 @@ export const importTopFreeModels = action({
           model.description?.trim() || 'Top free OpenRouter model imported from the current rankings.',
         task: 'Text Generation',
         access: 'public' as const,
+        supportsWebSearch: true,
         priceLabel: formatPriceLabel(promptPrice, completionPrice),
         prices:
           promptPrice !== undefined || completionPrice !== undefined
@@ -217,6 +218,7 @@ export const importTopPaidModels = action({
             model.description?.trim() || 'Top paid OpenRouter model imported from the current rankings.',
           task: 'Text Generation',
           access: 'admin' as const,
+          supportsWebSearch: true,
           priceLabel: formatPriceLabel(promptPrice, completionPrice),
           prices:
             promptPrice !== undefined || completionPrice !== undefined

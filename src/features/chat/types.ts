@@ -59,6 +59,7 @@ export type ChatThread = {
   title: string;
   pinned: boolean;
   personaId?: Id<'aiPersonas'>;
+  model?: string;
   titleManuallyEdited: boolean;
   createdAt: number;
   updatedAt: number;

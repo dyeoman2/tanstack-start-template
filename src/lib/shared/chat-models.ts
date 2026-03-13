@@ -13,6 +13,7 @@ export type ChatModelCatalogEntry = {
   description: string;
   task: string;
   access: ChatModelAccess;
+  supportsWebSearch?: boolean;
   priceLabel?: string;
   prices?: ChatModelPrice[];
   contextWindow?: number;
@@ -30,6 +31,7 @@ export type ChatModelOption = {
   description: string;
   access: ChatModelAccess;
   selectable: boolean;
+  supportsWebSearch?: boolean;
   priceLabel?: string;
   badge?: string;
 };
@@ -45,6 +47,7 @@ export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatMo
     description: DEFAULT_CHAT_MODEL_DESCRIPTION,
     task: 'Text Generation',
     access: 'public',
+    supportsWebSearch: true,
     priceLabel: 'Free',
     prices: [
       { unit: 'per M input tokens', price: 0.15, currency: 'USD' },
@@ -87,6 +90,7 @@ export function toChatModelOption(
     description: model.description,
     access: model.access,
     selectable,
+    supportsWebSearch: model.supportsWebSearch ?? true,
     priceLabel: model.priceLabel,
     badge:
       model.access === 'admin'

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildComposerParts } from '~/features/chat/lib/attachments';
-import { deriveThreadTitle, sortThreads } from '~/features/chat/lib/utils';
+import { deriveThreadTitle, resolveRequestedModelId, sortThreads } from '~/features/chat/lib/utils';
 
 describe('chat utils', () => {
   it('sorts pinned threads before recency', () => {
@@ -64,5 +64,25 @@ describe('chat utils', () => {
         content: 'hello world',
       },
     ]);
+  });
+
+  it('keeps the pending submission model selected after navigating to a new thread', () => {
+    expect(
+      resolveRequestedModelId({
+        threadId: 'thread-1',
+        draftModelId: 'openai/gpt-4o-mini',
+        pendingSubmissionModelId: 'anthropic/claude-3.5-sonnet',
+      }),
+    ).toBe('anthropic/claude-3.5-sonnet');
+  });
+
+  it('prefers the persisted thread model over the default before responses arrive', () => {
+    expect(
+      resolveRequestedModelId({
+        threadId: 'thread-1',
+        draftModelId: 'openai/gpt-4o-mini',
+        threadModelId: 'anthropic/claude-3.5-sonnet',
+      }),
+    ).toBe('anthropic/claude-3.5-sonnet');
   });
 });

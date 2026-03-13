@@ -27,6 +27,7 @@ const chatModelCatalogInputValidator = v.object({
   label: v.string(),
   description: v.string(),
   access: v.union(v.literal('public'), v.literal('admin')),
+  supportsWebSearch: v.optional(v.boolean()),
   priceLabel: v.optional(v.string()),
   contextWindow: v.optional(v.number()),
   isActive: v.boolean(),
@@ -41,6 +42,7 @@ const storedChatModelCatalogEntryValidator = v.object({
   description: v.string(),
   task: v.string(),
   access: v.union(v.literal('public'), v.literal('admin')),
+  supportsWebSearch: v.optional(v.boolean()),
   priceLabel: v.optional(v.string()),
   prices: v.optional(
     v.array(
@@ -99,6 +101,9 @@ function toStoredChatModelCatalogEntry(entry: ChatModelCatalogEntry) {
     source: entry.source,
     isActive: entry.isActive,
     refreshedAt: entry.refreshedAt,
+    ...(entry.supportsWebSearch !== undefined
+      ? { supportsWebSearch: entry.supportsWebSearch }
+      : {}),
     ...(entry.priceLabel ? { priceLabel: entry.priceLabel } : {}),
     ...(entry.prices ? { prices: entry.prices } : {}),
     ...(entry.contextWindow !== undefined ? { contextWindow: entry.contextWindow } : {}),
@@ -119,6 +124,7 @@ function buildChatModelCatalogEntry(
     label: string;
     description: string;
     access: ChatModelAccess;
+    supportsWebSearch?: boolean;
     priceLabel?: string;
     contextWindow?: number;
     isActive: boolean;
@@ -134,6 +140,7 @@ function buildChatModelCatalogEntry(
     description: input.description.trim(),
     task: DEFAULT_CHAT_TASK,
     access: input.access,
+    supportsWebSearch: input.supportsWebSearch ?? true,
     priceLabel: normalizeOptionalString(input.priceLabel),
     contextWindow: input.contextWindow,
     source: OPENROUTER_SOURCE,
@@ -481,6 +488,7 @@ export const createChatModel = mutation({
     label: v.string(),
     description: v.string(),
     access: v.union(v.literal('public'), v.literal('admin')),
+    supportsWebSearch: v.optional(v.boolean()),
     priceLabel: v.optional(v.string()),
     contextWindow: v.optional(v.number()),
     isActive: v.boolean(),

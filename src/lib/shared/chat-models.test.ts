@@ -4,6 +4,7 @@ import {
   getChatModelOption,
   getAuthorizedChatModel,
   getDefaultChatModelCatalogEntry,
+  toChatModelOption,
 } from '~/lib/shared/chat-models';
 
 describe('getDefaultChatModelCatalogEntry', () => {
@@ -12,6 +13,7 @@ describe('getDefaultChatModelCatalogEntry', () => {
       modelId: DEFAULT_CHAT_MODEL_ID,
       label: 'GPT-4o Mini',
       source: 'openrouter',
+      supportsWebSearch: true,
       refreshedAt: 123,
     });
   });
@@ -69,5 +71,19 @@ describe('getChatModelOption', () => {
     ];
 
     expect(getChatModelOption(options, 'missing/model')).toEqual(options[0]);
+  });
+});
+
+describe('toChatModelOption', () => {
+  it('preserves web search support on searchable models', () => {
+    const model = {
+      ...getDefaultChatModelCatalogEntry(),
+      supportsWebSearch: true,
+    };
+
+    expect(toChatModelOption(model, true)).toMatchObject({
+      id: model.modelId,
+      supportsWebSearch: true,
+    });
   });
 });

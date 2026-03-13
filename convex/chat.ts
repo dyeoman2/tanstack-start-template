@@ -241,6 +241,7 @@ export const listPersonas = query({
 export const createThread = mutation({
   args: {
     personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await getCurrentUserOrThrow(ctx);
@@ -261,6 +262,7 @@ export const createThread = mutation({
       title,
       pinned: false,
       personaId: args.personaId,
+      model: args.model,
       titleManuallyEdited: false,
       createdAt: now,
       updatedAt: now,
@@ -621,6 +623,7 @@ export const markAssistantCompleteInternal = internalMutation({
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
     usage: v.optional(usageValidator),
+    sourceParts: v.optional(v.array(sourceUrlPartValidator)),
   },
   handler: async (ctx, args) => {
     const message = await ctx.db.get(args.messageId);
@@ -628,7 +631,13 @@ export const markAssistantCompleteInternal = internalMutation({
       return;
     }
 
+    const nextParts =
+      args.sourceParts && args.sourceParts.length > 0
+        ? [...message.parts, ...args.sourceParts]
+        : message.parts;
+
     await ctx.db.patch(args.messageId, {
+      parts: nextParts,
       status: 'complete',
       provider: args.provider,
       model: args.model,
@@ -662,6 +671,7 @@ export const updateThreadAfterMessageInternal = internalMutation({
     threadId: v.id('aiThreads'),
     parts: v.array(messagePartValidator),
     titleFallback: v.string(),
+    model: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const thread = await ctx.db.get(args.threadId);
@@ -673,6 +683,7 @@ export const updateThreadAfterMessageInternal = internalMutation({
     const patch: Partial<AiThreadDoc> = {
       updatedAt: now,
       lastMessageAt: now,
+      ...(args.model ? { model: args.model } : {}),
     };
 
     if (!thread.personaId && !thread.titleManuallyEdited && thread.title === DEFAULT_THREAD_TITLE) {

@@ -3,6 +3,11 @@ import { useAction } from 'convex/react';
 import { Check, Copy, ExternalLink, FileText, Pencil, Volume2, VolumeX } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
 import { Button } from '~/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { useToast } from '~/components/ui/toast';
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
@@ -112,6 +117,62 @@ function getSourceTitle(source: ChatMessageSource) {
   return source.title || 'Document';
 }
 
+function getSourceHostname(source: ChatMessageSource) {
+  if (source.type !== 'url') {
+    return 'Document';
+  }
+
+  try {
+    return new URL(source.url).hostname.replace(/^www\./, '');
+  } catch {
+    return source.url;
+  }
+}
+
+function getSourceInitial(source: ChatMessageSource) {
+  const label = getSourceHostname(source);
+  const match = label.match(/[A-Za-z0-9]/);
+
+  return match?.[0]?.toUpperCase() ?? 'S';
+}
+
+function getSourceFaviconUrl(source: ChatMessageSource) {
+  if (source.type !== 'url') {
+    return null;
+  }
+
+  try {
+    const url = new URL(source.url);
+    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url.hostname)}&sz=64`;
+  } catch {
+    return null;
+  }
+}
+
+function SourceAvatar({ source, className }: { source: ChatMessageSource; className?: string }) {
+  const [showFallback, setShowFallback] = useState(source.type !== 'url');
+  const faviconUrl = getSourceFaviconUrl(source);
+
+  return (
+    <span
+      className={cn(
+        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/70 bg-muted text-[10px] font-semibold text-foreground',
+        className,
+      )}
+    >
+      {!showFallback && faviconUrl ? (
+        <img
+          src={faviconUrl}
+          alt=""
+          className="size-full object-cover"
+          onError={() => setShowFallback(true)}
+        />
+      ) : null}
+      {showFallback ? <span>{getSourceInitial(source)}</span> : null}
+    </span>
+  );
+}
+
 function getUserPartKey(part: ChatMessagePart) {
   if (part.type === 'text') {
     return `${part.type}-${part.text}`;
@@ -138,43 +199,80 @@ function Sources({ sources }: { sources: ChatMessageSource[] }) {
   }
 
   return (
-    <div className="mt-3 space-y-2">
-      <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-        <ExternalLink className="size-4" />
-        <span>Sources</span>
-      </div>
-      <div className="space-y-1.5">
-        {sources.map((source, index) => {
-          const title = getSourceTitle(source);
-
-          if (source.type === 'url') {
-            return (
-              <a
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-8 rounded-full px-2.5 text-muted-foreground hover:text-foreground"
+        >
+          <span className="flex items-center">
+            {sources.slice(0, 4).map((source, index) => (
+              <SourceAvatar
                 key={source.id}
-                href={source.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-xs transition-colors hover:bg-accent/40"
-              >
-                <span className="shrink-0 text-muted-foreground">[{index + 1}]</span>
-                <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-                <ExternalLink className="size-3.5 shrink-0 text-muted-foreground" />
-              </a>
-            );
-          }
+                source={source}
+                className={cn(
+                  'size-5 shadow-xs',
+                  index > 0 ? '-ml-1.5 ring-2 ring-background' : '',
+                )}
+              />
+            ))}
+          </span>
+          <span>Sources</span>
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={8}
+        className="w-[min(32rem,calc(100vw-2rem))] rounded-3xl p-0"
+      >
+        <div className="border-b border-border/60 px-5 py-4">
+          <p className="text-lg font-semibold">Sources</p>
+        </div>
+        <div className="max-h-[min(28rem,60vh)] overflow-y-auto px-5 py-2">
+          {sources.map((source, index) => {
+            const title = getSourceTitle(source);
+            const hostname = getSourceHostname(source);
 
-          return (
-            <div
-              key={source.id}
-              className="flex items-start gap-2 rounded-lg border border-border/60 bg-background/50 px-3 py-2 text-xs"
-            >
-              <span className="shrink-0 text-muted-foreground">[{index + 1}]</span>
-              <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+            if (source.type === 'url') {
+              return (
+                <a
+                  key={source.id}
+                  href={source.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-start gap-3 border-b border-border/60 py-4 last:border-b-0 hover:bg-accent/20"
+                >
+                  <SourceAvatar source={source} className="mt-0.5 size-10 text-sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-muted-foreground">{hostname}</p>
+                    <p className="mt-1 text-base font-semibold leading-snug">{title}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2 text-sm text-muted-foreground">
+                    <span className="hidden sm:inline">[{index + 1}]</span>
+                    <ExternalLink className="size-4" />
+                  </div>
+                </a>
+              );
+            }
+
+            return (
+              <div
+                key={source.id}
+                className="flex items-start gap-3 border-b border-border/60 py-4 last:border-b-0"
+              >
+                <SourceAvatar source={source} className="mt-0.5 size-10 text-sm" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-muted-foreground">{hostname}</p>
+                  <p className="mt-1 text-base font-semibold leading-snug">{title}</p>
+                </div>
+                <span className="shrink-0 text-sm text-muted-foreground">[{index + 1}]</span>
+              </div>
+            );
+          })}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -267,56 +365,56 @@ function EditableUserMessage({
           isEditing ? 'opacity-100' : 'opacity-0 group-hover/message:opacity-100',
         )}
       >
-          {isEditing ? (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="rounded-full"
-                onClick={onCancelEdit}
-                disabled={isRegenerating}
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className="rounded-full"
-                onClick={() => void onSaveEdit(draftText)}
-                disabled={isRegenerating}
-              >
-                {isRegenerating ? 'Saving...' : 'Save'}
-              </Button>
-            </>
-          ) : (
-            <>
+        {isEditing ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={onCancelEdit}
+              disabled={isRegenerating}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={() => void onSaveEdit(draftText)}
+              disabled={isRegenerating}
+            >
+              {isRegenerating ? 'Saving...' : 'Save'}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full text-muted-foreground"
+              onClick={() => {
+                void copy(copyText);
+              }}
+              aria-label={copied ? 'Copied' : 'Copy message'}
+            >
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            </Button>
+            {textPart ? (
               <Button
                 size="icon-sm"
                 variant="ghost"
                 className="rounded-full text-muted-foreground"
                 onClick={() => {
-                  void copy(copyText);
+                  setDraftText(textPart.text);
+                  onStartEdit();
                 }}
-                aria-label={copied ? 'Copied' : 'Copy message'}
+                aria-label="Edit message"
               >
-                {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                <Pencil className="size-4" />
               </Button>
-              {textPart ? (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="rounded-full text-muted-foreground"
-                  onClick={() => {
-                    setDraftText(textPart.text);
-                    onStartEdit();
-                  }}
-                  aria-label="Edit message"
-                >
-                  <Pencil className="size-4" />
-                </Button>
-              ) : null}
-            </>
-          )}
+            ) : null}
+          </>
+        )}
       </div>
     </div>
   );
@@ -383,14 +481,8 @@ function AssistantMessage({ message, thinking }: { message: ChatMessage; thinkin
           >
             {isSpeaking ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
           </Button>
-          {sources.length > 0 ? (
-            <div className="ml-2 flex items-center gap-2 text-sm font-medium">
-              <ExternalLink className="size-4" />
-              <span>Sources</span>
-            </div>
-          ) : null}
+          {sources.length > 0 ? <Sources sources={sources} /> : null}
         </div>
-        <Sources sources={sources} />
         {message.status === 'error' && message.errorMessage ? (
           <p className="mt-3 text-sm text-destructive">{message.errorMessage}</p>
         ) : null}
@@ -422,7 +514,9 @@ function PendingAssistantMessage({
     <div className="flex justify-start">
       <div className="max-w-[95%] px-1 py-1 md:max-w-[88%]">
         {stage === 'error' ? (
-          <p className="text-sm text-destructive">{errorMessage ?? 'Failed to generate a response.'}</p>
+          <p className="text-sm text-destructive">
+            {errorMessage ?? 'Failed to generate a response.'}
+          </p>
         ) : (
           <span className="text-base font-medium text-muted-foreground">Thinking...</span>
         )}

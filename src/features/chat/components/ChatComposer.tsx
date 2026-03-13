@@ -4,6 +4,7 @@ import {
   Bot,
   ChevronDown,
   FileText,
+  Globe,
   Mic,
   MicOff,
   Paperclip,
@@ -52,9 +53,11 @@ type ChatComposerProps = {
   modelOptions: ChatModelOption[];
   personas?: ChatPersona[];
   selectedModelId?: ChatModelId;
+  useWebSearch?: boolean;
   selectedPersonaId?: string;
   selectedPersonaLabel?: string;
   onSelectModel?: (modelId: ChatModelId) => void;
+  onToggleWebSearch?: () => void;
   onSelectPersona?: (personaId?: string) => void;
   onManagePersonas?: () => void;
   onSend: (payload: {
@@ -70,9 +73,11 @@ export function ChatComposer({
   modelOptions,
   personas = [],
   selectedModelId = DEFAULT_CHAT_MODEL_ID,
+  useWebSearch = false,
   selectedPersonaId,
   selectedPersonaLabel,
   onSelectModel,
+  onToggleWebSearch,
   onSelectPersona,
   onManagePersonas,
   onSend,
@@ -389,6 +394,31 @@ export function ChatComposer({
               </Button>
             </TooltipTrigger>
             <TooltipContent>Attach files</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                disabled={disabled}
+                onClick={onToggleWebSearch}
+                aria-pressed={useWebSearch}
+                aria-label={useWebSearch ? 'Disable web search' : 'Enable web search'}
+                className={
+                  useWebSearch
+                    ? 'size-9 rounded-full bg-[#e7f0ff] text-[#1f5cab] shadow-none hover:bg-[#d8e7ff] hover:text-[#184f96]'
+                    : 'size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
+                }
+              >
+                <Globe className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {useWebSearch
+                ? 'Web search enabled for next message'
+                : 'Enable web search for next message'}
+            </TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <Tooltip>

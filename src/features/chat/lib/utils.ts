@@ -1,5 +1,6 @@
 import type { ChatMessagePart, ChatThread } from '~/features/chat/types';
 import { NEW_CHAT_TITLE } from '~/features/chat/lib/constants';
+import { DEFAULT_CHAT_MODEL_ID, type ChatModelId } from '~/lib/shared/chat-models';
 
 const WORD_SPLIT_REGEX = /\s+/;
 const BR_TAG_REGEX = /<br\s*\/?>/gi;
@@ -48,4 +49,32 @@ export function deriveThreadTitle(parts: ChatMessagePart[], fallback = NEW_CHAT_
   }
 
   return truncateWords(candidate, 4) || fallback;
+}
+
+export function resolveRequestedModelId({
+  threadId,
+  draftModelId,
+  threadModelOverride,
+  threadModelId,
+  pendingSubmissionModelId,
+  inferredThreadModelId,
+}: {
+  threadId?: string;
+  draftModelId: ChatModelId;
+  threadModelOverride?: ChatModelId;
+  threadModelId?: ChatModelId;
+  pendingSubmissionModelId?: ChatModelId;
+  inferredThreadModelId?: ChatModelId;
+}) {
+  if (!threadId) {
+    return draftModelId;
+  }
+
+  return (
+    threadModelOverride ??
+    threadModelId ??
+    pendingSubmissionModelId ??
+    inferredThreadModelId ??
+    DEFAULT_CHAT_MODEL_ID
+  );
 }

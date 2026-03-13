@@ -156,6 +156,7 @@ export default defineSchema({
     title: v.string(),
     pinned: v.boolean(),
     personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -206,6 +207,7 @@ export default defineSchema({
     description: v.string(),
     task: v.string(),
     access: v.union(v.literal('public'), v.literal('admin')),
+    supportsWebSearch: v.optional(v.boolean()),
     priceLabel: v.optional(v.string()),
     prices: v.optional(
       v.array(

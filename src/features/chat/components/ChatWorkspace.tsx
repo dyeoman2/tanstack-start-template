@@ -16,6 +16,7 @@ import {
   usePendingThreadSubmission,
 } from '~/features/chat/lib/pending-thread-submission';
 import type { ChatMessagePart } from '~/features/chat/types';
+import { resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
   type ChatModelId,
   DEFAULT_CHAT_MODEL_ID,
@@ -58,6 +59,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [personaDialogOpen, setPersonaDialogOpen] = useState(false);
   const [draftPersonaId, setDraftPersonaId] = useState<string | undefined>(undefined);
   const [draftModelId, setDraftModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL_ID);
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
   >({});
@@ -101,9 +103,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
     return undefined;
   }, [currentMessages]);
-  const requestedModelId = threadId
-    ? (threadModelOverrides[threadId] ?? inferredThreadModelId ?? DEFAULT_CHAT_MODEL_ID)
-    : draftModelId;
+  const requestedModelId = resolveRequestedModelId({
+    threadId,
+    draftModelId,
+    threadModelOverride: threadId ? threadModelOverrides[threadId] : undefined,
+    threadModelId: thread?.model,
+    pendingSubmissionModelId: pendingSubmission?.modelId,
+    inferredThreadModelId,
+  });
   const selectedModelOption = getChatModelOption(modelOptions ?? [], requestedModelId);
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
@@ -248,10 +255,11 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           : undefined;
 
       if (!threadId) {
-        const nextThreadId = await createThread({ personaId });
+        const nextThreadId = await createThread({ personaId, model: effectiveModelId });
 
         setPendingThreadSubmission(nextThreadId, {
           clientMessageId,
+          modelId: effectiveModelId,
           parts,
           submittedAt: Date.now(),
           stage: 'submitting',
@@ -266,6 +274,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           threadId: nextThreadId,
           personaId,
           model: effectiveModelId,
+          useWebSearch,
           parts,
           clientMessageId,
         }).catch((error) => {
@@ -286,6 +295,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
       setPendingThreadSubmission(threadId, {
         clientMessageId,
+        modelId: effectiveModelId,
         parts,
         submittedAt: Date.now(),
         stage: 'submitting',
@@ -295,6 +305,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         threadId: typedThreadId,
         personaId,
         model: effectiveModelId,
+        useWebSearch,
         parts,
         clientMessageId,
       });
@@ -335,6 +346,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   modelOptions={modelOptions}
                   personas={personas ?? []}
                   selectedModelId={effectiveModelId}
+                  useWebSearch={useWebSearch}
                   selectedPersonaId={effectivePersonaId}
                   selectedPersonaLabel={currentPersonaLabel}
                   onSelectModel={(modelId) => {
@@ -362,6 +374,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                       setDraftPersonaId(personaId);
                     }
                   }}
+                  onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                   onManagePersonas={() => setPersonaDialogOpen(true)}
                   onSend={handleSend}
                 />
@@ -396,6 +409,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     modelOptions={modelOptions}
                     personas={personas ?? []}
                     selectedModelId={effectiveModelId}
+                    useWebSearch={useWebSearch}
                     selectedPersonaId={effectivePersonaId}
                     selectedPersonaLabel={currentPersonaLabel}
                     onSelectModel={(modelId) => {
@@ -423,6 +437,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                         setDraftPersonaId(personaId);
                       }
                     }}
+                    onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                     onManagePersonas={() => setPersonaDialogOpen(true)}
                     onSend={handleSend}
                   />
