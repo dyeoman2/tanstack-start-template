@@ -1,7 +1,5 @@
-import { api } from '@convex/_generated/api';
-import { useAction } from 'convex/react';
 import { Check, Copy, ExternalLink, FileText, Pencil, Volume2, VolumeX } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, type RefObject } from 'react';
+import { useCallback, useMemo, useState, type RefObject } from 'react';
 import { Button } from '~/components/ui/button';
 import {
   DropdownMenu,
@@ -312,109 +310,60 @@ function UserPart({ part }: { part: ChatMessagePart }) {
 function EditableUserMessage({
   message,
   onStartEdit,
-  onCancelEdit,
-  onSaveEdit,
-  isEditing,
-  isRegenerating,
 }: {
   message: ChatMessage;
   onStartEdit: () => void;
-  onCancelEdit: () => void;
-  onSaveEdit: (text: string) => Promise<void>;
-  isEditing: boolean;
-  isRegenerating: boolean;
 }) {
   const { copy, copied } = useCopyToClipboard();
   const textPart =
     message.parts.length === 1 && message.parts[0]?.type === 'text' ? message.parts[0] : null;
-  const [draftText, setDraftText] = useState(textPart?.text ?? '');
   const copyText = useMemo(() => getTextFromParts(message.parts), [message.parts]);
 
   return (
     <div className="group/message ml-auto flex max-w-[90%] flex-col items-end md:max-w-[80%]">
       <div className="rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground shadow-sm">
-        {isEditing && textPart ? (
-          <textarea
-            value={draftText}
-            rows={1}
-            onChange={(event) => setDraftText(event.target.value)}
-            className="min-h-[1.75rem] w-full resize-none bg-transparent text-base leading-relaxed outline-none [field-sizing:content]"
+        {message.parts.map((part) => (
+          <UserPart
+            key={
+              part.type === 'text'
+                ? `${message._id}-${part.type}-${part.text.slice(0, 24)}`
+                : part.type === 'image'
+                  ? `${message._id}-${part.type}-${part.image.slice(0, 24)}`
+                  : part.type === 'document'
+                    ? `${message._id}-${part.type}-${part.name}-${part.content.slice(0, 24)}`
+                    : part.type === 'source-url'
+                      ? `${message._id}-${part.type}-${part.url}`
+                      : `${message._id}-${part.type}-${part.sourceId}`
+            }
+            part={part}
           />
-        ) : (
-          message.parts.map((part) => (
-            <UserPart
-              key={
-                part.type === 'text'
-                  ? `${message._id}-${part.type}-${part.text.slice(0, 24)}`
-                  : part.type === 'image'
-                    ? `${message._id}-${part.type}-${part.image.slice(0, 24)}`
-                    : part.type === 'document'
-                      ? `${message._id}-${part.type}-${part.name}-${part.content.slice(0, 24)}`
-                      : part.type === 'source-url'
-                        ? `${message._id}-${part.type}-${part.url}`
-                        : `${message._id}-${part.type}-${part.sourceId}`
-              }
-              part={part}
-            />
-          ))
-        )}
+        ))}
       </div>
       <div
-        className={cn(
-          'mt-0.5 flex justify-end gap-1 transition-opacity',
-          isEditing ? 'opacity-100' : 'opacity-0 group-hover/message:opacity-100',
-        )}
+        className={cn('mt-0.5 flex justify-end gap-1 opacity-0 transition-opacity group-hover/message:opacity-100')}
       >
-        {isEditing ? (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="rounded-full"
-              onClick={onCancelEdit}
-              disabled={isRegenerating}
-            >
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="rounded-full"
-              onClick={() => void onSaveEdit(draftText)}
-              disabled={isRegenerating}
-            >
-              {isRegenerating ? 'Saving...' : 'Save'}
-            </Button>
-          </>
-        ) : (
-          <>
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="rounded-full text-muted-foreground"
-              onClick={() => {
-                void copy(copyText);
-              }}
-              aria-label={copied ? 'Copied' : 'Copy message'}
-            >
-              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-            </Button>
-            {textPart ? (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="rounded-full text-muted-foreground"
-                onClick={() => {
-                  setDraftText(textPart.text);
-                  onStartEdit();
-                }}
-                aria-label="Edit message"
-              >
-                <Pencil className="size-4" />
-              </Button>
-            ) : null}
-          </>
-        )}
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="rounded-full text-muted-foreground"
+          onClick={() => {
+            void copy(copyText);
+          }}
+          aria-label={copied ? 'Copied' : 'Copy message'}
+        >
+          {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+        </Button>
+        {textPart ? (
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            className="rounded-full text-muted-foreground"
+            onClick={onStartEdit}
+            aria-label="Edit message"
+          >
+            <Pencil className="size-4" />
+          </Button>
+        ) : null}
       </div>
     </div>
   );
@@ -529,6 +478,9 @@ export function MessageList({
   messages,
   isStreaming,
   pendingSubmission,
+  regeneratingMessageId,
+  optimisticEdits = {},
+  onStartEditMessage,
   scrollTargetClientMessageId,
   scrollTargetMessageRef,
 }: {
@@ -539,14 +491,12 @@ export function MessageList({
     showUserMessage: boolean;
     showAssistantPlaceholder: boolean;
   };
+  regeneratingMessageId?: string | null;
+  optimisticEdits?: Record<string, string>;
+  onStartEditMessage?: (message: ChatMessage) => void;
   scrollTargetClientMessageId?: string;
   scrollTargetMessageRef?: RefObject<HTMLDivElement | null>;
 }) {
-  const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
-  const { showToast } = useToast();
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
-  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
-  const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const lastAssistantId = [...messages]
     .reverse()
     .find((message) => message.role === 'assistant')?._id;
@@ -570,31 +520,6 @@ export function MessageList({
       }),
     [messages, optimisticEdits],
   );
-  useEffect(() => {
-    setOptimisticEdits((current) => {
-      let changed = false;
-      const next = { ...current };
-
-      for (const message of messages) {
-        const optimisticText = next[message._id];
-        if (
-          !optimisticText ||
-          message.role !== 'user' ||
-          message.parts.length !== 1 ||
-          message.parts[0]?.type !== 'text'
-        ) {
-          continue;
-        }
-
-        if (message.parts[0].text === optimisticText) {
-          delete next[message._id];
-          changed = true;
-        }
-      }
-
-      return changed ? next : current;
-    });
-  }, [messages]);
   const visibleMessages = useMemo(() => {
     if (!regeneratingMessageId) {
       return optimisticMessages;
@@ -624,35 +549,8 @@ export function MessageList({
           >
             <EditableUserMessage
               message={message}
-              isEditing={editingMessageId === message._id}
-              isRegenerating={regeneratingMessageId === message._id}
-              onStartEdit={() => setEditingMessageId(message._id)}
-              onCancelEdit={() => setEditingMessageId(null)}
-              onSaveEdit={async (text) => {
-                try {
-                  setOptimisticEdits((current) => ({
-                    ...current,
-                    [message._id]: text,
-                  }));
-                  setRegeneratingMessageId(message._id);
-                  setEditingMessageId(null);
-                  await editUserMessageAndRegenerate({
-                    messageId: message._id,
-                    text,
-                  });
-                } catch (error) {
-                  setOptimisticEdits((current) => {
-                    const next = { ...current };
-                    delete next[message._id];
-                    return next;
-                  });
-                  showToast(
-                    error instanceof Error ? error.message : 'Failed to edit message.',
-                    'error',
-                  );
-                } finally {
-                  setRegeneratingMessageId(null);
-                }
+              onStartEdit={() => {
+                onStartEditMessage?.(message);
               }}
             />
           </div>

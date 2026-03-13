@@ -77,12 +77,18 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const personas = useQuery(api.chat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const sendChatMessage = useAction(api.chatActions.sendChatMessage);
+  const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
   const createThread = useMutation(api.chat.createThread);
   const createPersona = useMutation(api.chat.createPersona);
   const updatePersona = useMutation(api.chat.updatePersona);
   const deletePersona = useMutation(api.chat.deletePersona);
   const setThreadPersona = useMutation(api.chat.setThreadPersona);
   const pendingSubmission = usePendingThreadSubmission(threadId);
+  const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
+    null,
+  );
+  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
+  const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
 
   const effectivePersonaId = thread?.personaId ?? draftPersonaId;
   const currentPersonaLabel = useMemo(() => {
@@ -152,6 +158,58 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       behavior: 'auto',
     });
   }, []);
+
+  useEffect(() => {
+    setOptimisticEdits((current) => {
+      let changed = false;
+      const next = { ...current };
+
+      for (const message of currentMessages) {
+        const optimisticText = next[message._id];
+        if (
+          !optimisticText ||
+          message.role !== 'user' ||
+          message.parts.length !== 1 ||
+          message.parts[0]?.type !== 'text'
+        ) {
+          continue;
+        }
+
+        if (message.parts[0].text === optimisticText) {
+          delete next[message._id];
+          changed = true;
+        }
+      }
+
+      return changed ? next : current;
+    });
+  }, [currentMessages]);
+
+  useEffect(() => {
+    if (!editingMessage) {
+      return;
+    }
+
+    const matchingMessage = currentMessages.find((message) => message._id === editingMessage.messageId);
+    if (!matchingMessage || matchingMessage.role !== 'user') {
+      setEditingMessage(null);
+      return;
+    }
+
+    if (matchingMessage.parts.length !== 1 || matchingMessage.parts[0]?.type !== 'text') {
+      setEditingMessage(null);
+      return;
+    }
+
+    if (regeneratingMessageId === editingMessage.messageId) {
+      return;
+    }
+
+    const nextText = optimisticEdits[editingMessage.messageId] ?? matchingMessage.parts[0].text;
+    if (nextText !== editingMessage.text) {
+      setEditingMessage({ messageId: editingMessage.messageId, text: nextText });
+    }
+  }, [currentMessages, editingMessage, optimisticEdits, regeneratingMessageId]);
 
   useEffect(() => {
     if (!threadId || !pendingSubmission || !messages) {
@@ -394,6 +452,22 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                       messages={currentMessages}
                       isStreaming={isSending}
                       pendingSubmission={pendingPreview}
+                      regeneratingMessageId={regeneratingMessageId}
+                      optimisticEdits={optimisticEdits}
+                      onStartEditMessage={(message) => {
+                        if (
+                          message.role !== 'user' ||
+                          message.parts.length !== 1 ||
+                          message.parts[0]?.type !== 'text'
+                        ) {
+                          return;
+                        }
+
+                        setEditingMessage({
+                          messageId: message._id,
+                          text: optimisticEdits[message._id] ?? message.parts[0].text,
+                        });
+                      }}
                       scrollTargetClientMessageId={pendingSubmission?.clientMessageId}
                       scrollTargetMessageRef={scrollTargetMessageRef}
                     />
@@ -439,6 +513,39 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     }}
                     onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                     onManagePersonas={() => setPersonaDialogOpen(true)}
+                    editingMessage={editingMessage ?? undefined}
+                    isSavingEdit={Boolean(regeneratingMessageId)}
+                    onCancelEdit={() => setEditingMessage(null)}
+                    onSubmitEdit={async ({ messageId, text, clear }) => {
+                      try {
+                        setOptimisticEdits((current) => ({
+                          ...current,
+                          [messageId]: text,
+                        }));
+                        setRegeneratingMessageId(messageId);
+                        setEditingMessage(null);
+                        clear();
+                        await editUserMessageAndRegenerate({
+                          messageId: messageId as never,
+                          text,
+                          model: effectiveModelId,
+                          useWebSearch,
+                        });
+                      } catch (error) {
+                        setOptimisticEdits((current) => {
+                          const next = { ...current };
+                          delete next[messageId];
+                          return next;
+                        });
+                        setEditingMessage({ messageId, text });
+                        showToast(
+                          error instanceof Error ? error.message : 'Failed to edit message.',
+                          'error',
+                        );
+                      } finally {
+                        setRegeneratingMessageId(null);
+                      }
+                    }}
                     onSend={handleSend}
                   />
                 </div>

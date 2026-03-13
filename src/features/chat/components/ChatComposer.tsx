@@ -7,6 +7,7 @@ import {
   Globe,
   Mic,
   MicOff,
+  Pencil,
   Paperclip,
   X,
 } from 'lucide-react';
@@ -60,6 +61,13 @@ type ChatComposerProps = {
   onToggleWebSearch?: () => void;
   onSelectPersona?: (personaId?: string) => void;
   onManagePersonas?: () => void;
+  editingMessage?: {
+    messageId: string;
+    text: string;
+  };
+  isSavingEdit?: boolean;
+  onCancelEdit?: () => void;
+  onSubmitEdit?: (payload: { messageId: string; text: string; clear: () => void }) => Promise<void>;
   onSend: (payload: {
     text: string;
     parts: ReturnType<typeof buildComposerParts>;
@@ -80,6 +88,10 @@ export function ChatComposer({
   onToggleWebSearch,
   onSelectPersona,
   onManagePersonas,
+  editingMessage,
+  isSavingEdit = false,
+  onCancelEdit,
+  onSubmitEdit,
   onSend,
 }: ChatComposerProps) {
   const { showToast } = useToast();
@@ -94,7 +106,14 @@ export function ChatComposer({
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const isListeningRef = useRef(false);
   const isManualStopRef = useRef(false);
+  const preEditDraftRef = useRef<{
+    message: string;
+    uploadedImages: UploadedImage[];
+    uploadedDocuments: UploadedDocument[];
+  } | null>(null);
+  const activeEditMessageIdRef = useRef<string | null>(null);
   const inputId = useId();
+  const isEditing = Boolean(editingMessage);
 
   const hasContent = useMemo(
     () => message.trim() || uploadedImages.length > 0 || uploadedDocuments.length > 0,
@@ -112,6 +131,61 @@ export function ChatComposer({
     setError(null);
     setInterimTranscript('');
   }, []);
+
+  useEffect(() => {
+    if (!editingMessage) {
+      if (activeEditMessageIdRef.current !== null) {
+        const draft = preEditDraftRef.current;
+        if (draft) {
+          setMessage(draft.message);
+          setUploadedImages(draft.uploadedImages);
+          setUploadedDocuments(draft.uploadedDocuments);
+        }
+        preEditDraftRef.current = null;
+        activeEditMessageIdRef.current = null;
+        setError(null);
+        setInterimTranscript('');
+      }
+
+      return;
+    }
+
+    const isNewEditSession = activeEditMessageIdRef.current === null;
+    const isSameMessage = activeEditMessageIdRef.current === editingMessage.messageId;
+
+    if (isNewEditSession) {
+      preEditDraftRef.current = {
+        message,
+        uploadedImages,
+        uploadedDocuments,
+      };
+    }
+
+    if (!isSameMessage && !isNewEditSession) {
+      activeEditMessageIdRef.current = editingMessage.messageId;
+      setMessage(editingMessage.text);
+      setUploadedImages([]);
+      setUploadedDocuments([]);
+      setError(null);
+      setInterimTranscript('');
+      textAreaRef.current?.focus();
+      return;
+    }
+
+    activeEditMessageIdRef.current = editingMessage.messageId;
+    if (message !== editingMessage.text) {
+      setMessage(editingMessage.text);
+    }
+    if (uploadedImages.length > 0) {
+      setUploadedImages([]);
+    }
+    if (uploadedDocuments.length > 0) {
+      setUploadedDocuments([]);
+    }
+    setError(null);
+    setInterimTranscript('');
+    textAreaRef.current?.focus();
+  }, [editingMessage?.messageId, editingMessage?.text]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -251,6 +325,26 @@ export function ChatComposer({
   }, [isListening, showToast]);
 
   const handleSubmit = useCallback(async () => {
+    if (editingMessage) {
+      const text = message.trim();
+      if (!text) {
+        setError('Please enter a message to continue.');
+        return;
+      }
+
+      setError(null);
+      await onSubmitEdit?.({
+        messageId: editingMessage.messageId,
+        text,
+        clear: () => {
+          preEditDraftRef.current = null;
+          activeEditMessageIdRef.current = null;
+          clearComposer();
+        },
+      });
+      return;
+    }
+
     const parts = buildComposerParts(message, uploadedImages, uploadedDocuments);
     if (parts.length === 0) {
       setError('Please enter a message or upload a file to continue.');
@@ -263,10 +357,28 @@ export function ChatComposer({
       parts,
       clear: clearComposer,
     });
-  }, [clearComposer, message, onSend, uploadedDocuments, uploadedImages]);
+  }, [clearComposer, editingMessage, message, onSend, onSubmitEdit, uploadedDocuments, uploadedImages]);
 
   return (
     <div className="rounded-[20px] border border-[#e3e1dc] bg-white px-5 py-2 shadow-[0_1px_4px_rgba(0,0,0,0.05)]">
+      {editingMessage ? (
+        <div className="mb-3 flex items-center justify-between rounded-[18px] border border-[#e8e5df] bg-[#faf9f7] px-4 py-3">
+          <div className="flex items-center gap-3">
+            <Pencil className="size-5 text-[#24211d]" />
+            <span className="text-lg font-semibold text-[#24211d]">Edit</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onCancelEdit}
+            className="size-9 rounded-full text-[#6f6c66] shadow-none hover:bg-black/5 hover:text-[#24211d]"
+            aria-label="Cancel edit"
+          >
+            <X className="size-5" />
+          </Button>
+        </div>
+      ) : null}
       <div className="flex flex-wrap gap-2 pb-1.5">
         {uploadedImages.map((image, index) => (
           <div key={`${image.name || 'image'}-${image.image.slice(0, 32)}`} className="relative">
@@ -362,7 +474,7 @@ export function ChatComposer({
           }
         }}
         disabled={disabled}
-        placeholder="Ask anything"
+        placeholder={editingMessage ? 'Edit your message' : 'Ask anything'}
         className="min-h-[58px] w-full resize-none bg-transparent px-1 pt-0 text-[15px] leading-6 text-[#403d39] outline-none placeholder:font-normal placeholder:text-[#b8b5af]"
       />
       {interimTranscript ? (
@@ -387,7 +499,7 @@ export function ChatComposer({
                 variant="ghost"
                 size="icon"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={disabled}
+                disabled={disabled || isEditing}
                 className="size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]"
               >
                 <Paperclip className="size-4" />
@@ -428,7 +540,7 @@ export function ChatComposer({
                     type="button"
                     variant="ghost"
                     size={personaButtonLabel ? 'sm' : 'icon'}
-                    disabled={disabled}
+                    disabled={disabled || isEditing}
                     className={
                       personaButtonLabel
                         ? 'max-w-44 gap-2 rounded-full pl-3 pr-3 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
@@ -491,7 +603,7 @@ export function ChatComposer({
                 type="button"
                 variant="ghost"
                 size="sm"
-                disabled={disabled}
+                disabled={disabled || isEditing}
                 className="max-w-44 gap-2 rounded-full px-3 text-[#403d39] shadow-none hover:bg-black/5 hover:text-[#24211d]"
                 aria-label={`Choose model: ${selectedModel.label}`}
               >
@@ -540,6 +652,7 @@ export function ChatComposer({
                 variant="ghost"
                 size="icon"
                 onClick={toggleVoiceInput}
+                disabled={isEditing}
                 className="size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]"
               >
                 {isListening ? <MicOff className="size-4" /> : <Mic className="size-4" />}
@@ -555,8 +668,9 @@ export function ChatComposer({
             onClick={() => {
               void handleSubmit();
             }}
-            disabled={disabled || isSending || !hasContent}
+            disabled={disabled || isSending || isSavingEdit || !hasContent}
             className="rounded-full"
+            aria-label={editingMessage ? 'Save edit' : 'Send message'}
           >
             <ArrowUp className="size-4" />
           </Button>

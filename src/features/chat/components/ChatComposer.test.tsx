@@ -66,4 +66,46 @@ describe('ChatComposer', () => {
 
     expect(screen.getByLabelText('Enable web search')).toBeInTheDocument();
   });
+
+  it('loads the main composer into edit mode and saves through the edit callback', async () => {
+    const user = userEvent.setup();
+    const onSubmitEdit = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatComposer
+            isSending={false}
+            modelOptions={[
+              {
+                id: 'openai/gpt-4o-mini',
+                label: 'GPT-4o Mini',
+                description: 'Default model',
+                access: 'public',
+                selectable: true,
+              },
+            ]}
+            editingMessage={{ messageId: 'message-1', text: 'tell me more' }}
+            onCancelEdit={vi.fn()}
+            onSubmitEdit={onSubmitEdit}
+            onSend={vi.fn().mockResolvedValue(undefined)}
+          />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    expect(screen.getByText('Edit')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('tell me more')).toBeInTheDocument();
+    expect(screen.getByLabelText('Cancel edit')).toBeInTheDocument();
+
+    await user.clear(screen.getByDisplayValue('tell me more'));
+    await user.type(screen.getByLabelText('Message'), 'tell me even more');
+    await user.click(screen.getByLabelText('Save edit'));
+
+    expect(onSubmitEdit).toHaveBeenCalledWith({
+      messageId: 'message-1',
+      text: 'tell me even more',
+      clear: expect.any(Function),
+    });
+  });
 });
