@@ -30,6 +30,8 @@ function AdminDashboardIndex() {
     handleCreateModel,
     handleUpdateModel,
     handleSetModelActiveState,
+    handleImportTopFreeModels,
+    handleImportTopPaidModels,
   } = useAdminDashboard();
 
   return (
@@ -53,6 +55,8 @@ function AdminDashboardIndex() {
         onCreateModel={handleCreateModel}
         onUpdateModel={handleUpdateModel}
         onSetModelActiveState={handleSetModelActiveState}
+        onImportTopFreeModels={handleImportTopFreeModels}
+        onImportTopPaidModels={handleImportTopPaidModels}
       />
 
       <TruncateDataModal

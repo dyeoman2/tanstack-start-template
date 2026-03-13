@@ -1,7 +1,7 @@
 'use node';
 
 import { type LanguageModelUsage, type ModelMessage, streamText } from 'ai';
-import { createOpenAI } from '@ai-sdk/openai';
+import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import { ConvexError, v } from 'convex/values';
 import {
   getAuthorizedChatModel,
@@ -103,8 +103,8 @@ const messagePartValidator = v.union(
 const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find information.';
 const DEFAULT_THREAD_TITLE = 'New Chat';
 
-let openRouterProvider: ReturnType<typeof createOpenAI> | null = null;
-const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenAI>>>();
+let openRouterProvider: ReturnType<typeof createOpenRouter> | null = null;
+const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenRouter>['chat']>>();
 
 function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
@@ -192,11 +192,10 @@ function buildUsageMetadata(usage: LanguageModelUsage | undefined) {
 function getOpenRouterProvider() {
   if (!openRouterProvider) {
     const config = getOpenRouterConfig();
-    openRouterProvider = createOpenAI({
+    openRouterProvider = createOpenRouter({
       apiKey: config.apiKey,
-      baseURL: config.baseURL,
-      headers: config.headers,
-      name: 'openrouter',
+      compatibility: config.compatibility,
+      ...(config.headers ? { headers: config.headers } : {}),
     });
   }
 
@@ -301,6 +300,14 @@ async function streamAssistantReply(
   try {
     const result = await streamText({
       model: getChatModel(args.modelId),
+      providerOptions: {
+        openrouter: {
+          provider: {
+            zdr: true,
+            data_collection: 'deny',
+          },
+        },
+      },
       messages: [
         { role: 'system', content: prompt },
         ...args.messages.map((message: AiMessageDoc) => toModelMessage(message)),

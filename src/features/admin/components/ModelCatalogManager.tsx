@@ -1,5 +1,5 @@
 import { useForm } from '@tanstack/react-form';
-import { Pencil, Plus, Power, PowerOff, Sparkles } from 'lucide-react';
+import { Download, Pencil, Plus, Power, PowerOff, Sparkles } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
@@ -58,6 +58,8 @@ interface ModelCatalogManagerProps {
   onCreateModel: (payload: ModelCatalogPayload) => Promise<unknown>;
   onUpdateModel: (args: { existingModelId: string; model: ModelCatalogPayload }) => Promise<unknown>;
   onSetModelActiveState: (args: { modelId: string; isActive: boolean }) => Promise<unknown>;
+  onImportTopFreeModels: () => Promise<unknown>;
+  onImportTopPaidModels: () => Promise<unknown>;
 }
 
 const EMPTY_FORM_VALUES: ModelCatalogPayload = {
@@ -79,6 +81,8 @@ export function ModelCatalogManager({
   onCreateModel,
   onUpdateModel,
   onSetModelActiveState,
+  onImportTopFreeModels,
+  onImportTopPaidModels,
 }: ModelCatalogManagerProps) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<ModelCatalogEntry | null>(null);
@@ -177,10 +181,20 @@ export function ModelCatalogManager({
           </p>
         </div>
 
-        <Button type="button" onClick={openCreateDialog}>
-          <Plus className="size-4" />
-          Add model
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" disabled={isMutating} onClick={() => void onImportTopFreeModels()}>
+            <Download className="size-4" />
+            Import top free models
+          </Button>
+          <Button type="button" variant="outline" disabled={isMutating} onClick={() => void onImportTopPaidModels()}>
+            <Download className="size-4" />
+            Import top paid models
+          </Button>
+          <Button type="button" onClick={openCreateDialog}>
+            <Plus className="size-4" />
+            Add model
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

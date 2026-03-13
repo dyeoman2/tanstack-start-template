@@ -1,10 +1,7 @@
-const OPENROUTER_BASE_URL = 'https://openrouter.ai/api/v1';
-const OPENROUTER_SITE_NAME = 'TanStack Start Template';
-
 export type OpenRouterConfig = {
   apiKey: string;
-  baseURL: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
+  compatibility: 'strict';
 };
 
 export function getOpenRouterConfig(): OpenRouterConfig {
@@ -14,17 +11,31 @@ export function getOpenRouterConfig(): OpenRouterConfig {
     throw new Error('OPENROUTER_API_KEY environment variable is required');
   }
 
-  const siteUrl = process.env.OPENROUTER_SITE_URL?.trim() || process.env.PUBLIC_SITE_URL?.trim();
-  const siteName = process.env.OPENROUTER_SITE_NAME?.trim() || OPENROUTER_SITE_NAME;
-
-  const headers: Record<string, string> = {
-    'HTTP-Referer': siteUrl || 'http://localhost:3000',
-    'X-Title': siteName,
-  };
+  const siteUrl = process.env.OPENROUTER_SITE_URL?.trim();
+  const siteName = process.env.OPENROUTER_SITE_NAME?.trim();
+  const headers =
+    siteUrl || siteName
+      ? {
+          ...(siteUrl ? { 'HTTP-Referer': siteUrl } : {}),
+          ...(siteName ? { 'X-Title': siteName } : {}),
+        }
+      : undefined;
 
   return {
     apiKey,
-    baseURL: OPENROUTER_BASE_URL,
     headers,
+    compatibility: 'strict',
   };
+}
+
+export function getOpenRouterAttributionHeaders() {
+  const siteUrl = process.env.OPENROUTER_SITE_URL?.trim();
+  const siteName = process.env.OPENROUTER_SITE_NAME?.trim();
+
+  return siteUrl || siteName
+    ? {
+        ...(siteUrl ? { 'HTTP-Referer': siteUrl } : {}),
+        ...(siteName ? { 'X-Title': siteName } : {}),
+      }
+    : undefined;
 }

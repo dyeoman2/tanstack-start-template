@@ -3,14 +3,12 @@ import { getOpenRouterConfig } from './openrouter';
 
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalOpenRouterSiteUrl = process.env.OPENROUTER_SITE_URL;
-const originalPublicSiteUrl = process.env.PUBLIC_SITE_URL;
 const originalOpenRouterSiteName = process.env.OPENROUTER_SITE_NAME;
 
 describe('getOpenRouterConfig', () => {
   afterEach(() => {
     restoreEnv('OPENROUTER_API_KEY', originalOpenRouterApiKey);
     restoreEnv('OPENROUTER_SITE_URL', originalOpenRouterSiteUrl);
-    restoreEnv('PUBLIC_SITE_URL', originalPublicSiteUrl);
     restoreEnv('OPENROUTER_SITE_NAME', originalOpenRouterSiteName);
   });
 
@@ -29,11 +27,22 @@ describe('getOpenRouterConfig', () => {
 
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',
-      baseURL: 'https://openrouter.ai/api/v1',
       headers: {
         'HTTP-Referer': 'https://example.com',
         'X-Title': 'Example App',
       },
+      compatibility: 'strict',
+    });
+  });
+
+  it('omits attribution headers when they are not configured', () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    delete process.env.OPENROUTER_SITE_URL;
+    delete process.env.OPENROUTER_SITE_NAME;
+
+    expect(getOpenRouterConfig()).toEqual({
+      apiKey: 'test-key',
+      compatibility: 'strict',
     });
   });
 });

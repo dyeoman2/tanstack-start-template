@@ -12,6 +12,43 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 
+function readOptionalEnvValue(envContent: string, name: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = envContent.match(new RegExp(`^${escapedName}=(.*)$`, 'm'));
+  if (!match) {
+    return null;
+  }
+
+  const rawValue = match[1]?.trim();
+  if (!rawValue) {
+    return null;
+  }
+
+  if (
+    rawValue.startsWith('<') ||
+    rawValue.includes('your-openrouter-api-key') ||
+    rawValue.includes('your-')
+  ) {
+    return null;
+  }
+
+  return rawValue.replace(/^"(.*)"$/, '$1');
+}
+
+function runConvexEnvSet(name: string, value: string) {
+  execSync(`npx convex env set ${name} "${value}"`, {
+    stdio: 'pipe',
+    cwd: process.cwd(),
+  });
+}
+
+function runOpenRouterSeed(actionName: 'importTopFreeModels' | 'importTopPaidModels') {
+  execSync(`npx convex run adminModelImports:${actionName} '{}'`, {
+    stdio: 'pipe',
+    cwd: process.cwd(),
+  });
+}
+
 async function main() {
   console.log('🔧 Setting up Convex URLs...\n');
 
@@ -174,6 +211,9 @@ async function main() {
 
   // Read the BETTER_AUTH_SECRET from .env.local
   const betterAuthSecret = envContent.match(/BETTER_AUTH_SECRET=(.+)/)?.[1];
+  const openRouterApiKey = readOptionalEnvValue(envContent, 'OPENROUTER_API_KEY');
+  const openRouterSiteUrl = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_URL');
+  const openRouterSiteName = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_NAME');
 
   if (!betterAuthSecret) {
     console.log('❌ Could not find BETTER_AUTH_SECRET in .env.local');
@@ -195,21 +235,40 @@ async function main() {
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
     { name: 'RESEND_EMAIL_SENDER', value: 'onboarding@resend.dev' },
     { name: 'APP_NAME', value: 'TanStack Start Template' },
+    ...(openRouterApiKey ? [{ name: 'OPENROUTER_API_KEY', value: openRouterApiKey }] : []),
+    ...(openRouterSiteUrl ? [{ name: 'OPENROUTER_SITE_URL', value: openRouterSiteUrl }] : []),
+    ...(openRouterSiteName ? [{ name: 'OPENROUTER_SITE_NAME', value: openRouterSiteName }] : []),
   ];
 
   for (const { name, value } of envVars) {
     try {
       console.log(`   Setting ${name}...`);
-      execSync(`npx convex env set ${name} "${value}"`, {
-        stdio: 'pipe',
-        cwd: process.cwd(),
-      });
+      runConvexEnvSet(name, value);
     } catch (_error) {
       console.log(`   ⚠️  Failed to set ${name} (may already be set)`);
     }
   }
 
   console.log('✅ Convex environment variables configured!');
+  console.log('────────────────────────────────────────────────');
+
+  if (!openRouterApiKey) {
+    console.log('ℹ️  OPENROUTER_API_KEY not found in .env.local. Skipping AI model seed.');
+    return;
+  }
+
+  console.log('🌱 Seeding OpenRouter model catalogs...');
+
+  for (const actionName of ['importTopFreeModels', 'importTopPaidModels'] as const) {
+    try {
+      console.log(`   Running ${actionName}...`);
+      runOpenRouterSeed(actionName);
+    } catch (_error) {
+      console.log(`   ⚠️  Failed to run ${actionName}. You can retry later from /app/admin.`);
+    }
+  }
+
+  console.log('✅ OpenRouter model seeding complete!');
   console.log('────────────────────────────────────────────────');
 }
 

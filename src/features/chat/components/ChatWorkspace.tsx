@@ -39,6 +39,18 @@ export function ChatWorkspaceSkeleton() {
   );
 }
 
+function ChatMessagesSkeleton() {
+  return (
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
+        <div className="ml-auto h-20 w-[min(32rem,80%)] animate-pulse rounded-2xl rounded-br-md bg-muted/70" />
+        <div className="h-24 w-[min(42rem,88%)] animate-pulse rounded-2xl bg-muted/55" />
+        <div className="ml-auto h-16 w-[min(28rem,72%)] animate-pulse rounded-2xl rounded-br-md bg-muted/70" />
+      </div>
+    </div>
+  );
+}
+
 export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -112,6 +124,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         }
       : undefined;
   const showEmptyState = currentMessages.length === 0 && !pendingPreview;
+  const isThreadPending = Boolean(threadId && (thread === undefined || messages === undefined));
+  const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
+  const composerDisabled = isThreadPending;
   const alignPendingMessageToTop = useCallback(() => {
     const viewportNode = messageViewportRef.current;
     const targetNode = scrollTargetMessageRef.current;
@@ -215,12 +230,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     );
   }
 
-  if (
-    (threadId && thread === undefined) ||
-    (threadId && messages === undefined) ||
-    personas === undefined ||
-    modelOptions === undefined
-  ) {
+  if (personas === undefined || modelOptions === undefined) {
     return <ChatWorkspaceSkeleton />;
   }
 
@@ -310,7 +320,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     <>
       <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
         <div className="flex h-full min-h-0 flex-1 flex-col">
-          {showEmptyState ? (
+          {shouldShowCenteredComposer ? (
             <div className="flex min-h-[50vh] flex-1 flex-col items-center justify-center px-4 text-center">
               <h1 className="text-4xl font-medium tracking-tight md:text-5xl">
                 What shall we explore?
@@ -320,6 +330,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               </p>
               <div className="mt-8 w-full max-w-3xl">
                 <ChatComposer
+                  disabled={composerDisabled}
                   isSending={isSending}
                   modelOptions={modelOptions}
                   personas={personas ?? []}
@@ -358,24 +369,29 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
             </div>
           ) : (
             <>
-              <div
-                ref={messageViewportRef}
-                className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6"
-              >
-                <div className="mx-auto w-full max-w-5xl">
-                  <MessageList
-                    messages={currentMessages}
-                    isStreaming={isSending}
-                    pendingSubmission={pendingPreview}
-                    scrollTargetClientMessageId={pendingSubmission?.clientMessageId}
-                    scrollTargetMessageRef={scrollTargetMessageRef}
-                  />
-                  <div ref={messageEndRef} aria-hidden="true" />
+              {isThreadPending ? (
+                <ChatMessagesSkeleton />
+              ) : (
+                <div
+                  ref={messageViewportRef}
+                  className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6"
+                >
+                  <div className="mx-auto w-full max-w-5xl">
+                    <MessageList
+                      messages={currentMessages}
+                      isStreaming={isSending}
+                      pendingSubmission={pendingPreview}
+                      scrollTargetClientMessageId={pendingSubmission?.clientMessageId}
+                      scrollTargetMessageRef={scrollTargetMessageRef}
+                    />
+                    <div ref={messageEndRef} aria-hidden="true" />
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6 md:px-6">
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
+                    disabled={composerDisabled}
                     isSending={isSending}
                     modelOptions={modelOptions}
                     personas={personas ?? []}

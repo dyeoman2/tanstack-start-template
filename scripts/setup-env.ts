@@ -63,6 +63,17 @@ NODE_ENV=development
 APP_NAME="TanStack Start Template"
 
 # ==========================================
+# OPENROUTER AI SETUP (Optional but recommended for chat)
+# ==========================================
+
+# Required for chat functionality
+# OPENROUTER_API_KEY=<your-openrouter-api-key>
+
+# Optional attribution headers
+# OPENROUTER_SITE_URL=http://localhost:3000
+# OPENROUTER_SITE_NAME="TanStack Start Template"
+
+# ==========================================
 # RESEND EMAIL SETUP
 # ==========================================
 #

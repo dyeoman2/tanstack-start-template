@@ -1,5 +1,5 @@
 import { api } from '@convex/_generated/api';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 
 /**
@@ -63,6 +63,8 @@ export function useAdminDashboard() {
   const createChatModel = useMutation(api.admin.createChatModel);
   const updateChatModel = useMutation(api.admin.updateChatModel);
   const setChatModelActiveState = useMutation(api.admin.setChatModelActiveState);
+  const importTopFreeModels = useAction(api.adminModelImports.importTopFreeModels);
+  const importTopPaidModels = useAction(api.adminModelImports.importTopPaidModels);
 
   const handleTruncateData = async () => {
     setIsTruncating(true);
@@ -138,6 +140,40 @@ export function useAdminDashboard() {
     }
   };
 
+  const handleImportTopFreeModels = async () => {
+    setIsMutatingModels(true);
+    try {
+      const result = await importTopFreeModels({});
+      setModelCatalogResult(result);
+      return result;
+    } catch (error) {
+      setModelCatalogResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to import free AI models',
+      });
+      throw error;
+    } finally {
+      setIsMutatingModels(false);
+    }
+  };
+
+  const handleImportTopPaidModels = async () => {
+    setIsMutatingModels(true);
+    try {
+      const result = await importTopPaidModels({});
+      setModelCatalogResult(result);
+      return result;
+    } catch (error) {
+      setModelCatalogResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to import paid AI models',
+      });
+      throw error;
+    } finally {
+      setIsMutatingModels(false);
+    }
+  };
+
   return {
     showTruncateModal,
     setShowTruncateModal,
@@ -151,5 +187,7 @@ export function useAdminDashboard() {
     handleCreateModel,
     handleUpdateModel,
     handleSetModelActiveState,
+    handleImportTopFreeModels,
+    handleImportTopPaidModels,
   };
 }

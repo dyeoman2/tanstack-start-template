@@ -9,6 +9,7 @@
  */
 
 import type * as admin from "../admin.js";
+import type * as adminModelImports from "../adminModelImports.js";
 import type * as auth from "../auth.js";
 import type * as auth_access from "../auth/access.js";
 import type * as auth_authorized from "../auth/authorized.js";
@@ -35,6 +36,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   admin: typeof admin;
+  adminModelImports: typeof adminModelImports;
   auth: typeof auth;
   "auth/access": typeof auth_access;
   "auth/authorized": typeof auth_authorized;

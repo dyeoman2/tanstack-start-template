@@ -6,7 +6,7 @@ import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/c
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { internal } from './_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
-import { action, internalQuery, mutation, query } from './_generated/server';
+import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 import {
@@ -30,6 +30,31 @@ const chatModelCatalogInputValidator = v.object({
   priceLabel: v.optional(v.string()),
   contextWindow: v.optional(v.number()),
   isActive: v.boolean(),
+  beta: v.optional(v.boolean()),
+  deprecated: v.optional(v.boolean()),
+  deprecationDate: v.optional(v.string()),
+});
+
+const storedChatModelCatalogEntryValidator = v.object({
+  modelId: v.string(),
+  label: v.string(),
+  description: v.string(),
+  task: v.string(),
+  access: v.union(v.literal('public'), v.literal('admin')),
+  priceLabel: v.optional(v.string()),
+  prices: v.optional(
+    v.array(
+      v.object({
+        unit: v.string(),
+        price: v.number(),
+        currency: v.string(),
+      }),
+    ),
+  ),
+  contextWindow: v.optional(v.number()),
+  source: v.string(),
+  isActive: v.boolean(),
+  refreshedAt: v.number(),
   beta: v.optional(v.boolean()),
   deprecated: v.optional(v.boolean()),
   deprecationDate: v.optional(v.string()),
@@ -413,6 +438,40 @@ export const listChatModelCatalog = query({
 
       return left.label.localeCompare(right.label);
     });
+  },
+});
+
+export const upsertImportedChatModels = internalMutation({
+  args: {
+    entries: v.array(storedChatModelCatalogEntryValidator),
+    refreshedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    for (const entry of args.entries) {
+      const existingModel = await ctx.db
+        .query('aiModelCatalog')
+        .withIndex('by_modelId', (q) => q.eq('modelId', entry.modelId))
+        .first();
+
+      if (existingModel) {
+        await ctx.db.patch(existingModel._id, {
+          ...toStoredChatModelCatalogEntry(entry),
+          refreshedAt: args.refreshedAt,
+          isActive: true,
+        });
+        continue;
+      }
+
+      await ctx.db.insert('aiModelCatalog', {
+        ...toStoredChatModelCatalogEntry(entry),
+        refreshedAt: args.refreshedAt,
+        isActive: true,
+      });
+    }
+
+    return {
+      modelCount: args.entries.length,
+    };
   },
 });
 
