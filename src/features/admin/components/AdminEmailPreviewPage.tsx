@@ -99,35 +99,27 @@ export function AdminEmailPreviewPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Email Metadata</CardTitle>
-          <CardDescription>
-            Subject line and inbox preview text for the current sample.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 md:grid-cols-2">
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Subject
-            </p>
-            <p className="text-sm text-foreground">{preview?.subject ?? 'Loading subject...'}</p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
-              Preview text
-            </p>
-            <p className="text-sm text-foreground">{preview?.preview ?? 'Loading preview...'}</p>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
           <CardTitle>Email Preview</CardTitle>
           <CardDescription>
             This preview uses the same rendered HTML and plain-text source as production sends.
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 grid gap-4 md:grid-cols-2">
+            <div className="space-y-1">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Subject
+              </p>
+              <p className="text-sm text-foreground">{preview?.subject ?? 'Loading subject...'}</p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
+                Preview text
+              </p>
+              <p className="text-sm text-foreground">{preview?.preview ?? 'Loading preview...'}</p>
+            </div>
+          </div>
+
           <div className="overflow-hidden rounded-xl border bg-slate-100">
             {isLoading || !preview ? (
               <div className="flex h-[840px] items-center justify-center">

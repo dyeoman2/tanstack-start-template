@@ -14,6 +14,13 @@ const chatRunStatusValidator = v.union(
   v.literal('aborted'),
   v.literal('error'),
 );
+const chatThreadVisibilityValidator = v.union(v.literal('private'), v.literal('shared'));
+const chatUsageOperationKindValidator = v.union(
+  v.literal('chat_turn'),
+  v.literal('web_search'),
+  v.literal('thread_title'),
+  v.literal('thread_summary'),
+);
 
 const onboardingStatusValidator = v.union(
   v.literal('not_started'),
@@ -126,11 +133,12 @@ export default defineSchema({
     .index('by_createdAt', ['createdAt']),
 
   chatThreads: defineTable({
-    userId: v.string(),
+    ownerUserId: v.string(),
     organizationId: v.string(),
     agentThreadId: v.string(),
     title: v.string(),
     pinned: v.boolean(),
+    visibility: chatThreadVisibilityValidator,
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
@@ -142,13 +150,22 @@ export default defineSchema({
   })
     .index('by_agentThreadId', ['agentThreadId'])
     .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
+    .index('by_organizationId_and_visibility_and_updatedAt', ['organizationId', 'visibility', 'updatedAt'])
     .index('by_organizationId_and_pinned', ['organizationId', 'pinned'])
-    .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt']),
+    .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt'])
+    .index('by_organizationId_and_visibility_and_lastMessageAt', [
+      'organizationId',
+      'visibility',
+      'lastMessageAt',
+    ])
+    .index('by_ownerUserId_and_updatedAt', ['ownerUserId', 'updatedAt'])
+    .index('by_ownerUserId_and_lastMessageAt', ['ownerUserId', 'lastMessageAt']),
 
   chatRuns: defineTable({
     threadId: v.id('chatThreads'),
     agentThreadId: v.string(),
     organizationId: v.string(),
+    initiatedByUserId: v.string(),
     ownerSessionId: v.string(),
     agentStreamId: v.optional(v.string()),
     status: chatRunStatusValidator,
@@ -169,15 +186,18 @@ export default defineSchema({
     .index('by_threadId_and_startedAt', ['threadId', 'startedAt'])
     .index('by_threadId_and_status', ['threadId', 'status'])
     .index('by_status_and_startedAt', ['status', 'startedAt'])
-    .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt']),
+    .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt'])
+    .index('by_initiatedByUserId_and_startedAt', ['initiatedByUserId', 'startedAt']),
 
   chatUsageEvents: defineTable({
     organizationId: v.string(),
-    userId: v.string(),
+    actorUserId: v.string(),
+    threadOwnerUserId: v.string(),
     threadId: v.id('chatThreads'),
     runId: v.optional(v.id('chatRuns')),
     agentThreadId: v.string(),
     agentName: v.optional(v.string()),
+    operationKind: chatUsageOperationKindValidator,
     model: v.string(),
     provider: v.string(),
     totalTokens: v.optional(v.number()),
@@ -189,7 +209,9 @@ export default defineSchema({
     .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
     .index('by_runId_and_createdAt', ['runId', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
-    .index('by_userId_and_createdAt', ['userId', 'createdAt']),
+    .index('by_actorUserId_and_createdAt', ['actorUserId', 'createdAt'])
+    .index('by_threadOwnerUserId_and_createdAt', ['threadOwnerUserId', 'createdAt'])
+    .index('by_operationKind_and_createdAt', ['operationKind', 'createdAt']),
 
   chatAttachments: defineTable({
     threadId: v.optional(v.id('chatThreads')),

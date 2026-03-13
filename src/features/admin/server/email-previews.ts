@@ -7,7 +7,6 @@ import {
   type EmailTemplateId,
 } from '~/features/admin/lib/email-preview-registry';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
-import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 import {
   buildApplicationInviteTemplate,
   buildChangeEmailTemplate,
@@ -45,7 +44,7 @@ function getScenarioOrThrow<TTemplateId extends EmailTemplateId>(
   const scenario = template?.scenarios.find((candidate) => candidate.id === scenarioId);
 
   if (!scenario) {
-    throw new ServerError('Unknown email preview scenario', 400);
+    throw new Error('Unknown email preview scenario');
   }
 
   return scenario;
@@ -154,10 +153,6 @@ export async function renderEmailPreview(args: EmailPreviewRequest): Promise<Ema
 export const renderEmailPreviewServerFn = createServerFn({ method: 'GET' })
   .inputValidator(emailPreviewRequestSchema)
   .handler(async ({ data }) => {
-    try {
-      await requireAdmin();
-      return await renderEmailPreview(data);
-    } catch (error) {
-      throw handleServerError(error, 'Render admin email preview');
-    }
+    await requireAdmin();
+    return await renderEmailPreview(data);
   });

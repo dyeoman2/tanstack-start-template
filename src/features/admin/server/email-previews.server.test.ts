@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { EMAIL_PREVIEW_TEMPLATES } from '~/features/admin/lib/email-preview-registry';
-import type { ServerError } from '~/lib/server/error-utils.server';
 import { emailPreviewRequestSchema, renderEmailPreview } from './email-previews';
 
 describe('renderEmailPreview', () => {
@@ -41,8 +40,7 @@ describe('renderEmailPreview', () => {
       }),
     ).rejects.toMatchObject({
       message: 'Unknown email preview scenario',
-      code: 400,
-    } satisfies Partial<ServerError>);
+    });
   });
 });
 

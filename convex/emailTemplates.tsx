@@ -30,6 +30,7 @@ import {
   type VerifyEmailOtpTemplateArgs,
   type VerifyEmailTemplateArgs,
 } from '../src/features/admin/lib/email-preview-registry';
+import { brandTheme } from '../src/lib/shared/brand-theme';
 
 export type { EmailTemplateId } from '../src/features/admin/lib/email-preview-registry';
 export { AVAILABLE_EMAIL_TEMPLATE_IDS };
@@ -89,9 +90,15 @@ function getSupportEmail() {
   );
 }
 
+function getEmailAppName(appName: string) {
+  return appName || brandTheme.appName;
+}
+
 function createGreeting(name: string | null) {
   return `Hi ${name || 'there'},`;
 }
+
+const emailTheme = brandTheme.email;
 
 async function renderTemplate(
   component: ReactNode,
@@ -112,20 +119,30 @@ async function renderTemplate(
 }
 
 function CopyBlock({ children }: { children: ReactNode }) {
-  return <Text className="m-0 mb-4 text-[16px] leading-7 text-slate-600">{children}</Text>;
+  return (
+    <Text className="m-0 mb-4 text-[16px] leading-7" style={{ color: emailTheme.colors.textMuted }}>
+      {children}
+    </Text>
+  );
 }
 
 function SecureLinkBlock({ actionUrl }: { actionUrl: string }) {
   return (
     <>
-      <Text className="m-0 mt-5 mb-2 text-[13px] leading-5 text-slate-500">
+      <Text
+        className="m-0 mt-5 mb-2 text-[13px] leading-5"
+        style={{ color: emailTheme.colors.textSubtle }}
+      >
         If the button does not work, copy and paste this secure link into your browser:
       </Text>
-      <Text className="m-0 text-[13px] leading-5 text-blue-600" style={{ wordBreak: 'break-word' }}>
+      <Text
+        className="m-0 text-[13px] leading-5"
+        style={{ color: emailTheme.colors.primary, wordBreak: 'break-word' }}
+      >
         <Link
           href={actionUrl}
-          className="text-blue-600 no-underline"
-          style={{ wordBreak: 'break-word' }}
+          className="no-underline"
+          style={{ color: emailTheme.colors.primary, wordBreak: 'break-word' }}
         >
           {actionUrl}
         </Link>
@@ -140,16 +157,26 @@ function SecurityPanel({ expiryNotice, footnote }: { expiryNotice?: string; foot
   }
 
   return (
-    <Section className="mt-6 rounded-xl border border-slate-200 bg-slate-50 px-5 py-4">
+    <Section
+      className="mt-6 px-5 py-4"
+      style={{
+        backgroundColor: emailTheme.colors.surfaceMuted,
+        border: `1px solid ${emailTheme.colors.border}`,
+        borderRadius: '12px',
+      }}
+    >
       {expiryNotice ? (
-        <Text className="m-0 text-[13px] leading-5 text-slate-600">
+        <Text className="m-0 text-[13px] leading-5" style={{ color: emailTheme.colors.textMuted }}>
           <strong>Security notice:</strong> {expiryNotice}
         </Text>
       ) : null}
       {footnote ? (
         <Text
-          className="m-0 text-[13px] leading-5 text-slate-600"
-          style={{ marginTop: expiryNotice ? '10px' : '0' }}
+          className="m-0 text-[13px] leading-5"
+          style={{
+            color: emailTheme.colors.textMuted,
+            marginTop: expiryNotice ? '10px' : '0',
+          }}
         >
           {footnote}
         </Text>
@@ -160,38 +187,74 @@ function SecurityPanel({ expiryNotice, footnote }: { expiryNotice?: string; foot
 
 function EmailLayout(props: BaseEmailProps) {
   const supportEmail = getSupportEmail();
+  const appName = getEmailAppName(props.appName);
 
   return (
     <Html>
       <Tailwind>
         <Head />
         <Preview>{props.preview}</Preview>
-        <Body className="m-0 bg-slate-100 px-3 py-6 font-sans">
+        <Body
+          className="m-0 px-3 py-6 font-sans"
+          style={{ backgroundColor: emailTheme.colors.background }}
+        >
           <Container className="mx-auto w-full max-w-[640px]">
-            <Section className="rounded-t-[20px] bg-slate-900 px-8 py-7">
-              <Text className="m-0 mb-2 text-[12px] leading-[18px] font-semibold tracking-[0.12em] text-sky-200 uppercase">
+            <Section
+              className="px-8 py-7"
+              style={{
+                backgroundColor: emailTheme.colors.surfaceStrong,
+                borderTopLeftRadius: emailTheme.radius.lg,
+                borderTopRightRadius: emailTheme.radius.lg,
+              }}
+            >
+              <Text
+                className="m-0 mb-2 text-[12px] leading-[18px] font-semibold tracking-[0.12em] uppercase"
+                style={{ color: emailTheme.colors.primarySubtle }}
+              >
                 Transactional email
               </Text>
-              <Heading className="m-0 text-[28px] leading-[34px] font-bold text-white">
-                {props.appName}
+              <Heading
+                className="m-0 text-[28px] leading-[34px] font-bold"
+                style={{ color: emailTheme.colors.primaryForeground }}
+              >
+                {appName}
               </Heading>
-              <Text className="m-0 mt-3 text-[15px] leading-6 text-sky-100">{props.preview}</Text>
+              <Text
+                className="m-0 mt-3 text-[15px] leading-6"
+                style={{ color: emailTheme.colors.primaryMuted }}
+              >
+                {props.preview}
+              </Text>
             </Section>
 
-            <Section className="rounded-b-[20px] bg-white px-8 py-8 shadow-sm">
+            <Section
+              className="px-8 py-8"
+              style={{
+                backgroundColor: emailTheme.colors.surface,
+                borderBottomLeftRadius: emailTheme.radius.lg,
+                borderBottomRightRadius: emailTheme.radius.lg,
+                boxShadow: emailTheme.shadow.card,
+              }}
+            >
               {props.children}
 
-              <Hr className="my-8 border-slate-200" />
-              <Text className="m-0 mb-2 text-[12px] leading-[18px] text-slate-500">
+              <Hr className="my-8" style={{ borderColor: emailTheme.colors.border }} />
+              <Text
+                className="m-0 mb-2 text-[12px] leading-[18px]"
+                style={{ color: emailTheme.colors.textSubtle }}
+              >
                 Need help?{' '}
-                <Link href={`mailto:${supportEmail}`} className="text-blue-600">
+                <Link href={`mailto:${supportEmail}`} style={{ color: emailTheme.colors.primary }}>
                   {supportEmail}
                 </Link>
                 .
               </Text>
-              <Text className="m-0 text-[12px] leading-[18px] text-slate-400">
-                This transactional email was sent by {props.appName}. © {new Date().getFullYear()}{' '}
-                {props.appName}.
+              <Text
+                className="m-0 text-[12px] leading-[18px]"
+                style={{ color: emailTheme.colors.textQuiet }}
+              >
+                This transactional email was sent by {appName}. © {new Date().getFullYear()}{' '}
+                {appName}.
               </Text>
             </Section>
           </Container>
@@ -204,7 +267,10 @@ function EmailLayout(props: BaseEmailProps) {
 function ActionEmailTemplate(props: ActionEmailTemplateArgs) {
   return (
     <EmailLayout appName={props.appName} preview={props.preview}>
-      <Heading className="m-0 mb-2 text-[24px] leading-8 font-bold text-slate-950">
+      <Heading
+        className="m-0 mb-2 text-[24px] leading-8 font-bold"
+        style={{ color: emailTheme.colors.text }}
+      >
         {props.title}
       </Heading>
       <CopyBlock>{props.greeting}</CopyBlock>
@@ -215,10 +281,12 @@ function ActionEmailTemplate(props: ActionEmailTemplateArgs) {
       <Section className="mt-7">
         <Button
           href={props.actionUrl}
-          className="inline-block rounded-[10px] px-6 py-3.5 text-[15px] leading-5 font-bold text-white no-underline"
+          className="inline-block px-6 py-3.5 text-[15px] leading-5 font-bold no-underline"
           style={{
-            backgroundColor: props.ctaTone === 'danger' ? '#dc2626' : '#2563eb',
-            color: '#ffffff',
+            backgroundColor:
+              props.ctaTone === 'danger' ? emailTheme.colors.danger : emailTheme.colors.primary,
+            borderRadius: emailTheme.radius.md,
+            color: emailTheme.colors.primaryForeground,
           }}
         >
           {props.actionLabel}
@@ -234,7 +302,10 @@ function ActionEmailTemplate(props: ActionEmailTemplateArgs) {
 function CodeEmailTemplate(props: CodeEmailTemplateArgs) {
   return (
     <EmailLayout appName={props.appName} preview={props.preview}>
-      <Heading className="m-0 mb-2 text-[24px] leading-8 font-bold text-slate-950">
+      <Heading
+        className="m-0 mb-2 text-[24px] leading-8 font-bold"
+        style={{ color: emailTheme.colors.text }}
+      >
         {props.title}
       </Heading>
       <CopyBlock>{props.greeting}</CopyBlock>
@@ -242,13 +313,23 @@ function CodeEmailTemplate(props: CodeEmailTemplateArgs) {
         <CopyBlock key={paragraph}>{paragraph}</CopyBlock>
       ))}
 
-      <Section className="mt-7 rounded-[14px] border border-slate-200 bg-slate-50 px-6 py-5 text-center">
-        <Text className="m-0 mb-2 text-[12px] leading-[18px] font-semibold tracking-[0.12em] text-slate-500 uppercase">
+      <Section
+        className="mt-7 px-6 py-5 text-center"
+        style={{
+          backgroundColor: emailTheme.colors.surfaceMuted,
+          border: `1px solid ${emailTheme.colors.border}`,
+          borderRadius: '14px',
+        }}
+      >
+        <Text
+          className="m-0 mb-2 text-[12px] leading-[18px] font-semibold tracking-[0.12em] uppercase"
+          style={{ color: emailTheme.colors.textSubtle }}
+        >
           {props.codeLabel}
         </Text>
         <Text
-          className="m-0 text-[32px] leading-9 font-bold text-slate-950"
-          style={{ letterSpacing: '0.18em' }}
+          className="m-0 text-[32px] leading-9 font-bold"
+          style={{ color: emailTheme.colors.text, letterSpacing: '0.18em' }}
         >
           {props.code}
         </Text>
@@ -262,7 +343,10 @@ function CodeEmailTemplate(props: CodeEmailTemplateArgs) {
 function NoticeEmailTemplate(props: NoticeEmailTemplateArgs) {
   return (
     <EmailLayout appName={props.appName} preview={props.preview}>
-      <Heading className="m-0 mb-2 text-[24px] leading-8 font-bold text-slate-950">
+      <Heading
+        className="m-0 mb-2 text-[24px] leading-8 font-bold"
+        style={{ color: emailTheme.colors.text }}
+      >
         {props.title}
       </Heading>
       <CopyBlock>{props.greeting}</CopyBlock>
@@ -275,8 +359,12 @@ function NoticeEmailTemplate(props: NoticeEmailTemplateArgs) {
           <Section className="mt-7">
             <Button
               href={props.actionUrl}
-              className="inline-block rounded-[10px] bg-blue-600 px-6 py-3.5 text-[15px] leading-5 font-bold text-white no-underline"
-              style={{ backgroundColor: '#2563eb', color: '#ffffff' }}
+              className="inline-block px-6 py-3.5 text-[15px] leading-5 font-bold no-underline"
+              style={{
+                backgroundColor: emailTheme.colors.primary,
+                borderRadius: emailTheme.radius.md,
+                color: emailTheme.colors.primaryForeground,
+              }}
             >
               {props.actionLabel}
             </Button>
