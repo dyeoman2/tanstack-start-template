@@ -12,11 +12,6 @@ export default defineConfig((env) => {
   return {
     optimizeDeps: {
       include: [
-        '@better-auth/core/env',
-        '@better-auth/core/error',
-        '@better-auth/core/utils/error-codes',
-        '@better-auth/core/utils/string',
-        '@better-fetch/fetch',
         '@tanstack/router-core',
         '@tanstack/router-core/ssr/client',
       ],

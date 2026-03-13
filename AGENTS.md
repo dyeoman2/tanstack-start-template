@@ -229,6 +229,7 @@ npx convex dashboard # Open Convex dashboard
 - `POST /api/test/agent-auth` accepts `{ "principal": "user" | "admin", "redirectTo"?: "/app" }`, requires the `x-e2e-test-secret` header, forwards Better Auth cookies, and redirects inside the same browser session.
 - Prefer `pnpm run agent:auth -- --session-name <name> --principal user --redirect-to /app` when the agent can invoke repo scripts. It authenticates a named `agent-browser` session through the route above and opens the requested page.
 - Prefer `pnpm run agent:inspect -- --session-name <name> --principal user --redirect-to /app` for the common "authenticate, wait, snapshot" workflow.
+- For repo-local Playwright automation, prefer `pnpm run playwright:inspect -- --principal user --path /app` instead of the external Playwright CLI skill. It authenticates through `/api/test/e2e-auth`, opens the requested page, and prints a compact JSON summary.
 - Admin example: `pnpm run agent:auth -- --session-name admin-check --principal admin --redirect-to /app/admin`
 - Close sessions with `pnpm run agent:close -- --session-name <name>` when browser work is complete.
 - Use `POST /api/test/e2e-auth` only when a tool needs cookie JSON for manual injection, such as Playwright storage-state setup.

@@ -34,9 +34,9 @@ export type ChatModelOption = {
   badge?: string;
 };
 
-export const DEFAULT_CHAT_MODEL_ID = '@cf/nvidia/nemotron-3-120b-a12b';
-export const DEFAULT_CHAT_MODEL_LABEL = 'Nemotron 3 120B';
-const DEFAULT_CHAT_MODEL_DESCRIPTION = 'Free Cloudflare text-generation model for everyday chat.';
+export const DEFAULT_CHAT_MODEL_ID = 'openai/gpt-4o-mini';
+export const DEFAULT_CHAT_MODEL_LABEL = 'GPT-4o Mini';
+const DEFAULT_CHAT_MODEL_DESCRIPTION = 'Fast OpenRouter text-generation model for everyday chat.';
 
 export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatModelCatalogEntry {
   return {
@@ -47,10 +47,10 @@ export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatMo
     access: 'public',
     priceLabel: 'Free',
     prices: [
-      { unit: 'per M input tokens', price: 0, currency: 'USD' },
-      { unit: 'per M output tokens', price: 0, currency: 'USD' },
+      { unit: 'per M input tokens', price: 0.15, currency: 'USD' },
+      { unit: 'per M output tokens', price: 0.6, currency: 'USD' },
     ],
-    source: 'cloudflare',
+    source: 'openrouter',
     isActive: true,
     refreshedAt,
   };

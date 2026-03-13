@@ -44,6 +44,15 @@ export function AdminCard({
     );
   }
 
+  if (!href) {
+    return (
+      <div className={cardClasses}>
+        <h3 className="text-left text-lg leading-6 font-medium text-foreground mb-2">{title}</h3>
+        <p className="text-muted-foreground">{description}</p>
+      </div>
+    );
+  }
+
   return (
     <Link to={href} className={cardClasses}>
       <h3 className="text-left text-lg leading-6 font-medium text-foreground mb-2">{title}</h3>

@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "Daniel Yeoman",
   "version": "1.0.0",
-  "description": "TanStack Start chat template built with TanStack Start, Better Auth, Convex, Tailwind CSS, shadcn/ui, and Cloudflare Workers AI",
+  "description": "TanStack Start chat template built with TanStack Start, Better Auth, Convex, Tailwind CSS, shadcn/ui, and OpenRouter via Vercel AI SDK",
   "homepage": "https://github.com/dyeoman2/tanstack-start-template",
   "repository": {
     "type": "git",
@@ -41,6 +41,7 @@
     "agent:auth": "tsx scripts/agent-browser-auth.ts",
     "agent:close": "tsx scripts/agent-browser-close.ts",
     "agent:inspect": "tsx scripts/agent-browser-inspect.ts",
+    "playwright:inspect": "tsx scripts/playwright-inspect.ts",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint .",
     "format": "biome format --write .",
@@ -61,6 +62,7 @@
     "infra:preview": "tsx infra/storage.ts --preview"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.41",
     "@aws-sdk/client-s3": "^3.1007.0",
     "@convex-dev/better-auth": "^0.11.1",
     "@convex-dev/rate-limiter": "^0.3.2",
@@ -117,7 +119,6 @@
     "tailwind-merge": "^3.5.0",
     "tailwindcss-animate": "^1.0.7",
     "tsx": "^4.21.0",
-    "workers-ai-provider": "^3.1.2",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6"
   },

@@ -7,7 +7,7 @@ A TanStack Start template built with TanStack Start, featuring modern full-stack
 After registering and logging in, you can explore these demo features:
 
 - **📊 Dashboard** - View real-time statistics and metrics with live data updates via Convex subscriptions
-- **💬 Chat** - Multi-threaded AI chat with real-time persistence, personas, and Cloudflare Workers AI responses
+- **💬 Chat** - Multi-threaded AI chat with real-time persistence, personas, and OpenRouter responses via the Vercel AI SDK
 - **👥 Admin Dashboard** - Full admin interface with:
   - User management (view, edit, delete users)
   - System statistics and analytics
@@ -205,6 +205,14 @@ Admin flow:
 pnpm run agent:auth -- --session-name codex-admin --principal admin --redirect-to /app/admin
 ```
 
+For repo-local Playwright automation, use:
+
+```bash
+pnpm run playwright:inspect -- --principal user --path /app
+```
+
+That command authenticates through `/api/test/e2e-auth`, opens the page with Playwright, and prints a compact JSON summary of the resulting UI. Add `--screenshot output/playwright/app.png` to save a screenshot artifact.
+
 For reliable browser automation in local development:
 
 - Use `http://127.0.0.1:3000` instead of `http://localhost:3000`.
@@ -237,7 +245,11 @@ npx netlify link
 
 ## 📄 Third Party Services Setup
 
-In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For chat functionality, you need to set up Cloudflare Workers AI. These are optional, but recommended for production.
+In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For chat functionality, you need to set up OpenRouter. These are optional, but recommended for production.
+
+- Add `OPENROUTER_API_KEY` to your local `.env.local` and production environment.
+- Optional: set `OPENROUTER_SITE_URL` and `OPENROUTER_SITE_NAME` if you want custom attribution headers sent to OpenRouter.
+- Manage the allowed chat models from the admin dashboard instead of syncing a provider catalog.
 
 - [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration
 - [Sentry Setup](./docs/SENTRY_SETUP.md) - Error monitoring and performance tracking

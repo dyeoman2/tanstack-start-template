@@ -2,6 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { PageHeader } from '~/components/PageHeader';
 import { AdminErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { AdminCardsGrid } from '~/features/admin/components/AdminCardsGrid';
+import { ModelCatalogManager } from '~/features/admin/components/ModelCatalogManager';
 import { ModelCatalogResultAlert } from '~/features/admin/components/ModelCatalogResultAlert';
 import { TruncateDataModal } from '~/features/admin/components/TruncateDataModal';
 import { TruncateResultAlert } from '~/features/admin/components/TruncateResultAlert';
@@ -22,10 +23,13 @@ function AdminDashboardIndex() {
     truncateResult,
     modelCatalogResult,
     modelCatalogStatus,
+    modelCatalog,
     isTruncating,
-    isRefreshingModels,
+    isMutatingModels,
     handleTruncateData,
-    handleRefreshModels,
+    handleCreateModel,
+    handleUpdateModel,
+    handleSetModelActiveState,
   } = useAdminDashboard();
 
   return (
@@ -40,9 +44,15 @@ function AdminDashboardIndex() {
 
       <AdminCardsGrid
         onTruncateClick={() => setShowTruncateModal(true)}
-        onRefreshModelsClick={() => void handleRefreshModels()}
-        isRefreshingModels={isRefreshingModels}
         modelCatalogStatus={modelCatalogStatus}
+      />
+
+      <ModelCatalogManager
+        models={modelCatalog}
+        isMutating={isMutatingModels}
+        onCreateModel={handleCreateModel}
+        onUpdateModel={handleUpdateModel}
+        onSetModelActiveState={handleSetModelActiveState}
       />
 
       <TruncateDataModal

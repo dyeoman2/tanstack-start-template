@@ -1,5 +1,5 @@
 import { api } from '@convex/_generated/api';
-import { useAction, useMutation, useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 
 /**
@@ -19,10 +19,6 @@ type TruncateResult = {
 type ModelCatalogRefreshResult = {
   success: boolean;
   message: string;
-  modelCount?: number;
-  publicModelCount?: number;
-  adminModelCount?: number;
-  refreshedAt?: number;
 };
 
 /**
@@ -37,7 +33,7 @@ export function useAdminDashboard() {
     null,
   );
   const [isTruncating, setIsTruncating] = useState(false);
-  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
+  const [isMutatingModels, setIsMutatingModels] = useState(false);
 
   // Auto-dismiss truncate result after 10 seconds
   useEffect(() => {
@@ -62,8 +58,11 @@ export function useAdminDashboard() {
 
   // Truncate data mutation - using Convex mutation directly
   const truncateMutation = useMutation(api.admin.truncateData);
-  const refreshChatModelCatalog = useAction(api.admin.refreshChatModelCatalog);
   const modelCatalogStatus = useQuery(api.admin.getChatModelCatalogStatus, {});
+  const modelCatalog = useQuery(api.admin.listChatModelCatalog, {});
+  const createChatModel = useMutation(api.admin.createChatModel);
+  const updateChatModel = useMutation(api.admin.updateChatModel);
+  const setChatModelActiveState = useMutation(api.admin.setChatModelActiveState);
 
   const handleTruncateData = async () => {
     setIsTruncating(true);
@@ -82,18 +81,60 @@ export function useAdminDashboard() {
     }
   };
 
-  const handleRefreshModels = async () => {
-    setIsRefreshingModels(true);
+  const handleCreateModel = async (
+    args: Parameters<typeof createChatModel>[0],
+  ) => {
+    setIsMutatingModels(true);
     try {
-      const result = await refreshChatModelCatalog({});
+      const result = await createChatModel(args);
       setModelCatalogResult(result);
+      return result;
     } catch (error) {
       setModelCatalogResult({
         success: false,
-        message: error instanceof Error ? error.message : 'Failed to refresh AI models',
+        message: error instanceof Error ? error.message : 'Failed to create AI model',
       });
+      throw error;
     } finally {
-      setIsRefreshingModels(false);
+      setIsMutatingModels(false);
+    }
+  };
+
+  const handleUpdateModel = async (
+    args: Parameters<typeof updateChatModel>[0],
+  ) => {
+    setIsMutatingModels(true);
+    try {
+      const result = await updateChatModel(args);
+      setModelCatalogResult(result);
+      return result;
+    } catch (error) {
+      setModelCatalogResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update AI model',
+      });
+      throw error;
+    } finally {
+      setIsMutatingModels(false);
+    }
+  };
+
+  const handleSetModelActiveState = async (
+    args: Parameters<typeof setChatModelActiveState>[0],
+  ) => {
+    setIsMutatingModels(true);
+    try {
+      const result = await setChatModelActiveState(args);
+      setModelCatalogResult(result);
+      return result;
+    } catch (error) {
+      setModelCatalogResult({
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to update AI model state',
+      });
+      throw error;
+    } finally {
+      setIsMutatingModels(false);
     }
   };
 
@@ -103,9 +144,12 @@ export function useAdminDashboard() {
     truncateResult,
     modelCatalogResult,
     modelCatalogStatus,
+    modelCatalog,
     isTruncating,
-    isRefreshingModels,
+    isMutatingModels,
     handleTruncateData,
-    handleRefreshModels,
+    handleCreateModel,
+    handleUpdateModel,
+    handleSetModelActiveState,
   };
 }

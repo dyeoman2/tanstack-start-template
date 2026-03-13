@@ -2,8 +2,6 @@ import { AdminCard } from './AdminCard';
 
 interface AdminCardsGridProps {
   onTruncateClick: () => void;
-  onRefreshModelsClick: () => void;
-  isRefreshingModels: boolean;
   modelCatalogStatus: {
     activeModelsCount: number;
     publicModelsCount: number;
@@ -22,8 +20,6 @@ function formatLastRefreshed(lastRefreshedAt: number | null) {
 
 export function AdminCardsGrid({
   onTruncateClick,
-  onRefreshModelsClick,
-  isRefreshingModels,
   modelCatalogStatus,
 }: AdminCardsGridProps) {
   return (
@@ -41,16 +37,14 @@ export function AdminCardsGrid({
       />
 
       <AdminCard
-        title={isRefreshingModels ? 'Refreshing AI Models...' : 'Refresh AI Models'}
+        title="AI Model Catalog"
         description={
           modelCatalogStatus
-            ? `${modelCatalogStatus.activeModelsCount} cached models. ${formatLastRefreshed(
+            ? `${modelCatalogStatus.activeModelsCount} active models, ${modelCatalogStatus.publicModelsCount} public, ${modelCatalogStatus.adminModelsCount} admin-only. ${formatLastRefreshed(
                 modelCatalogStatus.lastRefreshedAt,
               )}`
-            : 'Sync the Cloudflare catalog for admin chat model options'
+            : 'Manage curated OpenRouter models for the chat workspace'
         }
-        onClick={onRefreshModelsClick}
-        disabled={isRefreshingModels}
       />
 
       <AdminCard

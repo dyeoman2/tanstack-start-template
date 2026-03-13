@@ -1,81 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeCloudflareTextGenerationModels } from '~/lib/shared/cloudflare-model-catalog';
 import {
   DEFAULT_CHAT_MODEL_ID,
+  getChatModelOption,
   getAuthorizedChatModel,
   getDefaultChatModelCatalogEntry,
 } from '~/lib/shared/chat-models';
 
-describe('normalizeCloudflareTextGenerationModels', () => {
-  it('keeps the free public model and explicitly priced Cloudflare text-generation models', () => {
-    const refreshedAt = 123;
-    const models = normalizeCloudflareTextGenerationModels(
-      [
-        {
-          name: DEFAULT_CHAT_MODEL_ID,
-          description: 'Free default model',
-          task: { name: 'Text Generation' },
-          properties: [
-            { property_id: 'price', value: [{ unit: 'per M input tokens', price: 0, currency: 'USD' }] },
-          ],
-          source: 1,
-        },
-        {
-          name: '@cf/openai/gpt-oss-120b',
-          description: 'Paid admin model',
-          task: { name: 'Text Generation' },
-          properties: [
-            {
-              property_id: 'price',
-              value: [
-                { unit: 'per M input tokens', price: 0.35, currency: 'USD' },
-                { unit: 'per M output tokens', price: 0.75, currency: 'USD' },
-              ],
-            },
-          ],
-          source: 1,
-        },
-        {
-          name: '@cf/qwen/qwen1.5-0.5b-chat',
-          description: 'Unknown price model',
-          task: { name: 'Text Generation' },
-          properties: [{ property_id: 'beta', value: 'true' }],
-          source: 1,
-        },
-        {
-          name: '@cf/black-forest-labs/flux-1-schnell',
-          description: 'Image model',
-          task: { name: 'Text-to-Image' },
-          properties: [
-            { property_id: 'price', value: [{ unit: 'per step', price: 0.001, currency: 'USD' }] },
-          ],
-          source: 1,
-        },
-        {
-          name: '@hf/some/model',
-          description: 'Non Cloudflare model',
-          task: { name: 'Text Generation' },
-          properties: [
-            { property_id: 'price', value: [{ unit: 'per step', price: 0.001, currency: 'USD' }] },
-          ],
-          source: 2,
-        },
-      ],
-      refreshedAt,
-    );
-
-    expect(models.map((model) => model.modelId)).toEqual([
-      DEFAULT_CHAT_MODEL_ID,
-      '@cf/openai/gpt-oss-120b',
-    ]);
-    expect(models[0]).toMatchObject({
-      access: 'public',
-      refreshedAt,
-      priceLabel: 'Free',
-    });
-    expect(models[1]).toMatchObject({
-      access: 'admin',
-      refreshedAt,
+describe('getDefaultChatModelCatalogEntry', () => {
+  it('returns the curated OpenRouter default model', () => {
+    expect(getDefaultChatModelCatalogEntry(123)).toMatchObject({
+      modelId: DEFAULT_CHAT_MODEL_ID,
+      label: 'GPT-4o Mini',
+      source: 'openrouter',
+      refreshedAt: 123,
     });
   });
 });
@@ -84,10 +21,10 @@ describe('getAuthorizedChatModel', () => {
   const publicModel = getDefaultChatModelCatalogEntry();
   const adminModel = {
     ...getDefaultChatModelCatalogEntry(),
-    modelId: '@cf/openai/gpt-oss-120b',
-    label: 'GPT OSS 120B',
+    modelId: 'anthropic/claude-3.5-sonnet',
+    label: 'Claude 3.5 Sonnet',
     access: 'admin' as const,
-    priceLabel: '$0.35/per M input tokens',
+    priceLabel: '$3/M input tokens',
   };
 
   it('allows the public model for non-admin users', () => {
@@ -112,9 +49,25 @@ describe('getAuthorizedChatModel', () => {
   });
 
   it('rejects unknown models', () => {
-    expect(getAuthorizedChatModel('@cf/unknown/model', [publicModel, adminModel], true)).toEqual({
+    expect(getAuthorizedChatModel('unknown/model', [publicModel, adminModel], true)).toEqual({
       ok: false,
       reason: 'unknown',
     });
+  });
+});
+
+describe('getChatModelOption', () => {
+  it('falls back to the default model when the requested model is unavailable', () => {
+    const options = [
+      {
+        id: DEFAULT_CHAT_MODEL_ID,
+        label: 'GPT-4o Mini',
+        description: 'Default',
+        access: 'public' as const,
+        selectable: true,
+      },
+    ];
+
+    expect(getChatModelOption(options, 'missing/model')).toEqual(options[0]);
   });
 });

@@ -32,12 +32,13 @@ async function getActiveCatalogModels(ctx: QueryCtx) {
     .query('aiModelCatalog')
     .withIndex('by_isActive', (q) => q.eq('isActive', true))
     .collect();
+  const openRouterModels = activeModels.filter((model) => model.source === 'openrouter');
 
-  if (activeModels.some((model) => model.modelId === DEFAULT_CHAT_MODEL_ID)) {
-    return sortModels(activeModels);
+  if (openRouterModels.some((model) => model.modelId === DEFAULT_CHAT_MODEL_ID)) {
+    return sortModels(openRouterModels);
   }
 
-  return sortModels([...activeModels, getDefaultChatModelCatalogEntry()]);
+  return sortModels([...openRouterModels, getDefaultChatModelCatalogEntry()]);
 }
 
 export const listActiveChatModelsInternal = internalQuery({

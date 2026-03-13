@@ -20,20 +20,12 @@ export function ModelCatalogResultAlert({ result }: ModelCatalogResultAlertProps
   }
 
   return (
-    <Alert
-      className={`mb-6 ${result.success ? 'border-primary/20 bg-primary/5' : 'border-secondary bg-secondary/50'}`}
-    >
+    <Alert className="mb-6" variant={result.success ? 'success' : 'destructive'}>
       <AlertTriangle className="h-4 w-4" />
-      <AlertTitle>{result.success ? 'AI Models Refreshed' : 'AI Model Refresh Failed'}</AlertTitle>
+      <AlertTitle>{result.success ? 'AI Model Catalog Updated' : 'AI Model Update Failed'}</AlertTitle>
       <AlertDescription>
         <div className="space-y-2">
           <p>{result.message}</p>
-          {result.success && result.modelCount !== undefined ? (
-            <p className="text-sm text-muted-foreground">
-              {result.modelCount} total models, {result.publicModelCount ?? 0} public,{' '}
-              {result.adminModelCount ?? 0} admin-only.
-            </p>
-          ) : null}
         </div>
       </AlertDescription>
     </Alert>

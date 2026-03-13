@@ -2,15 +2,11 @@ import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
+import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
-import {
-  normalizeCloudflareTextGenerationModels,
-  type CloudflareCatalogModel,
-} from '../src/lib/shared/cloudflare-model-catalog';
-import { type ChatModelCatalogEntry, DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 import { internal } from './_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { action, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 import {
@@ -23,28 +19,17 @@ import {
 } from './lib/betterAuth';
 
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
-const CLOUDFLARE_MODEL_PAGE_SIZE = 50;
+const DEFAULT_CHAT_TASK = 'Text Generation';
+const OPENROUTER_SOURCE = 'openrouter';
 
-const chatModelCatalogEntryValidator = v.object({
+const chatModelCatalogInputValidator = v.object({
   modelId: v.string(),
   label: v.string(),
   description: v.string(),
-  task: v.string(),
   access: v.union(v.literal('public'), v.literal('admin')),
   priceLabel: v.optional(v.string()),
-  prices: v.optional(
-    v.array(
-      v.object({
-        unit: v.string(),
-        price: v.number(),
-        currency: v.string(),
-      }),
-    ),
-  ),
   contextWindow: v.optional(v.number()),
-  source: v.string(),
   isActive: v.boolean(),
-  refreshedAt: v.number(),
   beta: v.optional(v.boolean()),
   deprecated: v.optional(v.boolean()),
   deprecationDate: v.optional(v.string()),
@@ -79,69 +64,6 @@ function toTimestamp(value: string | number | Date | undefined) {
   return new Date(value).getTime();
 }
 
-function getCloudflareConfig() {
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-
-  if (!apiToken || !accountId) {
-    throw new Error(
-      'Missing required Cloudflare AI environment variables: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.',
-    );
-  }
-
-  return { apiToken, accountId };
-}
-
-async function fetchCloudflareCatalogPage(
-  page: number,
-  apiToken: string,
-  accountId: string,
-): Promise<CloudflareCatalogModel[]> {
-  const response = await fetch(
-    `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/models/search?per_page=${CLOUDFLARE_MODEL_PAGE_SIZE}&page=${page}`,
-    {
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-      },
-    },
-  );
-
-  if (!response.ok) {
-    throw new Error(`Cloudflare catalog request failed with ${response.status} ${response.statusText}.`);
-  }
-
-  const payload = (await response.json()) as {
-    result?: CloudflareCatalogModel[];
-    errors?: Array<{ message?: string }>;
-  };
-
-  if (!Array.isArray(payload.result)) {
-    const errorMessage = payload.errors?.[0]?.message;
-    throw new Error(errorMessage ?? 'Cloudflare catalog response did not include model results.');
-  }
-
-  return payload.result;
-}
-
-async function fetchCloudflareModelCatalog(): Promise<CloudflareCatalogModel[]> {
-  const { apiToken, accountId } = getCloudflareConfig();
-  const results: CloudflareCatalogModel[] = [];
-  let page = 1;
-
-  while (true) {
-    const currentPage = await fetchCloudflareCatalogPage(page, apiToken, accountId);
-    results.push(...currentPage);
-
-    if (currentPage.length < CLOUDFLARE_MODEL_PAGE_SIZE) {
-      break;
-    }
-
-    page += 1;
-  }
-
-  return results;
-}
-
 function toStoredChatModelCatalogEntry(entry: ChatModelCatalogEntry) {
   return {
     modelId: entry.modelId,
@@ -158,6 +80,43 @@ function toStoredChatModelCatalogEntry(entry: ChatModelCatalogEntry) {
     ...(entry.beta !== undefined ? { beta: entry.beta } : {}),
     ...(entry.deprecated !== undefined ? { deprecated: entry.deprecated } : {}),
     ...(entry.deprecationDate ? { deprecationDate: entry.deprecationDate } : {}),
+  };
+}
+
+function normalizeOptionalString(value: string | undefined) {
+  const trimmed = value?.trim();
+  return trimmed && trimmed.length > 0 ? trimmed : undefined;
+}
+
+function buildChatModelCatalogEntry(
+  input: {
+    modelId: string;
+    label: string;
+    description: string;
+    access: ChatModelAccess;
+    priceLabel?: string;
+    contextWindow?: number;
+    isActive: boolean;
+    beta?: boolean;
+    deprecated?: boolean;
+    deprecationDate?: string;
+  },
+  refreshedAt: number,
+): ChatModelCatalogEntry {
+  return {
+    modelId: input.modelId.trim(),
+    label: input.label.trim(),
+    description: input.description.trim(),
+    task: DEFAULT_CHAT_TASK,
+    access: input.access,
+    priceLabel: normalizeOptionalString(input.priceLabel),
+    contextWindow: input.contextWindow,
+    source: OPENROUTER_SOURCE,
+    isActive: input.isActive,
+    refreshedAt,
+    beta: input.beta,
+    deprecated: input.deprecated,
+    deprecationDate: normalizeOptionalString(input.deprecationDate),
   };
 }
 
@@ -437,92 +396,149 @@ export const getChatModelCatalogStatus = query({
   },
 });
 
-export const syncChatModelCatalogSnapshot = internalMutation({
-  args: {
-    entries: v.array(chatModelCatalogEntryValidator),
-    refreshedAt: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const existingModels = await ctx.db.query('aiModelCatalog').collect();
-    const incomingById = new Map(args.entries.map((entry) => [entry.modelId, entry]));
+export const listChatModelCatalog = query({
+  args: {},
+  handler: async (ctx): Promise<ChatModelCatalogEntry[]> => {
+    await requireSiteAdmin(ctx);
 
-    for (const existingModel of existingModels) {
-      const nextModel = incomingById.get(existingModel.modelId);
-      if (!nextModel) {
-        if (existingModel.isActive) {
-          await ctx.db.patch(existingModel._id, {
-            isActive: false,
-            refreshedAt: args.refreshedAt,
-          });
-        }
-        continue;
+    const models = await ctx.db.query('aiModelCatalog').collect();
+    return [...models].sort((left, right) => {
+      if (left.isActive !== right.isActive) {
+        return left.isActive ? -1 : 1;
       }
 
-      await ctx.db.patch(existingModel._id, {
-        ...toStoredChatModelCatalogEntry(nextModel),
-        refreshedAt: args.refreshedAt,
-      });
-      incomingById.delete(existingModel.modelId);
+      if (left.access !== right.access) {
+        return left.access === 'public' ? -1 : 1;
+      }
+
+      return left.label.localeCompare(right.label);
+    });
+  },
+});
+
+export const createChatModel = mutation({
+  args: {
+    modelId: v.string(),
+    label: v.string(),
+    description: v.string(),
+    access: v.union(v.literal('public'), v.literal('admin')),
+    priceLabel: v.optional(v.string()),
+    contextWindow: v.optional(v.number()),
+    isActive: v.boolean(),
+    beta: v.optional(v.boolean()),
+    deprecated: v.optional(v.boolean()),
+    deprecationDate: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
+
+    const modelId = args.modelId.trim();
+    if (!modelId) {
+      throw new Error('Model ID is required.');
     }
 
-    for (const entry of incomingById.values()) {
-      await ctx.db.insert('aiModelCatalog', {
-        ...toStoredChatModelCatalogEntry(entry),
-        refreshedAt: args.refreshedAt,
-      });
+    const existingModel = await ctx.db
+      .query('aiModelCatalog')
+      .withIndex('by_modelId', (q) => q.eq('modelId', modelId))
+      .first();
+
+    if (existingModel) {
+      throw new Error('A chat model with this model ID already exists.');
     }
+
+    const entry = buildChatModelCatalogEntry(
+      {
+        ...args,
+        modelId,
+      },
+      Date.now(),
+    );
+
+    const insertedId = await ctx.db.insert('aiModelCatalog', toStoredChatModelCatalogEntry(entry));
 
     return {
-      modelCount: args.entries.length,
-      refreshedAt: args.refreshedAt,
+      success: true,
+      message: `Added ${entry.label} to the OpenRouter model catalog.`,
+      modelId: insertedId,
     };
   },
 });
 
-export const refreshChatModelCatalog = action({
-  args: {},
-  handler: async (ctx): Promise<{
-    success: boolean;
-    modelCount: number;
-    publicModelCount: number;
-    adminModelCount: number;
-    refreshedAt: number;
-    message: string;
-  }> => {
+export const updateChatModel = mutation({
+  args: {
+    existingModelId: v.string(),
+    model: chatModelCatalogInputValidator,
+  },
+  handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
-    const refreshedAt = Date.now();
-    const catalogEntries = await fetchCloudflareModelCatalog();
-    const normalizedModels = normalizeCloudflareTextGenerationModels(catalogEntries, refreshedAt);
-
-    const uniqueModels = new Map<string, ChatModelCatalogEntry>();
-    for (const model of normalizedModels) {
-      uniqueModels.set(model.modelId, model);
+    const modelId = args.model.modelId.trim();
+    if (!modelId) {
+      throw new Error('Model ID is required.');
     }
 
-    if (!uniqueModels.has(DEFAULT_CHAT_MODEL_ID)) {
-      throw new Error('The free Nemotron model was not present in the Cloudflare catalog response.');
+    const existingModel = await ctx.db
+      .query('aiModelCatalog')
+      .withIndex('by_modelId', (q) => q.eq('modelId', args.existingModelId))
+      .first();
+
+    if (!existingModel) {
+      throw new Error('Chat model not found.');
     }
 
-    const persistedEntries = [...uniqueModels.values()].map(toStoredChatModelCatalogEntry);
-    const snapshot: { modelCount: number; refreshedAt: number } = await ctx.runMutation(
-      internal.admin.syncChatModelCatalogSnapshot,
+    if (modelId !== args.existingModelId) {
+      const duplicateModel = await ctx.db
+        .query('aiModelCatalog')
+        .withIndex('by_modelId', (q) => q.eq('modelId', modelId))
+        .first();
+
+      if (duplicateModel) {
+        throw new Error('A chat model with this model ID already exists.');
+      }
+    }
+
+    const entry = buildChatModelCatalogEntry(
       {
-      entries: persistedEntries,
-      refreshedAt,
+        ...args.model,
+        modelId,
       },
+      Date.now(),
     );
 
-    const publicModelCount = persistedEntries.filter((model) => model.access === 'public').length;
-    const adminModelCount = persistedEntries.filter((model) => model.access === 'admin').length;
+    await ctx.db.patch(existingModel._id, toStoredChatModelCatalogEntry(entry));
 
     return {
       success: true,
-      modelCount: snapshot.modelCount,
-      publicModelCount,
-      adminModelCount,
-      refreshedAt: snapshot.refreshedAt,
-      message: `Synced ${snapshot.modelCount} Cloudflare text-generation models.`,
+      message: `Updated ${entry.label}.`,
+    };
+  },
+});
+
+export const setChatModelActiveState = mutation({
+  args: {
+    modelId: v.string(),
+    isActive: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    await requireSiteAdmin(ctx);
+
+    const existingModel = await ctx.db
+      .query('aiModelCatalog')
+      .withIndex('by_modelId', (q) => q.eq('modelId', args.modelId))
+      .first();
+
+    if (!existingModel) {
+      throw new Error('Chat model not found.');
+    }
+
+    await ctx.db.patch(existingModel._id, {
+      isActive: args.isActive,
+      refreshedAt: Date.now(),
+    });
+
+    return {
+      success: true,
+      message: `${existingModel.label} ${args.isActive ? 'activated' : 'deactivated'}.`,
     };
   },
 });

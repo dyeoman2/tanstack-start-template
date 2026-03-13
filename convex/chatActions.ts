@@ -1,14 +1,15 @@
 'use node';
 
 import { type LanguageModelUsage, type ModelMessage, streamText } from 'ai';
+import { createOpenAI } from '@ai-sdk/openai';
 import { ConvexError, v } from 'convex/values';
-import { createWorkersAI } from 'workers-ai-provider';
 import {
   getAuthorizedChatModel,
   type ChatModelId,
   DEFAULT_CHAT_MODEL_ID,
   type ChatModelCatalogEntry,
 } from '../src/lib/shared/chat-models';
+import { getOpenRouterConfig } from '../src/lib/server/openrouter';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -102,8 +103,8 @@ const messagePartValidator = v.union(
 const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find information.';
 const DEFAULT_THREAD_TITLE = 'New Chat';
 
-let workersProvider: ReturnType<typeof createWorkersAI> | null = null;
-const modelCache = new Map<string, ReturnType<ReturnType<typeof createWorkersAI>>>();
+let openRouterProvider: ReturnType<typeof createOpenAI> | null = null;
+const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenAI>>>();
 
 function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
@@ -188,29 +189,18 @@ function buildUsageMetadata(usage: LanguageModelUsage | undefined) {
   };
 }
 
-function getProviderConfig() {
-  const apiToken = process.env.CLOUDFLARE_API_TOKEN;
-  const accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-
-  if (!apiToken || !accountId) {
-    throw new Error(
-      'Missing required Cloudflare AI environment variables: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID.',
-    );
-  }
-
-  return { apiToken, accountId };
-}
-
-function getWorkersProvider() {
-  if (!workersProvider) {
-    const config = getProviderConfig();
-    workersProvider = createWorkersAI({
-      accountId: config.accountId,
-      apiKey: config.apiToken,
+function getOpenRouterProvider() {
+  if (!openRouterProvider) {
+    const config = getOpenRouterConfig();
+    openRouterProvider = createOpenAI({
+      apiKey: config.apiKey,
+      baseURL: config.baseURL,
+      headers: config.headers,
+      name: 'openrouter',
     });
   }
 
-  return workersProvider;
+  return openRouterProvider;
 }
 
 function getChatModel(modelId: ChatModelId) {
@@ -219,7 +209,7 @@ function getChatModel(modelId: ChatModelId) {
     return cachedModel;
   }
 
-  const nextModel = getWorkersProvider()(modelId);
+  const nextModel = getOpenRouterProvider().chat(modelId);
   modelCache.set(modelId, nextModel);
   return nextModel;
 }
@@ -328,7 +318,7 @@ async function streamAssistantReply(
 
     await ctx.runMutation(internal.chat.markAssistantCompleteInternal, {
       messageId: assistantMessageId,
-      provider: 'cloudflare-workers-ai',
+      provider: 'openrouter',
       model: args.modelId,
       usage: buildUsageMetadata(usage),
     });
