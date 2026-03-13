@@ -103,7 +103,9 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
                 className="gap-2 p-2"
                 onClick={() => {
                   setActiveTeam(team);
-                  void navigate({ to: team.to });
+                  void navigate({
+                    to: team.to,
+                  });
                 }}
               >
                 <div className="flex size-6 items-center justify-center rounded-sm border">

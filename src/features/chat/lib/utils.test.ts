@@ -7,6 +7,7 @@ describe('chat utils', () => {
     const sorted = sortThreads([
       {
         _id: 'thread-1' as never,
+        agentThreadId: 'agent-thread-1',
         title: 'Recent',
         pinned: false,
         titleManuallyEdited: false,
@@ -16,6 +17,7 @@ describe('chat utils', () => {
       },
       {
         _id: 'thread-2' as never,
+        agentThreadId: 'agent-thread-2',
         title: 'Pinned older',
         pinned: true,
         titleManuallyEdited: false,
@@ -28,12 +30,12 @@ describe('chat utils', () => {
     expect(sorted.map((thread) => thread.title)).toEqual(['Pinned older', 'Recent']);
   });
 
-  it('derives a four-word title from the first user content', () => {
+  it('derives a title from the full first user content', () => {
     expect(
       deriveThreadTitle([
         { type: 'text', text: 'Write me a launch plan for tomorrow morning' },
       ]),
-    ).toBe('Write me a launch');
+    ).toBe('Write me a launch plan for tomorrow morning');
   });
 
   it('builds composer parts for text, images, and documents', () => {

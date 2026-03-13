@@ -16,6 +16,13 @@ export type ChatTextPart = {
   text: string;
 };
 
+export type ChatFilePart = {
+  type: 'file';
+  mediaType: string;
+  filename?: string;
+  url: string;
+};
+
 export type ChatImagePart = {
   type: 'image';
   image: string;
@@ -33,7 +40,7 @@ export type ChatDocumentPart = {
 
 export type ChatAttachmentPart = {
   type: 'attachment';
-  attachmentId: Id<'aiAttachments'>;
+  attachmentId: Id<'chatAttachments'>;
   kind: ChatAttachmentKind;
   name: string;
   mimeType: string;
@@ -60,6 +67,7 @@ export type ChatSourceDocumentPart = {
 
 export type ChatMessagePart =
   | ChatTextPart
+  | ChatFilePart
   | ChatImagePart
   | ChatDocumentPart
   | ChatAttachmentPart
@@ -68,20 +76,18 @@ export type ChatMessagePart =
 
 export type ChatComposerPart = ChatTextPart | ChatImagePart | ChatDocumentPart;
 
-export type ChatMessageStatus = 'pending' | 'complete' | 'error';
+export type ChatMessageStatus = 'pending' | 'streaming' | 'complete' | 'error';
 
 export type ChatRole = 'assistant' | 'user';
 
 export type ChatThread = {
-  _id: Id<'aiThreads'>;
+  _id: Id<'chatThreads'>;
+  agentThreadId: string;
   title: string;
   pinned: boolean;
   personaId?: Id<'aiPersonas'>;
   model?: string;
   titleManuallyEdited: boolean;
-  contextSummary?: string;
-  contextSummaryThroughMessageId?: Id<'aiMessages'>;
-  contextSummaryUpdatedAt?: number;
   createdAt: number;
   updatedAt: number;
   lastMessageAt: number;
@@ -95,38 +101,73 @@ export type ChatPersona = {
   updatedAt: number;
 };
 
+export type ChatUsage = {
+  totalTokens?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+};
+
 export type ChatMessage = {
-  _id: Id<'aiMessages'>;
-  threadId: Id<'aiThreads'>;
+  _id: string;
+  threadId: string;
+  order: number;
+  stepOrder: number;
   role: ChatRole;
   parts: ChatMessagePart[];
   status: ChatMessageStatus;
   provider?: string;
   model?: string;
-  usage?: {
-    totalTokens?: number;
-    inputTokens?: number;
-    outputTokens?: number;
-  };
+  usage?: ChatUsage;
   errorMessage?: string;
   createdAt: number;
   updatedAt: number;
   clientMessageId?: string;
+  metadata?: unknown;
 };
 
-export type ChatMessageDraft = {
-  _id: Id<'aiMessageDrafts'>;
-  messageId: Id<'aiMessages'>;
-  threadId: Id<'aiThreads'>;
+export type ChatStreamRequest =
+  | {
+      mode?: 'send';
+      threadId?: string;
+      personaId?: string;
+      model?: string;
+      useWebSearch?: boolean;
+      text: string;
+      attachmentIds: Id<'chatAttachments'>[];
+      clientMessageId?: string;
+    }
+  | {
+      mode: 'edit';
+      messageId: string;
+      text: string;
+      model?: string;
+      useWebSearch?: boolean;
+    }
+  | {
+      mode: 'retry';
+      runId: string;
+      model?: string;
+      useWebSearch?: boolean;
+    };
+
+export type ChatActiveStreamStatus = 'streaming' | 'complete' | 'aborted' | 'error';
+
+export type ChatActiveStream = {
+  threadId: string;
+  runId: string;
+  assistantMessageId: string;
+  ownerSessionId: string;
   text: string;
-  createdAt: number;
-  updatedAt: number;
+  status: ChatActiveStreamStatus;
+  errorMessage?: string;
+  startedAt: number;
+  request: ChatStreamRequest;
 };
 
 export type ChatAttachment = {
-  _id: Id<'aiAttachments'>;
-  messageId?: Id<'aiMessages'>;
-  threadId?: Id<'aiThreads'>;
+  _id: Id<'chatAttachments'>;
+  threadId?: Id<'chatThreads'>;
+  agentMessageId?: string;
   kind: ChatAttachmentKind;
   name: string;
   mimeType: string;

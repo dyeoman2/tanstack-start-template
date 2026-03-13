@@ -9,6 +9,7 @@ import {
   MicOff,
   Pencil,
   Paperclip,
+  Square,
   X,
 } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
@@ -63,7 +64,9 @@ type ComposerAttachmentDraft = {
 
 type ChatComposerProps = {
   disabled?: boolean;
+  autoFocus?: boolean;
   isSending: boolean;
+  canStop?: boolean;
   modelOptions?: ChatModelOption[];
   modelsReady?: boolean;
   personas?: ChatPersona[];
@@ -76,6 +79,7 @@ type ChatComposerProps = {
   onToggleWebSearch?: () => void;
   onSelectPersona?: (personaId?: string) => void;
   onManagePersonas?: () => void;
+  onStop?: () => void;
   onUploadAttachment: (file: File) => Promise<ChatAttachment>;
   editingMessage?: {
     messageId: string;
@@ -118,7 +122,9 @@ function toComposerAttachmentPart(
 
 export function ChatComposer({
   disabled = false,
+  autoFocus = false,
   isSending,
+  canStop = false,
   modelOptions = [],
   modelsReady = true,
   personas = [],
@@ -131,6 +137,7 @@ export function ChatComposer({
   onToggleWebSearch,
   onSelectPersona,
   onManagePersonas,
+  onStop,
   onUploadAttachment,
   editingMessage,
   isSavingEdit = false,
@@ -177,6 +184,7 @@ export function ChatComposer({
     () => message.trim() || attachmentDrafts.length > 0,
     [attachmentDrafts.length, message],
   );
+  const sendButtonDisabled = disabled || isSavingEdit || (!canStop && (!hasContent || hasBlockingAttachmentState));
   const isDefaultPersona = !selectedPersonaId;
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
@@ -250,6 +258,14 @@ export function ChatComposer({
     setInterimTranscript('');
     textAreaRef.current?.focus();
   }, [editingMessageId, editingMessageText]);
+
+  useEffect(() => {
+    if (!autoFocus || disabled || isEditing) {
+      return;
+    }
+
+    textAreaRef.current?.focus();
+  }, [autoFocus, disabled, isEditing]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -573,7 +589,12 @@ export function ChatComposer({
           if (event.key === 'Enter' && !event.shiftKey) {
             event.preventDefault();
 
-            if (disabled || isSending || !hasContent || hasBlockingAttachmentState) {
+            if (canStop) {
+              onStop?.();
+              return;
+            }
+
+            if (sendButtonDisabled || isSending) {
               return;
             }
 
@@ -814,19 +835,18 @@ export function ChatComposer({
             type="button"
             size="icon"
             onClick={() => {
+              if (canStop) {
+                onStop?.();
+                return;
+              }
+
               void handleSubmit();
             }}
-            disabled={
-              disabled ||
-              isSending ||
-              isSavingEdit ||
-              !hasContent ||
-              hasBlockingAttachmentState
-            }
-            className="rounded-full"
-            aria-label={editingMessage ? 'Save edit' : 'Send message'}
+            disabled={canStop ? disabled : sendButtonDisabled || isSending}
+            className={canStop ? 'rounded-full bg-black text-white hover:bg-black/90' : 'rounded-full'}
+            aria-label={canStop ? 'Stop generating' : editingMessage ? 'Save edit' : 'Send message'}
           >
-            <ArrowUp className="size-4" />
+            {canStop ? <Square className="size-4 fill-current" /> : <ArrowUp className="size-4" />}
           </Button>
         </div>
       </div>

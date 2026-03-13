@@ -69,6 +69,32 @@ describe('ChatComposer', () => {
     expect(screen.getByLabelText('Enable web search')).toBeInTheDocument();
   });
 
+  it('focuses the message input when autoFocus is enabled', () => {
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatComposer
+            autoFocus
+            isSending={false}
+            modelOptions={[
+              {
+                id: 'openai/gpt-4o-mini',
+                label: 'GPT-4o Mini',
+                description: 'Default model',
+                access: 'public',
+                selectable: true,
+              },
+            ]}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
+            onSend={vi.fn().mockResolvedValue(undefined)}
+          />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    expect(screen.getByLabelText('Message')).toHaveFocus();
+  });
+
   it('loads the main composer into edit mode and saves through the edit callback', async () => {
     const user = userEvent.setup();
     const onSubmitEdit = vi.fn().mockResolvedValue(undefined);
@@ -110,5 +136,41 @@ describe('ChatComposer', () => {
       text: 'tell me even more',
       clear: expect.any(Function),
     });
+  });
+
+  it('replaces the send button with a stop control while streaming', async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatComposer
+            isSending={false}
+            canStop
+            onStop={onStop}
+            modelOptions={[
+              {
+                id: 'openai/gpt-4o-mini',
+                label: 'GPT-4o Mini',
+                description: 'Default model',
+                access: 'public',
+                selectable: true,
+              },
+            ]}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
+            onSend={vi.fn().mockResolvedValue(undefined)}
+          />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    const stopButton = screen.getByLabelText('Stop generating');
+    expect(stopButton).toBeInTheDocument();
+    expect(screen.queryByLabelText('Send message')).not.toBeInTheDocument();
+
+    await user.click(stopButton);
+
+    expect(onStop).toHaveBeenCalledTimes(1);
   });
 });

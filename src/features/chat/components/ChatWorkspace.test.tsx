@@ -10,13 +10,21 @@ const navigateMock = vi.fn();
 const useQueryMock = vi.fn();
 const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
-const sendChatMessageMock = vi.fn();
-const editMessageMock = vi.fn();
+const startStreamMock = vi.fn();
 const uploadAttachmentMock = vi.fn();
+const defaultMutationMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
   Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
+}));
+
+vi.mock('@convex-dev/agent/react', () => ({
+  useUIMessages: () => ({
+    results: [],
+    status: 'Loaded',
+    loadMore: vi.fn(),
+  }),
 }));
 
 vi.mock('convex/react', () => ({
@@ -25,39 +33,34 @@ vi.mock('convex/react', () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
 
+vi.mock('~/features/chat/hooks/useChatStream', () => ({
+  useChatStream: () => ({
+    activeStream: null,
+    startStream: startStreamMock,
+    stopStream: vi.fn(),
+    clearStream: vi.fn(),
+  }),
+}));
+
 describe('ChatWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockResolvedValue(undefined);
-    sendChatMessageMock.mockResolvedValue({
-      threadId: 'thread-123',
-      assistantMessageId: 'assistant-123',
-    });
-    editMessageMock.mockResolvedValue({
+    startStreamMock.mockResolvedValue({
       threadId: 'thread-123',
       assistantMessageId: 'assistant-123',
     });
     uploadAttachmentMock.mockResolvedValue(null);
     useQueryMock.mockReturnValue(undefined);
-
-    let actionCallIndex = 0;
-    useActionMock.mockImplementation(() => {
-      actionCallIndex += 1;
-      if (actionCallIndex === 1) {
-        return sendChatMessageMock;
-      }
-
-      if (actionCallIndex === 2) {
-        return editMessageMock;
-      }
-
-      return uploadAttachmentMock;
-    });
-
-    useMutationMock.mockReturnValue(vi.fn());
+    useActionMock.mockReset();
+    useActionMock.mockReturnValue(uploadAttachmentMock);
+    defaultMutationMock.mockReset();
+    defaultMutationMock.mockResolvedValue(undefined);
+    useMutationMock.mockReset();
+    useMutationMock.mockReturnValue(defaultMutationMock);
   });
 
-  it('creates a new conversation through sendChatMessage without pre-creating a thread', async () => {
+  it('starts the first stream without precreating a thread shell', async () => {
     const user = userEvent.setup();
 
     render(
@@ -72,7 +75,8 @@ describe('ChatWorkspace', () => {
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
-      expect(sendChatMessageMock).toHaveBeenCalledWith({
+      expect(startStreamMock).toHaveBeenCalledWith({
+        mode: 'send',
         threadId: undefined,
         personaId: undefined,
         model: 'openai/gpt-4o-mini',
@@ -83,9 +87,41 @@ describe('ChatWorkspace', () => {
       });
     });
 
+    expect(navigateMock).toHaveBeenCalledTimes(1);
     expect(navigateMock).toHaveBeenCalledWith({
       to: '/app/chat/$threadId',
       params: { threadId: 'thread-123' },
     });
+  });
+
+  it('keeps the composer text until the new thread navigation resolves', async () => {
+    let resolveNavigate: (() => void) | undefined;
+    navigateMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveNavigate = resolve;
+        }),
+    );
+
+    const user = userEvent.setup();
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    const messageInput = screen.getByLabelText('Message');
+    await user.type(messageInput, 'Hold draft until route change');
+    await user.click(screen.getByLabelText('Send message'));
+
+    await waitFor(() => {
+      expect(startStreamMock).toHaveBeenCalled();
+    });
+
+    expect(messageInput).toHaveValue('Hold draft until route change');
+    resolveNavigate?.();
   });
 });

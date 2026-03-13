@@ -22,16 +22,39 @@ import {
 } from '~/components/ui/sidebar';
 import { CHAT_ROUTE } from '~/features/chat/lib/constants';
 import { toThreadId } from '~/features/chat/lib/ids';
+import { useOptimisticThreads } from '~/features/chat/lib/optimistic-threads';
 import { sortThreads } from '~/features/chat/lib/utils';
 
 export function ChatSidebarGroup() {
   const location = useLocation();
   const navigate = useNavigate();
   const { isMobile, setOpenMobile } = useSidebar();
-  const threads = useQuery(api.chat.listThreads, {});
-  const renameThread = useMutation(api.chat.renameThread);
-  const setThreadPinned = useMutation(api.chat.setThreadPinned);
-  const deleteThread = useMutation(api.chat.deleteThread);
+  const threads = useQuery(api.agentChat.listThreads, {});
+  const optimisticThreads = useOptimisticThreads();
+  const renameThread = useMutation(api.agentChat.renameThread);
+  const setThreadPinned = useMutation(api.agentChat.setThreadPinned);
+  const deleteThread = useMutation(api.agentChat.deleteThread).withOptimisticUpdate(
+    (localStore, args) => {
+      const currentThreads = localStore.getQuery(api.agentChat.listThreads, {});
+      if (!currentThreads) {
+        return;
+      }
+
+      const remainingThreads = currentThreads.filter((thread) => thread._id !== args.threadId);
+
+      localStore.setQuery(api.agentChat.listThreads, {}, remainingThreads);
+      localStore.setQuery(api.agentChat.getThread, { threadId: args.threadId }, null);
+
+      const currentLatestThreadId = localStore.getQuery(api.agentChat.getLatestThreadId, {});
+      if (currentLatestThreadId === args.threadId) {
+        localStore.setQuery(
+          api.agentChat.getLatestThreadId,
+          {},
+          remainingThreads[0]?._id ?? null,
+        );
+      }
+    },
+  );
   const [renamingThreadId, setRenamingThreadId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const renameInputRef = useRef<HTMLInputElement | null>(null);
@@ -43,7 +66,15 @@ export function ChatSidebarGroup() {
     }
   }, [renamingThreadId]);
 
-  const sortedThreads = useMemo(() => sortThreads(threads ?? []), [threads]);
+  const sortedThreads = useMemo(() => {
+    const serverThreads = threads ?? [];
+    const serverThreadIds = new Set(serverThreads.map((thread) => thread._id));
+
+    return sortThreads([
+      ...optimisticThreads.filter((thread) => !serverThreadIds.has(thread._id)),
+      ...serverThreads,
+    ]);
+  }, [optimisticThreads, threads]);
 
   const closeMobileSidebar = () => {
     if (isMobile) {

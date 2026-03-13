@@ -1,4 +1,5 @@
 import { api } from '@convex/_generated/api';
+import { useUIMessages } from '@convex-dev/agent/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
@@ -9,15 +10,18 @@ import { MessageList } from '~/features/chat/components/MessageList';
 import { PersonaDialog } from '~/features/chat/components/PersonaDialog';
 import { inferChatAttachmentMimeType } from '~/features/chat/lib/attachments';
 import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants';
-import { toPersonaId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
+import { mapAgentMessagesToChatMessages } from '~/features/chat/lib/agent-messages';
+import { toPersonaId, toRunId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
+import { clearOptimisticThread, setOptimisticThread } from '~/features/chat/lib/optimistic-threads';
 import {
   clearPendingThreadSubmission,
   setPendingThreadSubmission,
   updatePendingThreadSubmission,
   usePendingThreadSubmission,
 } from '~/features/chat/lib/pending-thread-submission';
+import { useChatStream } from '~/features/chat/hooks/useChatStream';
 import type { ChatAttachment, ChatMessage, ChatMessagePart, ChatPersona } from '~/features/chat/types';
-import { resolveRequestedModelId } from '~/features/chat/lib/utils';
+import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
   type ChatModelId,
   DEFAULT_CHAT_MODEL_ID,
@@ -53,6 +57,69 @@ function ChatMessagesSkeleton() {
   );
 }
 
+function getPartComparisonKey(part: ChatMessagePart) {
+  switch (part.type) {
+    case 'text':
+      return `text:${part.text}`;
+    case 'attachment':
+      return `attachment:${part.attachmentId}:${part.kind}:${part.name}:${part.promptSummary}`;
+    case 'document':
+      return `document:${part.name}:${part.mimeType}:${part.content}`;
+    case 'file':
+      return `file:${part.mediaType}:${part.filename ?? ''}:${part.url}`;
+    case 'image':
+      return `image:${part.mimeType ?? ''}:${part.name ?? ''}:${part.image}`;
+    case 'source-url':
+      return `source-url:${part.sourceId}:${part.url}:${part.title ?? ''}`;
+    case 'source-document':
+      return `source-document:${part.sourceId}:${part.mediaType}:${part.title}:${part.filename ?? ''}`;
+    default:
+      return 'unknown';
+  }
+}
+
+function getTextFromMessageParts(parts: ChatMessagePart[]) {
+  return parts
+    .map((part) => {
+      if (part.type === 'text') {
+        return part.text;
+      }
+
+      return '';
+    })
+    .join('\n\n')
+    .trim();
+}
+
+function matchesPendingSubmission(
+  message: ChatMessage,
+  pendingSubmission: NonNullable<ReturnType<typeof usePendingThreadSubmission>>,
+) {
+  if (message.role !== 'user') {
+    return false;
+  }
+
+  if (
+    message.clientMessageId &&
+    message.clientMessageId === pendingSubmission.clientMessageId
+  ) {
+    return true;
+  }
+
+  if (message.createdAt < pendingSubmission.submittedAt - 5_000) {
+    return false;
+  }
+
+  if (message.parts.length !== pendingSubmission.parts.length) {
+    return false;
+  }
+
+  return message.parts.every((part, index) => {
+    const pendingPart = pendingSubmission.parts[index];
+    return pendingPart ? getPartComparisonKey(part) === getPartComparisonKey(pendingPart) : false;
+  });
+}
+
 export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -73,30 +140,44 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const scrollRequestThreadIdRef = useRef<string | null>(null);
 
   const typedThreadId = threadId ? toThreadId(threadId) : undefined;
-  const thread = useQuery(api.chat.getThread, typedThreadId ? { threadId: typedThreadId } : 'skip');
-  const messages = useQuery(
-    api.chat.listMessages,
+  const thread = useQuery(api.agentChat.getThread, typedThreadId ? { threadId: typedThreadId } : 'skip');
+  const messageFeed = useUIMessages(
+    api.agentChat.listThreadMessages,
+    threadId ? { threadId } : 'skip',
+    {
+      initialNumItems: 100,
+    },
+  );
+  const activeRun = useQuery(
+    api.agentChat.getActiveRun,
     typedThreadId ? { threadId: typedThreadId } : 'skip',
   );
-  const activeDraft = useQuery(
-    api.chat.getActiveAssistantDraft,
+  const retryableRunIds = useQuery(
+    api.agentChat.getRetryableRunIds,
     typedThreadId ? { threadId: typedThreadId } : 'skip',
   );
-  const personas = useQuery(api.chat.listPersonas, {});
+  const personas = useQuery(api.agentChat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
-  const sendChatMessage = useAction(api.chatActions.sendChatMessage);
-  const editUserMessageAndRegenerate = useAction(api.chatActions.editUserMessageAndRegenerate);
-  const createChatAttachmentFromUpload = useAction(api.chatActions.createChatAttachmentFromUpload);
-  const generateChatAttachmentUploadUrl = useMutation(api.chat.generateChatAttachmentUploadUrl);
-  const createPersona = useMutation(api.chat.createPersona);
-  const updatePersona = useMutation(api.chat.updatePersona);
-  const deletePersona = useMutation(api.chat.deletePersona);
-  const setThreadPersona = useMutation(api.chat.setThreadPersona);
+  const createChatAttachmentFromUpload = useAction(api.agentChatActions.createChatAttachmentFromUpload);
+  const stopRun = useAction(api.agentChatActions.stopRun);
+  const generateChatAttachmentUploadUrl = useMutation(api.agentChat.generateChatAttachmentUploadUrl);
+  const createPersona = useMutation(api.agentChat.createPersona);
+  const updatePersona = useMutation(api.agentChat.updatePersona);
+  const deletePersona = useMutation(api.agentChat.deletePersona);
+  const setThreadPersona = useMutation(api.agentChat.setThreadPersona);
+  const { activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
   const pendingSubmission = usePendingThreadSubmission(threadId);
   const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
     null,
   );
-  const [regeneratingMessageId, setRegeneratingMessageId] = useState<string | null>(null);
+  const [regeneratingTarget, setRegeneratingTarget] = useState<{
+    messageId: string;
+    hideMessage: boolean;
+    originalUpdatedAt: number;
+  } | null>(null);
+  const [fallbackDraftTextByMessageId, setFallbackDraftTextByMessageId] = useState<
+    Record<string, string>
+  >({});
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const personasList = personas ?? [];
   const availableModelOptions = modelOptions ?? [];
@@ -112,7 +193,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       'Persona'
     );
   }, [effectivePersonaId, personasList]);
-  const currentMessages: ChatMessage[] = messages ?? [];
+  const currentMessages: ChatMessage[] = useMemo(
+    () => (threadId ? mapAgentMessagesToChatMessages(threadId, messageFeed.results) : []),
+    [messageFeed.results, threadId],
+  );
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
       const message = currentMessages[index];
@@ -135,28 +219,36 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
     : DEFAULT_CHAT_MODEL_ID;
+  const shouldAutoFocusComposer = !threadId;
   const pendingPreview =
     pendingSubmission && threadId
       ? {
           submission: pendingSubmission,
           showUserMessage: !currentMessages.some(
-            (message) =>
-              message.role === 'user' &&
-              message.clientMessageId === pendingSubmission.clientMessageId,
+            (message) => matchesPendingSubmission(message, pendingSubmission),
           ),
-          showAssistantPlaceholder: !currentMessages.some(
-            (message) =>
-              message.role === 'assistant' && message.createdAt >= pendingSubmission.submittedAt,
-          ),
+          showAssistantPlaceholder:
+            (!activeStream?.text.trim() || pendingSubmission.stage === 'error') &&
+            !currentMessages.some(
+              (message) =>
+                message.role === 'assistant' && message.createdAt >= pendingSubmission.submittedAt,
+            ),
         }
       : undefined;
-  const showEmptyState = currentMessages.length === 0 && !pendingPreview;
-  const isThreadPending = Boolean(threadId && (thread === undefined || messages === undefined));
+  const showEmptyState = currentMessages.length === 0 && !pendingSubmission && !activeStream;
+  const isThreadPending = Boolean(
+    threadId &&
+      !pendingSubmission &&
+      (thread === undefined || messageFeed.status === 'LoadingFirstPage'),
+  );
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled = isThreadPending;
-  const hasPendingAssistantResponse = currentMessages.some(
-    (message) => message.role === 'assistant' && message.status === 'pending',
-  ) || Boolean(activeDraft);
+  const hasPendingAssistantResponse =
+    currentMessages.some(
+      (message) => message.role === 'assistant' && message.status === 'streaming',
+    ) ||
+    activeRun?.status === 'streaming' ||
+    activeStream?.status === 'streaming';
   const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
   const pendingScrollTargetVisible = Boolean(
     targetClientMessageId &&
@@ -232,6 +324,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }, [currentMessages]);
 
   useEffect(() => {
+    if (!thread?.title || !threadId) {
+      return;
+    }
+
+    clearOptimisticThread(threadId);
+  }, [thread?.title, threadId]);
+
+  useEffect(() => {
     if (!editingMessage) {
       return;
     }
@@ -247,7 +347,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return;
     }
 
-    if (regeneratingMessageId === editingMessage.messageId) {
+    if (regeneratingTarget?.messageId === editingMessage.messageId) {
       return;
     }
 
@@ -255,7 +355,110 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     if (nextText !== editingMessage.text) {
       setEditingMessage({ messageId: editingMessage.messageId, text: nextText });
     }
-  }, [currentMessages, editingMessage, optimisticEdits, regeneratingMessageId]);
+  }, [currentMessages, editingMessage, optimisticEdits, regeneratingTarget]);
+
+  useEffect(() => {
+    if (!regeneratingTarget) {
+      return;
+    }
+
+    const matchingMessage = currentMessages.find(
+      (message) => message._id === regeneratingTarget.messageId,
+    );
+    if (!matchingMessage) {
+      return;
+    }
+
+    if (matchingMessage.role !== 'assistant') {
+      if (!isSending && !hasPendingAssistantResponse) {
+        setRegeneratingTarget(null);
+      }
+      return;
+    }
+
+    const persistedText = getTextFromMessageParts(matchingMessage.parts).trim();
+    const streamedRetryText =
+      fallbackDraftTextByMessageId[regeneratingTarget.messageId]?.trim() ?? '';
+    const hasPersistedRetryResult =
+      matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
+      matchingMessage.status === 'complete' &&
+      Boolean(persistedText) &&
+      (!streamedRetryText || persistedText === streamedRetryText);
+    const hasPersistedRetryError =
+      matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
+      matchingMessage.status === 'error';
+
+    if (hasPersistedRetryResult || hasPersistedRetryError) {
+      setRegeneratingTarget(null);
+    }
+  }, [
+    currentMessages,
+    fallbackDraftTextByMessageId,
+    hasPendingAssistantResponse,
+    isSending,
+    regeneratingTarget,
+  ]);
+
+  useEffect(() => {
+    const streamedText = activeStream?.text.trim();
+    if (!activeStream || !streamedText) {
+      return;
+    }
+
+    setFallbackDraftTextByMessageId((current) =>
+      current[activeStream.assistantMessageId] === streamedText
+        ? current
+        : {
+            ...current,
+            [activeStream.assistantMessageId]: streamedText,
+          },
+    );
+  }, [activeStream]);
+
+  useEffect(() => {
+    setFallbackDraftTextByMessageId((current) => {
+      if (Object.keys(current).length === 0) {
+        return current;
+      }
+
+      let next = current;
+
+      for (const message of currentMessages) {
+        if (message.role !== 'assistant') {
+          continue;
+        }
+
+        const persistedText = getTextFromMessageParts(message.parts).trim();
+        const fallbackText = current[message._id]?.trim() ?? '';
+        const isRetryTarget = regeneratingTarget?.messageId === message._id;
+        const hasRetriedVersion =
+          !isRetryTarget || message.updatedAt !== regeneratingTarget.originalUpdatedAt;
+        const shouldClearFallback =
+          (message.status === 'complete' &&
+            Boolean(persistedText) &&
+            Boolean(fallbackText) &&
+            persistedText === fallbackText &&
+            hasRetriedVersion) ||
+          (message.status === 'error' && hasRetriedVersion);
+
+        if (!shouldClearFallback) {
+          continue;
+        }
+
+        if (!(message._id in next)) {
+          continue;
+        }
+
+        if (next === current) {
+          next = { ...current };
+        }
+
+        delete next[message._id];
+      }
+
+      return next;
+    });
+  }, [currentMessages, regeneratingTarget]);
 
   useLayoutEffect(() => {
     if (pendingSubmission || hasPendingAssistantResponse) {
@@ -281,17 +484,19 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   ]);
 
   useEffect(() => {
-    if (!threadId || !pendingSubmission || !messages) {
+    if (!threadId || !pendingSubmission || messageFeed.status === 'LoadingFirstPage') {
       return;
     }
 
-    const hasUserMessage = messages.some(
+    const hasUserMessage = currentMessages.some(
       (message) =>
         message.role === 'user' && message.clientMessageId === pendingSubmission.clientMessageId,
     );
-    const hasAssistantMessage = messages.some(
+    const hasAssistantMessage = currentMessages.some(
       (message) =>
-        message.role === 'assistant' && message.createdAt >= pendingSubmission.submittedAt,
+        message.role === 'assistant' &&
+        message.createdAt >= pendingSubmission.submittedAt &&
+        message.status !== 'streaming',
     );
 
     if (hasAssistantMessage) {
@@ -309,10 +514,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           : submission,
       );
     }
-  }, [messages, pendingSubmission, threadId]);
+  }, [currentMessages, messageFeed.status, pendingSubmission, threadId]);
 
   useEffect(() => {
-    if (!threadId || messages === undefined || scrollRequestThreadIdRef.current === threadId) {
+    if (
+      !threadId ||
+      messageFeed.status === 'LoadingFirstPage' ||
+      scrollRequestThreadIdRef.current === threadId
+    ) {
       return;
     }
 
@@ -328,7 +537,33 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         endNode.scrollIntoView({ block: 'end' });
       });
     });
-  }, [messages, threadId]);
+  }, [messageFeed.status, threadId]);
+
+  useEffect(() => {
+    if (!threadId || !activeStream || activeStream.threadId !== threadId) {
+      return;
+    }
+
+    const matchingMessage = currentMessages.find(
+      (message) => message._id === activeStream.assistantMessageId,
+    );
+    if (!matchingMessage) {
+      return;
+    }
+
+    const finalizedMessageText = getTextFromMessageParts(matchingMessage.parts);
+    const streamedText = activeStream.text.trim();
+    const hasSynchronizedContent =
+      !streamedText || finalizedMessageText === streamedText;
+
+    if (
+      activeStream.status === 'complete' &&
+      matchingMessage.status === 'complete' &&
+      hasSynchronizedContent
+    ) {
+      clearStream(threadId);
+    }
+  }, [activeStream, clearStream, currentMessages, threadId]);
 
   useLayoutEffect(() => {
     if (!pendingScrollTargetVisible) {
@@ -466,9 +701,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     setIsSending(true);
     setScrollSpacerHeight(0);
     setSettledScrollBottomLimit(null);
+    let targetThreadId = threadId;
 
     try {
-      clear();
       const personaId = thread
         ? thread.personaId
         : draftPersonaId
@@ -476,8 +711,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           : undefined;
 
       const submittedAt = Date.now();
-      if (threadId) {
-        setPendingThreadSubmission(threadId, {
+      if (targetThreadId) {
+        clear();
+        setPendingThreadSubmission(targetThreadId, {
           clientMessageId,
           modelId: effectiveModelId,
           parts,
@@ -486,33 +722,43 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         });
       }
 
-      const response = await sendChatMessage({
-        threadId: typedThreadId,
-        personaId,
+      const response = await startStream({
+        mode: 'send',
+        threadId: targetThreadId,
+        personaId: personaId,
         model: effectiveModelId,
         useWebSearch,
         text,
         attachmentIds,
         clientMessageId,
       });
-
       if (!threadId) {
-        setPendingThreadSubmission(response.threadId, {
+        targetThreadId = response.threadId;
+        setOptimisticThread({
+          _id: toThreadId(targetThreadId),
+          title: deriveThreadTitle(parts),
+          pinned: false,
+          createdAt: submittedAt,
+          updatedAt: submittedAt,
+          lastMessageAt: submittedAt,
+        });
+        setPendingThreadSubmission(targetThreadId, {
           clientMessageId,
           modelId: effectiveModelId,
           parts,
           submittedAt,
           stage: 'submitting',
         });
-
         await navigate({
           to: '/app/chat/$threadId',
-          params: { threadId: response.threadId },
+          params: { threadId: targetThreadId },
         });
+        clear();
       }
     } catch (error) {
-      if (threadId) {
-        updatePendingThreadSubmission(threadId, (submission) =>
+      const failedThreadId = targetThreadId;
+      if (failedThreadId) {
+        updatePendingThreadSubmission(failedThreadId, (submission) =>
           submission
             ? {
                 ...submission,
@@ -523,6 +769,54 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         );
       }
       showToast(error instanceof Error ? error.message : 'Failed to send message.', 'error');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleStopActiveRun = async () => {
+    const stopped = stopStream(threadId);
+    if (stopped || !activeRun?._id) {
+      return;
+    }
+
+    await stopRun({
+      runId: toRunId(activeRun._id),
+    });
+  };
+
+  const handleRetryRun = async (messageId: string, runId: string) => {
+    if (!runId) {
+      return;
+    }
+
+    const targetMessage = currentMessages.find((message) => message._id === messageId);
+
+    setIsSending(true);
+    setFallbackDraftTextByMessageId((current) => {
+      if (!(messageId in current)) {
+        return current;
+      }
+
+      const next = { ...current };
+      delete next[messageId];
+      return next;
+    });
+    setRegeneratingTarget({
+      messageId,
+      hideMessage: true,
+      originalUpdatedAt: targetMessage?.updatedAt ?? 0,
+    });
+    try {
+      await startStream({
+        mode: 'retry',
+        runId,
+        model: effectiveModelId,
+        useWebSearch,
+      });
+    } catch (error) {
+      setRegeneratingTarget(null);
+      showToast(error instanceof Error ? error.message : 'Failed to retry message.', 'error');
     } finally {
       setIsSending(false);
     }
@@ -542,8 +836,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               </p>
               <div className="mt-8 w-full max-w-3xl">
                 <ChatComposer
+                  autoFocus={shouldAutoFocusComposer}
                   disabled={composerDisabled}
                   isSending={isSending}
+                  canStop={hasPendingAssistantResponse}
                   modelOptions={availableModelOptions}
                   modelsReady={modelOptions !== undefined}
                   personas={personasList}
@@ -556,6 +852,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   onSelectPersona={handleSelectPersona}
                   onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                   onManagePersonas={() => setPersonaDialogOpen(true)}
+                  onStop={() => {
+                    void handleStopActiveRun();
+                  }}
                   onUploadAttachment={handleUploadAttachment}
                   onSend={handleSend}
                 />
@@ -574,9 +873,15 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   <div className="mx-auto w-full max-w-5xl">
                     <MessageList
                       messages={currentMessages}
-                      activeDraft={activeDraft ?? null}
+                      activeStream={activeStream}
+                      retryRunIdByMessageId={retryableRunIds ?? {}}
+                      onRetryMessage={(messageId, runId) => {
+                        void handleRetryRun(messageId, runId);
+                      }}
                       pendingSubmission={pendingPreview}
-                      regeneratingMessageId={regeneratingMessageId}
+                      regeneratingTarget={regeneratingTarget}
+                      fallbackDraftTextByMessageId={fallbackDraftTextByMessageId}
+                      isRegenerationPending={Boolean(regeneratingTarget)}
                       optimisticEdits={optimisticEdits}
                       onStartEditMessage={(message) => {
                         if (
@@ -603,8 +908,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6 md:px-6">
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
+                    autoFocus={shouldAutoFocusComposer}
                     disabled={composerDisabled}
                     isSending={isSending}
+                    canStop={hasPendingAssistantResponse}
                     modelOptions={availableModelOptions}
                     modelsReady={modelOptions !== undefined}
                     personas={personasList}
@@ -617,9 +924,12 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     onSelectPersona={handleSelectPersona}
                     onToggleWebSearch={() => setUseWebSearch((current) => !current)}
                     onManagePersonas={() => setPersonaDialogOpen(true)}
+                    onStop={() => {
+                      void handleStopActiveRun();
+                    }}
                     onUploadAttachment={handleUploadAttachment}
                     editingMessage={editingMessage ?? undefined}
-                    isSavingEdit={Boolean(regeneratingMessageId)}
+                    isSavingEdit={Boolean(regeneratingTarget)}
                     onCancelEdit={() => setEditingMessage(null)}
                     onSubmitEdit={async ({ messageId, text, clear }) => {
                       try {
@@ -627,11 +937,18 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                           ...current,
                           [messageId]: text,
                         }));
-                        setRegeneratingMessageId(messageId);
+                        setRegeneratingTarget({
+                          messageId,
+                          hideMessage: false,
+                          originalUpdatedAt:
+                            currentMessages.find((message) => message._id === messageId)
+                              ?.updatedAt ?? 0,
+                        });
                         setEditingMessage(null);
                         clear();
-                        await editUserMessageAndRegenerate({
-                          messageId: messageId as never,
+                        await startStream({
+                          mode: 'edit',
+                          messageId,
                           text,
                           model: effectiveModelId,
                           useWebSearch,
@@ -643,12 +960,11 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                           return next;
                         });
                         setEditingMessage({ messageId, text });
+                        setRegeneratingTarget(null);
                         showToast(
                           error instanceof Error ? error.message : 'Failed to edit message.',
                           'error',
                         );
-                      } finally {
-                        setRegeneratingMessageId(null);
                       }
                     }}
                     onSend={handleSend}

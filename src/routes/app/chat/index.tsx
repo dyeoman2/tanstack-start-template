@@ -15,14 +15,10 @@ export const Route = createFileRoute('/app/chat/')({
 function ChatIndexRoute() {
   const navigate = useNavigate();
   const { new: isNewThread } = Route.useSearch();
-  const latestThreadId = useQuery(api.chat.getLatestThreadId, {});
+  const latestThreadId = useQuery(api.agentChat.getLatestThreadId, {});
 
   useEffect(() => {
-    if (isNewThread) {
-      return;
-    }
-
-    if (!latestThreadId) {
+    if (isNewThread || !latestThreadId) {
       return;
     }
 
@@ -33,11 +29,15 @@ function ChatIndexRoute() {
     });
   }, [isNewThread, latestThreadId, navigate]);
 
+  if (isNewThread) {
+    return <ChatWorkspace />;
+  }
+
   if (latestThreadId === undefined) {
     return <ChatWorkspaceSkeleton />;
   }
 
-  if (latestThreadId && !isNewThread) {
+  if (latestThreadId) {
     return null;
   }
 

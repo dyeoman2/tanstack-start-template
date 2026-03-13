@@ -21,6 +21,7 @@ import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/s
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { useOptimisticThreadTitle } from '~/features/chat/lib/optimistic-threads';
 import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
@@ -77,7 +78,10 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
           previousSegment === 'organizations' ? (
             <OrganizationBreadcrumbLabel slug={segment} fallback={fallbackLabel} />
           ) : previousSegment === 'chat' ? (
-            <ChatThreadBreadcrumbLabel threadId={segment} fallback={fallbackLabel} />
+            <ChatThreadBreadcrumbLabel
+              threadId={decodeURIComponent(segment)}
+              fallback={fallbackLabel}
+            />
           ) : (
             fallbackLabel
           ),
@@ -99,9 +103,10 @@ function ChatThreadBreadcrumbLabel({
   fallback: string;
   threadId: string;
 }) {
-  const title = useQuery(api.chat.getThreadTitle, { threadId: threadId as never });
+  const optimisticTitle = useOptimisticThreadTitle(threadId);
+  const title = useQuery(api.agentChat.getThreadTitle, { threadId });
 
-  return title ?? fallback;
+  return optimisticTitle ?? title ?? fallback;
 }
 
 function AppBreadcrumbs() {
@@ -121,7 +126,9 @@ function AppBreadcrumbs() {
                   asChild
                   className={cn(index < items.length - 2 && 'hidden md:inline')}
                 >
-                  <Link to={item.href}>{item.label}</Link>
+                  <Link to={item.href}>
+                    {item.label}
+                  </Link>
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>{item.label}</BreadcrumbPage>

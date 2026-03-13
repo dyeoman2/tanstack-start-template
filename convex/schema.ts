@@ -1,59 +1,18 @@
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
-const parsedPdfImageValidator = v.object({
-  pageNumber: v.number(),
-  name: v.string(),
-  width: v.number(),
-  height: v.number(),
-  dataUrl: v.string(),
-});
-
 const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
 const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('ready'),
   v.literal('error'),
 );
-
-const aiMessagePartValidator = v.union(
-  v.object({
-    type: v.literal('text'),
-    text: v.string(),
-  }),
-  v.object({
-    type: v.literal('image'),
-    image: v.string(),
-    mimeType: v.optional(v.string()),
-    name: v.optional(v.string()),
-  }),
-  v.object({
-    type: v.literal('document'),
-    name: v.string(),
-    content: v.string(),
-    mimeType: v.string(),
-    images: v.optional(v.array(parsedPdfImageValidator)),
-  }),
-  v.object({
-    type: v.literal('attachment'),
-    attachmentId: v.id('aiAttachments'),
-    kind: chatAttachmentKindValidator,
-    name: v.string(),
-    mimeType: v.string(),
-  }),
-  v.object({
-    type: v.literal('source-url'),
-    sourceId: v.string(),
-    url: v.string(),
-    title: v.optional(v.string()),
-  }),
-  v.object({
-    type: v.literal('source-document'),
-    sourceId: v.string(),
-    mediaType: v.string(),
-    title: v.string(),
-    filename: v.optional(v.string()),
-  }),
+const chatRunStatusValidator = v.union(
+  v.literal('idle'),
+  v.literal('streaming'),
+  v.literal('complete'),
+  v.literal('aborted'),
+  v.literal('error'),
 );
 
 const onboardingStatusValidator = v.union(
@@ -164,52 +123,46 @@ export default defineSchema({
     .index('by_identifier_kind', ['identifier', 'kind'])
     .index('by_createdAt', ['createdAt']),
 
-  aiThreads: defineTable({
+  chatThreads: defineTable({
     userId: v.string(),
     organizationId: v.string(),
+    agentThreadId: v.string(),
     title: v.string(),
     pinned: v.boolean(),
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
-    contextSummary: v.optional(v.string()),
-    contextSummaryThroughMessageId: v.optional(v.id('aiMessages')),
-    contextSummaryUpdatedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastMessageAt: v.number(),
   })
+    .index('by_agentThreadId', ['agentThreadId'])
     .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
     .index('by_organizationId_and_pinned', ['organizationId', 'pinned'])
     .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt']),
 
-  aiMessages: defineTable({
-    threadId: v.id('aiThreads'),
-    userId: v.string(),
+  chatRuns: defineTable({
+    threadId: v.id('chatThreads'),
+    agentThreadId: v.string(),
     organizationId: v.string(),
-    role: v.union(v.literal('assistant'), v.literal('user')),
-    parts: v.array(aiMessagePartValidator),
-    status: v.union(v.literal('pending'), v.literal('complete'), v.literal('error')),
+    ownerSessionId: v.string(),
+    status: chatRunStatusValidator,
+    startedAt: v.number(),
+    endedAt: v.optional(v.number()),
+    errorMessage: v.optional(v.string()),
+    activeAssistantMessageId: v.optional(v.string()),
+    promptMessageId: v.optional(v.string()),
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
-    usage: v.optional(
-      v.object({
-        totalTokens: v.optional(v.number()),
-        inputTokens: v.optional(v.number()),
-        outputTokens: v.optional(v.number()),
-      }),
-    ),
-    errorMessage: v.optional(v.string()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-    clientMessageId: v.optional(v.string()),
+    useWebSearch: v.boolean(),
   })
-    .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
-    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+    .index('by_threadId_and_startedAt', ['threadId', 'startedAt'])
+    .index('by_threadId_and_status', ['threadId', 'status'])
+    .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt']),
 
-  aiAttachments: defineTable({
-    messageId: v.optional(v.id('aiMessages')),
-    threadId: v.optional(v.id('aiThreads')),
+  chatAttachments: defineTable({
+    threadId: v.optional(v.id('chatThreads')),
+    agentMessageId: v.optional(v.string()),
     userId: v.string(),
     organizationId: v.string(),
     kind: chatAttachmentKindValidator,
@@ -218,28 +171,16 @@ export default defineSchema({
     sizeBytes: v.number(),
     rawStorageId: v.optional(v.id('_storage')),
     extractedTextStorageId: v.optional(v.id('_storage')),
+    agentFileId: v.optional(v.string()),
     promptSummary: v.string(),
     status: chatAttachmentStatusValidator,
     errorMessage: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index('by_messageId', ['messageId'])
     .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
     .index('by_userId_and_createdAt', ['userId', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
-
-  aiMessageDrafts: defineTable({
-    messageId: v.id('aiMessages'),
-    threadId: v.id('aiThreads'),
-    organizationId: v.string(),
-    text: v.string(),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index('by_messageId', ['messageId'])
-    .index('by_threadId', ['threadId'])
-    .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt']),
 
   aiPersonas: defineTable({
     userId: v.string(),

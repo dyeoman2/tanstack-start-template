@@ -1,4 +1,13 @@
-import { Check, Copy, ExternalLink, FileText, Pencil, Volume2, VolumeX } from 'lucide-react';
+import {
+  Check,
+  Copy,
+  ExternalLink,
+  FileText,
+  Pencil,
+  RotateCcw,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
 import { memo, useCallback, useMemo, useState, type RefObject } from 'react';
 import { Button } from '~/components/ui/button';
 import {
@@ -8,8 +17,9 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
+import { useSmoothStreamText } from '~/features/chat/hooks/useSmoothStreamText';
 import type { PendingThreadSubmission } from '~/features/chat/lib/pending-thread-submission';
-import type { ChatMessage, ChatMessageDraft, ChatMessagePart } from '~/features/chat/types';
+import type { ChatActiveStream, ChatMessage, ChatMessagePart } from '~/features/chat/types';
 import { cn } from '~/lib/utils';
 
 type ChatMessageSource =
@@ -29,6 +39,10 @@ function getTextFromParts(parts: ChatMessagePart[]) {
 
       if (part.type === 'document') {
         return part.content;
+      }
+
+      if (part.type === 'file') {
+        return part.filename ?? 'Attachment';
       }
 
       return '';
@@ -179,6 +193,10 @@ function getUserPartKey(part: ChatMessagePart) {
     return `${part.type}-${part.text}`;
   }
 
+  if (part.type === 'file') {
+    return `${part.type}-${part.filename ?? 'file'}-${part.url}`;
+  }
+
   if (part.type === 'image') {
     return `${part.type}-${part.name ?? 'image'}-${part.image.slice(0, 24)}`;
   }
@@ -286,6 +304,32 @@ function UserPart({ part }: { part: ChatMessagePart }) {
     return <span className="whitespace-pre-wrap">{part.text}</span>;
   }
 
+  if (part.type === 'file') {
+    const isImage = part.mediaType.startsWith('image/');
+    if (isImage) {
+      return (
+        <img
+          src={part.url}
+          alt={part.filename || 'Uploaded image'}
+          className="mt-2 max-h-[320px] max-w-full rounded-xl object-contain"
+        />
+      );
+    }
+
+    return (
+      <a
+        href={part.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="mt-2 flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 p-3 text-sm"
+      >
+        <FileText className="size-4" />
+        <span>{part.filename ?? 'Attachment'}</span>
+        <ExternalLink className="ml-auto size-4" />
+      </a>
+    );
+  }
+
   if (part.type === 'image') {
     return (
       <img
@@ -357,9 +401,11 @@ function UserPart({ part }: { part: ChatMessagePart }) {
 function EditableUserMessage({
   message,
   onStartEdit,
+  showActions = true,
 }: {
   message: ChatMessage;
   onStartEdit: () => void;
+  showActions?: boolean;
 }) {
   const { copy, copied } = useCopyToClipboard();
   const textPart =
@@ -370,26 +416,14 @@ function EditableUserMessage({
     <div className="group/message ml-auto flex max-w-[90%] flex-col items-end md:max-w-[80%]">
       <div className="rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground shadow-sm">
         {message.parts.map((part) => (
-          <UserPart
-            key={
-              part.type === 'text'
-                ? `${message._id}-${part.type}-${part.text.slice(0, 24)}`
-                : part.type === 'image'
-                  ? `${message._id}-${part.type}-${part.image.slice(0, 24)}`
-                  : part.type === 'document'
-                    ? `${message._id}-${part.type}-${part.name}-${part.content.slice(0, 24)}`
-                    : part.type === 'source-url'
-                      ? `${message._id}-${part.type}-${part.url}`
-                      : part.type === 'source-document'
-                        ? `${message._id}-${part.type}-${part.sourceId}`
-                        : `${message._id}-${part.type}-${part.attachmentId}`
-            }
-            part={part}
-          />
+          <UserPart key={`${message._id}-${getUserPartKey(part)}`} part={part} />
         ))}
       </div>
       <div
-        className={cn('mt-0.5 flex justify-end gap-1 opacity-0 transition-opacity group-hover/message:opacity-100')}
+        className={cn(
+          'mt-0.5 flex justify-end gap-1 transition-opacity',
+          showActions ? 'opacity-0 group-hover/message:opacity-100' : 'opacity-0',
+        )}
       >
         <Button
           size="icon-sm"
@@ -399,6 +433,8 @@ function EditableUserMessage({
             void copy(copyText);
           }}
           aria-label={copied ? 'Copied' : 'Copy message'}
+          tabIndex={showActions ? 0 : -1}
+          disabled={!showActions}
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         </Button>
@@ -409,6 +445,8 @@ function EditableUserMessage({
             className="rounded-full text-muted-foreground"
             onClick={onStartEdit}
             aria-label="Edit message"
+            tabIndex={showActions ? 0 : -1}
+            disabled={!showActions}
           >
             <Pencil className="size-4" />
           </Button>
@@ -422,31 +460,40 @@ function AssistantMessage({
   message,
   draftText,
   thinking,
+  retryRunId,
+  onRetry,
 }: {
   message: ChatMessage;
   draftText?: string;
-  draftUpdatedAt?: number;
   thinking?: boolean;
+  retryRunId?: string;
+  onRetry?: (messageId: string, runId: string) => void;
 }) {
   const sources = useMemo(() => getSourcesFromParts(message.parts), [message.parts]);
   const rawText = draftText ?? getTextFromParts(message.parts);
-  const text = useMemo(
-    () =>
-      message.status === 'pending'
+  const streaming = message.status === 'pending' || message.status === 'streaming';
+  const smoothedText = useSmoothStreamText(rawText, streaming);
+  const displayText =
+    thinking && !rawText.trim()
+      ? ''
+      : streaming && !smoothedText && rawText
         ? rawText
-        : stripTrailingSourceMarkdownLinks(rawText, sources),
-    [message.status, rawText, sources],
+        : smoothedText;
+  const finalText = useMemo(
+    () => (streaming ? displayText : stripTrailingSourceMarkdownLinks(displayText, sources)),
+    [displayText, sources, streaming],
   );
-  const showActions = message.status !== 'pending';
+  const showActions = !streaming;
+  const canRetry = Boolean(retryRunId && !streaming);
   const { copy, copied } = useCopyToClipboard();
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const handleCopy = useCallback(() => {
-    void copy(text);
-  }, [copy, text]);
+    void copy(finalText);
+  }, [copy, finalText]);
 
   const handleSpeak = useCallback(() => {
-    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !text.trim()) {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window) || !finalText.trim()) {
       return;
     }
 
@@ -456,25 +503,27 @@ function AssistantMessage({
       return;
     }
 
-    const utterance = new SpeechSynthesisUtterance(text);
+    const utterance = new SpeechSynthesisUtterance(finalText);
     utterance.onend = () => setIsSpeaking(false);
     utterance.onerror = () => setIsSpeaking(false);
     window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
     setIsSpeaking(true);
-  }, [isSpeaking, text]);
+  }, [finalText, isSpeaking]);
 
   return (
     <div className="flex justify-start">
       <div className="max-w-[95%] px-1 py-1 md:max-w-[88%]">
-        {thinking && !text.trim() ? (
-          <span className="text-base font-medium text-muted-foreground">Thinking...</span>
-        ) : message.status === 'pending' ? (
+        {thinking && !finalText.trim() ? (
+          <span className="chat-thinking-label text-base font-medium text-muted-foreground">
+            Thinking...
+          </span>
+        ) : streaming ? (
           <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed text-foreground">
-            {text}
+            {finalText}
           </pre>
         ) : (
-          <Markdown>{text}</Markdown>
+          <Markdown>{finalText}</Markdown>
         )}
         {showActions ? (
           <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
@@ -484,17 +533,32 @@ function AssistantMessage({
               className={cn('rounded-full', copied && 'text-foreground')}
               onClick={handleCopy}
               aria-label={copied ? 'Copied' : 'Copy'}
-              disabled={!text.trim()}
+              disabled={!finalText.trim()}
             >
               {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
             </Button>
+            {canRetry ? (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="rounded-full"
+                onClick={() => {
+                  if (retryRunId) {
+                    onRetry?.(message._id, retryRunId);
+                  }
+                }}
+                aria-label="Retry response"
+              >
+                <RotateCcw className="size-4" />
+              </Button>
+            ) : null}
             <Button
               size="icon-sm"
               variant="ghost"
               className="rounded-full"
               onClick={handleSpeak}
               aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
-              disabled={!text.trim()}
+              disabled={!finalText.trim()}
             >
               {isSpeaking ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
             </Button>
@@ -513,23 +577,31 @@ const MemoAssistantMessage = memo(
   AssistantMessage,
   (previous, next) =>
     previous.thinking === next.thinking &&
+    previous.retryRunId === next.retryRunId &&
     previous.message._id === next.message._id &&
     previous.message.status === next.message.status &&
     previous.message.updatedAt === next.message.updatedAt &&
     previous.message.errorMessage === next.message.errorMessage &&
-    previous.draftText === next.draftText &&
-    previous.draftUpdatedAt === next.draftUpdatedAt,
+    previous.draftText === next.draftText,
 );
 
 function StaticUserMessage({ parts }: { parts: ChatMessagePart[] }) {
   return (
-    <div className="ml-auto flex max-w-[90%] flex-col items-end md:max-w-[80%]">
-      <div className="rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground shadow-sm">
-        {parts.map((part) => (
-          <UserPart key={getUserPartKey(part)} part={part} />
-        ))}
-      </div>
-    </div>
+    <EditableUserMessage
+      message={{
+        _id: 'pending-user',
+        threadId: 'pending-thread',
+        order: Number.MAX_SAFE_INTEGER,
+        stepOrder: 0,
+        role: 'user',
+        parts,
+        status: 'complete',
+        createdAt: 0,
+        updatedAt: 0,
+      }}
+      onStartEdit={() => {}}
+      showActions={false}
+    />
   );
 }
 
@@ -548,31 +620,67 @@ function PendingAssistantMessage({
             {errorMessage ?? 'Failed to generate a response.'}
           </p>
         ) : (
-          <span className="text-base font-medium text-muted-foreground">Thinking...</span>
+          <span className="chat-thinking-label text-base font-medium text-muted-foreground">
+            Thinking...
+          </span>
         )}
       </div>
     </div>
   );
 }
 
+function buildSyntheticAssistantMessage(
+  baseThreadId: string,
+  activeStream: ChatActiveStream,
+): ChatMessage {
+  return {
+    _id: activeStream.assistantMessageId,
+    threadId: baseThreadId,
+    order: Number.MAX_SAFE_INTEGER - 1,
+    stepOrder: 0,
+    role: 'assistant',
+    parts: [{ type: 'text', text: '' }],
+    status:
+      activeStream.status === 'streaming'
+        ? 'streaming'
+        : activeStream.status === 'complete'
+          ? 'complete'
+          : 'error',
+    errorMessage: activeStream.errorMessage,
+    createdAt: activeStream.startedAt,
+    updatedAt: activeStream.startedAt,
+  };
+}
+
 export function MessageList({
   messages,
-  activeDraft,
+  activeStream,
+  fallbackDraftTextByMessageId = {},
+  isRegenerationPending = false,
+  retryRunIdByMessageId = {},
+  onRetryMessage,
   pendingSubmission,
-  regeneratingMessageId,
+  regeneratingTarget,
   optimisticEdits = {},
   onStartEditMessage,
   scrollTargetClientMessageId,
   scrollTargetMessageRef,
 }: {
   messages: ChatMessage[];
-  activeDraft?: ChatMessageDraft | null;
+  activeStream?: ChatActiveStream | null;
+  fallbackDraftTextByMessageId?: Record<string, string>;
+  isRegenerationPending?: boolean;
+  retryRunIdByMessageId?: Record<string, string>;
+  onRetryMessage?: (messageId: string, runId: string) => void;
   pendingSubmission?: {
     submission: PendingThreadSubmission;
     showUserMessage: boolean;
     showAssistantPlaceholder: boolean;
   };
-  regeneratingMessageId?: string | null;
+  regeneratingTarget?: {
+    messageId: string;
+    hideMessage: boolean;
+  } | null;
   optimisticEdits?: Record<string, string>;
   onStartEditMessage?: (message: ChatMessage) => void;
   scrollTargetClientMessageId?: string;
@@ -598,94 +706,169 @@ export function MessageList({
       }),
     [messages, optimisticEdits],
   );
+
   const visibleMessages = useMemo(() => {
-    if (!regeneratingMessageId) {
+    if (!regeneratingTarget) {
       return optimisticMessages;
     }
 
     const cutoffIndex = optimisticMessages.findIndex(
-      (message) => message._id === regeneratingMessageId,
+      (message) => message._id === regeneratingTarget.messageId,
     );
     if (cutoffIndex === -1) {
       return optimisticMessages;
     }
 
     return optimisticMessages.slice(0, cutoffIndex + 1);
-  }, [optimisticMessages, regeneratingMessageId]);
-  const hasRenderedActiveDraft = Boolean(
-    activeDraft && visibleMessages.some((message) => message._id === activeDraft.messageId),
+  }, [optimisticMessages, regeneratingTarget]);
+
+  const hasRenderedActiveStream = Boolean(
+    activeStream && visibleMessages.some((message) => message._id === activeStream.assistantMessageId),
   );
+  const hasVisibleRegeneratingMessage = Boolean(
+    regeneratingTarget &&
+      visibleMessages.some((message) => message._id === regeneratingTarget.messageId),
+  );
+
+  const syntheticStreamMessage =
+    activeStream && !hasRenderedActiveStream
+      ? buildSyntheticAssistantMessage(
+          visibleMessages[visibleMessages.length - 1]?.threadId ?? activeStream.threadId,
+          activeStream,
+        )
+      : null;
+  const showSyntheticStreamMessage = Boolean(
+    syntheticStreamMessage &&
+      (activeStream?.text.trim() ||
+        (regeneratingTarget &&
+          activeStream?.assistantMessageId === regeneratingTarget.messageId &&
+          !hasVisibleRegeneratingMessage)),
+  );
+  const missingRetryFallbackText = regeneratingTarget
+    ? fallbackDraftTextByMessageId[regeneratingTarget.messageId]?.trim()
+    : undefined;
 
   return (
     <div className="space-y-4">
-      {visibleMessages.map((message) =>
-        message.role === 'user' ? (
-          <div
-            key={message._id}
-            ref={
-              scrollTargetClientMessageId && message.clientMessageId === scrollTargetClientMessageId
-                ? scrollTargetMessageRef
-                : undefined
+      {visibleMessages.map((message) => {
+        if (message.role === 'user') {
+          return (
+            <div
+              key={message._id}
+              ref={
+                scrollTargetClientMessageId &&
+                message.clientMessageId === scrollTargetClientMessageId
+                  ? scrollTargetMessageRef
+                  : undefined
+              }
+            >
+              <EditableUserMessage
+                message={message}
+                onStartEdit={() => {
+                  onStartEditMessage?.(message);
+                }}
+              />
+            </div>
+          );
+        }
+
+        const streamForMessage =
+          activeStream?.assistantMessageId === message._id ? activeStream : null;
+        const isRegeneratingMessage =
+          regeneratingTarget?.messageId === message._id && isRegenerationPending;
+        const completedFallbackDraftText =
+          !streamForMessage ? fallbackDraftTextByMessageId[message._id]?.trim() : undefined;
+        const renderedMessage = streamForMessage
+          ? {
+              ...message,
+              status:
+                streamForMessage.status === 'streaming'
+                  ? 'streaming'
+                  : streamForMessage.status === 'complete'
+                    ? message.status
+                    : 'error',
+              errorMessage: streamForMessage.errorMessage ?? message.errorMessage,
             }
-          >
-            <EditableUserMessage
-              message={message}
-              onStartEdit={() => {
-                onStartEditMessage?.(message);
-              }}
-            />
-          </div>
-        ) : (
-          <MemoAssistantMessage
+          : isRegeneratingMessage
+            ? {
+                ...message,
+                parts: completedFallbackDraftText
+                  ? message.parts
+                  : ([{ type: 'text', text: '' }] as ChatMessagePart[]),
+                status: completedFallbackDraftText ? ('complete' as const) : ('pending' as const),
+                errorMessage: undefined,
+              }
+          : message;
+        const persistedAssistantText = getTextFromParts(renderedMessage.parts);
+        const fallbackDraftText =
+          !streamForMessage && !persistedAssistantText.trim()
+            ? fallbackDraftTextByMessageId[message._id]
+            : undefined;
+        const assistantText =
+          streamForMessage?.text ?? fallbackDraftText ?? persistedAssistantText;
+        const hideEmptyAssistantMessage =
+          (renderedMessage.status === 'pending' || renderedMessage.status === 'streaming') &&
+          !assistantText.trim() &&
+          !renderedMessage.errorMessage &&
+          !isRegeneratingMessage;
+
+        if (hideEmptyAssistantMessage) {
+          return null;
+      }
+
+      return (
+        <MemoAssistantMessage
             key={message._id}
-            message={message}
-            draftText={activeDraft?.messageId === message._id ? activeDraft.text : undefined}
-            draftUpdatedAt={
-              activeDraft?.messageId === message._id ? activeDraft.updatedAt : undefined
+            message={renderedMessage}
+            draftText={streamForMessage?.text ?? fallbackDraftText}
+            retryRunId={streamForMessage?.runId ?? retryRunIdByMessageId[message._id]}
+            thinking={
+              (renderedMessage.status === 'pending' || renderedMessage.status === 'streaming') &&
+              !assistantText.trim()
             }
-            thinking={message.status === 'pending'}
+            onRetry={onRetryMessage}
           />
-        ),
-      )}
-      {activeDraft && !hasRenderedActiveDraft ? (
-        <MemoAssistantMessage
-          message={{
-            _id: activeDraft.messageId,
-            threadId: activeDraft.threadId,
-            role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
-            status: 'pending',
-            createdAt: activeDraft.createdAt,
-            updatedAt: activeDraft.updatedAt,
-          }}
-          draftText={activeDraft.text}
-          draftUpdatedAt={activeDraft.updatedAt}
-          thinking
-        />
-      ) : null}
-      {regeneratingMessageId ? (
-        <MemoAssistantMessage
-          message={{
-            _id: 'regenerating' as never,
-            threadId: visibleMessages[0]?.threadId as never,
-            role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
-            status: 'pending',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }}
-          thinking
-        />
-      ) : null}
+        );
+      })}
+
       {pendingSubmission?.showUserMessage ? (
         <div ref={scrollTargetMessageRef}>
           <StaticUserMessage parts={pendingSubmission.submission.parts} />
         </div>
       ) : null}
+
       {pendingSubmission?.showAssistantPlaceholder ? (
         <PendingAssistantMessage
           stage={pendingSubmission.submission.stage}
           errorMessage={pendingSubmission.submission.errorMessage}
+        />
+      ) : null}
+
+      {showSyntheticStreamMessage && syntheticStreamMessage ? (
+        <MemoAssistantMessage
+          message={syntheticStreamMessage}
+          draftText={activeStream?.text}
+          retryRunId={activeStream?.runId}
+          thinking={!activeStream?.text.trim()}
+          onRetry={onRetryMessage}
+        />
+      ) : null}
+
+      {regeneratingTarget && !activeStream && !hasVisibleRegeneratingMessage ? (
+        <MemoAssistantMessage
+          message={{
+            _id: regeneratingTarget.messageId,
+            threadId: visibleMessages[visibleMessages.length - 1]?.threadId ?? '',
+            order: Number.MAX_SAFE_INTEGER,
+            stepOrder: 0,
+            role: 'assistant',
+            parts: [{ type: 'text', text: '' }],
+            status: missingRetryFallbackText ? 'complete' : 'pending',
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          }}
+          draftText={missingRetryFallbackText}
+          thinking={!missingRetryFallbackText}
         />
       ) : null}
     </div>

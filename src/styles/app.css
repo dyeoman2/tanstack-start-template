@@ -223,3 +223,36 @@
     @apply bg-background text-foreground;
   }
 }
+
+@layer components {
+  .chat-thinking-label {
+    display: inline-block;
+    color: currentColor;
+    animation: chat-thinking-shimmer 1.6s ease-in-out infinite;
+    will-change: opacity, filter;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .chat-thinking-label {
+      animation: none;
+    }
+  }
+}
+
+@keyframes chat-thinking-shimmer {
+  0%,
+  100% {
+    opacity: 0.48;
+    filter: blur(0);
+  }
+
+  45% {
+    opacity: 0.96;
+    filter: blur(0);
+  }
+
+  55% {
+    opacity: 0.7;
+    filter: blur(0.2px);
+  }
+}
