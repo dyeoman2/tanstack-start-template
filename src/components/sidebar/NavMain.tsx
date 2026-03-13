@@ -57,6 +57,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                         <SidebarMenuSubButton asChild isActive={location.pathname === subItem.to}>
                           <Link
                             to={subItem.to}
+                            params={(params: never) => params}
+                            search={(search: never) => search}
                           >
                             <span>{subItem.title}</span>
                           </Link>
@@ -72,6 +74,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
               <SidebarMenuButton asChild tooltip={item.title} isActive={item.isActive}>
                 <Link
                   to={item.to ?? '/'}
+                  params={(params: never) => params}
+                  search={(search: never) => search}
                 >
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>

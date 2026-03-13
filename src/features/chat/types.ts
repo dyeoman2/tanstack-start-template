@@ -156,6 +156,7 @@ export type ChatActiveStream = {
   threadId: string;
   runId: string;
   assistantMessageId: string;
+  streamId?: string;
   ownerSessionId: string;
   text: string;
   status: ChatActiveStreamStatus;
@@ -163,8 +164,6 @@ export type ChatActiveStream = {
   startedAt: number;
   request: ChatStreamRequest;
 };
-
-export type ChatPassiveStream = Omit<ChatActiveStream, 'request'>;
 
 export type ChatAttachment = {
   _id: Id<'chatAttachments'>;

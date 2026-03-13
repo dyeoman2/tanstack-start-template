@@ -24,7 +24,6 @@ import type {
   ChatAttachment,
   ChatMessage,
   ChatMessagePart,
-  ChatPassiveStream,
   ChatPersona,
 } from '~/features/chat/types';
 import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
@@ -146,12 +145,15 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const scrollRequestThreadIdRef = useRef<string | null>(null);
 
   const typedThreadId = threadId ? toThreadId(threadId) : undefined;
+  const { activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
   const thread = useQuery(api.agentChat.getThread, typedThreadId ? { threadId: typedThreadId } : 'skip');
   const messageFeed = useUIMessages(
     api.agentChat.listThreadMessages,
     threadId ? { threadId } : 'skip',
     {
       initialNumItems: 100,
+      stream: true,
+      skipStreamIds: activeStream?.streamId ? [activeStream.streamId] : undefined,
     },
   );
   const activeRun = useQuery(
@@ -171,7 +173,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const updatePersona = useMutation(api.agentChat.updatePersona);
   const deletePersona = useMutation(api.agentChat.deletePersona);
   const setThreadPersona = useMutation(api.agentChat.setThreadPersona);
-  const { ownerSessionId, activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
   const pendingSubmission = usePendingThreadSubmission(threadId);
   const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
     null,
@@ -181,44 +182,15 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     hideMessage: boolean;
     originalUpdatedAt: number;
   } | null>(null);
+  const [fallbackRetryRunIdByMessageId, setFallbackRetryRunIdByMessageId] = useState<
+    Record<string, string>
+  >({});
   const [fallbackDraftTextByMessageId, setFallbackDraftTextByMessageId] = useState<
     Record<string, string>
   >({});
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const personasList = personas ?? [];
   const availableModelOptions = modelOptions ?? [];
-  const passiveStreamQuery = useQuery(
-    api.agentChat.getPassiveStream,
-    typedThreadId ? { threadId: typedThreadId } : 'skip',
-  );
-  const passiveStream: ChatPassiveStream | null = useMemo(() => {
-    if (!passiveStreamQuery) {
-      return null;
-    }
-
-    if (passiveStreamQuery.status !== 'streaming') {
-      return null;
-    }
-
-    if (passiveStreamQuery.ownerSessionId === ownerSessionId) {
-      return null;
-    }
-
-    if (activeStream && activeStream.runId === passiveStreamQuery.runId) {
-      return null;
-    }
-
-    return {
-      runId: passiveStreamQuery.runId,
-      threadId: passiveStreamQuery.threadId,
-      assistantMessageId: passiveStreamQuery.assistantMessageId,
-      ownerSessionId: passiveStreamQuery.ownerSessionId,
-      text: passiveStreamQuery.text,
-      status: 'streaming',
-      errorMessage: passiveStreamQuery.errorMessage,
-      startedAt: passiveStreamQuery.startedAt,
-    };
-  }, [activeStream, ownerSessionId, passiveStreamQuery]);
 
   const effectivePersonaId = thread?.personaId ?? draftPersonaId;
   const currentPersonaLabel = useMemo(() => {
@@ -257,6 +229,13 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
     : DEFAULT_CHAT_MODEL_ID;
+  const effectiveRetryRunIdByMessageId = useMemo(
+    () => ({
+      ...fallbackRetryRunIdByMessageId,
+      ...(retryableRunIds ?? {}),
+    }),
+    [fallbackRetryRunIdByMessageId, retryableRunIds],
+  );
   const shouldAutoFocusComposer = !threadId;
   const pendingPreview =
     pendingSubmission && threadId
@@ -266,7 +245,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
             (message) => matchesPendingSubmission(message, pendingSubmission),
           ),
           showAssistantPlaceholder:
-            (!(activeStream?.text ?? passiveStream?.text ?? '').trim() ||
+            (!(activeStream?.text ?? '').trim() ||
               pendingSubmission.stage === 'error') &&
             !currentMessages.some(
               (message) =>
@@ -275,7 +254,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         }
       : undefined;
   const showEmptyState =
-    currentMessages.length === 0 && !pendingSubmission && !activeStream && !passiveStream;
+    currentMessages.length === 0 && !pendingSubmission && !activeStream;
   const isThreadPending = Boolean(
     threadId &&
       !pendingSubmission &&
@@ -288,8 +267,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       (message) => message.role === 'assistant' && message.status === 'streaming',
     ) ||
     activeRun?.status === 'streaming' ||
-    activeStream?.status === 'streaming' ||
-    passiveStream?.status === 'streaming';
+    activeStream?.status === 'streaming';
   const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
   const pendingScrollTargetVisible = Boolean(
     targetClientMessageId &&
@@ -439,6 +417,63 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     isSending,
     regeneratingTarget,
   ]);
+
+  useEffect(() => {
+    if (!activeStream) {
+      return;
+    }
+
+    if (
+      activeStream.runId.startsWith('pending-run:') ||
+      activeStream.assistantMessageId.startsWith('pending-assistant:')
+    ) {
+      return;
+    }
+
+    setFallbackRetryRunIdByMessageId((current) =>
+      current[activeStream.assistantMessageId] === activeStream.runId
+        ? current
+        : {
+            ...current,
+            [activeStream.assistantMessageId]: activeStream.runId,
+          },
+    );
+  }, [activeStream]);
+
+  useEffect(() => {
+    setFallbackRetryRunIdByMessageId((current) => {
+      if (Object.keys(current).length === 0) {
+        return current;
+      }
+
+      const visibleAssistantMessageIds = new Set(
+        currentMessages
+          .filter((message) => message.role === 'assistant')
+          .map((message) => message._id),
+      );
+      let next = current;
+
+      for (const [messageId, runId] of Object.entries(current)) {
+        const persistedRunId = retryableRunIds?.[messageId];
+        const isActiveStreamMessage = activeStream?.assistantMessageId === messageId;
+        const shouldClearFallback =
+          persistedRunId === runId ||
+          (!visibleAssistantMessageIds.has(messageId) && !isActiveStreamMessage);
+
+        if (!shouldClearFallback) {
+          continue;
+        }
+
+        if (next === current) {
+          next = { ...current };
+        }
+
+        delete next[messageId];
+      }
+
+      return next;
+    });
+  }, [activeStream, currentMessages, retryableRunIds]);
 
   useEffect(() => {
     const streamedText = activeStream?.text.trim();
@@ -915,8 +950,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     <MessageList
                       messages={currentMessages}
                       activeStream={activeStream}
-                      passiveStream={passiveStream}
-                      retryRunIdByMessageId={retryableRunIds ?? {}}
+                      retryRunIdByMessageId={effectiveRetryRunIdByMessageId}
                       onRetryMessage={(messageId, runId) => {
                         void handleRetryRun(messageId, runId);
                       }}

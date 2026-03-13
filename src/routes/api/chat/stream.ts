@@ -6,8 +6,6 @@ import {
   streamText,
   tool,
   type ModelMessage,
-  type TextStreamPart,
-  type ToolSet,
 } from 'ai';
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
@@ -61,6 +59,7 @@ type PreparedStreamResult = {
   systemPrompt: string;
   threadId: string;
   assistantMessageId: string;
+  streamId: string;
   model: string;
   provider: 'openrouter';
   supportsWebSearch: boolean;
@@ -98,9 +97,9 @@ function toUsage(
 }
 
 function isTextDeltaPart(
-  part: TextStreamPart<ToolSet>,
-): part is Extract<TextStreamPart<ToolSet>, { type: 'text-delta' }> {
-  return part.type === 'text-delta';
+  part: { type: string; text?: string },
+): part is { type: 'text-delta'; text: string } {
+  return part.type === 'text-delta' && typeof part.text === 'string';
 }
 
 function mapOpenRouterSources(sources: unknown[] | undefined) {
@@ -156,35 +155,6 @@ function jsonError(status: number, errorMessage: string) {
   return Response.json({ errorMessage }, { status });
 }
 
-async function enforceChatRateLimit(args: {
-  rateLimitKey: string;
-  hasAttachments: boolean;
-}) {
-  const token = process.env.BETTER_AUTH_SECRET?.trim();
-  if (!token) {
-    throw new Error('BETTER_AUTH_SECRET environment variable is required');
-  }
-
-  const result = await convexAuthReactStart.fetchAuthAction(api.auth.rateLimitAction, {
-    token,
-    name: args.hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
-    key: args.rateLimitKey,
-    config: {
-      kind: 'token bucket',
-      rate: args.hasAttachments ? 4 : 12,
-      period: 60 * 1000,
-      capacity: args.hasAttachments ? 4 : 12,
-    },
-  });
-
-  if (!result.ok) {
-    const retrySeconds = Math.max(1, Math.ceil((result.retryAfter ?? 0) / 1000));
-    return jsonError(429, `Rate limit exceeded. Try again in ${retrySeconds} seconds.`);
-  }
-
-  return null;
-}
-
 export const Route = createFileRoute('/api/chat/stream' as never)({
   server: {
     handlers: {
@@ -195,16 +165,16 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
             return new Response(parsed.error.message, { status: 400 });
           }
 
-          const rateLimitContext = await convexAuthReactStart.fetchAuthQuery(
-            api.agentChat.getCurrentRateLimitContext,
-            {},
+          const rateLimitReservation = await convexAuthReactStart.fetchAuthAction(
+            api.agentChatActions.reserveChatRateLimit,
+            {
+              textLength: parsed.data.mode === 'retry' ? undefined : parsed.data.text.length,
+              hasAttachments:
+                parsed.data.mode === 'send' && parsed.data.attachmentIds.length > 0,
+            } as never,
           );
-          const rateLimitResponse = await enforceChatRateLimit({
-            rateLimitKey: rateLimitContext.key,
-            hasAttachments: parsed.data.mode === 'send' && parsed.data.attachmentIds.length > 0,
-          });
-          if (rateLimitResponse) {
-            return rateLimitResponse;
+          if (!rateLimitReservation.ok) {
+            return jsonError(429, rateLimitReservation.errorMessage);
           }
 
           let prepared: PreparedStreamResult;
@@ -246,6 +216,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
             'x-chat-thread-id': prepared.threadId,
             'x-chat-run-id': prepared.runId,
             'x-chat-assistant-message-id': prepared.assistantMessageId,
+            'x-chat-stream-id': prepared.streamId,
           });
 
           const providerOptions = {
@@ -265,7 +236,8 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
             async () => {
               let pendingText = '';
               let pendingDeltaText = '';
-              let deltaSequence = 0;
+              let streamCursor = 0;
+              let textStarted = false;
               let flushTimer: ReturnType<typeof setTimeout> | null = null;
               let flushPromise: Promise<void> = Promise.resolve();
               const collectedSources: Array<{
@@ -275,19 +247,38 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                 title?: string;
               }> = [];
 
-              const flushDeltaText = async () => {
-                if (!pendingDeltaText) {
+              const flushStreamParts = async (extraParts: Array<Record<string, unknown>> = []) => {
+                if (!pendingDeltaText && extraParts.length === 0) {
                   return;
                 }
-                const text = pendingDeltaText;
+                const parts: Array<Record<string, unknown>> = [];
+                if (!textStarted) {
+                  parts.push({
+                    type: 'text-start',
+                    id: prepared.assistantMessageId,
+                  });
+                  textStarted = true;
+                }
+                if (pendingDeltaText) {
+                  parts.push({
+                    type: 'text-delta',
+                    id: prepared.assistantMessageId,
+                    delta: pendingDeltaText,
+                  });
+                }
+                parts.push(...extraParts);
                 pendingDeltaText = '';
-                deltaSequence += 1;
-                await convexAuthReactStart.fetchAuthAction(api.agentChatActions.appendStreamDelta, {
+                if (parts.length === 0) {
+                  return;
+                }
+                const start = streamCursor;
+                const end = start + parts.length;
+                streamCursor = end;
+                await convexAuthReactStart.fetchAuthAction(api.agentChatActions.appendStreamParts, {
                   runId: prepared.runId as never,
-                  threadId: prepared.threadId as never,
-                  assistantMessageId: prepared.assistantMessageId,
-                  sequence: deltaSequence,
-                  text,
+                  start,
+                  end,
+                  parts,
                 });
               };
 
@@ -297,7 +288,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                 }
                 flushTimer = setTimeout(() => {
                   flushTimer = null;
-                  flushPromise = flushPromise.then(() => flushDeltaText()).catch(() => {});
+                  flushPromise = flushPromise.then(() => flushStreamParts()).catch(() => {});
                 }, 250);
               };
 
@@ -313,8 +304,6 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                         const searchModel = getOpenRouter().chat(prepared.model, {
                           plugins: [getOpenRouterWebSearchPlugin(prepared.model)],
                         });
-                        const webSearchProviderOptions =
-                          getOpenRouterWebSearchProviderOptions(prepared.model) ?? {};
                         const searchResult = await generateText({
                           model: searchModel,
                           prompt: `Search the web for: ${query}\n\nReturn a concise factual summary of the most relevant results.`,
@@ -323,7 +312,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                               provider: {
                                 zdr: true,
                                 data_collection: 'deny',
-                                ...webSearchProviderOptions,
+                                ...(getOpenRouterWebSearchProviderOptions(prepared.model) ?? {}),
                               },
                             },
                           },
@@ -369,7 +358,16 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                     flushTimer = null;
                   }
                   await flushPromise;
-                  await flushDeltaText();
+                  await flushStreamParts(
+                    textStarted || pendingDeltaText
+                      ? [
+                          {
+                            type: 'text-end',
+                            id: prepared.assistantMessageId,
+                          },
+                        ]
+                      : [],
+                  );
                   await convexAuthReactStart.fetchAuthAction(api.agentChatActions.finalizeStream, {
                     runId: prepared.runId as never,
                     finalText: event.text || pendingText,
@@ -386,7 +384,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                     flushTimer = null;
                   }
                   await flushPromise;
-                  await flushDeltaText();
+                  await flushStreamParts();
                   await convexAuthReactStart.fetchAuthAction(api.agentChatActions.abortStream, {
                     runId: prepared.runId as never,
                     reason: 'Stopped by user.',
@@ -400,7 +398,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                     flushTimer = null;
                   }
                   await flushPromise;
-                  await flushDeltaText();
+                  await flushStreamParts();
                   await convexAuthReactStart.fetchAuthAction(api.agentChatActions.abortStream, {
                     runId: prepared.runId as never,
                     reason:

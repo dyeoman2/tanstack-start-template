@@ -7,6 +7,7 @@ import {
   saveMessages,
   serializeMessage,
   storeFile,
+  updateThreadMetadata,
 } from '@convex-dev/agent';
 import { generateText } from 'ai';
 import { ConvexError, v } from 'convex/values';
@@ -19,7 +20,6 @@ import {
   extractDocumentText,
 } from './lib/chatAttachments';
 import {
-  DEFAULT_AGENT_CONTEXT_OPTIONS,
   DEFAULT_CHAT_AGENT_NAME,
   DEFAULT_PERSONA_PROMPT,
   deriveThreadTitle,
@@ -29,6 +29,10 @@ import {
   type ChatAttachmentDoc,
   type ChatThreadDoc,
 } from './lib/agentChat';
+import {
+  CHAT_AGENT_CONTEXT_OPTIONS,
+  recordChatUsageEvent,
+} from './lib/chatAgentRuntime';
 import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 
 type PreparedStreamPayload = {
@@ -38,10 +42,28 @@ type PreparedStreamPayload = {
   systemPrompt: string;
   threadId: Id<'chatThreads'>;
   assistantMessageId: string;
+  streamId: string;
   model: string;
   provider: 'openrouter';
   supportsWebSearch: boolean;
 };
+
+type AuthenticatedChatContext = {
+  userId: string;
+  organizationId: string;
+  isSiteAdmin: boolean;
+};
+
+type ChatRateLimitReservation =
+  | {
+      ok: true;
+      estimatedInputTokens: number;
+    }
+  | {
+      ok: false;
+      retryAfter?: number;
+      errorMessage: string;
+    };
 
 type AgentMessageDoc = {
   _id: string;
@@ -79,12 +101,8 @@ function toSourceMetadata(
   }));
 }
 
-async function getAuthenticatedContext(ctx: ActionCtx) {
-  return (await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {})) as {
-    userId: string;
-    organizationId: string;
-    isSiteAdmin: boolean;
-  };
+async function getAuthenticatedContext(ctx: ActionCtx): Promise<AuthenticatedChatContext> {
+  return (await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {})) as AuthenticatedChatContext;
 }
 
 async function resolveThread(
@@ -247,11 +265,22 @@ async function preparePendingAssistantRun(
   },
 ): Promise<PreparedStreamPayload> {
   const systemPrompt = await resolveSystemPrompt(ctx, args.organizationId, args.personaId);
+  const streamId = await ctx.runMutation(components.agent.streams.create, {
+    threadId: args.thread.agentThreadId,
+    userId: args.thread.userId,
+    agentName: DEFAULT_CHAT_AGENT_NAME,
+    model: args.model,
+    provider: 'openrouter',
+    format: 'UIMessageChunk',
+    order: args.pendingAssistantMessage.order,
+    stepOrder: args.pendingAssistantMessage.stepOrder,
+  });
   const runId = (await ctx.runMutation(internal.agentChat.createRunInternal, {
     threadId: args.thread._id,
     agentThreadId: args.thread.agentThreadId,
     organizationId: args.organizationId,
     ownerSessionId: args.ownerSessionId,
+    agentStreamId: streamId,
     status: 'streaming',
     startedAt: Date.now(),
     activeAssistantMessageId: args.pendingAssistantMessage._id,
@@ -278,6 +307,7 @@ async function preparePendingAssistantRun(
     systemPrompt,
     threadId: args.thread._id,
     assistantMessageId: args.pendingAssistantMessage._id,
+    streamId,
     model: args.model,
     provider: 'openrouter',
     supportsWebSearch: args.supportsWebSearch,
@@ -298,7 +328,7 @@ async function buildPreparedMessages(
     prompt: undefined,
     messages: undefined,
     promptMessageId: args.promptMessageId,
-    contextOptions: DEFAULT_AGENT_CONTEXT_OPTIONS,
+    contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
   });
 
   return await serializeMessagesForTransport(context.messages);
@@ -468,10 +498,27 @@ async function abortRun(
 
   const partialText =
     args.partialText?.trim() ||
-    ((await ctx.runQuery(internal.agentChat.getRunDeltaTextInternal, {
-      runId: run._id,
-    })) as string)
-      .trim();
+    (run.agentStreamId
+      ? (
+          await ctx.runQuery(components.agent.streams.listDeltas, {
+            threadId: run.agentThreadId,
+            cursors: [{ streamId: run.agentStreamId, cursor: 0 }],
+          })
+        )
+          .flatMap((delta) => delta.parts)
+          .flatMap((part) =>
+            part &&
+            typeof part === 'object' &&
+            'type' in part &&
+            part.type === 'text-delta' &&
+            'delta' in part &&
+            typeof part.delta === 'string'
+              ? [part.delta]
+              : [],
+          )
+          .join('')
+          .trim()
+      : '');
   if (run.activeAssistantMessageId) {
     if (partialText) {
       await saveMessages(ctx, components.agent, {
@@ -503,14 +550,18 @@ async function abortRun(
   await ctx.runMutation(internal.agentChat.patchRunInternal, {
     runId: run._id,
     patch: {
+      agentStreamId: null,
       status: args.status,
       endedAt: Date.now(),
       errorMessage: args.reason,
     },
   });
-  await ctx.runMutation(internal.agentChat.clearRunDeltasInternal, {
-    runId: run._id,
-  });
+  if (run.agentStreamId) {
+    await ctx.runMutation(components.agent.streams.abort, {
+      streamId: run.agentStreamId,
+      reason: args.reason,
+    });
+  }
   await ctx.runMutation(internal.agentChat.patchThreadInternal, {
     threadId: run.threadId,
     patch: {
@@ -522,13 +573,69 @@ async function abortRun(
   return true;
 }
 
-export const appendStreamDelta = action({
+export const reserveChatRateLimit = action({
+  args: {
+    textLength: v.optional(v.number()),
+    hasAttachments: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<ChatRateLimitReservation> => {
+    const { organizationId, userId } = await getAuthenticatedContext(ctx);
+    const baseKey = `${organizationId}:${userId}`;
+    const hasAttachments = args.hasAttachments ?? false;
+    const estimatedInputTokens = Math.max(
+      1,
+      Math.ceil((args.textLength ?? 0) / 4) + (hasAttachments ? 1_200 : 0),
+    );
+    const frequency = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+      name: hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
+      key: baseKey,
+      config: {
+        kind: 'token bucket',
+        rate: hasAttachments ? 4 : 12,
+        period: 60 * 1000,
+        capacity: hasAttachments ? 4 : 12,
+      },
+    });
+    if (!frequency.ok) {
+      return {
+        ok: false as const,
+        retryAfter: frequency.retryAfter,
+        errorMessage: `Rate limit exceeded. Try again in ${Math.max(1, Math.ceil(frequency.retryAfter / 1000))} seconds.`,
+      };
+    }
+    const tokens = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+      name: 'chatTokenBudget',
+      key: baseKey,
+      count: estimatedInputTokens,
+      reserve: true,
+      config: {
+        kind: 'token bucket',
+        rate: 40_000,
+        period: 60 * 1000,
+        capacity: 40_000,
+        maxReserved: 40_000,
+      },
+    });
+    if (!tokens.ok) {
+      return {
+        ok: false as const,
+        retryAfter: tokens.retryAfter,
+        errorMessage: `Token budget exceeded. Try again in ${Math.max(1, Math.ceil(tokens.retryAfter / 1000))} seconds.`,
+      };
+    }
+    return {
+      ok: true as const,
+      estimatedInputTokens,
+    };
+  },
+});
+
+export const appendStreamParts = action({
   args: {
     runId: v.id('chatRuns'),
-    threadId: v.id('chatThreads'),
-    assistantMessageId: v.string(),
-    sequence: v.number(),
-    text: v.string(),
+    start: v.number(),
+    end: v.number(),
+    parts: v.array(v.any()),
   },
   handler: async (ctx, args) => {
     const { organizationId } = await getAuthenticatedContext(ctx);
@@ -537,16 +644,16 @@ export const appendStreamDelta = action({
       organizationId,
     })) as Doc<'chatRuns'> | null;
 
-    if (!run || run.status !== 'streaming') {
+    if (!run || run.status !== 'streaming' || !run.agentStreamId) {
       return false;
     }
 
-    await ctx.runMutation(internal.agentChat.appendRunDeltaInternal, {
-      ...args,
-      organizationId,
-      createdAt: Date.now(),
+    return await ctx.runMutation(components.agent.streams.addDelta, {
+      streamId: run.agentStreamId,
+      start: args.start,
+      end: args.end,
+      parts: args.parts,
     });
-    return true;
   },
 });
 
@@ -809,6 +916,12 @@ export const prepareRetryStream = action({
         provider: 'openrouter',
       },
     });
+    const [updatedAssistantMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+      messageIds: [run.activeAssistantMessageId],
+    })) as Array<AgentMessageDoc | null>;
+    if (!updatedAssistantMessage) {
+      throw new ConvexError('Failed to load pending assistant message.');
+    }
 
     return await preparePendingAssistantRun(ctx, {
       thread,
@@ -816,11 +929,7 @@ export const prepareRetryStream = action({
       ownerSessionId: args.ownerSessionId,
       promptMessageId: run.promptMessageId,
       preparedMessages,
-      pendingAssistantMessage: {
-        _id: run.activeAssistantMessageId,
-        order: 0,
-        stepOrder: 0,
-      },
+      pendingAssistantMessage: updatedAssistantMessage,
       model: selectedModel.modelId,
       supportsWebSearch: selectedModel.supportsWebSearch !== false,
       useWebSearch,
@@ -883,6 +992,7 @@ export const finalizeStream = action({
     await ctx.runMutation(internal.agentChat.patchRunInternal, {
       runId: run._id,
       patch: {
+        agentStreamId: null,
         status: 'complete',
         endedAt: Date.now(),
         errorMessage: null,
@@ -895,8 +1005,23 @@ export const finalizeStream = action({
         lastMessageAt: Date.now(),
       },
     });
-    await ctx.runMutation(internal.agentChat.clearRunDeltasInternal, {
+    if (run.agentStreamId) {
+      await ctx.runMutation(components.agent.streams.finish, {
+        streamId: run.agentStreamId,
+      });
+    }
+    await recordChatUsageEvent(ctx, {
+      agentThreadId: run.agentThreadId,
       runId: run._id,
+      agentName: DEFAULT_CHAT_AGENT_NAME,
+      model: run.model ?? DEFAULT_CHAT_MODEL_ID,
+      provider: run.provider ?? 'openrouter',
+      totalTokens: args.usage.totalTokens,
+      inputTokens: args.usage.inputTokens,
+      outputTokens: args.usage.outputTokens,
+      providerMetadata: {
+        sourceCount: args.sources?.length ?? 0,
+      },
     });
     await ctx.scheduler.runAfter(0, internal.agentChatActions.runPostCompletionJobs, {
       runId: run._id,
@@ -1011,6 +1136,12 @@ export const runPostCompletionJobs = internalAction({
               updatedAt: Date.now(),
             },
           });
+          await updateThreadMetadata(ctx, components.agent, {
+            threadId: run.agentThreadId,
+            patch: {
+              title,
+            },
+          });
         }
       }
     }
@@ -1026,6 +1157,12 @@ export const runPostCompletionJobs = internalAction({
         patch: {
           summary,
           summaryUpdatedAt: Date.now(),
+        },
+      });
+      await updateThreadMetadata(ctx, components.agent, {
+        threadId: run.agentThreadId,
+        patch: {
+          summary,
         },
       });
     }

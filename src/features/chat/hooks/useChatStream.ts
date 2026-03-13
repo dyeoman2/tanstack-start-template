@@ -108,8 +108,9 @@ function parsePreparedHeaders(response: Response) {
   const threadId = response.headers.get('x-chat-thread-id');
   const runId = response.headers.get('x-chat-run-id');
   const assistantMessageId = response.headers.get('x-chat-assistant-message-id');
+  const streamId = response.headers.get('x-chat-stream-id');
 
-  if (!threadId || !runId || !assistantMessageId) {
+  if (!threadId || !runId || !assistantMessageId || !streamId) {
     throw new Error('Stream response headers were incomplete.');
   }
 
@@ -117,6 +118,7 @@ function parsePreparedHeaders(response: Response) {
     threadId,
     runId,
     assistantMessageId,
+    streamId,
   };
 }
 
@@ -126,6 +128,7 @@ async function pumpStream(
     threadId: string;
     runId: string;
     assistantMessageId: string;
+    streamId: string;
     ownerSessionId: string;
     request: ChatStreamRequest;
   },
@@ -325,6 +328,7 @@ export function useChatStream(threadId?: string) {
         threadId: prepared.threadId,
         runId: prepared.runId,
         assistantMessageId: prepared.assistantMessageId,
+        streamId: prepared.streamId,
         ownerSessionId,
         text:
           requestedThreadId && streamStore[requestedThreadId]?.request === request
@@ -351,6 +355,7 @@ export function useChatStream(threadId?: string) {
           threadId: prepared.threadId,
           runId: prepared.runId,
           assistantMessageId: prepared.assistantMessageId,
+          streamId: prepared.streamId,
           ownerSessionId,
           request,
         },

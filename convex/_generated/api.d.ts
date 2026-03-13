@@ -25,9 +25,12 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_agentChat from "../lib/agentChat.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
+import type * as lib_chatAgentRuntime from "../lib/chatAgentRuntime.js";
 import type * as lib_chatAttachments from "../lib/chatAttachments.js";
 import type * as migrations from "../migrations.js";
 import type * as organizationManagement from "../organizationManagement.js";
+import type * as playground from "../playground.js";
+import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as users from "../users.js";
 
 import type {
@@ -54,9 +57,12 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/agentChat": typeof lib_agentChat;
   "lib/betterAuth": typeof lib_betterAuth;
+  "lib/chatAgentRuntime": typeof lib_chatAgentRuntime;
   "lib/chatAttachments": typeof lib_chatAttachments;
   migrations: typeof migrations;
   organizationManagement: typeof organizationManagement;
+  playground: typeof playground;
+  playgroundAdmin: typeof playgroundAdmin;
   users: typeof users;
 }>;
 

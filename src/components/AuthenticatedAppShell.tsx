@@ -126,7 +126,11 @@ function AppBreadcrumbs() {
                   asChild
                   className={cn(index < items.length - 2 && 'hidden md:inline')}
                 >
-                  <Link to={item.href}>
+                  <Link
+                    to={item.href}
+                    params={(params: never) => params}
+                    search={(search: never) => search}
+                  >
                     {item.label}
                   </Link>
                 </BreadcrumbLink>

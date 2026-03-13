@@ -148,6 +148,7 @@ export default defineSchema({
     agentThreadId: v.string(),
     organizationId: v.string(),
     ownerSessionId: v.string(),
+    agentStreamId: v.optional(v.string()),
     status: chatRunStatusValidator,
     startedAt: v.number(),
     endedAt: v.optional(v.number()),
@@ -162,17 +163,25 @@ export default defineSchema({
     .index('by_threadId_and_status', ['threadId', 'status'])
     .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt']),
 
-  chatRunDeltas: defineTable({
-    runId: v.id('chatRuns'),
-    threadId: v.id('chatThreads'),
+  chatUsageEvents: defineTable({
     organizationId: v.string(),
-    assistantMessageId: v.string(),
-    sequence: v.number(),
-    text: v.string(),
+    userId: v.string(),
+    threadId: v.id('chatThreads'),
+    runId: v.optional(v.id('chatRuns')),
+    agentThreadId: v.string(),
+    agentName: v.optional(v.string()),
+    model: v.string(),
+    provider: v.string(),
+    totalTokens: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    providerMetadataJson: v.optional(v.string()),
     createdAt: v.number(),
   })
-    .index('by_runId_and_sequence', ['runId', 'sequence'])
-    .index('by_threadId_and_createdAt', ['threadId', 'createdAt']),
+    .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
+    .index('by_runId_and_createdAt', ['runId', 'createdAt'])
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_userId_and_createdAt', ['userId', 'createdAt']),
 
   chatAttachments: defineTable({
     threadId: v.optional(v.id('chatThreads')),

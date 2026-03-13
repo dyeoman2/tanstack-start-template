@@ -1,4 +1,9 @@
-import { listMessages, toUIMessages } from '@convex-dev/agent';
+import {
+  listUIMessages,
+  syncStreams,
+  updateThreadMetadata,
+  vStreamArgs,
+} from '@convex-dev/agent';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
@@ -19,6 +24,29 @@ import {
 } from './lib/agentChat';
 
 type PersonaDoc = Doc<'aiPersonas'>;
+const CHAT_MESSAGE_RATE_LIMIT_CONFIG = {
+  kind: 'token bucket' as const,
+  rate: 12,
+  period: 60 * 1000,
+  capacity: 12,
+};
+const CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG = {
+  kind: 'token bucket' as const,
+  rate: 4,
+  period: 60 * 1000,
+  capacity: 4,
+};
+const CHAT_TOKEN_RATE_LIMIT_CONFIG = {
+  kind: 'token bucket' as const,
+  rate: 40_000,
+  period: 60 * 1000,
+  capacity: 40_000,
+};
+
+function estimateChatInputTokens(args: { textLength?: number; hasAttachments?: boolean }) {
+  const textTokens = Math.max(1, Math.ceil((args.textLength ?? 0) / 4));
+  return textTokens + (args.hasAttachments ? 1_200 : 0);
+}
 
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUserOrThrow(ctx);
@@ -314,6 +342,7 @@ export const createRunInternal = internalMutation({
     agentThreadId: v.string(),
     organizationId: v.string(),
     ownerSessionId: v.string(),
+    agentStreamId: v.optional(v.string()),
     status: v.union(
       v.literal('idle'),
       v.literal('streaming'),
@@ -337,6 +366,7 @@ export const patchRunInternal = internalMutation({
   args: {
     runId: v.id('chatRuns'),
     patch: v.object({
+      agentStreamId: v.optional(v.union(v.string(), v.null())),
       status: v.optional(
         v.union(
           v.literal('idle'),
@@ -355,6 +385,9 @@ export const patchRunInternal = internalMutation({
   },
   handler: async (ctx, args) => {
     const patch: Partial<Doc<'chatRuns'>> = {};
+    if (args.patch.agentStreamId !== undefined) {
+      patch.agentStreamId = args.patch.agentStreamId ?? undefined;
+    }
     if (args.patch.status !== undefined) patch.status = args.patch.status;
     if (args.patch.endedAt !== undefined) patch.endedAt = args.patch.endedAt ?? undefined;
     if (args.patch.errorMessage !== undefined) {
@@ -402,50 +435,36 @@ export const getThreadByIdInternal = internalQuery({
   },
 });
 
-export const appendRunDeltaInternal = internalMutation({
+export const getThreadByAgentThreadIdAnyInternal = internalQuery({
   args: {
-    runId: v.id('chatRuns'),
-    threadId: v.id('chatThreads'),
+    agentThreadId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('chatThreads')
+      .withIndex('by_agentThreadId', (q) => q.eq('agentThreadId', args.agentThreadId))
+      .first();
+  },
+});
+
+export const recordUsageEventInternal = internalMutation({
+  args: {
     organizationId: v.string(),
-    assistantMessageId: v.string(),
-    sequence: v.number(),
-    text: v.string(),
+    userId: v.string(),
+    threadId: v.id('chatThreads'),
+    runId: v.optional(v.id('chatRuns')),
+    agentThreadId: v.string(),
+    agentName: v.optional(v.string()),
+    model: v.string(),
+    provider: v.string(),
+    totalTokens: v.optional(v.number()),
+    inputTokens: v.optional(v.number()),
+    outputTokens: v.optional(v.number()),
+    providerMetadataJson: v.optional(v.string()),
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
-    if (!args.text) {
-      return null;
-    }
-
-    return await ctx.db.insert('chatRunDeltas', args);
-  },
-});
-
-export const clearRunDeltasInternal = internalMutation({
-  args: {
-    runId: v.id('chatRuns'),
-  },
-  handler: async (ctx, args) => {
-    const deltas = await ctx.db
-      .query('chatRunDeltas')
-      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', args.runId))
-      .collect();
-
-    await Promise.all(deltas.map((delta) => ctx.db.delete(delta._id)));
-  },
-});
-
-export const getRunDeltaTextInternal = internalQuery({
-  args: {
-    runId: v.id('chatRuns'),
-  },
-  handler: async (ctx, args) => {
-    const deltas = await ctx.db
-      .query('chatRunDeltas')
-      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', args.runId))
-      .collect();
-
-    return deltas.map((delta) => delta.text).join('');
+    return await ctx.db.insert('chatUsageEvents', args);
   },
 });
 
@@ -507,6 +526,7 @@ export const listThreadMessages = query({
   args: {
     threadId: v.string(),
     paginationOpts: paginationOptsValidator,
+    streamArgs: vStreamArgs,
   },
   handler: async (ctx, args) => {
     const { organizationId } = await getCurrentChatContext(ctx);
@@ -517,6 +537,7 @@ export const listThreadMessages = query({
         page: [],
         isDone: true,
         continueCursor: args.paginationOpts.cursor ?? '',
+        streams: undefined,
       };
     }
 
@@ -526,18 +547,21 @@ export const listThreadMessages = query({
         page: [],
         isDone: true,
         continueCursor: args.paginationOpts.cursor ?? '',
+        streams: undefined,
       };
     }
 
-    const paginated = await listMessages(ctx, components.agent, {
+    const paginated = await listUIMessages(ctx, components.agent, {
       threadId: thread.agentThreadId,
       paginationOpts: args.paginationOpts,
-      excludeToolMessages: true,
-      statuses: ['success', 'failed'],
+    });
+    const streams = await syncStreams(ctx, components.agent, {
+      threadId: thread.agentThreadId,
+      streamArgs: args.streamArgs,
     });
     return {
       ...paginated,
-      page: toUIMessages(paginated.page),
+      streams,
     };
   },
 });
@@ -589,50 +613,39 @@ export const getRetryableRunIds = query({
   },
 });
 
-export const getPassiveStream = query({
+export const getChatRateLimit = query({
   args: {
-    threadId: v.id('chatThreads'),
+    textLength: v.optional(v.number()),
+    hasAttachments: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
-    if (!thread) {
-      return null;
-    }
-
-    const activeRun = (await getChatRunsForThread(ctx, args.threadId)).find(
-      (run) => run.status === 'streaming',
-    );
-    if (!activeRun || !activeRun.activeAssistantMessageId) {
-      return null;
-    }
-
-    const deltas = await ctx.db
-      .query('chatRunDeltas')
-      .withIndex('by_runId_and_sequence', (q) => q.eq('runId', activeRun._id))
-      .collect();
-
-    return {
-      runId: activeRun._id,
-      threadId: activeRun.threadId,
-      assistantMessageId: activeRun.activeAssistantMessageId,
-      ownerSessionId: activeRun.ownerSessionId,
-      text: deltas.map((delta) => delta.text).join(''),
-      status: activeRun.status,
-      errorMessage: activeRun.errorMessage,
-      startedAt: activeRun.startedAt,
-    };
-  },
-});
-
-export const getCurrentRateLimitContext = query({
-  args: {},
-  handler: async (ctx) => {
     const { userId, organizationId } = await getCurrentChatContext(ctx);
+    const baseKey = `${organizationId}:${userId}`;
+    const hasAttachments = args.hasAttachments ?? false;
+    const frequency = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+      name: hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
+      key: baseKey,
+      config: hasAttachments
+        ? CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG
+        : CHAT_MESSAGE_RATE_LIMIT_CONFIG,
+    });
+    const tokenEstimate = estimateChatInputTokens({
+      textLength: args.textLength,
+      hasAttachments,
+    });
+    const tokens = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
+      name: 'chatTokenBudget',
+      key: baseKey,
+      count: tokenEstimate,
+      config: {
+        ...CHAT_TOKEN_RATE_LIMIT_CONFIG,
+        maxReserved: CHAT_TOKEN_RATE_LIMIT_CONFIG.capacity,
+      },
+    });
     return {
-      key: `${organizationId}:${userId}`,
-      organizationId,
-      userId,
+      frequency,
+      tokens,
+      estimatedInputTokens: tokenEstimate,
     };
   },
 });
@@ -695,10 +708,18 @@ export const renameThread = mutation({
       throw new ConvexError('Thread not found.');
     }
 
+    const title = args.title.trim();
+
     await ctx.db.patch(args.threadId, {
-      title: args.title.trim(),
+      title,
       titleManuallyEdited: true,
       updatedAt: Date.now(),
+    });
+    await updateThreadMetadata(ctx, components.agent, {
+      threadId: thread.agentThreadId,
+      patch: {
+        title,
+      },
     });
   },
 });
