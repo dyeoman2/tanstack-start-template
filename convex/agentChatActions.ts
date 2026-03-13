@@ -43,7 +43,7 @@ type PreparedStreamPayload = {
   supportsWebSearch: boolean;
 };
 
-type AuthenticatedChatContext = {
+export type AuthenticatedChatContext = {
   userId: string;
   organizationId: string;
   isSiteAdmin: boolean;
@@ -60,7 +60,7 @@ type ChatRateLimitReservation =
       errorMessage: string;
     };
 
-type AgentMessageDoc = {
+export type AgentMessageDoc = {
   _id: string;
   threadId: string;
   order: number;
@@ -96,11 +96,11 @@ function toSourceMetadata(
   }));
 }
 
-async function getAuthenticatedContext(ctx: ActionCtx): Promise<AuthenticatedChatContext> {
+export async function getAuthenticatedContext(ctx: ActionCtx): Promise<AuthenticatedChatContext> {
   return (await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {})) as AuthenticatedChatContext;
 }
 
-async function resolveThread(
+export async function resolveThread(
   ctx: ActionCtx,
   args: {
     threadId?: Id<'chatThreads'>;
@@ -171,7 +171,7 @@ async function resolveThread(
   };
 }
 
-async function buildUserMessage(
+export async function buildUserMessage(
   ctx: ActionCtx,
   text: string,
   attachments: ChatAttachmentDoc[],
@@ -226,7 +226,7 @@ async function buildUserMessage(
   };
 }
 
-async function resolveSystemPrompt(
+export async function resolveSystemPrompt(
   ctx: ActionCtx,
   organizationId: string,
   personaId?: Id<'aiPersonas'>,
@@ -337,7 +337,7 @@ async function buildPreparedMessages(
   });
 }
 
-function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
+export function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
   if (!message || message.message?.role !== 'user') {
     return false;
   }
@@ -358,7 +358,7 @@ function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
   return content.every((part) => part?.type === 'text');
 }
 
-async function deleteMessagesAfterPrompt(
+export async function deleteMessagesAfterPrompt(
   ctx: ActionCtx,
   threadId: string,
   promptMessage: Pick<AgentMessageDoc, 'order' | 'stepOrder'>,
@@ -480,7 +480,7 @@ export const createChatAttachmentFromUpload = action({
   },
 });
 
-async function abortRun(
+export async function abortRun(
   ctx: ActionCtx,
   args: {
     runId: Id<'chatRuns'>;
@@ -530,24 +530,20 @@ async function abortRun(
           .trim()
       : '');
   if (run.activeAssistantMessageId) {
-    const agent = createChatAgent({
-      modelId: run.model,
-      useWebSearch: run.useWebSearch,
-    });
     if (partialText) {
-      await agent.saveMessages(ctx, {
-        threadId: run.agentThreadId,
-        messages: [{ role: 'assistant', content: partialText }],
-        promptMessageId: run.promptMessageId,
-        pendingMessageId: run.activeAssistantMessageId,
-        metadata: [
-          {
-            status: 'failed',
-            error: args.reason,
-            model: run.model,
-            provider: run.provider,
-          },
-        ],
+      const serialized = await serializeMessage(ctx, components.agent, {
+        role: 'assistant',
+        content: partialText,
+      });
+      await ctx.runMutation(components.agent.messages.updateMessage, {
+        messageId: run.activeAssistantMessageId,
+        patch: {
+          message: serialized.message,
+          status: 'failed',
+          error: args.reason,
+          model: run.model,
+          provider: run.provider,
+        },
       });
     } else {
       await ctx.runMutation(components.agent.messages.finalizeMessage, {

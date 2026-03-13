@@ -476,13 +476,14 @@ function AssistantMessage({
   const sources = useMemo(() => getSourcesFromParts(message.parts), [message.parts]);
   const rawText = draftText ?? getTextFromParts(message.parts);
   const streaming = message.status === 'pending' || message.status === 'streaming';
+  const activelyStreaming = streaming && Boolean(draftText);
   const settling = !streaming && Boolean(draftText);
   const showAsStreaming = streaming || settling;
-  const smoothedText = useSmoothStreamText(rawText, streaming);
+  const smoothedText = useSmoothStreamText(rawText, activelyStreaming);
   const displayText =
     thinking && !rawText.trim()
       ? ''
-      : streaming && !smoothedText && rawText
+      : activelyStreaming && !smoothedText && rawText
         ? rawText
         : smoothedText;
   const finalText = useMemo(
@@ -524,10 +525,6 @@ function AssistantMessage({
           <span className="chat-thinking-label text-base font-medium text-muted-foreground">
             Thinking...
           </span>
-        ) : showAsStreaming ? (
-          <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-foreground">
-            {finalText}
-          </div>
         ) : (
           <Markdown>{finalText}</Markdown>
         )}
@@ -793,6 +790,10 @@ export function MessageList({
           regeneratingTarget?.messageId === message._id && isRegenerationPending;
         const completedFallbackDraftText =
           !streamForMessage ? fallbackDraftTextByMessageId[message._id]?.trim() : undefined;
+        const isReconnecting =
+          !streamForMessage &&
+          !isRegeneratingMessage &&
+          (message.status === 'pending' || message.status === 'streaming');
         const renderedMessage = streamForMessage
           ? {
               ...message,
@@ -813,6 +814,11 @@ export function MessageList({
                 status: completedFallbackDraftText ? ('complete' as const) : ('pending' as const),
                 errorMessage: undefined,
               }
+          : isReconnecting
+            ? {
+                ...message,
+                parts: [{ type: 'text', text: '' }] as ChatMessagePart[],
+              }
           : message;
         const persistedAssistantText = getTextFromParts(renderedMessage.parts);
         const fallbackDraftText =
@@ -826,7 +832,8 @@ export function MessageList({
           !assistantText.trim() &&
           !renderedMessage.errorMessage &&
           !isRegeneratingMessage &&
-          !streamForMessage;
+          !streamForMessage &&
+          !isReconnecting;
 
         if (hideEmptyAssistantMessage) {
           return null;

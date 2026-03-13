@@ -121,7 +121,7 @@ export const Markdown = memo(function Markdown({ children }: { children: string 
   const content = normalizeParagraphBreaks(children);
   const components: Components = {
     code: CodeBlock,
-    p: ({ className, ...props }) => <p className={cn('mb-6 leading-relaxed last:mb-0', className)} {...props} />,
+    p: ({ className, ...props }) => <p className={cn('mt-0 mb-6 leading-relaxed last:mb-0', className)} {...props} />,
   };
 
   return (

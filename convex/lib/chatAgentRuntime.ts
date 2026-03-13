@@ -1,7 +1,7 @@
 'use node';
 
 import { Agent, createTool, docsToModelMessages, getThreadMetadata } from '@convex-dev/agent';
-import { generateText, tool } from 'ai';
+import { generateText } from 'ai';
 import { z } from 'zod';
 import { components, internal } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
@@ -71,11 +71,17 @@ export async function recordChatUsageEvent(
     return;
   }
 
+  const runId =
+    args.runId ??
+    (await ctx.runQuery(internal.agentChat.getLatestRunForThreadInternal, {
+      threadId: thread._id,
+    }))?._id;
+
   await ctx.runMutation(internal.agentChat.recordUsageEventInternal, {
     organizationId: thread.organizationId,
     userId: thread.userId,
     threadId: thread._id,
-    runId: args.runId,
+    runId,
     agentThreadId: args.agentThreadId,
     agentName: args.agentName,
     model: args.model,
@@ -178,27 +184,6 @@ export function createChatWebSearchTool(args?: {
   });
 }
 
-export function createRouteChatWebSearchTool(args?: {
-  modelId?: string;
-  onResults?: (results: ChatWebSearchSource[]) => void;
-}) {
-  return tool({
-    description:
-      'Search the web for current information and return a concise summary plus cited URL results.',
-    inputSchema: z.object({
-      query: z.string().min(2),
-    }),
-    execute: async ({ query }) => {
-      const result = await runChatWebSearch({
-        query,
-        modelId: args?.modelId,
-      });
-      args?.onResults?.(result.results);
-      return result;
-    },
-  });
-}
-
 export async function fetchPreparedChatMessages(
   ctx: ActionCtx,
   args: {
@@ -229,6 +214,7 @@ export function createChatAgent(args?: {
   modelId?: string;
   instructions?: string;
   useWebSearch?: boolean;
+  onWebSearchResults?: (results: ChatWebSearchSource[]) => void;
 }) {
   const modelId = args?.modelId ?? DEFAULT_CHAT_MODEL_ID;
 
@@ -277,7 +263,10 @@ export function createChatAgent(args?: {
     ...(args?.useWebSearch
       ? {
           tools: {
-            web_search: createChatWebSearchTool(),
+            web_search: createChatWebSearchTool({
+              modelId,
+              onResults: args.onWebSearchResults,
+            }),
           },
           maxSteps: 4,
         }

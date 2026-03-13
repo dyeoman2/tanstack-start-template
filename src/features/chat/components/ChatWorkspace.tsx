@@ -167,7 +167,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const personas = useQuery(api.agentChat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const createChatAttachmentFromUpload = useAction(api.agentChatActions.createChatAttachmentFromUpload);
-  const quickCreateThread = useAction(api.agentChatActions.quickCreateThread);
   const stopRun = useAction(api.agentChatActions.stopRun);
   const generateChatAttachmentUploadUrl = useMutation(api.agentChat.generateChatAttachmentUploadUrl);
   const createPersona = useMutation(api.agentChat.createPersona);
@@ -382,12 +381,17 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return;
     }
 
-    const matchingMessage = currentMessages.find(
+    const targetIndex = currentMessages.findIndex(
       (message) => message._id === regeneratingTarget.messageId,
     );
+    const matchingMessage = targetIndex === -1 ? undefined : currentMessages[targetIndex];
     if (!matchingMessage) {
       return;
     }
+
+    const replacementAssistant = currentMessages
+      .slice(targetIndex + 1)
+      .find((message) => message.role === 'assistant');
 
     if (matchingMessage.role !== 'assistant') {
       if (!isSending && !hasPendingAssistantResponse) {
@@ -407,8 +411,12 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     const hasPersistedRetryError =
       matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
       matchingMessage.status === 'error';
+    const hasReplacementAssistant =
+      Boolean(replacementAssistant) &&
+      replacementAssistant?.status !== 'pending' &&
+      replacementAssistant?.status !== 'streaming';
 
-    if (hasPersistedRetryResult || hasPersistedRetryError) {
+    if (hasPersistedRetryResult || hasPersistedRetryError || hasReplacementAssistant) {
       setRegeneratingTarget(null);
     }
   }, [
@@ -790,15 +798,17 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       const submittedAt = Date.now();
 
       if (!threadId) {
-        // New chat: fast-create thread + save message, navigate, then stream
-        const created = await quickCreateThread({
-          personaId: personaId as never,
+        const started = await startStream({
+          mode: 'send',
+          threadId: undefined,
+          personaId: personaId,
           model: effectiveModelId,
+          useWebSearch,
           text,
-          attachmentIds: attachmentIds as never,
+          attachmentIds,
           clientMessageId,
         });
-        targetThreadId = created.threadId as string;
+        targetThreadId = started.threadId;
         setOptimisticThread({
           _id: toThreadId(targetThreadId),
           title: deriveThreadTitle(parts),
@@ -812,35 +822,13 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           modelId: effectiveModelId,
           parts,
           submittedAt,
-          stage: 'submitting',
+          stage: 'streaming',
         });
         await navigate({
           to: '/app/chat/$threadId',
           params: { threadId: targetThreadId },
         });
         clear();
-
-        // Fire streaming in the background — no need to await
-        const newThreadId = targetThreadId;
-        void startStream({
-          mode: 'continue',
-          threadId: newThreadId,
-          promptMessageId: created.promptMessageId,
-          personaId: personaId as string | undefined,
-          model: effectiveModelId,
-          useWebSearch,
-        }).catch((error) => {
-          updatePendingThreadSubmission(newThreadId, (submission) =>
-            submission
-              ? {
-                  ...submission,
-                  stage: 'error',
-                  errorMessage:
-                    error instanceof Error ? error.message : 'Failed to start AI response.',
-                }
-              : submission,
-          );
-        });
       } else {
         // Existing thread: use the original send flow
         const existingThreadId = threadId;

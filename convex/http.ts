@@ -1,6 +1,7 @@
 import { httpRouter } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
+import { chatStreamHttp } from './chatHttp';
 import { resend } from './emails';
 import { healthCheck } from './health';
 
@@ -21,6 +22,18 @@ http.route({
   handler: httpAction(async (ctx, req) => {
     return await resend.handleResendEventWebhook(ctx, req);
   }),
+});
+
+http.route({
+  path: '/chat/stream',
+  method: 'OPTIONS',
+  handler: chatStreamHttp,
+});
+
+http.route({
+  path: '/chat/stream',
+  method: 'POST',
+  handler: chatStreamHttp,
 });
 
 export default http;

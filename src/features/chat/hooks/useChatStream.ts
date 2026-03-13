@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { authClient } from '~/features/auth/auth-client';
 import type { ChatActiveStream, ChatStreamRequest } from '~/features/chat/types';
 
 const OWNER_SESSION_STORAGE_KEY = 'chat-owner-session-id';
@@ -110,7 +111,7 @@ function parsePreparedHeaders(response: Response) {
   const assistantMessageId = response.headers.get('x-chat-assistant-message-id');
   const streamId = response.headers.get('x-chat-stream-id');
 
-  if (!threadId || !runId || !assistantMessageId || !streamId) {
+  if (!threadId || !runId || !assistantMessageId) {
     throw new Error('Stream response headers were incomplete.');
   }
 
@@ -118,8 +119,17 @@ function parsePreparedHeaders(response: Response) {
     threadId,
     runId,
     assistantMessageId,
-    streamId,
+    streamId: streamId ?? undefined,
   };
+}
+
+function getConvexChatStreamUrl() {
+  const siteUrl = import.meta.env.VITE_CONVEX_SITE_URL;
+  if (!siteUrl) {
+    throw new Error('VITE_CONVEX_SITE_URL environment variable is required.');
+  }
+
+  return new URL('/chat/stream', siteUrl).toString();
 }
 
 async function pumpStream(
@@ -128,7 +138,7 @@ async function pumpStream(
     threadId: string;
     runId: string;
     assistantMessageId: string;
-    streamId: string;
+    streamId?: string;
     ownerSessionId: string;
     request: ChatStreamRequest;
   },
@@ -247,10 +257,19 @@ export function useChatStream(threadId?: string) {
 
       let response: Response;
       try {
-        response = await fetch('/api/chat/stream', {
+        const tokenResponse = await authClient.convex.token({
+          fetchOptions: { throw: false },
+        });
+        const token = tokenResponse.data?.token;
+        if (!token) {
+          throw new Error('You must be signed in to start a chat stream.');
+        }
+
+        response = await fetch(getConvexChatStreamUrl(), {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(
             request.mode === 'send'
