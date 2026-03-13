@@ -6,10 +6,7 @@ export default defineConfig({
   resolve: {
     tsconfigPaths: true,
   },
-  plugins: [
-    tanstackRouter({ target: 'react' }),
-    react(),
-  ],
+  plugins: [tanstackRouter({ target: 'react' }), react()],
   test: {
     environment: 'jsdom',
     environmentOptions: {
@@ -18,7 +15,7 @@ export default defineConfig({
       },
     },
     setupFiles: ['./src/test/setup.ts'],
-    include: ['src/**/*.test.{ts,tsx}'],
+    include: ['src/**/*.test.{ts,tsx}', 'convex/**/*.test.ts'],
     clearMocks: true,
     restoreMocks: true,
     mockReset: true,

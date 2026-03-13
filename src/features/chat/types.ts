@@ -125,54 +125,6 @@ export type ChatMessage = {
   metadata?: unknown;
 };
 
-export type ChatStreamRequest =
-  | {
-      mode?: 'send';
-      threadId?: string;
-      personaId?: string;
-      model?: string;
-      useWebSearch?: boolean;
-      text: string;
-      attachmentIds: Id<'chatAttachments'>[];
-      clientMessageId?: string;
-    }
-  | {
-      mode: 'continue';
-      threadId: string;
-      promptMessageId: string;
-      personaId?: string;
-      model?: string;
-      useWebSearch?: boolean;
-    }
-  | {
-      mode: 'edit';
-      messageId: string;
-      text: string;
-      model?: string;
-      useWebSearch?: boolean;
-    }
-  | {
-      mode: 'retry';
-      runId: string;
-      model?: string;
-      useWebSearch?: boolean;
-    };
-
-export type ChatActiveStreamStatus = 'streaming' | 'complete' | 'aborted' | 'error';
-
-export type ChatActiveStream = {
-  threadId: string;
-  runId: string;
-  assistantMessageId: string;
-  streamId?: string;
-  ownerSessionId: string;
-  text: string;
-  status: ChatActiveStreamStatus;
-  errorMessage?: string;
-  startedAt: number;
-  request: ChatStreamRequest;
-};
-
 export type ChatAttachment = {
   _id: Id<'chatAttachments'>;
   threadId?: Id<'chatThreads'>;

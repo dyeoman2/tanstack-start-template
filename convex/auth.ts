@@ -2,8 +2,14 @@ import { createClient, type GenericCtx } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
+import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
-import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '../src/lib/server/env.server';
+import {
+  getBetterAuthSecret,
+  getBetterAuthTrustedOrigins,
+  getSiteUrl,
+} from '../src/lib/server/env.server';
+import { createAuthAuditPlugin } from './lib/authAudit';
 import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -14,16 +20,42 @@ const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
 const trustedOrigins = getBetterAuthTrustedOrigins(siteUrl);
 
-export const authComponent = createClient<DataModel, typeof betterAuthSchema>(components.betterAuth, {
-  local: {
-    schema: betterAuthSchema,
+export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
+  components.betterAuth,
+  {
+    local: {
+      schema: betterAuthSchema,
+    },
   },
-});
+);
 
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
 ) => {
+  const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
+    runMutation?: (fn: unknown, args: unknown) => Promise<unknown>;
+  };
+
+  const recordAuditEvent = async (event: {
+    eventType: string;
+    userId?: string;
+    organizationId?: string;
+    identifier?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt?: number;
+  }) => {
+    if (!ctxWithRunMutation.runMutation) {
+      return;
+    }
+
+    await ctxWithRunMutation.runMutation(anyApi.audit.insertAuditLog, {
+      ...event,
+    });
+  };
+
   return betterAuth({
     logger: {
       disabled: optionsOnly,
@@ -155,6 +187,7 @@ export const createAuth = (
           );
         },
       }),
+      createAuthAuditPlugin(recordAuditEvent),
       convex({
         authConfig,
         jwks: process.env.JWKS,
@@ -259,9 +292,7 @@ export const rotateKeys = action({
         createdAt:
           key.createdAt instanceof Date ? key.createdAt.getTime() : (key.createdAt ?? Date.now()),
         expiresAt:
-          key.expiresAt instanceof Date
-            ? key.expiresAt.getTime()
-            : (key.expiresAt ?? undefined),
+          key.expiresAt instanceof Date ? key.expiresAt.getTime() : (key.expiresAt ?? undefined),
       })),
     );
   },

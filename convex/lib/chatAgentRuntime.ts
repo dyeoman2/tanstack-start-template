@@ -1,7 +1,7 @@
 'use node';
 
-import { Agent, createTool, docsToModelMessages, getThreadMetadata } from '@convex-dev/agent';
-import { generateText } from 'ai';
+import { Agent, createTool, getThreadMetadata } from '@convex-dev/agent';
+import { generateText, stepCountIs } from 'ai';
 import { z } from 'zod';
 import { components, internal } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
@@ -11,9 +11,8 @@ import {
   DEFAULT_PERSONA_PROMPT,
   getChatLanguageModel,
   getOpenRouterProvider,
-  serializeMessagesForTransport,
 } from './agentChat';
-import { DEFAULT_CHAT_MODEL_ID } from '../../src/lib/shared/chat-models';
+import { DEFAULT_CHAT_MODEL_ID, type ChatModelId } from '../../src/lib/shared/chat-models';
 import {
   getOpenRouterWebSearchPlugin,
   getOpenRouterWebSearchProviderOptions,
@@ -60,7 +59,6 @@ export async function recordChatUsageEvent(
     outputTokens?: number;
     providerMetadata?: unknown;
     agentName?: string;
-    runId?: Doc<'chatRuns'>['_id'];
   },
 ) {
   const thread = (await ctx.runQuery(internal.agentChat.getThreadByAgentThreadIdAnyInternal, {
@@ -71,17 +69,15 @@ export async function recordChatUsageEvent(
     return;
   }
 
-  const runId =
-    args.runId ??
-    (await ctx.runQuery(internal.agentChat.getLatestRunForThreadInternal, {
-      threadId: thread._id,
-    }))?._id;
+  const run = (await ctx.runQuery(internal.agentChat.getLatestActiveRunForThreadInternal, {
+    threadId: thread._id,
+  })) as Doc<'chatRuns'> | null;
 
   await ctx.runMutation(internal.agentChat.recordUsageEventInternal, {
     organizationId: thread.organizationId,
     userId: thread.userId,
     threadId: thread._id,
-    runId,
+    runId: run?._id,
     agentThreadId: args.agentThreadId,
     agentName: args.agentName,
     model: args.model,
@@ -94,9 +90,7 @@ export async function recordChatUsageEvent(
   });
 }
 
-function dedupeSearchSources(
-  sources: ChatWebSearchSource[],
-) {
+function dedupeSearchSources(sources: ChatWebSearchSource[]) {
   const seen = new Set<string>();
   return sources.filter((source) => {
     if (seen.has(source.url)) {
@@ -111,13 +105,9 @@ function dedupeSearchSources(
 export function buildChatSystemPrompt(args: {
   instructions?: string;
   useWebSearch?: boolean;
-  threadSummary?: string;
 }) {
   const promptSections = [
     args.instructions?.trim() || DEFAULT_PERSONA_PROMPT,
-    args.threadSummary?.trim()
-      ? `Conversation summary:\n${args.threadSummary.trim()}`
-      : null,
     args.useWebSearch
       ? 'When current or recent web information is needed, use the web_search tool.'
       : null,
@@ -128,7 +118,7 @@ export function buildChatSystemPrompt(args: {
 
 export async function runChatWebSearch(args: {
   query: string;
-  modelId?: string;
+  modelId?: ChatModelId;
 }) {
   const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
   const searchModel = getOpenRouterProvider().chat(modelId, {
@@ -164,7 +154,7 @@ export async function runChatWebSearch(args: {
 }
 
 export function createChatWebSearchTool(args?: {
-  modelId?: string;
+  modelId?: ChatModelId;
   onResults?: (results: ChatWebSearchSource[]) => void;
 }) {
   return createTool({
@@ -184,83 +174,81 @@ export function createChatWebSearchTool(args?: {
   });
 }
 
-export async function fetchPreparedChatMessages(
-  ctx: ActionCtx,
-  args: {
-    userId: string;
-    threadId: string;
-    promptMessageId: string;
-    modelId?: string;
-    instructions?: string;
-    useWebSearch?: boolean;
-  },
-) {
-  const agent = createChatAgent({
-    modelId: args.modelId,
-    instructions: args.instructions,
-    useWebSearch: args.useWebSearch,
-  });
-  const messages = await agent.fetchContextMessages(ctx, {
-    userId: args.userId,
-    threadId: args.threadId,
-    targetMessageId: args.promptMessageId,
-    contextOptions: undefined,
-  });
+async function debugRawRequestResponse(args: {
+  threadId?: string;
+  agentName?: string;
+  request: unknown;
+  response: unknown;
+}) {
+  if (process.env.DEBUG_LLM !== 'true') {
+    return;
+  }
 
-  return await serializeMessagesForTransport(docsToModelMessages(messages));
+  console.log('[chat.debug.llm]', JSON.stringify(args));
 }
 
-export function createChatAgent(args?: {
-  modelId?: string;
+export const baseChatAgent = new Agent(components.agent, {
+  name: DEFAULT_CHAT_AGENT_NAME,
+  languageModel: getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false),
+  contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
+  usageHandler: async (ctx, usageArgs) => {
+    if (!usageArgs.threadId) {
+      return;
+    }
+
+    await recordChatUsageEvent(ctx, {
+      agentThreadId: usageArgs.threadId,
+      agentName: usageArgs.agentName,
+      model: usageArgs.model,
+      provider: usageArgs.provider,
+      totalTokens: usageArgs.usage.totalTokens,
+      inputTokens: usageArgs.usage.inputTokens,
+      outputTokens: usageArgs.usage.outputTokens,
+      providerMetadata: usageArgs.providerMetadata,
+    });
+  },
+  contextHandler: async (ctx, contextArgs) => {
+    if (!contextArgs.threadId) {
+      return contextArgs.allMessages;
+    }
+
+    const thread = await getThreadMetadata(ctx, components.agent, {
+      threadId: contextArgs.threadId,
+    });
+    const summary = thread.summary?.trim();
+    const summaryMessage = summary
+      ? [{ role: 'system' as const, content: `Conversation summary:\n${summary}` }]
+      : [];
+
+    return [
+      ...summaryMessage,
+      ...contextArgs.search,
+      ...contextArgs.recent,
+      ...contextArgs.inputMessages,
+      ...contextArgs.inputPrompt,
+    ];
+  },
+  rawRequestResponseHandler: async (_ctx, args) => {
+    await debugRawRequestResponse(args);
+  },
+});
+
+export function buildChatRequestConfig(args: {
+  modelId?: ChatModelId;
   instructions?: string;
   useWebSearch?: boolean;
   onWebSearchResults?: (results: ChatWebSearchSource[]) => void;
 }) {
-  const modelId = args?.modelId ?? DEFAULT_CHAT_MODEL_ID;
+  const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
+  const useWebSearch = args.useWebSearch ?? false;
 
-  return new Agent(components.agent, {
-    name: DEFAULT_CHAT_AGENT_NAME,
-    languageModel: getChatLanguageModel(modelId, false),
-    instructions: args?.instructions ?? DEFAULT_PERSONA_PROMPT,
-    contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
-    usageHandler: async (ctx, usageArgs) => {
-      if (!usageArgs.threadId) {
-        return;
-      }
-
-      await recordChatUsageEvent(ctx, {
-        agentThreadId: usageArgs.threadId,
-        agentName: usageArgs.agentName,
-        model: usageArgs.model,
-        provider: usageArgs.provider,
-        totalTokens: usageArgs.usage.totalTokens,
-        inputTokens: usageArgs.usage.inputTokens,
-        outputTokens: usageArgs.usage.outputTokens,
-        providerMetadata: usageArgs.providerMetadata,
-      });
-    },
-    contextHandler: async (ctx, contextArgs) => {
-      if (!contextArgs.threadId) {
-        return contextArgs.allMessages;
-      }
-
-      const thread = await getThreadMetadata(ctx, components.agent, {
-        threadId: contextArgs.threadId,
-      });
-      const summary = thread.summary?.trim();
-      const summaryMessage = summary
-        ? [{ role: 'system' as const, content: `Conversation summary:\n${summary}` }]
-        : [];
-
-      return [
-        ...summaryMessage,
-        ...contextArgs.search,
-        ...contextArgs.recent,
-        ...contextArgs.inputMessages,
-        ...contextArgs.inputPrompt,
-      ];
-    },
-    ...(args?.useWebSearch
+  return {
+    model: getChatLanguageModel(modelId, false),
+    system: buildChatSystemPrompt({
+      instructions: args.instructions,
+      useWebSearch,
+    }),
+    ...(useWebSearch
       ? {
           tools: {
             web_search: createChatWebSearchTool({
@@ -268,8 +256,10 @@ export function createChatAgent(args?: {
               onResults: args.onWebSearchResults,
             }),
           },
-          maxSteps: 4,
+          stopWhen: stepCountIs(4),
         }
-      : { maxSteps: 1 }),
-  });
+      : {
+          stopWhen: stepCountIs(1),
+        }),
+  };
 }

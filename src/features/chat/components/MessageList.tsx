@@ -18,9 +18,7 @@ import {
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
 import { useSmoothStreamText } from '~/features/chat/hooks/useSmoothStreamText';
-import type { PendingThreadSubmission } from '~/features/chat/lib/pending-thread-submission';
 import type {
-  ChatActiveStream,
   ChatMessage,
   ChatMessagePart,
 } from '~/features/chat/types';
@@ -525,6 +523,10 @@ function AssistantMessage({
           <span className="chat-thinking-label text-base font-medium text-muted-foreground">
             Thinking...
           </span>
+        ) : showAsStreaming ? (
+          <div className="whitespace-pre-wrap text-base leading-relaxed text-foreground">
+            {finalText}
+          </div>
         ) : (
           <Markdown>{finalText}</Markdown>
         )}
@@ -592,84 +594,10 @@ const MemoAssistantMessage = memo(
     previous.draftText === next.draftText,
 );
 
-function StaticUserMessage({ parts }: { parts: ChatMessagePart[] }) {
-  return (
-    <EditableUserMessage
-      message={{
-        _id: 'pending-user',
-        threadId: 'pending-thread',
-        order: Number.MAX_SAFE_INTEGER,
-        stepOrder: 0,
-        role: 'user',
-        parts,
-        status: 'complete',
-        createdAt: 0,
-        updatedAt: 0,
-      }}
-      onStartEdit={() => {}}
-      showActions={false}
-    />
-  );
-}
-
-function PendingAssistantMessage({
-  stage,
-  errorMessage,
-}: {
-  stage: PendingThreadSubmission['stage'];
-  errorMessage?: string;
-}) {
-  return (
-    <div className="flex justify-start">
-      <div className="max-w-[95%] px-1 py-1 md:max-w-[88%]">
-        {stage === 'error' ? (
-          <p className="text-sm text-destructive">
-            {errorMessage ?? 'Failed to generate a response.'}
-          </p>
-        ) : (
-          <span className="chat-thinking-label text-base font-medium text-muted-foreground">
-            Thinking...
-          </span>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function buildSyntheticAssistantMessage(
-  baseThreadId: string,
-  stream: Pick<
-    ChatActiveStream,
-    'assistantMessageId' | 'threadId' | 'status' | 'errorMessage' | 'startedAt'
-  >,
-): ChatMessage {
-  return {
-    _id: stream.assistantMessageId,
-    threadId: baseThreadId,
-    order: Number.MAX_SAFE_INTEGER - 1,
-    stepOrder: 0,
-    role: 'assistant',
-    parts: [{ type: 'text', text: '' }],
-    status:
-      stream.status === 'streaming'
-        ? 'streaming'
-        : stream.status === 'complete'
-          ? 'complete'
-          : 'error',
-    errorMessage: stream.errorMessage,
-    createdAt: stream.startedAt,
-    updatedAt: stream.startedAt,
-  };
-}
-
 export function MessageList({
   messages,
-  activeStream,
-  fallbackDraftTextByMessageId = {},
-  isRegenerationPending = false,
   retryRunIdByMessageId = {},
   onRetryMessage,
-  pendingSubmission,
   regeneratingTarget,
   optimisticEdits = {},
   onStartEditMessage,
@@ -677,16 +605,8 @@ export function MessageList({
   scrollTargetMessageRef,
 }: {
   messages: ChatMessage[];
-  activeStream?: ChatActiveStream | null;
-  fallbackDraftTextByMessageId?: Record<string, string>;
-  isRegenerationPending?: boolean;
   retryRunIdByMessageId?: Record<string, string>;
   onRetryMessage?: (messageId: string, runId: string) => void;
-  pendingSubmission?: {
-    submission: PendingThreadSubmission;
-    showUserMessage: boolean;
-    showAssistantPlaceholder: boolean;
-  };
   regeneratingTarget?: {
     messageId: string;
     hideMessage: boolean;
@@ -729,36 +649,28 @@ export function MessageList({
       return optimisticMessages;
     }
 
-    return optimisticMessages.slice(0, cutoffIndex + 1);
+    return optimisticMessages.slice(0, cutoffIndex + (regeneratingTarget.hideMessage ? 0 : 1));
   }, [optimisticMessages, regeneratingTarget]);
 
-  const hasRenderedActiveStream = Boolean(
-    activeStream && visibleMessages.some((message) => message._id === activeStream.assistantMessageId),
-  );
-  const hasVisibleRegeneratingMessage = Boolean(
-    regeneratingTarget &&
-      visibleMessages.some((message) => message._id === regeneratingTarget.messageId),
-  );
-  const streamForSyntheticMessage = activeStream ?? null;
+  const regenerationPlaceholder = useMemo(() => {
+    if (!regeneratingTarget?.hideMessage) {
+      return null;
+    }
 
-  const syntheticStreamMessage =
-    streamForSyntheticMessage &&
-    !hasRenderedActiveStream
-      ? buildSyntheticAssistantMessage(
-          visibleMessages[visibleMessages.length - 1]?.threadId ?? streamForSyntheticMessage.threadId,
-          streamForSyntheticMessage,
-        )
-      : null;
-  const showSyntheticStreamMessage = Boolean(
-    syntheticStreamMessage &&
-      ((activeStream?.text ?? '').trim() ||
-        (regeneratingTarget &&
-          streamForSyntheticMessage?.assistantMessageId === regeneratingTarget.messageId &&
-          !hasVisibleRegeneratingMessage)),
-  );
-  const missingRetryFallbackText = regeneratingTarget
-    ? fallbackDraftTextByMessageId[regeneratingTarget.messageId]?.trim()
-    : undefined;
+    const targetMessage = optimisticMessages.find(
+      (message) => message._id === regeneratingTarget.messageId,
+    );
+    if (!targetMessage || targetMessage.role !== 'assistant') {
+      return null;
+    }
+
+    return {
+      ...targetMessage,
+      parts: [{ type: 'text', text: '' }] as ChatMessagePart[],
+      status: 'pending' as const,
+      errorMessage: undefined,
+    };
+  }, [optimisticMessages, regeneratingTarget]);
 
   return (
     <div className="space-y-4">
@@ -784,56 +696,25 @@ export function MessageList({
           );
         }
 
-        const streamForMessage =
-          activeStream?.assistantMessageId === message._id ? activeStream : null;
-        const isRegeneratingMessage =
-          regeneratingTarget?.messageId === message._id && isRegenerationPending;
-        const completedFallbackDraftText =
-          !streamForMessage ? fallbackDraftTextByMessageId[message._id]?.trim() : undefined;
-        const isReconnecting =
-          !streamForMessage &&
-          !isRegeneratingMessage &&
-          (message.status === 'pending' || message.status === 'streaming');
-        const renderedMessage = streamForMessage
+        const isRegeneratingMessage = regeneratingTarget?.messageId === message._id;
+        const renderedMessage = isRegeneratingMessage
           ? {
               ...message,
-              status:
-                streamForMessage.status === 'streaming'
-                  ? 'streaming'
-                  : streamForMessage.status === 'complete'
-                    ? message.status
-                    : 'error',
-              errorMessage: streamForMessage.errorMessage ?? message.errorMessage,
-            }
-          : isRegeneratingMessage
-            ? {
-                ...message,
-                parts: completedFallbackDraftText
+              parts:
+                message.status === 'complete'
                   ? message.parts
                   : ([{ type: 'text', text: '' }] as ChatMessagePart[]),
-                status: completedFallbackDraftText ? ('complete' as const) : ('pending' as const),
-                errorMessage: undefined,
-              }
-          : isReconnecting
-            ? {
-                ...message,
-                parts: [{ type: 'text', text: '' }] as ChatMessagePart[],
-              }
+              status: message.status === 'complete' ? ('complete' as const) : ('pending' as const),
+              errorMessage: undefined,
+            }
           : message;
         const persistedAssistantText = getTextFromParts(renderedMessage.parts);
-        const fallbackDraftText =
-          !streamForMessage && !persistedAssistantText.trim()
-            ? fallbackDraftTextByMessageId[message._id]
-            : undefined;
-        const assistantText =
-          streamForMessage?.text ?? fallbackDraftText ?? persistedAssistantText;
+        const assistantText = persistedAssistantText;
         const hideEmptyAssistantMessage =
           (renderedMessage.status === 'pending' || renderedMessage.status === 'streaming') &&
           !assistantText.trim() &&
           !renderedMessage.errorMessage &&
-          !isRegeneratingMessage &&
-          !streamForMessage &&
-          !isReconnecting;
+          !isRegeneratingMessage;
 
         if (hideEmptyAssistantMessage) {
           return null;
@@ -843,8 +724,7 @@ export function MessageList({
           <MemoAssistantMessage
             key={message._id}
             message={renderedMessage}
-            draftText={streamForMessage?.text ?? fallbackDraftText}
-            retryRunId={streamForMessage?.runId ?? retryRunIdByMessageId[message._id]}
+            retryRunId={retryRunIdByMessageId[message._id]}
             thinking={
               (renderedMessage.status === 'pending' || renderedMessage.status === 'streaming') &&
               !assistantText.trim()
@@ -853,45 +733,12 @@ export function MessageList({
           />
         );
       })}
-
-      {pendingSubmission?.showUserMessage ? (
-        <div ref={scrollTargetMessageRef}>
-          <StaticUserMessage parts={pendingSubmission.submission.parts} />
-        </div>
-      ) : null}
-
-      {pendingSubmission?.showAssistantPlaceholder ? (
-        <PendingAssistantMessage
-          stage={pendingSubmission.submission.stage}
-          errorMessage={pendingSubmission.submission.errorMessage}
-        />
-      ) : null}
-
-      {showSyntheticStreamMessage && syntheticStreamMessage ? (
+      {regenerationPlaceholder ? (
         <MemoAssistantMessage
-          message={syntheticStreamMessage}
-          draftText={activeStream?.text}
-          retryRunId={activeStream?.runId}
-          thinking={!(activeStream?.text ?? '').trim()}
+          key={`regenerating-${regenerationPlaceholder._id}`}
+          message={regenerationPlaceholder}
+          thinking
           onRetry={onRetryMessage}
-        />
-      ) : null}
-
-      {regeneratingTarget && !activeStream && !hasVisibleRegeneratingMessage ? (
-        <MemoAssistantMessage
-          message={{
-            _id: regeneratingTarget.messageId,
-            threadId: visibleMessages[visibleMessages.length - 1]?.threadId ?? '',
-            order: Number.MAX_SAFE_INTEGER,
-            stepOrder: 0,
-            role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
-            status: missingRetryFallbackText ? 'complete' : 'pending',
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          }}
-          draftText={missingRetryFallbackText}
-          thinking={!missingRetryFallbackText}
         />
       ) : null}
     </div>

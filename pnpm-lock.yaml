@@ -80,6 +80,12 @@ importers:
       '@radix-ui/react-tooltip':
         specifier: ^1.2.8
         version: 1.2.8(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@react-email/components':
+        specifier: ^1.0.9
+        version: 1.0.9(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      '@react-email/render':
+        specifier: ^2.0.4
+        version: 2.0.4(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       '@sentry/profiling-node':
         specifier: ^10.43.0
         version: 10.43.0

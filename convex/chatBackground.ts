@@ -6,11 +6,11 @@ import { v } from 'convex/values';
 import { components, internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalAction, type ActionCtx } from './_generated/server';
+import { abortRunWithReason } from './agentChatActions';
 import {
   getChatLanguageModel,
   type ChatThreadDoc,
 } from './lib/agentChat';
-import { createChatAgent } from './lib/chatAgentRuntime';
 import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 
 const STALE_STREAM_TIMEOUT_MS = 15 * 60 * 1000;
@@ -196,59 +196,25 @@ export const cleanupStaleChatRuns = internalAction({
     })) as Doc<'chatRuns'>[];
 
     for (const run of staleRuns) {
-      const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
-        threadId: run.threadId,
-      })) as ChatThreadDoc | null;
-      const partialText = await getStaleStreamPartialText(ctx, run);
-
-      if (run.activeAssistantMessageId) {
-        const agent = createChatAgent({
-          modelId: run.model ?? DEFAULT_CHAT_MODEL_ID,
-          useWebSearch: run.useWebSearch,
-        });
-
-        if (partialText) {
-          await agent.saveMessages(ctx, {
-            threadId: run.agentThreadId,
-            promptMessageId: run.promptMessageId,
-            pendingMessageId: run.activeAssistantMessageId,
-            messages: [{ role: 'assistant', content: partialText }],
-            metadata: [
-              {
-                status: 'failed',
-                error: 'Stream expired before completion.',
-                model: run.model,
-                provider: run.provider,
-              },
-            ],
-          });
-        } else {
-          await ctx.runMutation(components.agent.messages.finalizeMessage, {
-            messageId: run.activeAssistantMessageId,
-            result: {
-              status: 'failed',
-              error: 'Stream expired before completion.',
-            },
-          });
-        }
-      }
-
-      await ctx.runMutation(internal.agentChat.patchRunInternal, {
+      const currentRun = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
         runId: run._id,
-        patch: {
-          agentStreamId: null,
-          status: 'error',
-          endedAt: Date.now(),
-          errorMessage: 'Stream expired before completion.',
-        },
-      });
+      })) as Doc<'chatRuns'> | null;
 
-      if (run.agentStreamId) {
-        await ctx.runMutation(components.agent.streams.abort, {
-          streamId: run.agentStreamId,
-          reason: 'Stale stream cleaned up.',
-        });
+      if (!currentRun || currentRun.status !== 'streaming') {
+        continue;
       }
+
+      const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
+        threadId: currentRun.threadId,
+      })) as ChatThreadDoc | null;
+      const partialText = await getStaleStreamPartialText(ctx, currentRun);
+
+      await abortRunWithReason(ctx, {
+        run: currentRun,
+        reason: 'Stream expired before completion.',
+        status: 'error',
+        partialText,
+      });
 
       if (thread) {
         await ctx.runMutation(internal.agentChat.patchThreadInternal, {

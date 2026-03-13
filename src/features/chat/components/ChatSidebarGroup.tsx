@@ -68,10 +68,12 @@ export function ChatSidebarGroup() {
 
   const sortedThreads = useMemo(() => {
     const serverThreads = threads ?? [];
-    const serverThreadIds = new Set(serverThreads.map((thread) => thread._id));
+    const serverThreadIds = new Set(
+      serverThreads.map((thread: (typeof serverThreads)[number]) => thread._id),
+    );
 
     return sortThreads([
-      ...optimisticThreads.filter((thread) => !serverThreadIds.has(thread._id)),
+      ...optimisticThreads.filter((thread: (typeof optimisticThreads)[number]) => !serverThreadIds.has(thread._id)),
       ...serverThreads,
     ]);
   }, [optimisticThreads, threads]);

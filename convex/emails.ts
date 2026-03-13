@@ -1,8 +1,30 @@
-import { type EmailEvent, Resend as ConvexResend, vEmailEvent, vEmailId } from '@convex-dev/resend';
+import { Resend as ConvexResend, type EmailEvent, vEmailEvent, vEmailId } from '@convex-dev/resend';
 import { v } from 'convex/values';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { action, internalAction, internalMutation, query } from './_generated/server';
+import {
+  buildInvitationTemplate,
+  buildResetPasswordTemplate,
+  type EmailTemplateId,
+} from './emailTemplates';
+
+export {
+  AVAILABLE_EMAIL_TEMPLATE_IDS,
+  buildApplicationInviteTemplate,
+  buildChangeEmailTemplate,
+  buildDeleteAccountTemplate,
+  buildInvitationTemplate,
+  buildMagicLinkTemplate,
+  buildResetPasswordOtpTemplate,
+  buildResetPasswordTemplate,
+  buildSignInOtpTemplate,
+  buildStaleAccountAdminTemplate,
+  buildStaleAccountUserTemplate,
+  buildTwoFactorTemplate,
+  buildVerifyEmailOtpTemplate,
+  buildVerifyEmailTemplate,
+} from './emailTemplates';
 
 /**
  * Email utilities for Convex using the official @convex-dev/resend component
@@ -83,38 +105,44 @@ export const checkEmailServiceConfigured = query({
   },
 });
 
-const createBaseHtmlTemplate = (content: string, title: string, businessName: string) => `
-  <!DOCTYPE html>
-  <html>
-    <head>
-      <meta charset="utf-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>${title}</title>
-    </head>
-    <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
-      <div style="text-align: center; margin-bottom: 30px;">
-        <h1 style="color: #2563eb; margin: 0; font-size: 24px;">${businessName}</h1>
-        <p style="color: #6b7280; margin: 5px 0 0 0; font-size: 14px;">Get Started</p>
-      </div>
+type EmailHeader = {
+  name: string;
+  value: string;
+};
 
-      ${content}
+type EmailTag = {
+  name: string;
+  value: string;
+};
 
-      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center;">
-        <p style="margin: 0; color: #9ca3af; font-size: 12px;">
-          © ${new Date().getFullYear()} ${businessName}. All rights reserved.
-        </p>
-      </div>
-    </body>
-  </html>
-`;
+function getSupportEmail() {
+  return (
+    process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_EMAIL_SENDER || 'support@example.com'
+  );
+}
 
-const createBaseTextTemplate = (content: string, businessName: string) => `
-${businessName} - Get Started
+function buildEmailHeaders(templateId: EmailTemplateId, appName: string): EmailHeader[] {
+  return [
+    { name: 'X-Transactional-Email', value: 'true' },
+    { name: 'X-Email-Template', value: templateId },
+    { name: 'X-App-Name', value: appName },
+  ];
+}
 
-${content}
-
-© ${new Date().getFullYear()} ${businessName}. All rights reserved.
-`;
+function buildEmailTags(templateId: EmailTemplateId, appName: string): EmailTag[] {
+  return [
+    { name: 'template', value: templateId },
+    {
+      name: 'app',
+      value:
+        appName
+          .toLowerCase()
+          .replaceAll(/[^a-z0-9]+/g, '-')
+          .replaceAll(/^-|-$/g, '') || 'app',
+    },
+    { name: 'category', value: 'transactional' },
+  ];
+}
 
 async function sendEmailViaResendApi(args: {
   apiKey: string;
@@ -123,6 +151,9 @@ async function sendEmailViaResendApi(args: {
   subject: string;
   html: string;
   text: string;
+  replyTo?: string[];
+  headers?: EmailHeader[];
+  tags?: EmailTag[];
 }) {
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -136,12 +167,17 @@ async function sendEmailViaResendApi(args: {
       subject: args.subject,
       html: args.html,
       text: args.text,
+      reply_to: args.replyTo,
+      headers: args.headers,
+      tags: args.tags,
     }),
   });
 
-  const payload = (await response.json().catch(() => null)) as
-    | { id?: string; message?: string; name?: string }
-    | null;
+  const payload = (await response.json().catch(() => null)) as {
+    id?: string;
+    message?: string;
+    name?: string;
+  } | null;
 
   if (!response.ok) {
     throw new Error(payload?.message ?? `Resend API request failed with ${response.status}`);
@@ -152,67 +188,6 @@ async function sendEmailViaResendApi(args: {
   }
 
   return payload.id;
-}
-
-function buildPasswordResetEmailContent(args: {
-  appName: string;
-  resetLink: string;
-  userName: string | null;
-}) {
-  const name = args.userName || 'there';
-
-  const htmlContent = `
-    <div style="background: #f8fafc; padding: 30px; border-radius: 8px; margin-bottom: 20px;">
-      <h2 style="color: #1f2937; margin: 0 0 15px 0; font-size: 20px;">Reset your password</h2>
-      <p style="margin: 0 0 15px 0; color: #4b5563;">Hi ${name},</p>
-      <p style="margin: 0 0 20px 0; color: #4b5563;">
-        We received a request to reset your password for your ${args.appName} account.
-        If you didn't make this request, you can safely ignore this email.
-      </p>
-      <p style="margin: 0 0 25px 0; color: #4b5563;">
-        Click the button below to reset your password. This link will expire in 1 hour for security reasons.
-      </p>
-
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${args.resetLink}"
-           style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
-          Reset Password
-        </a>
-      </div>
-
-      <p style="margin: 25px 0 15px 0; color: #6b7280; font-size: 14px;">
-        If the button doesn't work, you can copy and paste this link into your browser:
-      </p>
-      <p style="margin: 0; color: #2563eb; word-break: break-all; font-size: 14px;">
-        ${args.resetLink}
-      </p>
-    </div>
-
-    <div style="border-top: 1px solid #e5e7eb; padding-top: 20px; margin-top: 30px;">
-      <p style="margin: 0; color: #6b7280; font-size: 12px; text-align: center;">
-        This password reset link will expire in 1 hour.<br>
-        If you didn't request this password reset, please ignore this email.
-      </p>
-    </div>
-  `;
-
-  const textContent = `
-Hi ${name},
-
-We received a request to reset your password for your ${args.appName} account.
-If you didn't make this request, you can safely ignore this email.
-
-To reset your password, please visit: ${args.resetLink}
-
-This link will expire in 1 hour for security reasons.
-
-If you didn't request this password reset, please ignore this email.
-  `;
-
-  return {
-    html: createBaseHtmlTemplate(htmlContent, 'Reset your password', args.appName),
-    text: createBaseTextTemplate(textContent, args.appName),
-  };
 }
 
 export const sendPasswordResetEmailMutation = internalAction({
@@ -233,7 +208,10 @@ export const sendPasswordResetEmailMutation = internalAction({
 
     const appName = process.env.APP_NAME || 'Hackathon';
     const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
-    const content = buildPasswordResetEmailContent({
+    const supportEmail = getSupportEmail();
+    const headers = buildEmailHeaders('reset-password', appName);
+    const tags = buildEmailTags('reset-password', appName);
+    const content = await buildResetPasswordTemplate({
       appName,
       resetLink: args.url,
       userName: args.user.name,
@@ -247,6 +225,8 @@ export const sendPasswordResetEmailMutation = internalAction({
           from: `${appName} <${emailSender}>`,
           to: args.user.email,
           subject: `Reset your ${appName} password`,
+          replyTo: [supportEmail],
+          headers,
         },
         async () => {
           return await sendEmailViaResendApi({
@@ -256,6 +236,9 @@ export const sendPasswordResetEmailMutation = internalAction({
             subject: `Reset your ${appName} password`,
             html: content.html,
             text: content.text,
+            replyTo: [supportEmail],
+            headers,
+            tags,
           });
         },
       );
@@ -283,60 +266,6 @@ export const sendPasswordResetEmailMutation = internalAction({
   },
 });
 
-export const sendTeamInviteEmailMutation = internalMutation({
-  args: {
-    email: v.string(),
-    inviteUrl: v.string(),
-    inviterName: v.string(),
-    teamName: v.string(),
-    role: v.union(v.literal('admin'), v.literal('edit'), v.literal('view')),
-  },
-  handler: async (ctx, args) => {
-    const appName = process.env.APP_NAME || 'Hackathon';
-    const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
-    const htmlContent = `
-    <div style="background: #f8fafc; padding: 30px; border-radius: 8px; margin-bottom: 20px;">
-      <h2 style="color: #1f2937; margin: 0 0 15px 0; font-size: 20px;">Join ${args.teamName}</h2>
-      <p style="margin: 0 0 15px 0; color: #4b5563;">
-        ${args.inviterName} invited you to join <strong>${args.teamName}</strong> on ${appName} as
-        a <strong>${args.role}</strong>.
-      </p>
-      <p style="margin: 0 0 25px 0; color: #4b5563;">
-        Accept the invite to join the team. This invite expires in 7 days.
-      </p>
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${args.inviteUrl}"
-           style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
-          Accept Invite
-        </a>
-      </div>
-      <p style="margin: 25px 0 15px 0; color: #6b7280; font-size: 14px;">
-        If the button doesn't work, copy and paste this link into your browser:
-      </p>
-      <p style="margin: 0; color: #2563eb; word-break: break-all; font-size: 14px;">
-        ${args.inviteUrl}
-      </p>
-    </div>
-  `;
-
-    const textContent = `
-${args.inviterName} invited you to join ${args.teamName} on ${appName} as a ${args.role}.
-
-Accept the invite here: ${args.inviteUrl}
-
-This invite expires in 7 days.
-    `;
-
-    await resend.sendEmail(ctx, {
-      from: `${appName} <${emailSender}>`,
-      to: args.email,
-      subject: `${args.inviterName} invited you to join ${args.teamName}`,
-      html: createBaseHtmlTemplate(htmlContent, `Join ${args.teamName}`, appName),
-      text: createBaseTextTemplate(textContent, appName),
-    });
-  },
-});
-
 export const sendOrganizationInviteEmailMutation = internalMutation({
   args: {
     email: v.string(),
@@ -348,45 +277,23 @@ export const sendOrganizationInviteEmailMutation = internalMutation({
   handler: async (ctx, args) => {
     const appName = process.env.APP_NAME || 'Hackathon';
     const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
-    const htmlContent = `
-    <div style="background: #f8fafc; padding: 30px; border-radius: 8px; margin-bottom: 20px;">
-      <h2 style="color: #1f2937; margin: 0 0 15px 0; font-size: 20px;">Join ${args.organizationName}</h2>
-      <p style="margin: 0 0 15px 0; color: #4b5563;">
-        ${args.inviterName} invited you to join <strong>${args.organizationName}</strong> on ${appName} as
-        a <strong>${args.role}</strong>.
-      </p>
-      <p style="margin: 0 0 25px 0; color: #4b5563;">
-        Accept the invite to join the organization. This invite expires in 7 days.
-      </p>
-      <div style="text-align: center; margin: 30px 0;">
-        <a href="${args.inviteUrl}"
-           style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: 500; display: inline-block;">
-          Accept Invite
-        </a>
-      </div>
-      <p style="margin: 25px 0 15px 0; color: #6b7280; font-size: 14px;">
-        If the button doesn't work, copy and paste this link into your browser:
-      </p>
-      <p style="margin: 0; color: #2563eb; word-break: break-all; font-size: 14px;">
-        ${args.inviteUrl}
-      </p>
-    </div>
-  `;
-
-    const textContent = `
-${args.inviterName} invited you to join ${args.organizationName} on ${appName} as a ${args.role}.
-
-Accept the invite here: ${args.inviteUrl}
-
-This invite expires in 7 days.
-    `;
+    const supportEmail = getSupportEmail();
+    const content = await buildInvitationTemplate({
+      appName,
+      inviteUrl: args.inviteUrl,
+      inviterName: args.inviterName,
+      organizationName: args.organizationName,
+      role: args.role,
+    });
 
     await resend.sendEmail(ctx, {
       from: `${appName} <${emailSender}>`,
       to: args.email,
-      subject: `${args.inviterName} invited you to join ${args.organizationName}`,
-      html: createBaseHtmlTemplate(htmlContent, `Join ${args.organizationName}`, appName),
-      text: createBaseTextTemplate(textContent, appName),
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+      replyTo: [supportEmail],
+      headers: buildEmailHeaders('invitation', appName),
     });
   },
 });
@@ -397,59 +304,59 @@ export const handleResendEmailEvent = internalMutation({
     event: vEmailEvent,
   },
   handler: async (ctx, args) => {
-  const occurredAt = toEmailEventTimestamp(args.event.created_at);
-  const messageId = args.event.data.email_id;
-  const profile = await ctx.db
-    .query('userProfiles')
-    .withIndex('by_onboarding_email_id', (q) => q.eq('onboardingEmailId', args.id))
-    .first();
+    const occurredAt = toEmailEventTimestamp(args.event.created_at);
+    const messageId = args.event.data.email_id;
+    const profile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_onboarding_email_id', (q) => q.eq('onboardingEmailId', args.id))
+      .first();
 
-  await ctx.db.insert('emailLifecycleEvents', {
-    messageId,
-    emailId: args.id,
-    email:
-      profile?.email ??
-      (Array.isArray(args.event.data.to) ? args.event.data.to[0] : args.event.data.to),
-    category: 'onboarding',
-    eventType: args.event.type,
-    rawPayload: JSON.stringify(args.event),
-    occurredAt,
-    createdAt: Date.now(),
-    ...(profile?.authUserId ? { authUserId: profile.authUserId } : {}),
-  });
+    await ctx.db.insert('emailLifecycleEvents', {
+      messageId,
+      emailId: args.id,
+      email:
+        profile?.email ??
+        (Array.isArray(args.event.data.to) ? args.event.data.to[0] : args.event.data.to),
+      category: 'onboarding',
+      eventType: args.event.type,
+      rawPayload: JSON.stringify(args.event),
+      occurredAt,
+      createdAt: Date.now(),
+      ...(profile?.authUserId ? { authUserId: profile.authUserId } : {}),
+    });
 
-  if (!profile) {
-    return;
-  }
-
-  const next = deriveOnboardingStatusFromEmailEvent(args.event);
-  if (next.status === null) {
-    if (!profile.onboardingEmailMessageId) {
-      await ctx.db.patch(profile._id, {
-        onboardingEmailMessageId: messageId,
-        lastSyncedAt: Date.now(),
-      });
+    if (!profile) {
+      return;
     }
-    return;
-  }
 
-  if (
-    !shouldApplyOnboardingDeliveryEvent({
-      currentStatus: profile.onboardingStatus,
-      currentUpdatedAt: profile.onboardingDeliveryUpdatedAt,
-      incomingOccurredAt: occurredAt,
-    })
-  ) {
-    return;
-  }
+    const next = deriveOnboardingStatusFromEmailEvent(args.event);
+    if (next.status === null) {
+      if (!profile.onboardingEmailMessageId) {
+        await ctx.db.patch(profile._id, {
+          onboardingEmailMessageId: messageId,
+          lastSyncedAt: Date.now(),
+        });
+      }
+      return;
+    }
 
-  await ctx.db.patch(profile._id, {
-    onboardingStatus: next.status,
-    onboardingEmailMessageId: messageId,
-    onboardingDeliveryUpdatedAt: occurredAt,
-    onboardingDeliveryError: next.deliveryError,
-    lastSyncedAt: Date.now(),
-  });
+    if (
+      !shouldApplyOnboardingDeliveryEvent({
+        currentStatus: profile.onboardingStatus,
+        currentUpdatedAt: profile.onboardingDeliveryUpdatedAt,
+        incomingOccurredAt: occurredAt,
+      })
+    ) {
+      return;
+    }
+
+    await ctx.db.patch(profile._id, {
+      onboardingStatus: next.status,
+      onboardingEmailMessageId: messageId,
+      onboardingDeliveryUpdatedAt: occurredAt,
+      onboardingDeliveryError: next.deliveryError,
+      lastSyncedAt: Date.now(),
+    });
   },
 });
 

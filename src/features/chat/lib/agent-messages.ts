@@ -6,10 +6,34 @@ type AgentUIPart =
       text: string;
     }
   | {
+      type: 'attachment';
+      attachmentId: string;
+      kind: 'image' | 'document';
+      name: string;
+      mimeType: string;
+      status: 'pending' | 'ready' | 'error';
+      previewUrl?: string | null;
+      promptSummary: string;
+      errorMessage?: string;
+    }
+  | {
+      type: 'document';
+      name: string;
+      content: string;
+      mimeType: string;
+      images?: unknown[];
+    }
+  | {
       type: 'file';
       mediaType: string;
       filename?: string;
       url: string;
+    }
+  | {
+      type: 'image';
+      image: string;
+      mimeType?: string;
+      name?: string;
     }
   | {
       type: 'source-url';
@@ -54,6 +78,40 @@ function isFilePart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'fi
   );
 }
 
+function isAttachmentPart(
+  part: AgentUIPart,
+): part is Extract<AgentUIPart, { type: 'attachment' }> {
+  return (
+    part.type === 'attachment' &&
+    typeof part.attachmentId === 'string' &&
+    (part.kind === 'image' || part.kind === 'document') &&
+    typeof part.name === 'string' &&
+    typeof part.mimeType === 'string' &&
+    (part.status === 'pending' || part.status === 'ready' || part.status === 'error') &&
+    typeof part.promptSummary === 'string'
+  );
+}
+
+function isDocumentPart(
+  part: AgentUIPart,
+): part is Extract<AgentUIPart, { type: 'document' }> {
+  return (
+    part.type === 'document' &&
+    typeof part.name === 'string' &&
+    typeof part.content === 'string' &&
+    typeof part.mimeType === 'string'
+  );
+}
+
+function isImagePart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'image' }> {
+  return (
+    part.type === 'image' &&
+    typeof part.image === 'string' &&
+    (part.mimeType === undefined || typeof part.mimeType === 'string') &&
+    (part.name === undefined || typeof part.name === 'string')
+  );
+}
+
 function isSourceUrlPart(
   part: AgentUIPart,
 ): part is Extract<AgentUIPart, { type: 'source-url' }> {
@@ -94,6 +152,45 @@ function toChatParts(parts: AgentUIPart[], fallbackText?: string): ChatMessagePa
           mediaType: part.mediaType,
           filename: part.filename,
           url: part.url,
+        },
+      ];
+    }
+
+    if (isAttachmentPart(part)) {
+      return [
+        {
+          type: 'attachment',
+          attachmentId: part.attachmentId as never,
+          kind: part.kind,
+          name: part.name,
+          mimeType: part.mimeType,
+          status: part.status,
+          previewUrl: part.previewUrl,
+          promptSummary: part.promptSummary,
+          errorMessage: part.errorMessage,
+        },
+      ];
+    }
+
+    if (isDocumentPart(part)) {
+      return [
+        {
+          type: 'document',
+          name: part.name,
+          content: part.content,
+          mimeType: part.mimeType,
+          images: Array.isArray(part.images) ? (part.images as never) : undefined,
+        },
+      ];
+    }
+
+    if (isImagePart(part)) {
+      return [
+        {
+          type: 'image',
+          image: part.image,
+          mimeType: part.mimeType,
+          name: part.name,
         },
       ];
     }

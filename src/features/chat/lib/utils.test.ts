@@ -68,12 +68,12 @@ describe('chat utils', () => {
     ]);
   });
 
-  it('keeps the pending submission model selected after navigating to a new thread', () => {
+  it('keeps the thread override model selected after navigating to a new thread', () => {
     expect(
       resolveRequestedModelId({
         threadId: 'thread-1',
         draftModelId: 'openai/gpt-4o-mini',
-        pendingSubmissionModelId: 'anthropic/claude-3.5-sonnet',
+        threadModelOverride: 'anthropic/claude-3.5-sonnet',
       }),
     ).toBe('anthropic/claude-3.5-sonnet');
   });

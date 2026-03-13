@@ -2,7 +2,7 @@ import { api } from '@convex/_generated/api';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type UIEvent } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
@@ -11,15 +11,14 @@ import { PersonaDialog } from '~/features/chat/components/PersonaDialog';
 import { inferChatAttachmentMimeType } from '~/features/chat/lib/attachments';
 import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants';
 import { mapAgentMessagesToChatMessages } from '~/features/chat/lib/agent-messages';
-import { toPersonaId, toRunId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
-import { clearOptimisticThread, setOptimisticThread } from '~/features/chat/lib/optimistic-threads';
 import {
-  clearPendingThreadSubmission,
-  setPendingThreadSubmission,
-  updatePendingThreadSubmission,
-  usePendingThreadSubmission,
-} from '~/features/chat/lib/pending-thread-submission';
-import { useChatStream } from '~/features/chat/hooks/useChatStream';
+  toPersonaId,
+  toRunId,
+  toStorageId,
+  toThreadId,
+} from '~/features/chat/lib/ids';
+import { optimisticallySendChatMessage } from '~/features/chat/lib/optimistic-send';
+import { clearOptimisticThread, setOptimisticThread } from '~/features/chat/lib/optimistic-threads';
 import type {
   ChatAttachment,
   ChatMessage,
@@ -28,10 +27,28 @@ import type {
 } from '~/features/chat/types';
 import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
-  type ChatModelId,
   DEFAULT_CHAT_MODEL_ID,
   getChatModelOption,
+  type ChatModelId,
 } from '~/lib/shared/chat-models';
+
+const OWNER_SESSION_STORAGE_KEY = 'chat-owner-session-id';
+
+function getOwnerSessionId() {
+  if (typeof window === 'undefined') {
+    return 'server-session';
+  }
+
+  const existing = window.sessionStorage.getItem(OWNER_SESSION_STORAGE_KEY);
+  if (existing) {
+    return existing;
+  }
+
+  const next =
+    window.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  window.sessionStorage.setItem(OWNER_SESSION_STORAGE_KEY, next);
+  return next;
+}
 
 export function ChatWorkspaceSkeleton() {
   return (
@@ -62,90 +79,33 @@ function ChatMessagesSkeleton() {
   );
 }
 
-function getPartComparisonKey(part: ChatMessagePart) {
-  switch (part.type) {
-    case 'text':
-      return `text:${part.text}`;
-    case 'attachment':
-      return `attachment:${part.attachmentId}:${part.kind}:${part.name}:${part.promptSummary}`;
-    case 'document':
-      return `document:${part.name}:${part.mimeType}:${part.content}`;
-    case 'file':
-      return `file:${part.mediaType}:${part.filename ?? ''}:${part.url}`;
-    case 'image':
-      return `image:${part.mimeType ?? ''}:${part.name ?? ''}:${part.image}`;
-    case 'source-url':
-      return `source-url:${part.sourceId}:${part.url}:${part.title ?? ''}`;
-    case 'source-document':
-      return `source-document:${part.sourceId}:${part.mediaType}:${part.title}:${part.filename ?? ''}`;
-    default:
-      return 'unknown';
-  }
-}
-
-function getTextFromMessageParts(parts: ChatMessagePart[]) {
-  return parts
-    .map((part) => {
-      if (part.type === 'text') {
-        return part.text;
-      }
-
-      return '';
-    })
-    .join('\n\n')
-    .trim();
-}
-
-function matchesPendingSubmission(
-  message: ChatMessage,
-  pendingSubmission: NonNullable<ReturnType<typeof usePendingThreadSubmission>>,
-) {
-  if (message.role !== 'user') {
-    return false;
-  }
-
-  if (
-    message.clientMessageId &&
-    message.clientMessageId === pendingSubmission.clientMessageId
-  ) {
-    return true;
-  }
-
-  if (message.createdAt < pendingSubmission.submittedAt - 5_000) {
-    return false;
-  }
-
-  if (message.parts.length !== pendingSubmission.parts.length) {
-    return false;
-  }
-
-  return message.parts.every((part, index) => {
-    const pendingPart = pendingSubmission.parts[index];
-    return pendingPart ? getPartComparisonKey(part) === getPartComparisonKey(pendingPart) : false;
-  });
-}
-
 export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const ownerSessionId = useMemo(() => getOwnerSessionId(), []);
   const [isSending, setIsSending] = useState(false);
   const [personaDialogOpen, setPersonaDialogOpen] = useState(false);
   const [draftPersonaId, setDraftPersonaId] = useState<string | undefined>(undefined);
   const [draftModelId, setDraftModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL_ID);
   const [useWebSearch, setUseWebSearch] = useState(false);
-  const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
-  const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
-  const [settledScrollBottomLimit, setSettledScrollBottomLimit] = useState<number | null>(null);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
   >({});
-  const messageViewportRef = useRef<HTMLDivElement | null>(null);
+  const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
+    null,
+  );
+  const [regeneratingTarget, setRegeneratingTarget] = useState<{
+    messageId: string;
+    hideMessage: boolean;
+    originalUpdatedAt: number;
+  } | null>(null);
+  const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
+  const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const scrollTargetMessageRef = useRef<HTMLDivElement | null>(null);
-  const scrollRequestThreadIdRef = useRef<string | null>(null);
+  const optimisticPartsByClientMessageIdRef = useRef<Record<string, ChatMessagePart[]>>({});
 
   const typedThreadId = threadId ? toThreadId(threadId) : undefined;
-  const { activeStream, startStream, stopStream, clearStream } = useChatStream(threadId);
   const thread = useQuery(api.agentChat.getThread, typedThreadId ? { threadId: typedThreadId } : 'skip');
   const messageFeed = useUIMessages(
     api.agentChat.listThreadMessages,
@@ -153,7 +113,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     {
       initialNumItems: 100,
       stream: true,
-      skipStreamIds: activeStream?.streamId ? [activeStream.streamId] : undefined,
     },
   );
   const activeRun = useQuery(
@@ -169,26 +128,30 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const createChatAttachmentFromUpload = useAction(api.agentChatActions.createChatAttachmentFromUpload);
   const stopRun = useAction(api.agentChatActions.stopRun);
   const generateChatAttachmentUploadUrl = useMutation(api.agentChat.generateChatAttachmentUploadUrl);
+  const precreateThread = useMutation(api.agentChat.precreateThread);
+  const sendMessage = useMutation(api.agentChat.sendMessage).withOptimisticUpdate((store, args) => {
+    if (!args.clientMessageId) {
+      return;
+    }
+
+    const parts = optimisticPartsByClientMessageIdRef.current[args.clientMessageId];
+    if (!parts) {
+      return;
+    }
+
+    optimisticallySendChatMessage(store, {
+      threadId: args.threadId,
+      text: args.text,
+      parts,
+      clientMessageId: args.clientMessageId,
+    });
+  });
+  const editUserMessage = useMutation(api.agentChat.editUserMessage);
+  const retryAssistantResponse = useMutation(api.agentChat.retryAssistantResponse);
   const createPersona = useMutation(api.agentChat.createPersona);
   const updatePersona = useMutation(api.agentChat.updatePersona);
   const deletePersona = useMutation(api.agentChat.deletePersona);
   const setThreadPersona = useMutation(api.agentChat.setThreadPersona);
-  const pendingSubmission = usePendingThreadSubmission(threadId);
-  const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
-    null,
-  );
-  const [regeneratingTarget, setRegeneratingTarget] = useState<{
-    messageId: string;
-    hideMessage: boolean;
-    originalUpdatedAt: number;
-  } | null>(null);
-  const [fallbackRetryRunIdByMessageId, setFallbackRetryRunIdByMessageId] = useState<
-    Record<string, string>
-  >({});
-  const [fallbackDraftTextByMessageId, setFallbackDraftTextByMessageId] = useState<
-    Record<string, string>
-  >({});
-  const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const personasList = personas ?? [];
   const availableModelOptions = modelOptions ?? [];
 
@@ -222,99 +185,26 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     draftModelId,
     threadModelOverride: threadId ? threadModelOverrides[threadId] : undefined,
     threadModelId: thread?.model,
-    pendingSubmissionModelId: pendingSubmission?.modelId,
     inferredThreadModelId,
   });
   const selectedModelOption = getChatModelOption(availableModelOptions, requestedModelId);
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
     : DEFAULT_CHAT_MODEL_ID;
-  const effectiveRetryRunIdByMessageId = useMemo(
-    () => ({
-      ...fallbackRetryRunIdByMessageId,
-      ...(retryableRunIds ?? {}),
-    }),
-    [fallbackRetryRunIdByMessageId, retryableRunIds],
-  );
   const shouldAutoFocusComposer = !threadId;
-  const pendingPreview =
-    pendingSubmission && threadId
-      ? {
-          submission: pendingSubmission,
-          showUserMessage: !currentMessages.some(
-            (message) => matchesPendingSubmission(message, pendingSubmission),
-          ),
-          showAssistantPlaceholder:
-            (!(activeStream?.text ?? '').trim() ||
-              pendingSubmission.stage === 'error') &&
-            !currentMessages.some(
-              (message) =>
-                message.role === 'assistant' && message.createdAt >= pendingSubmission.submittedAt,
-            ),
-        }
-      : undefined;
-  const showEmptyState =
-    currentMessages.length === 0 && !pendingSubmission && !activeStream;
+  const showEmptyState = currentMessages.length === 0 && !activeRun;
   const isThreadPending = Boolean(
     threadId &&
-      !pendingSubmission &&
       (thread === undefined || messageFeed.status === 'LoadingFirstPage'),
   );
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled = isThreadPending;
   const hasPendingAssistantResponse =
     currentMessages.some(
-      (message) => message.role === 'assistant' && message.status === 'streaming',
-    ) ||
-    activeRun?.status === 'streaming' ||
-    activeStream?.status === 'streaming';
-  const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
-  const pendingScrollTargetVisible = Boolean(
-    targetClientMessageId &&
-      (pendingPreview?.showUserMessage ||
-        currentMessages.some(
-          (message) =>
-            message.role === 'user' && message.clientMessageId === targetClientMessageId,
-        )),
-  );
-  const alignPendingMessageToTop = useCallback(() => {
-    const viewportNode = messageViewportRef.current;
-    const targetNode = scrollTargetMessageRef.current;
-
-    if (!viewportNode || !targetNode) {
-      return 0;
-    }
-
-    const topOffset = 0;
-    const viewportRect = viewportNode.getBoundingClientRect();
-    const targetRect = targetNode.getBoundingClientRect();
-    const nextTop = viewportNode.scrollTop + (targetRect.top - viewportRect.top) - topOffset;
-    const maxScrollTop = viewportNode.scrollHeight - viewportNode.clientHeight;
-    const requiredSpacer = Math.max(0, nextTop - maxScrollTop);
-
-    viewportNode.scrollTo({
-      top: Math.max(0, nextTop + requiredSpacer),
-      behavior: 'auto',
-    });
-
-    return requiredSpacer;
-  }, []);
-
-  const handleMessageViewportScroll = useCallback(
-    (event: UIEvent<HTMLDivElement>) => {
-      if (settledScrollBottomLimit === null) {
-        return;
-      }
-
-      const viewportNode = event.currentTarget;
-      if (viewportNode.scrollTop <= settledScrollBottomLimit) {
-        return;
-      }
-
-      viewportNode.scrollTop = settledScrollBottomLimit;
-    },
-    [settledScrollBottomLimit],
-  );
+      (message) =>
+        message.role === 'assistant' &&
+        (message.status === 'pending' || message.status === 'streaming'),
+    ) || activeRun?.status === 'streaming';
 
   useEffect(() => {
     setOptimisticEdits((current) => {
@@ -366,15 +256,11 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return;
     }
 
-    if (regeneratingTarget?.messageId === editingMessage.messageId) {
-      return;
-    }
-
     const nextText = optimisticEdits[editingMessage.messageId] ?? matchingMessage.parts[0].text;
     if (nextText !== editingMessage.text) {
       setEditingMessage({ messageId: editingMessage.messageId, text: nextText });
     }
-  }, [currentMessages, editingMessage, optimisticEdits, regeneratingTarget]);
+  }, [currentMessages, editingMessage, optimisticEdits]);
 
   useEffect(() => {
     if (!regeneratingTarget) {
@@ -384,311 +270,45 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     const targetIndex = currentMessages.findIndex(
       (message) => message._id === regeneratingTarget.messageId,
     );
-    const matchingMessage = targetIndex === -1 ? undefined : currentMessages[targetIndex];
-    if (!matchingMessage) {
+    if (targetIndex === -1) {
+      setRegeneratingTarget(null);
       return;
     }
 
     const replacementAssistant = currentMessages
       .slice(targetIndex + 1)
-      .find((message) => message.role === 'assistant');
+      .find((message) => message.role === 'assistant' && message.status !== 'streaming');
+    const matchingMessage = currentMessages[targetIndex];
+    const hasReplacement =
+      Boolean(replacementAssistant) ||
+      (matchingMessage.role === 'assistant' &&
+        matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
+        matchingMessage.status !== 'streaming');
 
-    if (matchingMessage.role !== 'assistant') {
-      if (!isSending && !hasPendingAssistantResponse) {
-        setRegeneratingTarget(null);
-      }
-      return;
-    }
-
-    const persistedText = getTextFromMessageParts(matchingMessage.parts).trim();
-    const streamedRetryText =
-      fallbackDraftTextByMessageId[regeneratingTarget.messageId]?.trim() ?? '';
-    const hasPersistedRetryResult =
-      matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
-      matchingMessage.status === 'complete' &&
-      Boolean(persistedText) &&
-      (!streamedRetryText || persistedText === streamedRetryText);
-    const hasPersistedRetryError =
-      matchingMessage.updatedAt !== regeneratingTarget.originalUpdatedAt &&
-      matchingMessage.status === 'error';
-    const hasReplacementAssistant =
-      Boolean(replacementAssistant) &&
-      replacementAssistant?.status !== 'pending' &&
-      replacementAssistant?.status !== 'streaming';
-
-    if (hasPersistedRetryResult || hasPersistedRetryError || hasReplacementAssistant) {
+    if (hasReplacement) {
       setRegeneratingTarget(null);
     }
-  }, [
-    currentMessages,
-    fallbackDraftTextByMessageId,
-    hasPendingAssistantResponse,
-    isSending,
-    regeneratingTarget,
-  ]);
-
-  useEffect(() => {
-    if (!activeStream) {
-      return;
-    }
-
-    if (
-      activeStream.runId.startsWith('pending-run:') ||
-      activeStream.assistantMessageId.startsWith('pending-assistant:')
-    ) {
-      return;
-    }
-
-    setFallbackRetryRunIdByMessageId((current) =>
-      current[activeStream.assistantMessageId] === activeStream.runId
-        ? current
-        : {
-            ...current,
-            [activeStream.assistantMessageId]: activeStream.runId,
-          },
-    );
-  }, [activeStream]);
-
-  useEffect(() => {
-    setFallbackRetryRunIdByMessageId((current) => {
-      if (Object.keys(current).length === 0) {
-        return current;
-      }
-
-      const visibleAssistantMessageIds = new Set(
-        currentMessages
-          .filter((message) => message.role === 'assistant')
-          .map((message) => message._id),
-      );
-      let next = current;
-
-      for (const [messageId, runId] of Object.entries(current)) {
-        const persistedRunId = retryableRunIds?.[messageId];
-        const isActiveStreamMessage = activeStream?.assistantMessageId === messageId;
-        const shouldClearFallback =
-          persistedRunId === runId ||
-          (!visibleAssistantMessageIds.has(messageId) && !isActiveStreamMessage);
-
-        if (!shouldClearFallback) {
-          continue;
-        }
-
-        if (next === current) {
-          next = { ...current };
-        }
-
-        delete next[messageId];
-      }
-
-      return next;
-    });
-  }, [activeStream, currentMessages, retryableRunIds]);
-
-  useEffect(() => {
-    const streamedText = activeStream?.text.trim();
-    if (!activeStream || !streamedText) {
-      return;
-    }
-
-    setFallbackDraftTextByMessageId((current) =>
-      current[activeStream.assistantMessageId] === streamedText
-        ? current
-        : {
-            ...current,
-            [activeStream.assistantMessageId]: streamedText,
-          },
-    );
-  }, [activeStream]);
-
-  useEffect(() => {
-    setFallbackDraftTextByMessageId((current) => {
-      if (Object.keys(current).length === 0) {
-        return current;
-      }
-
-      let next = current;
-
-      for (const message of currentMessages) {
-        if (message.role !== 'assistant') {
-          continue;
-        }
-
-        const persistedText = getTextFromMessageParts(message.parts).trim();
-        const fallbackText = current[message._id]?.trim() ?? '';
-        const isRetryTarget = regeneratingTarget?.messageId === message._id;
-        const hasRetriedVersion =
-          !isRetryTarget || message.updatedAt !== regeneratingTarget.originalUpdatedAt;
-        const shouldClearFallback =
-          (message.status === 'complete' &&
-            Boolean(persistedText) &&
-            Boolean(fallbackText) &&
-            persistedText === fallbackText &&
-            hasRetriedVersion) ||
-          (message.status === 'error' && hasRetriedVersion);
-
-        if (!shouldClearFallback) {
-          continue;
-        }
-
-        if (!(message._id in next)) {
-          continue;
-        }
-
-        if (next === current) {
-          next = { ...current };
-        }
-
-        delete next[message._id];
-      }
-
-      return next;
-    });
   }, [currentMessages, regeneratingTarget]);
 
-  useLayoutEffect(() => {
-    if (pendingSubmission || hasPendingAssistantResponse) {
-      setSettledScrollBottomLimit(null);
-      return;
-    }
-
-    if (!scrollAnchorClientMessageId) {
-      setSettledScrollBottomLimit(null);
-      return;
-    }
-
-    if (scrollSpacerHeight > 0) {
-      setSettledScrollBottomLimit(messageViewportRef.current?.scrollTop ?? null);
-    }
-
-    setScrollAnchorClientMessageId(undefined);
-  }, [
-    hasPendingAssistantResponse,
-    pendingSubmission,
-    scrollAnchorClientMessageId,
-    scrollSpacerHeight,
-  ]);
-
   useEffect(() => {
-    if (!threadId || !pendingSubmission || messageFeed.status === 'LoadingFirstPage') {
-      return;
-    }
-
-    const hasUserMessage = currentMessages.some(
-      (message) =>
-        message.role === 'user' && message.clientMessageId === pendingSubmission.clientMessageId,
-    );
-    const hasAssistantMessage = currentMessages.some(
-      (message) =>
-        message.role === 'assistant' &&
-        message.createdAt >= pendingSubmission.submittedAt &&
-        message.status !== 'streaming',
-    );
-
-    if (hasAssistantMessage) {
-      clearPendingThreadSubmission(threadId);
-      return;
-    }
-
-    if (hasUserMessage && pendingSubmission.stage === 'submitting') {
-      updatePendingThreadSubmission(threadId, (submission) =>
-        submission
-          ? {
-              ...submission,
-              stage: 'streaming',
-            }
-          : submission,
-      );
-    }
-  }, [currentMessages, messageFeed.status, pendingSubmission, threadId]);
-
-  useEffect(() => {
-    if (
-      !threadId ||
-      messageFeed.status === 'LoadingFirstPage' ||
-      scrollRequestThreadIdRef.current === threadId
-    ) {
-      return;
-    }
-
-    scrollRequestThreadIdRef.current = threadId;
-
-    const endNode = messageEndRef.current;
-    if (!endNode) {
+    if (!threadId || messageFeed.status === 'LoadingFirstPage') {
       return;
     }
 
     requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        endNode.scrollIntoView({ block: 'end' });
-      });
+      messageEndRef.current?.scrollIntoView({ block: 'end' });
     });
   }, [messageFeed.status, threadId]);
 
   useEffect(() => {
-    if (!threadId || !activeStream || activeStream.threadId !== threadId) {
+    if (!scrollAnchorClientMessageId || !scrollTargetMessageRef.current) {
       return;
     }
 
-    const matchingMessage = currentMessages.find(
-      (message) => message._id === activeStream.assistantMessageId,
-    );
-    if (!matchingMessage) {
-      return;
-    }
-
-    const finalizedMessageText = getTextFromMessageParts(matchingMessage.parts);
-    const streamedText = activeStream.text.trim();
-    const hasSynchronizedContent =
-      !streamedText || finalizedMessageText === streamedText;
-
-    if (
-      activeStream.status === 'complete' &&
-      matchingMessage.status === 'complete' &&
-      hasSynchronizedContent
-    ) {
-      clearStream(threadId);
-    }
-  }, [activeStream, clearStream, currentMessages, threadId]);
-
-  useLayoutEffect(() => {
-    if (!pendingScrollTargetVisible) {
-      if (settledScrollBottomLimit === null) {
-        setScrollSpacerHeight(0);
-      }
-      return;
-    }
-
-    let frameId = 0;
-    const requiredSpacer = alignPendingMessageToTop();
-    setScrollSpacerHeight((current) =>
-      pendingSubmission || hasPendingAssistantResponse
-        ? Math.abs(current - requiredSpacer) < 1
-          ? current
-          : requiredSpacer
-        : Math.max(current, requiredSpacer),
-    );
-
-    frameId = requestAnimationFrame(() => {
-      const stabilizedSpacer = alignPendingMessageToTop();
-      setScrollSpacerHeight((current) =>
-        pendingSubmission || hasPendingAssistantResponse
-          ? Math.abs(current - stabilizedSpacer) < 1
-            ? current
-            : stabilizedSpacer
-          : Math.max(current, stabilizedSpacer),
-      );
+    requestAnimationFrame(() => {
+      scrollTargetMessageRef.current?.scrollIntoView({ block: 'start' });
     });
-
-    return () => {
-      cancelAnimationFrame(frameId);
-    };
-  }, [
-    alignPendingMessageToTop,
-    hasPendingAssistantResponse,
-    pendingScrollTargetVisible,
-    pendingSubmission,
-    settledScrollBottomLimit,
-  ]);
+  }, [currentMessages, scrollAnchorClientMessageId]);
 
   if (threadId && thread === null) {
     return (
@@ -782,98 +402,66 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }) => {
     const clientMessageId =
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-    setScrollAnchorClientMessageId(clientMessageId);
-    setIsSending(true);
-    setScrollSpacerHeight(0);
-    setSettledScrollBottomLimit(null);
+    const personaId = thread
+      ? thread.personaId
+      : draftPersonaId
+        ? toPersonaId(draftPersonaId)
+        : undefined;
     let targetThreadId = threadId;
 
+    optimisticPartsByClientMessageIdRef.current[clientMessageId] = parts;
+    setScrollAnchorClientMessageId(clientMessageId);
+    setIsSending(true);
+
     try {
-      const personaId = thread
-        ? thread.personaId
-        : draftPersonaId
-          ? toPersonaId(draftPersonaId)
-          : undefined;
-
-      const submittedAt = Date.now();
-
       if (!threadId) {
-        const started = await startStream({
-          mode: 'send',
-          threadId: undefined,
-          personaId: personaId,
-          model: effectiveModelId,
-          useWebSearch,
+        const created = await precreateThread({
           text,
           attachmentIds,
-          clientMessageId,
+          personaId,
+          model: effectiveModelId,
         });
-        targetThreadId = started.threadId;
+        const createdThreadId = created.threadId;
+        targetThreadId = createdThreadId;
         setOptimisticThread({
-          _id: toThreadId(targetThreadId),
+          _id: toThreadId(createdThreadId),
           title: deriveThreadTitle(parts),
           pinned: false,
-          createdAt: submittedAt,
-          updatedAt: submittedAt,
-          lastMessageAt: submittedAt,
-        });
-        setPendingThreadSubmission(targetThreadId, {
-          clientMessageId,
-          modelId: effectiveModelId,
-          parts,
-          submittedAt,
-          stage: 'streaming',
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          lastMessageAt: Date.now(),
         });
         await navigate({
           to: '/app/chat/$threadId',
-          params: { threadId: targetThreadId },
+          params: { threadId: createdThreadId },
         });
-        clear();
-      } else {
-        // Existing thread: use the original send flow
-        const existingThreadId = threadId;
-        clear();
-        setPendingThreadSubmission(existingThreadId, {
-          clientMessageId,
-          modelId: effectiveModelId,
-          parts,
-          submittedAt,
-          stage: 'submitting',
-        });
+      }
 
-        await startStream({
-          mode: 'send',
-          threadId: existingThreadId,
-          personaId: personaId,
-          model: effectiveModelId,
-          useWebSearch,
-          text,
-          attachmentIds,
-          clientMessageId,
-        });
+      if (!targetThreadId) {
+        throw new Error('Failed to resolve chat thread.');
       }
+
+      clear();
+      await sendMessage({
+        threadId: toThreadId(targetThreadId),
+        text,
+        attachmentIds,
+        clientMessageId,
+        ownerSessionId,
+        personaId,
+        model: effectiveModelId,
+        useWebSearch,
+      });
     } catch (error) {
-      const failedThreadId = targetThreadId;
-      if (failedThreadId) {
-        updatePendingThreadSubmission(failedThreadId, (submission) =>
-          submission
-            ? {
-                ...submission,
-                stage: 'error',
-                errorMessage: error instanceof Error ? error.message : 'Failed to send message.',
-              }
-            : submission,
-        );
-      }
       showToast(error instanceof Error ? error.message : 'Failed to send message.', 'error');
     } finally {
+      delete optimisticPartsByClientMessageIdRef.current[clientMessageId];
       setIsSending(false);
     }
   };
 
   const handleStopActiveRun = async () => {
-    const stopped = stopStream(threadId);
-    if (stopped || !activeRun?._id) {
+    if (!activeRun?._id) {
       return;
     }
 
@@ -888,26 +476,17 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
 
     const targetMessage = currentMessages.find((message) => message._id === messageId);
-
     setIsSending(true);
-    setFallbackDraftTextByMessageId((current) => {
-      if (!(messageId in current)) {
-        return current;
-      }
-
-      const next = { ...current };
-      delete next[messageId];
-      return next;
-    });
     setRegeneratingTarget({
       messageId,
       hideMessage: true,
       originalUpdatedAt: targetMessage?.updatedAt ?? 0,
     });
+
     try {
-      await startStream({
-        mode: 'retry',
-        runId,
+      await retryAssistantResponse({
+        runId: toRunId(runId),
+        ownerSessionId,
         model: effectiveModelId,
         useWebSearch,
       });
@@ -962,23 +541,15 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               {isThreadPending ? (
                 <ChatMessagesSkeleton />
               ) : (
-                <div
-                  ref={messageViewportRef}
-                  onScroll={handleMessageViewportScroll}
-                  className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6"
-                >
+                <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
                   <div className="mx-auto w-full max-w-5xl">
                     <MessageList
                       messages={currentMessages}
-                      activeStream={activeStream}
-                      retryRunIdByMessageId={effectiveRetryRunIdByMessageId}
+                      retryRunIdByMessageId={retryableRunIds ?? {}}
                       onRetryMessage={(messageId, runId) => {
                         void handleRetryRun(messageId, runId);
                       }}
-                      pendingSubmission={pendingPreview}
                       regeneratingTarget={regeneratingTarget}
-                      fallbackDraftTextByMessageId={fallbackDraftTextByMessageId}
-                      isRegenerationPending={Boolean(regeneratingTarget)}
                       optimisticEdits={optimisticEdits}
                       onStartEditMessage={(message) => {
                         if (
@@ -994,10 +565,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                           text: optimisticEdits[message._id] ?? message.parts[0].text,
                         });
                       }}
-                      scrollTargetClientMessageId={targetClientMessageId}
+                      scrollTargetClientMessageId={scrollAnchorClientMessageId}
                       scrollTargetMessageRef={scrollTargetMessageRef}
                     />
-                    <div aria-hidden="true" style={{ height: scrollSpacerHeight }} />
                     <div ref={messageEndRef} aria-hidden="true" />
                   </div>
                 </div>
@@ -1043,10 +613,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                         });
                         setEditingMessage(null);
                         clear();
-                        await startStream({
-                          mode: 'edit',
+                        await editUserMessage({
                           messageId,
                           text,
+                          ownerSessionId,
                           model: effectiveModelId,
                           useWebSearch,
                         });
@@ -1086,8 +656,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         }}
         onDeletePersona={async (personaId) => {
           await deletePersona({ personaId: toPersonaId(personaId) });
-          if (!threadId && draftPersonaId === personaId) {
-            setDraftPersonaId(undefined);
+          if (effectivePersonaId === personaId) {
+            handleSelectPersona(undefined);
           }
         }}
       />

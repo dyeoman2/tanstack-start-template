@@ -10,13 +10,29 @@ import { ChatWorkspace } from '~/features/chat/components/ChatWorkspace';
 const navigateMock = vi.fn();
 const useQueryMock = vi.fn();
 const useUIMessagesMock = vi.fn();
-const useChatStreamMock = vi.fn();
 const messageListPropsMock = vi.fn();
 const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
-const startStreamMock = vi.fn();
 const uploadAttachmentMock = vi.fn();
+const createThreadMock = vi.fn();
+const sendMessageMock = vi.fn();
+const editUserMessageMock = vi.fn();
+const retryAssistantResponseMock = vi.fn();
 const defaultMutationMock = vi.fn();
+const useChatRateLimitMock = vi.fn();
+let threadQueryResult:
+  | {
+      _id: string;
+      title: string;
+      personaId: string | undefined;
+      model: string | undefined;
+    }
+  | null
+  | undefined;
+let activeRunQueryResult: unknown;
+let retryableRunIdsQueryResult: Record<string, string> | undefined;
+let personasQueryResult: unknown[];
+let modelOptionsQueryResult: unknown[];
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
@@ -33,8 +49,8 @@ vi.mock('convex/react', () => ({
   useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
 
-vi.mock('~/features/chat/hooks/useChatStream', () => ({
-  useChatStream: (...args: unknown[]) => useChatStreamMock(...args),
+vi.mock('~/features/chat/hooks/useChatRateLimit', () => ({
+  useChatRateLimit: (...args: unknown[]) => useChatRateLimitMock(...args),
 }));
 
 vi.mock('~/features/chat/components/MessageList', () => ({
@@ -44,64 +60,95 @@ vi.mock('~/features/chat/components/MessageList', () => ({
   },
 }));
 
+function createMutationMock(fn: ReturnType<typeof vi.fn>) {
+  const mutation = fn as typeof fn & {
+    withOptimisticUpdate: (updater: unknown) => typeof fn;
+  };
+  mutation.withOptimisticUpdate = vi.fn(() => fn);
+  return mutation;
+}
+
 describe('ChatWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     navigateMock.mockResolvedValue(undefined);
-    startStreamMock.mockResolvedValue({
-      threadId: 'thread-123',
-      assistantMessageId: 'assistant-123',
-    });
     uploadAttachmentMock.mockResolvedValue(null);
-    useQueryMock.mockReturnValue(undefined);
+    createThreadMock.mockResolvedValue({ threadId: 'thread-123' });
+    sendMessageMock.mockResolvedValue({ threadId: 'thread-123', runId: 'run-123' });
+    editUserMessageMock.mockResolvedValue({ threadId: 'thread-123', runId: 'run-456' });
+    retryAssistantResponseMock.mockResolvedValue({ threadId: 'thread-123', runId: 'run-789' });
+    defaultMutationMock.mockResolvedValue(undefined);
+    useChatRateLimitMock.mockReset();
+    useChatRateLimitMock.mockReturnValue({
+      frequency: { ok: true, retryAfter: 0 },
+      tokens: { ok: true, retryAfter: 0 },
+      estimatedInputTokens: 0,
+    });
     useActionMock.mockReset();
     useActionMock.mockReturnValue(uploadAttachmentMock);
-    defaultMutationMock.mockReset();
-    defaultMutationMock.mockResolvedValue(undefined);
     useMutationMock.mockReset();
-    useMutationMock.mockReturnValue(defaultMutationMock);
+    let mutationCallIndex = 0;
+    useMutationMock.mockImplementation(() => {
+      const slot = mutationCallIndex % 9;
+      mutationCallIndex += 1;
+
+      switch (slot) {
+        case 0:
+          return uploadAttachmentMock;
+        case 1:
+          return createThreadMock;
+        case 2:
+          return createMutationMock(sendMessageMock);
+        case 3:
+          return editUserMessageMock;
+        case 4:
+          return retryAssistantResponseMock;
+        default:
+          return defaultMutationMock;
+      }
+    });
     useUIMessagesMock.mockReturnValue({
       results: [],
       status: 'Loaded',
       loadMore: vi.fn(),
     });
-    useChatStreamMock.mockReturnValue({
-      ownerSessionId: 'session-1',
-      activeStream: null,
-      startStream: startStreamMock,
-      stopStream: vi.fn(),
-      clearStream: vi.fn(),
-    });
-    useQueryMock.mockImplementation((query: unknown) => {
-      if (query === api.agentChat.getThread) {
-        return {
-          _id: 'thread-123',
-          title: 'Thread',
-          personaId: undefined,
-          model: undefined,
-        };
+    threadQueryResult = {
+      _id: 'thread-123',
+      title: 'Thread',
+      personaId: undefined,
+      model: undefined,
+    };
+    activeRunQueryResult = null;
+    retryableRunIdsQueryResult = {};
+    personasQueryResult = [];
+    modelOptionsQueryResult = [];
+    let queryCallIndex = 0;
+    useQueryMock.mockImplementation((_query: unknown, args?: unknown) => {
+      const slot = queryCallIndex % 5;
+      queryCallIndex += 1;
+
+      if (args === 'skip') {
+        return undefined;
       }
 
-      if (query === api.agentChat.getActiveRun) {
-        return null;
+      switch (slot) {
+        case 0:
+          return threadQueryResult;
+        case 1:
+          return activeRunQueryResult;
+        case 2:
+          return retryableRunIdsQueryResult;
+        case 3:
+          return personasQueryResult;
+        case 4:
+          return modelOptionsQueryResult;
+        default:
+          return undefined;
       }
-
-      if (query === api.agentChat.getRetryableRunIds) {
-        return {};
-      }
-
-      if (query === api.agentChat.listPersonas) {
-        return [];
-      }
-
-      if (query === api.chatModels.listAvailableChatModels) {
-        return [];
-      }
-      return undefined;
     });
   });
 
-  it('starts the first stream without precreating a thread shell', async () => {
+  it('precreates a thread, navigates, and then sends the first message through the mutation path', async () => {
     const user = userEvent.setup();
 
     render(
@@ -116,15 +163,29 @@ describe('ChatWorkspace', () => {
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
-      expect(startStreamMock).toHaveBeenCalledWith({
-        mode: 'send',
-        threadId: undefined,
+      expect(createThreadMock).toHaveBeenCalledWith({
+        text: 'Start a new conversation',
+        attachmentIds: [],
         personaId: undefined,
         model: 'openai/gpt-4o-mini',
-        useWebSearch: false,
+      });
+    });
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: '/app/chat/$threadId',
+        params: { threadId: 'thread-123' },
+      });
+    });
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalledWith({
+        threadId: 'thread-123',
         text: 'Start a new conversation',
         attachmentIds: [],
         clientMessageId: expect.any(String),
+        ownerSessionId: expect.any(String),
+        personaId: undefined,
+        model: 'openai/gpt-4o-mini',
+        useWebSearch: false,
       });
     });
     expect(useUIMessagesMock).toHaveBeenCalledWith(
@@ -135,12 +196,6 @@ describe('ChatWorkspace', () => {
         stream: true,
       }),
     );
-
-    expect(navigateMock).toHaveBeenCalledTimes(1);
-    expect(navigateMock).toHaveBeenCalledWith({
-      to: '/app/chat/$threadId',
-      params: { threadId: 'thread-123' },
-    });
   });
 
   it('keeps the composer text until the new thread navigation resolves', async () => {
@@ -167,32 +222,14 @@ describe('ChatWorkspace', () => {
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
-      expect(startStreamMock).toHaveBeenCalled();
+      expect(createThreadMock).toHaveBeenCalled();
     });
 
     expect(messageInput).toHaveValue('Hold draft until route change');
     resolveNavigate?.();
   });
 
-  it('keeps the retry action stable after the stream completes until retryable runs catch up', async () => {
-    let retryableRunIds: Record<string, string> = {};
-    let activeStream: ReturnType<typeof useChatStreamMock>['activeStream'] = {
-      threadId: 'thread-123',
-      runId: 'run-123',
-      assistantMessageId: 'assistant-123',
-      ownerSessionId: 'session-1',
-      text: 'Finished answer',
-      status: 'complete',
-      startedAt: 1,
-      request: {
-        mode: 'send',
-        threadId: 'thread-123',
-        text: 'Prompt',
-        attachmentIds: [],
-        clientMessageId: 'client-123',
-      },
-    };
-
+  it('passes retryable run ids from the query through to MessageList', async () => {
     useUIMessagesMock.mockReturnValue({
       results: [
         {
@@ -209,74 +246,9 @@ describe('ChatWorkspace', () => {
       status: 'Loaded',
       loadMore: vi.fn(),
     });
-    useChatStreamMock.mockImplementation(() => ({
-      ownerSessionId: 'session-1',
-      activeStream,
-      startStream: startStreamMock,
-      stopStream: vi.fn(),
-      clearStream: vi.fn(),
-    }));
-    useQueryMock.mockImplementation((query: unknown) => {
-      if (query === api.agentChat.getThread) {
-        return {
-          _id: 'thread-123',
-          title: 'Thread',
-          personaId: undefined,
-          model: undefined,
-        };
-      }
+    retryableRunIdsQueryResult = { 'assistant-123': 'run-123' };
 
-      if (query === api.agentChat.getActiveRun) {
-        return null;
-      }
-
-      if (query === api.agentChat.getRetryableRunIds) {
-        return retryableRunIds;
-      }
-
-      if (query === api.agentChat.listPersonas) {
-        return [];
-      }
-
-      if (query === api.chatModels.listAvailableChatModels) {
-        return [];
-      }
-      return undefined;
-    });
-
-    const { rerender } = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
-
-    await waitFor(() => {
-      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
-        retryRunIdByMessageId: Record<string, string>;
-      };
-      expect(props.retryRunIdByMessageId).toEqual({ 'assistant-123': 'run-123' });
-    });
-
-    activeStream = null;
-    rerender(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
-
-    await waitFor(() => {
-      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
-        retryRunIdByMessageId: Record<string, string>;
-      };
-      expect(props.retryRunIdByMessageId).toEqual({ 'assistant-123': 'run-123' });
-    });
-
-    retryableRunIds = { 'assistant-123': 'run-123' };
-    rerender(
+    render(
       <ToastProvider>
         <TooltipProvider>
           <ChatWorkspace threadId="thread-123" />

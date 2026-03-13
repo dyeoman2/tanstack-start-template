@@ -1,4 +1,5 @@
 import {
+  serializeMessage,
   listUIMessages,
   syncStreams,
   updateThreadMetadata,
@@ -7,7 +8,7 @@ import {
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { components } from './_generated/api';
+import { components, internal } from './_generated/api';
 import {
   internalMutation,
   internalQuery,
@@ -18,10 +19,22 @@ import {
 } from './_generated/server';
 import { getCurrentUserOrThrow } from './auth/access';
 import {
+  abortRunWithReason,
+  buildUserMessage,
+  deleteMessagesAfterPrompt,
+  isTextOnlyUserMessage,
+  resolveThread,
+  type AgentMessageDoc,
+} from './agentChatActions';
+import {
+  type ChatAttachmentDoc,
   type ChatRunDoc,
   type ChatThreadDoc,
+  deriveThreadTitle,
   ensureThreadId,
+  resolveChatModelId,
 } from './lib/agentChat';
+import { baseChatAgent } from './lib/chatAgentRuntime';
 
 type PersonaDoc = Doc<'aiPersonas'>;
 const CHAT_MESSAGE_RATE_LIMIT_CONFIG = {
@@ -439,6 +452,18 @@ export const getLatestRunForThreadInternal = internalQuery({
   },
 });
 
+export const getLatestActiveRunForThreadInternal = internalQuery({
+  args: {
+    threadId: v.id('chatThreads'),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('chatRuns')
+      .withIndex('by_threadId_and_status', (q) => q.eq('threadId', args.threadId).eq('status', 'streaming'))
+      .first();
+  },
+});
+
 export const listStaleStreamingRunsInternal = internalQuery({
   args: {
     startedBefore: v.number(),
@@ -679,6 +704,507 @@ export const getChatRateLimit = query({
   },
 });
 
+async function reserveChatRateLimitOrThrow(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    userId: string;
+    textLength?: number;
+    hasAttachments?: boolean;
+  },
+) {
+  const baseKey = `${args.organizationId}:${args.userId}`;
+  const hasAttachments = args.hasAttachments ?? false;
+  const frequency = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    name: hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
+    key: baseKey,
+    config: hasAttachments
+      ? CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG
+      : CHAT_MESSAGE_RATE_LIMIT_CONFIG,
+  });
+
+  if (!frequency.ok) {
+    throw new ConvexError(
+      `Rate limit exceeded. Try again in ${Math.max(1, Math.ceil(frequency.retryAfter / 1000))} seconds.`,
+    );
+  }
+
+  const estimatedInputTokens = estimateChatInputTokens({
+    textLength: args.textLength,
+    hasAttachments,
+  });
+  const tokens = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    name: 'chatTokenBudget',
+    key: baseKey,
+    count: estimatedInputTokens,
+    reserve: true,
+    config: {
+      ...CHAT_TOKEN_RATE_LIMIT_CONFIG,
+      maxReserved: CHAT_TOKEN_RATE_LIMIT_CONFIG.capacity,
+    },
+  });
+
+  if (!tokens.ok) {
+    throw new ConvexError(
+      `Token budget exceeded. Try again in ${Math.max(1, Math.ceil(tokens.retryAfter / 1000))} seconds.`,
+    );
+  }
+}
+
+async function abortExistingRunForThread(
+  ctx: MutationCtx,
+  args: {
+    threadId: Id<'chatThreads'>;
+    reason: string;
+  },
+) {
+  const activeRun = (await ctx.runQuery(internal.agentChat.getLatestActiveRunForThreadInternal, {
+    threadId: args.threadId,
+  })) as Doc<'chatRuns'> | null;
+
+  if (!activeRun) {
+    return;
+  }
+
+  await abortRunWithReason(ctx, {
+    run: activeRun,
+    reason: args.reason,
+    status: 'aborted',
+  });
+}
+
+async function resolveRequestedModel(
+  ctx: MutationCtx,
+  args: {
+    requestedModelId?: string;
+    threadModelId?: string;
+    isSiteAdmin: boolean;
+  },
+) {
+  const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
+  return resolveChatModelId({
+    requestedModelId: args.requestedModelId,
+    threadModelId: args.threadModelId,
+    availableModels,
+    isSiteAdmin: args.isSiteAdmin,
+  });
+}
+
+async function createStreamingRun(
+  ctx: MutationCtx,
+  args: {
+    thread: ChatThreadDoc;
+    organizationId: string;
+    ownerSessionId: string;
+    promptMessageId: string;
+    model: string;
+    useWebSearch: boolean;
+  },
+): Promise<Id<'chatRuns'>> {
+  return (await ctx.runMutation(internal.agentChat.createRunInternal, {
+    threadId: args.thread._id,
+    agentThreadId: args.thread.agentThreadId,
+    organizationId: args.organizationId,
+    ownerSessionId: args.ownerSessionId,
+    status: 'streaming',
+    startedAt: Date.now(),
+    promptMessageId: args.promptMessageId,
+    provider: 'openrouter',
+    model: args.model,
+    useWebSearch: args.useWebSearch,
+  })) as Id<'chatRuns'>;
+}
+
+export const precreateThread = mutation({
+  args: {
+    text: v.string(),
+    attachmentIds: v.array(v.id('chatAttachments')),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'> }> => {
+    const { userId, organizationId } = await getCurrentChatContext(ctx);
+
+    if (!args.text.trim() && args.attachmentIds.length === 0) {
+      throw new ConvexError('Message content is required.');
+    }
+
+    const attachments = (await ctx.runQuery(internal.agentChat.getAttachmentsForSendInternal, {
+      attachmentIds: args.attachmentIds,
+      userId,
+      organizationId,
+    })) as ChatAttachmentDoc[];
+    const { thread } = await resolveThread(ctx, {
+      threadId: undefined,
+      organizationId,
+      userId,
+      text: args.text,
+      attachments,
+      personaId: args.personaId,
+      model: args.model,
+    });
+
+    return {
+      threadId: thread._id,
+    };
+  },
+});
+
+export const sendMessage = mutation({
+  args: {
+    threadId: v.id('chatThreads'),
+    text: v.string(),
+    attachmentIds: v.array(v.id('chatAttachments')),
+    clientMessageId: v.optional(v.string()),
+    ownerSessionId: v.string(),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+    useWebSearch: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
+    const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+
+    if (!args.text.trim() && args.attachmentIds.length === 0) {
+      throw new ConvexError('Message content is required.');
+    }
+
+    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    if (!thread) {
+      throw new ConvexError('Thread not found.');
+    }
+
+    await reserveChatRateLimitOrThrow(ctx, {
+      organizationId,
+      userId,
+      textLength: args.text.length,
+      hasAttachments: args.attachmentIds.length > 0,
+    });
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
+
+    if (args.personaId) {
+      const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
+      if (!persona) {
+        throw new ConvexError('Persona not found.');
+      }
+    }
+
+    const attachments = (await ctx.runQuery(internal.agentChat.getAttachmentsForSendInternal, {
+      attachmentIds: args.attachmentIds,
+      userId,
+      organizationId,
+    })) as ChatAttachmentDoc[];
+    const selectedModel = await resolveRequestedModel(ctx, {
+      requestedModelId: args.model,
+      threadModelId: thread.model,
+      isSiteAdmin,
+    });
+    const userMessage = await buildUserMessage(ctx, args.text, attachments);
+    const savedPrompt = await baseChatAgent.saveMessages(ctx, {
+      threadId: thread.agentThreadId,
+      userId,
+      messages: [userMessage.message],
+      metadata: [
+        {
+          ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
+          ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
+        },
+      ],
+      failPendingSteps: false,
+    });
+    const promptMessage = savedPrompt.messages[savedPrompt.messages.length - 1];
+
+    if (!promptMessage) {
+      throw new ConvexError('Failed to create prompt message.');
+    }
+
+    if (args.attachmentIds.length > 0) {
+      await ctx.runMutation(internal.agentChat.assignAttachmentsToMessageInternal, {
+        attachmentIds: args.attachmentIds,
+        threadId: thread._id,
+        agentMessageId: promptMessage._id,
+        updatedAt: Date.now(),
+      });
+    }
+
+    const resolvedPersonaId = args.personaId ?? thread.personaId;
+    const runId = await createStreamingRun(ctx, {
+      thread,
+      organizationId,
+      ownerSessionId: args.ownerSessionId,
+      promptMessageId: promptMessage._id,
+      model: selectedModel.modelId,
+      useWebSearch: args.useWebSearch ?? false,
+    });
+
+    await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+      threadId: thread._id,
+      patch: {
+        personaId: resolvedPersonaId ?? null,
+        model: selectedModel.modelId,
+        updatedAt: Date.now(),
+        lastMessageAt: Date.now(),
+      },
+    });
+    await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
+      runId,
+    });
+
+    return {
+      threadId: thread._id,
+      runId,
+    };
+  },
+});
+
+export const editUserMessage = mutation({
+  args: {
+    messageId: v.string(),
+    text: v.string(),
+    ownerSessionId: v.string(),
+    model: v.optional(v.string()),
+    useWebSearch: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
+    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const nextText = args.text.trim();
+
+    if (!nextText) {
+      throw new ConvexError('Message content is required.');
+    }
+
+    const [message] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+      messageIds: [args.messageId],
+    })) as Array<AgentMessageDoc | null>;
+
+    if (!isTextOnlyUserMessage(message)) {
+      throw new ConvexError('Only text-only user messages can be edited.');
+    }
+
+    if (!message) {
+      throw new ConvexError('Message not found.');
+    }
+
+    const thread = (await ctx.runQuery(internal.agentChat.getThreadByAgentThreadIdInternal, {
+      agentThreadId: message.threadId,
+      organizationId,
+    })) as ChatThreadDoc | null;
+    if (!thread) {
+      throw new ConvexError('Thread not found.');
+    }
+
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
+    await deleteMessagesAfterPrompt(ctx, message.threadId, message);
+
+    const serialized = await serializeMessage(ctx, components.agent, {
+      role: 'user',
+      content: nextText,
+    });
+    await ctx.runMutation(components.agent.messages.updateMessage, {
+      messageId: args.messageId,
+      patch: {
+        message: serialized.message,
+        fileIds: [],
+        status: 'success',
+      },
+    });
+
+    if (!thread.titleManuallyEdited) {
+      await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+        threadId: thread._id,
+        patch: {
+          title: deriveThreadTitle({
+            text: nextText,
+            attachments: [],
+          }),
+          updatedAt: Date.now(),
+          lastMessageAt: Date.now(),
+        },
+      });
+    }
+
+    const selectedModel = await resolveRequestedModel(ctx, {
+      requestedModelId: args.model,
+      threadModelId: thread.model,
+      isSiteAdmin,
+    });
+    const runId = await createStreamingRun(ctx, {
+      thread,
+      organizationId,
+      ownerSessionId: args.ownerSessionId,
+      promptMessageId: args.messageId,
+      model: selectedModel.modelId,
+      useWebSearch: args.useWebSearch ?? false,
+    });
+
+    await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+      threadId: thread._id,
+      patch: {
+        model: selectedModel.modelId,
+        updatedAt: Date.now(),
+        lastMessageAt: Date.now(),
+      },
+    });
+    await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
+      runId,
+    });
+
+    return {
+      threadId: thread._id,
+      runId,
+    };
+  },
+});
+
+export const retryAssistantResponse = mutation({
+  args: {
+    runId: v.id('chatRuns'),
+    ownerSessionId: v.string(),
+    model: v.optional(v.string()),
+    useWebSearch: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
+    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
+      runId: args.runId,
+      organizationId,
+    })) as Doc<'chatRuns'> | null;
+
+    if (!run?.promptMessageId) {
+      throw new ConvexError('Run not found.');
+    }
+
+    const thread = await getThreadForOrganization(ctx, run.threadId, organizationId);
+    if (!thread) {
+      throw new ConvexError('Thread not found.');
+    }
+
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
+
+    const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+      messageIds: [run.promptMessageId],
+    })) as Array<AgentMessageDoc | null>;
+
+    if (!promptMessage) {
+      throw new ConvexError('Prompt message not found.');
+    }
+
+    await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
+
+    const selectedModel = await resolveRequestedModel(ctx, {
+      requestedModelId: args.model,
+      threadModelId: thread.model ?? run.model,
+      isSiteAdmin,
+    });
+    const runId = await createStreamingRun(ctx, {
+      thread,
+      organizationId,
+      ownerSessionId: args.ownerSessionId,
+      promptMessageId: run.promptMessageId,
+      model: selectedModel.modelId,
+      useWebSearch: args.useWebSearch ?? run.useWebSearch,
+    });
+
+    await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+      threadId: thread._id,
+      patch: {
+        model: selectedModel.modelId,
+        updatedAt: Date.now(),
+        lastMessageAt: Date.now(),
+      },
+    });
+    await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
+      runId,
+    });
+
+    return {
+      threadId: thread._id,
+      runId,
+    };
+  },
+});
+
+export const continuePrompt = mutation({
+  args: {
+    threadId: v.id('chatThreads'),
+    promptMessageId: v.string(),
+    ownerSessionId: v.string(),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+    useWebSearch: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
+    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    if (!thread) {
+      throw new ConvexError('Thread not found.');
+    }
+
+    if (args.personaId) {
+      const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
+      if (!persona) {
+        throw new ConvexError('Persona not found.');
+      }
+    }
+
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
+
+    const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+      messageIds: [args.promptMessageId],
+    })) as Array<AgentMessageDoc | null>;
+
+    if (!promptMessage) {
+      throw new ConvexError('Prompt message not found.');
+    }
+
+    await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
+
+    const selectedModel = await resolveRequestedModel(ctx, {
+      requestedModelId: args.model,
+      threadModelId: thread.model,
+      isSiteAdmin,
+    });
+    const resolvedPersonaId = args.personaId ?? thread.personaId;
+    const runId = await createStreamingRun(ctx, {
+      thread,
+      organizationId,
+      ownerSessionId: args.ownerSessionId,
+      promptMessageId: args.promptMessageId,
+      model: selectedModel.modelId,
+      useWebSearch: args.useWebSearch ?? false,
+    });
+
+    await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+      threadId: thread._id,
+      patch: {
+        personaId: resolvedPersonaId ?? null,
+        model: selectedModel.modelId,
+        updatedAt: Date.now(),
+        lastMessageAt: Date.now(),
+      },
+    });
+    await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
+      runId,
+    });
+
+    return {
+      threadId: thread._id,
+      runId,
+    };
+  },
+});
+
 export const generateChatAttachmentUploadUrl = mutation({
   args: {},
   handler: async (ctx) => {
@@ -788,9 +1314,14 @@ export const deleteThread = mutation({
       .query('chatAttachments')
       .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
       .collect();
+    const usageEvents = await ctx.db
+      .query('chatUsageEvents')
+      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
+      .collect();
 
     await Promise.all(runs.map((run) => ctx.db.delete(run._id)));
     await Promise.all(attachments.map((attachment) => ctx.db.delete(attachment._id)));
+    await Promise.all(usageEvents.map((event) => ctx.db.delete(event._id)));
     await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
       threadId: thread.agentThreadId,
     });

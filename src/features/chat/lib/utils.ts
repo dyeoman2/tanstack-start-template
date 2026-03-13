@@ -57,14 +57,12 @@ export function resolveRequestedModelId({
   draftModelId,
   threadModelOverride,
   threadModelId,
-  pendingSubmissionModelId,
   inferredThreadModelId,
 }: {
   threadId?: string;
   draftModelId: ChatModelId;
   threadModelOverride?: ChatModelId;
   threadModelId?: ChatModelId;
-  pendingSubmissionModelId?: ChatModelId;
   inferredThreadModelId?: ChatModelId;
 }) {
   if (!threadId) {
@@ -74,7 +72,6 @@ export function resolveRequestedModelId({
   return (
     threadModelOverride ??
     threadModelId ??
-    pendingSubmissionModelId ??
     inferredThreadModelId ??
     DEFAULT_CHAT_MODEL_ID
   );

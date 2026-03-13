@@ -20,26 +20,12 @@ describe('MessageList', () => {
             order: 1,
             stepOrder: 0,
             role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
+            parts: [{ type: 'text', text: '# Streaming title' }],
             status: 'streaming',
             createdAt: 1,
             updatedAt: 1,
           },
         ]}
-        activeStream={{
-          threadId: 'thread-1',
-          runId: 'run-1',
-          assistantMessageId: 'assistant-1',
-          ownerSessionId: 'session-1',
-          text: '# Streaming title',
-          status: 'streaming',
-          startedAt: 1,
-          request: {
-            mode: 'send',
-            text: 'Prompt',
-            attachmentIds: [],
-          },
-        }}
       />,
     );
 
@@ -175,7 +161,6 @@ describe('MessageList', () => {
           messageId: 'assistant-1',
           hideMessage: true,
         }}
-        isRegenerationPending
       />,
     );
 
@@ -185,7 +170,7 @@ describe('MessageList', () => {
   });
 
   it('shows the regenerated assistant message immediately once retry is no longer pending', () => {
-    render(
+    const { rerender } = render(
       <MessageList
         messages={[
           {
@@ -204,16 +189,10 @@ describe('MessageList', () => {
           messageId: 'assistant-1',
           hideMessage: true,
         }}
-        isRegenerationPending={false}
       />,
     );
 
-    expect(screen.getByText('Updated answer')).toBeInTheDocument();
-    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
-  });
-
-  it('keeps showing the completed retry text until the saved assistant message has content', () => {
-    render(
+    rerender(
       <MessageList
         messages={[
           {
@@ -222,104 +201,16 @@ describe('MessageList', () => {
             order: 1,
             stepOrder: 0,
             role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
+            parts: [{ type: 'text', text: 'Updated answer' }],
             status: 'complete',
             createdAt: 1,
             updatedAt: 2,
           },
         ]}
-        fallbackDraftTextByMessageId={{ 'assistant-1': 'Updated answer' }}
-        regeneratingTarget={{
-          messageId: 'assistant-1',
-          hideMessage: true,
-        }}
-        isRegenerationPending={false}
       />,
     );
 
     expect(screen.getByText('Updated answer')).toBeInTheDocument();
     expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
-  });
-
-  it('shows the completed retry text even while regeneration is still marked pending', () => {
-    render(
-      <MessageList
-        messages={[
-          {
-            _id: 'assistant-1',
-            threadId: 'thread-1',
-            order: 1,
-            stepOrder: 0,
-            role: 'assistant',
-            parts: [{ type: 'text', text: '' }],
-            status: 'pending',
-            createdAt: 1,
-            updatedAt: 2,
-          },
-        ]}
-        fallbackDraftTextByMessageId={{ 'assistant-1': 'Updated answer' }}
-        regeneratingTarget={{
-          messageId: 'assistant-1',
-          hideMessage: true,
-        }}
-        isRegenerationPending
-      />,
-    );
-
-    expect(screen.getByText('Updated answer')).toBeInTheDocument();
-    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
-  });
-
-  it('shows a synthetic retry row when the retried assistant message is temporarily missing', () => {
-    render(
-      <MessageList
-        messages={[]}
-        fallbackDraftTextByMessageId={{ 'assistant-1': 'Updated answer' }}
-        regeneratingTarget={{
-          messageId: 'assistant-1',
-          hideMessage: true,
-        }}
-        isRegenerationPending
-      />,
-    );
-
-    expect(screen.getByText('Updated answer')).toBeInTheDocument();
-    expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
-  });
-
-  it('renders the pending user submission with a thinking placeholder before text arrives', () => {
-    render(
-      <MessageList
-        messages={[]}
-        activeStream={{
-          threadId: 'thread-1',
-          runId: 'run-1',
-          assistantMessageId: 'assistant-1',
-          ownerSessionId: 'session-1',
-          text: '',
-          status: 'streaming',
-          startedAt: 2,
-          request: {
-            mode: 'send',
-            threadId: 'thread-1',
-            text: 'Tell me a joke',
-            attachmentIds: [],
-          },
-        }}
-        pendingSubmission={{
-          submission: {
-            clientMessageId: 'client-1',
-            parts: [{ type: 'text', text: 'Tell me a joke' }],
-            submittedAt: 1,
-            stage: 'submitting',
-          },
-          showUserMessage: true,
-          showAssistantPlaceholder: true,
-        }}
-      />,
-    );
-
-    expect(screen.getByText('Tell me a joke')).toBeInTheDocument();
-    expect(screen.getByText('Thinking...')).toBeInTheDocument();
   });
 });

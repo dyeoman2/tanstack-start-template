@@ -14,7 +14,7 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
       .withIndex('by_createdAt', (q) => q.gte('createdAt', since))
       .collect();
 
-    const signupCount = recentLogs.filter((log) => log.action === 'SIGNUP').length;
+    const signupCount = recentLogs.filter((log) => log.eventType === 'user_signed_up').length;
 
     return signupCount;
   } catch (error) {

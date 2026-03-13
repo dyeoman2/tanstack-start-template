@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
 import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
@@ -191,7 +192,10 @@ export const listUsers = query({
     ]);
 
     const organizationsById = new Map(
-      organizations.map((organization) => [organization._id ?? organization.id ?? '', organization]),
+      organizations.map((organization) => [
+        organization._id ?? organization.id ?? '',
+        organization,
+      ]),
     );
     const membershipsByUserId = new Map<
       string,
@@ -661,17 +665,28 @@ export const cleanupDeletedUserData = mutation({
       await ctx.db.delete(appUser._id);
     }
 
-    const auditLogs = await ctx.db
+    const normalizedEmail = normalizeAuditIdentifier(args.email);
+    const auditLogsByUserId = await ctx.db
       .query('auditLogs')
-      .withIndex('by_userId', (q) => q.eq('userId', args.userId))
+      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
       .collect();
-    for (const log of auditLogs) {
+    const auditLogsByIdentifier = normalizedEmail
+      ? await ctx.db
+          .query('auditLogs')
+          .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', normalizedEmail))
+          .collect()
+      : [];
+    const auditLogsById = new Map(
+      [...auditLogsByUserId, ...auditLogsByIdentifier].map((log) => [log._id, log] as const),
+    );
+
+    for (const log of Array.from(auditLogsById.values())) {
       await ctx.db.delete(log._id);
     }
 
     return {
       success: true,
-      deletedAuditLogs: auditLogs.length,
+      deletedAuditLogs: auditLogsById.size,
       deletedAppUser: appUser ? 1 : 0,
       email: args.email,
     };

@@ -24,7 +24,6 @@ const onboardingStatusValidator = v.union(
   v.literal('bounced'),
   v.literal('completed'),
 );
-
 export default defineSchema({
   // Note: Better Auth manages its own tables via the betterAuth component
   // Those tables are in the 'betterAuth' namespace (user, session, account, verification, etc.)
@@ -94,17 +93,20 @@ export default defineSchema({
 
   auditLogs: defineTable({
     id: v.string(),
-    userId: v.string(), // References Better Auth user.id
-    action: v.string(),
-    entityType: v.string(),
-    entityId: v.optional(v.string()),
+    eventType: v.string(),
+    userId: v.optional(v.string()), // References Better Auth user.id when the event resolves to one
+    organizationId: v.optional(v.string()),
+    identifier: v.optional(v.string()),
     metadata: v.optional(v.string()),
     createdAt: v.number(),
     ipAddress: v.optional(v.string()),
     userAgent: v.optional(v.string()),
   })
-    .index('by_userId', ['userId'])
-    .index('by_createdAt', ['createdAt']),
+    .index('by_userId_and_createdAt', ['userId', 'createdAt'])
+    .index('by_createdAt', ['createdAt'])
+    .index('by_eventType_and_createdAt', ['eventType', 'createdAt'])
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_identifier_and_createdAt', ['identifier', 'createdAt']),
 
   dashboardStats: defineTable({
     key: v.string(),

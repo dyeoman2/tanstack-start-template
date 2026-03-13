@@ -1,5 +1,6 @@
 import { v } from 'convex/values';
 import { getE2ETestSecret, isE2ETestAuthEnabled } from '../src/lib/server/env.server';
+import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import { mutation } from './_generated/server';
@@ -106,10 +107,20 @@ export const resetPrincipalByEmail = mutation({
     ]);
 
     if (appUser) {
-      const logs = await ctx.db
+      const normalizedEmail = normalizeAuditIdentifier(args.email);
+      const logsByUserId = await ctx.db
         .query('auditLogs')
-        .withIndex('by_userId', (q) => q.eq('userId', userId))
+        .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
         .collect();
+      const logsByIdentifier = normalizedEmail
+        ? await ctx.db
+            .query('auditLogs')
+            .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', normalizedEmail))
+            .collect()
+        : [];
+      const logsById = new Map(
+        [...logsByUserId, ...logsByIdentifier].map((log) => [log._id, log] as const),
+      );
 
       await Promise.all([
         ctx.runMutation(components.betterAuth.adapter.deleteMany, {
@@ -128,7 +139,7 @@ export const resetPrincipalByEmail = mutation({
         }),
       ]);
 
-      for (const log of logs) {
+      for (const log of Array.from(logsById.values())) {
         await ctx.db.delete(log._id);
       }
 
