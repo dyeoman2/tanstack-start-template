@@ -63,7 +63,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
-  const [settledViewportSpacerHeight, setSettledViewportSpacerHeight] = useState(0);
   const [settledScrollBottomLimit, setSettledScrollBottomLimit] = useState<number | null>(null);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
@@ -157,7 +156,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const composerDisabled = isThreadPending;
   const hasPendingAssistantResponse = currentMessages.some(
     (message) => message.role === 'assistant' && message.status === 'pending',
-  );
+  ) || Boolean(activeDraft);
   const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
   const pendingScrollTargetVisible = Boolean(
     targetClientMessageId &&
@@ -269,13 +268,11 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return;
     }
 
-    if (scrollSpacerHeight <= 0) {
-      return;
+    if (scrollSpacerHeight > 0) {
+      setSettledScrollBottomLimit(messageViewportRef.current?.scrollTop ?? null);
     }
 
-    setSettledScrollBottomLimit(messageViewportRef.current?.scrollTop ?? null);
-    setSettledViewportSpacerHeight((current) => Math.max(current, scrollSpacerHeight));
-    setScrollSpacerHeight(0);
+    setScrollAnchorClientMessageId(undefined);
   }, [
     hasPendingAssistantResponse,
     pendingSubmission,
@@ -335,7 +332,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
   useLayoutEffect(() => {
     if (!pendingScrollTargetVisible) {
-      setScrollSpacerHeight(0);
+      if (settledScrollBottomLimit === null) {
+        setScrollSpacerHeight(0);
+      }
       return;
     }
 
@@ -368,6 +367,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     hasPendingAssistantResponse,
     pendingScrollTargetVisible,
     pendingSubmission,
+    settledScrollBottomLimit,
   ]);
 
   if (threadId && thread === null) {
@@ -464,7 +464,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setScrollAnchorClientMessageId(clientMessageId);
     setIsSending(true);
-    setSettledViewportSpacerHeight(0);
+    setScrollSpacerHeight(0);
     setSettledScrollBottomLimit(null);
 
     try {
@@ -600,13 +600,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   </div>
                 </div>
               )}
-              {settledViewportSpacerHeight > 0 ? (
-                <div
-                  aria-hidden="true"
-                  className="shrink-0"
-                  style={{ height: settledViewportSpacerHeight }}
-                />
-              ) : null}
               <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6 md:px-6">
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
