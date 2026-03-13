@@ -11,6 +11,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.1008.0
         version: 3.1008.0
+      '@convex-dev/agent':
+        specifier: ^0.3.2
+        version: 0.3.2(@ai-sdk/provider-utils@4.0.19(zod@4.3.6))(ai@6.0.116(zod@4.3.6))(convex-helpers@0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(zod@4.3.6))(convex@1.33.0(react@19.2.4))(react@19.2.4)
       '@convex-dev/better-auth':
         specifier: ^0.11.1
         version: 0.11.1(@standard-schema/spec@1.1.0)(better-auth@1.5.5(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(mongodb@7.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@4.1.0(@opentelemetry/api@1.9.0)(@types/node@24.12.0)(jsdom@28.1.0(@noble/hashes@2.0.1))(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))))(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.9.3)
@@ -30,8 +33,8 @@ importers:
         specifier: ^0.1.96
         version: 0.1.96
       '@netlify/vite-plugin-tanstack-start':
-        specifier: ^1.2.21
-        version: 1.2.21(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+        specifier: ^1.3.0
+        version: 1.3.0(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
       '@openrouter/ai-sdk-provider':
         specifier: ^2.3.0
         version: 2.3.0(ai@6.0.116(zod@4.3.6))(zod@4.3.6)
@@ -229,8 +232,8 @@ importers:
         specifier: ^15.5.13
         version: 15.5.13
       '@vitejs/plugin-react':
-        specifier: ^6.0.0
-        version: 6.0.0(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+        specifier: ^6.0.1
+        version: 6.0.1(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
       concurrently:
         specifier: ^9.2.1
         version: 9.2.1
@@ -691,6 +694,18 @@ packages:
   '@colors/colors@1.6.0':
     resolution: {integrity: sha512-Ir+AOibqzrIsL6ajt3Rz3LskB7OiMVHqltZmspbW/TJuTVuyOMirVqAkjfY6JISiLHgyNqicAC8AyHHGzNd/dA==}
     engines: {node: '>=0.1.90'}
+
+  '@convex-dev/agent@0.3.2':
+    resolution: {integrity: sha512-TMFReXejAIUE22OOn8PYvoOseAqwVOPm4WZU554GFk0lJ9kcNCGRJP/T1NTZfSBXrSaSUjETMFv2vEfXbG+4Qg==}
+    peerDependencies:
+      '@ai-sdk/provider-utils': ^3.0.7
+      ai: ^5.0.29
+      convex: ^1.24.8
+      convex-helpers: ^0.1.103
+      react: ^18.3.1 || ^19.0.0
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   '@convex-dev/better-auth@0.11.1':
     resolution: {integrity: sha512-12EdVfNMeKB8fnGMsW4NEEkOQ0LW672qnFoA0WDfM3qGBrbySaVZ8B5OZZk+8ZRbeyUwXtVg8oFvtLejEwPRpA==}
@@ -1683,8 +1698,8 @@ packages:
   '@napi-rs/wasm-runtime@1.1.1':
     resolution: {integrity: sha512-p64ah1M1ld8xjWv3qbvFwHiFVWrq1yFvV4f7w+mzaqiR4IlSgkqhcRdHwsGgomwzBH51sRY4NEowLxnaBjcW/A==}
 
-  '@netlify/ai@0.4.0':
-    resolution: {integrity: sha512-ZSDSR5RuV9qkW4L2uwKvwDdSGBqef2NyLGsrdoEx0Yj7ulSWjPSTVCrl+uY23lgaEsoCVj+dSbN9yC+uXw7dJw==}
+  '@netlify/ai@0.4.1':
+    resolution: {integrity: sha512-ETLtV/9taYrcGhszwO+BLFgFJJ2MCnJp8BwxfwV6Z/+z3SsaUG4ExC8x4xzNCdB2GPWxXrXkvR2LFNsPFSLcRA==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/api@14.0.18':
@@ -1715,8 +1730,8 @@ packages:
     resolution: {integrity: sha512-vj2fJQg51cXrnZJ1NJdXZ3LWYoDFCa2Q9o6Zu7sXa8d3AOn2mw5z1jkQPug1Dl80oBp3niBNPU6iWJQQR+sxAA==}
     engines: {node: ^18.14.0 || >=20}
 
-  '@netlify/dev@4.16.1':
-    resolution: {integrity: sha512-GhqwTNNx9eEy+RfzZlf4/isd0wCMf7ahGgNP/rqwNtSWsHl4bI5GBRMLbsOEMQ452Tu+YDGEaWbQyOAvHT2b6w==}
+  '@netlify/dev@4.16.2':
+    resolution: {integrity: sha512-/2SCRbxY5t9Fcz5WKNb9ESDPXwr54jeWlhiJlmTqZn0TSXZmSTd7XKWVzz9klbxp9kvpVCDwpazFoWc0ruV7/w==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/edge-bundler@14.9.15':
@@ -1726,16 +1741,16 @@ packages:
   '@netlify/edge-functions-bootstrap@2.16.0':
     resolution: {integrity: sha512-v8QQihSbBHj3JxtJsHoepXALpNumD9M7egHoc8z62FYl5it34dWczkaJoFFopEyhiBVKi4K/n0ZYpdzwfujd6g==}
 
-  '@netlify/edge-functions-dev@1.0.13':
-    resolution: {integrity: sha512-sWFmQ9XA20wiuH+MMfQQhmdfAV9uQU79EjZUqc5XNduWQQn1tv7ulgrJhrbPqOf/p5fB6kr4vwt4IxKW8f2tiA==}
+  '@netlify/edge-functions-dev@1.0.14':
+    resolution: {integrity: sha512-3ea2zS+/1EXSP9Z5GUsCtEyIF06OYnnPVUnQIrtZr1CeLXpphAj6GEcmIAu2mVrqmgmosODUoJhm7su2eJOkiA==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/edge-functions@3.0.4':
     resolution: {integrity: sha512-3wVqFjBrLxp/8lQ/hm/Z1yLgVnP5WTt3jwlQwm+YN8eHBYAzX0RMRVJkv9c/rQTUTGK92TAIptrwBtK7GRQRSQ==}
     engines: {node: '>=18.0.0'}
 
-  '@netlify/functions-dev@1.2.1':
-    resolution: {integrity: sha512-rRzG1aaySZL3P0s7mwa/cA/gojtzL7afKBzrZalIHpEeomedA525AvKtEsMgiBpsF9mo+m515qucu6f3BAtj+g==}
+  '@netlify/functions-dev@1.2.2':
+    resolution: {integrity: sha512-3MM2WhqU1rBRr+aDpJx6U/vnIlhKFsWiZHXeFrUhPYqXznRJY3rwpu01FiAdIXf5XCYV/xzA+LxQf63uxArv6Q==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/functions@5.1.3':
@@ -1746,8 +1761,8 @@ packages:
     resolution: {integrity: sha512-KNzC9RaKDwJVS44iTK6JxNA6LeXH0PUw0pLktWpmMVI/0FR98bvxaHcAisjHqbThAjxL9QjL1UZh0KzHCkxpNQ==}
     engines: {node: '>=18.14.0'}
 
-  '@netlify/headers@2.1.5':
-    resolution: {integrity: sha512-L6JTee04pv9fhJLPSkDGWdR6pDyN0OEhD2hJspm7S6h7dX6eFe3Gms4zJO285t9lN73QATVsLGPUjQB1X4gu7A==}
+  '@netlify/headers@2.1.6':
+    resolution: {integrity: sha512-1PduiKmq/9NY3zqq+Gc/iyO4HxlU1vGpoxAn3fF0J6UrQq8xVm8Nj2M3oy/dWBxHhK1nhj9ntJotQ4NfLdbNaw==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/images@1.3.5':
@@ -1766,8 +1781,8 @@ packages:
     resolution: {integrity: sha512-UYHRCO4HZI6WMpf8RheaCWnGafeJeFTsp/5yK887fyGqohDmFbc26NuFUvRl7J6sNu+di/1lLmRXP+yJ1X9TDA==}
     engines: {node: '>=18.14.0'}
 
-  '@netlify/redirects@3.1.7':
-    resolution: {integrity: sha512-sSIjBKVnNtaK/TE2Fr6fvqk+2aF8C0+lI76tYk3Yhg2QQoriENkaOWkQi94iEGW6Nqz96rN7euIzPHHJe2xL1g==}
+  '@netlify/redirects@3.1.8':
+    resolution: {integrity: sha512-HobcrSOTh4a960iPuvkLT3FTsRev06A+kcMBTPulAWv+dw2wqvb6okH5QPewcEjnMwYRQ+YXoQfSQsh5IMb/WA==}
     engines: {node: '>=20.6.1'}
 
   '@netlify/runtime-utils@2.3.0':
@@ -1778,8 +1793,8 @@ packages:
     resolution: {integrity: sha512-in3k+0E9888+c6Z0BXqvLCApiL7mEjuHbtJiV6w0ZTXNCnWl5iatpWOczg2h9dLtjB1sNjd4g3GaZztMVf7bdw==}
     engines: {node: '>=20.6.1'}
 
-  '@netlify/serverless-functions-api@2.10.0':
-    resolution: {integrity: sha512-+gkCy5mwa39zCEeYjKA4FE/qELGbwwFsA+HDnSRJZ7nz3z3+ToYUxrhJ0XmFRCe9gEipUVzqmUaVee/xlY5ipw==}
+  '@netlify/serverless-functions-api@2.11.1':
+    resolution: {integrity: sha512-kpYVPy0Y9TiLbjMnsmZo/DwgEOaUkayx65sZgdELPxJ9zZV/ke9XZAkfzbJVVuFa7cA2bmhB1jPZGjm6Mur6Kw==}
     engines: {node: '>=18.0.0'}
 
   '@netlify/static@3.1.5':
@@ -1790,8 +1805,8 @@ packages:
     resolution: {integrity: sha512-FMHxZCa2XWIQgjt1WP1dTZ909XIbD1tWQYfXpIBZMq2H3hzFZV2HIDNWGfoL8INQ/CjGBP6dGbsfC6AbvHmH+Q==}
     engines: {node: ^18.14.0 || >=20}
 
-  '@netlify/vite-plugin-tanstack-start@1.2.21':
-    resolution: {integrity: sha512-cfrGrYXnjGLPTPbrXOGQekLS6JEk+4gYd425rozAgdPqHMtNyaKa5CsS8OGHwpY79RqgfeC5uws9+vkSrA2Z3A==}
+  '@netlify/vite-plugin-tanstack-start@1.3.0':
+    resolution: {integrity: sha512-A1s+1j8Q5SFvkRBy/yVUYqiUYVFa3VcLOOwn69F3EGY6u/R1kEWtcRy5kAGR1fd0VsMrvg2O4FZRa3XE/GjAeQ==}
     engines: {node: ^22.12.0 || >=24.0.0}
     peerDependencies:
       '@tanstack/react-start': '>=1.132.0'
@@ -1803,14 +1818,14 @@ packages:
       '@tanstack/solid-start':
         optional: true
 
-  '@netlify/vite-plugin@2.10.11':
-    resolution: {integrity: sha512-omfSxaeMot7I1bH82VW2OmFne8uuL98s+65zdK+r06PEq0trRcasyk6aNEIAjCVL3y/FDRW03okwrxVVD1ll9A==}
+  '@netlify/vite-plugin@2.11.0':
+    resolution: {integrity: sha512-c8Cf2Wp03B5zYdfDZFWR7ArAIxw+mWJ+q+/9sofALL1oPXxDS+K68cmKprzvAPGXuMjfUAF9/IGZFNh2paUP4A==}
     engines: {node: ^20.6.1 || >=22}
     peerDependencies:
-      vite: ^5 || ^6 || ^7
+      vite: ^5 || ^6 || ^7 || ^8
 
-  '@netlify/zip-it-and-ship-it@14.4.2':
-    resolution: {integrity: sha512-VCexaoWBRkTebJaecXx3eFqKY4otjLL62GWWWfdE6i1xE5Ma/olSASYA4qsWitL5Cn/3BZfTP1DN92LTVehm2A==}
+  '@netlify/zip-it-and-ship-it@14.5.0':
+    resolution: {integrity: sha512-xw+I3T43Ulg9TTqvxzAGOJw4U0KS7RgQBnqvvheLSbb+P+6bu8KTbFK96aK2ouYl3ooM+oyeGWl9BGJxJnMy7g==}
     engines: {node: '>=18.14.0'}
     hasBin: true
 
@@ -4077,11 +4092,11 @@ packages:
     resolution: {integrity: sha512-Fw28YZpRnA3cAHHDlkt7xQHiJ0fcL+NRcIqsocZQUSmbzeIKRpwttJjik5ZGanXP+vlA4SbTg+AbA3bP363l+w==}
     engines: {node: '>= 20'}
 
-  '@vitejs/plugin-react@6.0.0':
-    resolution: {integrity: sha512-Bu5/eP6td3WI654+tRq+ryW1PbgA90y5pqMKpb3U7UpNk6VjI53P/ncPUd192U9dSrepLy7DHnq1XEMDz5H++w==}
+  '@vitejs/plugin-react@6.0.1':
+    resolution: {integrity: sha512-l9X/E3cDb+xY3SWzlG1MOGt2usfEHGMNIaegaUGFsLkb3RCn/k8/TOXBcab+OndDI4TBtktT8/9BwwW8Vi9KUQ==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
-      '@rolldown/plugin-babel': ^0.1.7
+      '@rolldown/plugin-babel': ^0.1.7 || ^0.2.0
       babel-plugin-react-compiler: ^1.0.0
       vite: ^8.0.0
     peerDependenciesMeta:
@@ -4338,8 +4353,8 @@ packages:
       bare-buffer:
         optional: true
 
-  bare-os@3.7.1:
-    resolution: {integrity: sha512-ebvMaS5BgZKmJlvuWh14dg9rbUI84QeV3WlWn6Ph6lFI8jJoh7ADtVTyD2c93euwbe+zgi0DVrl4YmqXeM9aIA==}
+  bare-os@3.8.0:
+    resolution: {integrity: sha512-Dc9/SlwfxkXIGYhvMQNUtKaXCaGkZYGcd1vuNUUADVqzu4/vQfvnMkYYOUnt2VwQ2AqKr/8qAVFRtwETljgeFg==}
     engines: {bare: '>=1.14.0'}
 
   bare-path@3.0.0:
@@ -6070,8 +6085,8 @@ packages:
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
 
-  lru-cache@11.2.6:
-    resolution: {integrity: sha512-ESL2CrkS/2wTPfuend7Zhkzo2u0daGJ/A2VucJOgQ/C48S/zB8MMeMHSGKYpXhIjbPxfuezITkaBH1wqv00DDQ==}
+  lru-cache@11.2.7:
+    resolution: {integrity: sha512-aY/R+aEsRelme17KGQa/1ZSIpLpNYYrhcrepKTZgE+W3WM16YMCaPwOHLHsmopZHELU0Ojin1lPVxKR0MihncA==}
     engines: {node: 20 || >=22}
 
   lru-cache@5.1.1:
@@ -7513,8 +7528,8 @@ packages:
   undici-types@7.16.0:
     resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
 
-  undici@7.24.0:
-    resolution: {integrity: sha512-jxytwMHhsbdpBXxLAcuu0fzlQeXCNnWdDyRHpvWsUl8vd98UwYdl9YTyn8/HcpcJPC3pwUveefsa3zTxyD/ERg==}
+  undici@7.24.1:
+    resolution: {integrity: sha512-5xoBibbmnjlcR3jdqtY2Lnx7WbrD/tHlT01TmvqZUFVc9Q1w4+j5hbnapTqbcXITMH1ovjq/W7BkqBilHiVAaA==}
     engines: {node: '>=20.18.1'}
 
   unicorn-magic@0.1.0:
@@ -8023,7 +8038,7 @@ snapshots:
       '@csstools/css-color-parser': 4.0.2(@csstools/css-parser-algorithms@4.0.0(@csstools/css-tokenizer@4.0.0))(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-parser-algorithms': 4.0.0(@csstools/css-tokenizer@4.0.0)
       '@csstools/css-tokenizer': 4.0.0
-      lru-cache: 11.2.6
+      lru-cache: 11.2.7
 
   '@asamuzakjp/dom-selector@6.8.1':
     dependencies:
@@ -8031,7 +8046,7 @@ snapshots:
       bidi-js: 1.0.3
       css-tree: 3.2.1
       is-potential-custom-element-name: 1.0.1
-      lru-cache: 11.2.6
+      lru-cache: 11.2.7
 
   '@asamuzakjp/nwsapi@2.3.9': {}
 
@@ -8753,6 +8768,16 @@ snapshots:
 
   '@colors/colors@1.6.0': {}
 
+  '@convex-dev/agent@0.3.2(@ai-sdk/provider-utils@4.0.19(zod@4.3.6))(ai@6.0.116(zod@4.3.6))(convex-helpers@0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(zod@4.3.6))(convex@1.33.0(react@19.2.4))(react@19.2.4)':
+    dependencies:
+      '@ai-sdk/provider-utils': 4.0.19(zod@4.3.6)
+      ai: 6.0.116(zod@4.3.6)
+      convex: 1.33.0(react@19.2.4)
+      convex-helpers: 0.1.114(@standard-schema/spec@1.1.0)(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.9.3)(zod@4.3.6)
+    optionalDependencies:
+      '@ungap/structured-clone': 1.3.0
+      react: 19.2.4
+
   '@convex-dev/better-auth@0.11.1(@standard-schema/spec@1.1.0)(better-auth@1.5.5(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(mongodb@7.1.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vitest@4.1.0(@opentelemetry/api@1.9.0)(@types/node@24.12.0)(jsdom@28.1.0(@noble/hashes@2.0.1))(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))))(convex@1.33.0(react@19.2.4))(react@19.2.4)(typescript@5.9.3)':
     dependencies:
       '@better-fetch/fetch': 1.1.21
@@ -9471,7 +9496,7 @@ snapshots:
       '@tybys/wasm-util': 0.10.1
     optional: true
 
-  '@netlify/ai@0.4.0':
+  '@netlify/ai@0.4.1':
     dependencies:
       '@netlify/api': 14.0.18
 
@@ -9547,18 +9572,18 @@ snapshots:
       uuid: 13.0.0
       write-file-atomic: 5.0.1
 
-  '@netlify/dev@4.16.1(rollup@4.59.0)':
+  '@netlify/dev@4.16.2(rollup@4.59.0)':
     dependencies:
-      '@netlify/ai': 0.4.0
+      '@netlify/ai': 0.4.1
       '@netlify/blobs': 10.7.2
       '@netlify/config': 24.4.3
       '@netlify/db-dev': 0.7.0
       '@netlify/dev-utils': 4.4.1
-      '@netlify/edge-functions-dev': 1.0.13
-      '@netlify/functions-dev': 1.2.1(rollup@4.59.0)
-      '@netlify/headers': 2.1.5
+      '@netlify/edge-functions-dev': 1.0.14
+      '@netlify/functions-dev': 1.2.2(rollup@4.59.0)
+      '@netlify/headers': 2.1.6
       '@netlify/images': 1.3.5(@netlify/blobs@10.7.2)
-      '@netlify/redirects': 3.1.7
+      '@netlify/redirects': 3.1.8
       '@netlify/runtime': 4.1.18
       '@netlify/static': 3.1.5
       ulid: 3.0.2
@@ -9615,7 +9640,7 @@ snapshots:
 
   '@netlify/edge-functions-bootstrap@2.16.0': {}
 
-  '@netlify/edge-functions-dev@1.0.13':
+  '@netlify/edge-functions-dev@1.0.14':
     dependencies:
       '@netlify/dev-utils': 4.4.1
       '@netlify/edge-bundler': 14.9.15
@@ -9628,12 +9653,12 @@ snapshots:
     dependencies:
       '@netlify/types': 2.4.0
 
-  '@netlify/functions-dev@1.2.1(rollup@4.59.0)':
+  '@netlify/functions-dev@1.2.2(rollup@4.59.0)':
     dependencies:
       '@netlify/blobs': 10.7.2
       '@netlify/dev-utils': 4.4.1
       '@netlify/functions': 5.1.3
-      '@netlify/zip-it-and-ship-it': 14.4.2(rollup@4.59.0)
+      '@netlify/zip-it-and-ship-it': 14.5.0(rollup@4.59.0)
       cron-parser: 4.9.0
       decache: 4.6.2
       extract-zip: 2.0.1
@@ -9664,7 +9689,7 @@ snapshots:
       map-obj: 5.0.2
       path-exists: 5.0.0
 
-  '@netlify/headers@2.1.5':
+  '@netlify/headers@2.1.6':
     dependencies:
       '@netlify/headers-parser': 9.0.3
 
@@ -9711,7 +9736,7 @@ snapshots:
       is-plain-obj: 4.1.0
       path-exists: 5.0.0
 
-  '@netlify/redirects@3.1.7':
+  '@netlify/redirects@3.1.8':
     dependencies:
       '@netlify/dev-utils': 4.4.1
       '@netlify/redirect-parser': 15.0.4
@@ -9730,7 +9755,9 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@netlify/serverless-functions-api@2.10.0': {}
+  '@netlify/serverless-functions-api@2.11.1':
+    dependencies:
+      '@netlify/types': 2.4.0
 
   '@netlify/static@3.1.5':
     dependencies:
@@ -9738,9 +9765,9 @@ snapshots:
 
   '@netlify/types@2.4.0': {}
 
-  '@netlify/vite-plugin-tanstack-start@1.2.21(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
+  '@netlify/vite-plugin-tanstack-start@1.3.0(@tanstack/react-start@1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)))(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
-      '@netlify/vite-plugin': 2.10.11(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
+      '@netlify/vite-plugin': 2.11.0(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
       vite: 8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
     optionalDependencies:
       '@tanstack/react-start': 1.166.8(react-dom@19.2.4(react@19.2.4))(react@19.2.4)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))
@@ -9771,9 +9798,9 @@ snapshots:
       - supports-color
       - uploadthing
 
-  '@netlify/vite-plugin@2.10.11(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
+  '@netlify/vite-plugin@2.11.0(rollup@4.59.0)(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
-      '@netlify/dev': 4.16.1(rollup@4.59.0)
+      '@netlify/dev': 4.16.2(rollup@4.59.0)
       '@netlify/dev-utils': 4.4.1
       dedent: 1.7.2
       vite: 8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
@@ -9804,12 +9831,12 @@ snapshots:
       - supports-color
       - uploadthing
 
-  '@netlify/zip-it-and-ship-it@14.4.2(rollup@4.59.0)':
+  '@netlify/zip-it-and-ship-it@14.5.0(rollup@4.59.0)':
     dependencies:
       '@babel/parser': 7.29.0
       '@babel/types': 7.29.0
       '@netlify/binary-info': 1.0.0
-      '@netlify/serverless-functions-api': 2.10.0
+      '@netlify/serverless-functions-api': 2.11.1
       '@vercel/nft': 0.29.4(rollup@4.59.0)
       archiver: 7.0.1
       common-path-prefix: 3.0.0
@@ -12298,7 +12325,7 @@ snapshots:
 
   '@vercel/oidc@3.1.0': {}
 
-  '@vitejs/plugin-react@6.0.0(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
+  '@vitejs/plugin-react@6.0.1(vite@8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2))':
     dependencies:
       '@rolldown/pluginutils': 1.0.0-rc.7
       vite: 8.0.0(@types/node@24.12.0)(esbuild@0.27.4)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.2)
@@ -12585,11 +12612,11 @@ snapshots:
       - bare-abort-controller
       - react-native-b4a
 
-  bare-os@3.7.1: {}
+  bare-os@3.8.0: {}
 
   bare-path@3.0.0:
     dependencies:
-      bare-os: 3.7.1
+      bare-os: 3.8.0
 
   bare-stream@2.8.1(bare-events@2.8.2):
     dependencies:
@@ -12770,7 +12797,7 @@ snapshots:
       parse5: 7.3.0
       parse5-htmlparser2-tree-adapter: 7.1.0
       parse5-parser-stream: 7.1.2
-      undici: 7.24.0
+      undici: 7.24.1
       whatwg-mimetype: 4.0.0
 
   chokidar@3.6.0:
@@ -12982,7 +13009,7 @@ snapshots:
       '@asamuzakjp/css-color': 5.0.1
       '@csstools/css-syntax-patches-for-csstree': 1.1.0
       css-tree: 3.2.1
-      lru-cache: 11.2.6
+      lru-cache: 11.2.7
 
   csstype@3.2.3: {}
 
@@ -14197,7 +14224,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.1
-      undici: 7.24.0
+      undici: 7.24.1
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -14456,7 +14483,7 @@ snapshots:
 
   lru-cache@10.4.3: {}
 
-  lru-cache@11.2.6: {}
+  lru-cache@11.2.7: {}
 
   lru-cache@5.1.1:
     dependencies:
@@ -15192,7 +15219,7 @@ snapshots:
 
   path-scurry@2.0.2:
     dependencies:
-      lru-cache: 11.2.6
+      lru-cache: 11.2.7
       minipass: 7.1.3
 
   path-type@6.0.0: {}
@@ -16246,7 +16273,7 @@ snapshots:
 
   undici-types@7.16.0: {}
 
-  undici@7.24.0: {}
+  undici@7.24.1: {}
 
   unicorn-magic@0.1.0: {}
 
@@ -16312,7 +16339,7 @@ snapshots:
       chokidar: 5.0.0
       destr: 2.0.5
       h3: 1.15.6
-      lru-cache: 11.2.6
+      lru-cache: 11.2.7
       node-fetch-native: 1.6.7
       ofetch: 1.5.1
       ufo: 1.6.3
