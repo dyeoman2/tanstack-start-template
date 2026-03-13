@@ -2,12 +2,14 @@ import { AdminCard } from './AdminCard';
 
 interface AdminCardsGridProps {
   onTruncateClick: () => void;
-  modelCatalogStatus: {
-    activeModelsCount: number;
-    publicModelsCount: number;
-    adminModelsCount: number;
-    lastRefreshedAt: number | null;
-  } | undefined;
+  modelCatalogStatus:
+    | {
+        activeModelsCount: number;
+        publicModelsCount: number;
+        adminModelsCount: number;
+        lastRefreshedAt: number | null;
+      }
+    | undefined;
 }
 
 function formatLastRefreshed(lastRefreshedAt: number | null) {
@@ -18,10 +20,7 @@ function formatLastRefreshed(lastRefreshedAt: number | null) {
   return `Last refreshed ${new Date(lastRefreshedAt).toLocaleString()}`;
 }
 
-export function AdminCardsGrid({
-  onTruncateClick,
-  modelCatalogStatus,
-}: AdminCardsGridProps) {
+export function AdminCardsGrid({ onTruncateClick, modelCatalogStatus }: AdminCardsGridProps) {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       <AdminCard
@@ -37,6 +36,12 @@ export function AdminCardsGrid({
       />
 
       <AdminCard
+        title="Email Previews"
+        description="Preview transactional auth and invitation emails in the admin UI"
+        href="/app/admin/emails"
+      />
+
+      <AdminCard
         title="AI Model Catalog"
         description={
           modelCatalogStatus
@@ -45,6 +50,7 @@ export function AdminCardsGrid({
               )}`
             : 'Manage curated OpenRouter models for the chat workspace'
         }
+        href="/app/admin/models"
       />
 
       <AdminCard

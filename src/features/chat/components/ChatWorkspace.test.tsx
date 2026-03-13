@@ -14,6 +14,7 @@ const messageListPropsMock = vi.fn();
 const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
 const uploadAttachmentMock = vi.fn();
+const stopRunMock = vi.fn();
 const createThreadMock = vi.fn();
 const sendMessageMock = vi.fn();
 const editUserMessageMock = vi.fn();
@@ -71,6 +72,7 @@ function createMutationMock(fn: ReturnType<typeof vi.fn>) {
 describe('ChatWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     uploadAttachmentMock.mockResolvedValue(null);
     createThreadMock.mockResolvedValue({ threadId: 'thread-123' });
@@ -80,12 +82,19 @@ describe('ChatWorkspace', () => {
     defaultMutationMock.mockResolvedValue(undefined);
     useChatRateLimitMock.mockReset();
     useChatRateLimitMock.mockReturnValue({
-      frequency: { ok: true, retryAfter: 0 },
-      tokens: { ok: true, retryAfter: 0 },
+      request: { ok: true, retryAfter: 0 },
+      estimatedTokens: { ok: true, retryAfter: 0 },
       estimatedInputTokens: 0,
     });
     useActionMock.mockReset();
-    useActionMock.mockReturnValue(uploadAttachmentMock);
+    stopRunMock.mockReset();
+    stopRunMock.mockResolvedValue(true);
+    let actionCallIndex = 0;
+    useActionMock.mockImplementation(() => {
+      const slot = actionCallIndex % 2;
+      actionCallIndex += 1;
+      return slot === 0 ? uploadAttachmentMock : stopRunMock;
+    });
     useMutationMock.mockReset();
     let mutationCallIndex = 0;
     useMutationMock.mockImplementation(() => {
@@ -262,5 +271,64 @@ describe('ChatWorkspace', () => {
       };
       expect(props.retryRunIdByMessageId).toEqual({ 'assistant-123': 'run-123' });
     });
+  });
+
+  it('shows the provider-capacity error when sendMessage fails fast', async () => {
+    const user = userEvent.setup();
+    sendMessageMock.mockRejectedValueOnce(
+      new Error('AI capacity is temporarily full. Try again in 30 seconds.'),
+    );
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Message'), 'Need a response');
+    await user.click(screen.getByLabelText('Send message'));
+
+    expect(
+      await screen.findByText('AI capacity is temporarily full. Try again in 30 seconds.'),
+    ).toBeInTheDocument();
+  });
+
+  it('stops the active thread by thread id and exits stop mode once the run clears', async () => {
+    const user = userEvent.setup();
+    activeRunQueryResult = {
+      _id: 'run-123',
+      status: 'streaming',
+    };
+
+    const view = render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.click(await screen.findByLabelText('Stop generating'));
+
+    expect(stopRunMock).toHaveBeenCalledWith({
+      threadId: 'thread-123',
+    });
+
+    activeRunQueryResult = null;
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByLabelText('Stop generating')).not.toBeInTheDocument();
+    });
+    expect(screen.getByLabelText('Send message')).toBeInTheDocument();
   });
 });

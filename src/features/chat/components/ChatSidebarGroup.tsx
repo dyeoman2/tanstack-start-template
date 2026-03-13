@@ -10,6 +10,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
 import {
   SidebarGroup,
   SidebarGroupContent,
@@ -28,7 +29,7 @@ import { sortThreads } from '~/features/chat/lib/utils';
 export function ChatSidebarGroup() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isMobile, setOpenMobile } = useSidebar();
+  const { isMobile, setOpenMobile, state } = useSidebar();
   const threads = useQuery(api.agentChat.listThreads, {});
   const optimisticThreads = useOptimisticThreads();
   const renameThread = useMutation(api.agentChat.renameThread);
@@ -84,6 +85,8 @@ export function ChatSidebarGroup() {
     }
   };
 
+  const showNewChatLabel = !isMobile && state === 'expanded';
+
   const confirmRename = async () => {
     if (!renamingThreadId || !renameValue.trim()) {
       setRenamingThreadId(null);
@@ -100,18 +103,27 @@ export function ChatSidebarGroup() {
     <SidebarGroup>
       <div className="flex items-center justify-between">
         <SidebarGroupLabel>Threads</SidebarGroupLabel>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={() =>
-            void navigate({
-              to: CHAT_ROUTE,
-              search: { new: true },
-            })
-          }
-        >
-          <Plus className="size-4" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              size={showNewChatLabel ? 'sm' : 'icon-sm'}
+              variant="ghost"
+              aria-label="New chat"
+              title="New chat"
+              className={showNewChatLabel ? 'gap-2 rounded-full px-3' : undefined}
+              onClick={() =>
+                void navigate({
+                  to: CHAT_ROUTE,
+                  search: { new: true },
+                })
+              }
+            >
+              <Plus className="size-4" />
+              {showNewChatLabel ? <span>New chat</span> : null}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>New chat</TooltipContent>
+        </Tooltip>
       </div>
       <SidebarGroupContent>
         <SidebarMenu>

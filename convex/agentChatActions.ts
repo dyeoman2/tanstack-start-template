@@ -228,6 +228,17 @@ async function appendSourcesToAssistantMessage(
   });
 }
 
+async function getAgentMessageById(
+  ctx: ChatDataCtx,
+  messageId: string,
+) {
+  const [message] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+    messageIds: [messageId],
+  })) as Array<AgentMessageDoc | null>;
+
+  return message;
+}
+
 async function getStreamPartialText(
   ctx: ChatDataCtx,
   run: Pick<Doc<'chatRuns'>, 'agentStreamId' | 'agentThreadId'>,
@@ -475,8 +486,32 @@ export async function abortRunWithReason(
   }
 
   const partialText = args.partialText?.trim() || (await getStreamPartialText(ctx, run));
+  const assistantMessage = run.activeAssistantMessageId
+    ? await getAgentMessageById(ctx, run.activeAssistantMessageId)
+    : null;
+
   if (run.activeAssistantMessageId) {
-    if (partialText) {
+    if (args.status === 'aborted') {
+      if (partialText) {
+        const serialized = await serializeMessage(ctx, components.agent, {
+          role: 'assistant',
+          content: partialText,
+        });
+        await ctx.runMutation(components.agent.messages.updateMessage, {
+          messageId: run.activeAssistantMessageId,
+          patch: {
+            message: serialized.message,
+            status: 'success',
+            model: run.model,
+            provider: run.provider,
+          },
+        });
+      } else if (assistantMessage?._id) {
+        await ctx.runMutation(components.agent.messages.deleteByIds, {
+          messageIds: [assistantMessage._id],
+        });
+      }
+    } else if (partialText) {
       const serialized = await serializeMessage(ctx, components.agent, {
         role: 'assistant',
         content: partialText,
@@ -509,6 +544,7 @@ export async function abortRunWithReason(
       status: args.status,
       endedAt: Date.now(),
       errorMessage: args.reason,
+      ...(args.status === 'aborted' && !partialText ? { activeAssistantMessageId: null } : {}),
     },
   });
   if (run.agentStreamId) {
@@ -526,6 +562,61 @@ export async function abortRunWithReason(
   });
 
   return true;
+}
+
+async function reconcileAbortedRunArtifacts(
+  ctx: ChatDataCtx,
+  args: {
+    run: Doc<'chatRuns'>;
+    assistantMessage: AgentMessageDoc | null;
+    streamId: string | null;
+  },
+) {
+  const partialText = (
+    await getStreamPartialText(ctx, {
+      agentThreadId: args.run.agentThreadId,
+      agentStreamId: args.streamId ?? undefined,
+    })
+  ).trim();
+
+  if (args.assistantMessage?._id) {
+    if (partialText) {
+      const serialized = await serializeMessage(ctx, components.agent, {
+        role: 'assistant',
+        content: partialText,
+      });
+      await ctx.runMutation(components.agent.messages.updateMessage, {
+        messageId: args.assistantMessage._id,
+        patch: {
+          message: serialized.message,
+          status: 'success',
+          model: args.run.model,
+          provider: args.run.provider,
+        },
+      });
+    } else {
+      await ctx.runMutation(components.agent.messages.deleteByIds, {
+        messageIds: [args.assistantMessage._id],
+      });
+    }
+  }
+
+  await ctx.runMutation(internal.agentChat.patchRunInternal, {
+    runId: args.run._id,
+    patch: {
+      agentStreamId: null,
+      ...(args.assistantMessage?._id && partialText
+        ? { activeAssistantMessageId: args.assistantMessage._id }
+        : { activeAssistantMessageId: null }),
+    },
+  });
+
+  if (args.streamId) {
+    await ctx.runMutation(components.agent.streams.abort, {
+      streamId: args.streamId,
+      reason: args.run.errorMessage ?? 'Stopped by user.',
+    });
+  }
 }
 
 export const createChatAttachmentFromUpload = action({
@@ -709,7 +800,24 @@ export const runChatGenerationInternal = internalAction({
         }) as Promise<Doc<'chatRuns'> | null>,
       ]);
 
-      if (!currentRun || currentRun.status !== 'streaming') {
+      if (!currentRun) {
+        return;
+      }
+
+      if (currentRun.status !== 'streaming') {
+        if (currentRun.status === 'aborted') {
+          await reconcileAbortedRunArtifacts(ctx, {
+            run: currentRun,
+            assistantMessage,
+            streamId,
+          });
+        } else if (streamId) {
+          await ctx.runMutation(components.agent.streams.abort, {
+            streamId,
+            reason: currentRun.errorMessage ?? 'Run already finalized.',
+          });
+        }
+
         return;
       }
 
@@ -784,17 +892,34 @@ export const runChatGenerationInternal = internalAction({
 
 export const stopRun = action({
   args: {
-    runId: v.id('chatRuns'),
+    threadId: v.optional(v.id('chatThreads')),
+    runId: v.optional(v.id('chatRuns')),
   },
   handler: async (ctx, args) => {
     const { organizationId } = await getAuthenticatedContext(ctx);
-    const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
-      runId: args.runId,
-      organizationId,
-    })) as Doc<'chatRuns'> | null;
+    let run: Doc<'chatRuns'> | null = null;
+
+    if (args.threadId) {
+      const thread = (await ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
+        threadId: args.threadId,
+        organizationId,
+      })) as ChatThreadDoc | null;
+      if (!thread) {
+        return true;
+      }
+
+      run = (await ctx.runQuery(internal.agentChat.getLatestActiveRunForThreadInternal, {
+        threadId: thread._id,
+      })) as Doc<'chatRuns'> | null;
+    } else if (args.runId) {
+      run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
+        runId: args.runId,
+        organizationId,
+      })) as Doc<'chatRuns'> | null;
+    }
 
     if (!run) {
-      return false;
+      return true;
     }
 
     return await abortRunWithReason(ctx, {

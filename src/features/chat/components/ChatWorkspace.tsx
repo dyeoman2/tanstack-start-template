@@ -94,6 +94,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [editingMessage, setEditingMessage] = useState<{ messageId: string; text: string } | null>(
     null,
   );
+  const [isStoppingRun, setIsStoppingRun] = useState(false);
   const [regeneratingTarget, setRegeneratingTarget] = useState<{
     messageId: string;
     hideMessage: boolean;
@@ -199,12 +200,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   );
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled = isThreadPending;
-  const hasPendingAssistantResponse =
-    currentMessages.some(
-      (message) =>
-        message.role === 'assistant' &&
-        (message.status === 'pending' || message.status === 'streaming'),
-    ) || activeRun?.status === 'streaming';
+  const canStopGeneration = activeRun?.status === 'streaming';
 
   useEffect(() => {
     setOptimisticEdits((current) => {
@@ -239,6 +235,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
     clearOptimisticThread(threadId);
   }, [thread?.title, threadId]);
+
+  useEffect(() => {
+    if (activeRun?.status === 'streaming') {
+      return;
+    }
+
+    setIsStoppingRun(false);
+  }, [activeRun?.status]);
 
   useEffect(() => {
     if (!editingMessage) {
@@ -461,13 +465,20 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   };
 
   const handleStopActiveRun = async () => {
-    if (!activeRun?._id) {
+    if (!typedThreadId || !canStopGeneration || isStoppingRun) {
       return;
     }
 
-    await stopRun({
-      runId: toRunId(activeRun._id),
-    });
+    setIsStoppingRun(true);
+
+    try {
+      await stopRun({
+        threadId: typedThreadId,
+      });
+    } catch (error) {
+      setIsStoppingRun(false);
+      showToast(error instanceof Error ? error.message : 'Failed to stop generation.', 'error');
+    }
   };
 
   const handleRetryRun = async (messageId: string, runId: string) => {
@@ -515,7 +526,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   autoFocus={shouldAutoFocusComposer}
                   disabled={composerDisabled}
                   isSending={isSending}
-                  canStop={hasPendingAssistantResponse}
+                  canStop={canStopGeneration}
+                  isStopping={isStoppingRun}
                   modelOptions={availableModelOptions}
                   modelsReady={modelOptions !== undefined}
                   personas={personasList}
@@ -578,7 +590,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     autoFocus={shouldAutoFocusComposer}
                     disabled={composerDisabled}
                     isSending={isSending}
-                    canStop={hasPendingAssistantResponse}
+                    canStop={canStopGeneration}
+                    isStopping={isStoppingRun}
                     modelOptions={availableModelOptions}
                     modelsReady={modelOptions !== undefined}
                     personas={personasList}

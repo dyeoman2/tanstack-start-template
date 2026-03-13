@@ -160,6 +160,11 @@ export default defineSchema({
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
     useWebSearch: v.boolean(),
+    actualInputTokens: v.optional(v.number()),
+    actualOutputTokens: v.optional(v.number()),
+    actualTotalTokens: v.optional(v.number()),
+    usageEventCount: v.optional(v.number()),
+    usageRecordedAt: v.optional(v.number()),
   })
     .index('by_threadId_and_startedAt', ['threadId', 'startedAt'])
     .index('by_threadId_and_status', ['threadId', 'status'])

@@ -7,8 +7,8 @@ import {
   Globe,
   Mic,
   MicOff,
-  Pencil,
   Paperclip,
+  Pencil,
   Square,
   X,
 } from 'lucide-react';
@@ -26,12 +26,12 @@ import {
 } from '~/components/ui/dropdown-menu';
 import { useToast } from '~/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip';
+import { useChatRateLimit } from '~/features/chat/hooks/useChatRateLimit';
 import {
   getChatAttachmentKind,
   inferChatAttachmentMimeType,
 } from '~/features/chat/lib/attachments';
 import { DEFAULT_CHAT_PERSONA, DEFAULT_CHAT_PERSONA_ID } from '~/features/chat/lib/constants';
-import { useChatRateLimit } from '~/features/chat/hooks/useChatRateLimit';
 import type {
   ChatAttachment,
   ChatAttachmentKind,
@@ -68,6 +68,7 @@ type ChatComposerProps = {
   autoFocus?: boolean;
   isSending: boolean;
   canStop?: boolean;
+  isStopping?: boolean;
   modelOptions?: ChatModelOption[];
   modelsReady?: boolean;
   personas?: ChatPersona[];
@@ -98,13 +99,12 @@ type ChatComposerProps = {
 };
 
 function createComposerAttachmentId() {
-  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return (
+    globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  );
 }
 
-function formatRateLimitMessage(args: {
-  retryAfter?: number;
-  fallback: string;
-}) {
+function formatRateLimitMessage(args: { retryAfter?: number; fallback: string }) {
   if (!args.retryAfter || args.retryAfter <= 0) {
     return args.fallback;
   }
@@ -112,9 +112,7 @@ function formatRateLimitMessage(args: {
   return `${args.fallback} Try again in ${Math.max(1, Math.ceil(args.retryAfter / 1000))} seconds.`;
 }
 
-function toComposerAttachmentPart(
-  attachment: ComposerAttachmentDraft,
-): ChatAttachmentPart | null {
+function toComposerAttachmentPart(attachment: ComposerAttachmentDraft): ChatAttachmentPart | null {
   if (!attachment.attachmentId || attachment.status !== 'ready') {
     return null;
   }
@@ -137,6 +135,7 @@ export function ChatComposer({
   autoFocus = false,
   isSending,
   canStop = false,
+  isStopping = false,
   modelOptions = [],
   modelsReady = true,
   personas = [],
@@ -205,16 +204,16 @@ export function ChatComposer({
       return null;
     }
 
-    if (!rateLimit.frequency.ok) {
+    if (!rateLimit.request.ok) {
       return formatRateLimitMessage({
-        retryAfter: rateLimit.frequency.retryAfter,
+        retryAfter: rateLimit.request.retryAfter,
         fallback: 'Rate limit exceeded.',
       });
     }
 
-    if (!rateLimit.tokens.ok) {
+    if (!rateLimit.estimatedTokens.ok) {
       return formatRateLimitMessage({
-        retryAfter: rateLimit.tokens.retryAfter,
+        retryAfter: rateLimit.estimatedTokens.retryAfter,
         fallback: 'Token budget exceeded.',
       });
     }
@@ -599,7 +598,7 @@ export function ChatComposer({
                   {attachment.status === 'uploading'
                     ? 'Uploading...'
                     : attachment.status === 'error'
-                      ? attachment.errorMessage ?? 'Upload failed'
+                      ? (attachment.errorMessage ?? 'Upload failed')
                       : attachment.kind === 'image'
                         ? 'Image attached'
                         : 'Document ready'}
@@ -637,6 +636,10 @@ export function ChatComposer({
             event.preventDefault();
 
             if (canStop) {
+              if (isStopping) {
+                return;
+              }
+
               onStop?.();
               return;
             }
@@ -883,14 +886,20 @@ export function ChatComposer({
             size="icon"
             onClick={() => {
               if (canStop) {
+                if (isStopping) {
+                  return;
+                }
+
                 onStop?.();
                 return;
               }
 
               void handleSubmit();
             }}
-            disabled={canStop ? disabled : sendButtonDisabled || isSending}
-            className={canStop ? 'rounded-full bg-black text-white hover:bg-black/90' : 'rounded-full'}
+            disabled={canStop ? disabled || isStopping : sendButtonDisabled || isSending}
+            className={
+              canStop ? 'rounded-full bg-black text-white hover:bg-black/90' : 'rounded-full'
+            }
             aria-label={canStop ? 'Stop generating' : editingMessage ? 'Save edit' : 'Send message'}
           >
             {canStop ? <Square className="size-4 fill-current" /> : <ArrowUp className="size-4" />}

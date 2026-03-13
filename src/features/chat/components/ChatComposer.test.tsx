@@ -14,8 +14,8 @@ vi.mock('~/features/chat/hooks/useChatRateLimit', () => ({
 describe('ChatComposer', () => {
   beforeEach(() => {
     useChatRateLimitMock.mockReturnValue({
-      frequency: { ok: true, retryAfter: 0 },
-      tokens: { ok: true, retryAfter: 0 },
+      request: { ok: true, retryAfter: 0 },
+      estimatedTokens: { ok: true, retryAfter: 0 },
       estimatedInputTokens: 1,
     });
   });
@@ -193,8 +193,8 @@ describe('ChatComposer', () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
 
     useChatRateLimitMock.mockReturnValue({
-      frequency: { ok: false, retryAfter: 5_000 },
-      tokens: { ok: true, retryAfter: 0 },
+      request: { ok: false, retryAfter: 5_000 },
+      estimatedTokens: { ok: true, retryAfter: 0 },
       estimatedInputTokens: 120,
     });
 

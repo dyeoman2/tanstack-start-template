@@ -3,6 +3,11 @@
 import { Agent, createTool, getThreadMetadata } from '@convex-dev/agent';
 import { generateText, stepCountIs } from 'ai';
 import { z } from 'zod';
+import {
+  getOpenRouterWebSearchPlugin,
+  getOpenRouterWebSearchProviderOptions,
+} from '../../src/features/chat/lib/openrouter-web-search';
+import { type ChatModelId, DEFAULT_CHAT_MODEL_ID } from '../../src/lib/shared/chat-models';
 import { components, internal } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx } from '../_generated/server';
@@ -12,11 +17,7 @@ import {
   getChatLanguageModel,
   getOpenRouterProvider,
 } from './agentChat';
-import { DEFAULT_CHAT_MODEL_ID, type ChatModelId } from '../../src/lib/shared/chat-models';
-import {
-  getOpenRouterWebSearchPlugin,
-  getOpenRouterWebSearchProviderOptions,
-} from '../../src/features/chat/lib/openrouter-web-search';
+import { normalizeChatUsage } from './chatRateLimits';
 
 export const CHAT_AGENT_CONTEXT_OPTIONS = {
   recentMessages: 24,
@@ -61,6 +62,7 @@ export async function recordChatUsageEvent(
     agentName?: string;
   },
 ) {
+  const usage = normalizeChatUsage(args);
   const thread = (await ctx.runQuery(internal.agentChat.getThreadByAgentThreadIdAnyInternal, {
     agentThreadId: args.agentThreadId,
   })) as Doc<'chatThreads'> | null;
@@ -82,9 +84,9 @@ export async function recordChatUsageEvent(
     agentName: args.agentName,
     model: args.model,
     provider: args.provider,
-    totalTokens: args.totalTokens,
-    inputTokens: args.inputTokens,
-    outputTokens: args.outputTokens,
+    totalTokens: usage.totalTokens,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
     providerMetadataJson: serializeProviderMetadata(args.providerMetadata),
     createdAt: Date.now(),
   });
@@ -102,10 +104,7 @@ function dedupeSearchSources(sources: ChatWebSearchSource[]) {
   });
 }
 
-export function buildChatSystemPrompt(args: {
-  instructions?: string;
-  useWebSearch?: boolean;
-}) {
+export function buildChatSystemPrompt(args: { instructions?: string; useWebSearch?: boolean }) {
   const promptSections = [
     args.instructions?.trim() || DEFAULT_PERSONA_PROMPT,
     args.useWebSearch
@@ -116,10 +115,7 @@ export function buildChatSystemPrompt(args: {
   return promptSections.join('\n\n');
 }
 
-export async function runChatWebSearch(args: {
-  query: string;
-  modelId?: ChatModelId;
-}) {
+export async function runChatWebSearch(args: { query: string; modelId?: ChatModelId }) {
   const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
   const searchModel = getOpenRouterProvider().chat(modelId, {
     plugins: [getOpenRouterWebSearchPlugin(modelId)],
@@ -138,12 +134,13 @@ export async function runChatWebSearch(args: {
     },
   });
   const results = dedupeSearchSources(
-    (searchResult.sources as Array<{ id?: string; url?: string; title?: string }> | undefined)
-      ?.flatMap((source) =>
-        typeof source?.id === 'string' && typeof source?.url === 'string'
-          ? [{ id: source.id, url: source.url, title: source.title }]
-          : [],
-      ) ?? [],
+    (
+      searchResult.sources as Array<{ id?: string; url?: string; title?: string }> | undefined
+    )?.flatMap((source) =>
+      typeof source?.id === 'string' && typeof source?.url === 'string'
+        ? [{ id: source.id, url: source.url, title: source.title }]
+        : [],
+    ) ?? [],
   );
 
   return {

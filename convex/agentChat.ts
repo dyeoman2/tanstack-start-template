@@ -1,31 +1,31 @@
 import {
-  serializeMessage,
   listUIMessages,
+  serializeMessage,
   syncStreams,
   updateThreadMetadata,
   vStreamArgs,
 } from '@convex-dev/agent';
 import { paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
-import type { Doc, Id } from './_generated/dataModel';
 import { components, internal } from './_generated/api';
+import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
-  mutation,
-  query,
   type MutationCtx,
+  mutation,
   type QueryCtx,
+  query,
 } from './_generated/server';
-import { getCurrentUserOrThrow } from './auth/access';
 import {
+  type AgentMessageDoc,
   abortRunWithReason,
   buildUserMessage,
   deleteMessagesAfterPrompt,
   isTextOnlyUserMessage,
   resolveThread,
-  type AgentMessageDoc,
 } from './agentChatActions';
+import { getCurrentUserOrThrow } from './auth/access';
 import {
   type ChatAttachmentDoc,
   type ChatRunDoc,
@@ -35,31 +35,14 @@ import {
   resolveChatModelId,
 } from './lib/agentChat';
 import { baseChatAgent } from './lib/chatAgentRuntime';
+import {
+  buildChatUsageAggregatePatch,
+  chargeActualChatTokens,
+  enforceChatPreflightOrThrow,
+  getAdvisoryChatRateLimit,
+} from './lib/chatRateLimits';
 
 type PersonaDoc = Doc<'aiPersonas'>;
-const CHAT_MESSAGE_RATE_LIMIT_CONFIG = {
-  kind: 'token bucket' as const,
-  rate: 12,
-  period: 60 * 1000,
-  capacity: 12,
-};
-const CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG = {
-  kind: 'token bucket' as const,
-  rate: 4,
-  period: 60 * 1000,
-  capacity: 4,
-};
-const CHAT_TOKEN_RATE_LIMIT_CONFIG = {
-  kind: 'token bucket' as const,
-  rate: 40_000,
-  period: 60 * 1000,
-  capacity: 40_000,
-};
-
-function estimateChatInputTokens(args: { textLength?: number; hasAttachments?: boolean }) {
-  const textTokens = Math.max(1, Math.ceil((args.textLength ?? 0) / 4));
-  return textTokens + (args.hasAttachments ? 1_200 : 0);
-}
 
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUserOrThrow(ctx);
@@ -102,15 +85,40 @@ async function getPersonaForOrganization(
   return persona;
 }
 
-async function getChatRunsForThread(
-  ctx: QueryCtx | MutationCtx,
-  threadId: Id<'chatThreads'>,
-) {
+async function getChatRunsForThread(ctx: QueryCtx | MutationCtx, threadId: Id<'chatThreads'>) {
   return await ctx.db
     .query('chatRuns')
     .withIndex('by_threadId_and_startedAt', (q) => q.eq('threadId', threadId))
     .order('desc')
     .take(20);
+}
+
+function getMessageTextLength(message: AgentMessageDoc | null) {
+  if (!message) {
+    return 0;
+  }
+
+  const content = message.message?.content;
+  if (typeof content === 'string') {
+    return content.trim().length;
+  }
+
+  if (!Array.isArray(content)) {
+    return 0;
+  }
+
+  return content.reduce((total, part) => {
+    if (
+      !part ||
+      typeof part !== 'object' ||
+      part.type !== 'text' ||
+      typeof part.text !== 'string'
+    ) {
+      return total;
+    }
+
+    return total + part.text.trim().length;
+  }, 0);
 }
 
 export const getCurrentChatContextInternal = internalQuery({
@@ -369,6 +377,11 @@ export const createRunInternal = internalMutation({
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
     useWebSearch: v.boolean(),
+    actualInputTokens: v.optional(v.number()),
+    actualOutputTokens: v.optional(v.number()),
+    actualTotalTokens: v.optional(v.number()),
+    usageEventCount: v.optional(v.number()),
+    usageRecordedAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatRuns', args);
@@ -394,6 +407,11 @@ export const patchRunInternal = internalMutation({
       activeAssistantMessageId: v.optional(v.union(v.string(), v.null())),
       provider: v.optional(v.union(v.string(), v.null())),
       model: v.optional(v.union(v.string(), v.null())),
+      actualInputTokens: v.optional(v.union(v.number(), v.null())),
+      actualOutputTokens: v.optional(v.union(v.number(), v.null())),
+      actualTotalTokens: v.optional(v.union(v.number(), v.null())),
+      usageEventCount: v.optional(v.union(v.number(), v.null())),
+      usageRecordedAt: v.optional(v.union(v.number(), v.null())),
     }),
   },
   handler: async (ctx, args) => {
@@ -411,6 +429,21 @@ export const patchRunInternal = internalMutation({
     }
     if (args.patch.provider !== undefined) patch.provider = args.patch.provider ?? undefined;
     if (args.patch.model !== undefined) patch.model = args.patch.model ?? undefined;
+    if (args.patch.actualInputTokens !== undefined) {
+      patch.actualInputTokens = args.patch.actualInputTokens ?? undefined;
+    }
+    if (args.patch.actualOutputTokens !== undefined) {
+      patch.actualOutputTokens = args.patch.actualOutputTokens ?? undefined;
+    }
+    if (args.patch.actualTotalTokens !== undefined) {
+      patch.actualTotalTokens = args.patch.actualTotalTokens ?? undefined;
+    }
+    if (args.patch.usageEventCount !== undefined) {
+      patch.usageEventCount = args.patch.usageEventCount ?? undefined;
+    }
+    if (args.patch.usageRecordedAt !== undefined) {
+      patch.usageRecordedAt = args.patch.usageRecordedAt ?? undefined;
+    }
     await ctx.db.patch(args.runId, patch);
   },
 });
@@ -459,7 +492,9 @@ export const getLatestActiveRunForThreadInternal = internalQuery({
   handler: async (ctx, args) => {
     return await ctx.db
       .query('chatRuns')
-      .withIndex('by_threadId_and_status', (q) => q.eq('threadId', args.threadId).eq('status', 'streaming'))
+      .withIndex('by_threadId_and_status', (q) =>
+        q.eq('threadId', args.threadId).eq('status', 'streaming'),
+      )
       .first();
   },
 });
@@ -518,7 +553,30 @@ export const recordUsageEventInternal = internalMutation({
     createdAt: v.number(),
   },
   handler: async (ctx, args) => {
-    return await ctx.db.insert('chatUsageEvents', args);
+    const recordedAt = args.createdAt;
+    const usage = await chargeActualChatTokens(ctx, {
+      organizationId: args.organizationId,
+      userId: args.userId,
+      totalTokens: args.totalTokens,
+      inputTokens: args.inputTokens,
+      outputTokens: args.outputTokens,
+    });
+
+    const usageEventId = await ctx.db.insert('chatUsageEvents', {
+      ...args,
+      totalTokens: usage.totalTokens,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+    });
+
+    if (args.runId) {
+      const run = await ctx.db.get(args.runId);
+      if (run) {
+        await ctx.db.patch(args.runId, buildChatUsageAggregatePatch(run, usage, recordedAt));
+      }
+    }
+
+    return usageEventId;
   },
 });
 
@@ -674,82 +732,14 @@ export const getChatRateLimit = query({
   },
   handler: async (ctx, args) => {
     const { userId, organizationId } = await getCurrentChatContext(ctx);
-    const baseKey = `${organizationId}:${userId}`;
-    const hasAttachments = args.hasAttachments ?? false;
-    const frequency = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
-      name: hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
-      key: baseKey,
-      config: hasAttachments
-        ? CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG
-        : CHAT_MESSAGE_RATE_LIMIT_CONFIG,
-    });
-    const tokenEstimate = estimateChatInputTokens({
+    return await getAdvisoryChatRateLimit(ctx, {
+      organizationId,
+      userId,
       textLength: args.textLength,
-      hasAttachments,
+      hasAttachments: args.hasAttachments,
     });
-    const tokens = await ctx.runQuery(components.rateLimiter.lib.checkRateLimit, {
-      name: 'chatTokenBudget',
-      key: baseKey,
-      count: tokenEstimate,
-      config: {
-        ...CHAT_TOKEN_RATE_LIMIT_CONFIG,
-        maxReserved: CHAT_TOKEN_RATE_LIMIT_CONFIG.capacity,
-      },
-    });
-    return {
-      frequency,
-      tokens,
-      estimatedInputTokens: tokenEstimate,
-    };
   },
 });
-
-async function reserveChatRateLimitOrThrow(
-  ctx: MutationCtx,
-  args: {
-    organizationId: string;
-    userId: string;
-    textLength?: number;
-    hasAttachments?: boolean;
-  },
-) {
-  const baseKey = `${args.organizationId}:${args.userId}`;
-  const hasAttachments = args.hasAttachments ?? false;
-  const frequency = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
-    name: hasAttachments ? 'chatStreamWithAttachments' : 'chatStream',
-    key: baseKey,
-    config: hasAttachments
-      ? CHAT_ATTACHMENT_MESSAGE_RATE_LIMIT_CONFIG
-      : CHAT_MESSAGE_RATE_LIMIT_CONFIG,
-  });
-
-  if (!frequency.ok) {
-    throw new ConvexError(
-      `Rate limit exceeded. Try again in ${Math.max(1, Math.ceil(frequency.retryAfter / 1000))} seconds.`,
-    );
-  }
-
-  const estimatedInputTokens = estimateChatInputTokens({
-    textLength: args.textLength,
-    hasAttachments,
-  });
-  const tokens = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
-    name: 'chatTokenBudget',
-    key: baseKey,
-    count: estimatedInputTokens,
-    reserve: true,
-    config: {
-      ...CHAT_TOKEN_RATE_LIMIT_CONFIG,
-      maxReserved: CHAT_TOKEN_RATE_LIMIT_CONFIG.capacity,
-    },
-  });
-
-  if (!tokens.ok) {
-    throw new ConvexError(
-      `Token budget exceeded. Try again in ${Math.max(1, Math.ceil(tokens.retryAfter / 1000))} seconds.`,
-    );
-  }
-}
 
 async function abortExistingRunForThread(
   ctx: MutationCtx,
@@ -812,6 +802,10 @@ async function createStreamingRun(
     provider: 'openrouter',
     model: args.model,
     useWebSearch: args.useWebSearch,
+    actualInputTokens: 0,
+    actualOutputTokens: 0,
+    actualTotalTokens: 0,
+    usageEventCount: 0,
   })) as Id<'chatRuns'>;
 }
 
@@ -873,7 +867,7 @@ export const sendMessage = mutation({
       throw new ConvexError('Thread not found.');
     }
 
-    await reserveChatRateLimitOrThrow(ctx, {
+    await enforceChatPreflightOrThrow(ctx, {
       organizationId,
       userId,
       textLength: args.text.length,
@@ -995,6 +989,12 @@ export const editUserMessage = mutation({
       throw new ConvexError('Thread not found.');
     }
 
+    await enforceChatPreflightOrThrow(ctx, {
+      organizationId,
+      userId: thread.userId,
+      textLength: nextText.length,
+      hasAttachments: false,
+    });
     await abortExistingRunForThread(ctx, {
       threadId: thread._id,
       reason: 'Superseded by a newer request.',
@@ -1084,11 +1084,6 @@ export const retryAssistantResponse = mutation({
       throw new ConvexError('Thread not found.');
     }
 
-    await abortExistingRunForThread(ctx, {
-      threadId: thread._id,
-      reason: 'Superseded by a newer request.',
-    });
-
     const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
       messageIds: [run.promptMessageId],
     })) as Array<AgentMessageDoc | null>;
@@ -1096,6 +1091,17 @@ export const retryAssistantResponse = mutation({
     if (!promptMessage) {
       throw new ConvexError('Prompt message not found.');
     }
+
+    await enforceChatPreflightOrThrow(ctx, {
+      organizationId,
+      userId: thread.userId,
+      textLength: getMessageTextLength(promptMessage),
+      hasAttachments: (promptMessage.fileIds?.length ?? 0) > 0,
+    });
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
 
     await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
 
@@ -1155,11 +1161,6 @@ export const continuePrompt = mutation({
       }
     }
 
-    await abortExistingRunForThread(ctx, {
-      threadId: thread._id,
-      reason: 'Superseded by a newer request.',
-    });
-
     const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
       messageIds: [args.promptMessageId],
     })) as Array<AgentMessageDoc | null>;
@@ -1167,6 +1168,17 @@ export const continuePrompt = mutation({
     if (!promptMessage) {
       throw new ConvexError('Prompt message not found.');
     }
+
+    await enforceChatPreflightOrThrow(ctx, {
+      organizationId,
+      userId: thread.userId,
+      textLength: getMessageTextLength(promptMessage),
+      hasAttachments: (promptMessage.fileIds?.length ?? 0) > 0,
+    });
+    await abortExistingRunForThread(ctx, {
+      threadId: thread._id,
+      reason: 'Superseded by a newer request.',
+    });
 
     await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
 
