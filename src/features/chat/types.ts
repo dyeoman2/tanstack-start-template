@@ -137,6 +137,14 @@ export type ChatStreamRequest =
       clientMessageId?: string;
     }
   | {
+      mode: 'continue';
+      threadId: string;
+      promptMessageId: string;
+      personaId?: string;
+      model?: string;
+      useWebSearch?: boolean;
+    }
+  | {
       mode: 'edit';
       messageId: string;
       text: string;

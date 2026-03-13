@@ -426,6 +426,22 @@ export const getRunByIdAnyInternal = internalQuery({
   },
 });
 
+export const listStaleStreamingRunsInternal = internalQuery({
+  args: {
+    startedBefore: v.number(),
+    limit: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('chatRuns')
+      .withIndex('by_status_and_startedAt', (q) =>
+        q.eq('status', 'streaming').lt('startedAt', args.startedBefore),
+      )
+      .order('asc')
+      .take(args.limit);
+  },
+});
+
 export const getThreadByIdInternal = internalQuery({
   args: {
     threadId: v.id('chatThreads'),

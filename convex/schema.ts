@@ -161,6 +161,7 @@ export default defineSchema({
   })
     .index('by_threadId_and_startedAt', ['threadId', 'startedAt'])
     .index('by_threadId_and_status', ['threadId', 'status'])
+    .index('by_status_and_startedAt', ['status', 'startedAt'])
     .index('by_ownerSessionId_and_startedAt', ['ownerSessionId', 'startedAt']),
 
   chatUsageEvents: defineTable({

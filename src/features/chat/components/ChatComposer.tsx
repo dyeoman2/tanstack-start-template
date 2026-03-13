@@ -31,6 +31,7 @@ import {
   inferChatAttachmentMimeType,
 } from '~/features/chat/lib/attachments';
 import { DEFAULT_CHAT_PERSONA, DEFAULT_CHAT_PERSONA_ID } from '~/features/chat/lib/constants';
+import { useChatRateLimit } from '~/features/chat/hooks/useChatRateLimit';
 import type {
   ChatAttachment,
   ChatAttachmentKind,
@@ -98,6 +99,17 @@ type ChatComposerProps = {
 
 function createComposerAttachmentId() {
   return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function formatRateLimitMessage(args: {
+  retryAfter?: number;
+  fallback: string;
+}) {
+  if (!args.retryAfter || args.retryAfter <= 0) {
+    return args.fallback;
+  }
+
+  return `${args.fallback} Try again in ${Math.max(1, Math.ceil(args.retryAfter / 1000))} seconds.`;
 }
 
 function toComposerAttachmentPart(
@@ -169,6 +181,10 @@ export function ChatComposer({
     () => attachmentDrafts.some((attachment) => attachment.status !== 'ready'),
     [attachmentDrafts],
   );
+  const rateLimit = useChatRateLimit({
+    textLength: message.trim().length,
+    hasAttachments: !isEditing && attachmentDrafts.length > 0,
+  });
   const readyAttachmentParts = useMemo(
     () =>
       attachmentDrafts
@@ -184,7 +200,32 @@ export function ChatComposer({
     () => message.trim() || attachmentDrafts.length > 0,
     [attachmentDrafts.length, message],
   );
-  const sendButtonDisabled = disabled || isSavingEdit || (!canStop && (!hasContent || hasBlockingAttachmentState));
+  const proactiveRateLimitMessage = useMemo(() => {
+    if (!rateLimit || canStop) {
+      return null;
+    }
+
+    if (!rateLimit.frequency.ok) {
+      return formatRateLimitMessage({
+        retryAfter: rateLimit.frequency.retryAfter,
+        fallback: 'Rate limit exceeded.',
+      });
+    }
+
+    if (!rateLimit.tokens.ok) {
+      return formatRateLimitMessage({
+        retryAfter: rateLimit.tokens.retryAfter,
+        fallback: 'Token budget exceeded.',
+      });
+    }
+
+    return null;
+  }, [canStop, rateLimit]);
+  const sendButtonDisabled =
+    disabled ||
+    isSavingEdit ||
+    Boolean(proactiveRateLimitMessage) ||
+    (!canStop && (!hasContent || hasBlockingAttachmentState));
   const isDefaultPersona = !selectedPersonaId;
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
@@ -457,6 +498,11 @@ export function ChatComposer({
       return;
     }
 
+    if (proactiveRateLimitMessage) {
+      setError(proactiveRateLimitMessage);
+      return;
+    }
+
     const parts: ChatMessagePart[] = [];
     if (message.trim()) {
       parts.push({ type: 'text', text: message });
@@ -482,6 +528,7 @@ export function ChatComposer({
     message,
     onSend,
     onSubmitEdit,
+    proactiveRateLimitMessage,
     readyAttachmentIds,
     readyAttachmentParts,
   ]);
@@ -850,10 +897,10 @@ export function ChatComposer({
           </Button>
         </div>
       </div>
-      {error ? (
+      {error || proactiveRateLimitMessage ? (
         <div className="mt-3 flex items-center gap-2 text-sm text-destructive">
           <AlertCircle className="size-4" />
-          <span>{error}</span>
+          <span>{error ?? proactiveRateLimitMessage}</span>
         </div>
       ) : null}
     </div>

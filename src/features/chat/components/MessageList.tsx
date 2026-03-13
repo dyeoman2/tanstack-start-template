@@ -477,7 +477,7 @@ function AssistantMessage({
   const rawText = draftText ?? getTextFromParts(message.parts);
   const streaming = message.status === 'pending' || message.status === 'streaming';
   const settling = !streaming && Boolean(draftText);
-  const useStreamRenderer = streaming || settling;
+  const showAsStreaming = streaming || settling;
   const smoothedText = useSmoothStreamText(rawText, streaming);
   const displayText =
     thinking && !rawText.trim()
@@ -486,10 +486,10 @@ function AssistantMessage({
         ? rawText
         : smoothedText;
   const finalText = useMemo(
-    () => (useStreamRenderer ? displayText : stripTrailingSourceMarkdownLinks(displayText, sources)),
-    [displayText, sources, useStreamRenderer],
+    () => (showAsStreaming ? displayText : stripTrailingSourceMarkdownLinks(displayText, sources)),
+    [displayText, sources, showAsStreaming],
   );
-  const showActions = !useStreamRenderer;
+  const showActions = !showAsStreaming;
   const canRetry = Boolean(retryRunId && !streaming);
   const { copy, copied } = useCopyToClipboard();
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -524,10 +524,10 @@ function AssistantMessage({
           <span className="chat-thinking-label text-base font-medium text-muted-foreground">
             Thinking...
           </span>
-        ) : useStreamRenderer ? (
-          <pre className="whitespace-pre-wrap font-sans text-base leading-relaxed text-foreground">
+        ) : showAsStreaming ? (
+          <div className="whitespace-pre-wrap break-words text-[15px] leading-7 text-foreground">
             {finalText}
-          </pre>
+          </div>
         ) : (
           <Markdown>{finalText}</Markdown>
         )}

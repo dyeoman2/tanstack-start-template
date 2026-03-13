@@ -2,19 +2,15 @@
 
 import {
   createThread,
-  fetchContextWithPrompt,
   getFile,
-  saveMessages,
   serializeMessage,
   storeFile,
-  updateThreadMetadata,
 } from '@convex-dev/agent';
-import { generateText } from 'ai';
 import { ConvexError, v } from 'convex/values';
 import type { ModelMessage } from 'ai';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { action, internalAction, type ActionCtx } from './_generated/server';
+import { action, type ActionCtx } from './_generated/server';
 import {
   buildAttachmentPromptSummary,
   extractDocumentText,
@@ -23,17 +19,16 @@ import {
   DEFAULT_CHAT_AGENT_NAME,
   DEFAULT_PERSONA_PROMPT,
   deriveThreadTitle,
-  getChatLanguageModel,
   resolveChatModelId,
-  serializeMessagesForTransport,
   type ChatAttachmentDoc,
   type ChatThreadDoc,
 } from './lib/agentChat';
 import {
-  CHAT_AGENT_CONTEXT_OPTIONS,
+  buildChatSystemPrompt,
+  createChatAgent,
+  fetchPreparedChatMessages,
   recordChatUsageEvent,
 } from './lib/chatAgentRuntime';
-import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 
 type PreparedStreamPayload = {
   preparedMessages: unknown[];
@@ -133,43 +128,46 @@ async function resolveThread(
   }
 
   const now = Date.now();
+  const title = deriveThreadTitle({
+    text: args.text,
+    attachments: args.attachments.map((attachment) => ({
+      kind: attachment.kind,
+      name: attachment.name,
+    })),
+  });
   const agentThreadId = await createThread(ctx, components.agent, {
     userId: args.userId,
-    title: deriveThreadTitle({
-      text: args.text,
-      attachments: args.attachments.map((attachment) => ({
-        kind: attachment.kind,
-        name: attachment.name,
-      })),
-    }),
+    title,
   });
   const threadId = (await ctx.runMutation(internal.agentChat.createThreadShellInternal, {
     userId: args.userId,
     organizationId: args.organizationId,
     agentThreadId,
-    title: deriveThreadTitle({
-      text: args.text,
-      attachments: args.attachments.map((attachment) => ({
-        kind: attachment.kind,
-        name: attachment.name,
-      })),
-    }),
+    title,
     personaId: args.personaId,
     model: args.model,
     titleManuallyEdited: false,
     createdAt: now,
   })) as Id<'chatThreads'>;
 
-  const createdThread = (await ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
-    threadId,
+  const thread: ChatThreadDoc = {
+    _id: threadId,
+    _creationTime: now,
+    userId: args.userId,
     organizationId: args.organizationId,
-  })) as ChatThreadDoc | null;
-  if (!createdThread) {
-    throw new ConvexError('Failed to create chat thread.');
-  }
+    agentThreadId,
+    title,
+    pinned: false,
+    personaId: args.personaId,
+    model: args.model,
+    titleManuallyEdited: false,
+    createdAt: now,
+    updatedAt: now,
+    lastMessageAt: now,
+  };
 
   return {
-    thread: createdThread,
+    thread,
   };
 }
 
@@ -264,7 +262,11 @@ async function preparePendingAssistantRun(
     personaId?: Id<'aiPersonas'>;
   },
 ): Promise<PreparedStreamPayload> {
-  const systemPrompt = await resolveSystemPrompt(ctx, args.organizationId, args.personaId);
+  const systemPrompt = buildChatSystemPrompt({
+    instructions: await resolveSystemPrompt(ctx, args.organizationId, args.personaId),
+    threadSummary: args.thread.summary,
+    useWebSearch: args.useWebSearch && args.supportsWebSearch,
+  });
   const streamId = await ctx.runMutation(components.agent.streams.create, {
     threadId: args.thread.agentThreadId,
     userId: args.thread.userId,
@@ -320,18 +322,19 @@ async function buildPreparedMessages(
     userId: string;
     thread: ChatThreadDoc;
     promptMessageId: string;
+    model: string;
+    systemPrompt: string;
+    useWebSearch: boolean;
   },
 ) {
-  const context = await fetchContextWithPrompt(ctx, components.agent, {
+  return await fetchPreparedChatMessages(ctx, {
     userId: args.userId,
     threadId: args.thread.agentThreadId,
-    prompt: undefined,
-    messages: undefined,
     promptMessageId: args.promptMessageId,
-    contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
+    modelId: args.model,
+    instructions: args.systemPrompt,
+    useWebSearch: args.useWebSearch,
   });
-
-  return await serializeMessagesForTransport(context.messages);
 }
 
 function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
@@ -511,19 +514,29 @@ async function abortRun(
             typeof part === 'object' &&
             'type' in part &&
             part.type === 'text-delta' &&
-            'delta' in part &&
-            typeof part.delta === 'string'
-              ? [part.delta]
+            'text' in part &&
+            typeof part.text === 'string'
+              ? [part.text]
+              : part &&
+                  typeof part === 'object' &&
+                  'type' in part &&
+                  part.type === 'text-delta' &&
+                  'delta' in part &&
+                  typeof part.delta === 'string'
+                ? [part.delta]
               : [],
           )
           .join('')
           .trim()
       : '');
   if (run.activeAssistantMessageId) {
+    const agent = createChatAgent({
+      modelId: run.model,
+      useWebSearch: run.useWebSearch,
+    });
     if (partialText) {
-      await saveMessages(ctx, components.agent, {
+      await agent.saveMessages(ctx, {
         threadId: run.agentThreadId,
-        agentName: DEFAULT_CHAT_AGENT_NAME,
         messages: [{ role: 'assistant', content: partialText }],
         promptMessageId: run.promptMessageId,
         pendingMessageId: run.activeAssistantMessageId,
@@ -697,12 +710,21 @@ export const prepareStream = action({
       availableModels,
       isSiteAdmin,
     });
+    const systemPrompt = buildChatSystemPrompt({
+      instructions: await resolveSystemPrompt(ctx, organizationId, args.personaId),
+      threadSummary: thread.summary,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
+    const agent = createChatAgent({
+      modelId: selectedModel.modelId,
+      instructions: systemPrompt,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
     const resolvedPersonaId = args.personaId ?? thread.personaId;
     const userMessage = await buildUserMessage(ctx, args.text, attachments);
-    const savedPrompt = await saveMessages(ctx, components.agent, {
+    const savedPrompt = await agent.saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
-      agentName: DEFAULT_CHAT_AGENT_NAME,
       messages: [userMessage.message],
       metadata: [
         {
@@ -728,11 +750,13 @@ export const prepareStream = action({
       userId,
       thread,
       promptMessageId: promptMessage._id,
+      model: selectedModel.modelId,
+      systemPrompt,
+      useWebSearch,
     });
-    const savedPending = await saveMessages(ctx, components.agent, {
+    const savedPending = await agent.saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
-      agentName: DEFAULT_CHAT_AGENT_NAME,
       promptMessageId: promptMessage._id,
       messages: [{ role: 'assistant', content: '' }],
       metadata: [{ status: 'pending', model: selectedModel.modelId, provider: 'openrouter' }],
@@ -831,15 +855,27 @@ export const prepareEditedStream = action({
       availableModels,
       isSiteAdmin,
     });
+    const systemPrompt = buildChatSystemPrompt({
+      instructions: await resolveSystemPrompt(ctx, organizationId, thread.personaId),
+      threadSummary: thread.summary,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
+    const agent = createChatAgent({
+      modelId: selectedModel.modelId,
+      instructions: systemPrompt,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
     const preparedMessages = await buildPreparedMessages(ctx, {
       userId,
       thread,
       promptMessageId: args.messageId,
+      model: selectedModel.modelId,
+      systemPrompt,
+      useWebSearch,
     });
-    const saved = await saveMessages(ctx, components.agent, {
+    const saved = await agent.saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
-      agentName: DEFAULT_CHAT_AGENT_NAME,
       promptMessageId: args.messageId,
       messages: [{ role: 'assistant', content: '' }],
       metadata: [{ status: 'pending', model: selectedModel.modelId, provider: 'openrouter' }],
@@ -898,10 +934,18 @@ export const prepareRetryStream = action({
       isSiteAdmin,
     });
     const useWebSearch = args.useWebSearch ?? run.useWebSearch;
+    const systemPrompt = buildChatSystemPrompt({
+      instructions: await resolveSystemPrompt(ctx, organizationId, thread.personaId),
+      threadSummary: thread.summary,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
     const preparedMessages = await buildPreparedMessages(ctx, {
       userId,
       thread,
       promptMessageId: run.promptMessageId,
+      model: selectedModel.modelId,
+      systemPrompt,
+      useWebSearch,
     });
 
     await ctx.runMutation(components.agent.messages.updateMessage, {
@@ -969,9 +1013,12 @@ export const finalizeStream = action({
       throw new ConvexError('Run not found.');
     }
 
-    await saveMessages(ctx, components.agent, {
+    const agent = createChatAgent({
+      modelId: run.model,
+      useWebSearch: run.useWebSearch,
+    });
+    await agent.saveMessages(ctx, {
       threadId: run.agentThreadId,
-      agentName: DEFAULT_CHAT_AGENT_NAME,
       messages: [{ role: 'assistant', content: args.finalText }],
       promptMessageId: run.promptMessageId,
       pendingMessageId: run.activeAssistantMessageId,
@@ -1008,24 +1055,50 @@ export const finalizeStream = action({
     if (run.agentStreamId) {
       await ctx.runMutation(components.agent.streams.finish, {
         streamId: run.agentStreamId,
-      });
+        });
     }
+    await ctx.scheduler.runAfter(0, internal.chatBackground.runPostCompletionJobs, {
+      runId: run._id,
+    });
+  },
+});
+
+export const recordStreamUsage = action({
+  args: {
+    runId: v.id('chatRuns'),
+    usage: v.object({
+      totalTokens: v.optional(v.number()),
+      inputTokens: v.optional(v.number()),
+      outputTokens: v.optional(v.number()),
+    }),
+    sourceCount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { organizationId } = await getAuthenticatedContext(ctx);
+    const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
+      runId: args.runId,
+      organizationId,
+    })) as Doc<'chatRuns'> | null;
+
+    if (!run) {
+      return false;
+    }
+
     await recordChatUsageEvent(ctx, {
       agentThreadId: run.agentThreadId,
       runId: run._id,
       agentName: DEFAULT_CHAT_AGENT_NAME,
-      model: run.model ?? DEFAULT_CHAT_MODEL_ID,
+      model: run.model ?? 'unknown',
       provider: run.provider ?? 'openrouter',
       totalTokens: args.usage.totalTokens,
       inputTokens: args.usage.inputTokens,
       outputTokens: args.usage.outputTokens,
       providerMetadata: {
-        sourceCount: args.sources?.length ?? 0,
+        sourceCount: args.sourceCount ?? 0,
       },
     });
-    await ctx.scheduler.runAfter(0, internal.agentChatActions.runPostCompletionJobs, {
-      runId: run._id,
-    });
+
+    return true;
   },
 });
 
@@ -1054,117 +1127,171 @@ export const stopRun = action({
   },
 });
 
-export const runPostCompletionJobs = internalAction({
+export const quickCreateThread = action({
   args: {
-    runId: v.id('chatRuns'),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+    text: v.string(),
+    attachmentIds: v.array(v.id('chatAttachments')),
+    clientMessageId: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
-    const run = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
-      runId: args.runId,
-    })) as Doc<'chatRuns'> | null;
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ threadId: Id<'chatThreads'>; promptMessageId: string }> => {
+    const { userId, organizationId, isSiteAdmin } = await getAuthenticatedContext(ctx);
 
-    if (!run) {
-      return;
+    if (!args.text.trim() && args.attachmentIds.length === 0) {
+      throw new ConvexError('Message content is required.');
     }
 
-    const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
-      threadId: run.threadId,
-    })) as ChatThreadDoc | null;
+    const attachments = (await ctx.runQuery(internal.agentChat.getAttachmentsForSendInternal, {
+      attachmentIds: args.attachmentIds,
+      userId,
+      organizationId,
+    })) as ChatAttachmentDoc[];
+
+    const { thread } = await resolveThread(ctx, {
+      threadId: undefined,
+      organizationId,
+      userId,
+      text: args.text,
+      attachments,
+      personaId: args.personaId,
+      model: args.model,
+    });
+
+    const availableModels = await ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {});
+    const selectedModel = resolveChatModelId({
+      requestedModelId: args.model,
+      threadModelId: thread.model,
+      availableModels,
+      isSiteAdmin,
+    });
+    const useWebSearch = false;
+    const systemPrompt = buildChatSystemPrompt({
+      instructions: await resolveSystemPrompt(ctx, organizationId, args.personaId),
+      threadSummary: thread.summary,
+      useWebSearch,
+    });
+    const agent = createChatAgent({
+      modelId: selectedModel.modelId,
+      instructions: systemPrompt,
+      useWebSearch,
+    });
+
+    const userMessage = await buildUserMessage(ctx, args.text, attachments);
+    const savedPrompt = await agent.saveMessages(ctx, {
+      threadId: thread.agentThreadId,
+      userId,
+      messages: [userMessage.message],
+      metadata: [
+        {
+          ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
+          ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
+        },
+      ],
+      failPendingSteps: false,
+    });
+    const promptMessage = savedPrompt.messages[savedPrompt.messages.length - 1];
+    if (!promptMessage) {
+      throw new ConvexError('Failed to create prompt message.');
+    }
+
+    if (args.attachmentIds.length > 0) {
+      await ctx.runMutation(internal.agentChat.assignAttachmentsToMessageInternal, {
+        attachmentIds: args.attachmentIds,
+        threadId: thread._id,
+        agentMessageId: promptMessage._id,
+        updatedAt: Date.now(),
+      });
+    }
+
+    return {
+      threadId: thread._id,
+      promptMessageId: promptMessage._id,
+    };
+  },
+});
+
+export const prepareStreamForMessage = action({
+  args: {
+    threadId: v.id('chatThreads'),
+    promptMessageId: v.string(),
+    personaId: v.optional(v.id('aiPersonas')),
+    model: v.optional(v.string()),
+    useWebSearch: v.optional(v.boolean()),
+    ownerSessionId: v.string(),
+  },
+  handler: async (ctx, args): Promise<PreparedStreamPayload> => {
+    const { userId, organizationId, isSiteAdmin } = await getAuthenticatedContext(ctx);
+    const useWebSearch = args.useWebSearch ?? false;
+
+    const [thread, availableModels] = await Promise.all([
+      ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
+        threadId: args.threadId,
+        organizationId,
+      }) as Promise<ChatThreadDoc | null>,
+      ctx.runQuery(internal.chatModels.listActiveChatModelsInternal, {}) as Promise<
+        Awaited<ReturnType<typeof ctx.runQuery>>
+      >,
+    ]);
+
     if (!thread) {
-      return;
+      throw new ConvexError('Thread not found.');
     }
 
-    const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
-      threadId: run.agentThreadId,
-      order: 'desc',
-      paginationOpts: { cursor: null, numItems: 8 },
-      excludeToolMessages: true,
+    const selectedModel = resolveChatModelId({
+      requestedModelId: args.model,
+      threadModelId: thread.model,
+      availableModels,
+      isSiteAdmin,
     });
-    const recentMessages = [...messages.page]
-      .reverse()
-      .filter((message) => message.message?.role === 'assistant' || message.message?.role === 'user');
-    const transcript = recentMessages
-      .map((message) => {
-        const role = message.message?.role;
-        if (!role) {
-          return '';
-        }
-
-        const content =
-          typeof message.message?.content === 'string'
-            ? message.message.content
-            : Array.isArray(message.message?.content)
-              ? message.message.content
-                  .filter(
-                    (part): part is { type: 'text'; text: string } =>
-                      typeof part === 'object' &&
-                      part !== null &&
-                      'type' in part &&
-                      part.type === 'text' &&
-                      'text' in part &&
-                      typeof part.text === 'string',
-                  )
-                  .map((part) => part.text)
-                  .join('\n')
-              : '';
-        return `${role}: ${content}`.trim();
-      })
-      .filter(Boolean)
-      .join('\n\n');
-
-    if (!transcript) {
-      return;
-    }
-
-    const model = getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false);
-
-    if (!thread.titleManuallyEdited) {
-      const titleResult = await generateText({
-        model,
-        prompt: `Write a concise title under 60 characters for this chat.\n\n${transcript}`,
-      });
-      const title = titleResult.text.trim().replace(/^["']|["']$/g, '').slice(0, 60);
-      if (title) {
-        const latestThread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
-          threadId: run.threadId,
-        })) as ChatThreadDoc | null;
-        if (latestThread && !latestThread.titleManuallyEdited) {
-          await ctx.runMutation(internal.agentChat.patchThreadInternal, {
-            threadId: run.threadId,
-            patch: {
-              title,
-              updatedAt: Date.now(),
-            },
-          });
-          await updateThreadMetadata(ctx, components.agent, {
-            threadId: run.agentThreadId,
-            patch: {
-              title,
-            },
-          });
-        }
-      }
-    }
-
-    const summaryResult = await generateText({
-      model,
-      prompt: `Summarize this chat in 2 sentences for internal retrieval context.\n\n${transcript}`,
+    const resolvedPersonaId = args.personaId ?? thread.personaId;
+    const systemPrompt = buildChatSystemPrompt({
+      instructions: await resolveSystemPrompt(ctx, organizationId, resolvedPersonaId),
+      threadSummary: thread.summary,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
     });
-    const summary = summaryResult.text.trim().slice(0, 500);
-    if (summary) {
-      await ctx.runMutation(internal.agentChat.patchThreadInternal, {
-        threadId: run.threadId,
-        patch: {
-          summary,
-          summaryUpdatedAt: Date.now(),
-        },
-      });
-      await updateThreadMetadata(ctx, components.agent, {
-        threadId: run.agentThreadId,
-        patch: {
-          summary,
-        },
-      });
+    const agent = createChatAgent({
+      modelId: selectedModel.modelId,
+      instructions: systemPrompt,
+      useWebSearch: useWebSearch && selectedModel.supportsWebSearch !== false,
+    });
+
+    const preparedMessages = await buildPreparedMessages(ctx, {
+      userId,
+      thread,
+      promptMessageId: args.promptMessageId,
+      model: selectedModel.modelId,
+      systemPrompt,
+      useWebSearch,
+    });
+
+    const savedPending = await agent.saveMessages(ctx, {
+      threadId: thread.agentThreadId,
+      userId,
+      promptMessageId: args.promptMessageId,
+      messages: [{ role: 'assistant', content: '' }],
+      metadata: [{ status: 'pending', model: selectedModel.modelId, provider: 'openrouter' }],
+      failPendingSteps: false,
+    });
+    const pendingAssistantMessage = savedPending.messages[savedPending.messages.length - 1];
+    if (!pendingAssistantMessage) {
+      throw new ConvexError('Failed to create pending assistant message.');
     }
+
+    return await preparePendingAssistantRun(ctx, {
+      thread,
+      organizationId,
+      ownerSessionId: args.ownerSessionId,
+      promptMessageId: args.promptMessageId,
+      preparedMessages,
+      pendingAssistantMessage,
+      model: selectedModel.modelId,
+      supportsWebSearch: selectedModel.supportsWebSearch !== false,
+      useWebSearch,
+      personaId: resolvedPersonaId ?? undefined,
+    });
   },
 });

@@ -167,6 +167,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const personas = useQuery(api.agentChat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
   const createChatAttachmentFromUpload = useAction(api.agentChatActions.createChatAttachmentFromUpload);
+  const quickCreateThread = useAction(api.agentChatActions.quickCreateThread);
   const stopRun = useAction(api.agentChatActions.stopRun);
   const generateChatAttachmentUploadUrl = useMutation(api.agentChat.generateChatAttachmentUploadUrl);
   const createPersona = useMutation(api.agentChat.createPersona);
@@ -787,29 +788,17 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           : undefined;
 
       const submittedAt = Date.now();
-      if (targetThreadId) {
-        clear();
-        setPendingThreadSubmission(targetThreadId, {
-          clientMessageId,
-          modelId: effectiveModelId,
-          parts,
-          submittedAt,
-          stage: 'submitting',
-        });
-      }
 
-      const response = await startStream({
-        mode: 'send',
-        threadId: targetThreadId,
-        personaId: personaId,
-        model: effectiveModelId,
-        useWebSearch,
-        text,
-        attachmentIds,
-        clientMessageId,
-      });
       if (!threadId) {
-        targetThreadId = response.threadId;
+        // New chat: fast-create thread + save message, navigate, then stream
+        const created = await quickCreateThread({
+          personaId: personaId as never,
+          model: effectiveModelId,
+          text,
+          attachmentIds: attachmentIds as never,
+          clientMessageId,
+        });
+        targetThreadId = created.threadId as string;
         setOptimisticThread({
           _id: toThreadId(targetThreadId),
           title: deriveThreadTitle(parts),
@@ -830,6 +819,50 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           params: { threadId: targetThreadId },
         });
         clear();
+
+        // Fire streaming in the background — no need to await
+        const newThreadId = targetThreadId;
+        void startStream({
+          mode: 'continue',
+          threadId: newThreadId,
+          promptMessageId: created.promptMessageId,
+          personaId: personaId as string | undefined,
+          model: effectiveModelId,
+          useWebSearch,
+        }).catch((error) => {
+          updatePendingThreadSubmission(newThreadId, (submission) =>
+            submission
+              ? {
+                  ...submission,
+                  stage: 'error',
+                  errorMessage:
+                    error instanceof Error ? error.message : 'Failed to start AI response.',
+                }
+              : submission,
+          );
+        });
+      } else {
+        // Existing thread: use the original send flow
+        const existingThreadId = threadId;
+        clear();
+        setPendingThreadSubmission(existingThreadId, {
+          clientMessageId,
+          modelId: effectiveModelId,
+          parts,
+          submittedAt,
+          stage: 'submitting',
+        });
+
+        await startStream({
+          mode: 'send',
+          threadId: existingThreadId,
+          personaId: personaId,
+          model: effectiveModelId,
+          useWebSearch,
+          text,
+          attachmentIds,
+          clientMessageId,
+        });
       }
     } catch (error) {
       const failedThreadId = targetThreadId;

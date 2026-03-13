@@ -1,5 +1,5 @@
 import userEvent from '@testing-library/user-event';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MessageList } from '~/features/chat/components/MessageList';
 
@@ -10,7 +10,7 @@ vi.mock('next-themes', () => ({
 }));
 
 describe('MessageList', () => {
-  it('renders pending assistant stream output as plain text while streaming', () => {
+  it('renders pending assistant stream output as plain text while streaming', async () => {
     render(
       <MessageList
         messages={[
@@ -43,7 +43,9 @@ describe('MessageList', () => {
       />,
     );
 
-    expect(screen.getByText('# Streaming title')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText('# Streaming title')).toBeInTheDocument();
+    });
     expect(screen.queryByRole('heading', { name: 'Streaming title' })).not.toBeInTheDocument();
   });
 

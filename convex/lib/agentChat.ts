@@ -26,10 +26,6 @@ export type ChatPersonaDoc = Doc<'aiPersonas'>;
 export const DEFAULT_CHAT_AGENT_NAME = 'chat-assistant';
 export const DEFAULT_PERSONA_PROMPT =
   'You are an AI assistant that helps people find information.';
-export const DEFAULT_AGENT_CONTEXT_OPTIONS = {
-  recentMessages: 24,
-  excludeToolMessages: true,
-} as const;
 
 let openRouterProvider: ReturnType<typeof createOpenRouter> | null = null;
 const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenRouter>['chat']>>();

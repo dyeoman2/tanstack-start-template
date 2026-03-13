@@ -1,21 +1,12 @@
 import * as Sentry from '@sentry/tanstackstart-react';
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
-import {
-  generateText,
-  stepCountIs,
-  streamText,
-  tool,
-  type ModelMessage,
-} from 'ai';
+import { stepCountIs, streamText, type ModelMessage } from 'ai';
 import { createFileRoute } from '@tanstack/react-router';
 import { z } from 'zod';
 import { api } from '@convex/_generated/api';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import {
-  getOpenRouterWebSearchPlugin,
-  getOpenRouterWebSearchProviderOptions,
-} from '~/features/chat/lib/openrouter-web-search';
 import { getOpenRouterConfig } from '~/lib/server/openrouter';
+import { createRouteChatWebSearchTool } from '../../../../convex/lib/chatAgentRuntime';
 
 const sendRequestSchema = z.object({
   mode: z.literal('send').optional(),
@@ -38,6 +29,16 @@ const editRequestSchema = z.object({
   ownerSessionId: z.string(),
 });
 
+const continueRequestSchema = z.object({
+  mode: z.literal('continue'),
+  threadId: z.string(),
+  promptMessageId: z.string(),
+  personaId: z.string().optional(),
+  model: z.string().optional(),
+  useWebSearch: z.boolean().optional(),
+  ownerSessionId: z.string(),
+});
+
 const retryRequestSchema = z.object({
   mode: z.literal('retry'),
   runId: z.string(),
@@ -48,6 +49,7 @@ const retryRequestSchema = z.object({
 
 const requestSchema = z.discriminatedUnion('mode', [
   sendRequestSchema.extend({ mode: z.literal('send') }),
+  continueRequestSchema,
   editRequestSchema,
   retryRequestSchema,
 ]).or(sendRequestSchema);
@@ -168,7 +170,9 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
           const rateLimitReservation = await convexAuthReactStart.fetchAuthAction(
             api.agentChatActions.reserveChatRateLimit,
             {
-              textLength: parsed.data.mode === 'retry' ? undefined : parsed.data.text.length,
+              textLength: parsed.data.mode === 'retry' || parsed.data.mode === 'continue'
+                ? undefined
+                : parsed.data.text.length,
               hasAttachments:
                 parsed.data.mode === 'send' && parsed.data.attachmentIds.length > 0,
             } as never,
@@ -194,6 +198,18 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
               api.agentChatActions.prepareRetryStream,
               {
                 runId: parsed.data.runId as never,
+                model: parsed.data.model,
+                useWebSearch: parsed.data.useWebSearch,
+                ownerSessionId: parsed.data.ownerSessionId,
+              } as never,
+            )) as PreparedStreamResult;
+          } else if (parsed.data.mode === 'continue') {
+            prepared = (await convexAuthReactStart.fetchAuthAction(
+              api.agentChatActions.prepareStreamForMessage,
+              {
+                threadId: parsed.data.threadId as never,
+                promptMessageId: parsed.data.promptMessageId,
+                personaId: parsed.data.personaId as never,
                 model: parsed.data.model,
                 useWebSearch: parsed.data.useWebSearch,
                 ownerSessionId: parsed.data.ownerSessionId,
@@ -263,7 +279,7 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                   parts.push({
                     type: 'text-delta',
                     id: prepared.assistantMessageId,
-                    delta: pendingDeltaText,
+                    text: pendingDeltaText,
                   });
                 }
                 parts.push(...extraParts);
@@ -294,42 +310,17 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
 
               const webSearchTool =
                 parsed.data.useWebSearch && prepared.supportsWebSearch
-                  ? tool({
-                      description:
-                        'Search the web for current information and return a concise summary plus cited sources.',
-                      inputSchema: z.object({
-                        query: z.string().min(2),
-                      }),
-                      execute: async ({ query }) => {
-                        const searchModel = getOpenRouter().chat(prepared.model, {
-                          plugins: [getOpenRouterWebSearchPlugin(prepared.model)],
-                        });
-                        const searchResult = await generateText({
-                          model: searchModel,
-                          prompt: `Search the web for: ${query}\n\nReturn a concise factual summary of the most relevant results.`,
-                          providerOptions: {
-                            openrouter: {
-                              provider: {
-                                zdr: true,
-                                data_collection: 'deny',
-                                ...(getOpenRouterWebSearchProviderOptions(prepared.model) ?? {}),
-                              },
-                            },
-                          },
-                        });
-                        const sources = dedupeSources(
-                          mapOpenRouterSources(searchResult.sources as unknown[] | undefined) ?? [],
-                        );
-                        collectedSources.push(...sources);
-                        return {
-                          query,
-                          summary: searchResult.text,
-                          results: sources.map((source) => ({
+                  ? createRouteChatWebSearchTool({
+                      modelId: prepared.model,
+                      onResults: (results) => {
+                        collectedSources.push(
+                          ...results.map((source) => ({
+                            sourceType: 'url' as const,
                             id: source.id,
                             url: source.url,
                             title: source.title,
                           })),
-                        };
+                        );
                       },
                     })
                   : undefined;
@@ -377,6 +368,17 @@ export const Route = createFileRoute('/api/chat/stream' as never)({
                       ...collectedSources,
                     ]),
                   });
+                  await convexAuthReactStart.fetchAuthAction(
+                    api.agentChatActions.recordStreamUsage,
+                    {
+                      runId: prepared.runId as never,
+                      usage: toUsage(event.totalUsage),
+                      sourceCount: dedupeSources([
+                        ...(mapOpenRouterSources(event.sources) ?? []),
+                        ...collectedSources,
+                      ]).length,
+                    } as never,
+                  );
                 },
                 async onAbort() {
                   if (flushTimer) {

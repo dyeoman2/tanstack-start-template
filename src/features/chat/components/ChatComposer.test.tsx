@@ -1,11 +1,25 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '~/components/ui/toast';
 import { TooltipProvider } from '~/components/ui/tooltip';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
 
+const useChatRateLimitMock = vi.fn();
+
+vi.mock('~/features/chat/hooks/useChatRateLimit', () => ({
+  useChatRateLimit: (...args: unknown[]) => useChatRateLimitMock(...args),
+}));
+
 describe('ChatComposer', () => {
+  beforeEach(() => {
+    useChatRateLimitMock.mockReturnValue({
+      frequency: { ok: true, retryAfter: 0 },
+      tokens: { ok: true, retryAfter: 0 },
+      estimatedInputTokens: 1,
+    });
+  });
+
   it('renders searchable models in the model picker', async () => {
     const user = userEvent.setup();
 
@@ -172,5 +186,43 @@ describe('ChatComposer', () => {
     await user.click(stopButton);
 
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables send and shows proactive rate-limit feedback before submit', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(undefined);
+
+    useChatRateLimitMock.mockReturnValue({
+      frequency: { ok: false, retryAfter: 5_000 },
+      tokens: { ok: true, retryAfter: 0 },
+      estimatedInputTokens: 120,
+    });
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatComposer
+            isSending={false}
+            modelOptions={[
+              {
+                id: 'openai/gpt-4o-mini',
+                label: 'GPT-4o Mini',
+                description: 'Default model',
+                access: 'public',
+                selectable: true,
+              },
+            ]}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
+            onSend={onSend}
+          />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Message'), 'blocked prompt');
+
+    expect(screen.getByText('Rate limit exceeded. Try again in 5 seconds.')).toBeInTheDocument();
+    expect(screen.getByLabelText('Send message')).toBeDisabled();
+    expect(onSend).not.toHaveBeenCalled();
   });
 });
