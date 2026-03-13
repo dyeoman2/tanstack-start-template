@@ -62,6 +62,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
+  const [settledScrollBottomLimit, setSettledScrollBottomLimit] = useState<number | null>(null);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
   >({});
@@ -230,20 +231,30 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
   useLayoutEffect(() => {
     if (pendingSubmission || hasPendingAssistantResponse) {
+      setSettledScrollBottomLimit(null);
       return;
     }
 
     if (!scrollAnchorClientMessageId) {
+      setSettledScrollBottomLimit(null);
       return;
     }
 
     let frameId = 0;
     const requiredSpacer = alignPendingMessageToTop();
+    const nextSpacer = Math.max(scrollSpacerHeight, requiredSpacer);
     setScrollSpacerHeight((current) => Math.max(current, requiredSpacer));
+    setSettledScrollBottomLimit(null);
 
     frameId = requestAnimationFrame(() => {
       const stabilizedSpacer = alignPendingMessageToTop();
+      const finalSpacer = Math.max(nextSpacer, stabilizedSpacer);
       setScrollSpacerHeight((current) => Math.max(current, stabilizedSpacer));
+      setSettledScrollBottomLimit(
+        finalSpacer > 0 && messageViewportRef.current
+          ? messageViewportRef.current.scrollTop
+          : null,
+      );
     });
 
     return () => {
@@ -256,6 +267,31 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     scrollAnchorClientMessageId,
     scrollSpacerHeight,
   ]);
+
+  useEffect(() => {
+    const viewportNode = messageViewportRef.current;
+    if (!viewportNode || settledScrollBottomLimit === null) {
+      return;
+    }
+
+    const clampScroll = () => {
+      if (viewportNode.scrollTop <= settledScrollBottomLimit) {
+        return;
+      }
+
+      viewportNode.scrollTo({
+        top: settledScrollBottomLimit,
+        behavior: 'auto',
+      });
+    };
+
+    clampScroll();
+    viewportNode.addEventListener('scroll', clampScroll, { passive: true });
+
+    return () => {
+      viewportNode.removeEventListener('scroll', clampScroll);
+    };
+  }, [settledScrollBottomLimit]);
 
   useEffect(() => {
     if (!threadId || !pendingSubmission || !messages) {
@@ -367,6 +403,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     setScrollAnchorClientMessageId(clientMessageId);
     setIsSending(true);
+    setSettledScrollBottomLimit(null);
 
     try {
       clear();
