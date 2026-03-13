@@ -378,6 +378,7 @@ function AssistantMessage({ message, thinking }: { message: ChatMessage; thinkin
     () => stripTrailingSourceMarkdownLinks(getTextFromParts(message.parts), sources),
     [message.parts, sources],
   );
+  const showActions = message.status !== 'pending';
   const { copy, copied } = useCopyToClipboard();
   const [isSpeaking, setIsSpeaking] = useState(false);
 
@@ -416,29 +417,31 @@ function AssistantMessage({ message, thinking }: { message: ChatMessage; thinkin
         ) : (
           <Markdown>{text}</Markdown>
         )}
-        <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className={cn('rounded-full', copied && 'text-foreground')}
-            onClick={handleCopy}
-            aria-label={copied ? 'Copied' : 'Copy'}
-            disabled={!text.trim()}
-          >
-            {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-          </Button>
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="rounded-full"
-            onClick={handleSpeak}
-            aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
-            disabled={!text.trim()}
-          >
-            {isSpeaking ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
-          </Button>
-          {sources.length > 0 ? <Sources sources={sources} /> : null}
-        </div>
+        {showActions ? (
+          <div className="mt-1 flex items-center gap-1.5 text-muted-foreground">
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className={cn('rounded-full', copied && 'text-foreground')}
+              onClick={handleCopy}
+              aria-label={copied ? 'Copied' : 'Copy'}
+              disabled={!text.trim()}
+            >
+              {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+            </Button>
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              className="rounded-full"
+              onClick={handleSpeak}
+              aria-label={isSpeaking ? 'Stop speaking' : 'Read aloud'}
+              disabled={!text.trim()}
+            >
+              {isSpeaking ? <VolumeX className="size-4" /> : <Volume2 className="size-4" />}
+            </Button>
+            {sources.length > 0 ? <Sources sources={sources} /> : null}
+          </div>
+        ) : null}
         {message.status === 'error' && message.errorMessage ? (
           <p className="mt-3 text-sm text-destructive">{message.errorMessage}</p>
         ) : null}

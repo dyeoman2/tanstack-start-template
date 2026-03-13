@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
@@ -61,6 +61,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const [draftModelId, setDraftModelId] = useState<ChatModelId>(DEFAULT_CHAT_MODEL_ID);
   const [useWebSearch, setUseWebSearch] = useState(false);
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
+  const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
   const [threadModelOverrides, setThreadModelOverrides] = useState<
     Partial<Record<string, ChatModelId>>
   >({});
@@ -140,6 +141,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const isThreadPending = Boolean(threadId && (thread === undefined || messages === undefined));
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled = isThreadPending;
+  const hasPendingAssistantResponse = currentMessages.some(
+    (message) => message.role === 'assistant' && message.status === 'pending',
+  );
   const targetClientMessageId = scrollAnchorClientMessageId ?? pendingSubmission?.clientMessageId;
   const pendingScrollTargetVisible = Boolean(
     targetClientMessageId &&
@@ -154,18 +158,22 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     const targetNode = scrollTargetMessageRef.current;
 
     if (!viewportNode || !targetNode) {
-      return;
+      return 0;
     }
 
-    const topOffset = 24;
+    const topOffset = 0;
     const viewportRect = viewportNode.getBoundingClientRect();
     const targetRect = targetNode.getBoundingClientRect();
     const nextTop = viewportNode.scrollTop + (targetRect.top - viewportRect.top) - topOffset;
+    const maxScrollTop = viewportNode.scrollHeight - viewportNode.clientHeight;
+    const requiredSpacer = Math.max(0, nextTop - maxScrollTop);
 
     viewportNode.scrollTo({
-      top: Math.max(0, nextTop),
+      top: Math.max(0, nextTop + requiredSpacer),
       behavior: 'auto',
     });
+
+    return requiredSpacer;
   }, []);
 
   useEffect(() => {
@@ -220,6 +228,35 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
   }, [currentMessages, editingMessage, optimisticEdits, regeneratingMessageId]);
 
+  useLayoutEffect(() => {
+    if (pendingSubmission || hasPendingAssistantResponse) {
+      return;
+    }
+
+    if (!scrollAnchorClientMessageId) {
+      return;
+    }
+
+    let frameId = 0;
+    const requiredSpacer = alignPendingMessageToTop();
+    setScrollSpacerHeight((current) => Math.max(current, requiredSpacer));
+
+    frameId = requestAnimationFrame(() => {
+      const stabilizedSpacer = alignPendingMessageToTop();
+      setScrollSpacerHeight((current) => Math.max(current, stabilizedSpacer));
+    });
+
+    return () => {
+      cancelAnimationFrame(frameId);
+    };
+  }, [
+    alignPendingMessageToTop,
+    hasPendingAssistantResponse,
+    pendingSubmission,
+    scrollAnchorClientMessageId,
+    scrollSpacerHeight,
+  ]);
+
   useEffect(() => {
     if (!threadId || !pendingSubmission || !messages) {
       return;
@@ -270,33 +307,39 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     });
   }, [messages, threadId]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!pendingScrollTargetVisible) {
+      setScrollSpacerHeight(0);
       return;
     }
 
     let frameId = 0;
-    let attempts = 0;
+    const requiredSpacer = alignPendingMessageToTop();
+    setScrollSpacerHeight((current) =>
+      pendingSubmission || hasPendingAssistantResponse
+        ? Math.abs(current - requiredSpacer) < 1
+          ? current
+          : requiredSpacer
+        : Math.max(current, requiredSpacer),
+    );
 
-    const scheduleAlignment = () => {
-      frameId = requestAnimationFrame(() => {
-        alignPendingMessageToTop();
-
-        attempts += 1;
-        if (attempts < 6) {
-          scheduleAlignment();
-        }
-      });
-    };
-
-    scheduleAlignment();
+    frameId = requestAnimationFrame(() => {
+      const stabilizedSpacer = alignPendingMessageToTop();
+      setScrollSpacerHeight((current) =>
+        pendingSubmission || hasPendingAssistantResponse
+          ? Math.abs(current - stabilizedSpacer) < 1
+            ? current
+            : stabilizedSpacer
+          : Math.max(current, stabilizedSpacer),
+      );
+    });
 
     return () => {
       cancelAnimationFrame(frameId);
     };
   }, [
     alignPendingMessageToTop,
-    currentMessages,
+    hasPendingAssistantResponse,
     pendingPreview?.showUserMessage,
     pendingScrollTargetVisible,
   ]);
@@ -470,6 +513,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                       scrollTargetClientMessageId={targetClientMessageId}
                       scrollTargetMessageRef={scrollTargetMessageRef}
                     />
+                    <div aria-hidden="true" style={{ height: scrollSpacerHeight }} />
                     <div ref={messageEndRef} aria-hidden="true" />
                   </div>
                 </div>

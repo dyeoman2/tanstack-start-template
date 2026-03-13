@@ -61,6 +61,7 @@ type ChatMessagePart =
 
 type AiMessageDoc = Doc<'aiMessages'>;
 type AiThreadDoc = Doc<'aiThreads'>;
+type AssistantChunkWrite = (content: string) => Promise<void>;
 
 const messagePartValidator = v.union(
   v.object({
@@ -229,7 +230,7 @@ function getChatModel(modelId: ChatModelId, supportsWebSearch: boolean) {
   return nextModel;
 }
 
-function resolveChatModelId(
+export function resolveChatModelId(
   modelId: string | undefined,
   threadModelId: string | undefined,
   messages: AiMessageDoc[],
@@ -315,10 +316,20 @@ async function getPersonaPrompt(ctx: ActionCtx, thread: AiThreadDoc, organizatio
   return persona?.prompt ?? DEFAULT_PERSONA_PROMPT;
 }
 
-function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessages'>) {
+export function createBufferedChunkWriter(options: {
+  flush: AssistantChunkWrite;
+  flushIntervalMs?: number;
+  flushCharThreshold?: number;
+  schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
+  cancel?: (timer: ReturnType<typeof setTimeout>) => void;
+}) {
   let buffer = '';
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let flushChain = Promise.resolve();
+  const flushIntervalMs = options.flushIntervalMs ?? STREAM_FLUSH_INTERVAL_MS;
+  const flushCharThreshold = options.flushCharThreshold ?? STREAM_FLUSH_CHAR_THRESHOLD;
+  const schedule = options.schedule ?? ((callback, delay) => setTimeout(callback, delay));
+  const cancel = options.cancel ?? ((timer) => clearTimeout(timer));
 
   const flush = async () => {
     if (!buffer) {
@@ -328,10 +339,7 @@ function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessa
     const content = buffer;
     buffer = '';
     flushChain = flushChain.then(async () => {
-      await ctx.runMutation(internal.chat.appendAssistantChunkInternal, {
-        messageId,
-        content,
-      });
+      await options.flush(content);
     });
     await flushChain;
   };
@@ -341,7 +349,7 @@ function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessa
       return;
     }
 
-    clearTimeout(flushTimer);
+    cancel(flushTimer);
     flushTimer = null;
   };
 
@@ -350,17 +358,17 @@ function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessa
       return;
     }
 
-    flushTimer = setTimeout(() => {
+    flushTimer = schedule(() => {
       flushTimer = null;
       void flush();
-    }, STREAM_FLUSH_INTERVAL_MS);
+    }, flushIntervalMs);
   };
 
   return {
     async push(chunk: string) {
       buffer += chunk;
 
-      if (buffer.length >= STREAM_FLUSH_CHAR_THRESHOLD) {
+      if (buffer.length >= flushCharThreshold) {
         cancelTimer();
         await flush();
         return;
@@ -374,6 +382,17 @@ function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessa
       await flushChain;
     },
   };
+}
+
+function createBufferedAssistantPersister(ctx: ActionCtx, messageId: Id<'aiMessages'>) {
+  return createBufferedChunkWriter({
+    flush: async (content) => {
+      await ctx.runMutation(internal.chat.appendAssistantChunkInternal, {
+        messageId,
+        content,
+      });
+    },
+  });
 }
 
 async function streamAssistantReply(
