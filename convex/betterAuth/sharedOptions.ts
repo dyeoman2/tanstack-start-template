@@ -30,10 +30,6 @@ export const AUTH_SESSION_FRESH_AGE_SECONDS = 24 * 60 * 60;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 
-function shouldUseSecureAuthCookies() {
-  return getSiteUrl().startsWith('https://');
-}
-
 function shouldDisableAuthRateLimitInDev() {
   try {
     const siteUrl = new URL(getSiteUrl());
@@ -56,6 +52,10 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
     '/sign-up/email': {
       window: 60 * 60,
       max: 5,
+    },
+    '/request-password-reset': {
+      window: 60 * 60,
+      max: 3,
     },
     '/forget-password': {
       window: 60 * 60,
@@ -99,7 +99,6 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
 export function createSharedBetterAuthOptions(
   callbacks: SharedBetterAuthCallbacks,
 ): BetterAuthOptions {
-  const useSecureCookies = shouldUseSecureAuthCookies();
   const disableRateLimit = shouldDisableAuthRateLimitInDev();
 
   return {
@@ -114,7 +113,6 @@ export function createSharedBetterAuthOptions(
       customRules: createCustomRateLimitRules(),
     },
     advanced: {
-      useSecureCookies,
       ipAddress: {
         // Trust only the proxy headers we expect our app platform to normalize.
         ipAddressHeaders: ['x-forwarded-for'],
@@ -123,7 +121,6 @@ export function createSharedBetterAuthOptions(
       defaultCookieAttributes: {
         httpOnly: true,
         sameSite: 'lax',
-        secure: useSecureCookies,
         path: '/',
       },
     },
