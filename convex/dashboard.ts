@@ -2,7 +2,7 @@ import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { getCurrentAuthUserOrNull } from './auth/access';
+import { getVerifiedCurrentAuthUserOrNull } from './auth/access';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 const USER_COUNT_BATCH_SIZE = 256;
@@ -59,7 +59,7 @@ export const getDashboardData = query({
   },
   handler: async (ctx, args) => {
     // Return explicit access states so the client can render one stable branch.
-    const currentUser = await getCurrentAuthUserOrNull(ctx);
+    const currentUser = await getVerifiedCurrentAuthUserOrNull(ctx);
     if (!currentUser) {
       return {
         status: 'unauthenticated' as const,

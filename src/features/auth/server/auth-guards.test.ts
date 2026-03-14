@@ -68,4 +68,23 @@ describe('auth-guards', () => {
     await expect(requireAdmin()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({ to: '/login' });
   });
+
+  it('redirects newly unverified users to the verification pending route', async () => {
+    fetchAuthQueryMock.mockResolvedValue({
+      id: 'user_123',
+      email: 'user@example.com',
+      role: USER_ROLES.USER,
+      emailVerified: false,
+      requiresEmailVerification: true,
+    });
+
+    await expect(requireAuth()).rejects.toMatchObject({ status: 302 });
+    expect(redirectMock).toHaveBeenCalledWith({
+      to: '/verify-email-pending',
+      search: {
+        email: 'user@example.com',
+        redirectTo: '/app',
+      },
+    });
+  });
 });

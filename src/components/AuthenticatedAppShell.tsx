@@ -22,6 +22,7 @@ import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useOptimisticThreadTitle } from '~/features/chat/lib/optimistic-threads';
+import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import { cn } from '~/lib/utils';
 
 type BreadcrumbPart = {
@@ -91,9 +92,11 @@ function getBreadcrumbs(pathname: string): BreadcrumbPart[] {
 }
 
 function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slug: string }) {
+  const location = useLocation();
   const organization = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
+  const optimisticName = getOrganizationBreadcrumbName(location.state, slug);
 
-  return organization?.organization.name ?? fallback;
+  return optimisticName ?? organization?.organization.name ?? fallback;
 }
 
 function ChatThreadBreadcrumbLabel({

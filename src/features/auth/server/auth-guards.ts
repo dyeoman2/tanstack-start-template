@@ -12,6 +12,8 @@ export interface AuthenticatedUser {
   email: string;
   role: UserRole;
   isSiteAdmin: boolean;
+  emailVerified: boolean;
+  requiresEmailVerification: boolean;
   name?: string;
 }
 
@@ -20,7 +22,7 @@ export interface AuthResult {
 }
 
 function getCurrentRequest(): Request | undefined {
-  if (!import.meta.env.SSR) {
+  if (!import.meta.env.SSR && process.env.VITEST !== 'true') {
     throw new Error('Authentication utilities must run on the server');
   }
 
@@ -34,44 +36,77 @@ function getCurrentRequest(): Request | undefined {
  * Note: Better Auth remains the source of truth for the global role.
  * The Convex profile query returns the app projection used by routes and UI.
  */
-async function getCurrentUser(): Promise<AuthenticatedUser | null> {
+async function getCurrentProfile() {
+  let request: Request | undefined;
   try {
-    if (!getCurrentRequest()) {
-      return null;
-    }
-
-    const profile = await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {});
-    const role = normalizeUserRole(profile?.role);
-
-    const sessionUserId = normalizeUserId(profile);
-    if (!sessionUserId) {
-      return null;
-    }
-
-    const sessionUserEmail =
-      typeof profile?.email === 'string' && profile.email.length > 0 ? profile.email : null;
-    if (!sessionUserEmail) {
-      return null;
-    }
-
-    return {
-      id: sessionUserId,
-      email: sessionUserEmail,
-      role,
-      isSiteAdmin: deriveIsSiteAdmin(role),
-      name: typeof profile?.name === 'string' ? profile.name : undefined,
-    };
+    request = getCurrentRequest();
   } catch {
     return null;
   }
+
+  if (!request) {
+    return null;
+  }
+
+  try {
+    return await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {});
+  } catch {
+    return null;
+  }
+}
+
+function mapProfileToAuthenticatedUser(
+  profile: Awaited<ReturnType<typeof convexAuthReactStart.fetchAuthQuery>>,
+): AuthenticatedUser | null {
+  const role = normalizeUserRole(profile?.role);
+
+  const sessionUserId = normalizeUserId(profile);
+  if (!sessionUserId) {
+    return null;
+  }
+
+  const sessionUserEmail =
+    typeof profile?.email === 'string' && profile.email.length > 0 ? profile.email : null;
+  if (!sessionUserEmail) {
+    return null;
+  }
+
+  return {
+    id: sessionUserId,
+    email: sessionUserEmail,
+    role,
+    isSiteAdmin: deriveIsSiteAdmin(role),
+    emailVerified: profile?.emailVerified ?? false,
+    requiresEmailVerification: profile?.requiresEmailVerification ?? false,
+    name: typeof profile?.name === 'string' ? profile.name : undefined,
+  };
 }
 
 /**
  * Require authentication
  */
 export async function requireAuth(): Promise<AuthResult> {
-  const user = await getCurrentUser();
+  const profile = await getCurrentProfile();
+  if (!profile) {
+    throw redirect({ to: '/login' });
+  }
 
+  if (
+    profile?.requiresEmailVerification &&
+    !profile.emailVerified &&
+    typeof profile.email === 'string' &&
+    profile.email.length > 0
+  ) {
+    throw redirect({
+      to: '/verify-email-pending',
+      search: {
+        email: profile.email,
+        redirectTo: '/app',
+      },
+    });
+  }
+
+  const user = mapProfileToAuthenticatedUser(profile);
   if (!user) {
     throw redirect({ to: '/login' });
   }

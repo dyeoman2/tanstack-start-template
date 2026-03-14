@@ -1,5 +1,7 @@
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
+import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
@@ -9,7 +11,14 @@ import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
-import { action, internalMutation, mutation, query } from './_generated/server';
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from './_generated/server';
 import { authComponent } from './auth';
 import {
   buildCurrentUserProfile,
@@ -39,6 +48,19 @@ type EnsureUserContextResult = {
   organizationId: string;
 };
 
+type UserContextRecords = {
+  appUserId: Id<'users'> | null;
+  userProfileId: Id<'userProfiles'> | null;
+};
+
+type BootstrapUserContextResult =
+  | {
+      found: false;
+    }
+  | ({
+      found: true;
+    } & EnsureUserContextResult);
+
 type UserProfileDocument = Doc<'userProfiles'>;
 
 type OnboardingStatePatch = {
@@ -51,6 +73,7 @@ type OnboardingStatePatch = {
   onboardingDeliveryError?: string | null | undefined;
 };
 const USER_PROFILES_SYNC_BATCH_SIZE = 256;
+const BETTER_AUTH_USER_COUNT_BATCH_SIZE = 1000;
 
 function toTimestampOrFallback(
   value: string | number | Date | undefined,
@@ -102,7 +125,6 @@ function slugify(value: string): string {
 async function resolveActiveOrganizationForUser(
   ctx: MutationCtx,
   authUserId: string,
-  preferredOrganizationId?: string,
 ) {
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
   if (memberships.length === 0) {
@@ -125,16 +147,6 @@ async function resolveActiveOrganizationForUser(
   const organizationsById = new Map(
     organizations.map((organization) => [organization._id ?? organization.id, organization]),
   );
-
-  if (preferredOrganizationId) {
-    const preferredOrganization = organizationsById.get(preferredOrganizationId);
-    if (preferredOrganization) {
-      return {
-        organization: preferredOrganization,
-        organizationId: preferredOrganization._id ?? preferredOrganizationId,
-      };
-    }
-  }
 
   for (const membership of memberships) {
     const organization = organizationsById.get(membership.organizationId);
@@ -194,17 +206,12 @@ async function ensureUserContextRecord(
   ctx: MutationCtx,
   args: EnsureUserContextArgs,
 ): Promise<EnsureUserContextResult> {
-  const now = Date.now();
   let user = await ctx.db
     .query('users')
     .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
     .first();
 
-  const resolvedOrganization = await resolveActiveOrganizationForUser(
-    ctx,
-    args.authUserId,
-    user?.lastActiveOrganizationId,
-  );
+  const resolvedOrganization = await resolveActiveOrganizationForUser(ctx, args.authUserId);
   const organizationId = resolvedOrganization.organizationId;
 
   if (!user) {
@@ -215,11 +222,6 @@ async function ensureUserContextRecord(
       updatedAt: args.updatedAt,
     });
     user = await ctx.db.get(userId);
-  } else if (user.lastActiveOrganizationId !== organizationId) {
-    await ctx.db.patch(user._id, {
-      lastActiveOrganizationId: organizationId,
-      updatedAt: now,
-    });
   }
 
   if (!user) {
@@ -278,26 +280,36 @@ async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string)
 export const getUserCount = query({
   args: {},
   handler: async (ctx) => {
-    let allUsers: BetterAuthAdapterUserDoc[] = [];
-    try {
-      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-        model: 'user',
-        paginationOpts: {
-          cursor: null,
-          numItems: 1000,
-          id: 0,
-        },
-      });
+    let totalUsers = 0;
+    let cursor: string | null = null;
 
-      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
-      allUsers = normalized.page;
+    try {
+      while (true) {
+        const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+          model: 'user',
+          paginationOpts: {
+            cursor,
+            numItems: BETTER_AUTH_USER_COUNT_BATCH_SIZE,
+            id: 0,
+          },
+        });
+
+        const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
+        totalUsers += normalized.page.length;
+
+        if (normalized.isDone || normalized.continueCursor === null) {
+          break;
+        }
+
+        cursor = normalized.continueCursor;
+      }
     } catch (error) {
       console.error('Failed to query Better Auth users:', error);
     }
 
     return {
-      totalUsers: allUsers.length,
-      isFirstUser: allUsers.length === 0,
+      totalUsers,
+      isFirstUser: totalUsers === 0,
     };
   },
 });
@@ -493,18 +505,29 @@ export const syncUserProfilesSnapshot = internalMutation({
   },
 });
 
-export const bootstrapUserContext = action({
+export const bootstrapUserContext = internalAction({
   args: {
-    token: v.string(),
     authUserId: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
     role: v.optional(v.union(v.literal('user'), v.literal('admin'))),
   },
-  handler: async (ctx, args): Promise<EnsureUserContextResult> => {
-    const secret = process.env.BETTER_AUTH_SECRET;
-    if (!secret || args.token !== secret) {
-      throw new Error('Unauthorized bootstrap access');
+  handler: async (ctx, args): Promise<BootstrapUserContextResult> => {
+    const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: 'user',
+      where: [
+        {
+          field: '_id',
+          operator: 'eq',
+          value: args.authUserId,
+        },
+      ],
+    });
+
+    if (!authUser) {
+      return {
+        found: false,
+      };
     }
 
     if (args.role) {
@@ -531,11 +554,163 @@ export const bootstrapUserContext = action({
       });
     }
 
-    return await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+    const result = await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
       authUserId: args.authUserId,
       createdAt: args.createdAt,
       updatedAt: args.updatedAt,
     });
+
+    return {
+      ...result,
+      found: true,
+    };
+  },
+});
+
+export const rollbackBootstrapUserContext = internalAction({
+  args: {
+    authUserId: v.string(),
+    email: v.string(),
+  },
+  handler: async (ctx, args): Promise<{ success: true }> => {
+    const deletePaginationOpts = {
+      cursor: null,
+      numItems: 1000,
+      id: 0,
+    } as const;
+
+    const memberships = await fetchBetterAuthMembersByUserId(ctx, args.authUserId);
+    const organizationIds = [...new Set(memberships.map((membership) => membership.organizationId))];
+
+    for (const organizationId of organizationIds) {
+      const rawMemberships = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'member',
+        where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+        paginationOpts: deletePaginationOpts,
+      });
+      const organizationMemberships = normalizeAdapterFindManyResult(rawMemberships).page;
+      const remainingMemberships = organizationMemberships.filter(
+        (membership) => membership.userId !== args.authUserId,
+      );
+
+      if (remainingMemberships.length === 0) {
+        await Promise.all([
+          ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+            input: {
+              model: 'invitation',
+              where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+            },
+            paginationOpts: deletePaginationOpts,
+          }),
+          ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+            input: {
+              model: 'member',
+              where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+            },
+            paginationOpts: deletePaginationOpts,
+          }),
+          ctx.runMutation(components.betterAuth.adapter.deleteOne, {
+            input: {
+              model: 'organization',
+              where: [{ field: '_id', operator: 'eq', value: organizationId }],
+            },
+          }),
+        ]);
+      } else {
+        await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+          input: {
+            model: 'member',
+            where: [
+              { field: 'organizationId', operator: 'eq', value: organizationId },
+              {
+                field: 'userId',
+                operator: 'eq',
+                value: args.authUserId,
+                connector: 'AND',
+              },
+            ],
+          },
+          paginationOpts: deletePaginationOpts,
+        });
+      }
+    }
+
+    await Promise.all([
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'session',
+          where: [{ field: 'userId', operator: 'eq', value: args.authUserId }],
+        },
+        paginationOpts: deletePaginationOpts,
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'account',
+          where: [{ field: 'userId', operator: 'eq', value: args.authUserId }],
+        },
+        paginationOpts: deletePaginationOpts,
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'verification',
+          where: [{ field: 'identifier', operator: 'eq', value: args.email }],
+        },
+        paginationOpts: deletePaginationOpts,
+      }),
+      ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+        input: {
+          model: 'user',
+          where: [{ field: '_id', operator: 'eq', value: args.authUserId }],
+        },
+        paginationOpts: deletePaginationOpts,
+      }),
+    ]);
+
+    const userContextRecords = await ctx.runQuery(internal.users.getUserContextRecordIds, {
+      authUserId: args.authUserId,
+    });
+    await ctx.runMutation(internal.users.deleteUserContextRecords, userContextRecords);
+
+    return { success: true };
+  },
+});
+
+export const getUserContextRecordIds = internalQuery({
+  args: {
+    authUserId: v.string(),
+  },
+  handler: async (ctx, args): Promise<UserContextRecords> => {
+    const [appUser, userProfile] = await Promise.all([
+      ctx.db
+        .query('users')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+        .first(),
+      ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+        .first(),
+    ]);
+
+    return {
+      appUserId: appUser?._id ?? null,
+      userProfileId: userProfile?._id ?? null,
+    };
+  },
+});
+
+export const deleteUserContextRecords = internalMutation({
+  args: {
+    appUserId: v.union(v.id('users'), v.null()),
+    userProfileId: v.union(v.id('userProfiles'), v.null()),
+  },
+  handler: async (ctx, args) => {
+    if (args.appUserId) {
+      await ctx.db.delete(args.appUserId);
+    }
+
+    if (args.userProfileId) {
+      await ctx.db.delete(args.userProfileId);
+    }
   },
 });
 
@@ -656,6 +831,8 @@ export const getCurrentUserProfile = query({
       const role = normalizeUserRole(
         (authUser as BetterAuthAdapterUserDoc & { role?: string | string[] }).role,
       );
+      const createdAt = toTimestampOrFallback(authUser.createdAt, 0);
+      const emailVerified = authUser.emailVerified ?? false;
 
       return {
         id: authUserId,
@@ -664,8 +841,13 @@ export const getCurrentUserProfile = query({
         phoneNumber: authUser.phoneNumber ?? null,
         role,
         isSiteAdmin: deriveIsSiteAdmin(role),
-        emailVerified: authUser.emailVerified ?? false,
-        createdAt: toTimestampOrFallback(authUser.createdAt, 0),
+        emailVerified,
+        requiresEmailVerification: isEmailVerificationRequiredForUser({
+          createdAt,
+          emailVerified,
+          enforcedAt: getEmailVerificationEnforcedAt(),
+        }),
+        createdAt,
         updatedAt: toTimestampOrFallback(authUser.updatedAt, 0),
         currentOrganization: null,
         organizations: [],

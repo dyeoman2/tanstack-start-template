@@ -2,6 +2,53 @@ export const ORGANIZATION_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
 
 export type OrganizationRole = (typeof ORGANIZATION_ROLE_VALUES)[number];
 export type OrganizationViewerRole = OrganizationRole | 'site-admin' | null;
+export type OrganizationAccess = {
+  admin: boolean;
+  delete: boolean;
+  edit: boolean;
+  view: boolean;
+  siteAdmin: boolean;
+};
+
+export const SITE_ADMIN_ORGANIZATION_ACCESS: OrganizationAccess = {
+  admin: true,
+  delete: true,
+  edit: true,
+  view: true,
+  siteAdmin: true,
+};
+
+export const ADMIN_ORGANIZATION_ACCESS: OrganizationAccess = {
+  admin: true,
+  delete: true,
+  edit: true,
+  view: true,
+  siteAdmin: false,
+};
+
+export const EDIT_ORGANIZATION_ACCESS: OrganizationAccess = {
+  admin: false,
+  delete: false,
+  edit: true,
+  view: true,
+  siteAdmin: false,
+};
+
+export const VIEW_ORGANIZATION_ACCESS: OrganizationAccess = {
+  admin: false,
+  delete: false,
+  edit: false,
+  view: true,
+  siteAdmin: false,
+};
+
+export const NO_ORGANIZATION_ACCESS: OrganizationAccess = {
+  admin: false,
+  delete: false,
+  edit: false,
+  view: false,
+  siteAdmin: false,
+};
 
 function isOrganizationRole(value: string): value is OrganizationRole {
   return ORGANIZATION_ROLE_VALUES.includes(value as OrganizationRole);
@@ -32,6 +79,20 @@ export function deriveViewerRole(input: {
 
 export function canManageOrganization(viewerRole: OrganizationViewerRole) {
   return viewerRole === 'site-admin' || viewerRole === 'owner' || viewerRole === 'admin';
+}
+
+export function getOrganizationAccess(viewerRole: OrganizationViewerRole): OrganizationAccess {
+  switch (viewerRole) {
+    case 'site-admin':
+      return SITE_ADMIN_ORGANIZATION_ACCESS;
+    case 'owner':
+    case 'admin':
+      return ADMIN_ORGANIZATION_ACCESS;
+    case 'member':
+      return EDIT_ORGANIZATION_ACCESS;
+    default:
+      return NO_ORGANIZATION_ACCESS;
+  }
 }
 
 export function getAssignableRoles(

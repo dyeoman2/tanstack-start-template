@@ -3,6 +3,11 @@
  * Provides automatic inference of common environment variables.
  */
 
+import {
+  DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT,
+  parseTimestampLike,
+} from '../shared/email-verification';
+
 /**
  * Automatically infer the site URL based on deployment environment.
  * Prefers explicit overrides and falls back to hosting platform defaults.
@@ -31,12 +36,127 @@ export function getSiteUrl(): string {
   return 'http://localhost:3000';
 }
 
-export function getBetterAuthTrustedOrigins(siteUrl = getSiteUrl()): string[] {
+function isLoopbackHostname(hostname: string): boolean {
+  return hostname === 'localhost' || hostname === '127.0.0.1';
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
+}
+
+function matchesWildcardPattern(value: string, pattern: string): boolean {
+  const normalizedPattern = pattern.trim().toLowerCase();
+  const normalizedValue = value.trim().toLowerCase();
+
+  if (!normalizedPattern || !normalizedValue) {
+    return false;
+  }
+
+  if (!normalizedPattern.includes('*')) {
+    return normalizedValue === normalizedPattern;
+  }
+
+  const regex = new RegExp(
+    `^${normalizedPattern.split('*').map(escapeRegex).join('.*')}$`,
+    'i',
+  );
+
+  return regex.test(normalizedValue);
+}
+
+function parseCsvEnv(name: string): string[] {
+  const value = process.env[name];
+  if (!value) {
+    return [];
+  }
+
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function normalizeConfiguredOrigin(value: string, label: string): string | null {
+  return resolveSiteUrlCandidate(value, label);
+}
+
+function normalizeAllowedHost(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (trimmed.includes('://')) {
+    try {
+      return new URL(trimmed).host.toLowerCase();
+    } catch {
+      return null;
+    }
+  }
+
+  return trimmed.toLowerCase();
+}
+
+export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
+  const allowedHosts = new Set<string>();
+
+  try {
+    const origin = new URL(siteUrl);
+    allowedHosts.add(origin.host.toLowerCase());
+
+    if (isLoopbackHostname(origin.hostname)) {
+      const port = origin.port || '3000';
+      allowedHosts.add(`localhost:${port}`);
+      allowedHosts.add(`127.0.0.1:${port}`);
+    }
+  } catch {
+    // Ignore malformed site url here; caller already has fallback behavior.
+  }
+
+  for (const pattern of parseCsvEnv('BETTER_AUTH_PREVIEW_HOSTS')) {
+    const normalized = normalizeAllowedHost(pattern);
+    if (normalized) {
+      allowedHosts.add(normalized);
+    }
+  }
+
+  return [...allowedHosts];
+}
+
+export function isTrustedBetterAuthOrigin(
+  candidate: string,
+  siteUrl = getSiteUrl(),
+): boolean {
+  let origin: URL;
+  try {
+    origin = new URL(candidate);
+  } catch {
+    return false;
+  }
+
+  const host = origin.host.toLowerCase();
+  const hostname = origin.hostname.toLowerCase();
+  const allowedHosts = getBetterAuthAllowedHosts(siteUrl);
+
+  if (
+    allowedHosts.some(
+      (pattern) =>
+        matchesWildcardPattern(host, pattern) || matchesWildcardPattern(hostname, pattern),
+    )
+  ) {
+    return true;
+  }
+
+  const configuredOrigins = getConfiguredBetterAuthOrigins(siteUrl);
+  return configuredOrigins.some((configuredOrigin) => configuredOrigin === origin.origin);
+}
+
+export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[] {
   const trustedOrigins = new Set<string>([siteUrl]);
 
   try {
     const origin = new URL(siteUrl);
-    const isLoopbackHost = origin.hostname === 'localhost' || origin.hostname === '127.0.0.1';
+    const isLoopbackHost = isLoopbackHostname(origin.hostname);
 
     if (isLoopbackHost) {
       trustedOrigins.add(`http://localhost:${origin.port || '3000'}`);
@@ -46,7 +166,56 @@ export function getBetterAuthTrustedOrigins(siteUrl = getSiteUrl()): string[] {
     // getSiteUrl already normalizes inputs, so this is only a defensive fallback.
   }
 
+  for (const configuredOrigin of parseCsvEnv('BETTER_AUTH_TRUSTED_ORIGINS')) {
+    const normalized = normalizeConfiguredOrigin(configuredOrigin, 'BETTER_AUTH_TRUSTED_ORIGINS');
+    if (normalized) {
+      trustedOrigins.add(normalized);
+    }
+  }
+
   return [...trustedOrigins];
+}
+
+export function getBetterAuthTrustedOrigins(
+  request?: Request,
+  siteUrl = getSiteUrl(),
+): string[] {
+  const trustedOrigins = new Set<string>(getConfiguredBetterAuthOrigins(siteUrl));
+
+  if (!request) {
+    return [...trustedOrigins];
+  }
+
+  try {
+    const requestOrigin = new URL(request.url).origin;
+    if (isTrustedBetterAuthOrigin(requestOrigin, siteUrl)) {
+      trustedOrigins.add(requestOrigin);
+    }
+  } catch {
+    // Ignore invalid request urls.
+  }
+
+  return [...trustedOrigins];
+}
+
+export function getBetterAuthBaseUrlConfig(): string | {
+  allowedHosts: string[];
+  fallback?: string;
+  protocol?: 'auto' | 'http' | 'https';
+} {
+  const siteUrl = getSiteUrl();
+  const allowedHosts = getBetterAuthAllowedHosts(siteUrl);
+
+  if (allowedHosts.length === 0) {
+    return siteUrl;
+  }
+
+  const protocol = siteUrl.startsWith('http://') ? 'http' : 'auto';
+  return {
+    allowedHosts,
+    fallback: siteUrl,
+    protocol,
+  };
 }
 
 function resolveSiteUrlCandidate(value: string | undefined, label: string): string | null {
@@ -91,6 +260,17 @@ export function getBetterAuthSecret(): string {
   return secret;
 }
 
+export function getEmailVerificationEnforcedAt(): number {
+  const configuredValue =
+    readOptionalEnv('EMAIL_VERIFICATION_ENFORCED_AT') ??
+    readOptionalEnv('VITE_EMAIL_VERIFICATION_ENFORCED_AT') ??
+    readOptionalEnv('BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT') ??
+    readOptionalEnv('VITE_BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT');
+  const parsed = parseTimestampLike(configuredValue);
+
+  return parsed ?? DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT;
+}
+
 export type E2EPrincipalType = 'user' | 'admin';
 
 export type E2EPrincipalConfig = {
@@ -106,6 +286,14 @@ function getRequiredServerEnv(name: string): string {
     throw new Error(`${name} environment variable is required`);
   }
   return value;
+}
+
+function readOptionalEnv(name: string): string | undefined {
+  try {
+    return process.env[name];
+  } catch {
+    return undefined;
+  }
 }
 
 export function isE2ETestAuthEnabled(): boolean {

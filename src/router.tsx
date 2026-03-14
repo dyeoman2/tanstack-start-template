@@ -25,6 +25,15 @@ export const defaultRouterAuthContext: RouterAuthContext = {
   user: null,
 };
 
+declare module '@tanstack/history' {
+  interface HistoryState {
+    organizationBreadcrumb?: {
+      name: string;
+      slug: string;
+    };
+  }
+}
+
 interface CreateAppRouterOptions {
   history?: RouterHistory;
   context?: RouterAuthContext;

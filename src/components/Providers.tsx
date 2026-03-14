@@ -4,6 +4,7 @@ import { AuthQueryProvider } from '@daveyplate/better-auth-tanstack';
 import { AuthUIProviderTanstack } from '@daveyplate/better-auth-ui/tanstack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
+import { useConvexAuth } from 'convex/react';
 import { useMutation } from 'convex/react';
 import {
   createContext,
@@ -46,6 +47,7 @@ interface AuthProviderProps {
 
 function AuthProvider({ children }: AuthProviderProps) {
   const { user, isAuthenticated, isPending, isSiteAdmin } = useAuth();
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
   const ensureCurrentUserContext = useMutation(api.users.ensureCurrentUserContext);
   const [authContext, setAuthContext] = useState<RouterAuthContext>({
     authenticated: false,
@@ -130,14 +132,20 @@ function AuthProvider({ children }: AuthProviderProps) {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || isPending) {
+    if (!isAuthenticated || isPending || isConvexAuthLoading || !isConvexAuthenticated) {
       return;
     }
 
     void ensureCurrentUserContext({}).catch((error) => {
       console.warn('[auth] Failed to ensure user context', error);
     });
-  }, [ensureCurrentUserContext, isAuthenticated, isPending]);
+  }, [
+    ensureCurrentUserContext,
+    isAuthenticated,
+    isPending,
+    isConvexAuthLoading,
+    isConvexAuthenticated,
+  ]);
 
   return (
     <AuthContext.Provider value={{ authContext, isAuthLoading: isPending }}>

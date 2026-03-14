@@ -2,19 +2,21 @@ import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
-import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
+import {
+  normalizeAdapterFindManyResult,
+  type BetterAuthAdapterUserDoc,
+} from '../src/lib/server/better-auth/adapter-utils';
 import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
-import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
+import { components, internal } from './_generated/api';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 import {
-  fetchAllBetterAuthMembers,
-  fetchAllBetterAuthOrganizations,
   fetchAllBetterAuthUsers,
+  fetchBetterAuthOrganizationsByIds,
+  fetchBetterAuthMembersByUserId,
   findBetterAuthUserByEmail,
   normalizeBetterAuthUserProfile,
   updateBetterAuthUserRecord,
@@ -25,6 +27,24 @@ const DEFAULT_CHAT_TASK = 'Text Generation';
 const OPENROUTER_SOURCE = 'openrouter';
 const AUDIT_LOG_TRUNCATION_BATCH_SIZE = 256;
 const ADMIN_USER_PAGE_BATCH_SIZE = 256;
+const USER_CLEANUP_BATCH_SIZE = 256;
+
+type TruncateDataResult = {
+  success: boolean;
+  message: string;
+  truncatedTables: number;
+  failedTables: number;
+  totalTables: number;
+  failedTableNames: string[];
+  invalidateAllCaches: boolean;
+};
+
+type CleanupDeletedUserDataResult = {
+  success: boolean;
+  deletedAuditLogs: number;
+  deletedAppUser: number;
+  email: string;
+};
 
 const chatModelCatalogInputValidator = v.object({
   modelId: v.string(),
@@ -156,48 +176,102 @@ function buildChatModelCatalogEntry(
   };
 }
 
-async function listUserProfilesByRole(
-  ctx: QueryCtx,
-  role: 'all' | 'admin' | 'user',
+function mapAdminUserSortField(
+  sortBy: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt',
 ) {
-  const profiles: Doc<'userProfiles'>[] = [];
-  let cursor: string | null = null;
+  switch (sortBy) {
+    case 'createdAt':
+      return 'createdAt';
+    case 'email':
+      return 'email';
+    case 'emailVerified':
+      return 'emailVerified';
+    case 'role':
+      return 'role';
+    default:
+      return 'name';
+  }
+}
 
-  while (true) {
-    if (role === 'all') {
-      const result = await ctx.db.query('userProfiles').paginate({
-        cursor,
-        numItems: ADMIN_USER_PAGE_BATCH_SIZE,
-      });
+function normalizeSearchValue(value: string) {
+  const trimmed = value.trim().toLowerCase();
+  return trimmed.length > 0 ? trimmed : null;
+}
 
-      profiles.push(...result.page);
-
-      if (result.isDone) {
-        break;
-      }
-
-      cursor = result.continueCursor;
-      continue;
-    }
-
-    const result = await ctx.db
-      .query('userProfiles')
-      .withIndex('by_role', (q) => q.eq('role', role))
-      .paginate({
-        cursor,
-        numItems: ADMIN_USER_PAGE_BATCH_SIZE,
-      });
-
-    profiles.push(...result.page);
-
-    if (result.isDone) {
-      break;
-    }
-
-    cursor = result.continueCursor;
+function matchesAdminUserSearch(
+  user: ReturnType<typeof normalizeBetterAuthUserProfile>,
+  searchValue: string | null,
+) {
+  if (!searchValue) {
+    return true;
   }
 
-  return profiles;
+  return (
+    user.emailLower.includes(searchValue) ||
+    (user.nameLower?.includes(searchValue) ?? false)
+  );
+}
+
+function compareAdminUserValues(
+  left: string | number,
+  right: string | number,
+  direction: 'asc' | 'desc',
+) {
+  if (left === right) {
+    return 0;
+  }
+
+  if (direction === 'asc') {
+    return left > right ? 1 : -1;
+  }
+
+  return left < right ? 1 : -1;
+}
+
+function sortAdminUsersPage(
+  users: Array<ReturnType<typeof normalizeBetterAuthUserProfile>>,
+  args: {
+    sortBy: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
+    sortOrder: 'asc' | 'desc';
+    secondarySortBy: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
+    secondarySortOrder: 'asc' | 'desc';
+  },
+) {
+  const sortValue = (
+    user: ReturnType<typeof normalizeBetterAuthUserProfile>,
+    field: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt',
+  ): string | number => {
+    switch (field) {
+      case 'name':
+        return user.nameLower ?? '';
+      case 'email':
+        return user.emailLower;
+      case 'role':
+        return user.role;
+      case 'emailVerified':
+        return user.emailVerified ? 1 : 0;
+      default:
+        return user.createdAt;
+    }
+  };
+
+  return [...users].sort((left, right) => {
+    const primary = compareAdminUserValues(
+      sortValue(left, args.sortBy),
+      sortValue(right, args.sortBy),
+      args.sortOrder,
+    );
+
+    if (primary !== 0) {
+      return primary;
+    }
+
+    return compareAdminUserValues(
+      sortValue(left, args.secondarySortBy),
+      sortValue(right, args.secondarySortBy),
+      args.secondarySortOrder,
+    );
+  });
 }
 
 export const listUsers = query({
@@ -227,72 +301,164 @@ export const listUsers = query({
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
-    const [profiles, memberships, organizations] = await Promise.all([
-      listUserProfilesByRole(ctx, args.role === 'all' ? 'all' : args.role),
-      fetchAllBetterAuthMembers(ctx),
-      fetchAllBetterAuthOrganizations(ctx),
+    const pageSize = Math.max(1, Math.min(args.pageSize, ADMIN_USER_PAGE_BATCH_SIZE));
+    const page = Math.max(1, args.page);
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const searchValue = normalizeSearchValue(args.search);
+    const roleWhere =
+      args.role === 'all'
+        ? undefined
+        : [
+            {
+              field: 'role',
+              operator: 'eq' as const,
+              value: args.role,
+            },
+          ];
+
+    const pageUsers: Array<ReturnType<typeof normalizeBetterAuthUserProfile>> = [];
+    let matchedUsers = 0;
+    let cursor: string | null = null;
+
+    while (true) {
+      const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        where: roleWhere,
+        sortBy: {
+          field: mapAdminUserSortField(args.sortBy),
+          direction: args.sortOrder,
+        },
+        paginationOpts: {
+          cursor,
+          numItems: pageSize,
+          id: 0,
+        },
+      });
+
+      const result = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
+
+      for (const authUser of result.page) {
+        const normalizedUser = normalizeBetterAuthUserProfile(authUser);
+        if (!matchesAdminUserSearch(normalizedUser, searchValue)) {
+          continue;
+        }
+
+        if (matchedUsers >= startIndex && matchedUsers < endIndex) {
+          pageUsers.push(normalizedUser);
+        }
+
+        matchedUsers += 1;
+      }
+
+      if (result.isDone || !result.continueCursor) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+    }
+
+    const sortedPageUsers = sortAdminUsersPage(pageUsers, args);
+    const pageUserIds = sortedPageUsers.map((user) => user.authUserId);
+
+    const [profileEntries, pageMemberships] = await Promise.all([
+      Promise.all(
+        pageUserIds.map(async (authUserId) => {
+          const profile = await ctx.db
+            .query('userProfiles')
+            .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+            .first();
+          return [authUserId, profile] as const;
+        }),
+      ),
+      Promise.all(
+        pageUserIds.map(async (authUserId) => {
+          const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+          return [authUserId, memberships] as const;
+        }),
+      ),
     ]);
 
+    const profilesByAuthUserId = new Map(profileEntries);
+    const organizationIds = [
+      ...new Set(
+        pageMemberships.flatMap(([, memberships]) =>
+          memberships.map((membership) => membership.organizationId),
+        ),
+      ),
+    ];
+    const organizations = await fetchBetterAuthOrganizationsByIds(ctx, organizationIds);
     const organizationsById = new Map(
       organizations.map((organization) => [
         organization._id ?? organization.id ?? '',
         organization,
       ]),
     );
-    const membershipsByUserId = new Map<
-      string,
-      Array<{
-        id: string;
-        slug: string;
-        name: string;
-        logo: string | null;
-      }>
-    >();
+    const membershipsByUserId = new Map(
+      pageMemberships.map(([authUserId, memberships]) => [
+        authUserId,
+        memberships
+          .map((membership) => {
+            const organization = organizationsById.get(membership.organizationId);
+            if (!organization) {
+              return null;
+            }
 
-    for (const membership of memberships) {
-      const organization = organizationsById.get(membership.organizationId);
-      if (!organization) {
-        continue;
-      }
-
-      const organizationSummary = {
-        id: organization._id ?? membership.organizationId,
-        slug: organization.slug,
-        name: organization.name,
-        logo: organization.logo ?? null,
-      };
-      const userOrganizations = membershipsByUserId.get(membership.userId) ?? [];
-
-      if (!userOrganizations.some((entry) => entry.id === organizationSummary.id)) {
-        userOrganizations.push(organizationSummary);
-        userOrganizations.sort((left, right) => left.name.localeCompare(right.name));
-        membershipsByUserId.set(membership.userId, userOrganizations);
-      }
-    }
-
-    return shapeAdminUsers(
-      profiles.map((profile) => ({
-        id: profile.authUserId,
-        email: profile.email,
-        name: profile.name,
-        role: profile.role,
-        emailVerified: profile.emailVerified,
-        banned: profile.banned,
-        banReason: profile.banReason,
-        banExpires: profile.banExpires,
-        onboardingStatus: profile.onboardingStatus ?? 'not_started',
-        onboardingEmailId: profile.onboardingEmailId,
-        onboardingEmailMessageId: profile.onboardingEmailMessageId,
-        onboardingEmailLastSentAt: profile.onboardingEmailLastSentAt,
-        onboardingCompletedAt: profile.onboardingCompletedAt,
-        onboardingDeliveryUpdatedAt: profile.onboardingDeliveryUpdatedAt,
-        onboardingDeliveryError: profile.onboardingDeliveryError ?? null,
-        createdAt: profile.createdAt,
-        updatedAt: profile.updatedAt,
-        organizations: membershipsByUserId.get(profile.authUserId) ?? [],
-      })),
-      args,
+            return {
+              id: organization._id ?? membership.organizationId,
+              slug: organization.slug,
+              name: organization.name,
+              logo: organization.logo ?? null,
+            };
+          })
+          .filter(
+            (
+              organization,
+            ): organization is {
+              id: string;
+              slug: string;
+              name: string;
+              logo: string | null;
+            } => organization !== null,
+          )
+          .sort((left, right) => left.name.localeCompare(right.name)),
+      ]),
     );
+
+    return {
+      users: sortedPageUsers.map((user) => {
+        const profile = profilesByAuthUserId.get(user.authUserId);
+
+        return {
+          id: user.authUserId,
+          email: user.email,
+          name: user.name,
+          role: user.role,
+          emailVerified: user.emailVerified,
+          banned: user.banned,
+          banReason: user.banReason,
+          banExpires: user.banExpires,
+          onboardingStatus: profile?.onboardingStatus ?? 'not_started',
+          onboardingEmailId: profile?.onboardingEmailId,
+          onboardingEmailMessageId: profile?.onboardingEmailMessageId,
+          onboardingEmailLastSentAt: profile?.onboardingEmailLastSentAt,
+          onboardingCompletedAt: profile?.onboardingCompletedAt,
+          onboardingDeliveryUpdatedAt: profile?.onboardingDeliveryUpdatedAt,
+          onboardingDeliveryError: profile?.onboardingDeliveryError ?? null,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+          organizations: membershipsByUserId.get(user.authUserId) ?? [],
+        };
+      }),
+      pagination: {
+        page,
+        pageSize,
+        total: matchedUsers,
+        totalPages: Math.ceil(matchedUsers / pageSize),
+        hasNextPage: endIndex < matchedUsers,
+        nextCursor: endIndex < matchedUsers ? String(page + 1) : null,
+      },
+    };
   },
 });
 
@@ -414,17 +580,11 @@ export const getSystemStats = query({
   },
 });
 
-export const promoteUserByEmail = action({
+export const promoteUserByEmail = internalAction({
   args: {
-    token: v.string(),
     email: v.string(),
   },
   handler: async (ctx, args) => {
-    const secret = process.env.BETTER_AUTH_SECRET;
-    if (!secret || args.token !== secret) {
-      throw new Error('Unauthorized admin promotion access');
-    }
-
     const email = args.email.trim().toLowerCase();
     const authUser = await findBetterAuthUserByEmail(ctx, email);
     if (!authUser) {
@@ -479,8 +639,18 @@ export const listChatModelCatalog = query({
   handler: async (ctx): Promise<ChatModelCatalogEntry[]> => {
     await requireSiteAdmin(ctx);
 
-    const models = await ctx.db.query('aiModelCatalog').collect();
-    return [...models].sort((left, right) => {
+    const [activeModels, inactiveModels] = await Promise.all([
+      ctx.db
+        .query('aiModelCatalog')
+        .withIndex('by_isActive', (q) => q.eq('isActive', true))
+        .collect(),
+      ctx.db
+        .query('aiModelCatalog')
+        .withIndex('by_isActive', (q) => q.eq('isActive', false))
+        .collect(),
+    ]);
+
+    return [...activeModels, ...inactiveModels].sort((left, right) => {
       if (left.isActive !== right.isActive) {
         return left.isActive ? -1 : 1;
       }
@@ -547,7 +717,7 @@ export const createChatModel = mutation({
 
     const modelId = args.modelId.trim();
     if (!modelId) {
-      throw new Error('Model ID is required.');
+      throwConvexError('VALIDATION', 'Model ID is required.');
     }
 
     const existingModel = await ctx.db
@@ -556,7 +726,7 @@ export const createChatModel = mutation({
       .first();
 
     if (existingModel) {
-      throw new Error('A chat model with this model ID already exists.');
+      throwConvexError('VALIDATION', 'A chat model with this model ID already exists.');
     }
 
     const entry = buildChatModelCatalogEntry(
@@ -587,7 +757,7 @@ export const updateChatModel = mutation({
 
     const modelId = args.model.modelId.trim();
     if (!modelId) {
-      throw new Error('Model ID is required.');
+      throwConvexError('VALIDATION', 'Model ID is required.');
     }
 
     const existingModel = await ctx.db
@@ -596,7 +766,7 @@ export const updateChatModel = mutation({
       .first();
 
     if (!existingModel) {
-      throw new Error('Chat model not found.');
+      throwConvexError('NOT_FOUND', 'Chat model not found.');
     }
 
     if (modelId !== args.existingModelId) {
@@ -606,7 +776,7 @@ export const updateChatModel = mutation({
         .first();
 
       if (duplicateModel) {
-        throw new Error('A chat model with this model ID already exists.');
+        throwConvexError('VALIDATION', 'A chat model with this model ID already exists.');
       }
     }
 
@@ -641,7 +811,7 @@ export const setChatModelActiveState = mutation({
       .first();
 
     if (!existingModel) {
-      throw new Error('Chat model not found.');
+      throwConvexError('NOT_FOUND', 'Chat model not found.');
     }
 
     await ctx.db.patch(existingModel._id, {
@@ -656,33 +826,65 @@ export const setChatModelActiveState = mutation({
   },
 });
 
-export const truncateData = mutation({
+export const truncateAuditLogsBatch = internalMutation({
   args: {},
+  returns: v.object({
+    deletedCount: v.number(),
+    failedCount: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx) => {
+    const auditLogs = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_createdAt')
+      .order('asc')
+      .take(AUDIT_LOG_TRUNCATION_BATCH_SIZE);
+
+    let deletedCount = 0;
+    let failedCount = 0;
+
+    for (const log of auditLogs) {
+      try {
+        await ctx.db.delete(log._id);
+        deletedCount += 1;
+      } catch (error) {
+        failedCount += 1;
+        console.error(`Failed to delete audit log ${log._id}:`, error);
+      }
+    }
+
+    return {
+      deletedCount,
+      failedCount,
+      hasMore: auditLogs.length === AUDIT_LOG_TRUNCATION_BATCH_SIZE,
+    };
+  },
+});
+
+export const truncateData = action({
+  args: {},
+  returns: v.object({
+    success: v.boolean(),
+    message: v.string(),
+    truncatedTables: v.number(),
+    failedTables: v.number(),
+    totalTables: v.number(),
+    failedTableNames: v.array(v.string()),
+    invalidateAllCaches: v.boolean(),
+  }),
+  handler: async (ctx): Promise<TruncateDataResult> => {
     await requireSiteAdmin(ctx);
 
     let deletedCount = 0;
     let failedCount = 0;
 
     while (true) {
-      const auditLogs = await ctx.db
-        .query('auditLogs')
-        .withIndex('by_createdAt')
-        .order('asc')
-        .take(AUDIT_LOG_TRUNCATION_BATCH_SIZE);
+      const batch = await ctx.runMutation(internal.admin.truncateAuditLogsBatch, {});
+      deletedCount += batch.deletedCount;
+      failedCount += batch.failedCount;
 
-      if (auditLogs.length === 0) {
+      if (!batch.hasMore) {
         break;
-      }
-
-      for (const log of auditLogs) {
-        try {
-          await ctx.db.delete(log._id);
-          deletedCount += 1;
-        } catch (error) {
-          failedCount += 1;
-          console.error(`Failed to delete audit log ${log._id}:`, error);
-        }
       }
     }
 
@@ -701,46 +903,133 @@ export const truncateData = mutation({
   },
 });
 
-export const cleanupDeletedUserData = mutation({
+export const deleteAuditLogsByUserIdBatch = internalMutation({
   args: {
     userId: v.string(),
-    email: v.string(),
   },
+  returns: v.object({
+    deletedCount: v.number(),
+    hasMore: v.boolean(),
+  }),
   handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
+    const auditLogs = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
+      .order('asc')
+      .take(USER_CLEANUP_BATCH_SIZE);
 
+    for (const log of auditLogs) {
+      await ctx.db.delete(log._id);
+    }
+
+    return {
+      deletedCount: auditLogs.length,
+      hasMore: auditLogs.length === USER_CLEANUP_BATCH_SIZE,
+    };
+  },
+});
+
+export const deleteAuditLogsByIdentifierBatch = internalMutation({
+  args: {
+    identifier: v.string(),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const auditLogs = await ctx.db
+      .query('auditLogs')
+      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', args.identifier))
+      .order('asc')
+      .take(USER_CLEANUP_BATCH_SIZE);
+
+    for (const log of auditLogs) {
+      await ctx.db.delete(log._id);
+    }
+
+    return {
+      deletedCount: auditLogs.length,
+      hasMore: auditLogs.length === USER_CLEANUP_BATCH_SIZE,
+    };
+  },
+});
+
+export const deleteAppUserContextInternal = internalMutation({
+  args: {
+    userId: v.string(),
+  },
+  returns: v.object({
+    deletedAppUser: v.number(),
+  }),
+  handler: async (ctx, args) => {
     const appUser = await ctx.db
       .query('users')
       .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.userId))
       .first();
 
-    if (appUser) {
-      await ctx.db.delete(appUser._id);
+    if (!appUser) {
+      return { deletedAppUser: 0 };
+    }
+
+    await ctx.db.delete(appUser._id);
+    return { deletedAppUser: 1 };
+  },
+});
+
+export const cleanupDeletedUserData = action({
+  args: {
+    userId: v.string(),
+    email: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    deletedAuditLogs: v.number(),
+    deletedAppUser: v.number(),
+    email: v.string(),
+  }),
+  handler: async (ctx, args): Promise<CleanupDeletedUserDataResult> => {
+    await requireSiteAdmin(ctx);
+
+    const deleteAppUserResult: { deletedAppUser: number } = await ctx.runMutation(
+      internal.admin.deleteAppUserContextInternal,
+      {
+        userId: args.userId,
+      },
+    );
+    const deletedAppUser = deleteAppUserResult.deletedAppUser;
+
+    let deletedAuditLogs = 0;
+
+    while (true) {
+      const batch = await ctx.runMutation(internal.admin.deleteAuditLogsByUserIdBatch, {
+        userId: args.userId,
+      });
+      deletedAuditLogs += batch.deletedCount;
+
+      if (!batch.hasMore) {
+        break;
+      }
     }
 
     const normalizedEmail = normalizeAuditIdentifier(args.email);
-    const auditLogsByUserId = await ctx.db
-      .query('auditLogs')
-      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
-      .collect();
-    const auditLogsByIdentifier = normalizedEmail
-      ? await ctx.db
-          .query('auditLogs')
-          .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', normalizedEmail))
-          .collect()
-      : [];
-    const auditLogsById = new Map(
-      [...auditLogsByUserId, ...auditLogsByIdentifier].map((log) => [log._id, log] as const),
-    );
+    if (normalizedEmail) {
+      while (true) {
+        const batch = await ctx.runMutation(internal.admin.deleteAuditLogsByIdentifierBatch, {
+          identifier: normalizedEmail,
+        });
+        deletedAuditLogs += batch.deletedCount;
 
-    for (const log of Array.from(auditLogsById.values())) {
-      await ctx.db.delete(log._id);
+        if (!batch.hasMore) {
+          break;
+        }
+      }
     }
 
     return {
       success: true,
-      deletedAuditLogs: auditLogsById.size,
-      deletedAppUser: appUser ? 1 : 0,
+      deletedAuditLogs,
+      deletedAppUser,
       email: args.email,
     };
   },

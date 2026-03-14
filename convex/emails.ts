@@ -6,6 +6,7 @@ import { internalAction, internalMutation, query } from './_generated/server';
 import {
   buildInvitationTemplate,
   buildResetPasswordTemplate,
+  buildVerifyEmailTemplate,
   type EmailTemplateId,
 } from './emailTemplates';
 
@@ -201,6 +202,7 @@ export const sendPasswordResetEmailMutation = internalAction({
     token: v.string(),
   },
   handler: async (ctx, args) => {
+    void args.token;
     const resendApiKey = process.env.RESEND_API_KEY;
     if (!resendApiKey) {
       throw new Error('RESEND_API_KEY environment variable is required');
@@ -263,6 +265,59 @@ export const sendPasswordResetEmailMutation = internalAction({
       });
       throw error;
     }
+  },
+});
+
+export const sendVerificationEmailMutation = internalAction({
+  args: {
+    user: v.object({
+      id: v.string(),
+      email: v.string(),
+      name: v.union(v.string(), v.null()),
+    }),
+    url: v.string(),
+    token: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      throw new Error('RESEND_API_KEY environment variable is required');
+    }
+
+    const appName = process.env.APP_NAME || 'Hackathon';
+    const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
+    const supportEmail = getSupportEmail();
+    const headers = buildEmailHeaders('verify-email', appName);
+    const tags = buildEmailTags('verify-email', appName);
+    const content = await buildVerifyEmailTemplate({
+      appName,
+      verificationLink: args.url,
+      userName: args.user.name,
+    });
+
+    await resend.sendEmailManually(
+      ctx,
+      {
+        from: `${appName} <${emailSender}>`,
+        to: args.user.email,
+        subject: content.subject,
+        replyTo: [supportEmail],
+        headers,
+      },
+      async () => {
+        return await sendEmailViaResendApi({
+          apiKey: resendApiKey,
+          from: `${appName} <${emailSender}>`,
+          to: args.user.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+          replyTo: [supportEmail],
+          headers,
+          tags,
+        });
+      },
+    );
   },
 });
 

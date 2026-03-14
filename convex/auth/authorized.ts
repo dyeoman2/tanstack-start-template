@@ -6,7 +6,7 @@ import {
   type ACCESS,
   checkOrganizationAccess,
   type CurrentUser,
-  getCurrentUserOrThrow,
+  getVerifiedCurrentUserOrThrow,
 } from './access';
 import { throwConvexError } from './errors';
 
@@ -35,7 +35,7 @@ export function organizationQuery<Result>(
   return query({
     args: organizationIdArgs,
     handler: async (ctx, args) => {
-      const user = await getCurrentUserOrThrow(ctx);
+      const user = await getVerifiedCurrentUserOrThrow(ctx);
       const access = await checkOrganizationAccess(ctx, args.organizationId, { user });
       if (!access.view) {
         throwConvexError('FORBIDDEN', 'Not authorized to view this organization');
@@ -58,7 +58,7 @@ export function organizationMutation<Result>(
   return mutation({
     args: organizationIdArgs,
     handler: async (ctx, args) => {
-      const user = await getCurrentUserOrThrow(ctx);
+      const user = await getVerifiedCurrentUserOrThrow(ctx);
       const access = await checkOrganizationAccess(ctx, args.organizationId, { user });
       if (!access.edit) {
         throwConvexError('FORBIDDEN', 'Not authorized to edit this organization');
@@ -81,7 +81,7 @@ export function organizationAdminMutation<Result>(
   return mutation({
     args: organizationIdArgs,
     handler: async (ctx, args) => {
-      const user = await getCurrentUserOrThrow(ctx);
+      const user = await getVerifiedCurrentUserOrThrow(ctx);
       const access = user.isSiteAdmin
         ? ADMIN_ACCESS
         : await checkOrganizationAccess(

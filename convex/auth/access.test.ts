@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
-import { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } from './access';
 
 describe('normalizeUserRole', () => {
   it('normalizes scalar and array Better Auth role payloads', () => {
@@ -19,7 +18,12 @@ describe('deriveIsSiteAdmin', () => {
 });
 
 describe('access constants', () => {
-  it('preserves the expected permission lattice', () => {
+  it('preserves the expected permission lattice', async () => {
+    process.env.BETTER_AUTH_SECRET = 'test-secret';
+
+    const { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } =
+      await import('./access');
+
     expect(SITE_ADMIN_ACCESS.delete).toBe(true);
     expect(ADMIN_ACCESS.edit).toBe(true);
     expect(EDIT_ACCESS.view).toBe(true);

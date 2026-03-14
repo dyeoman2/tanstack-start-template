@@ -1,5 +1,6 @@
 import { useForm } from '@tanstack/react-form';
-import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '~/components/ui/button';
@@ -15,6 +16,7 @@ import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
+import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 
 interface CreateOrganizationDialogProps {
   open: boolean;
@@ -22,7 +24,9 @@ interface CreateOrganizationDialogProps {
 }
 
 export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizationDialogProps) {
+  const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const router = useRouter();
   const { showToast } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -44,6 +48,11 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
           slug: generateOrganizationSlug(name),
           fetchOptions: { throw: true },
         });
+        await refreshOrganizationClientState(queryClient, {
+          invalidateRouter: async () => {
+            await router.invalidate();
+          },
+        });
 
         onOpenChange(false);
         form.reset();
@@ -52,6 +61,12 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
         await navigate({
           to: '/app/organizations/$slug/settings',
           params: { slug: organization.slug },
+          state: {
+            organizationBreadcrumb: {
+              name: organization.name,
+              slug: organization.slug,
+            },
+          },
         });
       } catch (error) {
         const message = getErrorMessage(error);

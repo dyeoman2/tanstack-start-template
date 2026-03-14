@@ -4,6 +4,7 @@ import {
   canManageOrganization,
   canRemoveMember,
   deriveViewerRole,
+  getOrganizationAccess,
   getAssignableRoles,
 } from './organization-permissions';
 
@@ -23,6 +24,32 @@ describe('organization permission rules', () => {
     expect(canManageOrganization('admin')).toBe(true);
     expect(canManageOrganization('member')).toBe(false);
     expect(canManageOrganization(null)).toBe(false);
+  });
+
+  it('maps viewer roles to a single canonical access model', () => {
+    expect(getOrganizationAccess('site-admin')).toMatchObject({
+      admin: true,
+      delete: true,
+      edit: true,
+      view: true,
+      siteAdmin: true,
+    });
+    expect(getOrganizationAccess('owner')).toMatchObject({
+      admin: true,
+      edit: true,
+      view: true,
+      siteAdmin: false,
+    });
+    expect(getOrganizationAccess('member')).toMatchObject({
+      admin: false,
+      edit: true,
+      view: true,
+    });
+    expect(getOrganizationAccess(null)).toMatchObject({
+      admin: false,
+      edit: false,
+      view: false,
+    });
   });
 
   it('lets owners and site admins assign owner roles, but not admins', () => {

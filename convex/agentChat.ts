@@ -25,7 +25,7 @@ import {
   isTextOnlyUserMessage,
   resolveThread,
 } from './agentChatActions';
-import { getCurrentUserOrThrow } from './auth/access';
+import { getVerifiedCurrentUserOrThrow } from './auth/access';
 import {
   assertChatModelSupportsWebSearch,
   type ChatAttachmentDoc,
@@ -38,6 +38,7 @@ import {
 } from './lib/agentChat';
 import { baseChatAgent } from './lib/chatAgentRuntime';
 import {
+  type AdvisoryChatRateLimit,
   buildChatUsageAggregatePatch,
   chargeActualChatTokens,
   enforceChatPreflightOrThrow,
@@ -50,7 +51,7 @@ type ThreadWithAccess = ChatThreadDoc & {
   canManage: boolean;
 };
 
-function getCurrentUserDisplayName(user: Awaited<ReturnType<typeof getCurrentUserOrThrow>>) {
+function getCurrentUserDisplayName(user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>) {
   const normalizedName = user.authUser.name?.trim();
   if (normalizedName) {
     return normalizedName;
@@ -60,11 +61,27 @@ function getCurrentUserDisplayName(user: Awaited<ReturnType<typeof getCurrentUse
 }
 
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
-  const user = await getCurrentUserOrThrow(ctx);
-  const organizationId = user.lastActiveOrganizationId;
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const organizationId = user.activeOrganizationId;
 
   if (!organizationId) {
     throw new ConvexError('No active organization is selected.');
+  }
+
+  return {
+    userId: user._id,
+    organizationId,
+    isSiteAdmin: user.isSiteAdmin,
+    currentUserName: getCurrentUserDisplayName(user),
+  };
+}
+
+async function getCurrentChatContextOrNull(ctx: QueryCtx | MutationCtx) {
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const organizationId = user.activeOrganizationId;
+
+  if (!organizationId) {
+    return null;
   }
 
   return {
@@ -170,15 +187,17 @@ async function listAccessibleThreads(
   if (viewer.isSiteAdmin) {
     return await ctx.db
       .query('chatThreads')
-      .withIndex('by_organizationId_and_updatedAt', (q) =>
+      .withIndex('by_organizationId_and_lastMessageAt', (q) =>
         q.eq('organizationId', viewer.organizationId),
       )
+      .order('desc')
       .collect();
   }
 
   return await ctx.db
     .query('chatThreads')
-    .withIndex('by_ownerUserId_and_updatedAt', (q) => q.eq('ownerUserId', viewer.userId))
+    .withIndex('by_ownerUserId_and_lastMessageAt', (q) => q.eq('ownerUserId', viewer.userId))
+    .order('desc')
     .collect();
 }
 
@@ -229,6 +248,55 @@ function getMessageTextLength(message: AgentMessageDoc | null) {
 
     return total + part.text.trim().length;
   }, 0);
+}
+
+const THREAD_DELETE_BATCH_SIZE = 128;
+
+async function deleteThreadDocumentsInBatches(
+  ctx: MutationCtx,
+  threadId: Id<'chatThreads'>,
+) {
+  while (true) {
+    const runs = await ctx.db
+      .query('chatRuns')
+      .withIndex('by_threadId_and_startedAt', (q) => q.eq('threadId', threadId))
+      .order('asc')
+      .take(THREAD_DELETE_BATCH_SIZE);
+
+    if (runs.length === 0) {
+      break;
+    }
+
+    await Promise.all(runs.map((run) => ctx.db.delete(run._id)));
+  }
+
+  while (true) {
+    const attachments = await ctx.db
+      .query('chatAttachments')
+      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', threadId))
+      .order('asc')
+      .take(THREAD_DELETE_BATCH_SIZE);
+
+    if (attachments.length === 0) {
+      break;
+    }
+
+    await Promise.all(attachments.map((attachment) => ctx.db.delete(attachment._id)));
+  }
+
+  while (true) {
+    const usageEvents = await ctx.db
+      .query('chatUsageEvents')
+      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', threadId))
+      .order('asc')
+      .take(THREAD_DELETE_BATCH_SIZE);
+
+    if (usageEvents.length === 0) {
+      break;
+    }
+
+    await Promise.all(usageEvents.map((event) => ctx.db.delete(event._id)));
+  }
 }
 
 export const getCurrentChatContextInternal = internalQuery({
@@ -731,7 +799,11 @@ export const recordUsageEventInternal = internalMutation({
 export const listThreads = query({
   args: {},
   handler: async (ctx) => {
-    const viewer = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContextOrNull(ctx);
+    if (!viewer) {
+      return [];
+    }
+
     const threads = await listAccessibleThreads(ctx, viewer);
 
     return threads.map((thread) => toThreadWithAccess(thread, viewer));
@@ -741,12 +813,28 @@ export const listThreads = query({
 export const getLatestThreadId = query({
   args: {},
   handler: async (ctx) => {
-    const viewer = await getCurrentChatContext(ctx);
-    const threads = await listAccessibleThreads(ctx, viewer);
+    const viewer = await getCurrentChatContextOrNull(ctx);
+    if (!viewer) {
+      return null;
+    }
 
-    return (
-      [...threads].sort((left, right) => right.lastMessageAt - left.lastMessageAt)[0]?._id ?? null
-    );
+    const threads = viewer.isSiteAdmin
+      ? await ctx.db
+          .query('chatThreads')
+          .withIndex('by_organizationId_and_lastMessageAt', (q) =>
+            q.eq('organizationId', viewer.organizationId),
+          )
+          .order('desc')
+          .take(1)
+      : await ctx.db
+          .query('chatThreads')
+          .withIndex('by_ownerUserId_and_lastMessageAt', (q) =>
+            q.eq('ownerUserId', viewer.userId),
+          )
+          .order('desc')
+          .take(1);
+
+    return threads[0]?._id ?? null;
   },
 });
 
@@ -926,7 +1014,16 @@ export const getChatRateLimit = query({
     hasAttachments: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { userId, organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContextOrNull(ctx);
+    if (!viewer) {
+      return {
+        request: { ok: true },
+        estimatedTokens: { ok: true },
+        estimatedInputTokens: 0,
+      } satisfies AdvisoryChatRateLimit;
+    }
+
+    const { userId, organizationId } = viewer;
     return await getAdvisoryChatRateLimit(ctx, {
       organizationId,
       userId,
@@ -1485,7 +1582,12 @@ export const generateChatAttachmentUploadUrl = mutation({
 export const listPersonas = query({
   args: {},
   handler: async (ctx): Promise<PersonaDoc[]> => {
-    const { organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContextOrNull(ctx);
+    if (!viewer) {
+      return [];
+    }
+
+    const { organizationId } = viewer;
 
     return await ctx.db
       .query('aiPersonas')
@@ -1593,19 +1695,7 @@ export const deleteThread = mutation({
       throw new ConvexError('You do not have permission to delete this thread.');
     }
 
-    const runs = await getChatRunsForThread(ctx, args.threadId);
-    const attachments = await ctx.db
-      .query('chatAttachments')
-      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
-      .collect();
-    const usageEvents = await ctx.db
-      .query('chatUsageEvents')
-      .withIndex('by_threadId_and_createdAt', (q) => q.eq('threadId', args.threadId))
-      .collect();
-
-    await Promise.all(runs.map((run) => ctx.db.delete(run._id)));
-    await Promise.all(attachments.map((attachment) => ctx.db.delete(attachment._id)));
-    await Promise.all(usageEvents.map((event) => ctx.db.delete(event._id)));
+    await deleteThreadDocumentsInBatches(ctx, args.threadId);
     await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
       threadId: thread.agentThreadId,
     });

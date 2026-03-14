@@ -7,6 +7,10 @@ import { Button } from '~/components/ui/button';
 import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
 import { authClient, authHooks } from '~/features/auth/auth-client';
+import {
+  getOrganizationActionErrorMessage,
+  refreshOrganizationClientState,
+} from '~/features/organizations/lib/organization-session';
 
 type UserInvitation = {
   id: string;
@@ -43,16 +47,6 @@ export function UserInvitationInbox() {
     });
   }, [data]);
 
-  const refreshOrganizationState = async () => {
-    authClient.$store.notify('$activeOrgSignal');
-    authClient.$store.notify('$sessionSignal');
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['organizations'] }),
-      queryClient.invalidateQueries({ queryKey: ['active-organization'] }),
-      queryClient.invalidateQueries({ queryKey: ['user-invitations'] }),
-    ]);
-  };
-
   const handleAccept = async (invitationId: string) => {
     setPendingInvitationId(invitationId);
 
@@ -61,12 +55,18 @@ export function UserInvitationInbox() {
         invitationId,
         fetchOptions: { throw: true },
       });
-      await refreshOrganizationState();
+      await refreshOrganizationClientState(queryClient, {
+        invalidateRouter: async () => {
+          await router.invalidate();
+        },
+      });
       showToast('Invitation accepted.', 'success');
       await navigate({ to: '/app/organizations' });
-      await router.invalidate();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to accept invitation', 'error');
+      showToast(
+        getOrganizationActionErrorMessage(error, 'Failed to accept invitation'),
+        'error',
+      );
     } finally {
       setPendingInvitationId(null);
     }
@@ -80,10 +80,13 @@ export function UserInvitationInbox() {
         invitationId,
         fetchOptions: { throw: true },
       });
-      await refreshOrganizationState();
+      await refreshOrganizationClientState(queryClient);
       showToast('Invitation rejected.', 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to reject invitation', 'error');
+      showToast(
+        getOrganizationActionErrorMessage(error, 'Failed to reject invitation'),
+        'error',
+      );
     } finally {
       setPendingInvitationId(null);
     }

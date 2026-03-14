@@ -1,6 +1,7 @@
 import * as React from 'react';
 import type { Organization } from 'better-auth/plugins/organization';
-import { useLocation, useNavigate } from '@tanstack/react-router';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
 import {
   DropdownMenu,
@@ -21,6 +22,7 @@ import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
 import { authClient, authHooks } from '~/features/auth/auth-client';
 import { CreateOrganizationDialog } from '~/features/organizations/components/CreateOrganizationDialog';
+import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 
 export type TeamSwitcherItem = {
   name: string;
@@ -31,8 +33,10 @@ export type TeamSwitcherItem = {
 
 export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
   const { isMobile } = useSidebar();
+  const queryClient = useQueryClient();
   const location = useLocation();
   const navigate = useNavigate();
+  const router = useRouter();
   const { showToast } = useToast();
   const { data: organizations, isPending: organizationsPending } = authHooks.useListOrganizations();
   const { data: activeOrganization } = authHooks.useActiveOrganization();
@@ -132,6 +136,10 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
                       navigate,
                       onActiveTeamChange: setActiveTeam,
                       onError: showToast,
+                      queryClient,
+                      routerInvalidate: async () => {
+                        await router.invalidate();
+                      },
                     });
                   }}
                 >
@@ -171,16 +179,23 @@ async function handleOrganizationSelect({
   navigate,
   onActiveTeamChange,
   onError,
+  queryClient,
+  routerInvalidate,
 }: {
   organization: Organization;
   navigate: ReturnType<typeof useNavigate>;
   onActiveTeamChange: (team: TeamSwitcherItem) => void;
   onError: (message: string, variant: 'error' | 'success' | 'info') => void;
+  queryClient: Pick<QueryClient, 'invalidateQueries'>;
+  routerInvalidate: () => Promise<void>;
 }) {
   try {
     await authClient.organization.setActive({
       organizationId: organization.id,
       fetchOptions: { throw: true },
+    });
+    await refreshOrganizationClientState(queryClient, {
+      invalidateRouter: routerInvalidate,
     });
 
     const team = {
@@ -194,6 +209,12 @@ async function handleOrganizationSelect({
     await navigate({
       to: '/app/organizations/$slug/settings',
       params: { slug: organization.slug },
+      state: {
+        organizationBreadcrumb: {
+          name: organization.name,
+          slug: organization.slug,
+        },
+      },
     });
   } catch (error) {
     onError(getErrorMessage(error), 'error');

@@ -1,7 +1,8 @@
 import { api } from '@convex/_generated/api';
 import { useNavigate } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
+import { useQuery } from 'convex/react';
 import { Loader2, Plus } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -24,6 +25,7 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { Button } from '~/components/ui/button';
+import { Spinner } from '~/components/ui/spinner';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersTable } from '~/features/organizations/components/OrganizationMembersTable';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
@@ -33,6 +35,12 @@ import type {
   OrganizationDirectoryRow,
   OrganizationDirectorySearchParams,
 } from '~/features/organizations/lib/organization-management';
+import {
+  cancelOrganizationInvitationServerFn,
+  createOrganizationInvitationServerFn,
+  removeOrganizationMemberServerFn,
+  updateOrganizationMemberRoleServerFn,
+} from '~/features/organizations/server/organization-management';
 
 const KIND_FILTER_OPTIONS: TableFilterOption<OrganizationDirectoryKind>[] = [
   { label: 'All rows', value: 'all' },
@@ -41,10 +49,18 @@ const KIND_FILTER_OPTIONS: TableFilterOption<OrganizationDirectoryKind>[] = [
 ];
 
 export function OrganizationMembersManagement({
+  actions,
+  inviteDialogOpen: inviteDialogOpenProp,
+  onInviteDialogOpenChange,
   searchParams,
+  showHeader = true,
   slug,
 }: {
+  actions?: ReactNode;
+  inviteDialogOpen?: boolean;
+  onInviteDialogOpenChange?: (open: boolean) => void;
   searchParams: OrganizationDirectorySearchParams;
+  showHeader?: boolean;
   slug: string;
 }) {
   const navigate = useNavigate();
@@ -53,12 +69,11 @@ export function OrganizationMembersManagement({
     slug,
     ...searchParams,
   });
-  const createInvitation = useMutation(api.organizationManagement.createOrganizationInvitation);
-  const updateMemberRole = useMutation(api.organizationManagement.updateOrganizationMemberRole);
-  const removeMember = useMutation(api.organizationManagement.removeOrganizationMember);
-  const cancelInvitation = useMutation(api.organizationManagement.cancelOrganizationInvitation);
-
-  const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
+  const createInvitation = createOrganizationInvitationServerFn;
+  const updateMemberRole = updateOrganizationMemberRoleServerFn;
+  const removeMember = removeOrganizationMemberServerFn;
+  const cancelInvitation = cancelOrganizationInvitationServerFn;
+  const [inviteDialogOpenInternal, setInviteDialogOpenInternal] = useState(false);
   const [selectedRoleMember, setSelectedRoleMember] = useState<Extract<
     OrganizationDirectoryRow,
     { kind: 'member' }
@@ -93,6 +108,7 @@ export function OrganizationMembersManagement({
   }, [selectedRoleMember]);
 
   const isLoading = directory === undefined;
+  const inviteDialogOpen = inviteDialogOpenProp ?? inviteDialogOpenInternal;
   const rows = directory?.rows ?? [];
   const pagination = directory?.pagination ?? {
     page: searchParams.page,
@@ -105,9 +121,17 @@ export function OrganizationMembersManagement({
     directory?.viewerRole === 'owner' ||
     directory?.viewerRole === 'admin';
   const organizationName = directory?.organization.name ?? 'Organization';
+  const setInviteDialogOpen = (open: boolean) => {
+    onInviteDialogOpenChange?.(open);
+
+    if (inviteDialogOpenProp === undefined) {
+      setInviteDialogOpenInternal(open);
+    }
+  };
+
   const handleSearchChange = (search: string) => {
     void navigate({
-      to: '/app/organizations/$slug/members',
+      to: '/app/organizations/$slug/settings',
       params: { slug },
       search: {
         ...searchParams,
@@ -119,7 +143,7 @@ export function OrganizationMembersManagement({
 
   const handleKindChange = (kind: OrganizationDirectoryKind) => {
     void navigate({
-      to: '/app/organizations/$slug/members',
+      to: '/app/organizations/$slug/settings',
       params: { slug },
       search: {
         ...searchParams,
@@ -139,9 +163,11 @@ export function OrganizationMembersManagement({
 
     try {
       await createInvitation({
-        organizationId: directory.organization.id,
-        email: inviteEmail.trim(),
-        role: inviteRole,
+        data: {
+          organizationId: directory.organization.id,
+          email: inviteEmail.trim(),
+          role: inviteRole,
+        },
       });
       setInviteDialogOpen(false);
       setInviteEmail('');
@@ -166,9 +192,11 @@ export function OrganizationMembersManagement({
 
     try {
       await updateMemberRole({
-        organizationId: directory.organization.id,
-        membershipId: selectedRoleMember.membershipId,
-        role: nextRole,
+        data: {
+          organizationId: directory.organization.id,
+          membershipId: selectedRoleMember.membershipId,
+          role: nextRole,
+        },
       });
       setSelectedRoleMember(null);
       showToast('Member role updated.', 'success');
@@ -191,8 +219,10 @@ export function OrganizationMembersManagement({
 
     try {
       await removeMember({
-        organizationId: directory.organization.id,
-        membershipId: selectedRemovalMember.membershipId,
+        data: {
+          organizationId: directory.organization.id,
+          membershipId: selectedRemovalMember.membershipId,
+        },
       });
       setSelectedRemovalMember(null);
       showToast('Member removed.', 'success');
@@ -215,8 +245,10 @@ export function OrganizationMembersManagement({
 
     try {
       await cancelInvitation({
-        organizationId: directory.organization.id,
-        invitationId: selectedInvitation.invitationId,
+        data: {
+          organizationId: directory.organization.id,
+          invitationId: selectedInvitation.invitationId,
+        },
       });
       setSelectedInvitation(null);
       showToast('Invitation revoked.', 'success');
@@ -241,9 +273,12 @@ export function OrganizationMembersManagement({
 
     try {
       await createInvitation({
-        organizationId: directory.organization.id,
-        email: invitation.email,
-        role: invitation.role,
+        data: {
+          organizationId: directory.organization.id,
+          email: invitation.email,
+          role: invitation.role,
+          resend: true,
+        },
       });
       showToast('Invitation resent.', 'success');
     } catch (error) {
@@ -288,24 +323,29 @@ export function OrganizationMembersManagement({
 
   return (
     <div className="space-y-6">
-      <OrganizationWorkspaceNav
-        slug={slug}
-        view="MEMBERS"
-        title={organizationName}
-        description="Manage members and invitations with one org-specific directory."
-        actions={
-          canManage ? (
-            <Button size="sm" onClick={() => setInviteDialogOpen(true)}>
-              <Plus className="size-4" />
-              Invite member
-            </Button>
-          ) : undefined
-        }
-      />
+      {showHeader ? (
+        <OrganizationWorkspaceNav
+          title={organizationName}
+          description="Manage members and invitations with one org-specific directory."
+          actions={
+            actions ??
+            (canManage ? (
+              <Button size="sm" onClick={() => setInviteDialogOpen(true)}>
+                <Plus className="size-4" />
+                Invite member
+              </Button>
+            ) : undefined)
+          }
+        />
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2">
-        <SummaryCard label="Members" value={directory?.counts.members ?? 0} />
-        <SummaryCard label="Pending invites" value={directory?.counts.invites ?? 0} />
+        <SummaryCard label="Members" value={directory?.counts.members} isLoading={isLoading} />
+        <SummaryCard
+          label="Pending invites"
+          value={directory?.counts.invites}
+          isLoading={isLoading}
+        />
       </div>
 
       <div className="space-y-4">
@@ -417,12 +457,22 @@ export function OrganizationMembersManagement({
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: number }) {
+function SummaryCard({
+  label,
+  value,
+  isLoading,
+}: {
+  label: string;
+  value: number | undefined;
+  isLoading: boolean;
+}) {
   return (
     <Card>
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-2xl">{value}</CardTitle>
+        <CardTitle className="flex h-8 items-center text-2xl">
+          {isLoading ? <Spinner className="size-8" /> : value ?? 0}
+        </CardTitle>
       </CardHeader>
     </Card>
   );

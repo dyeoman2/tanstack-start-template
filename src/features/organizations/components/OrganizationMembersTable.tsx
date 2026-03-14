@@ -56,7 +56,7 @@ export function OrganizationMembersTable({
         searchParams.sortBy === columnId && searchParams.sortOrder === 'asc' ? 'desc' : 'asc';
 
       void navigate({
-        to: '/app/organizations/$slug/members',
+        to: '/app/organizations/$slug/settings',
         params: { slug },
         search: {
           ...searchParams,
@@ -72,7 +72,7 @@ export function OrganizationMembersTable({
   const handlePageChange = useCallback(
     (page: number) => {
       void navigate({
-        to: '/app/organizations/$slug/members',
+        to: '/app/organizations/$slug/settings',
         params: { slug },
         search: {
           ...searchParams,
@@ -86,7 +86,7 @@ export function OrganizationMembersTable({
   const handlePageSizeChange = useCallback(
     (pageSize: number) => {
       void navigate({
-        to: '/app/organizations/$slug/members',
+        to: '/app/organizations/$slug/settings',
         params: { slug },
         search: {
           ...searchParams,

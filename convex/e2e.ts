@@ -1,9 +1,9 @@
 import { v } from 'convex/values';
-import { getE2ETestSecret, isE2ETestAuthEnabled } from '../src/lib/server/env.server';
+import { isE2ETestAuthEnabled } from '../src/lib/server/env.server';
 import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import { mutation } from './_generated/server';
+import { internalMutation } from './_generated/server';
 import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 
 const deletePaginationOpts = {
@@ -12,24 +12,19 @@ const deletePaginationOpts = {
   numItems: 1000,
 } as const;
 
-function assertE2EAccess(secret: string) {
+function assertE2EAccess() {
   if (!isE2ETestAuthEnabled()) {
     throw new Error('E2E test auth is disabled');
   }
-
-  if (secret !== getE2ETestSecret()) {
-    throw new Error('Unauthorized e2e access');
-  }
 }
 
-export const ensurePrincipalRole = mutation({
+export const ensurePrincipalRole = internalMutation({
   args: {
-    secret: v.string(),
     email: v.string(),
     role: v.union(v.literal('user'), v.literal('admin')),
   },
   handler: async (ctx, args) => {
-    assertE2EAccess(args.secret);
+    assertE2EAccess();
 
     const authUser = await findBetterAuthUserByEmail(ctx, args.email);
     if (!authUser) {
@@ -54,13 +49,12 @@ export const ensurePrincipalRole = mutation({
   },
 });
 
-export const resetPrincipalByEmail = mutation({
+export const resetPrincipalByEmail = internalMutation({
   args: {
-    secret: v.string(),
     email: v.string(),
   },
   handler: async (ctx, args) => {
-    assertE2EAccess(args.secret);
+    assertE2EAccess();
 
     const authUser = await findBetterAuthUserByEmail(ctx, args.email);
     if (!authUser) {

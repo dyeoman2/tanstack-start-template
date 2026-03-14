@@ -1,24 +1,43 @@
 import { createClient, type GenericCtx } from '@convex-dev/better-auth';
-import { convex } from '@convex-dev/better-auth/plugins';
 import { betterAuth } from 'better-auth';
-import { admin, organization } from 'better-auth/plugins';
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 import {
   getBetterAuthSecret,
-  getBetterAuthTrustedOrigins,
-  getSiteUrl,
+  isTrustedBetterAuthOrigin,
 } from '../src/lib/server/env.server';
+import {
+  createSharedBetterAuthOptions,
+  type SharedSendInvitationEmail,
+} from './betterAuth/sharedOptions';
 import { createAuthAuditPlugin } from './lib/authAudit';
 import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
-import { action, query } from './_generated/server';
-import authConfig from './auth.config';
+import { internalAction, query } from './_generated/server';
 
-const siteUrl = getSiteUrl();
 const secret = getBetterAuthSecret();
-const trustedOrigins = getBetterAuthTrustedOrigins(siteUrl);
+
+function resolveAuthEmailUrl(url: string, request?: Request): string {
+  if (!request) {
+    return url;
+  }
+
+  try {
+    const requestOrigin = new URL(request.url).origin;
+    if (!isTrustedBetterAuthOrigin(requestOrigin)) {
+      return url;
+    }
+
+    const nextUrl = new URL(url);
+    const nextOrigin = new URL(requestOrigin);
+    nextUrl.protocol = nextOrigin.protocol;
+    nextUrl.host = nextOrigin.host;
+    return nextUrl.toString();
+  } catch {
+    return url;
+  }
+}
 
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
   components.betterAuth,
@@ -56,24 +75,8 @@ export const createAuth = (
     });
   };
 
-  return betterAuth({
-    logger: {
-      disabled: optionsOnly,
-    },
-    baseURL: siteUrl,
-    secret,
-    database: authComponent.adapter(ctx),
-    // Rate limiting at top level - Better Auth only inspects options.rateLimit
-    rateLimit: {
-      // Global rate limit - applies to all endpoints
-      window: 60 * 60, // 1 hour in seconds
-      max: 100, // 100 requests per hour per IP
-    },
-    emailAndPassword: {
-      enabled: true,
-      requireEmailVerification: false,
-      autoSignIn: true,
-      sendResetPassword: async ({ user, url, token }) => {
+  const sharedOptions = createSharedBetterAuthOptions({
+    sendResetPassword: async ({ user, url, token }, request) => {
         // Apply server-side rate limiting for password reset (defense-in-depth)
         const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
           runMutation?: (
@@ -130,7 +133,7 @@ export const createAuth = (
                 email: user.email,
                 name: user.name || null,
               },
-              url,
+              url: resolveAuthEmailUrl(url, request),
               token,
             },
           );
@@ -140,69 +143,75 @@ export const createAuth = (
           throw new Error('Cannot send email: scheduler not available');
         }
       },
-    },
-    user: {
-      additionalFields: {
-        // Note: role is NOT included here because the Convex adapter validator
-        // doesn't accept additionalFields during user creation. We set role
-        // after user creation via a Convex mutation (see user-management.ts)
-        phoneNumber: {
-          type: 'string',
-          required: false,
-        },
-      },
-    },
-    trustedOrigins,
-    plugins: [
-      admin({
-        defaultRole: 'user',
-        adminRoles: ['admin'],
-      }),
-      organization({
-        allowUserToCreateOrganization: true,
-        invitationExpiresIn: 7 * 24 * 60 * 60,
-        cancelPendingInvitationsOnReInvite: true,
-        sendInvitationEmail: async (data) => {
-          const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
-            scheduler?: {
-              runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
-            };
-          };
+    sendVerificationEmail: async ({ user, url, token }, request) => {
+      const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
+        scheduler?: {
+          runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
+        };
+      };
 
-          if (!ctxWithScheduler.scheduler) {
-            throw new Error('Cannot send organization invitation email: scheduler not available');
-          }
+      if (!ctxWithScheduler.scheduler) {
+        throw new Error('Cannot send verification email: scheduler not available');
+      }
 
-          const inviteUrl = `${siteUrl}/invite/${data.id}`;
-          await ctxWithScheduler.scheduler.runAfter(
-            0,
-            internal.emails.sendOrganizationInviteEmailMutation,
-            {
-              email: data.email,
-              inviteUrl,
-              inviterName: data.inviter.user.name ?? data.inviter.user.email,
-              organizationName: data.organization.name,
-              role: data.role,
-            },
-          );
+      await ctxWithScheduler.scheduler.runAfter(0, internal.emails.sendVerificationEmailMutation, {
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name || null,
         },
-      }),
-      createAuthAuditPlugin(recordAuditEvent),
-      convex({
-        authConfig,
-        jwks: process.env.JWKS,
-        options: {
-          basePath: '/api/auth',
+        url: resolveAuthEmailUrl(url, request),
+        token,
+      });
+    },
+    afterEmailVerification: async (user) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return;
+      }
+
+      await ctxWithRunMutation.runMutation(internal.users.syncAuthUserProfile, {
+        authUserId: user.id,
+      });
+    },
+    sendInvitationEmail: async (
+      data: Parameters<SharedSendInvitationEmail>[0],
+      request?: Request,
+    ) => {
+      const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
+        scheduler?: {
+          runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
+        };
+      };
+
+      if (!ctxWithScheduler.scheduler) {
+        throw new Error('Cannot send organization invitation email: scheduler not available');
+      }
+
+      const inviteUrl = resolveAuthEmailUrl(`/invite/${data.id}`, request);
+      await ctxWithScheduler.scheduler.runAfter(
+        0,
+        internal.emails.sendOrganizationInviteEmailMutation,
+        {
+          email: data.email,
+          inviteUrl,
+          inviterName: data.inviter.user.name ?? data.inviter.user.email,
+          organizationName: data.organization.name,
+          role: data.role,
         },
-      }),
-    ],
+      );
+    },
+  });
+
+  return betterAuth({
+    ...sharedOptions,
+    logger: {
+      disabled: optionsOnly,
+    },
+    secret,
+    database: authComponent.adapter(ctx),
+    plugins: [...(sharedOptions.plugins ?? []), createAuthAuditPlugin(recordAuditEvent)],
   });
 };
-
-const internalRateLimitToken = process.env.BETTER_AUTH_SECRET;
-if (!internalRateLimitToken) {
-  throw new Error('BETTER_AUTH_SECRET environment variable is required');
-}
 
 type RotatedJwk = {
   alg?: string;
@@ -244,9 +253,8 @@ const parseRotatedJwks = (value: unknown): RotatedJwk[] => {
 };
 
 // Action wrapper for rate limiting (callable from server functions)
-export const rateLimitAction = action({
+export const rateLimitAction = internalAction({
   args: {
-    token: v.string(),
     name: v.string(),
     key: v.string(),
     config: v.union(
@@ -265,26 +273,20 @@ export const rateLimitAction = action({
     ),
   },
   handler: async (ctx, args) => {
-    if (args.token !== internalRateLimitToken) {
-      throw new Error('Unauthorized rate limit access');
-    }
-
-    const { token: _token, ...rateLimitArgs } = args;
-    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, rateLimitArgs);
+    return await ctx.runMutation(components.rateLimiter.lib.rateLimit, args);
   },
 });
 
-export const rotateKeys = action({
-  args: {
-    token: v.string(),
-  },
+export const rotateKeys = internalAction({
+  args: {},
   handler: async (ctx, args) => {
-    if (args.token !== internalRateLimitToken) {
-      throw new Error('Unauthorized key rotation access');
-    }
-
+    void args;
     const auth = createAuth(ctx);
-    const jwksResult: unknown = await auth.api.rotateKeys();
+    const jwksResult: unknown = await (
+      auth.api as unknown as {
+        rotateKeys: () => Promise<unknown>;
+      }
+    ).rotateKeys();
     const jwks = parseRotatedJwks(jwksResult);
     return JSON.stringify(
       jwks.map((key: RotatedJwk) => ({

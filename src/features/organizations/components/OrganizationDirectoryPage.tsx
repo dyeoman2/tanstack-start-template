@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useQuery } from 'convex/react';
 import { Link } from '@tanstack/react-router';
-import { Building2, Plus, Settings, Users } from 'lucide-react';
+import { Building2, Plus, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
@@ -23,8 +23,8 @@ export function OrganizationDirectoryPage() {
           title="Organizations"
           description={
             !isPending && organizations
-              ? `Manage organization settings, members, and invitations.`
-              : 'Open an organization to manage settings, members, and invitations.'
+              ? 'Open an organization to manage members, invitations, and workspace settings.'
+              : 'Open an organization to manage members, invitations, and workspace settings.'
           }
           actions={
             <Button onClick={() => setCreateDialogOpen(true)} size="sm">
@@ -92,6 +92,12 @@ function OrganizationRow({
       <Link
         to="/app/organizations/$slug/settings"
         params={{ slug }}
+        state={{
+          organizationBreadcrumb: {
+            name: organization.name,
+            slug,
+          },
+        }}
         className="flex min-w-0 flex-1 items-center gap-4 rounded-md outline-none transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
       >
         <div className="flex size-12 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
@@ -112,16 +118,19 @@ function OrganizationRow({
       </Link>
 
       <div className="flex flex-wrap items-center gap-2">
-        <Button asChild variant="outline" size="sm">
-          <Link to="/app/organizations/$slug/members" params={{ slug }}>
-            <Users className="size-4" />
-            Members
-          </Link>
-        </Button>
         <Button asChild size="sm">
-          <Link to="/app/organizations/$slug/settings" params={{ slug }}>
+          <Link
+            to="/app/organizations/$slug/settings"
+            params={{ slug }}
+            state={{
+              organizationBreadcrumb: {
+                name: organization.name,
+                slug,
+              },
+            }}
+          >
             <Settings className="size-4" />
-            Settings
+            Open settings
           </Link>
         </Button>
       </div>
@@ -140,7 +149,6 @@ function OrganizationRowSkeleton() {
         </div>
       </div>
       <div className="flex gap-2">
-        <Skeleton className="h-9 w-24 rounded-md" />
         <Skeleton className="h-9 w-32 rounded-md" />
       </div>
     </div>

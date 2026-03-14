@@ -11,7 +11,6 @@ const updateMemberRoleMock = vi.fn();
 const removeMemberMock = vi.fn();
 const cancelInvitationMock = vi.fn();
 const useQueryMock = vi.fn();
-const useMutationMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
@@ -20,7 +19,13 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: (...args: unknown[]) => useMutationMock(...args),
+}));
+
+vi.mock('~/features/organizations/server/organization-management', () => ({
+  createOrganizationInvitationServerFn: (...args: unknown[]) => createInvitationMock(...args),
+  updateOrganizationMemberRoleServerFn: (...args: unknown[]) => updateMemberRoleMock(...args),
+  removeOrganizationMemberServerFn: (...args: unknown[]) => removeMemberMock(...args),
+  cancelOrganizationInvitationServerFn: (...args: unknown[]) => cancelInvitationMock(...args),
 }));
 
 vi.mock('~/components/ui/toast', () => ({
@@ -74,18 +79,6 @@ describe('OrganizationMembersManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useQueryMock.mockReturnValue(directoryResponse);
-    const mutationValues = [
-      createInvitationMock,
-      updateMemberRoleMock,
-      removeMemberMock,
-      cancelInvitationMock,
-    ];
-    let mutationIndex = 0;
-    useMutationMock.mockImplementation(() => {
-      const mutation = mutationValues[mutationIndex % mutationValues.length];
-      mutationIndex += 1;
-      return mutation;
-    });
   });
 
   it('resends organization invitations from the invite row actions', async () => {
@@ -114,11 +107,51 @@ describe('OrganizationMembersManagement', () => {
 
     await waitFor(() => {
       expect(createInvitationMock).toHaveBeenCalledWith({
-        organizationId: 'org-1',
-        email: 'invitee@example.com',
-        role: 'member',
+        data: {
+          organizationId: 'org-1',
+          email: 'invitee@example.com',
+          role: 'member',
+          resend: true,
+        },
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Invitation resent.', 'success');
+  });
+
+  it('navigates sorting changes to the consolidated settings route', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <OrganizationMembersManagement
+        slug="cottage-hospital"
+        searchParams={{
+          page: 1,
+          pageSize: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          secondarySortBy: 'email',
+          secondarySortOrder: 'asc',
+          search: '',
+          kind: 'all',
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /^email$/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/app/organizations/$slug/settings',
+      params: { slug: 'cottage-hospital' },
+      search: {
+        page: 1,
+        pageSize: 10,
+        sortBy: 'email',
+        sortOrder: 'asc',
+        secondarySortBy: 'email',
+        secondarySortOrder: 'asc',
+        search: '',
+        kind: 'all',
+      },
+    });
   });
 });

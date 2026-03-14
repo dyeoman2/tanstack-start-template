@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { AuthEmailPrefill } from '~/features/auth/components/AuthEmailPrefill';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
-import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
   staticData: true,
@@ -22,6 +22,7 @@ export const Route = createFileRoute('/login')({
       .regex(/^\/|https?:\/\/.*$/)
       .optional(),
     reset: z.string().optional(),
+    verified: z.string().optional(),
   }),
 });
 
@@ -47,23 +48,25 @@ function resolveRedirectTarget(value?: string | null): RedirectTarget {
 }
 
 function LoginPage() {
-  const { email, redirectTo, reset } = Route.useSearch();
-  const { isAuthenticated, isPending } = useAuthState();
+  const { email, redirectTo, reset, verified } = Route.useSearch();
+  const { isAuthenticated, isPending } = useAuth({ fetchRole: false });
   const router = useRouter();
   const redirectTarget = resolveRedirectTarget(redirectTo);
   const [showResetSuccess] = useState(reset === 'success');
+  const [showVerifySuccess] = useState(verified === 'success');
 
   useEffect(() => {
-    if (reset !== 'success') {
+    if (reset !== 'success' && verified !== 'success') {
       return;
     }
 
     const searchParams = new URLSearchParams(window.location.search);
     searchParams.delete('reset');
+    searchParams.delete('verified');
     const nextSearch = searchParams.toString();
     const nextHref = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
     router.history.replace(nextHref);
-  }, [reset, router]);
+  }, [reset, router, verified]);
 
   if (isPending) {
     return <AuthSkeleton />;
@@ -79,6 +82,10 @@ function LoginPage() {
         showResetSuccess ? (
           <div className="rounded border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
             Password reset successful. Sign in with your new password.
+          </div>
+        ) : showVerifySuccess ? (
+          <div className="rounded border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
+            Email verified. Sign in to continue.
           </div>
         ) : undefined
       }

@@ -45,7 +45,9 @@ export function ChatSidebarGroup() {
         return;
       }
 
-      const remainingThreads = currentThreads.filter((thread) => thread._id !== args.threadId);
+      const remainingThreads = currentThreads.filter(
+        (thread: (typeof currentThreads)[number]) => thread._id !== args.threadId,
+      );
 
       localStore.setQuery(api.agentChat.listThreads, {}, remainingThreads);
       localStore.setQuery(api.agentChat.getThread, { threadId: args.threadId }, null);

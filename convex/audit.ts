@@ -1,4 +1,5 @@
 import { v } from 'convex/values';
+import type { PaginationResult } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   isAuthAuditEventType,
@@ -8,12 +9,11 @@ import {
 import { assertUserId } from '../src/lib/shared/user-id';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, query, type QueryCtx } from './_generated/server';
-import { getCurrentAuthUserOrNull } from './auth/access';
+import { getVerifiedCurrentAuthUserOrNull } from './auth/access';
 import { throwConvexError } from './auth/errors';
 
 type AuditLogDoc = Doc<'auditLogs'>;
-const AUDIT_FETCH_MULTIPLIER = 3;
-const AUDIT_FETCH_CAP = 300;
+const AUDIT_FETCH_BATCH_SIZE = 128;
 
 function normalizeOptionalString(value: string | undefined) {
   const trimmed = value?.trim();
@@ -71,79 +71,67 @@ function dedupeEvents(events: AuthAuditEvent[]) {
   return Array.from(uniqueEvents.values());
 }
 
-async function collectAuditLogsForAdmin(
+async function collectAuditLogsPageForAdmin(
   ctx: QueryCtx,
   filters: {
     eventType?: string;
     identifier?: string;
     organizationId?: string;
     userId?: string;
+    cursor: string | null;
   },
-  fetchSize: number,
 ) {
-  const { eventType, identifier, organizationId, userId } = filters;
+  const { eventType, identifier, organizationId, userId, cursor } = filters;
 
   if (userId) {
-    return ctx.db
+    return await ctx.db
       .query('auditLogs')
       .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
       .order('desc')
-      .take(fetchSize);
+      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   if (identifier) {
-    return ctx.db
+    return await ctx.db
       .query('auditLogs')
       .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', identifier))
       .order('desc')
-      .take(fetchSize);
+      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   if (eventType) {
-    return ctx.db
+    return await ctx.db
       .query('auditLogs')
       .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
       .order('desc')
-      .take(fetchSize);
+      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   if (organizationId) {
-    return ctx.db
+    return await ctx.db
       .query('auditLogs')
       .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
       .order('desc')
-      .take(fetchSize);
+      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
-  return ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(fetchSize);
+  return await ctx.db
+    .query('auditLogs')
+    .withIndex('by_createdAt')
+    .order('desc')
+    .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
 }
 
-async function collectAuditLogsForUser(
+async function collectAuditLogsPageForUser(
   ctx: QueryCtx,
   currentUserId: string,
-  currentIdentifier: string | undefined,
-  fetchSize: number,
+  cursor: string | null,
 ) {
-  const logsByUserIdPromise = ctx.db
+  return await ctx.db
     .query('auditLogs')
     .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', currentUserId))
     .order('desc')
-    .take(fetchSize);
-
-  const logsByIdentifierPromise = currentIdentifier
-    ? ctx.db
-        .query('auditLogs')
-        .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', currentIdentifier))
-        .order('desc')
-        .take(fetchSize)
-    : Promise.resolve([] satisfies AuditLogDoc[]);
-
-  const [logsByUserId, logsByIdentifier] = await Promise.all([
-    logsByUserIdPromise,
-    logsByIdentifierPromise,
-  ]);
-
-  return [...logsByUserId, ...logsByIdentifier];
+    .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
 }
 
 export const insertAuditLog = internalMutation({
@@ -189,14 +177,14 @@ export const insertAuditLog = internalMutation({
 export const getAuditLogs = query({
   args: {
     limit: v.optional(v.number()),
-    offset: v.optional(v.number()),
+    cursor: v.optional(v.string()),
     organizationId: v.optional(v.string()),
     identifier: v.optional(v.string()),
     eventType: v.optional(v.string()),
     userId: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const authUser = await getCurrentAuthUserOrNull(ctx);
+    const authUser = await getVerifiedCurrentAuthUserOrNull(ctx);
     if (!authUser) {
       throwConvexError('UNAUTHENTICATED', 'Not authenticated');
     }
@@ -210,7 +198,7 @@ export const getAuditLogs = query({
     );
 
     if (args.eventType && !isAuthAuditEventType(args.eventType)) {
-      throw new Error(`Unsupported audit event type: ${args.eventType}`);
+      throwConvexError('VALIDATION', `Unsupported audit event type: ${args.eventType}`);
     }
 
     if (!isSiteAdmin && requestedUserId && requestedUserId !== currentUserId) {
@@ -222,61 +210,71 @@ export const getAuditLogs = query({
     }
 
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const offset = Math.max(0, args.offset ?? 0);
     const organizationId = normalizeOptionalString(args.organizationId);
-    const fetchSize = Math.min(AUDIT_FETCH_CAP, Math.max(limit + offset, limit) * AUDIT_FETCH_MULTIPLIER);
+    const filterEvent = (event: AuthAuditEvent) => {
+      if (!isSiteAdmin) {
+        const matchesUserId = event.userId === currentUserId;
+        const matchesIdentifier = currentIdentifier
+          ? event.identifier === currentIdentifier
+          : false;
 
-    const logs = isSiteAdmin
-      ? await collectAuditLogsForAdmin(ctx, {
-          eventType: args.eventType,
-          identifier: requestedIdentifier,
-          organizationId,
-          userId: requestedUserId,
-        }, fetchSize)
-      : await collectAuditLogsForUser(ctx, currentUserId, currentIdentifier, fetchSize);
-
-    const events = dedupeEvents(
-      logs
-        .map((log) => toAuditEvent(log))
-        .filter((event): event is AuthAuditEvent => event !== null),
-    )
-      .filter((event) => {
-        if (!isSiteAdmin) {
-          const matchesUserId = event.userId === currentUserId;
-          const matchesIdentifier = currentIdentifier
-            ? event.identifier === currentIdentifier
-            : false;
-
-          if (!matchesUserId && !matchesIdentifier) {
-            return false;
-          }
-        }
-
-        if (requestedUserId && event.userId !== requestedUserId) {
+        if (!matchesUserId && !matchesIdentifier) {
           return false;
         }
+      }
 
-        if (args.eventType && event.eventType !== args.eventType) {
-          return false;
-        }
+      if (requestedUserId && event.userId !== requestedUserId) {
+        return false;
+      }
 
-        if (organizationId && event.organizationId !== organizationId) {
-          return false;
-        }
+      if (args.eventType && event.eventType !== args.eventType) {
+        return false;
+      }
 
-        if (requestedIdentifier && event.identifier !== requestedIdentifier) {
-          return false;
-        }
+      if (organizationId && event.organizationId !== organizationId) {
+        return false;
+      }
 
-        return true;
-      })
-      .sort(compareByCreatedAtDesc);
+      if (requestedIdentifier && event.identifier !== requestedIdentifier) {
+        return false;
+      }
+
+      return true;
+    };
+
+    const events: AuthAuditEvent[] = [];
+    let cursor = normalizeOptionalString(args.cursor) ?? null;
+    let isDone = false;
+
+    while (events.length < limit && !isDone) {
+      const result: PaginationResult<AuditLogDoc> = isSiteAdmin
+        ? await collectAuditLogsPageForAdmin(ctx, {
+            eventType: args.eventType,
+            identifier: requestedIdentifier,
+            organizationId,
+            userId: requestedUserId,
+            cursor,
+          })
+        : await collectAuditLogsPageForUser(ctx, currentUserId, cursor);
+
+      const nextEvents = dedupeEvents(
+        result.page
+          .map((log) => toAuditEvent(log))
+          .filter((event): event is AuthAuditEvent => event !== null),
+      )
+        .filter(filterEvent)
+        .sort(compareByCreatedAtDesc);
+
+      events.push(...nextEvents);
+      isDone = result.isDone;
+      cursor = result.isDone ? null : result.continueCursor;
+    }
 
     return {
-      events: events.slice(offset, offset + limit),
-      total: events.length,
+      events: events.slice(0, limit),
       limit,
-      offset,
+      continueCursor: events.length >= limit ? cursor : null,
+      isDone: isDone && events.length < limit,
     };
   },
 });

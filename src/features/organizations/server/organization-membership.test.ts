@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { requireAuthMock, getRequestMock, fetchAuthMutationMock, handleServerErrorMock } =
+const { requireAuthMock, getRequestMock, fetchAuthMutationMock, fetchAuthQueryMock, handleServerErrorMock } =
   vi.hoisted(() => ({
     requireAuthMock: vi.fn(),
     getRequestMock: vi.fn(),
     fetchAuthMutationMock: vi.fn(),
+    fetchAuthQueryMock: vi.fn(),
     handleServerErrorMock: vi.fn((error: unknown) => error),
   }));
 
@@ -21,6 +22,7 @@ vi.mock('@convex/_generated/api', () => ({
   api: {
     users: {
       ensureCurrentUserContext: 'ensureCurrentUserContext',
+      getCurrentUserProfile: 'getCurrentUserProfile',
     },
   },
 }));
@@ -36,6 +38,7 @@ vi.mock('~/features/auth/server/auth-guards', () => ({
 vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
   convexAuthReactStart: {
     fetchAuthMutation: fetchAuthMutationMock,
+    fetchAuthQuery: fetchAuthQueryMock,
   },
 }));
 
@@ -80,6 +83,11 @@ describe('leaveOrganizationServerFn', () => {
       }),
     );
     fetchAuthMutationMock.mockResolvedValue({ organizationId: 'org_next' });
+    fetchAuthQueryMock.mockResolvedValue({
+      currentOrganization: {
+        id: 'org_next',
+      },
+    });
 
     await expect(
       leaveOrganizationServerFn({
@@ -99,6 +107,7 @@ describe('leaveOrganizationServerFn', () => {
       }),
     );
     expect(fetchAuthMutationMock).toHaveBeenCalledWith('ensureCurrentUserContext', {});
+    expect(fetchAuthQueryMock).toHaveBeenCalledWith('getCurrentUserProfile', {});
   });
 
   it('wraps Better Auth endpoint failures', async () => {

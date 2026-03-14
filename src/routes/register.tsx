@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, useNavigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Crown, Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
@@ -10,9 +10,9 @@ import { ClientOnly } from '~/components/ClientOnly';
 import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
-import { signIn } from '~/features/auth/auth-client';
+import { authClient } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
-import { signUpWithFirstAdminServerFn } from '~/features/auth/server/user-management';
+import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
 
 export const Route = createFileRoute('/register')({
   staticData: true,
@@ -35,7 +35,6 @@ function RegisterPage() {
   const passwordId = `${uid}-password`;
   const { isAuthenticated, isPending } = useAuthState();
   const navigate = useNavigate();
-  const router = useRouter();
 
   // Use Convex query directly instead of server function wrapper
   const userCountResult = useQuery(api.users.getUserCount, {});
@@ -101,71 +100,54 @@ function RegisterPage() {
       }
 
       try {
-        const result = await signUpWithFirstAdminServerFn({
-          data: { email, password, name },
+        const callbackURL =
+          typeof window === 'undefined'
+            ? undefined
+            : new URL('/login?verified=success', window.location.origin).toString();
+
+        const result = await authClient.signUp.email({
+          email,
+          password,
+          name,
+          callbackURL,
+          fetchOptions: {
+            throw: true,
+          },
         });
 
-        // Automatically sign in the user after successful registration
-        try {
-          const { data, error: signInError } = await signIn.email(
-            {
-              email: result.userCredentials.email,
-              password,
-              rememberMe: true,
+        const authUserId =
+          typeof result === 'object' && result !== null && 'user' in result
+            ? (result.user as { id?: string } | undefined)?.id
+            : undefined;
+
+        const bootstrapResult = authUserId
+          ? await bootstrapSignedUpUserServerFn({
+              data: { authUserId, email },
+            })
+          : {
+              success: false,
+              isFirstUser: false,
+              message: 'Account created. Check your inbox to verify your email.',
+            };
+
+        setSuccessMessage(bootstrapResult.message);
+        setTimeout(() => {
+          void navigate({
+            to: '/verify-email-pending',
+            search: {
+              email,
+              redirectTo: '/app',
             },
-            {
-              onSuccess: () => undefined,
-              onError: () => undefined,
-            },
-          );
-
-          if (signInError) {
-            setSuccessMessage(`${result.message} Please sign in to continue.`);
-            // Navigate to login after showing message
-            setTimeout(() => {
-              navigate({ to: '/login' });
-            }, 2000);
-            return;
-          }
-
-          if (data) {
-            // Invalidate router to refresh auth state
-            await router.invalidate();
-
-            // Navigate to the app after showing success message
-            setTimeout(() => {
-              navigate({ to: '/app' });
-            }, 2000);
-          } else {
-            throw new Error('Sign-in returned no data');
-          }
-        } catch (_signInError) {
-          // Navigate to login after showing message
-          setTimeout(() => {
-            navigate({ to: '/login' });
-          }, 2000);
-        }
+          });
+        }, 1200);
       } catch (error: unknown) {
-        // Handle specific error messages
-        // Only show "user exists" if we get the explicit error code from Better Auth
         if (
-          (error as { code?: string })?.code === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' ||
-          (error instanceof Error &&
-            error.message?.includes('User already exists') &&
-            (error as { code?: string })?.code !== 'FAILED_TO_CREATE_USER')
-        ) {
-          setError('An account with this email already exists. Please try logging in instead.');
-        } else if (error instanceof Error && error.message?.includes('Invalid email')) {
-          setError('Please enter a valid email address.');
-        } else if (error instanceof Error && error.message?.includes('Password')) {
-          setError('Password does not meet the requirements. Please check the password criteria.');
-        } else if (
-          (error instanceof Error && error.message?.includes('rate limit')) ||
-          (error instanceof Error && error.message?.includes('Too many'))
+          (error instanceof Error && error.message.toLowerCase().includes('rate limit')) ||
+          (error instanceof Error && error.message.includes('Too many'))
         ) {
           setError('Too many registration attempts. Please wait a few minutes and try again.');
         } else {
-          setError('Registration failed. Please try again.');
+          setError('Unable to create your account. Check your details and try again.');
         }
       }
     },

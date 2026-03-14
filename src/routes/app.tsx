@@ -4,7 +4,7 @@ import { AuthenticatedAppShell } from '~/components/AuthenticatedAppShell';
 import { NotFound } from '~/components/NotFound';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Spinner } from '~/components/ui/spinner';
-import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/app')({
   pendingMs: 150,
@@ -18,13 +18,29 @@ export const Route = createFileRoute('/app')({
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, isPending } = useAuthState();
+  const { isAuthenticated, isPending, requiresEmailVerification, user } = useAuth();
   const redirectRef = useRef(false);
   const redirectTarget = location.href ?? '/app';
 
   useEffect(() => {
-    if (isPending || isAuthenticated || redirectRef.current) {
-      if (isAuthenticated) {
+    if (isPending || redirectRef.current) {
+      return;
+    }
+
+    if (isAuthenticated && requiresEmailVerification && user?.email) {
+      redirectRef.current = true;
+      void navigate({
+        to: '/verify-email-pending',
+        search: { email: user.email, redirectTo: redirectTarget },
+        replace: true,
+      }).catch(() => {
+        redirectRef.current = false;
+      });
+      return;
+    }
+
+    if (isAuthenticated) {
+      if (!requiresEmailVerification) {
         redirectRef.current = false;
       }
       return;
@@ -38,9 +54,9 @@ function AppLayout() {
     }).catch(() => {
       redirectRef.current = false;
     });
-  }, [isAuthenticated, isPending, navigate, redirectTarget]);
+  }, [isAuthenticated, isPending, navigate, redirectTarget, requiresEmailVerification, user?.email]);
 
-  if (isPending || !isAuthenticated) {
+  if (isPending || !isAuthenticated || requiresEmailVerification) {
     return <AppLayoutSkeleton />;
   }
 

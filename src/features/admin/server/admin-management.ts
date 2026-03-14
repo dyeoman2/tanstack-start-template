@@ -1,7 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
-import { getRequest } from '@tanstack/react-start/server';
 import { z } from 'zod';
 import {
   shapeAdminUsers,
@@ -13,6 +12,10 @@ import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-
 import type { UserRole } from '~/features/auth/types';
 import { USER_ROLES } from '~/features/auth/types';
 import type { OnboardingStatus } from '~/lib/shared/onboarding';
+import {
+  callBetterAuthEndpoint as callBetterAuthEndpointBase,
+  getBetterAuthRequest,
+} from '~/lib/server/better-auth/http';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 
 const userSearchSchema = z.object({
@@ -136,15 +139,6 @@ export type AdminUserSession = {
   impersonatedBy?: string;
 };
 
-function getCurrentRequest(): Request {
-  const request = getRequest();
-  if (!request) {
-    throw new Error('Better Auth admin utilities must run on the server');
-  }
-
-  return request;
-}
-
 function toTimestamp(value: string | number | Date | undefined | null): number {
   if (!value) {
     return Date.now();
@@ -232,19 +226,6 @@ function normalizeAuthErrorMessage(
   return message || 'Admin action failed';
 }
 
-async function readResponsePayload(response: Response) {
-  const text = await response.text();
-  if (!text) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(text) as unknown;
-  } catch {
-    return text;
-  }
-}
-
 async function callBetterAuthEndpoint<TResponse>(
   path: string,
   init: {
@@ -253,74 +234,10 @@ async function callBetterAuthEndpoint<TResponse>(
     query?: Record<string, string | number | boolean | undefined>;
   } = {},
 ): Promise<TResponse> {
-  const request = getCurrentRequest();
-  const url = new URL(path, request.url);
-
-  if (init.query) {
-    for (const [key, value] of Object.entries(init.query)) {
-      if (value !== undefined) {
-        url.searchParams.set(key, String(value));
-      }
-    }
-  }
-
-  const headers = new Headers();
-  const forwardedHeaderNames = [
-    'cookie',
-    'origin',
-    'referer',
-    'user-agent',
-    'x-forwarded-for',
-    'x-forwarded-proto',
-    'x-real-ip',
-  ] as const;
-
-  for (const headerName of forwardedHeaderNames) {
-    const value = request.headers.get(headerName);
-    if (value) {
-      headers.set(headerName, value);
-    }
-  }
-
-  headers.set('accept', 'application/json');
-
-  let body: string | undefined;
-  if (init.body) {
-    headers.set('content-type', 'application/json');
-    body = JSON.stringify(init.body);
-  }
-
-  const response = await fetch(url, {
-    method: init.method ?? (body ? 'POST' : 'GET'),
-    headers,
-    body,
+  return await callBetterAuthEndpointBase<TResponse>(path, init, {
+    mapErrorMessage: ({ code, message, status }) =>
+      normalizeAuthErrorMessage(code, message, status),
   });
-
-  const payload = await readResponsePayload(response);
-  if (!response.ok) {
-    const errorPayload =
-      payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-    const code =
-      typeof errorPayload.code === 'string'
-        ? errorPayload.code
-        : typeof errorPayload.error === 'string'
-          ? errorPayload.error
-          : undefined;
-    const message =
-      typeof errorPayload.message === 'string'
-        ? errorPayload.message
-        : typeof payload === 'string'
-          ? payload
-          : undefined;
-
-    throw new ServerError(
-      normalizeAuthErrorMessage(code, message, response.status),
-      response.status,
-      payload,
-    );
-  }
-
-  return payload as TResponse;
 }
 
 async function listAllAdminUsers(): Promise<AdminUser[]> {
@@ -425,7 +342,7 @@ function createOnboardingPassword() {
 }
 
 async function requestOnboardingEmail(email: string) {
-  const request = getCurrentRequest();
+  const request = getBetterAuthRequest();
   const redirectTo = new URL('/reset-password', request.url).toString();
 
   await callBetterAuthEndpoint<{ status: boolean; message: string }>(
@@ -767,7 +684,7 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       );
 
       try {
-        await convexAuthReactStart.fetchAuthMutation(api.admin.cleanupDeletedUserData, {
+        await convexAuthReactStart.fetchAuthAction(api.admin.cleanupDeletedUserData, {
           userId: data.userId,
           email: target.email,
         });

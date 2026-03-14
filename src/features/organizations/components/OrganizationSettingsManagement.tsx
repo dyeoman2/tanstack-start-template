@@ -1,32 +1,63 @@
 import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { useNavigate, useRouter } from '@tanstack/react-router';
-import { useMutation, useQuery } from 'convex/react';
-import { Loader2 } from 'lucide-react';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
+import { Loader2, LogOut, MoreHorizontal, Pencil, Trash2, UserRoundPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { Button } from '~/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
-import { authClient } from '~/features/auth/auth-client';
+import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
+import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
+import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import {
+  deleteOrganizationServerFn,
+  updateOrganizationSettingsServerFn,
+} from '~/features/organizations/server/organization-management';
 import { leaveOrganizationServerFn } from '~/features/organizations/server/organization-membership';
 
-export function OrganizationSettingsManagement({ slug }: { slug: string }) {
+export function OrganizationSettingsManagement({
+  searchParams,
+  slug,
+}: {
+  searchParams: OrganizationDirectorySearchParams;
+  slug: string;
+}) {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const navigate = useNavigate();
   const router = useRouter();
   const { showToast } = useToast();
   const settings = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
-  const updateSettings = useMutation(api.organizationManagement.updateOrganizationSettings);
-  const deleteOrganization = useMutation(api.organizationManagement.deleteOrganization);
+  const updateSettings = updateOrganizationSettingsServerFn;
+  const deleteOrganization = deleteOrganizationServerFn;
 
   const [name, setName] = useState('');
   const [logo, setLogo] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -43,13 +74,13 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
     setLogo(settings.organization.logo ?? '');
   }, [settings]);
 
+  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
+
   if (settings === undefined) {
     return (
       <div className="space-y-6">
         <OrganizationWorkspaceNav
-          slug={slug}
-          view="SETTINGS"
-          title="Loading organization"
+          title={optimisticOrganizationName ?? 'Loading organization'}
           description="Preparing the organization settings."
         />
       </div>
@@ -78,10 +109,13 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
 
     try {
       await updateSettings({
-        organizationId: settings.organization.id,
-        name,
-        logo: logo.trim().length > 0 ? logo.trim() : null,
+        data: {
+          organizationId: settings.organization.id,
+          name,
+          logo: logo.trim().length > 0 ? logo.trim() : null,
+        },
       });
+      setIsEditDialogOpen(false);
       showToast('Organization settings updated.', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to update organization';
@@ -98,7 +132,9 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
 
     try {
       await deleteOrganization({
-        organizationId: settings.organization.id,
+        data: {
+          organizationId: settings.organization.id,
+        },
       });
       setIsDeleteDialogOpen(false);
       showToast('Organization deleted.', 'success');
@@ -122,16 +158,14 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
           organizationId: settings.organization.id,
         },
       });
-      authClient.$store.notify('$activeOrgSignal');
-      authClient.$store.notify('$sessionSignal');
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['organizations'] }),
-        queryClient.invalidateQueries({ queryKey: ['active-organization'] }),
-      ]);
+      await refreshOrganizationClientState(queryClient, {
+        invalidateRouter: async () => {
+          await router.invalidate();
+        },
+      });
       setIsLeaveDialogOpen(false);
       showToast('You left the organization.', 'success');
       await navigate({ to: '/app/organizations' });
-      await router.invalidate();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to leave organization';
       setLeaveError(message);
@@ -141,85 +175,61 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
     }
   };
 
+  const canShowActions = canManage || canLeaveOrganization;
+
   return (
     <div className="space-y-6">
       <OrganizationWorkspaceNav
-        slug={slug}
-        view="SETTINGS"
         title={settings.organization.name}
         description="Manage organization settings with site-admin-aware controls."
+        actions={
+          canShowActions ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button type="button" variant="outline" size="sm">
+                  <MoreHorizontal className="size-4" />
+                  Actions
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {canManage ? (
+                  <DropdownMenuItem onSelect={() => setIsEditDialogOpen(true)}>
+                    <Pencil className="size-4" />
+                    Edit
+                  </DropdownMenuItem>
+                ) : null}
+                {canManage ? (
+                  <DropdownMenuItem onSelect={() => setIsInviteDialogOpen(true)}>
+                    <UserRoundPlus className="size-4" />
+                    Invite member
+                  </DropdownMenuItem>
+                ) : null}
+                {canManage && (canLeaveOrganization || canManage) ? <DropdownMenuSeparator /> : null}
+                {canLeaveOrganization ? (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => setIsLeaveDialogOpen(true)}
+                  >
+                    <LogOut className="size-4" />
+                    Leave organization
+                  </DropdownMenuItem>
+                ) : null}
+                {canManage ? (
+                  <DropdownMenuItem
+                    variant="destructive"
+                    onSelect={() => setIsDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="size-4" />
+                    Delete
+                  </DropdownMenuItem>
+                ) : null}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : undefined
+        }
       />
 
-      {canManage ? (
-        <>
-          <Card>
-            <CardHeader>
-              <CardTitle>Organization details</CardTitle>
-              <CardDescription>Update the name and logo used across the app.</CardDescription>
-            </CardHeader>
-            <div className="space-y-4 px-6 pb-6">
-              <Field>
-                <FieldLabel htmlFor="organization-name">Name</FieldLabel>
-                <Input
-                  id="organization-name"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  disabled={isSaving}
-                />
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="organization-logo">Logo URL</FieldLabel>
-                <Input
-                  id="organization-logo"
-                  value={logo}
-                  onChange={(event) => setLogo(event.target.value)}
-                  disabled={isSaving}
-                  placeholder="https://example.com/logo.png"
-                />
-              </Field>
-
-              {saveError ? <FieldError>{saveError}</FieldError> : null}
-
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={isSaving || name.trim().length === 0}
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="size-4 animate-spin" />
-                      Saving...
-                    </>
-                  ) : (
-                    'Save settings'
-                  )}
-                </Button>
-              </div>
-            </div>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Delete organization</CardTitle>
-              <CardDescription>
-                This permanently deletes the organization, its memberships, invitations, and
-                org-scoped AI data.
-              </CardDescription>
-            </CardHeader>
-            <div className="px-6 pb-6">
-              <Button
-                type="button"
-                variant="destructive"
-                onClick={() => setIsDeleteDialogOpen(true)}
-              >
-                Delete organization
-              </Button>
-            </div>
-          </Card>
-        </>
-      ) : (
+      {!canManage ? (
         <Card>
           <CardHeader>
             <CardTitle>Management access required</CardTitle>
@@ -228,24 +238,86 @@ export function OrganizationSettingsManagement({ slug }: { slug: string }) {
             </CardDescription>
           </CardHeader>
         </Card>
-      )}
-
-      {canLeaveOrganization ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Leave organization</CardTitle>
-            <CardDescription>
-              Remove your membership from this organization and switch back to your remaining
-              workspace.
-            </CardDescription>
-          </CardHeader>
-          <div className="px-6 pb-6">
-            <Button type="button" variant="outline" onClick={() => setIsLeaveDialogOpen(true)}>
-              Leave organization
-            </Button>
-          </div>
-        </Card>
       ) : null}
+
+      <OrganizationMembersManagement
+        slug={slug}
+        searchParams={searchParams}
+        showHeader={false}
+        inviteDialogOpen={isInviteDialogOpen}
+        onInviteDialogOpenChange={(open) => {
+          setIsInviteDialogOpen(open);
+        }}
+      />
+
+      <Dialog
+        open={isEditDialogOpen}
+        onOpenChange={(open) => {
+          setIsEditDialogOpen(open);
+          if (!open) {
+            setSaveError(null);
+            setName(settings.organization.name);
+            setLogo(settings.organization.logo ?? '');
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit organization</DialogTitle>
+            <DialogDescription>Update the name and logo used across the app.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Field>
+              <FieldLabel htmlFor="organization-name">Name</FieldLabel>
+              <Input
+                id="organization-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                disabled={isSaving}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="organization-logo">Logo URL</FieldLabel>
+              <Input
+                id="organization-logo"
+                value={logo}
+                onChange={(event) => setLogo(event.target.value)}
+                disabled={isSaving}
+                placeholder="https://example.com/logo.png"
+              />
+            </Field>
+
+            {saveError ? <FieldError>{saveError}</FieldError> : null}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsEditDialogOpen(false)}
+              disabled={isSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving || name.trim().length === 0}
+            >
+              {isSaving ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                'Save changes'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DeleteConfirmationDialog
         open={isDeleteDialogOpen}

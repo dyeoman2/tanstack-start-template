@@ -1,4 +1,5 @@
 import { api } from '@convex/_generated/api';
+import { useConvexAuth } from 'convex/react';
 import { useQuery } from 'convex/react';
 import { useMemo } from 'react';
 import { useSession } from '~/features/auth/auth-client';
@@ -20,6 +21,8 @@ export interface AuthResult {
     phoneNumber?: string | null;
     role: UserRole;
     isSiteAdmin: boolean;
+    emailVerified?: boolean;
+    requiresEmailVerification?: boolean;
     currentOrganization?: {
       id: string;
       name: string;
@@ -28,6 +31,7 @@ export interface AuthResult {
   } | null;
   isAuthenticated: boolean;
   isSiteAdmin: boolean;
+  requiresEmailVerification: boolean;
   isImpersonating: boolean;
   impersonatedByUserId?: string;
   isPending: boolean;
@@ -39,10 +43,13 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Use the lightweight auth state hook
   const authState = useAuthState();
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
   const { data: session, isPending: sessionPending, error } = useSession();
 
-  // Only fetch profile if we have a session user, we're not already loading, AND role fetching is enabled
-  const shouldFetchProfile = authState.isAuthenticated && !sessionPending && fetchRole;
+  const hasSession = authState.isAuthenticated;
+  const shouldWaitForConvexAuth = hasSession && isConvexAuthLoading;
+  const canUseConvex = hasSession && isConvexAuthenticated;
+  const shouldFetchProfile = canUseConvex && !sessionPending && fetchRole;
 
   // Pass "skip" to avoid running the Convex query when profile data is not needed
   const profileQuery = useQuery(api.users.getCurrentUserProfile, shouldFetchProfile ? {} : 'skip');
@@ -55,8 +62,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       : undefined;
   const isImpersonating = impersonatedByUserId !== undefined;
 
-  const isPending =
-    sessionPending || (authState.isAuthenticated && shouldFetchProfile && profile === undefined);
+  const isPending = sessionPending || shouldWaitForConvexAuth || (canUseConvex && shouldFetchProfile && profile === undefined);
 
   // Determine role: use profile role if available, otherwise default to user
   // If we're not fetching roles, default to user
@@ -66,6 +72,8 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       : USER_ROLES.USER
     : DEFAULT_ROLE;
   const isSiteAdmin = deriveIsSiteAdmin(role);
+  const requiresEmailVerification =
+    !!session?.user && (shouldFetchProfile ? (profile?.requiresEmailVerification ?? false) : false);
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -75,12 +83,15 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
             ...session.user,
             role,
             isSiteAdmin,
+            emailVerified: session.user.emailVerified,
+            requiresEmailVerification,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
             currentOrganization: shouldFetchProfile ? profile?.currentOrganization ?? null : null,
           }
         : null,
-      isAuthenticated: authState.isAuthenticated,
+      isAuthenticated: canUseConvex,
       isSiteAdmin,
+      requiresEmailVerification,
       isImpersonating,
       impersonatedByUserId,
       isPending,
@@ -90,9 +101,10 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       session?.user,
       role,
       isSiteAdmin,
+      requiresEmailVerification,
       profile?.currentOrganization,
       profile?.phoneNumber,
-      authState.isAuthenticated,
+      canUseConvex,
       isImpersonating,
       impersonatedByUserId,
       isPending,

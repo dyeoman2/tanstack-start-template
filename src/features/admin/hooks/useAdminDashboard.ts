@@ -1,5 +1,5 @@
 import { api } from '@convex/_generated/api';
-import { useMutation, useQuery } from 'convex/react';
+import { useAction, useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 
 /**
@@ -37,13 +37,13 @@ export function useAdminDashboard() {
   }, [truncateResult]);
 
   // Truncate data mutation - using Convex mutation directly
-  const truncateMutation = useMutation(api.admin.truncateData);
+  const truncateMutation = useAction(api.admin.truncateData);
   const modelCatalogStatus = useQuery(api.admin.getChatModelCatalogStatus, {});
 
   const handleTruncateData = async () => {
     setIsTruncating(true);
     try {
-      const result = await truncateMutation();
+      const result = await truncateMutation({});
       setTruncateResult(result);
       // Convex automatically updates queries when data changes - no cache invalidation needed!
       setShowTruncateModal(false);

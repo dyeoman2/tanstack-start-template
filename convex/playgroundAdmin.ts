@@ -1,14 +1,14 @@
 import { ConvexError, v } from 'convex/values';
 import { components } from './_generated/api';
 import { mutation } from './_generated/server';
-import { getCurrentUserOrThrow } from './auth/access';
+import { getVerifiedCurrentUserOrThrow } from './auth/access';
 
 export const issueChatPlaygroundApiKey = mutation({
   args: {
     name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrThrow(ctx);
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
     if (!user.isSiteAdmin) {
       throw new ConvexError('Site admin access required.');
     }
@@ -25,7 +25,7 @@ export const revokeChatPlaygroundApiKey = mutation({
     name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await getCurrentUserOrThrow(ctx);
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
     if (!user.isSiteAdmin) {
       throw new ConvexError('Site admin access required.');
     }

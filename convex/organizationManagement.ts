@@ -16,7 +16,7 @@ import type { MutationCtx, QueryCtx } from './_generated/server';
 import { mutation, query } from './_generated/server';
 import {
   checkOrganizationAccess,
-  getCurrentUserOrThrow,
+  getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
@@ -40,7 +40,7 @@ type OrganizationDirectorySortDirection = 'asc' | 'desc';
 type OrganizationAccessContext = {
   access: Awaited<ReturnType<typeof checkOrganizationAccess>>;
   organization: NonNullable<Awaited<ReturnType<typeof findBetterAuthOrganizationById>>>;
-  user: Awaited<ReturnType<typeof getCurrentUserOrThrow>>;
+  user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>;
   viewerMembership: Awaited<ReturnType<typeof findBetterAuthMember>>;
   viewerRole: OrganizationViewerRole;
 };
@@ -101,7 +101,7 @@ function isInvitationExpired(expiresAt: string | number | Date | undefined | nul
 }
 
 async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
-  const user = await getCurrentUserOrThrow(ctx);
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
   const organization = await findBetterAuthOrganizationBySlug(ctx, slug);
   if (!organization) {
     return null;
@@ -132,7 +132,7 @@ async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
 }
 
 async function requireOrganizationManagerById(ctx: MutationCtx, organizationId: string) {
-  const user = await getCurrentUserOrThrow(ctx);
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
   const organization = await findBetterAuthOrganizationById(ctx, organizationId);
   if (!organization) {
     throwConvexError('NOT_FOUND', 'Organization not found');
@@ -225,7 +225,7 @@ async function repairUserContexts(ctx: MutationCtx, authUserIds: string[]) {
 export const listOrganizationsForDirectory = query({
   args: {},
   handler: async (ctx) => {
-    const user = await getCurrentUserOrThrow(ctx);
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
 
     if (user.isSiteAdmin) {
       const organizations = await fetchAllBetterAuthOrganizations(ctx);

@@ -1,11 +1,12 @@
-import { api } from '@convex/_generated/api';
+import { internal } from '@convex/_generated/api';
 import {
   getE2EPrincipalConfig,
   getE2ETestSecret,
   isE2ETestAuthEnabled,
   type E2EPrincipalType,
 } from '~/lib/server/env.server';
-import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
+import { buildBetterAuthForwardHeaders } from '~/lib/server/better-auth/http';
 
 const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
 
@@ -76,6 +77,7 @@ async function postToAuthEndpoint(
   return fetch(url, {
     method: 'POST',
     headers: {
+      ...Object.fromEntries(buildBetterAuthForwardHeaders(request).entries()),
       'Content-Type': 'application/json',
       Origin: request.headers.get('origin') || origin,
       Referer: request.headers.get('referer') || `${origin}/`,
@@ -89,13 +91,12 @@ export async function establishE2EAuthSession(
   principalType: E2EPrincipalType,
 ): Promise<EstablishedE2EAuthSession> {
   const principal = getE2EPrincipalConfig(principalType);
-  const secret = getE2ETestSecret();
+  const adminClient = createConvexAdminClient();
 
   let authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
 
   if (!authResponse.ok) {
-    await convexAuthReactStart.fetchAuthMutation(api.e2e.resetPrincipalByEmail, {
-      secret,
+    await adminClient.mutation(internal.e2e.resetPrincipalByEmail, {
       email: principal.email,
     });
 
@@ -109,8 +110,7 @@ export async function establishE2EAuthSession(
     }
   }
 
-  const roleResult = await convexAuthReactStart.fetchAuthMutation(api.e2e.ensurePrincipalRole, {
-    secret,
+  const roleResult = await adminClient.mutation(internal.e2e.ensurePrincipalRole, {
     email: principal.email,
     role: principal.role,
   });

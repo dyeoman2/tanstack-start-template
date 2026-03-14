@@ -158,23 +158,13 @@ export async function fetchBetterAuthUsersByIds(
     return [];
   }
 
-  const remainingIds = new Set(userIds);
-  const matchedUsers: BetterAuthUser[] = [];
-  const allUsers = await fetchAllBetterAuthUsers(ctx);
-
-  for (const user of allUsers) {
-    const userId = assertUserId(user, 'Better Auth user missing id');
-    if (remainingIds.has(userId)) {
-      matchedUsers.push(user);
-      remainingIds.delete(userId);
-    }
-
-    if (remainingIds.size === 0) {
-      break;
-    }
-  }
-
-  return matchedUsers;
+  return await fetchAllRecords<BetterAuthUser>(ctx, 'user', [
+    {
+      field: '_id',
+      operator: 'in',
+      value: [...new Set(userIds)],
+    },
+  ]);
 }
 
 export async function findBetterAuthUserByEmail(

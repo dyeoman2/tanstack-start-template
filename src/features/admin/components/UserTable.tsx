@@ -157,6 +157,12 @@ export function UserTable({
                       <Link
                         to="/app/organizations/$slug/settings"
                         params={{ slug: organization.slug }}
+                        state={{
+                          organizationBreadcrumb: {
+                            name: organization.name,
+                            slug: organization.slug,
+                          },
+                        }}
                         className="rounded-full outline-none transition-transform hover:scale-[1.04] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         aria-label={`Open ${organization.name}`}
                       >

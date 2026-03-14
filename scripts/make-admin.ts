@@ -2,8 +2,8 @@
 
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ConvexHttpClient } from 'convex/browser';
-import { api } from '../convex/_generated/api';
+import { internal } from '../convex/_generated/api';
+import { createConvexAdminClient } from '../src/lib/server/convex-admin.server';
 
 function loadLocalEnv() {
   const loadEnvFile = process.loadEnvFile?.bind(process);
@@ -19,7 +19,7 @@ function loadLocalEnv() {
   }
 }
 
-function getRequiredEnv(name: 'BETTER_AUTH_SECRET' | 'VITE_CONVEX_URL') {
+function getRequiredEnv(name: 'VITE_CONVEX_URL') {
   const value = process.env[name];
   if (!value || value.trim().length === 0) {
     throw new Error(`${name} environment variable is required`);
@@ -41,12 +41,9 @@ async function main() {
   loadLocalEnv();
 
   const email = getEmailArg();
-  const convexUrl = getRequiredEnv('VITE_CONVEX_URL');
-  const token = getRequiredEnv('BETTER_AUTH_SECRET');
-
-  const client = new ConvexHttpClient(convexUrl, { logger: false });
-  const result = await client.action(api.admin.promoteUserByEmail, {
-    token,
+  getRequiredEnv('VITE_CONVEX_URL');
+  const client = createConvexAdminClient();
+  const result = await client.action(internal.admin.promoteUserByEmail, {
     email,
   });
 

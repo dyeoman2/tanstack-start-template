@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { getBetterAuthSecret, getBetterAuthTrustedOrigins, getSiteUrl } from '~/lib/server/env.server';
+import {
+  getBetterAuthAllowedHosts,
+  getBetterAuthBaseUrlConfig,
+  getBetterAuthSecret,
+  getBetterAuthTrustedOrigins,
+  getEmailVerificationEnforcedAt,
+  getSiteUrl,
+  isTrustedBetterAuthOrigin,
+} from '~/lib/server/env.server';
 
 const ORIGINAL_ENV = { ...process.env };
 
@@ -16,6 +24,12 @@ describe('env.server', () => {
     delete process.env.URL;
     delete process.env.DEPLOY_URL;
     delete process.env.DEPLOY_PRIME_URL;
+    delete process.env.BETTER_AUTH_PREVIEW_HOSTS;
+    delete process.env.BETTER_AUTH_TRUSTED_ORIGINS;
+    delete process.env.EMAIL_VERIFICATION_ENFORCED_AT;
+    delete process.env.VITE_EMAIL_VERIFICATION_ENFORCED_AT;
+    delete process.env.BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT;
+    delete process.env.VITE_BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT;
     delete process.env.BETTER_AUTH_SECRET;
   });
 
@@ -66,6 +80,76 @@ describe('env.server', () => {
 
     expect(getBetterAuthSecret()).toBe('short-secret');
     expect(warnSpy).toHaveBeenCalledOnce();
+  });
+
+  it('includes preview host patterns in the allowed host list', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app, preview-*.example.dev';
+
+    expect(getBetterAuthAllowedHosts()).toEqual([
+      'app.example.com',
+      '*.netlify.app',
+      'preview-*.example.dev',
+    ]);
+  });
+
+  it('preserves explicit ports in allowed host patterns', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
+
+    expect(getBetterAuthAllowedHosts()).toEqual([
+      '127.0.0.1:3000',
+      'localhost:3000',
+    ]);
+  });
+
+  it('builds a dynamic Better Auth base url config when allowed hosts are configured', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app';
+
+    expect(getBetterAuthBaseUrlConfig()).toEqual({
+      allowedHosts: ['app.example.com', '*.netlify.app'],
+      fallback: 'https://app.example.com',
+      protocol: 'auto',
+    });
+  });
+
+  it('treats matching preview origins as trusted request origins', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app';
+
+    expect(isTrustedBetterAuthOrigin('https://feature-123.netlify.app')).toBe(true);
+    expect(isTrustedBetterAuthOrigin('https://evil.example.org')).toBe(false);
+  });
+
+  it('matches trusted loopback origins by host and port', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
+
+    expect(isTrustedBetterAuthOrigin('http://localhost:3000')).toBe(true);
+    expect(isTrustedBetterAuthOrigin('http://localhost:4000')).toBe(false);
+  });
+
+  it('adds a trusted request origin when the request host matches the configured policy', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app';
+
+    const request = new Request('https://feature-123.netlify.app/app');
+
+    expect(getBetterAuthTrustedOrigins(request)).toEqual([
+      'https://app.example.com',
+      'https://feature-123.netlify.app',
+    ]);
+  });
+
+  it('returns the configured email verification rollout timestamp when present', () => {
+    process.env.EMAIL_VERIFICATION_ENFORCED_AT = '2026-03-15T00:00:00.000Z';
+
+    expect(getEmailVerificationEnforcedAt()).toBe(Date.parse('2026-03-15T00:00:00.000Z'));
+  });
+
+  it('falls back to the legacy Better Auth env name', () => {
+    process.env.BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT = '2026-03-16T00:00:00.000Z';
+
+    expect(getEmailVerificationEnforcedAt()).toBe(Date.parse('2026-03-16T00:00:00.000Z'));
   });
 
   it('throws when Better Auth secret is missing', () => {
