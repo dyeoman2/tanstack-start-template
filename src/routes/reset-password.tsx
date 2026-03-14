@@ -1,15 +1,15 @@
 import { useForm } from '@tanstack/react-form';
-import { createFileRoute, Link, redirect, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
 import { CheckCircle2, Lock } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
-import { Card, CardContent } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
+import { Card, CardContent } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
-import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { authClient } from '~/features/auth/auth-client';
+import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { markCurrentUserOnboardingCompleteServerFn } from '~/features/auth/server/onboarding.server';
@@ -150,7 +150,7 @@ function ResetPasswordPage() {
     }
 
     if (authState.isAuthenticated) {
-      throw redirect({ to: '/app' });
+      return <Navigate to="/app" replace />;
     }
   }
 
@@ -165,8 +165,8 @@ function ResetPasswordPage() {
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-foreground">Password Reset Successful</h2>
               <p className="text-sm text-muted-foreground">
-                Your password has been updated. You are now signed in and will be redirected to
-                your dashboard.
+                Your password has been updated. You are now signed in and will be redirected to your
+                dashboard.
               </p>
             </div>
           </CardContent>

@@ -1,5 +1,5 @@
 import { AuthView } from '@daveyplate/better-auth-ui';
-import { createFileRoute, redirect, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Navigate, useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
@@ -70,7 +70,7 @@ function LoginPage() {
   }
 
   if (isAuthenticated) {
-    throw redirect({ to: redirectTarget });
+    return <Navigate to={redirectTarget} replace />;
   }
 
   return (

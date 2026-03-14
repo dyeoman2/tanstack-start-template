@@ -30,6 +30,7 @@ export function optimisticallySendChatMessage(
     }
 
     const maxOrder = Math.max(...value.page.map((message: (typeof value.page)[number]) => message.order));
+    let pendingUserOrder: number | null = null;
     const nextPage = value.page.map((message: (typeof value.page)[number]) => {
       if (
         message.order !== maxOrder ||
@@ -39,6 +40,7 @@ export function optimisticallySendChatMessage(
         return message;
       }
 
+      pendingUserOrder = message.order;
       return {
         ...message,
         parts: args.parts as (typeof value.page)[number]['parts'],
@@ -50,9 +52,34 @@ export function optimisticallySendChatMessage(
       } as (typeof value.page)[number];
     });
 
+    const hasTrailingAssistantPlaceholder = nextPage.some(
+      (message: (typeof nextPage)[number]) =>
+        message.role === 'assistant' &&
+        (pendingUserOrder === null || message.order > pendingUserOrder) &&
+        (message.status === 'pending' || message.status === 'streaming'),
+    );
+
+    const finalPage =
+      pendingUserOrder !== null && !hasTrailingAssistantPlaceholder
+        ? ([
+            ...nextPage,
+            {
+              id: `optimistic-assistant-${args.clientMessageId ?? pendingUserOrder}`,
+              _creationTime: Date.now(),
+              order: pendingUserOrder + 1,
+              stepOrder: 0,
+              role: 'assistant',
+              status: 'pending',
+              parts: [{ type: 'text', text: '' }],
+              text: '',
+              metadata: args.clientMessageId ? { clientMessageId: args.clientMessageId } : {},
+            },
+          ] as typeof value.page)
+        : (nextPage as typeof value.page);
+
     store.setQuery(api.agentChat.listThreadMessages, queryResult.args, {
       ...value,
-      page: nextPage as typeof value.page,
+      page: finalPage,
     });
   }
 }

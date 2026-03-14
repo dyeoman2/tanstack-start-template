@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { AuthView } from '@daveyplate/better-auth-ui';
-import { createFileRoute, Link, redirect } from '@tanstack/react-router';
+import { createFileRoute, Link, Navigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Mail } from 'lucide-react';
 import { z } from 'zod';
@@ -35,7 +35,7 @@ function ForgotPasswordPage() {
   }
 
   if (isAuthenticated) {
-    throw redirect({ to: '/app' });
+    return <Navigate to="/app" replace />;
   }
 
   if (!isEmailConfigured) {
@@ -101,8 +101,8 @@ function ResendSetupCard() {
               <li>Or use the Convex Dashboard: Settings → Environment Variables</li>
             </ol>
             <p className="mt-2 text-xs text-amber-700">
-              <strong>Note:</strong> This variable must be set in Convex, not in local `.env`
-              files or Netlify.
+              <strong>Note:</strong> This variable must be set in Convex, not in local `.env` files
+              or Netlify.
             </p>
           </div>
         </div>

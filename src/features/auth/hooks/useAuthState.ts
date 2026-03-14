@@ -1,4 +1,5 @@
-import { useSession } from '~/features/auth/auth-client';
+import { useEffect } from 'react';
+import { clearSigningOutState, useIsSigningOut, useSession } from '~/features/auth/auth-client';
 
 export interface AuthState {
   isAuthenticated: boolean;
@@ -14,11 +15,20 @@ export interface AuthState {
  */
 export function useAuthState(): AuthState {
   const { data: session, isPending, error } = useSession();
+  const isSigningOut = useIsSigningOut();
+
+  useEffect(() => {
+    if (!isSigningOut || isPending || session?.user) {
+      return;
+    }
+
+    clearSigningOutState();
+  }, [isPending, isSigningOut, session?.user]);
 
   return {
-    isAuthenticated: !!session?.user,
-    isPending,
+    isAuthenticated: !isSigningOut && !!session?.user,
+    isPending: isSigningOut ? false : isPending,
     error,
-    userId: session?.user?.id,
+    userId: isSigningOut ? undefined : session?.user?.id,
   };
 }

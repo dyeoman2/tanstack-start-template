@@ -206,6 +206,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     originalUpdatedAt: number;
   } | null>(null);
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
+  const [pendingAssistantPlaceholder, setPendingAssistantPlaceholder] = useState<{
+    threadId: string;
+    clientMessageId: string;
+  } | null>(null);
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
   const [dismissedRunErrorKey, setDismissedRunErrorKey] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
@@ -298,12 +302,61 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     );
     const hasAssistantMessage = currentMessages.some((message) => message.role === 'assistant');
 
-    if (!bootstrapAssistantMessage || hasAssistantMessage) {
-      return currentMessages;
+    const baseMessages =
+      !bootstrapAssistantMessage || hasAssistantMessage
+        ? currentMessages
+        : [...currentMessages, bootstrapAssistantMessage];
+
+    if (!threadId || pendingAssistantPlaceholder?.threadId !== threadId) {
+      return baseMessages;
     }
 
-    return [...currentMessages, bootstrapAssistantMessage];
-  }, [currentMessages, optimisticThreadBootstrap]);
+    const hasPendingAssistant = baseMessages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        (message.status === 'pending' || message.status === 'streaming'),
+    );
+    if (hasPendingAssistant) {
+      return baseMessages;
+    }
+
+    const targetIndex = baseMessages.findIndex(
+      (message) =>
+        message.role === 'user' &&
+        message.clientMessageId === pendingAssistantPlaceholder.clientMessageId,
+    );
+    const anchorMessage =
+      targetIndex === -1 ? baseMessages.at(-1) : baseMessages[targetIndex];
+    if (!anchorMessage) {
+      return baseMessages;
+    }
+
+    const hasAssistantAfterTarget =
+      targetIndex === -1
+        ? false
+        : baseMessages.slice(targetIndex + 1).some((message) => message.role === 'assistant');
+    if (hasAssistantAfterTarget) {
+      return baseMessages;
+    }
+
+    const placeholder: ChatMessage = {
+      _id: `pending-assistant-${pendingAssistantPlaceholder.clientMessageId}`,
+      threadId,
+      order: anchorMessage.order + 1,
+      stepOrder: 0,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '' }],
+      status: 'pending',
+      createdAt: anchorMessage.updatedAt + 1,
+      updatedAt: anchorMessage.updatedAt + 1,
+    };
+
+    if (targetIndex === -1) {
+      return [...baseMessages, placeholder];
+    }
+
+    return [...baseMessages.slice(0, targetIndex + 1), placeholder, ...baseMessages.slice(targetIndex + 1)];
+  }, [currentMessages, optimisticThreadBootstrap, pendingAssistantPlaceholder, threadId]);
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
       const message = currentMessages[index];
@@ -412,6 +465,35 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
     clearOptimisticThreadBootstrap(threadId);
   }, [currentMessages, latestRunState?.status, thread, threadId]);
+
+  useEffect(() => {
+    if (!pendingAssistantPlaceholder || pendingAssistantPlaceholder.threadId !== threadId) {
+      return;
+    }
+
+    const targetIndex = currentMessages.findIndex(
+      (message) =>
+        message.role === 'user' &&
+        message.clientMessageId === pendingAssistantPlaceholder.clientMessageId,
+    );
+    if (targetIndex === -1) {
+      if (latestRunState?.status === 'error') {
+        setPendingAssistantPlaceholder(null);
+      }
+      return;
+    }
+
+    const assistantAfterTarget = currentMessages
+      .slice(targetIndex + 1)
+      .find((message) => message.role === 'assistant');
+    const hasCommittedAssistantAfterTarget =
+      Boolean(assistantAfterTarget) &&
+      assistantAfterTarget?.status !== 'pending';
+
+    if (hasCommittedAssistantAfterTarget || latestRunState?.status === 'error') {
+      setPendingAssistantPlaceholder(null);
+    }
+  }, [currentMessages, latestRunState?.status, pendingAssistantPlaceholder, threadId]);
 
   useEffect(() => {
     if (selectedModelSupportsWebSearch || !useWebSearch) {
@@ -655,9 +737,18 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
             }),
           },
         );
+        setPendingAssistantPlaceholder({
+          threadId: createdThreadId,
+          clientMessageId,
+        });
         navigatePromise = navigate({
           to: '/app/chat/$threadId',
           params: { threadId: createdThreadId },
+        });
+      } else if (targetThreadId) {
+        setPendingAssistantPlaceholder({
+          threadId: targetThreadId,
+          clientMessageId,
         });
       }
 
@@ -679,6 +770,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
       await Promise.all([sendPromise, navigatePromise]);
     } catch (error) {
+      setPendingAssistantPlaceholder((current) =>
+        current?.clientMessageId === clientMessageId ? null : current,
+      );
       if (!threadId && targetThreadId) {
         clearOptimisticThreadBootstrap(targetThreadId);
       }

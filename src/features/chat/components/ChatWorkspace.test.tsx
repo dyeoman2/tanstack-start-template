@@ -458,6 +458,288 @@ describe('ChatWorkspace', () => {
     });
   });
 
+  it('keeps a pending assistant placeholder visible for subsequent sends while the feed only contains the saved user prompt', async () => {
+    const user = userEvent.setup();
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    const view = render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    await user.click(screen.getByLabelText('Send message'));
+
+    const sendArgs = await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+      return sendMessageMock.mock.calls.at(-1)?.[0] as { clientMessageId: string };
+    });
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+        {
+          id: 'user-123',
+          _creationTime: 2,
+          order: 2,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Follow-up question' }],
+          metadata: { clientMessageId: sendArgs.clientMessageId },
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'assistant', status: 'complete' }),
+        expect.objectContaining({ role: 'user', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
+  it('keeps a pending assistant placeholder visible for subsequent sends even if the hydrated feed briefly omits the new user prompt', async () => {
+    const user = userEvent.setup();
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    const view = render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    await user.click(screen.getByLabelText('Send message'));
+
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+    });
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'assistant', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
+  it('keeps the local pending placeholder after an optimistic pending assistant disappears from the hydrated feed', async () => {
+    const user = userEvent.setup();
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    const view = render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    await user.click(screen.getByLabelText('Send message'));
+
+    const sendArgs = await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalled();
+      return sendMessageMock.mock.calls.at(-1)?.[0] as { clientMessageId: string };
+    });
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+        {
+          id: 'user-123',
+          _creationTime: 2,
+          order: 2,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Follow-up question' }],
+          metadata: { clientMessageId: sendArgs.clientMessageId },
+        },
+        {
+          id: 'assistant-pending',
+          _creationTime: 3,
+          order: 3,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'pending',
+          parts: [{ type: 'text', text: '' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'assistant-older',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Earlier answer' }],
+          metadata: {},
+        },
+        {
+          id: 'user-123',
+          _creationTime: 2,
+          order: 2,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Follow-up question' }],
+          metadata: { clientMessageId: sendArgs.clientMessageId },
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'assistant', status: 'complete' }),
+        expect.objectContaining({ role: 'user', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
   it('shows the provider-capacity error when sendMessage fails fast', async () => {
     const user = userEvent.setup();
     sendMessageMock.mockRejectedValueOnce(
