@@ -254,6 +254,18 @@ export const aiPersonasDocValidator = v.object({
   updatedAt: v.number(),
 });
 
+export const personaWithAccessValidator = v.object({
+  _id: v.id('aiPersonas'),
+  _creationTime: v.number(),
+  userId: v.string(),
+  organizationId: v.string(),
+  name: v.string(),
+  prompt: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  canManage: v.boolean(),
+});
+
 export const aiModelPriceValidator = v.object({
   unit: v.string(),
   price: v.number(),
@@ -427,6 +439,14 @@ export const directoryOrganizationValidator = v.object({
 export const organizationSettingsValidator = v.object({
   organization: organizationSummaryValidator,
   access: organizationAccessValidator,
+  capabilities: v.object({
+    availableInviteRoles: v.array(organizationRoleValidator),
+    canInvite: v.boolean(),
+    canUpdateSettings: v.boolean(),
+    canDeleteOrganization: v.boolean(),
+    canLeaveOrganization: v.boolean(),
+    canManageMembers: v.boolean(),
+  }),
   isMember: v.boolean(),
   viewerRole: organizationViewerRoleValidator,
   canManage: v.boolean(),
@@ -454,7 +474,7 @@ export const organizationInvitationRowValidator = v.object({
   invitationId: v.string(),
   name: v.null(),
   email: v.string(),
-  role: v.union(v.literal('admin'), v.literal('member')),
+  role: organizationRoleValidator,
   status: v.union(v.literal('pending'), v.literal('expired')),
   createdAt: v.number(),
   expiresAt: v.number(),
@@ -469,6 +489,14 @@ export const organizationDirectoryRowValidator = v.union(
 export const organizationDirectoryResponseValidator = v.object({
   organization: organizationSummaryValidator,
   access: organizationAccessValidator,
+  capabilities: v.object({
+    availableInviteRoles: v.array(organizationRoleValidator),
+    canInvite: v.boolean(),
+    canUpdateSettings: v.boolean(),
+    canDeleteOrganization: v.boolean(),
+    canLeaveOrganization: v.boolean(),
+    canManageMembers: v.boolean(),
+  }),
   viewerRole: organizationViewerRoleValidator,
   rows: v.array(organizationDirectoryRowValidator),
   counts: v.object({
@@ -526,6 +554,7 @@ export const bootstrapUserContextResultValidator = v.union(
     found: v.literal(false),
   }),
   v.object({
+    assignedRole: userRoleValidator,
     found: v.literal(true),
     userId: v.id('users'),
     organizationId: v.string(),

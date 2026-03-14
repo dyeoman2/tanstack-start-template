@@ -29,4 +29,24 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
 
     expect(shouldSkipE2EAuthEmailForTesting('person@example.com')).toBe(false);
   });
+
+  it('rewrites auth email urls only for trusted request origins', async () => {
+    process.env.BETTER_AUTH_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com';
+    const { resolveAuthEmailUrl } = await import('./auth');
+
+    expect(
+      resolveAuthEmailUrl(
+        '/reset-password?token=abc',
+        new Request('https://preview.example.com/api/auth/request-password-reset'),
+      ),
+    ).toBe('https://preview.example.com/reset-password?token=abc');
+
+    expect(
+      resolveAuthEmailUrl(
+        '/reset-password?token=abc',
+        new Request('https://malicious.example.net/api/auth/request-password-reset'),
+      ),
+    ).toBe('https://app.example.com/reset-password?token=abc');
+  });
 });

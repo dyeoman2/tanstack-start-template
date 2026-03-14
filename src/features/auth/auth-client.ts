@@ -3,13 +3,35 @@ import { createAuthHooks } from '@daveyplate/better-auth-tanstack';
 import { adminClient, organizationClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 import { useSyncExternalStore } from 'react';
+import {
+  adminAccessControl,
+  adminRole,
+  organizationAccessControl,
+  organizationAdminRole,
+  organizationMemberRole,
+  organizationOwnerRole,
+  userRole,
+} from '~/lib/shared/better-auth-access';
 
 export const authClient = createAuthClient({
   plugins: [
     convexClient(),
-    adminClient(),
+    adminClient({
+      ac: adminAccessControl,
+      roles: {
+        admin: adminRole,
+        user: userRole,
+      },
+    }),
     // Match the server plugin configuration: organizations enabled, teams intentionally omitted.
-    organizationClient(),
+    organizationClient({
+      ac: organizationAccessControl,
+      roles: {
+        admin: organizationAdminRole,
+        member: organizationMemberRole,
+        owner: organizationOwnerRole,
+      },
+    }),
   ],
 });
 

@@ -14,8 +14,7 @@ import {
  */
 export function getSiteUrl(): string {
   const candidates: Array<[string | undefined, string]> = [
-    [process.env.BETTER_AUTH_SITE_URL, 'BETTER_AUTH_SITE_URL'],
-    [process.env.BETTER_AUTH_BASE_URL, 'BETTER_AUTH_BASE_URL'],
+    [process.env.BETTER_AUTH_URL, 'BETTER_AUTH_URL'],
     [process.env.SITE_URL, 'SITE_URL'],
     [process.env.PUBLIC_SITE_URL, 'PUBLIC_SITE_URL'],
     [process.env.NEXT_PUBLIC_SITE_URL, 'NEXT_PUBLIC_SITE_URL'],
@@ -34,6 +33,22 @@ export function getSiteUrl(): string {
 
   // Local development - default fallback
   return 'http://localhost:3000';
+}
+
+export function getRequiredBetterAuthUrl(): string {
+  const value = process.env.BETTER_AUTH_URL;
+  if (!value || value.trim().length === 0) {
+    throw new Error(
+      'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
+    );
+  }
+
+  const normalized = resolveSiteUrlCandidate(value, 'BETTER_AUTH_URL');
+  if (!normalized) {
+    throw new Error('BETTER_AUTH_URL must be a valid absolute URL.');
+  }
+
+  return normalized;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -102,7 +117,7 @@ function normalizeAllowedHost(value: string): string | null {
   return trimmed.toLowerCase();
 }
 
-export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
+export function getBetterAuthAllowedHosts(siteUrl = getRequiredBetterAuthUrl()): string[] {
   const allowedHosts = new Set<string>();
 
   try {
@@ -128,7 +143,10 @@ export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
   return [...allowedHosts];
 }
 
-export function isTrustedBetterAuthOrigin(candidate: string, siteUrl = getSiteUrl()): boolean {
+export function isTrustedBetterAuthOrigin(
+  candidate: string,
+  siteUrl = getRequiredBetterAuthUrl(),
+): boolean {
   let origin: URL;
   try {
     origin = new URL(candidate);
@@ -153,7 +171,7 @@ export function isTrustedBetterAuthOrigin(candidate: string, siteUrl = getSiteUr
   return configuredOrigins.some((configuredOrigin) => configuredOrigin === origin.origin);
 }
 
-export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[] {
+export function getConfiguredBetterAuthOrigins(siteUrl = getRequiredBetterAuthUrl()): string[] {
   const trustedOrigins = new Set<string>([siteUrl]);
 
   try {
@@ -178,7 +196,10 @@ export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[]
   return [...trustedOrigins];
 }
 
-export function getBetterAuthTrustedOrigins(request?: Request, siteUrl = getSiteUrl()): string[] {
+export function getBetterAuthTrustedOrigins(
+  request?: Request,
+  siteUrl = getRequiredBetterAuthUrl(),
+): string[] {
   const trustedOrigins = new Set<string>(getConfiguredBetterAuthOrigins(siteUrl));
 
   if (!request) {
@@ -204,7 +225,7 @@ export function getBetterAuthBaseUrlConfig():
       fallback?: string;
       protocol?: 'auto' | 'http' | 'https';
     } {
-  const siteUrl = getSiteUrl();
+  const siteUrl = getRequiredBetterAuthUrl();
   const allowedHosts = getBetterAuthAllowedHosts(siteUrl);
 
   if (allowedHosts.length === 0) {
@@ -224,6 +245,14 @@ export function getBetterAuthBaseUrlConfig():
     protocol,
     ...(isLoopbackSiteUrl ? { fallback: siteUrl } : {}),
   };
+}
+
+export function shouldUseSecureAuthCookies(siteUrl = getRequiredBetterAuthUrl()): boolean {
+  try {
+    return new URL(siteUrl).protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 function resolveSiteUrlCandidate(value: string | undefined, label: string): string | null {
@@ -258,10 +287,9 @@ export function getBetterAuthSecret(): string {
     );
   }
 
-  // Basic validation - should be at least 32 bytes when base64 encoded
   if (secret.length < 32) {
-    console.warn(
-      'BETTER_AUTH_SECRET appears to be too short. Should be at least 32 bytes base64 encoded.',
+    throw new Error(
+      'BETTER_AUTH_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
     );
   }
 
@@ -308,6 +336,19 @@ function readOptionalEnv(name: string): string | undefined {
 
 export function isE2ETestAuthEnabled(): boolean {
   return process.env.ENABLE_E2E_TEST_AUTH === 'true';
+}
+
+export function isSafeE2EAuthRuntime(request?: Request): boolean {
+  if (!request) {
+    return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  }
+
+  try {
+    const { hostname } = new URL(request.url);
+    return isLoopbackHostname(hostname);
+  } catch {
+    return false;
+  }
 }
 
 export function getE2ETestSecret(): string {

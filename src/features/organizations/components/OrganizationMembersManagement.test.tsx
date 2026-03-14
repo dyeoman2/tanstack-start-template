@@ -79,6 +79,14 @@ const directoryResponse = {
     view: true,
     siteAdmin: true,
   },
+  capabilities: {
+    availableInviteRoles: ['owner', 'admin', 'member'] as const,
+    canInvite: true,
+    canUpdateSettings: true,
+    canDeleteOrganization: true,
+    canLeaveOrganization: false,
+    canManageMembers: true,
+  },
   viewerRole: 'site-admin' as const,
   rows: [
     {
@@ -151,6 +159,48 @@ describe('OrganizationMembersManagement', () => {
     expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
     expect(routerInvalidateMock).toHaveBeenCalled();
+  });
+
+  it('offers owner as an invite role when the server capabilities allow it', async () => {
+    const user = userEvent.setup();
+    createInvitationMock.mockResolvedValueOnce({ success: true, invitationId: 'invite-2' });
+    useQueryMock.mockReturnValue({
+      ...directoryResponse,
+      capabilities: {
+        ...directoryResponse.capabilities,
+        availableInviteRoles: ['owner'] as const,
+      },
+    });
+
+    render(
+      <OrganizationMembersManagement
+        slug="cottage-hospital"
+        searchParams={{
+          page: 1,
+          pageSize: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          secondarySortBy: 'email',
+          secondarySortOrder: 'asc',
+          search: '',
+          kind: 'all',
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole('button', { name: /invite member/i }));
+    await user.type(screen.getByLabelText(/email/i), 'owner@example.com');
+    await user.click(screen.getByRole('button', { name: /send invite/i }));
+
+    await waitFor(() => {
+      expect(createInvitationMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          email: 'owner@example.com',
+          role: 'owner',
+        },
+      });
+    });
   });
 
   it('navigates sorting changes to the consolidated settings route', async () => {

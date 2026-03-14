@@ -38,6 +38,15 @@ export type OrganizationCreationEligibility = {
   isUnlimited: boolean;
 };
 
+export type OrganizationCapabilities = {
+  availableInviteRoles: OrganizationDirectoryRole[];
+  canInvite: boolean;
+  canUpdateSettings: boolean;
+  canDeleteOrganization: boolean;
+  canLeaveOrganization: boolean;
+  canManageMembers: boolean;
+};
+
 export type OrganizationMemberRow = {
   id: string;
   kind: 'member';
@@ -60,7 +69,7 @@ export type OrganizationInvitationRow = {
   invitationId: string;
   name: null;
   email: string;
-  role: Extract<OrganizationDirectoryRole, 'admin' | 'member'>;
+  role: OrganizationDirectoryRole;
   status: 'pending' | 'expired';
   createdAt: number;
   expiresAt: number;

@@ -11,7 +11,7 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import {
   getBetterAuthSecret,
   isE2EPrincipalEmail,
-  getSiteUrl,
+  getRequiredBetterAuthUrl,
   isTrustedBetterAuthOrigin,
 } from '../src/lib/server/env.server';
 import { assertUserId } from '../src/lib/shared/user-id';
@@ -19,6 +19,10 @@ import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx } from './_generated/server';
 import { action, internalAction, mutation, query } from './_generated/server';
+import {
+  getVerifiedCurrentSiteAdminUserFromActionOrThrow,
+  getVerifiedCurrentUserFromActionOrThrow,
+} from './auth/access';
 import betterAuthSchema from './betterAuth/schema';
 import {
   createSharedBetterAuthOptions,
@@ -36,8 +40,17 @@ import {
   fetchBetterAuthSessionsByUserId,
   updateBetterAuthSessionRecord,
 } from './lib/betterAuth';
+import {
+  createActorScopedRateLimitKey,
+  createEmailScopedRateLimitKey,
+  enforceServerAuthRateLimit,
+} from './lib/authRateLimits';
 import { createAuthAuditPlugin } from './lib/authAudit';
-import { authUserValidator, rateLimitResultValidator } from './lib/returnValidators';
+import {
+  authUserValidator,
+  organizationRoleValidator,
+  rateLimitResultValidator,
+} from './lib/returnValidators';
 
 const secret = getBetterAuthSecret();
 
@@ -53,11 +66,11 @@ function logSkippedE2EAuthEmail(kind: 'invitation' | 'password reset' | 'verific
   console.info(`[auth] Skipping ${kind} email for E2E principal ${email}`);
 }
 
-function resolveAuthEmailUrl(url: string, request?: Request): string {
+export function resolveAuthEmailUrl(url: string, request?: Request): string {
   let canonicalUrl: URL;
 
   try {
-    canonicalUrl = new URL(url, getSiteUrl());
+    canonicalUrl = new URL(url, getRequiredBetterAuthUrl());
   } catch {
     return url;
   }
@@ -127,7 +140,6 @@ const betterAuthAdminSessionValidator = v.object({
   id: v.string(),
   impersonatedBy: v.optional(v.string()),
   ipAddress: v.union(v.string(), v.null()),
-  token: v.string(),
   updatedAt: v.number(),
   userAgent: v.union(v.string(), v.null()),
   userId: v.string(),
@@ -190,7 +202,6 @@ type BetterAuthAdminSession = {
   id: string;
   impersonatedBy?: string;
   ipAddress: string | null;
-  token: string;
   updatedAt: number;
   userAgent: string | null;
   userId: string;
@@ -292,7 +303,7 @@ type BetterAuthApiSurface = {
       email: string;
       organizationId: string;
       resend?: boolean;
-      role: 'admin' | 'member';
+      role: 'owner' | 'admin' | 'member';
     };
     headers: Headers;
   }): Promise<{ id: string }>;
@@ -341,13 +352,6 @@ type BetterAuthActionContext = {
     api: BetterAuthApiSurface;
   };
   headers: Headers;
-};
-
-type BetterAuthAuthUser = {
-  email?: string;
-  id?: string;
-  name?: string | null;
-  role?: string | string[] | null;
 };
 
 function normalizeStatusCode(status: string | number | undefined): number {
@@ -452,17 +456,42 @@ async function getCurrentBetterAuthUserOrThrow(ctx: ActionCtx): Promise<{
   isSiteAdmin: boolean;
   name: string | null;
 }> {
-  const authUser = (await authComponent.getAuthUser(ctx)) as BetterAuthAuthUser | null;
-  if (!authUser?.id) {
-    throw APIError.fromStatus('UNAUTHORIZED', { message: 'Not authenticated' });
-  }
+  const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
 
   return {
-    email: typeof authUser.email === 'string' ? authUser.email : null,
-    id: authUser.id,
-    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role ?? undefined)),
-    name: typeof authUser.name === 'string' ? authUser.name : null,
+    email: typeof user.authUser.email === 'string' ? user.authUser.email : null,
+    id: user.authUserId,
+    isSiteAdmin: user.isSiteAdmin,
+    name: typeof user.authUser.name === 'string' ? user.authUser.name : null,
   };
+}
+
+async function enforceActorScopedServerAuthRateLimit(
+  ctx: ActionCtx,
+  name:
+    | 'adminBanUser'
+    | 'adminCreateUser'
+    | 'adminGetUser'
+    | 'adminListUserSessions'
+    | 'adminListUsers'
+    | 'adminRemoveUser'
+    | 'adminRevokeUserSession'
+    | 'adminRevokeUserSessions'
+    | 'adminSetRole'
+    | 'adminSetUserPassword'
+    | 'adminUnbanUser'
+    | 'adminUpdateUser',
+  scope?: string | null,
+): Promise<void> {
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  await enforceServerAuthRateLimit(
+    ctx,
+    name,
+    createActorScopedRateLimitKey({
+      actorUserId: currentUser.authUserId,
+      ...(scope ? { scope } : {}),
+    }),
+  );
 }
 
 async function assertSiteAdminWriteAccess(
@@ -480,10 +509,7 @@ async function assertSiteAdminWriteAccess(
     nextRole?: 'owner' | 'admin' | 'member';
   },
 ) {
-  const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-  if (!currentUser.isSiteAdmin) {
-    throw new APIError('FORBIDDEN', { message: 'Organization admin access required' });
-  }
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
 
   const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, args);
   if (!access.allowed) {
@@ -559,7 +585,7 @@ async function createSiteAdminInvitation(
     email: string;
     organizationId: string;
     resend?: boolean;
-    role: 'admin' | 'member';
+    role: 'owner' | 'admin' | 'member';
   },
 ) {
   const currentUser = await assertSiteAdminWriteAccess(ctx, {
@@ -626,15 +652,15 @@ async function createSiteAdminInvitation(
       paginationOpts: { cursor: null, numItems: 1, id: 0 },
     } as never);
 
-    if (orgOptions?.sendInvitationEmail && currentUser.email) {
+    if (orgOptions?.sendInvitationEmail && currentUser.authUser.email) {
       await orgOptions.sendInvitationEmail({
         email,
         id: existingInvitation._id,
         inviter: {
           user: {
-            email: currentUser.email ?? '',
-            id: currentUser.id,
-            name: currentUser.name,
+            email: currentUser.authUser.email ?? '',
+            id: currentUser.authUserId,
+            name: currentUser.authUser.name ?? null,
           },
         },
         organization: {
@@ -650,9 +676,9 @@ async function createSiteAdminInvitation(
 
   let invitationData: typeof invitationSeed & Record<string, unknown> = invitationSeed;
   const hookUser = {
-    email: currentUser.email ?? '',
-    id: currentUser.id,
-    name: currentUser.name,
+    email: currentUser.authUser.email ?? '',
+    id: currentUser.authUserId,
+    name: currentUser.authUser.name ?? null,
   };
   if (orgOptions?.organizationHooks?.beforeCreateInvitation) {
     const response = await orgOptions.organizationHooks.beforeCreateInvitation({
@@ -678,7 +704,7 @@ async function createSiteAdminInvitation(
         ...invitationData,
         createdAt: Date.now(),
         expiresAt,
-        inviterId: currentUser.id,
+        inviterId: currentUser.authUserId,
         status: 'pending',
       },
     },
@@ -695,7 +721,7 @@ async function createSiteAdminInvitation(
     throw new Error('Created invitation is missing an id');
   }
 
-  if (orgOptions?.sendInvitationEmail && currentUser.email) {
+  if (orgOptions?.sendInvitationEmail && currentUser.authUser.email) {
     await orgOptions.sendInvitationEmail({
       email,
       id: invitationId,
@@ -991,7 +1017,6 @@ function normalizeAdminSessionRecord(record: {
   id: string;
   impersonatedBy?: string;
   ipAddress?: string | null;
-  token: string;
   updatedAt: Date | number | string;
   userAgent?: string | null;
   userId: string;
@@ -1002,7 +1027,6 @@ function normalizeAdminSessionRecord(record: {
     id: record.id,
     ...(record.impersonatedBy ? { impersonatedBy: record.impersonatedBy } : {}),
     ipAddress: record.ipAddress ?? null,
-    token: record.token,
     updatedAt: toTimestamp(record.updatedAt),
     userAgent: record.userAgent ?? null,
     userId: record.userId,
@@ -1235,7 +1259,9 @@ export const createAuth = (
         return;
       }
 
-      // Apply server-side rate limiting for password reset (defense-in-depth)
+      // Apply a second per-account limiter without surfacing a distinct failure to the caller.
+      // This callback only runs for existing accounts, so throwing here would leak account
+      // existence once the bucket is exhausted.
       const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
         runMutation?: (fn: unknown, args: unknown) => Promise<{ ok: boolean; retryAfter?: number }>;
       };
@@ -1259,11 +1285,11 @@ export const createAuth = (
       );
 
       if (!rateLimitResult.ok) {
-        throw new Error(
-          `Rate limit exceeded. Too many password reset requests. Please try again in ${Math.ceil(
-            (rateLimitResult.retryAfter ?? 0) / (60 * 1000),
-          )} minutes.`,
-        );
+        console.warn('[auth] Suppressed password reset email after per-account rate limit', {
+          email: user.email,
+          retryAfterMs: rateLimitResult.retryAfter ?? null,
+        });
+        return;
       }
 
       // Call the email action which schedules the mutation using the Resend component
@@ -1492,6 +1518,7 @@ export const adminListUsers = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminListUsers');
       const response = await auth.api.listUsers({
         headers,
         query: {
@@ -1517,6 +1544,7 @@ export const adminGetUser = action({
   returns: betterAuthActionResultValidator(betterAuthAdminUserValidator),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminGetUser', args.id);
       const response = await auth.api.getUser({
         headers,
         query: { id: args.id },
@@ -1541,6 +1569,7 @@ export const adminCreateUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminCreateUser', args.email);
       const response = await auth.api.createUser({
         body: args,
         headers,
@@ -1565,6 +1594,7 @@ export const adminUpdateUser = action({
   returns: betterAuthActionResultValidator(betterAuthAdminUserValidator),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminUpdateUser', args.userId);
       const response = await auth.api.adminUpdateUser({
         body: args,
         headers,
@@ -1587,6 +1617,7 @@ export const adminSetRole = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminSetRole', args.userId);
       const response = await auth.api.setRole({
         body: args,
         headers,
@@ -1612,6 +1643,7 @@ export const adminBanUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminBanUser', args.userId);
       const response = await auth.api.banUser({
         body: args,
         headers,
@@ -1635,6 +1667,7 @@ export const adminUnbanUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminUnbanUser', args.userId);
       const response = await auth.api.unbanUser({
         body: args,
         headers,
@@ -1658,6 +1691,7 @@ export const adminListUserSessions = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminListUserSessions', args.userId);
       const response = await auth.api.listUserSessions({
         body: args,
         headers,
@@ -1672,7 +1706,7 @@ export const adminListUserSessions = action({
 
 export const adminRevokeUserSession = action({
   args: {
-    sessionToken: v.string(),
+    sessionId: v.string(),
   },
   returns: betterAuthActionResultValidator(
     v.object({
@@ -1681,11 +1715,85 @@ export const adminRevokeUserSession = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminRevokeUserSession', args.sessionId);
+      const sessionRecord = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+        model: 'session',
+        where: [
+          {
+            field: '_id',
+            operator: 'eq',
+            value: args.sessionId,
+          },
+        ],
+      })) as { token?: string } | null;
+
+      if (!sessionRecord?.token) {
+        throw new APIError('NOT_FOUND', { message: 'Session not found' });
+      }
+
       return await auth.api.revokeUserSession({
-        body: args,
+        body: {
+          sessionToken: sessionRecord.token,
+        },
         headers,
       });
     });
+  },
+});
+
+export const resolvePasswordResetEmail = action({
+  args: {
+    token: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      email: v.string(),
+      found: v.literal(true),
+    }),
+    v.object({
+      found: v.literal(false),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const verification = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: 'verification',
+      where: [
+        {
+          field: 'identifier',
+          operator: 'eq',
+          value: `reset-password:${args.token}`,
+        },
+        {
+          field: 'expiresAt',
+          operator: 'gt',
+          value: Date.now(),
+        },
+      ],
+    })) as { value?: string } | null;
+
+    if (!verification?.value) {
+      return { found: false } as const;
+    }
+
+    const authUser = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+      model: 'user',
+      where: [
+        {
+          field: '_id',
+          operator: 'eq',
+          value: verification.value,
+        },
+      ],
+    })) as { email?: string | null } | null;
+
+    if (!authUser?.email) {
+      return { found: false } as const;
+    }
+
+    return {
+      found: true as const,
+      email: authUser.email,
+    };
   },
 });
 
@@ -1700,6 +1808,7 @@ export const adminRevokeUserSessions = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminRevokeUserSessions', args.userId);
       return await auth.api.revokeUserSessions({
         body: args,
         headers,
@@ -1719,6 +1828,7 @@ export const adminRemoveUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminRemoveUser', args.userId);
       return await auth.api.removeUser({
         body: args,
         headers,
@@ -1739,6 +1849,7 @@ export const adminSetUserPassword = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceActorScopedServerAuthRateLimit(ctx, 'adminSetUserPassword', args.userId);
       return await auth.api.setUserPassword({
         body: args,
         headers,
@@ -1760,6 +1871,11 @@ export const requestPasswordResetServer = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await enforceServerAuthRateLimit(
+        ctx,
+        'requestPasswordReset',
+        createEmailScopedRateLimitKey(args.email),
+      );
       return await auth.api.requestPasswordReset({
         body: args,
         headers,
@@ -1811,7 +1927,7 @@ export const createOrganizationInvitationServer = action({
     email: v.string(),
     organizationId: v.string(),
     resend: v.optional(v.boolean()),
-    role: v.union(v.literal('admin'), v.literal('member')),
+    role: organizationRoleValidator,
   },
   returns: betterAuthActionResultValidator(
     v.object({
@@ -1820,7 +1936,11 @@ export const createOrganizationInvitationServer = action({
   ),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
+    const viewerMembership = await findBetterAuthMember(
+      ctx,
+      args.organizationId,
+      currentUser.id,
+    );
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -1856,7 +1976,11 @@ export const updateOrganizationMemberRoleServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationMemberResultValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
+    const viewerMembership = await findBetterAuthMember(
+      ctx,
+      args.organizationId,
+      currentUser.id,
+    );
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -1895,7 +2019,11 @@ export const removeOrganizationMemberServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationMemberResultValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
+    const viewerMembership = await findBetterAuthMember(
+      ctx,
+      args.organizationId,
+      currentUser.id,
+    );
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -1997,7 +2125,11 @@ export const updateOrganizationServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationSummaryValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
+    const viewerMembership = await findBetterAuthMember(
+      ctx,
+      args.organizationId,
+      currentUser.id,
+    );
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -2031,7 +2163,11 @@ export const deleteOrganizationServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationSummaryValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
+    const viewerMembership = await findBetterAuthMember(
+      ctx,
+      args.organizationId,
+      currentUser.id,
+    );
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {

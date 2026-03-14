@@ -275,7 +275,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const retryAssistantResponse = useMutation(api.agentChat.retryAssistantResponse);
   const createPersona = useMutation(api.agentChat.createPersona);
   const updatePersona = useMutation(api.agentChat.updatePersona);
-  const deletePersona = useMutation(api.agentChat.deletePersona);
+  const deletePersona = useAction(api.agentChat.deletePersona);
   const setThreadPersona = useMutation(api.agentChat.setThreadPersona);
   const personasList = personas ?? [];
   const availableModelOptions = modelOptions ?? [];

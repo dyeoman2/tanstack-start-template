@@ -44,7 +44,6 @@ export const ensurePrincipalRole = internalAction({
       authUserId: userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
-      role: args.role,
     });
 
     if (!bootstrapResult.found) {

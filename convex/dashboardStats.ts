@@ -1,10 +1,12 @@
 import { v } from 'convex/values';
+import type { Doc } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { internalMutation } from './_generated/server';
 import { dashboardCountsValidator } from './lib/returnValidators';
 
 const DASHBOARD_STATS_KEY = 'global';
 const USER_COUNT_BATCH_SIZE = 256;
+type DashboardStatsDoc = Doc<'dashboardStats'>;
 
 async function countUsers(ctx: MutationCtx) {
   let cursor: string | null = null;
@@ -26,6 +28,66 @@ async function countUsers(ctx: MutationCtx) {
   }
 }
 
+async function listDashboardStatsDocs(ctx: MutationCtx) {
+  return await ctx.db
+    .query('dashboardStats')
+    .withIndex('by_key', (q) => q.eq('key', DASHBOARD_STATS_KEY))
+    .collect();
+}
+
+function selectCanonicalDashboardStatsDoc(statsDocs: DashboardStatsDoc[]) {
+  return statsDocs.reduce<DashboardStatsDoc | null>((current, candidate) => {
+    if (!current) {
+      return candidate;
+    }
+
+    if (candidate.updatedAt !== current.updatedAt) {
+      return candidate.updatedAt > current.updatedAt ? candidate : current;
+    }
+
+    return candidate._creationTime > current._creationTime ? candidate : current;
+  }, null);
+}
+
+async function upsertDashboardStats(
+  ctx: MutationCtx,
+  nextValue: {
+    totalUsers: number;
+    activeUsers: number;
+    updatedAt: number;
+  },
+) {
+  const statsDocs = await listDashboardStatsDocs(ctx);
+  const canonicalDoc = selectCanonicalDashboardStatsDoc(statsDocs);
+
+  if (!canonicalDoc) {
+    const insertedId = await ctx.db.insert('dashboardStats', {
+      key: DASHBOARD_STATS_KEY,
+      ...nextValue,
+    });
+    const insertedDoc = await ctx.db.get(insertedId);
+
+    if (!insertedDoc) {
+      return;
+    }
+
+    const insertedDocs = await listDashboardStatsDocs(ctx);
+    await Promise.all(
+      insertedDocs
+        .filter((doc) => doc._id !== insertedDoc._id)
+        .map((doc) => ctx.db.delete(doc._id)),
+    );
+    return;
+  }
+
+  await ctx.db.patch(canonicalDoc._id, nextValue);
+  await Promise.all(
+    statsDocs
+      .filter((doc) => doc._id !== canonicalDoc._id)
+      .map((doc) => ctx.db.delete(doc._id)),
+  );
+}
+
 export const adjustUserCounts = internalMutation({
   args: {
     totalDelta: v.number(),
@@ -33,33 +95,23 @@ export const adjustUserCounts = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const statsDoc = await ctx.db
-      .query('dashboardStats')
-      .withIndex('by_key', (q) => q.eq('key', DASHBOARD_STATS_KEY))
-      .first();
-
     const now = Date.now();
     const activeDelta = args.activeDelta ?? args.totalDelta;
+    const statsDoc = selectCanonicalDashboardStatsDoc(await listDashboardStatsDocs(ctx));
 
     if (!statsDoc) {
       const totalUsers = await countUsers(ctx);
-      const activeUsers = totalUsers;
-
-      await ctx.db.insert('dashboardStats', {
-        key: DASHBOARD_STATS_KEY,
+      await upsertDashboardStats(ctx, {
         totalUsers,
-        activeUsers,
+        activeUsers: totalUsers,
         updatedAt: now,
       });
       return null;
     }
 
-    const nextTotal = Math.max(0, statsDoc.totalUsers + args.totalDelta);
-    const nextActive = Math.max(0, statsDoc.activeUsers + activeDelta);
-
-    await ctx.db.patch(statsDoc._id, {
-      totalUsers: nextTotal,
-      activeUsers: nextActive,
+    await upsertDashboardStats(ctx, {
+      totalUsers: Math.max(0, statsDoc.totalUsers + args.totalDelta),
+      activeUsers: Math.max(0, statsDoc.activeUsers + activeDelta),
       updatedAt: now,
     });
 
@@ -73,28 +125,13 @@ export const recomputeUserCounts = internalMutation({
   handler: async (ctx) => {
     const totalUsers = await countUsers(ctx);
     const activeUsers = totalUsers;
-
-    const statsDoc = await ctx.db
-      .query('dashboardStats')
-      .withIndex('by_key', (q) => q.eq('key', DASHBOARD_STATS_KEY))
-      .first();
-
     const now = Date.now();
 
-    if (!statsDoc) {
-      await ctx.db.insert('dashboardStats', {
-        key: DASHBOARD_STATS_KEY,
-        totalUsers,
-        activeUsers,
-        updatedAt: now,
-      });
-    } else {
-      await ctx.db.patch(statsDoc._id, {
-        totalUsers,
-        activeUsers,
-        updatedAt: now,
-      });
-    }
+    await upsertDashboardStats(ctx, {
+      totalUsers,
+      activeUsers,
+      updatedAt: now,
+    });
 
     return { totalUsers, activeUsers, updatedAt: now };
   },

@@ -73,7 +73,7 @@ type OrganizationInvitationRow = {
   invitationId: string;
   name: null;
   email: string;
-  role: Extract<OrganizationRole, 'admin' | 'member'>;
+  role: OrganizationRole;
   status: 'pending' | 'expired';
   createdAt: number;
   expiresAt: number;
@@ -83,6 +83,44 @@ type OrganizationInvitationRow = {
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
+
+function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): OrganizationRole[] {
+  if (viewerRole === 'site-admin' || viewerRole === 'owner') {
+    return ['owner', 'admin', 'member'];
+  }
+
+  if (viewerRole === 'admin') {
+    return ['admin', 'member'];
+  }
+
+  return [];
+}
+
+function canLeaveOrganization(input: {
+  ownerCount: number;
+  viewerMembership: Awaited<ReturnType<typeof findBetterAuthMember>>;
+}) {
+  if (!input.viewerMembership) {
+    return false;
+  }
+
+  return input.viewerMembership.role !== 'owner' || input.ownerCount > 1;
+}
+
+function buildOrganizationCapabilities(input: {
+  ownerCount: number;
+  viewerMembership: Awaited<ReturnType<typeof findBetterAuthMember>>;
+  viewerRole: OrganizationViewerRole;
+}) {
+  return {
+    availableInviteRoles: getAvailableInviteRoles(input.viewerRole),
+    canInvite: getAvailableInviteRoles(input.viewerRole).length > 0,
+    canUpdateSettings: canManageOrganization(input.viewerRole),
+    canDeleteOrganization: canDeleteOrganization(input.viewerRole),
+    canLeaveOrganization: canLeaveOrganization(input),
+    canManageMembers: canManageOrganization(input.viewerRole),
+  };
+}
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
   if (!value) {
@@ -308,6 +346,19 @@ export const getOrganizationSettings = query({
       return null;
     }
 
+    const organizationId = context.organization._id ?? context.organization.id;
+    const ownerCount =
+      organizationId && context.viewerMembership
+        ? (await listOrganizationMembers(ctx, organizationId)).filter(
+            (membership) => membership.role === 'owner',
+          ).length
+        : 0;
+    const capabilities = buildOrganizationCapabilities({
+      ownerCount,
+      viewerMembership: context.viewerMembership,
+      viewerRole: context.viewerRole,
+    });
+
     return {
       organization: {
         id: context.organization._id ?? context.organization.id ?? '',
@@ -316,12 +367,10 @@ export const getOrganizationSettings = query({
         logo: context.organization.logo ?? null,
       },
       access: context.access,
+      capabilities,
       isMember: context.viewerMembership !== null,
       viewerRole: context.viewerRole,
-      canManage:
-        context.access.siteAdmin ||
-        context.viewerRole === 'owner' ||
-        context.viewerRole === 'admin',
+      canManage: capabilities.canManageMembers || capabilities.canUpdateSettings,
     };
   },
 });
@@ -361,11 +410,26 @@ export const getOrganizationWriteAccess = query({
       membershipRole: viewerMembership?.role,
     });
 
-    if (
-      args.action === 'invite' ||
-      args.action === 'cancel-invitation' ||
-      args.action === 'update-settings'
-    ) {
+    if (args.action === 'invite') {
+      const availableInviteRoles = getAvailableInviteRoles(viewerRole);
+      if (availableInviteRoles.length === 0) {
+        return {
+          allowed: false as const,
+          reason: 'Organization admin access required',
+        };
+      }
+
+      if (args.nextRole && !availableInviteRoles.includes(args.nextRole)) {
+        return {
+          allowed: false as const,
+          reason: 'You cannot assign that organization role',
+        };
+      }
+
+      return { allowed: true as const };
+    }
+
+    if (args.action === 'cancel-invitation' || args.action === 'update-settings') {
       return canManageOrganization(viewerRole)
         ? { allowed: true as const }
         : {
@@ -483,6 +547,11 @@ export const listOrganizationDirectory = query({
     ]);
 
     const ownerCount = memberships.filter((membership) => membership.role === 'owner').length;
+    const capabilities = buildOrganizationCapabilities({
+      ownerCount,
+      viewerMembership: context.viewerMembership,
+      viewerRole: context.viewerRole,
+    });
     const invitationRows: OrganizationInvitationRow[] = invitations
       .filter((invitation) => invitation.status === 'pending')
       .map(
@@ -493,14 +562,11 @@ export const listOrganizationDirectory = query({
             invitationId: invitation._id ?? invitation.id ?? '',
             name: null,
             email: invitation.email,
-            role: invitation.role === 'admin' ? 'admin' : 'member',
+            role: normalizeOrganizationRole(invitation.role),
             status: isInvitationExpired(invitation.expiresAt, args.asOf) ? 'expired' : 'pending',
             createdAt: toTimestamp(invitation.createdAt),
             expiresAt: toTimestamp(invitation.expiresAt),
-            canRevoke:
-              context.access.siteAdmin ||
-              context.viewerRole === 'owner' ||
-              context.viewerRole === 'admin',
+            canRevoke: capabilities.canInvite,
           }) satisfies OrganizationInvitationRow,
       )
       .filter((invitation) => invitation.invitationId.length > 0);
@@ -638,6 +704,7 @@ export const listOrganizationDirectory = query({
           logo: context.organization.logo ?? null,
         },
         access: context.access,
+        capabilities,
         viewerRole: context.viewerRole,
         rows: hydratedRows,
         counts: {
@@ -676,6 +743,7 @@ export const listOrganizationDirectory = query({
         logo: context.organization.logo ?? null,
       },
       access: context.access,
+      capabilities,
       viewerRole: context.viewerRole,
       rows: rows.slice(start, end),
       counts: {

@@ -20,7 +20,7 @@ import { handleServerError, ServerError } from '~/lib/server/error-utils.server'
 const organizationInvitationSchema = z.object({
   organizationId: z.string().min(1),
   email: z.string().email(),
-  role: z.enum(['admin', 'member']),
+  role: z.enum(['owner', 'admin', 'member']),
   resend: z.boolean().optional(),
 });
 
@@ -229,6 +229,7 @@ export const createOrganizationInvitationServerFn = createServerFn({ method: 'PO
       await requireOrganizationWriteAccess({
         action: 'invite',
         organizationId: data.organizationId,
+        nextRole: data.role,
       });
 
       return await createBetterAuthOrganizationInvitation(

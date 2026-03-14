@@ -12,7 +12,10 @@ import { authClient } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
-import { markCurrentUserOnboardingCompleteServerFn } from '~/features/auth/server/onboarding.server';
+import {
+  markCurrentUserOnboardingCompleteServerFn,
+  resolvePasswordResetEmailServerFn,
+} from '~/features/auth/server/onboarding.server';
 
 export const Route = createFileRoute('/reset-password')({
   staticData: true,
@@ -79,19 +82,50 @@ function ResetPasswordPage() {
       }
 
       try {
-        // Reset the password using Better Auth client
+        const resetEmail = await resolvePasswordResetEmailServerFn({
+          data: { token },
+        });
+
+        if (!resetEmail.found) {
+          throw new Error('Password was reset, but the follow-up sign-in context was unavailable.');
+        }
+
+        // Reset the password using Better Auth client.
         await authClient.resetPassword({
           token,
           newPassword: value.password,
           fetchOptions: { throw: true },
         });
 
+        try {
+          await authClient.signIn.email({
+            email: resetEmail.email,
+            password: value.password,
+            fetchOptions: { throw: true },
+          });
+        } catch (signInError) {
+          const message =
+            signInError instanceof Error ? signInError.message.toLowerCase() : String(signInError);
+
+          if (message.includes('email not verified') || message.includes('verify your email')) {
+            await router.navigate({
+              to: '/verify-email-pending',
+              search: {
+                email: resetEmail.email,
+                redirectTo: '/app',
+              },
+              replace: true,
+            });
+            return;
+          }
+
+          throw signInError;
+        }
+
         await markCurrentUserOnboardingCompleteServerFn();
 
         setSuccess(true);
 
-        // Better Auth should handle auto-signin with autoSignIn: true
-        // Invalidate router to refresh auth state
         await router.invalidate();
 
         // Navigate to the app after showing success message
@@ -165,8 +199,8 @@ function ResetPasswordPage() {
             <div className="space-y-2">
               <h2 className="text-2xl font-bold text-foreground">Password Reset Successful</h2>
               <p className="text-sm text-muted-foreground">
-                Your password has been updated. You are now signed in and will be redirected to your
-                dashboard.
+                Your password has been updated, and you are now signed in. You will be redirected to
+                your dashboard.
               </p>
             </div>
           </CardContent>

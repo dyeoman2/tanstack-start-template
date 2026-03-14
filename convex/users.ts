@@ -46,8 +46,10 @@ import {
   ensureUserContextResultValidator,
   successTrueValidator,
   successValidator,
+  userRoleValidator,
   userContextRecordsValidator,
   userCountValidator,
+  userProfilesDocValidator,
 } from './lib/returnValidators';
 import { buildPersistedOnboardingState as buildPersistedOnboardingStateBase } from './lib/onboardingState';
 
@@ -72,6 +74,7 @@ type BootstrapUserContextResult =
       found: false;
     }
   | ({
+      assignedRole: 'admin' | 'user';
       found: true;
     } & EnsureUserContextResult);
 
@@ -87,7 +90,42 @@ type OnboardingStatePatch = {
   onboardingDeliveryError?: string | null | undefined;
 };
 const USER_PROFILES_SYNC_BATCH_SIZE = 256;
-const BETTER_AUTH_USER_COUNT_BATCH_SIZE = 1000;
+const USER_COUNT_LOOKUP_LIMIT = 2;
+const USER_PROFILE_SYNC_STATE_KEY = 'global';
+
+const userProfileSyncInputValidator = v.object({
+  authUserId: v.string(),
+  email: v.string(),
+  emailLower: v.string(),
+  name: v.union(v.string(), v.null()),
+  nameLower: v.union(v.string(), v.null()),
+  phoneNumber: v.union(v.string(), v.null()),
+  role: v.union(v.literal('user'), v.literal('admin')),
+  isSiteAdmin: v.boolean(),
+  emailVerified: v.boolean(),
+  banned: v.boolean(),
+  banReason: v.union(v.string(), v.null()),
+  banExpires: v.union(v.number(), v.null()),
+  onboardingStatus: v.optional(
+    v.union(
+      v.literal('not_started'),
+      v.literal('email_pending'),
+      v.literal('email_sent'),
+      v.literal('delivered'),
+      v.literal('delivery_delayed'),
+      v.literal('bounced'),
+      v.literal('completed'),
+    ),
+  ),
+  onboardingEmailId: v.optional(v.string()),
+  onboardingEmailMessageId: v.optional(v.string()),
+  onboardingEmailLastSentAt: v.optional(v.number()),
+  onboardingCompletedAt: v.optional(v.number()),
+  onboardingDeliveryUpdatedAt: v.optional(v.number()),
+  onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
 
 function toTimestampOrFallback(
   value: string | number | Date | undefined,
@@ -187,6 +225,133 @@ async function createDefaultOrganization(
   return organization;
 }
 
+async function assignBootstrapUserRole(
+  ctx: MutationCtx,
+  authUserId: string,
+): Promise<'admin' | 'user'> {
+  const currentUser = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'user',
+    where: [
+      {
+        field: '_id',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+  })) as { role?: string | string[] | null } | null;
+
+  const currentRole = normalizeUserRole(currentUser?.role ?? undefined);
+  if (currentRole === 'admin') {
+    return 'admin';
+  }
+
+  const existingAdminPage = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'user',
+    where: [
+      {
+        field: 'role',
+        operator: 'eq',
+        value: 'admin',
+      },
+    ],
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+  const existingAdmins = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(
+    existingAdminPage,
+  ).page;
+
+  const nextRole: 'admin' | 'user' = existingAdmins.length === 0 ? 'admin' : 'user';
+
+  if (currentRole !== nextRole) {
+    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+      input: {
+        model: 'user',
+        update: {
+          updatedAt: Date.now(),
+          role: nextRole,
+        },
+        where: [
+          {
+            field: '_id',
+            operator: 'eq',
+            value: authUserId,
+          },
+        ],
+      },
+      paginationOpts: {
+        cursor: null,
+        numItems: 1,
+        id: 0,
+      },
+    });
+  }
+
+  return nextRole;
+}
+
+async function listUserProfileSyncStateDocs(ctx: MutationCtx) {
+  return await ctx.db
+    .query('userProfileSyncState')
+    .withIndex('by_key', (q) => q.eq('key', USER_PROFILE_SYNC_STATE_KEY))
+    .collect();
+}
+
+function selectCanonicalUserProfileSyncState(syncStates: Array<Doc<'userProfileSyncState'>>) {
+  return syncStates.reduce<Doc<'userProfileSyncState'> | null>((current, candidate) => {
+    if (!current) {
+      return candidate;
+    }
+
+    if (candidate.lastFullSyncAt !== current.lastFullSyncAt) {
+      return candidate.lastFullSyncAt > current.lastFullSyncAt ? candidate : current;
+    }
+
+    return candidate._creationTime > current._creationTime ? candidate : current;
+  }, null);
+}
+
+async function upsertUserProfileSyncState(
+  ctx: MutationCtx,
+  nextValue: {
+    lastFullSyncAt: number;
+    totalUsers: number;
+  },
+) {
+  const syncStates = await listUserProfileSyncStateDocs(ctx);
+  const canonicalSyncState = selectCanonicalUserProfileSyncState(syncStates);
+
+  if (!canonicalSyncState) {
+    const insertedId = await ctx.db.insert('userProfileSyncState', {
+      key: USER_PROFILE_SYNC_STATE_KEY,
+      ...nextValue,
+    });
+    const insertedDoc = await ctx.db.get(insertedId);
+
+    if (!insertedDoc) {
+      return;
+    }
+
+    const insertedStates = await listUserProfileSyncStateDocs(ctx);
+    await Promise.all(
+      insertedStates
+        .filter((state) => state._id !== insertedDoc._id)
+        .map((state) => ctx.db.delete(state._id)),
+    );
+    return;
+  }
+
+  await ctx.db.patch(canonicalSyncState._id, nextValue);
+  await Promise.all(
+    syncStates
+      .filter((state) => state._id !== canonicalSyncState._id)
+      .map((state) => ctx.db.delete(state._id)),
+  );
+}
+
 async function ensureUserContextRecord(
   ctx: MutationCtx,
   args: EnsureUserContextArgs,
@@ -271,60 +436,31 @@ export const getUserCount = query({
   returns: userCountValidator,
   handler: async (ctx) => {
     const authUser = await getCurrentAuthUserOrNull(ctx);
+    let rawResult: unknown;
 
-    if (!authUser) {
-      const firstPage = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    try {
+      rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
         model: 'user',
         paginationOpts: {
           cursor: null,
-          numItems: 1,
+          numItems: USER_COUNT_LOOKUP_LIMIT,
           id: 0,
         },
       });
-      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(firstPage);
-
-      return {
-        totalUsers: null,
-        isFirstUser: normalized.page.length === 0,
-      };
+    } catch (error) {
+      console.error('Failed to query Better Auth users:', error);
+      throw new ConvexError({
+        code: 'INTERNAL_ERROR',
+        message: 'Unable to determine the current user count.',
+      });
     }
 
-    let totalUsers = 0;
-    let cursor: string | null = null;
-
-    while (true) {
-      let rawResult: unknown;
-
-      try {
-        rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-          model: 'user',
-          paginationOpts: {
-            cursor,
-            numItems: BETTER_AUTH_USER_COUNT_BATCH_SIZE,
-            id: 0,
-          },
-        });
-      } catch (error) {
-        console.error('Failed to query Better Auth users:', error);
-        throw new ConvexError({
-          code: 'INTERNAL_ERROR',
-          message: 'Unable to determine the current user count.',
-        });
-      }
-
-      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
-      totalUsers += normalized.page.length;
-
-      if (normalized.isDone || normalized.continueCursor === null) {
-        break;
-      }
-
-      cursor = normalized.continueCursor;
-    }
+    const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
+    const observedUsers = normalized.page.length;
 
     return {
-      totalUsers,
-      isFirstUser: totalUsers === 0,
+      totalUsers: observedUsers < USER_COUNT_LOOKUP_LIMIT ? observedUsers : null,
+      isFirstUser: authUser ? observedUsers === 1 : observedUsers === 0,
     };
   },
 });
@@ -338,6 +474,16 @@ export const ensureUserContextForAuthUser = internalMutation({
   returns: ensureUserContextResultValidator,
   handler: async (ctx, args) => {
     return await ensureUserContextRecord(ctx, args);
+  },
+});
+
+export const assignBootstrapUserRoleMutation = internalMutation({
+  args: {
+    authUserId: v.string(),
+  },
+  returns: userRoleValidator,
+  handler: async (ctx, args) => {
+    return await assignBootstrapUserRole(ctx, args.authUserId);
   },
 });
 
@@ -412,114 +558,57 @@ export const deleteAuthUserProfile = internalMutation({
   },
 });
 
-export const syncUserProfilesSnapshot = internalMutation({
+export const syncUserProfilesSnapshot = internalAction({
   args: {
-    users: v.array(
-      v.object({
-        authUserId: v.string(),
-        email: v.string(),
-        emailLower: v.string(),
-        name: v.union(v.string(), v.null()),
-        nameLower: v.union(v.string(), v.null()),
-        phoneNumber: v.union(v.string(), v.null()),
-        role: v.union(v.literal('user'), v.literal('admin')),
-        isSiteAdmin: v.boolean(),
-        emailVerified: v.boolean(),
-        banned: v.boolean(),
-        banReason: v.union(v.string(), v.null()),
-        banExpires: v.union(v.number(), v.null()),
-        onboardingStatus: v.optional(
-          v.union(
-            v.literal('not_started'),
-            v.literal('email_pending'),
-            v.literal('email_sent'),
-            v.literal('delivered'),
-            v.literal('delivery_delayed'),
-            v.literal('bounced'),
-            v.literal('completed'),
-          ),
-        ),
-        onboardingEmailId: v.optional(v.string()),
-        onboardingEmailMessageId: v.optional(v.string()),
-        onboardingEmailLastSentAt: v.optional(v.number()),
-        onboardingCompletedAt: v.optional(v.number()),
-        onboardingDeliveryUpdatedAt: v.optional(v.number()),
-        onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
-        createdAt: v.number(),
-        updatedAt: v.number(),
-      }),
-    ),
+    users: v.array(userProfileSyncInputValidator),
   },
   returns: v.object({
     success: v.literal(true),
     totalUsers: v.number(),
   }),
   handler: async (ctx, args) => {
-    const existingProfiles: UserProfileDocument[] = [];
+    const syncTimestamp = Date.now();
+    const activeAuthUserIds = new Set(args.users.map((user) => user.authUserId));
+
+    for (let start = 0; start < args.users.length; start += USER_PROFILES_SYNC_BATCH_SIZE) {
+      await ctx.runMutation(internal.users.syncUserProfilesSnapshotBatch, {
+        syncTimestamp,
+        users: args.users.slice(start, start + USER_PROFILES_SYNC_BATCH_SIZE),
+      });
+    }
+
     let cursor: string | null = null;
 
     while (true) {
-      const result = await ctx.db.query('userProfiles').paginate({
+      const page: {
+        continueCursor: string;
+        isDone: boolean;
+        page: UserProfileDocument[];
+      } = await ctx.runQuery(internal.users.listUserProfilesSyncPage, {
         cursor,
         numItems: USER_PROFILES_SYNC_BATCH_SIZE,
       });
-      existingProfiles.push(...result.page);
+      const staleProfileIds = page.page
+        .filter((profile) => !activeAuthUserIds.has(profile.authUserId))
+        .map((profile) => profile._id);
 
-      if (result.isDone) {
+      if (staleProfileIds.length > 0) {
+        await ctx.runMutation(internal.users.deleteUserProfilesBatch, {
+          profileIds: staleProfileIds,
+        });
+      }
+
+      if (page.isDone) {
         break;
       }
 
-      cursor = result.continueCursor;
+      cursor = page.continueCursor;
     }
 
-    const existingByAuthUserId = new Map(
-      existingProfiles.map((profile) => [profile.authUserId, profile]),
-    );
-    const activeAuthUserIds = new Set(args.users.map((user) => user.authUserId));
-    const syncTimestamp = Date.now();
-
-    for (const user of args.users) {
-      const existing = existingByAuthUserId.get(user.authUserId);
-      const nextValue = {
-        ...user,
-        ...buildPersistedOnboardingState(existing ?? null, user),
-        lastSyncedAt: syncTimestamp,
-      };
-
-      if (existing) {
-        await ctx.db.replace(existing._id, nextValue);
-        existingByAuthUserId.delete(user.authUserId);
-        continue;
-      }
-
-      await ctx.db.insert('userProfiles', nextValue);
-    }
-
-    for (const staleProfile of existingByAuthUserId.values()) {
-      if (activeAuthUserIds.has(staleProfile.authUserId)) {
-        continue;
-      }
-
-      await ctx.db.delete(staleProfile._id);
-    }
-
-    const syncState = await ctx.db
-      .query('userProfileSyncState')
-      .withIndex('by_key', (q) => q.eq('key', 'global'))
-      .first();
-
-    if (syncState) {
-      await ctx.db.patch(syncState._id, {
-        lastFullSyncAt: syncTimestamp,
-        totalUsers: args.users.length,
-      });
-    } else {
-      await ctx.db.insert('userProfileSyncState', {
-        key: 'global',
-        lastFullSyncAt: syncTimestamp,
-        totalUsers: args.users.length,
-      });
-    }
+    await ctx.runMutation(internal.users.finalizeUserProfilesSnapshotSync, {
+      syncTimestamp,
+      totalUsers: args.users.length,
+    });
 
     return {
       success: true as const,
@@ -528,12 +617,93 @@ export const syncUserProfilesSnapshot = internalMutation({
   },
 });
 
+export const syncUserProfilesSnapshotBatch = internalMutation({
+  args: {
+    syncTimestamp: v.number(),
+    users: v.array(userProfileSyncInputValidator),
+  },
+  returns: v.object({
+    processed: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    for (const user of args.users) {
+      const existing = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', user.authUserId))
+        .first();
+      const nextValue = {
+        ...user,
+        ...buildPersistedOnboardingState(existing ?? null, user),
+        lastSyncedAt: args.syncTimestamp,
+      };
+
+      if (existing) {
+        await ctx.db.replace(existing._id, nextValue);
+        continue;
+      }
+
+      await ctx.db.insert('userProfiles', nextValue);
+    }
+
+    return { processed: args.users.length };
+  },
+});
+
+export const listUserProfilesSyncPage = internalQuery({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    numItems: v.number(),
+  },
+  returns: v.object({
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+    page: v.array(userProfilesDocValidator),
+  }),
+  handler: async (ctx, args) => {
+    return await ctx.db.query('userProfiles').paginate({
+      cursor: args.cursor,
+      numItems: args.numItems,
+    });
+  },
+});
+
+export const deleteUserProfilesBatch = internalMutation({
+  args: {
+    profileIds: v.array(v.id('userProfiles')),
+  },
+  returns: v.object({
+    deleted: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    for (const profileId of args.profileIds) {
+      await ctx.db.delete(profileId);
+    }
+
+    return { deleted: args.profileIds.length };
+  },
+});
+
+export const finalizeUserProfilesSnapshotSync = internalMutation({
+  args: {
+    syncTimestamp: v.number(),
+    totalUsers: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await upsertUserProfileSyncState(ctx, {
+      lastFullSyncAt: args.syncTimestamp,
+      totalUsers: args.totalUsers,
+    });
+
+    return null;
+  },
+});
+
 export const bootstrapUserContext = internalAction({
   args: {
     authUserId: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
-    role: v.optional(v.union(v.literal('user'), v.literal('admin'))),
   },
   returns: bootstrapUserContextResultValidator,
   handler: async (ctx, args): Promise<BootstrapUserContextResult> => {
@@ -554,29 +724,9 @@ export const bootstrapUserContext = internalAction({
       };
     }
 
-    if (args.role) {
-      await ctx.runMutation(components.betterAuth.adapter.updateMany, {
-        input: {
-          model: 'user',
-          update: {
-            updatedAt: Date.now(),
-            role: args.role,
-          },
-          where: [
-            {
-              field: '_id',
-              operator: 'eq',
-              value: args.authUserId,
-            },
-          ],
-        },
-        paginationOpts: {
-          cursor: null,
-          numItems: 1,
-          id: 0,
-        },
-      });
-    }
+    const assignedRole = await ctx.runMutation(internal.users.assignBootstrapUserRoleMutation, {
+      authUserId: args.authUserId,
+    });
 
     const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, args.authUserId);
     if (existingMemberships.length === 0) {
@@ -607,6 +757,7 @@ export const bootstrapUserContext = internalAction({
     });
 
     return {
+      assignedRole,
       ...result,
       found: true,
     };

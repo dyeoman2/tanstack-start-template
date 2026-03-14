@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   accessConstants,
   checkOrganizationAccessMock,
-  getCurrentSiteAdminAuthUserOrThrowMock,
   getVerifiedCurrentSiteAdminUserOrThrowMock,
   getVerifiedCurrentUserOrThrowMock,
 } = vi.hoisted(() => ({
@@ -32,7 +31,6 @@ const {
     },
   },
   checkOrganizationAccessMock: vi.fn(),
-  getCurrentSiteAdminAuthUserOrThrowMock: vi.fn(),
   getVerifiedCurrentSiteAdminUserOrThrowMock: vi.fn(),
   getVerifiedCurrentUserOrThrowMock: vi.fn(),
 }));
@@ -41,7 +39,6 @@ vi.mock('./access', async () => {
   return {
     ADMIN_ACCESS: accessConstants.ADMIN_ACCESS,
     checkOrganizationAccess: checkOrganizationAccessMock,
-    getCurrentSiteAdminAuthUserOrThrow: getCurrentSiteAdminAuthUserOrThrowMock,
     getVerifiedCurrentSiteAdminUserOrThrow: getVerifiedCurrentSiteAdminUserOrThrowMock,
     getVerifiedCurrentUserOrThrow: getVerifiedCurrentUserOrThrowMock,
   };
@@ -157,16 +154,20 @@ describe('authorized helpers', () => {
     expect(ctx.user).toEqual(siteAdmin);
   });
 
-  it('injects site-admin auth users for privileged actions', async () => {
-    const authUser = {
-      id: 'auth_user_1',
-      role: 'admin',
+  it('injects verified site-admin users for privileged actions', async () => {
+    const siteAdmin = {
+      ...baseUser,
+      authUser: {
+        ...baseUser.authUser,
+        role: 'admin',
+      },
+      isSiteAdmin: true,
     };
-    getCurrentSiteAdminAuthUserOrThrowMock.mockResolvedValue(authUser);
+    getVerifiedCurrentSiteAdminUserOrThrowMock.mockResolvedValue(siteAdmin);
 
     const ctx = await authorizeSiteAdminActionContext({} as never);
 
-    expect(ctx.authUser).toEqual(authUser);
+    expect(ctx.user).toEqual(siteAdmin);
   });
 
   it('uses edit-level access when an org admin is authorized', async () => {

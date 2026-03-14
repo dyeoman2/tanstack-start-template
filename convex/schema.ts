@@ -78,6 +78,10 @@ export default defineSchema({
     .index('by_auth_user_id', ['authUserId'])
     .index('by_role', ['role'])
     .index('by_email_lower', ['emailLower'])
+    .index('by_name_lower', ['nameLower'])
+    .index('by_role_and_created_at', ['role', 'createdAt'])
+    .index('by_role_and_email_lower', ['role', 'emailLower'])
+    .index('by_role_and_name_lower', ['role', 'nameLower'])
     .index('by_onboarding_email_id', ['onboardingEmailId'])
     .index('by_onboarding_email_message_id', ['onboardingEmailMessageId'])
     .index('by_created_at', ['createdAt']),

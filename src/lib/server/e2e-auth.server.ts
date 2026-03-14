@@ -6,6 +6,7 @@ import {
   getE2EPrincipalConfig,
   getE2ETestSecret,
   isE2ETestAuthEnabled,
+  isSafeE2EAuthRuntime,
 } from '~/lib/server/env.server';
 
 const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
@@ -22,7 +23,7 @@ export type PlaywrightCookiePayload = {
 };
 
 export function assertE2EAuthRequestAuthorized(request: Request) {
-  if (!isE2ETestAuthEnabled()) {
+  if (!isE2ETestAuthEnabled() || !isSafeE2EAuthRuntime(request)) {
     throw new Response('Not found', { status: 404 });
   }
 

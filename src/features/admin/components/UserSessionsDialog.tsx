@@ -59,8 +59,8 @@ function formatSessionLabel(session: SessionView) {
 export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogProps) {
   const queryClient = useQueryClient();
   const { showToast } = useToast();
-  const [pendingSessionToken, setPendingSessionToken] = useState<string | null>(null);
-  const [confirmSessionToken, setConfirmSessionToken] = useState<string | null>(null);
+  const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
+  const [confirmSessionId, setConfirmSessionId] = useState<string | null>(null);
   const [isRevokingAll, setIsRevokingAll] = useState(false);
   const [confirmRevokeAll, setConfirmRevokeAll] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,8 +86,8 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
   useEffect(() => {
     if (!open) {
       setError(null);
-      setPendingSessionToken(null);
-      setConfirmSessionToken(null);
+      setPendingSessionId(null);
+      setConfirmSessionId(null);
       setConfirmRevokeAll(false);
       setIsRevokingAll(false);
     }
@@ -95,24 +95,24 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
 
   const sessions = data ?? [];
 
-  const handleRevokeSession = async (sessionToken: string) => {
-    setPendingSessionToken(sessionToken);
+  const handleRevokeSession = async (sessionId: string) => {
+    setPendingSessionId(sessionId);
     setError(null);
 
     try {
       await revokeAdminUserSessionServerFn({
         data: {
-          sessionToken,
+          sessionId,
         },
       });
       await refetch();
       await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
-      setConfirmSessionToken(null);
+      setConfirmSessionId(null);
       showToast('Session revoked', 'success');
     } catch (revokeError) {
       setError(revokeError instanceof Error ? revokeError.message : 'Failed to revoke session');
     } finally {
-      setPendingSessionToken(null);
+      setPendingSessionId(null);
     }
   };
 
@@ -210,8 +210,8 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
           <div className="max-h-[420px] space-y-3 overflow-y-auto pr-2">
             {sessions.map((session) => {
               const Icon = getSessionIcon(session.userAgent);
-              const isPending = pendingSessionToken === session.token;
-              const isConfirming = confirmSessionToken === session.token;
+              const isPending = pendingSessionId === session.id;
+              const isConfirming = confirmSessionId === session.id;
 
               return (
                 <div key={session.id} className="rounded-lg border border-border bg-card p-4">
@@ -243,7 +243,7 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
                             type="button"
                             variant="outline"
                             size="sm"
-                            onClick={() => setConfirmSessionToken(null)}
+                            onClick={() => setConfirmSessionId(null)}
                             disabled={isPending}
                           >
                             Cancel
@@ -253,7 +253,7 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
                             variant="destructive"
                             size="sm"
                             onClick={() => {
-                              void handleRevokeSession(session.token);
+                              void handleRevokeSession(session.id);
                             }}
                             disabled={isPending}
                           >
@@ -265,7 +265,7 @@ export function UserSessionsDialog({ open, user, onClose }: UserSessionsDialogPr
                           type="button"
                           variant="ghost-destructive"
                           size="sm"
-                          onClick={() => setConfirmSessionToken(session.token)}
+                          onClick={() => setConfirmSessionId(session.id)}
                         >
                           Revoke
                         </Button>

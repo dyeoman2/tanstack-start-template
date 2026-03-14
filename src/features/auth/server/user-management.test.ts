@@ -18,7 +18,6 @@ vi.mock('@tanstack/react-start', () => ({
 vi.mock('@convex/_generated/api', () => ({
   api: {
     users: {
-      getUserCount: 'getUserCount',
       getCurrentUserProfile: 'getCurrentUserProfile',
     },
   },
@@ -54,10 +53,8 @@ describe('bootstrapSignedUpUserServerFn', () => {
   });
 
   it('assigns the first signed up user the admin role', async () => {
-    fetchAuthQueryMock
-      .mockResolvedValueOnce({ totalUsers: 1 })
-      .mockResolvedValueOnce({ id: 'user_1', email: 'admin@example.com' });
-    actionMock.mockResolvedValue({ found: true });
+    fetchAuthQueryMock.mockResolvedValueOnce({ id: 'user_1', email: 'admin@example.com' });
+    actionMock.mockResolvedValue({ found: true, assignedRole: 'admin' });
 
     const result = await bootstrapSignedUpUserServerFn();
 
@@ -65,7 +62,6 @@ describe('bootstrapSignedUpUserServerFn', () => {
       authUserId: 'user_1',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
-      role: 'admin',
     });
     expect(result).toEqual({
       success: true,
@@ -76,9 +72,7 @@ describe('bootstrapSignedUpUserServerFn', () => {
 
   it('rolls back the auth user when bootstrap fails', async () => {
     const bootstrapError = new Error('bootstrap failed');
-    fetchAuthQueryMock
-      .mockResolvedValueOnce({ totalUsers: 2 })
-      .mockResolvedValueOnce({ id: 'user_2', email: 'user@example.com' });
+    fetchAuthQueryMock.mockResolvedValueOnce({ id: 'user_2', email: 'user@example.com' });
     actionMock.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({ success: true });
 
     await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(bootstrapError);
@@ -87,7 +81,6 @@ describe('bootstrapSignedUpUserServerFn', () => {
       authUserId: 'user_2',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
-      role: 'user',
     });
     expect(actionMock).toHaveBeenNthCalledWith(2, 'rollbackBootstrapUserContext', {
       authUserId: 'user_2',
@@ -96,13 +89,13 @@ describe('bootstrapSignedUpUserServerFn', () => {
   });
 
   it('fails closed when counting users fails before bootstrap', async () => {
-    const countError = new Error('count failed');
+    const profileError = new Error('profile failed');
     fetchAuthQueryMock
-      .mockRejectedValueOnce(countError)
+      .mockRejectedValueOnce(profileError)
       .mockResolvedValueOnce({ id: 'user_3', email: 'user3@example.com' });
     actionMock.mockResolvedValueOnce({ success: true });
 
-    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(countError);
+    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(profileError);
 
     expect(actionMock).toHaveBeenCalledTimes(1);
     expect(actionMock).toHaveBeenCalledWith('rollbackBootstrapUserContext', {

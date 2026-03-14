@@ -3,7 +3,6 @@ import { createServerFn } from '@tanstack/react-start';
 import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { handleServerError } from '~/lib/server/error-utils.server';
 import { normalizeUserId } from '~/lib/shared/user-id';
-import { USER_ROLES } from '../types';
 import { convexAuthReactStart } from './convex-better-auth-react-start';
 
 export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' }).handler(
@@ -11,8 +10,6 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' }).
     let currentProfile: { email?: string | null } | null | undefined;
 
     try {
-      const userCountResult = await convexAuthReactStart.fetchAuthQuery(api.users.getUserCount, {});
-      const isFirstUser = userCountResult.totalUsers === 1;
       currentProfile = await convexAuthReactStart.fetchAuthQuery(
         api.users.getCurrentUserProfile,
         {},
@@ -27,14 +24,12 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' }).
         throw new Error('Authenticated signup context is unavailable');
       }
 
-      const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
       const bootstrapResult = await createConvexAdminClient().action(
         internal.users.bootstrapUserContext,
         {
           authUserId,
           createdAt: Date.now(),
           updatedAt: Date.now(),
-          role: roleToSet,
         },
       );
 
@@ -45,6 +40,8 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' }).
           message: 'Account created. Check your inbox for a verification email.',
         };
       }
+
+      const isFirstUser = bootstrapResult.assignedRole === 'admin';
 
       return {
         success: true,

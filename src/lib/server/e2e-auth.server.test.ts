@@ -44,6 +44,19 @@ describe('e2e-auth.server', () => {
     );
   });
 
+  it('rejects requests outside loopback and test runtimes', () => {
+    process.env.NODE_ENV = 'development';
+    const request = new Request('https://app.example.com/api/test/agent-auth', {
+      headers: {
+        'x-e2e-test-secret': 'test-secret',
+      },
+    });
+
+    expect(() => assertE2EAuthRequestAuthorized(request)).toThrow(
+      expect.objectContaining({ status: 404 }),
+    );
+  });
+
   it('rejects requests with a missing or invalid secret', () => {
     const request = new Request('http://127.0.0.1:3000/api/test/agent-auth');
 

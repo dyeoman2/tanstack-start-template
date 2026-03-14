@@ -137,7 +137,7 @@ describe('organization management server functions', () => {
       data: {
         organizationId: 'org_1',
         email: ' Person@Example.com ',
-        role: 'admin',
+        role: 'owner',
         resend: true,
       },
     });
@@ -161,6 +161,7 @@ describe('organization management server functions', () => {
     expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(1, 'getOrganizationWriteAccess', {
       action: 'invite',
       organizationId: 'org_1',
+      nextRole: 'owner',
     });
     expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(2, 'getOrganizationWriteAccess', {
       action: 'update-member-role',
@@ -176,7 +177,7 @@ describe('organization management server functions', () => {
       {
         organizationId: 'org_1',
         email: 'person@example.com',
-        role: 'admin',
+        role: 'owner',
         resend: true,
       },
       expect.any(Function),
@@ -332,6 +333,33 @@ describe('organization management server functions', () => {
     expect(handleServerErrorMock).toHaveBeenCalledWith(
       expect.objectContaining({
         message: 'That user already has a pending invitation',
+      }),
+      'Create organization invitation',
+    );
+  });
+
+  it('surfaces preflight invite role failures before calling Better Auth', async () => {
+    const failure = new Error('wrapped invite failure');
+    fetchAuthQueryMock.mockResolvedValueOnce({
+      allowed: false,
+      reason: 'You cannot assign that organization role',
+    });
+    handleServerErrorMock.mockReturnValue(failure);
+
+    await expect(
+      createOrganizationInvitationServerFn({
+        data: {
+          organizationId: 'org_1',
+          email: 'person@example.com',
+          role: 'owner',
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(createBetterAuthOrganizationInvitationMock).not.toHaveBeenCalled();
+    expect(handleServerErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'You cannot assign that organization role',
       }),
       'Create organization invitation',
     );

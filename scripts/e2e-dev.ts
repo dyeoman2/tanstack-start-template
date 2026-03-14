@@ -69,8 +69,7 @@ async function main() {
     cwd: process.cwd(),
     env: {
       ...process.env,
-      BETTER_AUTH_BASE_URL: BASE_URL,
-      BETTER_AUTH_SITE_URL: BASE_URL,
+      BETTER_AUTH_URL: BASE_URL,
       NODE_OPTIONS: withInstrumentServerImport(process.env.NODE_OPTIONS),
     },
     stdio: 'inherit',

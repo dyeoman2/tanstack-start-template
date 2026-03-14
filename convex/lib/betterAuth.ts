@@ -138,7 +138,7 @@ async function fetchAllRecords<T extends BetterAuthRecord>(
     const normalized = normalizeAdapterFindManyResult<T>(rawResult);
     records.push(...normalized.page);
 
-    if (normalized.isDone || !normalized.continueCursor || normalized.page.length < 1000) {
+    if (normalized.isDone || !normalized.continueCursor) {
       break;
     }
 

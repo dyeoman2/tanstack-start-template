@@ -31,6 +31,7 @@ import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersTable } from '~/features/organizations/components/OrganizationMembersTable';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import type {
+  OrganizationCapabilities,
   OrganizationDirectoryKind,
   OrganizationDirectoryRole,
   OrganizationDirectoryRow,
@@ -97,7 +98,7 @@ export function OrganizationMembersManagement({
   const [isRemovingMember, setIsRemovingMember] = useState(false);
   const [isRevokingInvitation, setIsRevokingInvitation] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<'admin' | 'member'>('member');
+  const [inviteRole, setInviteRole] = useState<OrganizationDirectoryRole>('member');
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [nextRole, setNextRole] = useState<OrganizationDirectoryRole>('member');
   const [roleError, setRoleError] = useState<string | null>(null);
@@ -112,6 +113,17 @@ export function OrganizationMembersManagement({
     setNextRole(selectedRoleMember.role);
     setRoleError(null);
   }, [selectedRoleMember]);
+
+  useEffect(() => {
+    const availableInviteRoles = directory?.capabilities.availableInviteRoles ?? [];
+    if (availableInviteRoles.length === 0) {
+      return;
+    }
+
+    if (!availableInviteRoles.includes(inviteRole)) {
+      setInviteRole(availableInviteRoles[0] ?? 'member');
+    }
+  }, [directory?.capabilities.availableInviteRoles, inviteRole]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -130,10 +142,8 @@ export function OrganizationMembersManagement({
     total: 0,
     totalPages: 0,
   };
-  const canManage =
-    directory?.access.siteAdmin ||
-    directory?.viewerRole === 'owner' ||
-    directory?.viewerRole === 'admin';
+  const capabilities: OrganizationCapabilities | undefined = directory?.capabilities;
+  const canInvite = capabilities?.canInvite ?? false;
   const organizationName = directory?.organization.name ?? 'Organization';
   const setInviteDialogOpen = (open: boolean) => {
     onInviteDialogOpenChange?.(open);
@@ -356,7 +366,7 @@ export function OrganizationMembersManagement({
           description="Manage members and invitations with one org-specific directory."
           actions={
             actions ??
-            (canManage ? (
+            (canInvite ? (
               <Button size="sm" onClick={() => setInviteDialogOpen(true)}>
                 <Plus className="size-4" />
                 Invite member
@@ -418,7 +428,8 @@ export function OrganizationMembersManagement({
       </div>
 
       <InviteMemberDialog
-        canManage={canManage}
+        availableInviteRoles={capabilities?.availableInviteRoles ?? []}
+        canManage={canInvite}
         error={inviteError}
         inviteEmail={inviteEmail}
         inviteRole={inviteRole}
@@ -506,6 +517,7 @@ function SummaryCard({
 }
 
 function InviteMemberDialog({
+  availableInviteRoles,
   canManage,
   error,
   inviteEmail,
@@ -517,13 +529,14 @@ function InviteMemberDialog({
   onSubmit,
   open,
 }: {
+  availableInviteRoles: OrganizationDirectoryRole[];
   canManage: boolean | undefined;
   error: string | null;
   inviteEmail: string;
-  inviteRole: 'admin' | 'member';
+  inviteRole: OrganizationDirectoryRole;
   isPending: boolean;
   onInviteEmailChange: (value: string) => void;
-  onInviteRoleChange: (value: 'admin' | 'member') => void;
+  onInviteRoleChange: (value: OrganizationDirectoryRole) => void;
   onOpenChange: (open: boolean) => void;
   onSubmit: () => void;
   open: boolean;
@@ -553,15 +566,18 @@ function InviteMemberDialog({
             <FieldLabel>Role</FieldLabel>
             <Select
               value={inviteRole}
-              onValueChange={(value) => onInviteRoleChange(value as 'admin' | 'member')}
+              onValueChange={(value) => onInviteRoleChange(value as OrganizationDirectoryRole)}
               disabled={isPending || !canManage}
             >
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="member">Member</SelectItem>
-                <SelectItem value="admin">Admin</SelectItem>
+                {availableInviteRoles.map((role) => (
+                  <SelectItem key={role} value={role}>
+                    {capitalize(role)}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Field>

@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { Dashboard } from '~/features/dashboard/components/Dashboard';
@@ -19,15 +19,7 @@ function DashboardComponent() {
   usePerformanceMonitoring('Dashboard');
 
   const authState = useAuthState();
-  const [dashboardAsOf, setDashboardAsOf] = useState(() => Date.now());
-
-  useEffect(() => {
-    const intervalId = window.setInterval(() => {
-      setDashboardAsOf(Date.now());
-    }, 60_000);
-
-    return () => window.clearInterval(intervalId);
-  }, []);
+  const [dashboardAsOf] = useState(() => Date.now());
 
   const dashboardData = useQuery(
     api.dashboard.getDashboardData,

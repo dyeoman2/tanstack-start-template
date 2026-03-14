@@ -74,8 +74,8 @@ const setPasswordSchema = z.object({
   newPassword: z.string().min(8),
 });
 
-const sessionTokenSchema = z.object({
-  sessionToken: z.string().min(1),
+const sessionIdSchema = z.object({
+  sessionId: z.string().min(1),
 });
 
 type CreateAdminUserResult = {
@@ -152,7 +152,6 @@ export function normalizeAdminUser(user: BetterAuthAdminUser): AdminUser {
 function normalizeAdminSession(session: BetterAuthAdminUserSession): AdminUserSession {
   return {
     id: session.id,
-    token: session.token,
     userId: session.userId,
     expiresAt: toTimestamp(session.expiresAt),
     createdAt: toTimestamp(session.createdAt),
@@ -574,12 +573,12 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   });
 
 export const revokeAdminUserSessionServerFn = createServerFn({ method: 'POST' })
-  .inputValidator(sessionTokenSchema)
+  .inputValidator(sessionIdSchema)
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
       return await revokeBetterAuthUserSession(
-        data.sessionToken,
+        data.sessionId,
         ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {

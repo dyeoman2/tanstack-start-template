@@ -10,6 +10,8 @@ import { ConvexError, v } from 'convex/values';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  action,
+  type ActionCtx,
   internalMutation,
   internalQuery,
   type MutationCtx,
@@ -56,12 +58,16 @@ import {
   chatRunsDocValidator,
   chatThreadsDocValidator,
   currentUserContextValidator,
+  personaWithAccessValidator,
   threadWithAccessValidator,
 } from './lib/returnValidators';
 
 type PersonaDoc = Doc<'aiPersonas'>;
 type ChatViewerContext = Awaited<ReturnType<typeof getCurrentChatContext>>;
 type ThreadWithAccess = ChatThreadDoc & {
+  canManage: boolean;
+};
+type PersonaWithAccess = PersonaDoc & {
   canManage: boolean;
 };
 
@@ -77,6 +83,9 @@ function getCurrentUserDisplayName(
 }
 
 const CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000;
+const THREAD_LIST_LIMIT = 200;
+const RETRYABLE_RUN_LOOKBACK_LIMIT = 200;
+const PERSONA_THREAD_CLEANUP_BATCH_SIZE = 128;
 
 function createChatAttachmentUploadToken() {
   return crypto.randomUUID();
@@ -146,6 +155,27 @@ function canManageThread(
   }
 
   return viewer.isSiteAdmin || thread.ownerUserId === viewer.userId;
+}
+
+function canManagePersona(
+  persona: PersonaDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (persona.organizationId !== viewer.organizationId) {
+    return false;
+  }
+
+  return viewer.isSiteAdmin || persona.userId === viewer.userId;
+}
+
+function toPersonaWithAccess(
+  persona: PersonaDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+): PersonaWithAccess {
+  return {
+    ...persona,
+    canManage: canManagePersona(persona, viewer),
+  };
 }
 
 function getMessageMetadataRecord(message: { metadata?: unknown } | null) {
@@ -221,14 +251,14 @@ async function listAccessibleThreads(
         q.eq('organizationId', viewer.organizationId),
       )
       .order('desc')
-      .collect();
+      .take(THREAD_LIST_LIMIT);
   }
 
   return await ctx.db
     .query('chatThreads')
     .withIndex('by_ownerUserId_and_lastMessageAt', (q) => q.eq('ownerUserId', viewer.userId))
     .order('desc')
-    .collect();
+    .take(THREAD_LIST_LIMIT);
 }
 
 async function getPersonaForOrganization(
@@ -1149,7 +1179,7 @@ export const getRetryableRunIds = query({
       .query('chatRuns')
       .withIndex('by_threadId_and_startedAt', (q) => q.eq('threadId', args.threadId))
       .order('desc')
-      .collect();
+      .take(RETRYABLE_RUN_LOOKBACK_LIMIT);
 
     const retryableRunIds: Record<string, string> = {};
 
@@ -1786,8 +1816,8 @@ export const generateChatAttachmentUploadUrl = mutation({
 
 export const listPersonas = query({
   args: {},
-  returns: v.array(aiPersonasDocValidator),
-  handler: async (ctx): Promise<PersonaDoc[]> => {
+  returns: v.array(personaWithAccessValidator),
+  handler: async (ctx): Promise<PersonaWithAccess[]> => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
       return [];
@@ -1798,7 +1828,8 @@ export const listPersonas = query({
     return await ctx.db
       .query('aiPersonas')
       .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
-      .collect();
+      .collect()
+      .then((personas) => personas.map((persona) => toPersonaWithAccess(persona, viewer)));
   },
 });
 
@@ -1942,10 +1973,14 @@ export const updatePersona = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContext(ctx);
+    const { organizationId } = viewer;
     const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
     if (!persona) {
       throw new ConvexError('Persona not found.');
+    }
+    if (!canManagePersona(persona, viewer)) {
+      throw new ConvexError('You do not have permission to update this persona.');
     }
 
     await ctx.db.patch(args.personaId, {
@@ -1957,35 +1992,99 @@ export const updatePersona = mutation({
   },
 });
 
-export const deletePersona = mutation({
+export const clearThreadsForPersonaBatchInternal = internalMutation({
   args: {
+    limit: v.number(),
+    organizationId: v.string(),
     personaId: v.id('aiPersonas'),
+    updatedAt: v.number(),
   },
-  returns: v.null(),
+  returns: v.object({
+    isDone: v.boolean(),
+    updatedCount: v.number(),
+  }),
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
-    if (!persona) {
-      throw new ConvexError('Persona not found.');
-    }
-
     const threads = await ctx.db
       .query('chatThreads')
       .withIndex('by_organizationId_and_personaId', (q) =>
-        q.eq('organizationId', organizationId).eq('personaId', args.personaId),
+        q.eq('organizationId', args.organizationId).eq('personaId', args.personaId),
       )
-      .collect();
+      .take(args.limit);
 
     await Promise.all(
       threads.map((thread) =>
         ctx.db.patch(thread._id, {
           personaId: undefined,
-          updatedAt: Date.now(),
+          updatedAt: args.updatedAt,
         }),
       ),
     );
 
+    return {
+      isDone: threads.length < args.limit,
+      updatedCount: threads.length,
+    };
+  },
+});
+
+export const deletePersonaInternal = internalMutation({
+  args: {
+    personaId: v.id('aiPersonas'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
     await ctx.db.delete(args.personaId);
+    return null;
+  },
+});
+
+async function deletePersonaInBatches(
+  ctx: ActionCtx,
+  args: {
+    organizationId: string;
+    personaId: Id<'aiPersonas'>;
+  },
+) {
+  while (true) {
+    const result = await ctx.runMutation(internal.agentChat.clearThreadsForPersonaBatchInternal, {
+      limit: PERSONA_THREAD_CLEANUP_BATCH_SIZE,
+      organizationId: args.organizationId,
+      personaId: args.personaId,
+      updatedAt: Date.now(),
+    });
+
+    if (result.isDone) {
+      return;
+    }
+  }
+}
+
+export const deletePersona = action({
+  args: {
+    personaId: v.id('aiPersonas'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const viewer = await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {});
+    const { organizationId } = viewer;
+    const persona = await ctx.runQuery(internal.agentChat.getPersonaByIdInternal, {
+      organizationId,
+      personaId: args.personaId,
+    });
+    if (!persona) {
+      throw new ConvexError('Persona not found.');
+    }
+    if (!canManagePersona(persona, viewer)) {
+      throw new ConvexError('You do not have permission to delete this persona.');
+    }
+
+    await deletePersonaInBatches(ctx, {
+      organizationId,
+      personaId: args.personaId,
+    });
+    await ctx.runMutation(internal.agentChat.deletePersonaInternal, {
+      personaId: args.personaId,
+    });
     return null;
   },
 });

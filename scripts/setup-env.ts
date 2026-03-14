@@ -59,6 +59,9 @@ BETTER_AUTH_SECRET=${authSecret}
 # Set development environment
 NODE_ENV=development
 
+# Better Auth base URL. Loopback host allowlisting keeps alternate local ports working.
+BETTER_AUTH_URL=http://localhost:3000
+
 # Application name for email templates
 APP_NAME="TanStack Start Template"
 

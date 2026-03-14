@@ -11,7 +11,7 @@ import {
   ADMIN_ACCESS,
   type CurrentUser,
   checkOrganizationAccess,
-  getCurrentSiteAdminAuthUserOrThrow,
+  getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
   getVerifiedCurrentUserOrThrow,
 } from './access';
@@ -44,7 +44,7 @@ type SiteAdminMutationCtx = MutationCtx & {
 };
 
 type SiteAdminActionCtx = ActionCtx & {
-  authUser: Awaited<ReturnType<typeof getCurrentSiteAdminAuthUserOrThrow>>;
+  user: CurrentUser;
 };
 
 type AuthorizedConfig<
@@ -140,8 +140,8 @@ export async function authorizeSiteAdminMutationContext(
 }
 
 export async function authorizeSiteAdminActionContext(ctx: ActionCtx): Promise<SiteAdminActionCtx> {
-  const authUser = await getCurrentSiteAdminAuthUserOrThrow(ctx);
-  return Object.assign(ctx, { authUser });
+  const user = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  return Object.assign(ctx, { user });
 }
 
 export function organizationQuery<

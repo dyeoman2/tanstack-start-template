@@ -44,8 +44,8 @@ function VerifyEmailPendingPage() {
   }
 
   const resendVerificationEmail = async () => {
-    if (!resolvedEmail) {
-      setError('We could not determine which email address to verify.');
+    if (!isAuthenticated || !user?.email) {
+      setError('Sign in again to request another verification email.');
       return;
     }
 
@@ -60,14 +60,14 @@ function VerifyEmailPendingPage() {
           : new URL('/login?verified=success', window.location.origin).toString();
 
       await authClient.sendVerificationEmail({
-        email: resolvedEmail,
+        email: user.email,
         callbackURL,
         fetchOptions: {
           throw: true,
         },
       });
 
-      setSuccessMessage(`Verification email sent to ${resolvedEmail}.`);
+      setSuccessMessage(`Verification email sent to ${user.email}.`);
     } catch (resendError) {
       setError(
         resendError instanceof Error
@@ -135,7 +135,7 @@ function VerifyEmailPendingPage() {
         <div className="flex flex-col gap-3">
           <Button
             onClick={() => void resendVerificationEmail()}
-            disabled={isSubmitting || !isEmailConfigured}
+            disabled={isSubmitting || !isEmailConfigured || !isAuthenticated || !user?.email}
           >
             {isSubmitting ? (
               <>

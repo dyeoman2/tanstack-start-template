@@ -1,11 +1,21 @@
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
-import { admin, createAccessControl, organization } from 'better-auth/plugins';
+import { admin } from 'better-auth/plugins/admin';
+import { organization } from 'better-auth/plugins/organization';
+import {
+  adminAccessControl,
+  adminRole,
+  organizationAccessControl,
+  organizationAdminRole,
+  organizationMemberRole,
+  organizationOwnerRole,
+  userRole,
+} from '../../src/lib/shared/better-auth-access';
 import {
   getBetterAuthBaseUrlConfig,
   getBetterAuthTrustedOrigins,
-  getSiteUrl,
+  shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
 import authConfig from '../auth.config';
 
@@ -34,80 +44,17 @@ export const AUTH_SESSION_FRESH_AGE_SECONDS = 24 * 60 * 60;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 
-const adminAccessControl = createAccessControl({
-  user: [
-    'create',
-    'list',
-    'set-role',
-    'ban',
-    'impersonate',
-    'delete',
-    'set-password',
-    'get',
-    'update',
-  ],
-  session: ['list', 'revoke', 'delete'],
-});
+function shouldDisableAuthRateLimit() {
+  const envValue = process.env.BETTER_AUTH_DISABLE_RATE_LIMIT?.trim().toLowerCase();
+  if (envValue === 'true') {
+    return true;
+  }
 
-const adminRole = adminAccessControl.newRole({
-  user: [
-    'create',
-    'list',
-    'set-role',
-    'ban',
-    'impersonate',
-    'delete',
-    'set-password',
-    'get',
-    'update',
-  ],
-  session: ['list', 'revoke', 'delete'],
-});
-
-const userRole = adminAccessControl.newRole({
-  user: [],
-  session: [],
-});
-
-const organizationAccessControl = createAccessControl({
-  organization: ['update', 'delete'],
-  member: ['create', 'update', 'delete'],
-  invitation: ['create', 'cancel'],
-  team: ['create', 'update', 'delete'],
-  ac: ['create', 'read', 'update', 'delete'],
-});
-
-const organizationOwnerRole = organizationAccessControl.newRole({
-  organization: ['update', 'delete'],
-  member: ['create', 'update', 'delete'],
-  invitation: ['create', 'cancel'],
-  team: ['create', 'update', 'delete'],
-  ac: ['create', 'read', 'update', 'delete'],
-});
-
-const organizationAdminRole = organizationAccessControl.newRole({
-  organization: ['update'],
-  member: ['create', 'update', 'delete'],
-  invitation: ['create', 'cancel'],
-  team: ['create', 'update', 'delete'],
-  ac: ['create', 'read', 'update', 'delete'],
-});
-
-const organizationMemberRole = organizationAccessControl.newRole({
-  organization: [],
-  member: [],
-  invitation: [],
-  team: [],
-  ac: ['read'],
-});
-
-function shouldDisableAuthRateLimitInDev() {
-  try {
-    const siteUrl = new URL(getSiteUrl());
-    return siteUrl.hostname === 'localhost' || siteUrl.hostname === '127.0.0.1';
-  } catch {
+  if (envValue === 'false') {
     return false;
   }
+
+  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 }
 
 function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit']>['customRules'] {
@@ -165,20 +112,29 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
 
 export function createSharedBetterAuthOptions(
   callbacks: SharedBetterAuthCallbacks,
+  options?: {
+    includeRuntimeEnvConfig?: boolean;
+  },
 ): BetterAuthOptions {
-  const disableRateLimit = shouldDisableAuthRateLimitInDev();
+  const includeRuntimeEnvConfig = options?.includeRuntimeEnvConfig ?? true;
+  const disableRateLimit = shouldDisableAuthRateLimit();
+  const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies() : false;
 
   return {
-    baseURL: getBetterAuthBaseUrlConfig(),
+    ...(includeRuntimeEnvConfig ? { baseURL: getBetterAuthBaseUrlConfig() } : {}),
     database: convexAdapter({} as never, {} as never),
-    trustedOrigins: (request) => getBetterAuthTrustedOrigins(request),
-    rateLimit: {
-      enabled: !disableRateLimit,
-      window: DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
-      max: DEFAULT_RATE_LIMIT_MAX_REQUESTS,
-      storage: 'database',
-      customRules: createCustomRateLimitRules(),
-    },
+    ...(includeRuntimeEnvConfig
+      ? {
+          trustedOrigins: (request?: Request) => getBetterAuthTrustedOrigins(request),
+          rateLimit: {
+            enabled: !disableRateLimit,
+            window: DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
+            max: DEFAULT_RATE_LIMIT_MAX_REQUESTS,
+            storage: 'database',
+            customRules: createCustomRateLimitRules(),
+          },
+        }
+      : {}),
     advanced: {
       ipAddress: {
         // Trust only the proxy headers we expect our app platform to normalize.
@@ -186,6 +142,7 @@ export function createSharedBetterAuthOptions(
         ipv6Subnet: 64,
       },
       defaultCookieAttributes: {
+        secure: secureCookies,
         httpOnly: true,
         sameSite: 'lax',
         path: '/',
@@ -195,6 +152,7 @@ export function createSharedBetterAuthOptions(
       enabled: true,
       requireEmailVerification: true,
       autoSignIn: false,
+      revokeSessionsOnPasswordReset: true,
       sendResetPassword: callbacks.sendResetPassword,
     },
     emailVerification: {
@@ -211,9 +169,10 @@ export function createSharedBetterAuthOptions(
       freshAge: AUTH_SESSION_FRESH_AGE_SECONDS,
       disableSessionRefresh: false,
       deferSessionRefresh: false,
+      // Prefer immediate session revalidation so admin revokes and impersonation changes
+      // take effect without a client-side cache window.
       cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60,
+        enabled: false,
       },
     },
     user: {

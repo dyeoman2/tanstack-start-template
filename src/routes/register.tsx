@@ -1,8 +1,6 @@
-import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
-import { Crown, Lock, Mail, ShieldCheck, User } from 'lucide-react';
+import { Lock, Mail, ShieldCheck, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
@@ -35,10 +33,6 @@ function RegisterPage() {
   const passwordId = `${uid}-password`;
   const { isAuthenticated, isPending } = useAuthState();
   const navigate = useNavigate();
-
-  // Use Convex query directly instead of server function wrapper
-  const userCountResult = useQuery(api.users.getUserCount, {});
-  const isFirstUser = userCountResult !== undefined && userCountResult.isFirstUser === true;
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -174,24 +168,6 @@ function RegisterPage() {
           <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Create your account
           </h2>
-          {isFirstUser && (
-            <div className="mt-4 bg-card border border-border rounded-md p-4">
-              <div className="flex">
-                <div className="shrink-0">
-                  <Crown className="h-5 w-5 text-muted-foreground" />
-                </div>
-                <div className="ml-3">
-                  <h3 className="text-sm font-medium text-card-foreground">
-                    Administrator Account
-                  </h3>
-                  <div className="mt-2 text-sm text-muted-foreground">
-                    As the first user, you will automatically receive administrator privileges with
-                    full access to system management features.
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
         <ClientOnly
           fallback={

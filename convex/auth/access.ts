@@ -1,3 +1,4 @@
+import { anyApi } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
   ADMIN_ORGANIZATION_ACCESS,
@@ -252,6 +253,21 @@ export async function getVerifiedCurrentUserOrThrow(
   return user;
 }
 
+export async function getVerifiedCurrentUserFromActionOrThrow(
+  ctx: ActionCtx,
+): Promise<CurrentUser> {
+  const user = (await ctx.runQuery(anyApi.users.getCurrentAppUser, {})) as CurrentUser | null;
+  if (!user) {
+    throwConvexError('UNAUTHENTICATED', 'User context not initialized');
+  }
+
+  if (requiresVerifiedEmail(user.authUser)) {
+    throwConvexError('FORBIDDEN', 'Email verification required');
+  }
+
+  return user;
+}
+
 export function ensureCurrentUserIsSiteAdminOrThrow<T extends CurrentUser>(user: T): T {
   if (!user.isSiteAdmin) {
     throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
@@ -262,6 +278,10 @@ export function ensureCurrentUserIsSiteAdminOrThrow<T extends CurrentUser>(user:
 
 export async function getVerifiedCurrentSiteAdminUserOrThrow(ctx: QueryCtx | MutationCtx) {
   return ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserOrThrow(ctx));
+}
+
+export async function getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx: ActionCtx) {
+  return ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserFromActionOrThrow(ctx));
 }
 
 export async function getCurrentOrganizationOrNull(

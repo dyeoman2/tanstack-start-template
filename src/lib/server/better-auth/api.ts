@@ -41,7 +41,6 @@ export type BetterAuthAdminUserSession = {
   id: string;
   impersonatedBy?: string;
   ipAddress: string | null;
-  token: string;
   updatedAt: number;
   userAgent: string | null;
   userId: string;
@@ -211,11 +210,11 @@ export async function listBetterAuthUserSessions(
 }
 
 export async function revokeBetterAuthUserSession(
-  sessionToken: string,
+  sessionId: string,
   mapErrorMessage?: BetterAuthErrorMapper,
 ): Promise<{ success: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.adminRevokeUserSession, { sessionToken }),
+    await convexAuthReactStart.fetchAuthAction(api.auth.adminRevokeUserSession, { sessionId }),
     mapErrorMessage,
   );
 }
@@ -306,7 +305,7 @@ export async function createBetterAuthOrganizationInvitation(
     email: string;
     organizationId: string;
     resend?: boolean;
-    role: 'admin' | 'member';
+    role: 'owner' | 'admin' | 'member';
   },
   mapErrorMessage?: BetterAuthErrorMapper,
 ): Promise<BetterAuthOrganizationInviteResult> {

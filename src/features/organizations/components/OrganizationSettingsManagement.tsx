@@ -26,7 +26,6 @@ import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
-import { canDeleteOrganization } from '~/features/organizations/lib/organization-permissions';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
@@ -101,9 +100,12 @@ export function OrganizationSettingsManagement({
     );
   }
 
-  const canManage = settings.canManage;
-  const canLeaveOrganization = settings.isMember;
-  const canDelete = canDeleteOrganization(settings.viewerRole);
+  const canUpdateSettings = settings.capabilities.canUpdateSettings;
+  const canInvite = settings.capabilities.canInvite;
+  const canManageMembers = settings.capabilities.canManageMembers;
+  const canLeaveOrganization = settings.capabilities.canLeaveOrganization;
+  const canDelete = settings.capabilities.canDeleteOrganization;
+  const canManage = canUpdateSettings || canManageMembers;
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -204,19 +206,19 @@ export function OrganizationSettingsManagement({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {canManage ? (
+                {canUpdateSettings ? (
                   <DropdownMenuItem onSelect={() => setIsEditDialogOpen(true)}>
                     <Pencil className="size-4" />
                     Edit
                   </DropdownMenuItem>
                 ) : null}
-                {canManage ? (
+                {canInvite ? (
                   <DropdownMenuItem onSelect={() => setIsInviteDialogOpen(true)}>
                     <UserRoundPlus className="size-4" />
                     Invite member
                   </DropdownMenuItem>
                 ) : null}
-                {canManage && (canLeaveOrganization || canManage) ? (
+                {(canUpdateSettings || canInvite) && (canLeaveOrganization || canDelete) ? (
                   <DropdownMenuSeparator />
                 ) : null}
                 {canLeaveOrganization ? (
@@ -254,7 +256,7 @@ export function OrganizationSettingsManagement({
         </Card>
       ) : null}
 
-      {canManage ? (
+      {canManageMembers ? (
         <OrganizationMembersManagement
           slug={slug}
           searchParams={searchParams}

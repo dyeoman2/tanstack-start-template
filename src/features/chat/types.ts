@@ -105,6 +105,7 @@ export type ChatPersona = {
   prompt: string;
   createdAt: number;
   updatedAt: number;
+  canManage: boolean;
 };
 
 export type ChatUsage = {

@@ -30,6 +30,7 @@ import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_agentChat from "../lib/agentChat.js";
 import type * as lib_authAudit from "../lib/authAudit.js";
+import type * as lib_authRateLimits from "../lib/authRateLimits.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
 import type * as lib_chatAgentRuntime from "../lib/chatAgentRuntime.js";
 import type * as lib_chatAttachments from "../lib/chatAttachments.js";
@@ -72,6 +73,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   "lib/agentChat": typeof lib_agentChat;
   "lib/authAudit": typeof lib_authAudit;
+  "lib/authRateLimits": typeof lib_authRateLimits;
   "lib/betterAuth": typeof lib_betterAuth;
   "lib/chatAgentRuntime": typeof lib_chatAgentRuntime;
   "lib/chatAttachments": typeof lib_chatAttachments;

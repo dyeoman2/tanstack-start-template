@@ -58,6 +58,10 @@ export function PersonaDialog({
   };
 
   const startEdit = (persona: ChatPersona) => {
+    if (!persona.canManage) {
+      return;
+    }
+
     setEditingPersonaId(persona._id);
     setName(persona.name);
     setPrompt(persona.prompt);
@@ -123,23 +127,25 @@ export function PersonaDialog({
                       {persona.prompt}
                     </p>
                   </button>
-                  <div className="mt-3 flex items-center gap-2">
-                    <Button size="sm" variant="outline" onClick={() => startEdit(persona)}>
-                      <Pencil className="size-3.5" />
-                      Edit
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive"
-                      onClick={() => {
-                        void onDeletePersona(persona._id);
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                      Delete
-                    </Button>
-                  </div>
+                  {persona.canManage ? (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button size="sm" variant="outline" onClick={() => startEdit(persona)}>
+                        <Pencil className="size-3.5" />
+                        Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-destructive"
+                        onClick={() => {
+                          void onDeletePersona(persona._id);
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                        Delete
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
               ))}
             </div>
