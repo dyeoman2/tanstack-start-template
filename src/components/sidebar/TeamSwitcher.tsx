@@ -105,8 +105,6 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
                   setActiveTeam(team);
                   void navigate({
                     to: team.to,
-                    params: (params: never) => params,
-                    search: (search: never) => search,
                   });
                 }}
               >

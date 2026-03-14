@@ -101,8 +101,6 @@ export function MobileNavigation() {
                   <Link
                     key={item.to}
                     to={item.to}
-                    params={(params: never) => params}
-                    search={(search: never) => search}
                     preload="intent"
                     onClick={handleLinkClick}
                     className={cn(

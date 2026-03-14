@@ -1,3 +1,4 @@
+import { v } from 'convex/values';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
@@ -7,16 +8,14 @@ const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 async function countSignupsSince(ctx: QueryCtx, since: number) {
   try {
-    // Use collect() instead of pagination for counting - simpler and avoids cursor issues
-    // For admin dashboard stats, the number of recent signups should be manageable
     const recentLogs = await ctx.db
       .query('auditLogs')
-      .withIndex('by_createdAt', (q) => q.gte('createdAt', since))
+      .withIndex('by_eventType_and_createdAt', (q) =>
+        q.eq('eventType', 'user_signed_up').gte('createdAt', since),
+      )
       .collect();
 
-    const signupCount = recentLogs.filter((log) => log.eventType === 'user_signed_up').length;
-
-    return signupCount;
+    return recentLogs.length;
   } catch (error) {
     console.error(`❌ Error counting signups:`, error);
     // Fallback: return 0 on error
@@ -34,8 +33,10 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
  * instead of hitting the route error boundary on authorization failures.
  */
 export const getDashboardData = query({
-  args: {},
-  handler: async (ctx) => {
+  args: {
+    asOf: v.number(),
+  },
+  handler: async (ctx, args) => {
     // Return explicit access states so the client can render one stable branch.
     const currentUser = await getCurrentAuthUserOrNull(ctx);
     if (!currentUser) {
@@ -51,8 +52,7 @@ export const getDashboardData = query({
     }
 
     // Prefer cached dashboard stats, fall back to direct scan if stats doc missing
-    const now = Date.now();
-    const sevenDaysAgo = now - SEVEN_DAYS_MS;
+    const sevenDaysAgo = args.asOf - SEVEN_DAYS_MS;
 
     const [statsDoc, recentSignups] = await Promise.all([
       ctx.db
@@ -80,7 +80,7 @@ export const getDashboardData = query({
         totalUsers,
         activeUsers,
         recentSignups,
-        lastUpdated: new Date(now).toISOString() as string & { __brand: 'IsoDateString' },
+        lastUpdated: new Date(args.asOf).toISOString() as string & { __brand: 'IsoDateString' },
       },
     };
   },

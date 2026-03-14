@@ -1,12 +1,9 @@
 'use node';
 
-import { Agent, createTool, getThreadMetadata } from '@convex-dev/agent';
+import { Agent, getThreadMetadata } from '@convex-dev/agent';
 import { generateText, type ModelMessage, stepCountIs } from 'ai';
-import { z } from 'zod';
-import { getOpenRouterWebSearchPlugin } from '../../src/features/chat/lib/openrouter-web-search';
 import {
   type ChatModelCatalogEntry,
-  type ChatModelId,
   chatModelSupportsWebSearch,
   DEFAULT_CHAT_MODEL_ID,
 } from '../../src/lib/shared/chat-models';
@@ -20,7 +17,7 @@ import {
   DEFAULT_PERSONA_PROMPT,
   getChatEmbeddingModel,
   getChatLanguageModel,
-  getOpenRouterProvider,
+  type getOpenRouterProvider,
   getOpenRouterProviderOptions,
 } from './agentChat';
 import { normalizeChatUsage } from './chatRateLimits';
@@ -36,12 +33,6 @@ export const CHAT_AGENT_CONTEXT_OPTIONS = {
   },
   searchOtherThreads: false,
 } as const;
-
-export type ChatWebSearchSource = {
-  id: string;
-  url: string;
-  title?: string;
-};
 
 type ChatContextMessages = {
   search: ModelMessage[];
@@ -191,23 +182,11 @@ export async function trackedGenerateText(
   return result;
 }
 
-function dedupeSearchSources(sources: ChatWebSearchSource[]) {
-  const seen = new Set<string>();
-  return sources.filter((source) => {
-    if (seen.has(source.url)) {
-      return false;
-    }
-
-    seen.add(source.url);
-    return true;
-  });
-}
-
 export function buildChatSystemPrompt(args: { instructions?: string; useWebSearch?: boolean }) {
   const promptSections = [
     args.instructions?.trim() || DEFAULT_PERSONA_PROMPT,
     args.useWebSearch
-      ? 'When current or recent web information is needed, use the web_search tool.'
+      ? 'Web search is enabled for this response. Use current retrieved information when it improves accuracy and cite sources when relevant.'
       : null,
   ].filter((section): section is string => Boolean(section));
 
@@ -230,95 +209,12 @@ export function buildChatContextMessages(args: { summary?: string; context: Chat
   ];
 }
 
-type ChatRequestConfig = {
+export type ChatRequestConfig = {
   model: ReturnType<typeof getChatLanguageModel>;
   system: string;
-} & (
-  | {
-      stopWhen: ReturnType<typeof stepCountIs>;
-      providerOptions?: undefined;
-      tools?: undefined;
-    }
-  | {
-      stopWhen: ReturnType<typeof stepCountIs>;
-      providerOptions?: undefined;
-      tools: {
-        web_search: ReturnType<typeof createChatWebSearchTool>;
-      };
-    }
-);
-
-export async function runChatWebSearch(
-  ctx: ChatUsageMutationCtx,
-  args: {
-    query: string;
-    modelId?: ChatModelId;
-    thread: ChatUsageThreadRef;
-    actorUserId: string;
-    runId?: Id<'chatRuns'>;
-  },
-) {
-  const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
-  const searchModel = getOpenRouterProvider().chat(modelId, {
-    plugins: [getOpenRouterWebSearchPlugin(modelId)],
-  });
-  const searchResult = await trackedGenerateText(ctx, {
-    thread: args.thread,
-    actorUserId: args.actorUserId,
-    runId: args.runId,
-    operationKind: 'web_search',
-    model: searchModel,
-    modelId,
-    provider: 'openrouter',
-    prompt: `Search the web for: ${args.query}\n\nReturn a concise factual summary of the most relevant results.`,
-    providerOptions: getOpenRouterProviderOptions({
-      modelId,
-      useWebSearch: true,
-    }),
-  });
-  const results = dedupeSearchSources(
-    (
-      searchResult.sources as Array<{ id?: string; url?: string; title?: string }> | undefined
-    )?.flatMap((source) =>
-      typeof source?.id === 'string' && typeof source?.url === 'string'
-        ? [{ id: source.id, url: source.url, title: source.title }]
-        : [],
-    ) ?? [],
-  );
-
-  return {
-    query: args.query,
-    summary: searchResult.text,
-    results,
-  };
-}
-
-export function createChatWebSearchTool(args: {
-  modelId?: ChatModelId;
-  thread: ChatUsageThreadRef;
-  actorUserId: string;
-  runId?: Id<'chatRuns'>;
-  onResults?: (results: ChatWebSearchSource[]) => void;
-}) {
-  return createTool({
-    description:
-      'Search the web for current information and return a concise summary plus cited URL results.',
-    args: z.object({
-      query: z.string().min(2),
-    }),
-    handler: async (toolCtx, { query }) => {
-      const result = await runChatWebSearch(toolCtx, {
-        query,
-        modelId: args.modelId,
-        thread: args.thread,
-        actorUserId: args.actorUserId,
-        runId: args.runId,
-      });
-      args.onResults?.(result.results);
-      return result;
-    },
-  });
-}
+  providerOptions: ChatProviderOptions;
+  stopWhen: ReturnType<typeof stepCountIs>;
+};
 
 async function debugRawRequestResponse(args: {
   threadId?: string;
@@ -376,40 +272,22 @@ export function buildChatRequestConfig(args: {
   model: Pick<ChatModelCatalogEntry, 'modelId' | 'supportsWebSearch'>;
   instructions?: string;
   useWebSearch?: boolean;
-  thread: ChatUsageThreadRef;
-  actorUserId: string;
-  runId?: Id<'chatRuns'>;
-  onWebSearchResults?: (results: ChatWebSearchSource[]) => void;
 }): ChatRequestConfig {
   const modelId = args.model.modelId ?? DEFAULT_CHAT_MODEL_ID;
   const supportsWebSearch = chatModelSupportsWebSearch(args.model);
   const useWebSearch = (args.useWebSearch ?? false) && supportsWebSearch;
-  const baseConfig = {
-    model: getChatLanguageModel(modelId, false),
+
+  return {
+    model: getChatLanguageModel(modelId, useWebSearch),
     system: buildChatSystemPrompt({
       instructions: args.instructions,
       useWebSearch,
     }),
-  };
-
-  if (!useWebSearch) {
-    return {
-      ...baseConfig,
-      stopWhen: stepCountIs(1),
-    };
-  }
-
-  return {
-    ...baseConfig,
-    tools: {
-      web_search: createChatWebSearchTool({
-        modelId,
-        thread: args.thread,
-        actorUserId: args.actorUserId,
-        runId: args.runId,
-        onResults: args.onWebSearchResults,
-      }),
-    },
-    stopWhen: stepCountIs(4),
+    providerOptions: getOpenRouterProviderOptions({
+      modelId,
+      useWebSearch,
+      supportsWebSearch,
+    }),
+    stopWhen: stepCountIs(1),
   };
 }

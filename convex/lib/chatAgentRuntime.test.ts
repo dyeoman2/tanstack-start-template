@@ -3,7 +3,6 @@ import type { Id } from '../_generated/dataModel';
 
 vi.mock('@convex-dev/agent', () => ({
   Agent: class {},
-  createTool: vi.fn(),
   getThreadMetadata: vi.fn(),
 }));
 
@@ -39,9 +38,9 @@ let trackedGenerateText: typeof import('./chatAgentRuntime').trackedGenerateText
 let buildChatContextMessages: typeof import('./chatAgentRuntime').buildChatContextMessages;
 let buildChatRequestConfig: typeof import('./chatAgentRuntime').buildChatRequestConfig;
 let generateTextMock: ReturnType<typeof vi.fn>;
-let createToolMock: ReturnType<typeof vi.fn>;
 let stepCountIsMock: ReturnType<typeof vi.fn>;
 let getChatLanguageModelMock: ReturnType<typeof vi.fn>;
+let getOpenRouterProviderOptionsMock: ReturnType<typeof vi.fn>;
 
 beforeAll(async () => {
   ({ buildChatContextMessages, buildChatRequestConfig, recordChatUsageEvent, trackedGenerateText } =
@@ -49,16 +48,15 @@ beforeAll(async () => {
   ({ generateText: generateTextMock } = (await import('ai')) as unknown as {
     generateText: ReturnType<typeof vi.fn>;
   });
-  ({ createTool: createToolMock } = (await import('@convex-dev/agent')) as unknown as {
-    createTool: ReturnType<typeof vi.fn>;
-  });
   ({ stepCountIs: stepCountIsMock } = (await import('ai')) as unknown as {
     stepCountIs: ReturnType<typeof vi.fn>;
   });
-  ({ getChatLanguageModel: getChatLanguageModelMock } = (await import(
-    './agentChat'
-  )) as unknown as {
+  ({
+    getChatLanguageModel: getChatLanguageModelMock,
+    getOpenRouterProviderOptions: getOpenRouterProviderOptionsMock,
+  } = (await import('./agentChat')) as unknown as {
     getChatLanguageModel: ReturnType<typeof vi.fn>;
+    getOpenRouterProviderOptions: ReturnType<typeof vi.fn>;
   });
 });
 
@@ -209,7 +207,7 @@ describe('trackedGenerateText', () => {
 });
 
 describe('buildChatRequestConfig', () => {
-  it('returns a single-step config without tools when web search is unsupported', () => {
+  it('returns a single-step config without provider-native web search when unsupported', () => {
     stepCountIsMock.mockReturnValueOnce('one-step');
 
     const config = buildChatRequestConfig({
@@ -219,28 +217,30 @@ describe('buildChatRequestConfig', () => {
       },
       instructions: 'Be concise.',
       useWebSearch: true,
-      thread: {
-        _id: 'thread-123' as Id<'chatThreads'>,
-        agentThreadId: 'agent-thread-123',
-        organizationId: 'org-123',
-        ownerUserId: 'owner-123',
-      },
-      actorUserId: 'actor-123',
     });
 
     expect(getChatLanguageModelMock).toHaveBeenCalledWith('openai/gpt-4o-mini', false);
+    expect(getOpenRouterProviderOptionsMock).toHaveBeenCalledWith({
+      modelId: 'openai/gpt-4o-mini',
+      useWebSearch: false,
+      supportsWebSearch: false,
+    });
     expect(config).toMatchObject({
       model: { model: 'mock-model' },
       system: 'Be concise.',
+      providerOptions: {
+        openrouter: {
+          provider: {
+            zdr: true,
+          },
+        },
+      },
       stopWhen: 'one-step',
     });
-    expect('providerOptions' in config).toBe(false);
-    expect('tools' in config && config.tools).toBeFalsy();
   });
 
-  it('returns a multi-step config with the web search tool when supported', () => {
-    createToolMock.mockReturnValueOnce('mock-tool');
-    stepCountIsMock.mockReturnValueOnce('four-step');
+  it('returns a single-step config with provider-native web search when supported', () => {
+    stepCountIsMock.mockReturnValueOnce('one-step');
 
     const config = buildChatRequestConfig({
       model: {
@@ -249,25 +249,27 @@ describe('buildChatRequestConfig', () => {
       },
       instructions: 'Answer with citations.',
       useWebSearch: true,
-      thread: {
-        _id: 'thread-123' as Id<'chatThreads'>,
-        agentThreadId: 'agent-thread-123',
-        organizationId: 'org-123',
-        ownerUserId: 'owner-123',
-      },
-      actorUserId: 'actor-123',
     });
 
+    expect(getChatLanguageModelMock).toHaveBeenCalledWith('openai/gpt-4o-search-preview', true);
+    expect(getOpenRouterProviderOptionsMock).toHaveBeenCalledWith({
+      modelId: 'openai/gpt-4o-search-preview',
+      useWebSearch: true,
+      supportsWebSearch: true,
+    });
     expect(config).toMatchObject({
       model: { model: 'mock-model' },
       system:
-        'Answer with citations.\n\nWhen current or recent web information is needed, use the web_search tool.',
-      stopWhen: 'four-step',
-      tools: {
-        web_search: 'mock-tool',
+        'Answer with citations.\n\nWeb search is enabled for this response. Use current retrieved information when it improves accuracy and cite sources when relevant.',
+      providerOptions: {
+        openrouter: {
+          provider: {
+            zdr: true,
+          },
+        },
       },
+      stopWhen: 'one-step',
     });
-    expect('providerOptions' in config).toBe(false);
   });
 });
 

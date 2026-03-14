@@ -1,8 +1,12 @@
 'use node';
 
 import { OpenRouter } from '@openrouter/sdk';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { internal } from './_generated/api';
+import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
+import { authComponent } from './auth';
+import { throwConvexError } from './auth/errors';
 import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
 
 const TOP_FREE_MODEL_IDS = [
@@ -131,9 +135,22 @@ function formatPriceLabel(promptPrice: number | undefined, completionPrice: numb
   return parts.join(' | ');
 }
 
+async function requireSiteAdmin(ctx: ActionCtx) {
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+  }
+
+  if (!deriveIsSiteAdmin(normalizeUserRole((authUser as { role?: string | string[] }).role))) {
+    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
+  }
+}
+
 export const importTopFreeModels = action({
   args: {},
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+    await requireSiteAdmin(ctx);
+
     const response = await listZdrModelsForCurrentUser();
     const models = response.data.filter((model) => TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]));
 
@@ -190,6 +207,8 @@ export const importTopFreeModels = action({
 export const importTopPaidModels = action({
   args: {},
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+    await requireSiteAdmin(ctx);
+
     const response = await listZdrModelsForCurrentUser();
 
     const rankedModels = dedupeByModelId(

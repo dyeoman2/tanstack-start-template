@@ -281,7 +281,7 @@ function resolveAuthAuditState(
     method: getRequestMethod(ctx),
     organizationId:
       normalizeOptionalString(response?.organizationId) ??
-      normalizeOptionalString((ctx.body ?? {}).organizationId) ??
+      normalizeOptionalString(ctx.body?.organizationId) ??
       normalizeOptionalString(sessionSnapshot?.session?.activeOrganizationId),
     path: ctx.path,
     response,
@@ -1089,7 +1089,7 @@ function getHookOrganizationId(ctx: DatabaseHookContext) {
     null) as AuthSession | null;
   return (
     normalizeOptionalString(sessionSnapshot?.session?.activeOrganizationId) ??
-    normalizeOptionalString((ctx.body ?? {}).organizationId)
+    normalizeOptionalString(ctx.body?.organizationId)
   );
 }
 

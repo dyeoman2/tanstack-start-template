@@ -1,10 +1,12 @@
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { isAuthAuditEventType, normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { action, internalMutation } from './_generated/server';
-import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { action, type ActionCtx, internalMutation } from './_generated/server';
+import { authComponent } from './auth';
+import { throwConvexError } from './auth/errors';
 
 const USER_PROFILES_BACKFILL_BATCH_SIZE = 100;
 const AUDIT_LOGS_BACKFILL_BATCH_SIZE = 100;
@@ -72,6 +74,17 @@ function stringifyAuditMetadata(metadata: Record<string, unknown> | string | und
   return JSON.stringify(Object.fromEntries(entries));
 }
 
+async function requireSiteAdmin(ctx: ActionCtx) {
+  const authUser = await authComponent.getAuthUser(ctx);
+  if (!authUser) {
+    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+  }
+
+  if (!deriveIsSiteAdmin(normalizeUserRole((authUser as { role?: string | string[] }).role))) {
+    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
+  }
+}
+
 export const backfillUserProfilesIsSiteAdminBatch = internalMutation({
   args: {
     cursor: v.optional(v.string()),
@@ -119,6 +132,8 @@ export const runUserProfilesIsSiteAdminBackfill = action({
     updated: v.number(),
   }),
   handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
     let batches = 0;
     let processed = 0;
     let updated = 0;
@@ -198,6 +213,8 @@ export const runUserProfilesOnboardingStateBackfill = action({
     updated: v.number(),
   }),
   handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
     let batches = 0;
     let processed = 0;
     let updated = 0;
@@ -311,6 +328,8 @@ export const runUserProfilesOnboardingNormalization = action({
     updated: v.number(),
   }),
   handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
     let batches = 0;
     let processed = 0;
     let updated = 0;
@@ -457,6 +476,8 @@ export const runAuditLogsNormalization = action({
     skipped: v.number(),
   }),
   handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
     let batches = 0;
     let processed = 0;
     let skipped = 0;

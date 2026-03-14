@@ -20,7 +20,6 @@ import {
   setOptimisticThreadBootstrap,
   setOptimisticThread,
   useOptimisticThreadBootstrap,
-  useOptimisticThreadTitle,
 } from '~/features/chat/lib/optimistic-threads';
 import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import type {
@@ -217,7 +216,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const optimisticPartsByClientMessageIdRef = useRef<Record<string, ChatMessagePart[]>>({});
 
   const typedThreadId = threadId ? toThreadId(threadId) : undefined;
-  const optimisticThreadTitle = useOptimisticThreadTitle(threadId);
   const optimisticThreadBootstrap = useOptimisticThreadBootstrap(threadId);
   const thread = useQuery(
     api.agentChat.getThread,
@@ -394,7 +392,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     latestRunState?.status === 'streaming' && latestRunState.canStop !== false;
   const latestRunErrorKey =
     threadId && latestRunState ? `${threadId}:${latestRunState.runId}` : null;
-  const threadTitle = thread?.title ?? optimisticThreadTitle;
   const promptMessageOrder =
     latestRunState?.promptMessageId !== undefined
       ? currentMessages.find((message) => message._id === latestRunState.promptMessageId)?.order

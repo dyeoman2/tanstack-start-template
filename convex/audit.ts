@@ -78,36 +78,36 @@ async function collectAuditLogsForAdmin(
     userId?: string;
   },
 ) {
-  if (filters.userId) {
+  const { eventType, identifier, organizationId, userId } = filters;
+
+  if (userId) {
     return ctx.db
       .query('auditLogs')
-      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', filters.userId!))
+      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
       .order('desc')
       .collect();
   }
 
-  if (filters.identifier) {
+  if (identifier) {
     return ctx.db
       .query('auditLogs')
-      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', filters.identifier!))
+      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', identifier))
       .order('desc')
       .collect();
   }
 
-  if (filters.eventType) {
+  if (eventType) {
     return ctx.db
       .query('auditLogs')
-      .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', filters.eventType!))
+      .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
       .order('desc')
       .collect();
   }
 
-  if (filters.organizationId) {
+  if (organizationId) {
     return ctx.db
       .query('auditLogs')
-      .withIndex('by_organizationId_and_createdAt', (q) =>
-        q.eq('organizationId', filters.organizationId!),
-      )
+      .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
       .order('desc')
       .collect();
   }

@@ -18,11 +18,7 @@ import {
   classifyChatRunFailure,
   deriveThreadTitle,
 } from './lib/agentChat';
-import {
-  baseChatAgent,
-  buildChatRequestConfig,
-  type ChatWebSearchSource,
-} from './lib/chatAgentRuntime';
+import { baseChatAgent, buildChatRequestConfig } from './lib/chatAgentRuntime';
 import { buildAttachmentPromptSummary, extractDocumentText } from './lib/chatAttachments';
 
 type ChatDataCtx =
@@ -747,8 +743,6 @@ export const runChatGenerationInternal = internalAction({
       return;
     }
 
-    const collectedSources: ChatWebSearchSource[] = [];
-
     try {
       const activeModels = (await ctx.runQuery(
         internal.chatModels.listActiveChatModelsInternal,
@@ -762,12 +756,6 @@ export const runChatGenerationInternal = internalAction({
         model: selectedModel,
         instructions: await resolveSystemPrompt(ctx, thread.organizationId, thread.personaId),
         useWebSearch: run.useWebSearch,
-        thread,
-        actorUserId: run.initiatedByUserId,
-        runId: run._id,
-        onWebSearchResults: (results) => {
-          collectedSources.push(...results);
-        },
       });
       const threadTarget = {
         threadId: run.agentThreadId,
@@ -780,21 +768,13 @@ export const runChatGenerationInternal = internalAction({
           returnImmediately: true as const,
         },
       };
-      const streamArgs =
-        'tools' in requestConfig
-          ? {
-              promptMessageId: run.promptMessageId,
-              model: requestConfig.model,
-              system: requestConfig.system,
-              tools: requestConfig.tools,
-              stopWhen: requestConfig.stopWhen as unknown,
-            }
-          : {
-              promptMessageId: run.promptMessageId,
-              model: requestConfig.model,
-              system: requestConfig.system,
-              stopWhen: requestConfig.stopWhen as unknown,
-            };
+      const streamArgs = {
+        promptMessageId: run.promptMessageId,
+        model: requestConfig.model,
+        system: requestConfig.system,
+        providerOptions: requestConfig.providerOptions,
+        stopWhen: requestConfig.stopWhen as unknown,
+      };
       const result = await (
         baseChatAgent.streamText as unknown as (
           ctx: ActionCtx,
@@ -848,15 +828,7 @@ export const runChatGenerationInternal = internalAction({
 
       await result.consumeStream();
       await result.text;
-      const allSources = dedupeSources([
-        ...mapOpenRouterSources(await result.sources),
-        ...collectedSources.map((source) => ({
-          sourceType: 'url' as const,
-          id: source.id,
-          url: source.url,
-          title: source.title,
-        })),
-      ]);
+      const allSources = dedupeSources(mapOpenRouterSources(await result.sources));
 
       const finalizedRun = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
         runId: args.runId,

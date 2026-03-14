@@ -1,5 +1,13 @@
-import { api } from './_generated/api';
-import { httpAction } from './_generated/server';
+import { internal } from './_generated/api';
+import { httpAction, internalQuery } from './_generated/server';
+
+export const probeHealth = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    await ctx.db.query('users').take(1);
+    return { connected: true as const };
+  },
+});
 
 /**
  * Health check HTTP endpoint
@@ -9,8 +17,7 @@ export const healthCheck = httpAction(async (ctx, _request) => {
   const startTime = Date.now();
 
   try {
-    // Test Convex connectivity by checking user count
-    const userCountResult = await ctx.runQuery(api.users.getUserCount, {});
+    await ctx.runQuery(internal.health.probeHealth, {});
 
     const responseTime = Date.now() - startTime;
 
@@ -22,7 +29,6 @@ export const healthCheck = httpAction(async (ctx, _request) => {
         database: {
           connected: true,
           provider: 'convex',
-          userCount: userCountResult.totalUsers,
         },
         service: {
           name: 'TanStack Start Template',
@@ -37,6 +43,7 @@ export const healthCheck = httpAction(async (ctx, _request) => {
       },
     );
   } catch (error) {
+    console.error('Health check failed', error);
     const responseTime = Date.now() - startTime;
 
     return new Response(
@@ -44,7 +51,7 @@ export const healthCheck = httpAction(async (ctx, _request) => {
         status: 'unhealthy',
         timestamp: new Date().toISOString(),
         responseTime: `${responseTime}ms`,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: 'Service unavailable',
         database: {
           connected: false,
           provider: 'convex',

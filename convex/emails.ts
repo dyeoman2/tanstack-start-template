@@ -2,7 +2,7 @@ import { Resend as ConvexResend, type EmailEvent, vEmailEvent, vEmailId } from '
 import { v } from 'convex/values';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
-import { action, internalAction, internalMutation, query } from './_generated/server';
+import { internalAction, internalMutation, query } from './_generated/server';
 import {
   buildInvitationTemplate,
   buildResetPasswordTemplate,
@@ -360,7 +360,7 @@ export const handleResendEmailEvent = internalMutation({
   },
 });
 
-export const sendPasswordResetEmail = action({
+export const sendPasswordResetEmail = internalAction({
   args: {
     user: v.object({
       id: v.string(),

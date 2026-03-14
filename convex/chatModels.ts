@@ -3,8 +3,6 @@ import type { QueryCtx } from './_generated/server';
 import { internalQuery, query } from './_generated/server';
 import { getCurrentUserOrNull } from './auth/access';
 import {
-  DEFAULT_CHAT_MODEL_ID,
-  getDefaultChatModelCatalogEntry,
   selectActiveChatModelCatalogEntries,
   type ChatModelCatalogEntry,
   type ChatModelOption,
