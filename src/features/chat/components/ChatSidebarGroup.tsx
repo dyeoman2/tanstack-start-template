@@ -22,6 +22,7 @@ import {
 } from '~/components/ui/sidebar';
 import { CHAT_ROUTE } from '~/features/chat/lib/constants';
 import { toThreadId } from '~/features/chat/lib/ids';
+import { optimisticallySetThreadPinned } from '~/features/chat/lib/optimistic-thread-pinning';
 import { useOptimisticThreads } from '~/features/chat/lib/optimistic-threads';
 import { sortThreads } from '~/features/chat/lib/utils';
 
@@ -32,7 +33,11 @@ export function ChatSidebarGroup() {
   const threads = useQuery(api.agentChat.listThreads, {});
   const optimisticThreads = useOptimisticThreads();
   const renameThread = useMutation(api.agentChat.renameThread);
-  const setThreadPinned = useMutation(api.agentChat.setThreadPinned);
+  const setThreadPinned = useMutation(api.agentChat.setThreadPinned).withOptimisticUpdate(
+    (localStore, args) => {
+      optimisticallySetThreadPinned(localStore, args);
+    },
+  );
   const deleteThread = useMutation(api.agentChat.deleteThread).withOptimisticUpdate(
     (localStore, args) => {
       const currentThreads = localStore.getQuery(api.agentChat.listThreads, {});

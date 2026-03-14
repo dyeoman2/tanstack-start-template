@@ -1568,6 +1568,9 @@ export const setThreadPinned = mutation({
     if (!canManageThread(thread, viewer)) {
       throw new ConvexError('You do not have permission to update this thread.');
     }
+    if (thread.pinned === args.pinned) {
+      return;
+    }
 
     await ctx.db.patch(args.threadId, {
       pinned: args.pinned,
