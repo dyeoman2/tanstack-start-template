@@ -55,6 +55,13 @@ function getOwnerSessionId() {
   return next;
 }
 
+async function computeFileSha256Hex(file: File) {
+  const digest = await crypto.subtle.digest('SHA-256', await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join(
+    '',
+  );
+}
+
 export function ChatWorkspaceSkeleton() {
   return (
     <div className="flex min-h-[60vh] flex-col overflow-hidden px-4 py-5 md:px-6">
@@ -642,7 +649,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   };
 
   const handleUploadAttachment = async (file: File): Promise<ChatAttachment> => {
-    const uploadUrlWithToken = await generateChatAttachmentUploadUrl({});
+    const mimeType = inferChatAttachmentMimeType(file);
+    const sha256 = await computeFileSha256Hex(file);
+    const uploadUrlWithToken = await generateChatAttachmentUploadUrl({
+      fileName: file.name,
+      mimeType,
+      sizeBytes: file.size,
+      sha256,
+    });
     const uploadUrl = new URL(uploadUrlWithToken);
     const fragmentParams = new URLSearchParams(
       uploadUrl.hash.startsWith('#') ? uploadUrl.hash.slice(1) : uploadUrl.hash,
@@ -654,7 +668,6 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
 
     uploadUrl.hash = '';
-    const mimeType = inferChatAttachmentMimeType(file);
     const uploadResponse = await fetch(uploadUrl.toString(), {
       method: 'POST',
       headers: {

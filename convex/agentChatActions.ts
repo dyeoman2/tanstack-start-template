@@ -120,6 +120,11 @@ function dedupeSources(
   });
 }
 
+async function computeBlobSha256Hex(blob: Blob) {
+  const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
+  return Buffer.from(digest).toString('hex');
+}
+
 async function getAssistantMessageForOrder(ctx: ChatDataCtx, agentThreadId: string, order: number) {
   const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
     threadId: agentThreadId,
@@ -645,7 +650,7 @@ export const createChatAttachmentFromUpload = action({
       organizationId,
       userId,
     });
-    const uploadTokenAccepted = await ctx.runMutation(
+    const uploadTokenRecord = await ctx.runMutation(
       internal.agentChat.consumeAttachmentUploadTokenInternal,
       {
         token: args.uploadToken,
@@ -655,13 +660,26 @@ export const createChatAttachmentFromUpload = action({
       },
     );
 
-    if (!uploadTokenAccepted) {
+    if (!uploadTokenRecord) {
       throw new ConvexError('Attachment upload token is invalid or expired.');
+    }
+
+    if (
+      uploadTokenRecord.expectedFileName !== args.name.trim() ||
+      uploadTokenRecord.expectedMimeType !== args.mimeType ||
+      uploadTokenRecord.expectedSizeBytes !== args.sizeBytes
+    ) {
+      throw new ConvexError('Attachment metadata does not match the authorized upload.');
     }
 
     const blob = await ctx.storage.get(args.storageId);
     if (!blob) {
       throw new Error('Uploaded file was not found.');
+    }
+
+    const uploadedSha256 = await computeBlobSha256Hex(blob);
+    if (uploadedSha256 !== uploadTokenRecord.expectedSha256) {
+      throw new ConvexError('Uploaded file does not match the authorized upload.');
     }
 
     const validatedAttachment = validateChatAttachmentUpload({

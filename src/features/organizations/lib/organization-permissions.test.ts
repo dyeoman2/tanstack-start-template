@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  canDeleteOrganization,
   canChangeMemberRole,
   canManageOrganization,
   canRemoveMember,
@@ -36,13 +37,21 @@ describe('organization permission rules', () => {
     });
     expect(getOrganizationAccess('owner')).toMatchObject({
       admin: true,
+      delete: false,
+      edit: true,
+      view: true,
+      siteAdmin: false,
+    });
+    expect(getOrganizationAccess('admin')).toMatchObject({
+      admin: true,
+      delete: false,
       edit: true,
       view: true,
       siteAdmin: false,
     });
     expect(getOrganizationAccess('member')).toMatchObject({
       admin: false,
-      edit: true,
+      edit: false,
       view: true,
     });
     expect(getOrganizationAccess(null)).toMatchObject({
@@ -56,6 +65,14 @@ describe('organization permission rules', () => {
     expect(getAssignableRoles('site-admin', 'member', 2)).toEqual(['owner', 'admin', 'member']);
     expect(getAssignableRoles('owner', 'member', 2)).toEqual(['owner', 'admin', 'member']);
     expect(getAssignableRoles('admin', 'member', 2)).toEqual(['admin', 'member']);
+  });
+
+  it('restricts organization deletion to owners and site admins', () => {
+    expect(canDeleteOrganization('site-admin')).toBe(true);
+    expect(canDeleteOrganization('owner')).toBe(true);
+    expect(canDeleteOrganization('admin')).toBe(false);
+    expect(canDeleteOrganization('member')).toBe(false);
+    expect(canDeleteOrganization(null)).toBe(false);
   });
 
   it('prevents demoting or removing the last owner', () => {

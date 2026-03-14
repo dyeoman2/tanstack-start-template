@@ -27,7 +27,9 @@ describe('access constants', () => {
 
     expect(SITE_ADMIN_ACCESS.delete).toBe(true);
     expect(ADMIN_ACCESS.edit).toBe(true);
+    expect(ADMIN_ACCESS.delete).toBe(false);
     expect(EDIT_ACCESS.view).toBe(true);
+    expect(EDIT_ACCESS.delete).toBe(false);
     expect(VIEW_ACCESS.edit).toBe(false);
     expect(NO_ACCESS.view).toBe(false);
   });

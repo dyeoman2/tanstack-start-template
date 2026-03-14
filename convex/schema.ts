@@ -258,6 +258,10 @@ export default defineSchema({
     userId: v.string(),
     organizationId: v.string(),
     sessionId: v.string(),
+    expectedFileName: v.string(),
+    expectedMimeType: v.string(),
+    expectedSizeBytes: v.number(),
+    expectedSha256: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
   })

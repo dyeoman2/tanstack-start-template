@@ -11,13 +11,6 @@ const {
   accessConstants: {
     ADMIN_ACCESS: {
       admin: true,
-      delete: true,
-      edit: true,
-      view: true,
-      siteAdmin: false,
-    },
-    EDIT_ACCESS: {
-      admin: false,
       delete: false,
       edit: true,
       view: true,
@@ -176,12 +169,12 @@ describe('authorized helpers', () => {
     expect(ctx.authUser).toEqual(authUser);
   });
 
-  it('uses edit-level access when a member is authorized', async () => {
+  it('uses edit-level access when an org admin is authorized', async () => {
     getVerifiedCurrentUserOrThrowMock.mockResolvedValue(baseUser);
-    checkOrganizationAccessMock.mockResolvedValue(accessConstants.EDIT_ACCESS);
+    checkOrganizationAccessMock.mockResolvedValue(accessConstants.ADMIN_ACCESS);
 
     const ctx = await authorizeOrganizationEdit({} as never, 'org_1');
 
-    expect(ctx.access).toEqual(accessConstants.EDIT_ACCESS);
+    expect(ctx.access).toEqual(accessConstants.ADMIN_ACCESS);
   });
 });

@@ -3,11 +3,12 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { findReachableLocalBaseUrls } from './lib/local-base-url';
 
 type Principal = 'user' | 'admin';
 
 type Options = {
-  baseUrl: string;
+  baseUrl?: string;
   principal: Principal;
   redirectTo: string;
   sessionName: string;
@@ -38,7 +39,6 @@ function requireEnv(name: string): string {
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
-    baseUrl: 'http://127.0.0.1:3000',
     principal: 'user',
     redirectTo: '/app',
     sessionName: 'agent-browser-auth',
@@ -107,14 +107,15 @@ function buildAuthScript(secret: string, principal: Principal, redirectTo: strin
       principal: ${JSON.stringify(principal)},
       redirectTo: ${JSON.stringify(redirectTo)},
     }),
-    redirect: 'follow',
+    redirect: 'manual',
   });
 
-  if (!response.ok) {
+  const isOpaqueRedirect = response.type === 'opaqueredirect' || response.status === 0;
+  if (!isOpaqueRedirect && response.status !== 302) {
     throw new Error(\`Agent auth failed: \${response.status} \${await response.text()}\`);
   }
 
-  return response.url;
+  return response.headers.get('location') || ${JSON.stringify(redirectTo)};
 })()
 `;
 }
@@ -128,17 +129,34 @@ async function main() {
 
   const options = parseArgs(process.argv.slice(2));
   const secret = requireEnv('E2E_TEST_SECRET');
-  const destination = new URL(options.redirectTo, options.baseUrl).toString();
+  const candidateBaseUrls = await findReachableLocalBaseUrls(options.baseUrl);
+  let lastError: unknown = null;
 
-  runAgentBrowser(options.sessionName, ['open', options.baseUrl]);
-  runAgentBrowser(
-    options.sessionName,
-    ['eval', '--stdin'],
-    buildAuthScript(secret, options.principal, options.redirectTo),
-  );
-  runAgentBrowser(options.sessionName, ['open', destination]);
+  for (const baseUrl of candidateBaseUrls) {
+    const destination = new URL(options.redirectTo, baseUrl).toString();
 
-  console.log(`Authenticated agent-browser session "${options.sessionName}" at ${destination}`);
+    try {
+      runAgentBrowser(options.sessionName, ['open', baseUrl]);
+      runAgentBrowser(
+        options.sessionName,
+        ['eval', '--stdin'],
+        buildAuthScript(secret, options.principal, options.redirectTo),
+      );
+      runAgentBrowser(options.sessionName, ['open', destination]);
+
+      console.log(`Authenticated agent-browser session "${options.sessionName}" at ${destination}`);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!options.baseUrl) {
+        console.warn(`[agent-browser-auth] Failed auth bootstrap on ${baseUrl}, trying next candidate`);
+      }
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error('Failed to authenticate agent-browser session against local app');
 }
 
 main().catch((error) => {

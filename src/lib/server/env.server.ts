@@ -40,10 +40,6 @@ function isLoopbackHostname(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
-function isDevelopmentRuntime(): boolean {
-  return process.env.NODE_ENV !== 'production';
-}
-
 function getLoopbackHostPatterns(): string[] {
   return ['localhost:*', '127.0.0.1:*'];
 }
@@ -113,7 +109,7 @@ export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
     const origin = new URL(siteUrl);
     allowedHosts.add(origin.host.toLowerCase());
 
-    if (isLoopbackHostname(origin.hostname) || isDevelopmentRuntime()) {
+    if (isLoopbackHostname(origin.hostname)) {
       for (const loopbackHostPattern of getLoopbackHostPatterns()) {
         allowedHosts.add(loopbackHostPattern);
       }
@@ -163,7 +159,7 @@ export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[]
   try {
     const origin = new URL(siteUrl);
 
-    if (isLoopbackHostname(origin.hostname) || isDevelopmentRuntime()) {
+    if (isLoopbackHostname(origin.hostname)) {
       for (const loopbackOriginPattern of getLoopbackOriginPatterns()) {
         trustedOrigins.add(loopbackOriginPattern);
       }
@@ -292,6 +288,8 @@ export type E2EPrincipalConfig = {
   role: E2EPrincipalType;
 };
 
+const DEFAULT_E2E_PRINCIPAL_EMAILS = ['e2e-user@local.test', 'e2e-admin@local.test'] as const;
+
 function getRequiredServerEnv(name: string): string {
   const value = process.env[name];
   if (!value || value.trim().length === 0) {
@@ -332,4 +330,19 @@ export function getE2EPrincipalConfig(principal: E2EPrincipalType): E2EPrincipal
     password: getRequiredServerEnv('E2E_USER_PASSWORD'),
     role: 'user',
   };
+}
+
+export function isE2EPrincipalEmail(email: string): boolean {
+  if (!isE2ETestAuthEnabled()) {
+    return false;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail) {
+    return false;
+  }
+
+  return [...DEFAULT_E2E_PRINCIPAL_EMAILS, process.env.E2E_USER_EMAIL, process.env.E2E_ADMIN_EMAIL]
+    .map((value) => value?.trim().toLowerCase())
+    .some((value) => value === normalizedEmail);
 }

@@ -1,7 +1,6 @@
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
   ADMIN_ORGANIZATION_ACCESS,
-  EDIT_ORGANIZATION_ACCESS,
   getOrganizationAccess,
   NO_ORGANIZATION_ACCESS,
   type OrganizationAccess,
@@ -58,7 +57,7 @@ export const ADMIN_ACCESS: ACCESS = {
 };
 
 export const EDIT_ACCESS: ACCESS = {
-  ...EDIT_ORGANIZATION_ACCESS,
+  ...ADMIN_ORGANIZATION_ACCESS,
 };
 
 export const VIEW_ACCESS: ACCESS = {

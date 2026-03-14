@@ -2,6 +2,7 @@ import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   canChangeMemberRole,
+  canDeleteOrganization,
   canManageOrganization,
   canRemoveMember,
   deriveViewerRole,
@@ -363,14 +364,22 @@ export const getOrganizationWriteAccess = query({
     if (
       args.action === 'invite' ||
       args.action === 'cancel-invitation' ||
-      args.action === 'update-settings' ||
-      args.action === 'delete-organization'
+      args.action === 'update-settings'
     ) {
       return canManageOrganization(viewerRole)
         ? { allowed: true as const }
         : {
             allowed: false as const,
             reason: 'Organization admin access required',
+          };
+    }
+
+    if (args.action === 'delete-organization') {
+      return canDeleteOrganization(viewerRole)
+        ? { allowed: true as const }
+        : {
+            allowed: false as const,
+            reason: 'Organization owner access required',
           };
     }
 

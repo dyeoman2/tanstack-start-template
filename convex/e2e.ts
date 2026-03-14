@@ -3,7 +3,7 @@ import { isE2ETestAuthEnabled } from '../src/lib/server/env.server';
 import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import { internalMutation } from './_generated/server';
+import { internalAction, internalMutation } from './_generated/server';
 import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 import {
   e2eEnsurePrincipalRoleValidator,
@@ -22,7 +22,7 @@ function assertE2EAccess() {
   }
 }
 
-export const ensurePrincipalRole = internalMutation({
+export const ensurePrincipalRole = internalAction({
   args: {
     email: v.string(),
     role: v.union(v.literal('user'), v.literal('admin')),
@@ -40,16 +40,54 @@ export const ensurePrincipalRole = internalMutation({
 
     const userId = assertUserId(authUser, 'E2E auth user id not found');
     await updateBetterAuthUserRecord(ctx, userId, { role: args.role });
-    await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
+    const bootstrapResult = await ctx.runAction(internal.users.bootstrapUserContext, {
       authUserId: userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      role: args.role,
     });
+
+    if (!bootstrapResult.found) {
+      throw new Error(`Failed to bootstrap E2E principal context for ${args.email}`);
+    }
 
     return {
       found: true as const,
       userId,
       role: args.role,
+    };
+  },
+});
+
+export const verifyPrincipalEmailByEmail = internalMutation({
+  args: {
+    email: v.string(),
+  },
+  returns: v.union(
+    v.object({
+      found: v.literal(false),
+    }),
+    v.object({
+      found: v.literal(true),
+      userId: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    assertE2EAccess();
+
+    const authUser = await findBetterAuthUserByEmail(ctx, args.email);
+    if (!authUser) {
+      return {
+        found: false as const,
+      };
+    }
+
+    const userId = assertUserId(authUser, 'E2E auth user id not found');
+    await updateBetterAuthUserRecord(ctx, userId, { emailVerified: true });
+
+    return {
+      found: true as const,
+      userId,
     };
   },
 });

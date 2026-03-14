@@ -538,7 +538,7 @@ export const userContextRecordsValidator = v.object({
 });
 
 export const userCountValidator = v.object({
-  totalUsers: v.number(),
+  totalUsers: v.union(v.number(), v.null()),
   isFirstUser: v.boolean(),
 });
 

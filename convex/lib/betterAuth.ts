@@ -374,6 +374,26 @@ export async function fetchBetterAuthInvitationsByOrganizationId(
   ]);
 }
 
+export async function fetchBetterAuthInvitationsByOrganizationAndEmail(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+  email: string,
+): Promise<BetterAuthInvitation[]> {
+  return await fetchAllRecords<BetterAuthInvitation>(ctx, 'invitation', [
+    {
+      field: 'organizationId',
+      operator: 'eq',
+      value: organizationId,
+    },
+    {
+      field: 'email',
+      operator: 'eq',
+      value: email.toLowerCase(),
+      connector: 'AND',
+    },
+  ]);
+}
+
 export async function findBetterAuthInvitationById(
   ctx: GenericCtx<DataModel>,
   invitationId: string,

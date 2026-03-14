@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 type Principal = 'user' | 'admin';
 
 type Options = {
-  baseUrl: string;
+  baseUrl?: string;
   principal: Principal;
   redirectTo: string;
   sessionName: string;
@@ -13,7 +13,6 @@ type Options = {
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
-    baseUrl: 'http://127.0.0.1:3000',
     principal: 'user',
     redirectTo: '/app',
     sessionName: 'agent-browser-inspect',
@@ -70,20 +69,22 @@ function runCommand(command: string, args: string[]) {
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-
-  runCommand('pnpm', [
+  const authArgs = [
     'run',
     'agent:auth',
     '--',
     '--session-name',
     options.sessionName,
-    '--base-url',
-    options.baseUrl,
     '--principal',
     options.principal,
     '--redirect-to',
     options.redirectTo,
-  ]);
+  ];
+  if (options.baseUrl) {
+    authArgs.splice(5, 0, '--base-url', options.baseUrl);
+  }
+
+  runCommand('pnpm', authArgs);
   runCommand('agent-browser', [
     '--session-name',
     options.sessionName,

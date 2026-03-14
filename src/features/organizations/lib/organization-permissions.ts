@@ -20,14 +20,6 @@ export const SITE_ADMIN_ORGANIZATION_ACCESS: OrganizationAccess = {
 
 export const ADMIN_ORGANIZATION_ACCESS: OrganizationAccess = {
   admin: true,
-  delete: true,
-  edit: true,
-  view: true,
-  siteAdmin: false,
-};
-
-export const EDIT_ORGANIZATION_ACCESS: OrganizationAccess = {
-  admin: false,
   delete: false,
   edit: true,
   view: true,
@@ -86,13 +78,18 @@ export function getOrganizationAccess(viewerRole: OrganizationViewerRole): Organ
     case 'site-admin':
       return SITE_ADMIN_ORGANIZATION_ACCESS;
     case 'owner':
+      return ADMIN_ORGANIZATION_ACCESS;
     case 'admin':
       return ADMIN_ORGANIZATION_ACCESS;
     case 'member':
-      return EDIT_ORGANIZATION_ACCESS;
+      return VIEW_ORGANIZATION_ACCESS;
     default:
       return NO_ORGANIZATION_ACCESS;
   }
+}
+
+export function canDeleteOrganization(viewerRole: OrganizationViewerRole) {
+  return viewerRole === 'site-admin' || viewerRole === 'owner';
 }
 
 export function getAssignableRoles(

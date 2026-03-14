@@ -267,6 +267,52 @@ describe('OrganizationSettingsManagement', () => {
     expect(screen.getByRole('menuitem', { name: /^delete$/i })).toBeInTheDocument();
   });
 
+  it('hides delete for organization admins while keeping management actions', async () => {
+    const user = userEvent.setup();
+
+    const settingsResponse = {
+      organization: {
+        id: 'org-1',
+        slug: 'cottage-hospital',
+        name: 'Cottage Hospital',
+        logo: null,
+      },
+      access: {
+        admin: true,
+        delete: false,
+        edit: true,
+        view: true,
+        siteAdmin: false,
+      },
+      isMember: true,
+      viewerRole: 'admin' as const,
+      canManage: true,
+    };
+    const adminDirectoryResponse = {
+      ...directoryResponse,
+      access: {
+        admin: true,
+        delete: false,
+        edit: true,
+        view: true,
+        siteAdmin: false,
+      },
+      viewerRole: 'admin' as const,
+    };
+    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
+      'page' in args ? adminDirectoryResponse : settingsResponse,
+    );
+
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
+
+    await user.click(screen.getByRole('button', { name: /actions/i }));
+
+    expect(screen.getByRole('menuitem', { name: /^edit$/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /invite member/i })).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /leave organization/i })).toBeInTheDocument();
+    expect(screen.queryByRole('menuitem', { name: /^delete$/i })).not.toBeInTheDocument();
+  });
+
   it('opens the delete confirmation dialog from the actions menu', async () => {
     const user = userEvent.setup();
 
@@ -316,7 +362,7 @@ describe('OrganizationSettingsManagement', () => {
       access: {
         admin: false,
         delete: false,
-        edit: true,
+        edit: false,
         view: true,
         siteAdmin: false,
       },
@@ -329,7 +375,7 @@ describe('OrganizationSettingsManagement', () => {
       access: {
         admin: false,
         delete: false,
-        edit: true,
+        edit: false,
         view: true,
         siteAdmin: false,
       },

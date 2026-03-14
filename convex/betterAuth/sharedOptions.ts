@@ -15,6 +15,7 @@ type BetterAuthDatabaseHooks = NonNullable<BetterAuthOptions['databaseHooks']>;
 type OrganizationPluginOptions = NonNullable<Parameters<typeof organization>[0]>;
 
 type SharedBetterAuthCallbacks = {
+  allowUserToCreateOrganization?: NonNullable<OrganizationPluginOptions['allowUserToCreateOrganization']>;
   afterEmailVerification?: BetterAuthEmailVerificationOptions['afterEmailVerification'];
   databaseHooks?: BetterAuthDatabaseHooks;
   organizationHooks?: OrganizationPluginOptions['organizationHooks'];
@@ -40,7 +41,6 @@ const adminAccessControl = createAccessControl({
     'set-role',
     'ban',
     'impersonate',
-    'impersonate-admins',
     'delete',
     'set-password',
     'get',
@@ -56,7 +56,6 @@ const adminRole = adminAccessControl.newRole({
     'set-role',
     'ban',
     'impersonate',
-    'impersonate-admins',
     'delete',
     'set-password',
     'get',
@@ -105,14 +104,10 @@ const organizationMemberRole = organizationAccessControl.newRole({
 function shouldDisableAuthRateLimitInDev() {
   try {
     const siteUrl = new URL(getSiteUrl());
-    if (siteUrl.hostname === 'localhost' || siteUrl.hostname === '127.0.0.1') {
-      return true;
-    }
+    return siteUrl.hostname === 'localhost' || siteUrl.hostname === '127.0.0.1';
   } catch {
-    // Fall through to NODE_ENV check.
+    return false;
   }
-
-  return process.env.NODE_ENV !== 'production';
 }
 
 function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit']>['customRules'] {
@@ -216,6 +211,10 @@ export function createSharedBetterAuthOptions(
       freshAge: AUTH_SESSION_FRESH_AGE_SECONDS,
       disableSessionRefresh: false,
       deferSessionRefresh: false,
+      cookieCache: {
+        enabled: true,
+        maxAge: 5 * 60,
+      },
     },
     user: {
       additionalFields: {
@@ -239,7 +238,7 @@ export function createSharedBetterAuthOptions(
       }),
       organization({
         ac: organizationAccessControl,
-        allowUserToCreateOrganization: true,
+        allowUserToCreateOrganization: callbacks.allowUserToCreateOrganization ?? true,
         creatorRole: 'owner',
         invitationExpiresIn: 7 * 24 * 60 * 60,
         cancelPendingInvitationsOnReInvite: true,

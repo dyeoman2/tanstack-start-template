@@ -10,6 +10,7 @@ import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   getBetterAuthSecret,
+  isE2EPrincipalEmail,
   getSiteUrl,
   isTrustedBetterAuthOrigin,
 } from '../src/lib/server/env.server';
@@ -28,10 +29,10 @@ import {
   findBetterAuthMember,
   findBetterAuthOrganizationById,
   findBetterAuthUserByEmail,
+  fetchBetterAuthInvitationsByOrganizationAndEmail,
   fetchBetterAuthMembersByOrganizationId,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
-  fetchBetterAuthInvitationsByOrganizationId,
   fetchBetterAuthSessionsByUserId,
   updateBetterAuthSessionRecord,
 } from './lib/betterAuth';
@@ -39,6 +40,18 @@ import { createAuthAuditPlugin } from './lib/authAudit';
 import { authUserValidator, rateLimitResultValidator } from './lib/returnValidators';
 
 const secret = getBetterAuthSecret();
+
+export function shouldSkipE2EAuthEmailForTesting(targetEmail: string): boolean {
+  return isE2EPrincipalEmail(targetEmail);
+}
+
+function logSkippedE2EAuthEmail(kind: 'invitation' | 'password reset' | 'verification', email: string) {
+  if (process.env.NODE_ENV === 'production') {
+    return;
+  }
+
+  console.info(`[auth] Skipping ${kind} email for E2E principal ${email}`);
+}
 
 function resolveAuthEmailUrl(url: string, request?: Request): string {
   let canonicalUrl: URL;
@@ -583,7 +596,9 @@ async function createSiteAdminInvitation(
     }
   }
 
-  const pendingInvitations = (await fetchBetterAuthInvitationsByOrganizationId(ctx, args.organizationId))
+  const pendingInvitations = (
+    await fetchBetterAuthInvitationsByOrganizationAndEmail(ctx, args.organizationId, email)
+  )
     .filter((invitation) => invitation.email.toLowerCase() === email && invitation.status === 'pending')
     .sort((left, right) => toTimestamp(right.createdAt) - toTimestamp(left.createdAt));
 
@@ -1145,6 +1160,14 @@ export const createAuth = (
   };
 
   const sharedOptions = createSharedBetterAuthOptions({
+    allowUserToCreateOrganization: async (user) => {
+      if (deriveIsSiteAdmin(normalizeUserRole(user.role ?? undefined))) {
+        return true;
+      }
+
+      const memberships = await fetchBetterAuthMembersByUserId(ctx, user.id);
+      return memberships.length < 2;
+    },
     databaseHooks: {
       session: {
         create: {
@@ -1207,6 +1230,11 @@ export const createAuth = (
       },
     },
     sendResetPassword: async ({ user, url, token }, request) => {
+      if (shouldSkipE2EAuthEmailForTesting(user.email)) {
+        logSkippedE2EAuthEmail('password reset', user.email);
+        return;
+      }
+
       // Apply server-side rate limiting for password reset (defense-in-depth)
       const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
         runMutation?: (fn: unknown, args: unknown) => Promise<{ ok: boolean; retryAfter?: number }>;
@@ -1271,6 +1299,11 @@ export const createAuth = (
       }
     },
     sendVerificationEmail: async ({ user, url, token }, request) => {
+      if (shouldSkipE2EAuthEmailForTesting(user.email)) {
+        logSkippedE2EAuthEmail('verification', user.email);
+        return;
+      }
+
       const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
         scheduler?: {
           runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
@@ -1304,6 +1337,11 @@ export const createAuth = (
       data: Parameters<SharedSendInvitationEmail>[0],
       request?: Request,
     ) => {
+      if (shouldSkipE2EAuthEmailForTesting(data.email)) {
+        logSkippedE2EAuthEmail('invitation', data.email);
+        return;
+      }
+
       const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
         scheduler?: {
           runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;

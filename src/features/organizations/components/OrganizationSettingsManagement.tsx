@@ -26,6 +26,7 @@ import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
+import { canDeleteOrganization } from '~/features/organizations/lib/organization-permissions';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
@@ -102,6 +103,7 @@ export function OrganizationSettingsManagement({
 
   const canManage = settings.canManage;
   const canLeaveOrganization = settings.isMember;
+  const canDelete = canDeleteOrganization(settings.viewerRole);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -226,7 +228,7 @@ export function OrganizationSettingsManagement({
                     Leave organization
                   </DropdownMenuItem>
                 ) : null}
-                {canManage ? (
+                {canDelete ? (
                   <DropdownMenuItem
                     variant="destructive"
                     onSelect={() => setIsDeleteDialogOpen(true)}

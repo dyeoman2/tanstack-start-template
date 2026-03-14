@@ -98,6 +98,7 @@ export async function establishE2EAuthSession(
 ): Promise<EstablishedE2EAuthSession> {
   const principal = getE2EPrincipalConfig(principalType);
   const adminClient = createConvexAdminClient();
+  let createdViaSignUp = false;
 
   let authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
 
@@ -114,15 +115,43 @@ export async function establishE2EAuthSession(
         status: authResponse.status,
       });
     }
+
+    createdViaSignUp = true;
   }
 
-  const roleResult = await adminClient.mutation(internal.e2e.ensurePrincipalRole, {
-    email: principal.email,
-    role: principal.role,
-  });
+  if (createdViaSignUp) {
+    const verificationResult = await adminClient.mutation(internal.e2e.verifyPrincipalEmailByEmail, {
+      email: principal.email,
+    });
+
+    if (!verificationResult.found) {
+      throw new Response('Failed to mark e2e principal email as verified', { status: 500 });
+    }
+
+    authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
+    if (!authResponse.ok) {
+      const authError = await readAuthError(authResponse);
+      throw new Response(authError.message || 'Failed to sign in verified e2e principal', {
+        status: authResponse.status,
+      });
+    }
+  }
+
+  let roleResult;
+  try {
+    roleResult = await adminClient.action(internal.e2e.ensurePrincipalRole, {
+      email: principal.email,
+      role: principal.role,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to bootstrap e2e principal';
+    throw new Response(message, { status: 500 });
+  }
 
   if (!roleResult.found) {
-    throw new Response('Failed to reconcile e2e principal role', { status: 500 });
+    throw new Response('Failed to reconcile e2e principal role and bootstrap context', {
+      status: 500,
+    });
   }
 
   return {

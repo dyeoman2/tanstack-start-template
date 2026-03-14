@@ -19,7 +19,7 @@ import {
   mutation,
   query,
 } from './_generated/server';
-import { authComponent, createAuth } from './auth';
+import { authComponent } from './auth';
 import {
   buildCurrentUserProfile,
   type CurrentUserProfile,
@@ -31,6 +31,8 @@ import { throwConvexError } from './auth/errors';
 import {
   type BetterAuthOrganization,
   type BetterAuthUser,
+  createBetterAuthMember,
+  createBetterAuthOrganization,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthSessionsByUserId,
@@ -169,30 +171,20 @@ async function createDefaultOrganization(
   authUserId: string,
   now: number,
 ): Promise<BetterAuthOrganization> {
-  const auth = createAuth(ctx);
-  const response = await (
-    (auth.api as unknown) as {
-      createOrganization: (input: {
-        body: {
-          keepCurrentActiveOrganization?: boolean;
-          name: string;
-          slug: string;
-          userId?: string;
-        };
-        headers: Headers;
-      }) => Promise<BetterAuthOrganization>;
-    }
-  ).createOrganization({
-    body: {
-      keepCurrentActiveOrganization: false,
-      name: 'New Organization',
-      slug: `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`,
-      userId: authUserId,
-    },
-    headers: new Headers(),
+  const organization = await createBetterAuthOrganization(ctx, {
+    createdAt: now,
+    name: 'New Organization',
+    slug: `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`,
   });
 
-  return response;
+  await createBetterAuthMember(ctx, {
+    createdAt: now,
+    organizationId: organization._id ?? organization.id,
+    role: 'owner',
+    userId: authUserId,
+  });
+
+  return organization;
 }
 
 async function ensureUserContextRecord(
@@ -278,6 +270,25 @@ export const getUserCount = query({
   args: {},
   returns: userCountValidator,
   handler: async (ctx) => {
+    const authUser = await getCurrentAuthUserOrNull(ctx);
+
+    if (!authUser) {
+      const firstPage = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+        model: 'user',
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+          id: 0,
+        },
+      });
+      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(firstPage);
+
+      return {
+        totalUsers: null,
+        isFirstUser: normalized.page.length === 0,
+      };
+    }
+
     let totalUsers = 0;
     let cursor: string | null = null;
 

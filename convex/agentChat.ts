@@ -565,6 +565,10 @@ export const issueAttachmentUploadTokenInternal = internalMutation({
     userId: v.string(),
     organizationId: v.string(),
     sessionId: v.string(),
+    expectedFileName: v.string(),
+    expectedMimeType: v.string(),
+    expectedSizeBytes: v.number(),
+    expectedSha256: v.string(),
     expiresAt: v.number(),
     createdAt: v.number(),
   },
@@ -582,7 +586,15 @@ export const consumeAttachmentUploadTokenInternal = internalMutation({
     organizationId: v.string(),
     sessionId: v.string(),
   },
-  returns: v.boolean(),
+  returns: v.union(
+    v.object({
+      expectedFileName: v.string(),
+      expectedMimeType: v.string(),
+      expectedSizeBytes: v.number(),
+      expectedSha256: v.string(),
+    }),
+    v.null(),
+  ),
   handler: async (ctx, args) => {
     const tokenRecord = await ctx.db
       .query('chatAttachmentUploadTokens')
@@ -590,7 +602,7 @@ export const consumeAttachmentUploadTokenInternal = internalMutation({
       .unique();
 
     if (!tokenRecord) {
-      return false;
+      return null;
     }
 
     const isValid =
@@ -600,7 +612,16 @@ export const consumeAttachmentUploadTokenInternal = internalMutation({
       tokenRecord.expiresAt > Date.now();
 
     await ctx.db.delete(tokenRecord._id);
-    return isValid;
+    if (!isValid) {
+      return null;
+    }
+
+    return {
+      expectedFileName: tokenRecord.expectedFileName,
+      expectedMimeType: tokenRecord.expectedMimeType,
+      expectedSizeBytes: tokenRecord.expectedSizeBytes,
+      expectedSha256: tokenRecord.expectedSha256,
+    };
   },
 });
 
@@ -1729,9 +1750,14 @@ export const continuePrompt = mutation({
 });
 
 export const generateChatAttachmentUploadUrl = mutation({
-  args: {},
+  args: {
+    fileName: v.string(),
+    mimeType: v.string(),
+    sizeBytes: v.number(),
+    sha256: v.string(),
+  },
   returns: v.string(),
-  handler: async (ctx) => {
+  handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     await enforceChatAttachmentUploadsRateLimitOrThrow(ctx, {
       organizationId: viewer.organizationId,
@@ -1746,6 +1772,10 @@ export const generateChatAttachmentUploadUrl = mutation({
       userId: viewer.userId,
       organizationId: viewer.organizationId,
       sessionId: viewer.sessionId,
+      expectedFileName: args.fileName.trim(),
+      expectedMimeType: args.mimeType,
+      expectedSizeBytes: args.sizeBytes,
+      expectedSha256: args.sha256.toLowerCase(),
       expiresAt: now + CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS,
       createdAt: now,
     });
