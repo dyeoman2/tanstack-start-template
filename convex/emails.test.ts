@@ -94,6 +94,8 @@ describe('available email templates', () => {
 
 describe('email template builders', () => {
   it('builds the password reset template with reset copy and link fallback', async () => {
+    const expectedSupportEmail =
+      process.env.RESEND_REPLY_TO_EMAIL || process.env.RESEND_EMAIL_SENDER || 'support@example.com';
     const template = await buildResetPasswordTemplate({
       appName: 'Acme',
       resetLink: 'https://example.com/reset?token=123',
@@ -108,7 +110,7 @@ describe('email template builders', () => {
     );
     expect(template.html).toContain('role="presentation"');
     expect(template.text).toContain('This password reset link will expire in 1 hour.');
-    expect(template.text).toContain('Need help? support@example.com.');
+    expect(template.text).toContain(`Need help? ${expectedSupportEmail}.`);
   });
 
   it('builds the invitation template with inviter, organization, and role copy', async () => {

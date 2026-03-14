@@ -12,6 +12,8 @@ import { getCurrentAuthUserOrNull } from './auth/access';
 import { throwConvexError } from './auth/errors';
 
 type AuditLogDoc = Doc<'auditLogs'>;
+const AUDIT_FETCH_MULTIPLIER = 3;
+const AUDIT_FETCH_CAP = 300;
 
 function normalizeOptionalString(value: string | undefined) {
   const trimmed = value?.trim();
@@ -77,6 +79,7 @@ async function collectAuditLogsForAdmin(
     organizationId?: string;
     userId?: string;
   },
+  fetchSize: number,
 ) {
   const { eventType, identifier, organizationId, userId } = filters;
 
@@ -85,7 +88,7 @@ async function collectAuditLogsForAdmin(
       .query('auditLogs')
       .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
       .order('desc')
-      .collect();
+      .take(fetchSize);
   }
 
   if (identifier) {
@@ -93,7 +96,7 @@ async function collectAuditLogsForAdmin(
       .query('auditLogs')
       .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', identifier))
       .order('desc')
-      .collect();
+      .take(fetchSize);
   }
 
   if (eventType) {
@@ -101,7 +104,7 @@ async function collectAuditLogsForAdmin(
       .query('auditLogs')
       .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
       .order('desc')
-      .collect();
+      .take(fetchSize);
   }
 
   if (organizationId) {
@@ -109,29 +112,30 @@ async function collectAuditLogsForAdmin(
       .query('auditLogs')
       .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
       .order('desc')
-      .collect();
+      .take(fetchSize);
   }
 
-  return ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').collect();
+  return ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(fetchSize);
 }
 
 async function collectAuditLogsForUser(
   ctx: QueryCtx,
   currentUserId: string,
   currentIdentifier: string | undefined,
+  fetchSize: number,
 ) {
   const logsByUserIdPromise = ctx.db
     .query('auditLogs')
     .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', currentUserId))
     .order('desc')
-    .collect();
+    .take(fetchSize);
 
   const logsByIdentifierPromise = currentIdentifier
     ? ctx.db
         .query('auditLogs')
         .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', currentIdentifier))
         .order('desc')
-        .collect()
+        .take(fetchSize)
     : Promise.resolve([] satisfies AuditLogDoc[]);
 
   const [logsByUserId, logsByIdentifier] = await Promise.all([
@@ -220,6 +224,7 @@ export const getAuditLogs = query({
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
     const offset = Math.max(0, args.offset ?? 0);
     const organizationId = normalizeOptionalString(args.organizationId);
+    const fetchSize = Math.min(AUDIT_FETCH_CAP, Math.max(limit + offset, limit) * AUDIT_FETCH_MULTIPLIER);
 
     const logs = isSiteAdmin
       ? await collectAuditLogsForAdmin(ctx, {
@@ -227,8 +232,8 @@ export const getAuditLogs = query({
           identifier: requestedIdentifier,
           organizationId,
           userId: requestedUserId,
-        })
-      : await collectAuditLogsForUser(ctx, currentUserId, currentIdentifier);
+        }, fetchSize)
+      : await collectAuditLogsForUser(ctx, currentUserId, currentIdentifier, fetchSize);
 
     const events = dedupeEvents(
       logs

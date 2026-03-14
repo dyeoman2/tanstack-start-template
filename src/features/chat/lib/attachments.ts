@@ -29,16 +29,7 @@ const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
 export type UploadedImage = { image: string; mimeType: string; name?: string };
 export type UploadedDocument = ParsedFile;
 
-export function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => resolve(event.target?.result as string);
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-export function isImageFile(file: File) {
+function isImageFile(file: File) {
   const fileName = file.name.toLowerCase();
   return file.type.startsWith('image/') || IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
 }

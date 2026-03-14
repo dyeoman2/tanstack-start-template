@@ -3,10 +3,12 @@ import { createServerFn } from '@tanstack/react-start';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import type { RouterAuthContext } from '~/router';
 
+type RouteGuardLocation = Pick<ParsedLocation, 'href' | 'pathname'>;
+
 export async function routeAdminGuard({
   location,
 }: {
-  location: ParsedLocation;
+  location: RouteGuardLocation;
 }): Promise<RouterAuthContext> {
   try {
     // Add timeout to prevent hanging requests

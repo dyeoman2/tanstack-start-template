@@ -6,6 +6,7 @@ import { shapeAdminUsers } from '../src/features/admin/lib/admin-user-shaping';
 import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { internal } from './_generated/api';
+import type { Doc } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { authComponent } from './auth';
@@ -22,6 +23,8 @@ import {
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
 const OPENROUTER_SOURCE = 'openrouter';
+const AUDIT_LOG_TRUNCATION_BATCH_SIZE = 256;
+const ADMIN_USER_PAGE_BATCH_SIZE = 256;
 
 const chatModelCatalogInputValidator = v.object({
   modelId: v.string(),
@@ -153,6 +156,50 @@ function buildChatModelCatalogEntry(
   };
 }
 
+async function listUserProfilesByRole(
+  ctx: QueryCtx,
+  role: 'all' | 'admin' | 'user',
+) {
+  const profiles: Doc<'userProfiles'>[] = [];
+  let cursor: string | null = null;
+
+  while (true) {
+    if (role === 'all') {
+      const result = await ctx.db.query('userProfiles').paginate({
+        cursor,
+        numItems: ADMIN_USER_PAGE_BATCH_SIZE,
+      });
+
+      profiles.push(...result.page);
+
+      if (result.isDone) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+      continue;
+    }
+
+    const result = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_role', (q) => q.eq('role', role))
+      .paginate({
+        cursor,
+        numItems: ADMIN_USER_PAGE_BATCH_SIZE,
+      });
+
+    profiles.push(...result.page);
+
+    if (result.isDone) {
+      break;
+    }
+
+    cursor = result.continueCursor;
+  }
+
+  return profiles;
+}
+
 export const listUsers = query({
   args: {
     page: v.number(),
@@ -181,12 +228,7 @@ export const listUsers = query({
     await requireSiteAdmin(ctx);
 
     const [profiles, memberships, organizations] = await Promise.all([
-      args.role === 'all'
-        ? ctx.db.query('userProfiles').collect()
-        : ctx.db
-            .query('userProfiles')
-            .withIndex('by_role', (q) => q.eq('role', args.role === 'admin' ? 'admin' : 'user'))
-            .collect(),
+      listUserProfilesByRole(ctx, args.role === 'all' ? 'all' : args.role),
       fetchAllBetterAuthMembers(ctx),
       fetchAllBetterAuthOrganizations(ctx),
     ]);
@@ -619,17 +661,28 @@ export const truncateData = mutation({
   handler: async (ctx) => {
     await requireSiteAdmin(ctx);
 
-    const auditLogs = await ctx.db.query('auditLogs').collect();
     let deletedCount = 0;
     let failedCount = 0;
 
-    for (const log of auditLogs) {
-      try {
-        await ctx.db.delete(log._id);
-        deletedCount += 1;
-      } catch (error) {
-        failedCount += 1;
-        console.error(`Failed to delete audit log ${log._id}:`, error);
+    while (true) {
+      const auditLogs = await ctx.db
+        .query('auditLogs')
+        .withIndex('by_createdAt')
+        .order('asc')
+        .take(AUDIT_LOG_TRUNCATION_BATCH_SIZE);
+
+      if (auditLogs.length === 0) {
+        break;
+      }
+
+      for (const log of auditLogs) {
+        try {
+          await ctx.db.delete(log._id);
+          deletedCount += 1;
+        } catch (error) {
+          failedCount += 1;
+          console.error(`Failed to delete audit log ${log._id}:`, error);
+        }
       }
     }
 

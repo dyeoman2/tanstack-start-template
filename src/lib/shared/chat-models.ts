@@ -37,7 +37,7 @@ export type ChatModelOption = {
 };
 
 export const DEFAULT_CHAT_MODEL_ID = 'openai/gpt-4o-mini';
-export const DEFAULT_CHAT_MODEL_LABEL = 'GPT-4o Mini';
+const DEFAULT_CHAT_MODEL_LABEL = 'GPT-4o Mini';
 const DEFAULT_CHAT_MODEL_DESCRIPTION = 'Fast OpenRouter text-generation model for everyday chat.';
 
 type ChatModelWithWebSearch = {
@@ -75,18 +75,6 @@ export function selectActiveChatModelCatalogEntries(models: ChatModelCatalogEntr
   }
 
   return [...openRouterModels, getDefaultChatModelCatalogEntry()];
-}
-
-export function formatChatModelLabel(modelId: string): string {
-  if (modelId === DEFAULT_CHAT_MODEL_ID) {
-    return DEFAULT_CHAT_MODEL_LABEL;
-  }
-
-  const baseName = modelId.split('/').pop() ?? modelId;
-  return baseName
-    .split('-')
-    .map((part) => part.toUpperCase() === part ? part : part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
 }
 
 function isChatModelSelectable(

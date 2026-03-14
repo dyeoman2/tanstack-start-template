@@ -156,6 +156,7 @@ export default defineSchema({
     lastMessageAt: v.number(),
   })
     .index('by_agentThreadId', ['agentThreadId'])
+    .index('by_organizationId_and_personaId', ['organizationId', 'personaId'])
     .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
     .index('by_organizationId_and_visibility_and_updatedAt', [
       'organizationId',

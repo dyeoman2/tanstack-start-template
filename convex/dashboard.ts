@@ -5,6 +5,27 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import { getCurrentAuthUserOrNull } from './auth/access';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+const USER_COUNT_BATCH_SIZE = 256;
+
+async function countUsers(ctx: QueryCtx) {
+  let cursor: string | null = null;
+  let totalUsers = 0;
+
+  while (true) {
+    const result = await ctx.db.query('users').paginate({
+      cursor,
+      numItems: USER_COUNT_BATCH_SIZE,
+    });
+
+    totalUsers += result.page.length;
+
+    if (result.isDone) {
+      return totalUsers;
+    }
+
+    cursor = result.continueCursor;
+  }
+}
 
 async function countSignupsSince(ctx: QueryCtx, since: number) {
   try {
@@ -69,8 +90,7 @@ export const getDashboardData = query({
       totalUsers = statsDoc.totalUsers;
       activeUsers = statsDoc.activeUsers;
     } else {
-      const users = await ctx.db.query('users').collect();
-      totalUsers = users.length;
+      totalUsers = await countUsers(ctx);
       activeUsers = totalUsers; // TODO: Implement proper active user logic
     }
 

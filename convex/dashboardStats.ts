@@ -1,7 +1,29 @@
 import { v } from 'convex/values';
+import type { MutationCtx } from './_generated/server';
 import { internalMutation } from './_generated/server';
 
 const DASHBOARD_STATS_KEY = 'global';
+const USER_COUNT_BATCH_SIZE = 256;
+
+async function countUsers(ctx: MutationCtx) {
+  let cursor: string | null = null;
+  let totalUsers = 0;
+
+  while (true) {
+    const result = await ctx.db.query('users').paginate({
+      cursor,
+      numItems: USER_COUNT_BATCH_SIZE,
+    });
+
+    totalUsers += result.page.length;
+
+    if (result.isDone) {
+      return totalUsers;
+    }
+
+    cursor = result.continueCursor;
+  }
+}
 
 export const adjustUserCounts = internalMutation({
   args: {
@@ -18,8 +40,7 @@ export const adjustUserCounts = internalMutation({
     const activeDelta = args.activeDelta ?? args.totalDelta;
 
     if (!statsDoc) {
-      const users = await ctx.db.query('users').collect();
-      const totalUsers = users.length;
+      const totalUsers = await countUsers(ctx);
       const activeUsers = totalUsers;
 
       await ctx.db.insert('dashboardStats', {
@@ -45,8 +66,7 @@ export const adjustUserCounts = internalMutation({
 export const recomputeUserCounts = internalMutation({
   args: {},
   handler: async (ctx) => {
-    const users = await ctx.db.query('users').collect();
-    const totalUsers = users.length;
+    const totalUsers = await countUsers(ctx);
     const activeUsers = totalUsers;
 
     const statsDoc = await ctx.db

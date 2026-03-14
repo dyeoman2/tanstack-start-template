@@ -758,30 +758,31 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       const users = await listAllAdminUsers();
       const target = assertCanDeleteUser(users, currentUser.id, data.userId);
 
-      await convexAuthReactStart.fetchAuthMutation(api.admin.cleanupDeletedUserData, {
-        userId: data.userId,
-        email: target.email,
-      });
+      const result = await callBetterAuthEndpoint<{ success: boolean }>(
+        '/api/auth/admin/remove-user',
+        {
+          method: 'POST',
+          body: data,
+        },
+      );
 
       try {
-        const result = await callBetterAuthEndpoint<{ success: boolean }>(
-          '/api/auth/admin/remove-user',
-          {
-            method: 'POST',
-            body: data,
-          },
-        );
+        await convexAuthReactStart.fetchAuthMutation(api.admin.cleanupDeletedUserData, {
+          userId: data.userId,
+          email: target.email,
+        });
         await convexAuthReactStart.fetchAuthMutation(api.admin.deleteUserIndexEntry, {
           userId: data.userId,
         });
-        return result;
       } catch (error) {
         throw new ServerError(
-          'App cleanup completed, but removing the auth user failed. Manual reconciliation is required.',
+          'Auth user removal succeeded, but app cleanup failed. Retry the cleanup flow to reconcile remaining Convex data.',
           error instanceof ServerError ? error.code : 500,
           error,
         );
       }
+
+      return result;
     } catch (error) {
       throw handleServerError(error, 'Delete admin user');
     }

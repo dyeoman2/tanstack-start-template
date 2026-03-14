@@ -1,26 +1,23 @@
 import { v } from 'convex/values';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
-import { assertUserId } from '../src/lib/shared/user-id';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
+import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { MutationCtx } from './_generated/server';
 import { action, internalMutation, mutation, query } from './_generated/server';
+import { authComponent } from './auth';
 import {
-  type CurrentUserProfile,
   buildCurrentUserProfile,
+  type CurrentUserProfile,
   getCurrentAuthUserOrNull,
   getCurrentUserOrNull,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
-import { authComponent } from './auth';
-import {
-  deriveIsSiteAdmin,
-  normalizeUserRole,
-} from '../src/features/auth/lib/user-role';
 import {
   type BetterAuthOrganization,
   type BetterAuthUser,
@@ -53,17 +50,36 @@ type OnboardingStatePatch = {
   onboardingDeliveryUpdatedAt?: number | undefined;
   onboardingDeliveryError?: string | null | undefined;
 };
+const USER_PROFILES_SYNC_BATCH_SIZE = 256;
+
+function toTimestampOrFallback(
+  value: string | number | Date | undefined,
+  fallback: number,
+): number {
+  if (value === undefined) {
+    return fallback;
+  }
+
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
 
 function buildPersistedOnboardingState(
   existing: UserProfileDocument | null,
   patch?: OnboardingStatePatch,
 ) {
   return {
-    onboardingStatus:
-      patch?.onboardingStatus ?? existing?.onboardingStatus ?? 'not_started',
+    onboardingStatus: patch?.onboardingStatus ?? existing?.onboardingStatus ?? 'not_started',
     onboardingEmailId: patch?.onboardingEmailId ?? existing?.onboardingEmailId,
-    onboardingEmailMessageId:
-      patch?.onboardingEmailMessageId ?? existing?.onboardingEmailMessageId,
+    onboardingEmailMessageId: patch?.onboardingEmailMessageId ?? existing?.onboardingEmailMessageId,
     onboardingEmailLastSentAt:
       patch?.onboardingEmailLastSentAt ?? existing?.onboardingEmailLastSentAt,
     onboardingCompletedAt: patch?.onboardingCompletedAt ?? existing?.onboardingCompletedAt,
@@ -233,9 +249,7 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
   };
 
   if (existing) {
-    // Reinsert so persisted profile documents match the current schema exactly.
-    await ctx.db.delete(existing._id);
-    await ctx.db.insert('userProfiles', nextValue);
+    await ctx.db.replace(existing._id, nextValue);
     return;
   }
 
@@ -406,7 +420,23 @@ export const syncUserProfilesSnapshot = internalMutation({
     ),
   },
   handler: async (ctx, args) => {
-    const existingProfiles = await ctx.db.query('userProfiles').collect();
+    const existingProfiles: UserProfileDocument[] = [];
+    let cursor: string | null = null;
+
+    while (true) {
+      const result = await ctx.db.query('userProfiles').paginate({
+        cursor,
+        numItems: USER_PROFILES_SYNC_BATCH_SIZE,
+      });
+      existingProfiles.push(...result.page);
+
+      if (result.isDone) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+    }
+
     const existingByAuthUserId = new Map(
       existingProfiles.map((profile) => [profile.authUserId, profile]),
     );
@@ -422,8 +452,7 @@ export const syncUserProfilesSnapshot = internalMutation({
       };
 
       if (existing) {
-        await ctx.db.delete(existing._id);
-        await ctx.db.insert('userProfiles', nextValue);
+        await ctx.db.replace(existing._id, nextValue);
         existingByAuthUserId.delete(user.authUserId);
         continue;
       }
@@ -636,8 +665,8 @@ export const getCurrentUserProfile = query({
         role,
         isSiteAdmin: deriveIsSiteAdmin(role),
         emailVerified: authUser.emailVerified ?? false,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: toTimestampOrFallback(authUser.createdAt, 0),
+        updatedAt: toTimestampOrFallback(authUser.updatedAt, 0),
         currentOrganization: null,
         organizations: [],
       };

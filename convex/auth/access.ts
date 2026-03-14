@@ -1,8 +1,5 @@
+import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import { assertUserId } from '../../src/lib/shared/user-id';
-import {
-  deriveIsSiteAdmin,
-  normalizeUserRole,
-} from '../../src/features/auth/lib/user-role';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { authComponent } from '../auth';
@@ -85,8 +82,8 @@ export type CurrentUser = Doc<'users'> & {
 };
 
 function toMillis(value: string | number | Date | undefined): number {
-  if (!value) {
-    return Date.now();
+  if (value === undefined) {
+    return 0;
   }
 
   if (typeof value === 'number') {
@@ -97,7 +94,8 @@ function toMillis(value: string | number | Date | undefined): number {
     return value.getTime();
   }
 
-  return new Date(value).getTime();
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? 0 : parsed;
 }
 
 function mapOrganizationRoleToAccess(role: string): ACCESS {
@@ -242,7 +240,9 @@ async function resolveOrganizationsForUser(
       .map((membership) => membership.organizationId)
       .filter((organizationId, index, values) => values.indexOf(organizationId) === index),
   );
-  const organizationsById = new Map(organizations.map((organization) => [organization._id ?? '', organization]));
+  const organizationsById = new Map(
+    organizations.map((organization) => [organization._id ?? '', organization]),
+  );
 
   return memberships
     .map((membership) => {
@@ -257,7 +257,9 @@ async function resolveOrganizationsForUser(
         role: membership.role,
       };
     })
-    .filter((organization): organization is NonNullable<typeof organization> => organization !== null)
+    .filter(
+      (organization): organization is NonNullable<typeof organization> => organization !== null,
+    )
     .sort((left, right) => left.name.localeCompare(right.name));
 }
 

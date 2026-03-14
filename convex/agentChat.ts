@@ -1667,18 +1667,18 @@ export const deletePersona = mutation({
 
     const threads = await ctx.db
       .query('chatThreads')
-      .withIndex('by_organizationId_and_updatedAt', (q) => q.eq('organizationId', organizationId))
+      .withIndex('by_organizationId_and_personaId', (q) =>
+        q.eq('organizationId', organizationId).eq('personaId', args.personaId),
+      )
       .collect();
 
     await Promise.all(
-      threads
-        .filter((thread) => thread.personaId === args.personaId)
-        .map((thread) =>
-          ctx.db.patch(thread._id, {
-            personaId: undefined,
-            updatedAt: Date.now(),
-          }),
-        ),
+      threads.map((thread) =>
+        ctx.db.patch(thread._id, {
+          personaId: undefined,
+          updatedAt: Date.now(),
+        }),
+      ),
     );
 
     await ctx.db.delete(args.personaId);

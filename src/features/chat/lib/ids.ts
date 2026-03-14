@@ -4,10 +4,6 @@ export function toThreadId(value: string): Id<'chatThreads'> {
   return value as Id<'chatThreads'>;
 }
 
-export function toAttachmentId(value: string): Id<'chatAttachments'> {
-  return value as Id<'chatAttachments'>;
-}
-
 export function toPersonaId(value: string): Id<'aiPersonas'> {
   return value as Id<'aiPersonas'>;
 }

@@ -10,7 +10,7 @@ export const ONBOARDING_STATUSES = [
 
 export type OnboardingStatus = (typeof ONBOARDING_STATUSES)[number];
 
-export const RETRYABLE_ONBOARDING_STATUSES: ReadonlySet<OnboardingStatus> = new Set([
+const RETRYABLE_ONBOARDING_STATUSES: ReadonlySet<OnboardingStatus> = new Set([
   'email_pending',
   'email_sent',
   'delivery_delayed',
