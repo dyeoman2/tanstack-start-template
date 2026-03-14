@@ -18,6 +18,13 @@ export const organizationAccessValidator = v.object({
   view: v.boolean(),
   siteAdmin: v.boolean(),
 });
+export const organizationCreationEligibilityValidator = v.object({
+  count: v.number(),
+  limit: v.union(v.number(), v.null()),
+  canCreate: v.boolean(),
+  reason: v.union(v.string(), v.null()),
+  isUnlimited: v.boolean(),
+});
 export const onboardingStatusValidator = v.union(
   v.literal('not_started'),
   v.literal('email_pending'),
@@ -27,10 +34,7 @@ export const onboardingStatusValidator = v.union(
   v.literal('bounced'),
   v.literal('completed'),
 );
-export const chatAttachmentKindValidator = v.union(
-  v.literal('image'),
-  v.literal('document'),
-);
+export const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
 export const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('ready'),
@@ -49,20 +53,14 @@ export const chatRunFailureKindValidator = v.union(
   v.literal('tool_error'),
   v.literal('unknown'),
 );
-export const chatThreadVisibilityValidator = v.union(
-  v.literal('private'),
-  v.literal('shared'),
-);
+export const chatThreadVisibilityValidator = v.union(v.literal('private'), v.literal('shared'));
 export const chatUsageOperationKindValidator = v.union(
   v.literal('chat_turn'),
   v.literal('web_search'),
   v.literal('thread_title'),
   v.literal('thread_summary'),
 );
-export const chatModelAccessValidator = v.union(
-  v.literal('public'),
-  v.literal('admin'),
-);
+export const chatModelAccessValidator = v.union(v.literal('public'), v.literal('admin'));
 
 export const successValidator = v.object({
   success: v.boolean(),
@@ -317,6 +315,7 @@ export const emailLifecycleEventsDocValidator = v.object({
 export const currentUserContextValidator = v.object({
   userId: v.id('users'),
   organizationId: v.string(),
+  sessionId: v.string(),
   isSiteAdmin: v.boolean(),
   currentUserName: v.string(),
 });

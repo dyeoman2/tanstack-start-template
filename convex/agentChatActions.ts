@@ -19,10 +19,13 @@ import {
   deriveThreadTitle,
 } from './lib/agentChat';
 import { baseChatAgent, buildChatRequestConfig } from './lib/chatAgentRuntime';
-import { buildAttachmentPromptSummary, extractDocumentText } from './lib/chatAttachments';
 import {
-  chatAttachmentWithPreviewValidator,
-} from './lib/returnValidators';
+  buildAttachmentPromptSummary,
+  extractDocumentText,
+  validateChatAttachmentUpload,
+} from './lib/chatAttachments';
+import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
+import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -31,6 +34,7 @@ type ChatDataCtx =
 export type AuthenticatedChatContext = {
   userId: string;
   organizationId: string;
+  sessionId: string;
   isSiteAdmin: boolean;
   currentUserName: string;
 };
@@ -441,6 +445,13 @@ export function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
   return content.every((part) => part?.type === 'text');
 }
 
+export function isValidContinuationPromptMessage(
+  message: AgentMessageDoc | null,
+  expectedThreadId: string,
+) : message is AgentMessageDoc {
+  return message?.threadId === expectedThreadId && message.message?.role === 'user';
+}
+
 export async function deleteMessagesAfterPrompt(
   ctx: MutationCtx | ActionCtx,
   threadId: string,
@@ -622,18 +633,48 @@ async function reconcileAbortedRunArtifacts(
 export const createChatAttachmentFromUpload = action({
   args: {
     storageId: v.id('_storage'),
+    uploadToken: v.string(),
     name: v.string(),
     mimeType: v.string(),
     sizeBytes: v.number(),
   },
   returns: chatAttachmentWithPreviewValidator,
   handler: async (ctx, args) => {
-    const { userId, organizationId } = await getAuthenticatedContext(ctx);
-    const kind = args.mimeType.toLowerCase().startsWith('image/') ? 'image' : 'document';
+    const { userId, organizationId, sessionId } = await getAuthenticatedContext(ctx);
+    await enforceChatAttachmentProcessingRateLimitOrThrow(ctx, {
+      organizationId,
+      userId,
+    });
+    const uploadTokenAccepted = await ctx.runMutation(
+      internal.agentChat.consumeAttachmentUploadTokenInternal,
+      {
+        token: args.uploadToken,
+        userId,
+        organizationId,
+        sessionId,
+      },
+    );
+
+    if (!uploadTokenAccepted) {
+      throw new ConvexError('Attachment upload token is invalid or expired.');
+    }
+
+    const blob = await ctx.storage.get(args.storageId);
+    if (!blob) {
+      throw new Error('Uploaded file was not found.');
+    }
+
+    const validatedAttachment = validateChatAttachmentUpload({
+      blobSize: blob.size,
+      blobType: blob.type,
+      fileName: args.name,
+      claimedMimeType: args.mimeType,
+    });
+    const kind = validatedAttachment.kind;
     const now = Date.now();
     const initialSummary = buildAttachmentPromptSummary({
       kind,
-      name: args.name,
+      name: validatedAttachment.normalizedName,
     });
     const attachmentId = (await ctx.runMutation(internal.agentChat.createAttachmentInternal, {
       threadId: undefined,
@@ -641,9 +682,9 @@ export const createChatAttachmentFromUpload = action({
       userId,
       organizationId,
       kind,
-      name: args.name,
-      mimeType: args.mimeType,
-      sizeBytes: args.sizeBytes,
+      name: validatedAttachment.normalizedName,
+      mimeType: validatedAttachment.mimeType,
+      sizeBytes: validatedAttachment.sizeBytes,
       rawStorageId: args.storageId,
       extractedTextStorageId: undefined,
       agentFileId: undefined,
@@ -654,25 +695,24 @@ export const createChatAttachmentFromUpload = action({
     })) as Id<'chatAttachments'>;
 
     try {
-      const blob = await ctx.storage.get(args.storageId);
-      if (!blob) {
-        throw new Error('Uploaded file was not found.');
-      }
-
       const stored = await storeFile(ctx, components.agent, blob, {
-        filename: args.name,
+        filename: validatedAttachment.normalizedName,
       });
       let extractedTextStorageId: Id<'_storage'> | undefined;
       let promptSummary = initialSummary;
 
       if (kind === 'document') {
-        const extractedText = await extractDocumentText(blob, args.name, args.mimeType);
+        const extractedText = await extractDocumentText(
+          blob,
+          validatedAttachment.normalizedName,
+          validatedAttachment.mimeType,
+        );
         extractedTextStorageId = await ctx.storage.store(
           new Blob([extractedText], { type: 'text/plain' }),
         );
         promptSummary = buildAttachmentPromptSummary({
           kind,
-          name: args.name,
+          name: validatedAttachment.normalizedName,
           text: extractedText,
         });
       }
@@ -820,7 +860,6 @@ export const runChatGenerationInternal = internalAction({
         }
 
         return;
-        
       }
 
       await ctx.runMutation(internal.agentChat.patchRunInternal, {

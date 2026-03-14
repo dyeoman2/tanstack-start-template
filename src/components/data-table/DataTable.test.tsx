@@ -1,7 +1,11 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { DataTable, createSortableHeader, formatTableDate } from '~/components/data-table/DataTable';
+import {
+  createSortableHeader,
+  DataTable,
+  formatTableDate,
+} from '~/components/data-table/DataTable';
 
 type Row = {
   id: string;

@@ -1,6 +1,6 @@
-import type { ChatMessagePart } from '~/features/chat/types';
 import { NEW_CHAT_TITLE } from '~/features/chat/lib/constants';
-import { DEFAULT_CHAT_MODEL_ID, type ChatModelId } from '~/lib/shared/chat-models';
+import type { ChatMessagePart } from '~/features/chat/types';
+import { type ChatModelId, DEFAULT_CHAT_MODEL_ID } from '~/lib/shared/chat-models';
 
 const BR_TAG_REGEX = /<br\s*\/?>/gi;
 const HTML_TAG_REGEX = /<[^>]*>/g;
@@ -69,10 +69,5 @@ export function resolveRequestedModelId({
     return draftModelId;
   }
 
-  return (
-    threadModelOverride ??
-    threadModelId ??
-    inferredThreadModelId ??
-    DEFAULT_CHAT_MODEL_ID
-  );
+  return threadModelOverride ?? threadModelId ?? inferredThreadModelId ?? DEFAULT_CHAT_MODEL_ID;
 }

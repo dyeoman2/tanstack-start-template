@@ -1,7 +1,7 @@
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
-import { admin, organization } from 'better-auth/plugins';
+import { admin, createAccessControl, organization } from 'better-auth/plugins';
 import {
   getBetterAuthBaseUrlConfig,
   getBetterAuthTrustedOrigins,
@@ -11,10 +11,13 @@ import authConfig from '../auth.config';
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
+type BetterAuthDatabaseHooks = NonNullable<BetterAuthOptions['databaseHooks']>;
 type OrganizationPluginOptions = NonNullable<Parameters<typeof organization>[0]>;
 
 type SharedBetterAuthCallbacks = {
   afterEmailVerification?: BetterAuthEmailVerificationOptions['afterEmailVerification'];
+  databaseHooks?: BetterAuthDatabaseHooks;
+  organizationHooks?: OrganizationPluginOptions['organizationHooks'];
   sendInvitationEmail: NonNullable<OrganizationPluginOptions['sendInvitationEmail']>;
   sendResetPassword: NonNullable<BetterAuthEmailAndPasswordOptions['sendResetPassword']>;
   sendVerificationEmail: NonNullable<BetterAuthEmailVerificationOptions['sendVerificationEmail']>;
@@ -29,6 +32,75 @@ export const AUTH_SESSION_FRESH_AGE_SECONDS = 24 * 60 * 60;
 
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
+
+const adminAccessControl = createAccessControl({
+  user: [
+    'create',
+    'list',
+    'set-role',
+    'ban',
+    'impersonate',
+    'impersonate-admins',
+    'delete',
+    'set-password',
+    'get',
+    'update',
+  ],
+  session: ['list', 'revoke', 'delete'],
+});
+
+const adminRole = adminAccessControl.newRole({
+  user: [
+    'create',
+    'list',
+    'set-role',
+    'ban',
+    'impersonate',
+    'impersonate-admins',
+    'delete',
+    'set-password',
+    'get',
+    'update',
+  ],
+  session: ['list', 'revoke', 'delete'],
+});
+
+const userRole = adminAccessControl.newRole({
+  user: [],
+  session: [],
+});
+
+const organizationAccessControl = createAccessControl({
+  organization: ['update', 'delete'],
+  member: ['create', 'update', 'delete'],
+  invitation: ['create', 'cancel'],
+  team: ['create', 'update', 'delete'],
+  ac: ['create', 'read', 'update', 'delete'],
+});
+
+const organizationOwnerRole = organizationAccessControl.newRole({
+  organization: ['update', 'delete'],
+  member: ['create', 'update', 'delete'],
+  invitation: ['create', 'cancel'],
+  team: ['create', 'update', 'delete'],
+  ac: ['create', 'read', 'update', 'delete'],
+});
+
+const organizationAdminRole = organizationAccessControl.newRole({
+  organization: ['update'],
+  member: ['create', 'update', 'delete'],
+  invitation: ['create', 'cancel'],
+  team: ['create', 'update', 'delete'],
+  ac: ['create', 'read', 'update', 'delete'],
+});
+
+const organizationMemberRole = organizationAccessControl.newRole({
+  organization: [],
+  member: [],
+  invitation: [],
+  team: [],
+  ac: ['read'],
+});
 
 function shouldDisableAuthRateLimitInDev() {
   try {
@@ -153,20 +225,34 @@ export function createSharedBetterAuthOptions(
         },
       },
     },
+    ...(callbacks.databaseHooks ? { databaseHooks: callbacks.databaseHooks } : {}),
     plugins: [
       admin({
+        ac: adminAccessControl,
         defaultRole: 'user',
         adminRoles: ['admin'],
-        allowImpersonatingAdmins: false,
         impersonationSessionDuration: ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS,
+        roles: {
+          admin: adminRole,
+          user: userRole,
+        },
       }),
       organization({
+        ac: organizationAccessControl,
         allowUserToCreateOrganization: true,
         creatorRole: 'owner',
         invitationExpiresIn: 7 * 24 * 60 * 60,
         cancelPendingInvitationsOnReInvite: true,
         requireEmailVerificationOnInvitation: true,
+        roles: {
+          owner: organizationOwnerRole,
+          admin: organizationAdminRole,
+          member: organizationMemberRole,
+        },
+        // App-level policy enforcement happens in our server functions because the limit is based
+        // on current memberships and site admins bypass it entirely.
         // Keep the plugin in organizations-only mode; team support is intentionally not enabled.
+        ...(callbacks.organizationHooks ? { organizationHooks: callbacks.organizationHooks } : {}),
         sendInvitationEmail: callbacks.sendInvitationEmail,
       }),
       convex({

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendSetCookieHeaders,
   assertE2EAuthRequestAuthorized,
+  buildAuthEndpointHeaders,
   getSetCookieHeaders,
   resolveAgentAuthRedirect,
 } from '~/lib/server/e2e-auth.server';
@@ -87,5 +88,23 @@ describe('e2e-auth.server', () => {
       'session=abc; Path=/; HttpOnly',
       'csrf=def; Path=/; SameSite=Lax',
     ]);
+  });
+
+  it('normalizes forwarded auth headers without duplicating origin metadata', () => {
+    const request = new Request('http://127.0.0.1:3000/api/test/agent-auth', {
+      headers: {
+        cookie: 'session=abc',
+        origin: 'http://127.0.0.1:3000',
+        referer: 'http://127.0.0.1:3000/app',
+      },
+    });
+
+    const headers = buildAuthEndpointHeaders(request);
+
+    expect(headers.get('content-type')).toBe('application/json');
+    expect(headers.get('origin')).toBe('http://127.0.0.1:3000');
+    expect(headers.get('referer')).toBe('http://127.0.0.1:3000/app');
+    expect([...headers.entries()].filter(([name]) => name === 'origin')).toHaveLength(1);
+    expect([...headers.entries()].filter(([name]) => name === 'referer')).toHaveLength(1);
   });
 });

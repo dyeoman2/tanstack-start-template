@@ -155,12 +155,7 @@ describe('OrganizationSettingsManagement', () => {
       'page' in args ? memberDirectoryResponse : settingsResponse,
     );
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     expect(screen.getByText('Management access required')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /actions/i })).toBeInTheDocument();
@@ -175,12 +170,7 @@ describe('OrganizationSettingsManagement', () => {
     };
     useQueryMock.mockReturnValue(undefined);
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Loading organization' })).not.toBeInTheDocument();
@@ -212,12 +202,7 @@ describe('OrganizationSettingsManagement', () => {
     );
     updateSettingsMock.mockResolvedValueOnce({ success: true });
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     await user.click(screen.getByRole('button', { name: /actions/i }));
 
@@ -249,6 +234,39 @@ describe('OrganizationSettingsManagement', () => {
     expect(routerInvalidateMock).toHaveBeenCalled();
   });
 
+  it('does not show leave organization for a site admin who is not a member', async () => {
+    const user = userEvent.setup();
+
+    const settingsResponse = {
+      organization: {
+        id: 'org-1',
+        slug: 'cottage-hospital',
+        name: 'Cottage Hospital',
+        logo: null,
+      },
+      access: {
+        admin: true,
+        delete: true,
+        edit: true,
+        view: true,
+        siteAdmin: true,
+      },
+      isMember: false,
+      viewerRole: 'site-admin' as const,
+      canManage: true,
+    };
+    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
+      'page' in args ? directoryResponse : settingsResponse,
+    );
+
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
+
+    await user.click(screen.getByRole('button', { name: /actions/i }));
+
+    expect(screen.queryByRole('menuitem', { name: /leave organization/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: /^delete$/i })).toBeInTheDocument();
+  });
+
   it('opens the delete confirmation dialog from the actions menu', async () => {
     const user = userEvent.setup();
 
@@ -274,20 +292,15 @@ describe('OrganizationSettingsManagement', () => {
       'page' in args ? directoryResponse : settingsResponse,
     );
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     await user.click(screen.getByRole('button', { name: /actions/i }));
     await user.click(screen.getByRole('menuitem', { name: /^delete$/i }));
 
+    expect(screen.getByRole('heading', { name: /delete organization/i })).toBeInTheDocument();
     expect(
-      screen.getByRole('heading', { name: /delete organization/i }),
+      screen.getByText(/delete cottage hospital and all organization-scoped data/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/delete cottage hospital and all organization-scoped data/i)).toBeInTheDocument();
   });
 
   it('allows members to leave an organization from the actions menu', async () => {
@@ -330,12 +343,7 @@ describe('OrganizationSettingsManagement', () => {
       nextOrganizationId: 'org-2',
     });
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     await user.click(screen.getByRole('button', { name: /actions/i }));
     await user.click(screen.getByRole('menuitem', { name: /leave organization/i }));
@@ -388,12 +396,7 @@ describe('OrganizationSettingsManagement', () => {
       'page' in args ? memberDirectoryResponse : settingsResponse,
     );
 
-    render(
-      <OrganizationSettingsManagement
-        slug="cottage-hospital"
-        searchParams={searchParams}
-      />,
-    );
+    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     await user.click(screen.getByRole('button', { name: /actions/i }));
 

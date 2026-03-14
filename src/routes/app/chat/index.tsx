@@ -1,7 +1,7 @@
+import { api } from '@convex/_generated/api';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect } from 'react';
-import { api } from '@convex/_generated/api';
 import { z } from 'zod';
 import { ChatWorkspace, ChatWorkspaceSkeleton } from '~/features/chat/components/ChatWorkspace';
 

@@ -1,7 +1,4 @@
-import {
-  type RouterHistory,
-  createRouter as createTanStackRouter,
-} from '@tanstack/react-router';
+import { createRouter as createTanStackRouter, type RouterHistory } from '@tanstack/react-router';
 import type { UserRole } from '~/features/auth/types';
 import { initializeSentry } from '~/lib/sentry';
 import type { UserId } from '~/lib/shared/user-id';
@@ -17,7 +14,13 @@ export type RouterAuthContext =
     }
   | {
       authenticated: true;
-      user: { id: UserId; email: string; name?: string; role: UserRole; isSiteAdmin: boolean } | null;
+      user: {
+        id: UserId;
+        email: string;
+        name?: string;
+        role: UserRole;
+        isSiteAdmin: boolean;
+      } | null;
     };
 
 export const defaultRouterAuthContext: RouterAuthContext = {

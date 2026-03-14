@@ -77,10 +77,7 @@ export function selectActiveChatModelCatalogEntries(models: ChatModelCatalogEntr
   return [...openRouterModels, getDefaultChatModelCatalogEntry()];
 }
 
-function isChatModelSelectable(
-  access: ChatModelAccess,
-  isSiteAdmin: boolean,
-): boolean {
+function isChatModelSelectable(access: ChatModelAccess, isSiteAdmin: boolean): boolean {
   return access === 'public' || isSiteAdmin;
 }
 
@@ -99,18 +96,11 @@ export function toChatModelOption(
     supportsWebSearch: chatModelSupportsWebSearch(model),
     priceLabel: model.priceLabel,
     badge:
-      model.access === 'admin'
-        ? 'Admin only'
-        : model.priceLabel === 'Free'
-          ? 'Free'
-          : undefined,
+      model.access === 'admin' ? 'Admin only' : model.priceLabel === 'Free' ? 'Free' : undefined,
   };
 }
 
-export function getChatModelOption(
-  models: ChatModelOption[],
-  modelId?: string,
-): ChatModelOption {
+export function getChatModelOption(models: ChatModelOption[], modelId?: string): ChatModelOption {
   if (modelId) {
     const matchedModel = models.find((model) => model.id === modelId);
     if (matchedModel) {
@@ -164,9 +154,7 @@ export function getAuthorizedChatModel(
   modelId: string,
   models: ChatModelCatalogEntry[],
   isSiteAdmin: boolean,
-):
-  | { ok: true; model: ChatModelCatalogEntry }
-  | { ok: false; reason: 'unknown' | 'forbidden' } {
+): { ok: true; model: ChatModelCatalogEntry } | { ok: false; reason: 'unknown' | 'forbidden' } {
   const matchedModel = models.find((model) => model.modelId === modelId);
   if (!matchedModel) {
     return { ok: false, reason: 'unknown' };

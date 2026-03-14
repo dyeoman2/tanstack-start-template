@@ -21,8 +21,9 @@ describe('access constants', () => {
   it('preserves the expected permission lattice', async () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret';
 
-    const { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } =
-      await import('./access');
+    const { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } = await import(
+      './access'
+    );
 
     expect(SITE_ADMIN_ACCESS.delete).toBe(true);
     expect(ADMIN_ACCESS.edit).toBe(true);

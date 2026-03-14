@@ -132,7 +132,9 @@ async function parseExcel(file: File): Promise<ParsedFile> {
   const sheetNames = await readSheetNames(file);
 
   if (sheetNames.length > MAX_SPREADSHEET_SHEETS) {
-    throw new Error(`Spreadsheet has too many sheets. Maximum allowed is ${MAX_SPREADSHEET_SHEETS}.`);
+    throw new Error(
+      `Spreadsheet has too many sheets. Maximum allowed is ${MAX_SPREADSHEET_SHEETS}.`,
+    );
   }
 
   let content = `[Excel File: ${file.name}]\n\n`;

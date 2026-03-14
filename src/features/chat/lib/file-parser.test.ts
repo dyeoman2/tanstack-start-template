@@ -67,7 +67,9 @@ Count | 3
   });
 
   it('rejects spreadsheets with too many sheets', async () => {
-    readSheetNamesMock.mockResolvedValue(Array.from({ length: 11 }, (_, index) => `Sheet ${index}`));
+    readSheetNamesMock.mockResolvedValue(
+      Array.from({ length: 11 }, (_, index) => `Sheet ${index}`),
+    );
 
     const file = new File(['spreadsheet'], 'wide.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -81,9 +83,7 @@ Count | 3
 
   it('rejects spreadsheets with too many rows across sheets', async () => {
     readSheetNamesMock.mockResolvedValue(['Summary']);
-    readXlsxFileMock.mockResolvedValue(
-      Array.from({ length: 5_001 }, () => ['cell']),
-    );
+    readXlsxFileMock.mockResolvedValue(Array.from({ length: 5_001 }, () => ['cell']));
 
     const file = new File(['spreadsheet'], 'rows.xlsx', {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

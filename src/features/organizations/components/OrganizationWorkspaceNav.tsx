@@ -12,7 +12,5 @@ export function OrganizationWorkspaceNav({
   title,
   actions,
 }: OrganizationWorkspaceNavProps) {
-  return (
-    <PageHeader title={title} description={description} actions={actions} />
-  );
+  return <PageHeader title={title} description={description} actions={actions} />;
 }

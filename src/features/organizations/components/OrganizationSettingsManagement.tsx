@@ -4,7 +4,6 @@ import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Loader2, LogOut, MoreHorizontal, Pencil, Trash2, UserRoundPlus } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { Button } from '~/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
@@ -27,6 +26,7 @@ import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
+import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
@@ -214,7 +214,9 @@ export function OrganizationSettingsManagement({
                     Invite member
                   </DropdownMenuItem>
                 ) : null}
-                {canManage && (canLeaveOrganization || canManage) ? <DropdownMenuSeparator /> : null}
+                {canManage && (canLeaveOrganization || canManage) ? (
+                  <DropdownMenuSeparator />
+                ) : null}
                 {canLeaveOrganization ? (
                   <DropdownMenuItem
                     variant="destructive"
@@ -250,15 +252,17 @@ export function OrganizationSettingsManagement({
         </Card>
       ) : null}
 
-      <OrganizationMembersManagement
-        slug={slug}
-        searchParams={searchParams}
-        showHeader={false}
-        inviteDialogOpen={isInviteDialogOpen}
-        onInviteDialogOpenChange={(open) => {
-          setIsInviteDialogOpen(open);
-        }}
-      />
+      {canManage ? (
+        <OrganizationMembersManagement
+          slug={slug}
+          searchParams={searchParams}
+          showHeader={false}
+          inviteDialogOpen={isInviteDialogOpen}
+          onInviteDialogOpenChange={(open) => {
+            setIsInviteDialogOpen(open);
+          }}
+        />
+      ) : null}
 
       <Dialog
         open={isEditDialogOpen}

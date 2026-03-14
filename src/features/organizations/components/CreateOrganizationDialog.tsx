@@ -1,6 +1,8 @@
+import { api } from '@convex/_generated/api';
 import { useForm } from '@tanstack/react-form';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '~/components/ui/button';
@@ -15,8 +17,12 @@ import {
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
-import { authClient } from '~/features/auth/auth-client';
+import { generateOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import {
+  checkOrganizationSlugServerFn,
+  createOrganizationServerFn,
+} from '~/features/organizations/server/organization-management';
 
 interface CreateOrganizationDialogProps {
   open: boolean;
@@ -29,6 +35,12 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
   const router = useRouter();
   const { showToast } = useToast();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const eligibility = useQuery(api.organizationManagement.getOrganizationCreationEligibility, {});
+  const createOrganization = createOrganizationServerFn;
+  const checkOrganizationSlug = checkOrganizationSlugServerFn;
+  const canCreate = eligibility?.canCreate ?? false;
+  const creationReason = eligibility?.reason ?? null;
+  const isEligibilityPending = eligibility === undefined;
 
   const form = useForm({
     defaultValues: {
@@ -43,10 +55,22 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
       setSubmitError(null);
 
       try {
-        const organization = await authClient.organization.create({
-          name,
-          slug: generateOrganizationSlug(name),
-          fetchOptions: { throw: true },
+        const slug = generateOrganizationSlug(name);
+        const slugCheck = await checkOrganizationSlug({
+          data: { slug },
+        });
+        if (!slugCheck.available) {
+          const message = 'That organization URL is already in use. Try a different name.';
+          setSubmitError(message);
+          showToast(message, 'error');
+          return;
+        }
+
+        const organization = await createOrganization({
+          data: {
+            name,
+            slug: slugCheck.slug,
+          },
         });
         await refreshOrganizationClientState(queryClient, {
           invalidateRouter: async () => {
@@ -140,6 +164,9 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
           </form.Field>
 
           {submitError ? <FieldError>{submitError}</FieldError> : null}
+          {creationReason ? (
+            <p className="text-sm text-muted-foreground">{creationReason}</p>
+          ) : null}
 
           <DialogFooter>
             <Button
@@ -153,7 +180,10 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
 
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
               {([canSubmit, isSubmitting]) => (
-                <Button type="submit" disabled={!canSubmit || isSubmitting}>
+                <Button
+                  type="submit"
+                  disabled={!canSubmit || isSubmitting || isEligibilityPending || !canCreate}
+                >
                   {isSubmitting ? (
                     <>
                       <Loader2 className="size-4 animate-spin" />
@@ -170,22 +200,6 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
       </DialogContent>
     </Dialog>
   );
-}
-
-function generateOrganizationSlug(name: string) {
-  const suffix = crypto.randomUUID().slice(0, 8);
-  const base = slugify(name) || 'organization';
-  const maxBaseLength = Math.max(1, 48 - suffix.length - 1);
-
-  return `${base.slice(0, maxBaseLength)}-${suffix}`;
-}
-
-function slugify(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
 }
 
 function getErrorMessage(error: unknown) {

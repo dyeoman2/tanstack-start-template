@@ -245,8 +245,24 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_threadId_and_createdAt', ['threadId', 'createdAt'])
+    .index('by_organizationId_and_threadId_and_createdAt', [
+      'organizationId',
+      'threadId',
+      'createdAt',
+    ])
     .index('by_userId_and_createdAt', ['userId', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+
+  chatAttachmentUploadTokens: defineTable({
+    token: v.string(),
+    userId: v.string(),
+    organizationId: v.string(),
+    sessionId: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_token', ['token'])
+    .index('by_expiresAt', ['expiresAt']),
 
   aiPersonas: defineTable({
     userId: v.string(),

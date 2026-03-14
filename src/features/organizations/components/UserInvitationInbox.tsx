@@ -2,8 +2,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { Building2, Check, Loader2, Mail, X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Button } from '~/components/ui/button';
+import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
 import { authClient, authHooks } from '~/features/auth/auth-client';
@@ -41,8 +41,7 @@ export function UserInvitationInbox() {
   const invitations = useMemo(() => {
     return (data ?? []).filter((invitation) => {
       return (
-        invitation.status === 'pending' &&
-        new Date(invitation.expiresAt).getTime() > Date.now()
+        invitation.status === 'pending' && new Date(invitation.expiresAt).getTime() > Date.now()
       );
     });
   }, [data]);
@@ -63,10 +62,7 @@ export function UserInvitationInbox() {
       showToast('Invitation accepted.', 'success');
       await navigate({ to: '/app/organizations' });
     } catch (error) {
-      showToast(
-        getOrganizationActionErrorMessage(error, 'Failed to accept invitation'),
-        'error',
-      );
+      showToast(getOrganizationActionErrorMessage(error, 'Failed to accept invitation'), 'error');
     } finally {
       setPendingInvitationId(null);
     }
@@ -83,10 +79,7 @@ export function UserInvitationInbox() {
       await refreshOrganizationClientState(queryClient);
       showToast('Invitation rejected.', 'success');
     } catch (error) {
-      showToast(
-        getOrganizationActionErrorMessage(error, 'Failed to reject invitation'),
-        'error',
-      );
+      showToast(getOrganizationActionErrorMessage(error, 'Failed to reject invitation'), 'error');
     } finally {
       setPendingInvitationId(null);
     }
@@ -123,7 +116,9 @@ export function UserInvitationInbox() {
                 </div>
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate font-medium text-foreground">{invitation.organizationName}</p>
+                    <p className="truncate font-medium text-foreground">
+                      {invitation.organizationName}
+                    </p>
                     <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
                       {invitation.role}
                     </span>
@@ -147,7 +142,11 @@ export function UserInvitationInbox() {
                   }}
                   disabled={isWorking}
                 >
-                  {isWorking ? <Loader2 className="size-4 animate-spin" /> : <X className="size-4" />}
+                  {isWorking ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <X className="size-4" />
+                  )}
                   Reject
                 </Button>
                 <Button

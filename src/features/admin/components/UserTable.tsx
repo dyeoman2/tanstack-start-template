@@ -1,6 +1,15 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Ban, Clock3, Edit3, LogIn, MailWarning, MoreHorizontal, Shield, Trash2 } from 'lucide-react';
+import {
+  Ban,
+  Clock3,
+  Edit3,
+  LogIn,
+  MailWarning,
+  MoreHorizontal,
+  Shield,
+  Trash2,
+} from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
 import { Avatar, AvatarFallback, AvatarImage } from '~/components/ui/avatar';
@@ -14,11 +23,8 @@ import {
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+import { getOnboardingStatusLabel, isRetryableOnboardingStatus } from '~/lib/shared/onboarding';
 import { DEFAULT_ROLE, USER_ROLES } from '../../auth/types';
-import {
-  getOnboardingStatusLabel,
-  isRetryableOnboardingStatus,
-} from '~/lib/shared/onboarding';
 import type { User as AdminUser } from '../types';
 
 type UserRow = AdminUser;

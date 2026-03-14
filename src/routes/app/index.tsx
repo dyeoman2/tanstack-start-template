@@ -3,8 +3,8 @@ import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useState } from 'react';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { Dashboard } from '~/features/dashboard/components/Dashboard';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { Dashboard } from '~/features/dashboard/components/Dashboard';
 import { usePerformanceMonitoring } from '~/hooks/use-performance-monitoring';
 
 export const Route = createFileRoute('/app/')({

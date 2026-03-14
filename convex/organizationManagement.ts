@@ -33,9 +33,11 @@ import {
   allowedResultValidator,
   chatThreadsDocValidator,
   directoryOrganizationValidator,
+  organizationCreationEligibilityValidator,
   organizationDirectoryResponseValidator,
   organizationSettingsValidator,
 } from './lib/returnValidators';
+import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -79,10 +81,11 @@ type OrganizationInvitationRow = {
 
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
+const SELF_SERVE_ORGANIZATION_LIMIT = 2;
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
   if (!value) {
-    return Date.now();
+    return 0;
   }
 
   if (typeof value === 'number') {
@@ -96,8 +99,42 @@ function toTimestamp(value: string | number | Date | undefined | null): number {
   return new Date(value).getTime();
 }
 
-function isInvitationExpired(expiresAt: string | number | Date | undefined | null) {
-  return toTimestamp(expiresAt) <= Date.now();
+function isInvitationExpired(expiresAt: string | number | Date | undefined | null, asOf: number) {
+  return toTimestamp(expiresAt) <= asOf;
+}
+
+function matchesOrganizationDirectorySearch(row: OrganizationDirectoryRow, searchValue: string) {
+  return (
+    row.email.toLowerCase().includes(searchValue) ||
+    (row.name?.toLowerCase().includes(searchValue) ?? false)
+  );
+}
+
+function sortOrganizationDirectoryRows(
+  rows: OrganizationDirectoryRow[],
+  args: {
+    sortBy: OrganizationDirectorySortField;
+    sortOrder: OrganizationDirectorySortDirection;
+    secondarySortBy: OrganizationDirectorySortField;
+    secondarySortOrder: OrganizationDirectorySortDirection;
+  },
+) {
+  return [...rows].sort((left, right) => {
+    const primary = compareValues(
+      sortValue(left, args.sortBy),
+      sortValue(right, args.sortBy),
+      args.sortOrder,
+    );
+    if (primary !== 0) {
+      return primary;
+    }
+
+    return compareValues(
+      sortValue(left, args.secondarySortBy),
+      sortValue(right, args.secondarySortBy),
+      args.secondarySortOrder,
+    );
+  });
 }
 
 async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
@@ -223,6 +260,39 @@ export const listOrganizationsForDirectory = query({
         (organization): organization is NonNullable<typeof organization> => organization !== null,
       )
       .sort((left, right) => left.name.localeCompare(right.name));
+  },
+});
+
+export const getOrganizationCreationEligibility = query({
+  args: {},
+  returns: organizationCreationEligibilityValidator,
+  handler: async (ctx) => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+
+    if (user.isSiteAdmin) {
+      const memberships = await listOrganizationMembersForUser(ctx, user.authUserId);
+      return {
+        count: memberships.length,
+        limit: null,
+        canCreate: true,
+        reason: null,
+        isUnlimited: true,
+      };
+    }
+
+    const memberships = await listOrganizationMembersForUser(ctx, user.authUserId);
+    const count = memberships.length;
+    const canCreate = count < SELF_SERVE_ORGANIZATION_LIMIT;
+
+    return {
+      count,
+      limit: SELF_SERVE_ORGANIZATION_LIMIT,
+      canCreate,
+      reason: canCreate
+        ? null
+        : `You can belong to up to ${SELF_SERVE_ORGANIZATION_LIMIT} organizations.`,
+      isUnlimited: false,
+    };
   },
 });
 
@@ -362,6 +432,7 @@ export const getOrganizationWriteAccess = query({
 export const listOrganizationDirectory = query({
   args: {
     slug: v.string(),
+    asOf: v.number(),
     page: v.number(),
     pageSize: v.number(),
     sortBy: v.union(
@@ -388,7 +459,7 @@ export const listOrganizationDirectory = query({
   returns: v.union(organizationDirectoryResponseValidator, v.null()),
   handler: async (ctx, args) => {
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-    if (!context || !context.access.view) {
+    if (!context || !context.access.view || !canManageOrganization(context.viewerRole)) {
       return null;
     }
 
@@ -403,46 +474,6 @@ export const listOrganizationDirectory = query({
     ]);
 
     const ownerCount = memberships.filter((membership) => membership.role === 'owner').length;
-    const authUsers = await fetchBetterAuthUsersByIds(
-      ctx,
-      memberships.map((membership) => membership.userId),
-    );
-    const authUsersById = new Map(
-      authUsers.map((authUser) => [(authUser.id ?? authUser._id) as string, authUser]),
-    );
-
-    const memberRows: OrganizationMemberRow[] = memberships.map((membership) => {
-      const authUser = authUsersById.get(membership.userId);
-      const role = normalizeOrganizationRole(membership.role);
-      const availableRoles = getAssignableRoles(context.viewerRole, role, ownerCount);
-
-      return {
-        id: `member:${membership._id ?? membership.userId}`,
-        kind: 'member',
-        membershipId: membership._id ?? '',
-        authUserId: membership.userId,
-        name: authUser?.name ?? null,
-        email: authUser?.email ?? '',
-        role,
-        status: 'active',
-        createdAt: toTimestamp(membership.createdAt),
-        isSiteAdmin: authUser ? deriveIsSiteAdmin(normalizeUserRole(authUser.role)) : false,
-        availableRoles,
-        canChangeRole: canChangeMemberRole(
-          context.viewerRole,
-          role,
-          availableRoles,
-          membership.userId === context.user.authUserId,
-        ),
-        canRemove: canRemoveMember(
-          context.viewerRole,
-          role,
-          membership.userId === context.user.authUserId,
-          ownerCount,
-        ),
-      };
-    });
-
     const invitationRows: OrganizationInvitationRow[] = invitations
       .filter((invitation) => invitation.status === 'pending')
       .map(
@@ -454,7 +485,7 @@ export const listOrganizationDirectory = query({
             name: null,
             email: invitation.email,
             role: invitation.role === 'admin' ? 'admin' : 'member',
-            status: isInvitationExpired(invitation.expiresAt) ? 'expired' : 'pending',
+            status: isInvitationExpired(invitation.expiresAt, args.asOf) ? 'expired' : 'pending',
             createdAt: toTimestamp(invitation.createdAt),
             expiresAt: toTimestamp(invitation.expiresAt),
             canRevoke:
@@ -466,37 +497,163 @@ export const listOrganizationDirectory = query({
       .filter((invitation) => invitation.invitationId.length > 0);
 
     const searchValue = args.search.trim().toLowerCase();
-    let rows: OrganizationDirectoryRow[] = [...memberRows, ...invitationRows];
+    const inviteCount = invitationRows.length;
+    const shouldIncludeInvites = args.kind === 'all' || args.kind === 'invite';
+    const shouldIncludeMembers = args.kind === 'all' || args.kind === 'member';
+    const needsAllMembersHydrated =
+      shouldIncludeMembers &&
+      (args.kind === 'all' ||
+        searchValue.length > 0 ||
+        args.sortBy === 'name' ||
+        args.sortBy === 'email' ||
+        args.secondarySortBy === 'name' ||
+        args.secondarySortBy === 'email');
 
-    if (args.kind !== 'all') {
-      rows = rows.filter((row) => row.kind === args.kind);
+    let memberRows: OrganizationMemberRow[] = [];
+    let memberCount = memberships.length;
+
+    if (needsAllMembersHydrated) {
+      const authUsers = await fetchBetterAuthUsersByIds(
+        ctx,
+        memberships.map((membership) => membership.userId),
+      );
+      const authUsersById = new Map(
+        authUsers.map((authUser) => [(authUser.id ?? authUser._id) as string, authUser]),
+      );
+
+      memberRows = memberships.map((membership) => {
+        const authUser = authUsersById.get(membership.userId);
+        const role = normalizeOrganizationRole(membership.role);
+        const availableRoles = getAssignableRoles(context.viewerRole, role, ownerCount);
+
+        return {
+          id: `member:${membership._id ?? membership.userId}`,
+          kind: 'member',
+          membershipId: membership._id ?? '',
+          authUserId: membership.userId,
+          name: authUser?.name ?? null,
+          email: authUser?.email ?? '',
+          role,
+          status: 'active',
+          createdAt: toTimestamp(membership.createdAt),
+          isSiteAdmin: authUser ? deriveIsSiteAdmin(normalizeUserRole(authUser.role)) : false,
+          availableRoles,
+          canChangeRole: canChangeMemberRole(
+            context.viewerRole,
+            role,
+            availableRoles,
+            membership.userId === context.user.authUserId,
+          ),
+          canRemove: canRemoveMember(
+            context.viewerRole,
+            role,
+            membership.userId === context.user.authUserId,
+            ownerCount,
+          ),
+        };
+      });
+    } else if (shouldIncludeMembers) {
+      const lightweightMemberRows = sortOrganizationDirectoryRows(
+        memberships.map((membership) => {
+          const role = normalizeOrganizationRole(membership.role);
+          const availableRoles = getAssignableRoles(context.viewerRole, role, ownerCount);
+
+          return {
+            id: `member:${membership._id ?? membership.userId}`,
+            kind: 'member' as const,
+            membershipId: membership._id ?? '',
+            authUserId: membership.userId,
+            name: null,
+            email: '',
+            role,
+            status: 'active' as const,
+            createdAt: toTimestamp(membership.createdAt),
+            isSiteAdmin: false,
+            availableRoles,
+            canChangeRole: canChangeMemberRole(
+              context.viewerRole,
+              role,
+              availableRoles,
+              membership.userId === context.user.authUserId,
+            ),
+            canRemove: canRemoveMember(
+              context.viewerRole,
+              role,
+              membership.userId === context.user.authUserId,
+              ownerCount,
+            ),
+          };
+        }),
+        args,
+      );
+
+      memberCount = lightweightMemberRows.length;
+
+      const combinedRows = shouldIncludeInvites
+        ? sortOrganizationDirectoryRows([...lightweightMemberRows, ...invitationRows], args)
+        : lightweightMemberRows;
+      const filteredRows =
+        searchValue.length > 0
+          ? combinedRows.filter((row) => matchesOrganizationDirectorySearch(row, searchValue))
+          : combinedRows;
+      const total = filteredRows.length;
+      const start = Math.max(0, (args.page - 1) * args.pageSize);
+      const end = start + args.pageSize;
+      const pagedMemberIds = filteredRows
+        .slice(start, end)
+        .filter((row): row is OrganizationMemberRow => row.kind === 'member')
+        .map((row) => row.authUserId);
+      const authUsers = await fetchBetterAuthUsersByIds(ctx, pagedMemberIds);
+      const authUsersById = new Map(
+        authUsers.map((authUser) => [(authUser.id ?? authUser._id) as string, authUser]),
+      );
+      const hydratedRows = filteredRows.slice(start, end).map((row) => {
+        if (row.kind !== 'member') {
+          return row;
+        }
+
+        const authUser = authUsersById.get(row.authUserId);
+        return {
+          ...row,
+          name: authUser?.name ?? null,
+          email: authUser?.email ?? '',
+          isSiteAdmin: authUser ? deriveIsSiteAdmin(normalizeUserRole(authUser.role)) : false,
+        } satisfies OrganizationMemberRow;
+      });
+
+      return {
+        organization: {
+          id: organizationId,
+          slug: context.organization.slug,
+          name: context.organization.name,
+          logo: context.organization.logo ?? null,
+        },
+        access: context.access,
+        viewerRole: context.viewerRole,
+        rows: hydratedRows,
+        counts: {
+          members: memberCount,
+          invites: inviteCount,
+        },
+        pagination: {
+          page: args.page,
+          pageSize: args.pageSize,
+          total,
+          totalPages: Math.ceil(total / args.pageSize),
+        },
+      };
     }
+
+    let rows: OrganizationDirectoryRow[] = [
+      ...(shouldIncludeMembers ? memberRows : []),
+      ...(shouldIncludeInvites ? invitationRows : []),
+    ];
 
     if (searchValue.length > 0) {
-      rows = rows.filter((row) => {
-        return (
-          row.email.toLowerCase().includes(searchValue) ||
-          (row.name?.toLowerCase().includes(searchValue) ?? false)
-        );
-      });
+      rows = rows.filter((row) => matchesOrganizationDirectorySearch(row, searchValue));
     }
 
-    rows = [...rows].sort((left, right) => {
-      const primary = compareValues(
-        sortValue(left, args.sortBy),
-        sortValue(right, args.sortBy),
-        args.sortOrder,
-      );
-      if (primary !== 0) {
-        return primary;
-      }
-
-      return compareValues(
-        sortValue(left, args.secondarySortBy),
-        sortValue(right, args.secondarySortBy),
-        args.secondarySortOrder,
-      );
-    });
+    rows = sortOrganizationDirectoryRows(rows, args);
 
     const total = rows.length;
     const start = Math.max(0, (args.page - 1) * args.pageSize);
@@ -513,8 +670,8 @@ export const listOrganizationDirectory = query({
       viewerRole: context.viewerRole,
       rows: rows.slice(start, end),
       counts: {
-        members: memberRows.length,
-        invites: invitationRows.length,
+        members: memberCount,
+        invites: inviteCount,
       },
       pagination: {
         page: args.page,
@@ -554,17 +711,7 @@ export const deleteOrganizationStandaloneAttachmentsBatch = internalMutation({
   },
   returns: v.number(),
   handler: async (ctx, args) => {
-    const attachments = await ctx.db
-      .query('chatAttachments')
-      .withIndex('by_organizationId_and_createdAt', (q) =>
-        q.eq('organizationId', args.organizationId),
-      )
-      .order('asc')
-      .take(args.limit);
-
-    const standaloneAttachments = attachments.filter(
-      (attachment) => attachment.threadId === undefined,
-    );
+    const standaloneAttachments = await listStandaloneAttachmentsForOrganization(ctx, args);
     await Promise.all(
       standaloneAttachments.map(async (attachment) => {
         if (attachment.rawStorageId) {

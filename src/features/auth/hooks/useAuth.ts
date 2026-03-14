@@ -1,6 +1,5 @@
 import { api } from '@convex/_generated/api';
-import { useConvexAuth } from 'convex/react';
-import { useQuery } from 'convex/react';
+import { useConvexAuth, useQuery } from 'convex/react';
 import { useMemo } from 'react';
 import { useSession } from '~/features/auth/auth-client';
 import { deriveIsSiteAdmin } from '../lib/user-role';
@@ -43,7 +42,8 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Use the lightweight auth state hook
   const authState = useAuthState();
-  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
   const { data: session, isPending: sessionPending, error } = useSession();
 
   const hasSession = authState.isAuthenticated;
@@ -57,12 +57,16 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
   const impersonatedByUserId =
-    typeof session?.session?.impersonatedBy === 'string' && session.session.impersonatedBy.length > 0
+    typeof session?.session?.impersonatedBy === 'string' &&
+    session.session.impersonatedBy.length > 0
       ? session.session.impersonatedBy
       : undefined;
   const isImpersonating = impersonatedByUserId !== undefined;
 
-  const isPending = sessionPending || shouldWaitForConvexAuth || (canUseConvex && shouldFetchProfile && profile === undefined);
+  const isPending =
+    sessionPending ||
+    shouldWaitForConvexAuth ||
+    (canUseConvex && shouldFetchProfile && profile === undefined);
 
   // Determine role: use profile role if available, otherwise default to user
   // If we're not fetching roles, default to user
@@ -86,7 +90,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
             emailVerified: session.user.emailVerified,
             requiresEmailVerification,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
-            currentOrganization: shouldFetchProfile ? profile?.currentOrganization ?? null : null,
+            currentOrganization: shouldFetchProfile ? (profile?.currentOrganization ?? null) : null,
           }
         : null,
       isAuthenticated: canUseConvex,

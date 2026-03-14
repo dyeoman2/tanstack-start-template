@@ -1,6 +1,8 @@
+import { api } from '@convex/_generated/api';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import type { Organization } from 'better-auth/plugins/organization';
+import { useQuery } from 'convex/react';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
 import * as React from 'react';
 import {
@@ -24,6 +26,7 @@ import { CreateOrganizationDialog } from '~/features/organizations/components/Cr
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 
 type OrganizationSwitcherItem = {
+  id?: string;
   name: string;
   logo: React.ElementType;
   description: string;
@@ -39,12 +42,20 @@ export function OrganizationSwitcher() {
   const { showToast } = useToast();
   const { data: organizations, isPending: organizationsPending } = authHooks.useListOrganizations();
   const { data: activeOrganization } = authHooks.useActiveOrganization();
-  const [activeOrganizationItem, setActiveOrganizationItem] =
-    React.useState<OrganizationSwitcherItem | null>(null);
+  const eligibility = useQuery(api.organizationManagement.getOrganizationCreationEligibility, {});
+  const [activeOrganizationItem, setActiveOrganizationItem] = React.useState<OrganizationSwitcherItem>({
+    name: 'Select organization',
+    logo: Building2,
+    description: 'Choose a workspace',
+    to: '/app/organizations',
+  });
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
+  const canCreateOrganization = eligibility?.canCreate ?? false;
+  const creationReason = eligibility?.reason ?? null;
 
   const organizationItems = React.useMemo<OrganizationSwitcherItem[]>(() => {
     return (organizations ?? []).map((organization) => ({
+      id: organization.id,
       name: organization.name,
       logo: Building2,
       description: 'Organization workspace',
@@ -53,27 +64,26 @@ export function OrganizationSwitcher() {
   }, [organizations]);
 
   React.useEffect(() => {
-    const organizationSlug = getOrganizationSlugFromPath(location.pathname);
-    const matchedOrganizationItem =
-      (organizationSlug
-        ? organizationItems.find((organization) =>
-            organization.to.startsWith(`/app/organizations/${organizationSlug}/`),
-          )
-        : null) ??
-      (location.pathname.startsWith('/app/organizations') && activeOrganization
-        ? (organizationItems.find(
-            (organization) => organization.name === activeOrganization.name,
-          ) ?? null)
-        : null) ??
-      organizationItems[0] ??
-      null;
+    const matchedOrganizationItem = activeOrganization
+      ? (organizationItems.find((organization) => organization.id === activeOrganization.id) ?? {
+          id: activeOrganization.id,
+          name: activeOrganization.name,
+          logo: Building2,
+          description: 'Organization workspace',
+          to: `/app/organizations/${activeOrganization.slug}/settings`,
+        })
+      : {
+          name: organizations && organizations.length > 0 ? 'Select organization' : 'No organization',
+          logo: Building2,
+          description:
+            organizations && organizations.length > 0
+              ? 'Choose a workspace'
+              : 'Create your first organization',
+          to: '/app/organizations',
+        };
 
     setActiveOrganizationItem(matchedOrganizationItem);
-  }, [activeOrganization, location.pathname, organizationItems]);
-
-  if (!activeOrganizationItem) {
-    return null;
-  }
+  }, [activeOrganization, location.pathname, organizationItems, organizations]);
 
   return (
     <SidebarMenu>
@@ -141,7 +151,13 @@ export function OrganizationSwitcher() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               className="gap-2 p-2"
+              disabled={!canCreateOrganization}
               onSelect={(event) => {
+                if (!canCreateOrganization) {
+                  event.preventDefault();
+                  return;
+                }
+
                 event.preventDefault();
                 setCreateDialogOpen(true);
               }}
@@ -149,7 +165,11 @@ export function OrganizationSwitcher() {
               <div className="flex size-6 items-center justify-center rounded-md border bg-background">
                 <Plus className="size-4" />
               </div>
-              <div className="font-medium text-muted-foreground">Add organization</div>
+              <div className="font-medium text-muted-foreground">
+                {canCreateOrganization
+                  ? 'Add organization'
+                  : (creationReason ?? 'Add organization')}
+              </div>
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -184,6 +204,7 @@ async function handleOrganizationSelect({
     });
 
     const nextOrganization = {
+      id: organization.id,
       name: organization.name,
       logo: Building2,
       description: 'Organization workspace',
@@ -204,11 +225,6 @@ async function handleOrganizationSelect({
   } catch (error) {
     onError(getErrorMessage(error), 'error');
   }
-}
-
-function getOrganizationSlugFromPath(pathname: string) {
-  const match = pathname.match(/^\/app\/organizations\/([^/]+)/);
-  return match?.[1] ?? null;
 }
 
 function getInitials(name: string) {

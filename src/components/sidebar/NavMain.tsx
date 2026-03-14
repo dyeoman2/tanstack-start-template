@@ -1,10 +1,6 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { ChevronRight, type LucideIcon } from 'lucide-react';
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '~/components/ui/collapsible';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/components/ui/collapsible';
 import {
   SidebarGroup,
   SidebarGroupLabel,
@@ -34,7 +30,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
     <SidebarGroup>
       <SidebarGroupLabel>Platform</SidebarGroupLabel>
       <SidebarMenu>
-        {items.map((item) => (
+        {items.map((item) =>
           item.items?.length ? (
             <Collapsible
               key={item.title}
@@ -74,8 +70,8 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
-          )
-        ))}
+          ),
+        )}
       </SidebarMenu>
     </SidebarGroup>
   );

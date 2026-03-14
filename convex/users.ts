@@ -1,16 +1,16 @@
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
-import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
+import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
+import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import type { MutationCtx } from './_generated/server';
+import type { ActionCtx, MutationCtx } from './_generated/server';
 import {
   action,
   internalAction,
@@ -19,22 +19,23 @@ import {
   mutation,
   query,
 } from './_generated/server';
-import { authComponent } from './auth';
+import { authComponent, createAuth } from './auth';
 import {
   buildCurrentUserProfile,
   type CurrentUserProfile,
   getCurrentAuthUserOrNull,
+  getCurrentAuthUserOrThrow,
   getCurrentUserOrNull,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
   type BetterAuthOrganization,
   type BetterAuthUser,
-  createBetterAuthMember,
-  createBetterAuthOrganization,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
+  fetchBetterAuthSessionsByUserId,
   normalizeBetterAuthUserProfile,
+  updateBetterAuthSessionRecord,
 } from './lib/betterAuth';
 import {
   bootstrapUserContextResultValidator,
@@ -46,6 +47,7 @@ import {
   userContextRecordsValidator,
   userCountValidator,
 } from './lib/returnValidators';
+import { buildPersistedOnboardingState as buildPersistedOnboardingStateBase } from './lib/onboardingState';
 
 type EnsureUserContextArgs = {
   authUserId: string;
@@ -75,8 +77,8 @@ type UserProfileDocument = Doc<'userProfiles'>;
 
 type OnboardingStatePatch = {
   onboardingStatus?: OnboardingStatus;
-  onboardingEmailId?: string | undefined;
-  onboardingEmailMessageId?: string | undefined;
+  onboardingEmailId?: string | null | undefined;
+  onboardingEmailMessageId?: string | null | undefined;
   onboardingEmailLastSentAt?: number | undefined;
   onboardingCompletedAt?: number | undefined;
   onboardingDeliveryUpdatedAt?: number | undefined;
@@ -109,18 +111,11 @@ function buildPersistedOnboardingState(
   existing: UserProfileDocument | null,
   patch?: OnboardingStatePatch,
 ) {
-  return {
-    onboardingStatus: patch?.onboardingStatus ?? existing?.onboardingStatus ?? 'not_started',
-    onboardingEmailId: patch?.onboardingEmailId ?? existing?.onboardingEmailId,
-    onboardingEmailMessageId: patch?.onboardingEmailMessageId ?? existing?.onboardingEmailMessageId,
-    onboardingEmailLastSentAt:
-      patch?.onboardingEmailLastSentAt ?? existing?.onboardingEmailLastSentAt,
-    onboardingCompletedAt: patch?.onboardingCompletedAt ?? existing?.onboardingCompletedAt,
-    onboardingDeliveryUpdatedAt:
-      patch?.onboardingDeliveryUpdatedAt ?? existing?.onboardingDeliveryUpdatedAt,
-    onboardingDeliveryError:
-      patch?.onboardingDeliveryError ?? existing?.onboardingDeliveryError ?? null,
-  };
+  return buildPersistedOnboardingStateBase({
+    existing,
+    patch,
+    defaultStatus: 'not_started',
+  });
 }
 
 function slugify(value: string): string {
@@ -132,22 +127,10 @@ function slugify(value: string): string {
     .slice(0, 48);
 }
 
-async function resolveActiveOrganizationForUser(
-  ctx: MutationCtx,
-  authUserId: string,
-) {
+async function resolveActiveOrganizationForUser(ctx: MutationCtx, authUserId: string) {
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
   if (memberships.length === 0) {
-    const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
-    const organizationId = organization._id ?? organization.id;
-    if (!organizationId) {
-      throw new Error('Failed to initialize default organization');
-    }
-
-    return {
-      organization,
-      organizationId,
-    };
+    return null;
   }
 
   const organizations = await fetchBetterAuthOrganizationsByIds(
@@ -168,16 +151,7 @@ async function resolveActiveOrganizationForUser(
     }
   }
 
-  const organization = await createDefaultOrganization(ctx, authUserId, Date.now());
-  const organizationId = organization._id ?? organization.id;
-  if (!organizationId) {
-    throw new Error('Failed to initialize default organization');
-  }
-
-  return {
-    organization,
-    organizationId,
-  };
+  return null;
 }
 
 async function patchAiOwnershipToOrganization(
@@ -191,25 +165,34 @@ async function patchAiOwnershipToOrganization(
 }
 
 async function createDefaultOrganization(
-  ctx: MutationCtx,
+  ctx: ActionCtx,
   authUserId: string,
   now: number,
 ): Promise<BetterAuthOrganization> {
-  const slug = `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`;
-  const organization = await createBetterAuthOrganization(ctx, {
-    name: 'New Organization',
-    slug,
-    createdAt: now,
+  const auth = createAuth(ctx);
+  const response = await (
+    (auth.api as unknown) as {
+      createOrganization: (input: {
+        body: {
+          keepCurrentActiveOrganization?: boolean;
+          name: string;
+          slug: string;
+          userId?: string;
+        };
+        headers: Headers;
+      }) => Promise<BetterAuthOrganization>;
+    }
+  ).createOrganization({
+    body: {
+      keepCurrentActiveOrganization: false,
+      name: 'New Organization',
+      slug: `${slugify(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`,
+      userId: authUserId,
+    },
+    headers: new Headers(),
   });
 
-  await createBetterAuthMember(ctx, {
-    organizationId: organization._id ?? organization.id,
-    userId: authUserId,
-    role: 'owner',
-    createdAt: now,
-  });
-
-  return organization;
+  return response;
 }
 
 async function ensureUserContextRecord(
@@ -222,6 +205,10 @@ async function ensureUserContextRecord(
     .first();
 
   const resolvedOrganization = await resolveActiveOrganizationForUser(ctx, args.authUserId);
+  if (!resolvedOrganization) {
+    throw new Error('User must belong to an organization before user context can be initialized');
+  }
+
   const organizationId = resolvedOrganization.organizationId;
 
   if (!user) {
@@ -294,9 +281,11 @@ export const getUserCount = query({
     let totalUsers = 0;
     let cursor: string | null = null;
 
-    try {
-      while (true) {
-        const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    while (true) {
+      let rawResult: unknown;
+
+      try {
+        rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
           model: 'user',
           paginationOpts: {
             cursor,
@@ -304,18 +293,22 @@ export const getUserCount = query({
             id: 0,
           },
         });
-
-        const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
-        totalUsers += normalized.page.length;
-
-        if (normalized.isDone || normalized.continueCursor === null) {
-          break;
-        }
-
-        cursor = normalized.continueCursor;
+      } catch (error) {
+        console.error('Failed to query Better Auth users:', error);
+        throw new ConvexError({
+          code: 'INTERNAL_ERROR',
+          message: 'Unable to determine the current user count.',
+        });
       }
-    } catch (error) {
-      console.error('Failed to query Better Auth users:', error);
+
+      const normalized = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(rawResult);
+      totalUsers += normalized.page.length;
+
+      if (normalized.isDone || normalized.continueCursor === null) {
+        break;
+      }
+
+      cursor = normalized.continueCursor;
     }
 
     return {
@@ -362,8 +355,8 @@ export const setAuthUserOnboardingState = internalMutation({
         v.literal('completed'),
       ),
     ),
-    onboardingEmailId: v.optional(v.string()),
-    onboardingEmailMessageId: v.optional(v.string()),
+    onboardingEmailId: v.optional(v.union(v.string(), v.null())),
+    onboardingEmailMessageId: v.optional(v.union(v.string(), v.null())),
     onboardingEmailLastSentAt: v.optional(v.number()),
     onboardingCompletedAt: v.optional(v.number()),
     onboardingDeliveryUpdatedAt: v.optional(v.number()),
@@ -574,6 +567,28 @@ export const bootstrapUserContext = internalAction({
       });
     }
 
+    const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, args.authUserId);
+    if (existingMemberships.length === 0) {
+      const organization = await createDefaultOrganization(ctx, args.authUserId, args.createdAt);
+      const organizationId = organization._id ?? organization.id;
+      if (!organizationId) {
+        throw new Error('Failed to initialize default organization');
+      }
+
+      const sessions = await fetchBetterAuthSessionsByUserId(ctx, args.authUserId);
+      await Promise.all(
+        sessions.map(async (session) => {
+          if (session.activeOrganizationId) {
+            return;
+          }
+
+          await updateBetterAuthSessionRecord(ctx, session._id, {
+            activeOrganizationId: organizationId,
+          });
+        }),
+      );
+    }
+
     const result = await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
       authUserId: args.authUserId,
       createdAt: args.createdAt,
@@ -601,7 +616,9 @@ export const rollbackBootstrapUserContext = internalAction({
     } as const;
 
     const memberships = await fetchBetterAuthMembersByUserId(ctx, args.authUserId);
-    const organizationIds = [...new Set(memberships.map((membership) => membership.organizationId))];
+    const organizationIds = [
+      ...new Set(memberships.map((membership) => membership.organizationId)),
+    ];
 
     for (const organizationId of organizationIds) {
       const rawMemberships = await ctx.runQuery(components.betterAuth.adapter.findMany, {
@@ -739,17 +756,21 @@ export const deleteUserContextRecords = internalMutation({
   },
 });
 
-export const ensureCurrentUserContext = mutation({
+export const ensureCurrentUserContext = action({
   args: {},
   returns: ensureUserContextResultValidator,
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<EnsureUserContextResult> => {
     const authUser = await authComponent.getAuthUser(ctx);
     if (!authUser) {
-      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+      throw new Error('Not authenticated');
+    }
+    const authUserId = assertUserId(authUser, 'User ID not found in auth user');
+    const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+    if (existingMemberships.length === 0) {
+      await createDefaultOrganization(ctx, authUserId, Date.now());
     }
 
-    const authUserId = assertUserId(authUser, 'User ID not found in auth user');
-    return await ensureUserContextRecord(ctx, {
+    return await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
       authUserId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -764,11 +785,7 @@ export const updateCurrentUserProfile = mutation({
   },
   returns: successTrueValidator,
   handler: async (ctx, args) => {
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
-      throwConvexError('UNAUTHENTICATED', 'Not authenticated');
-    }
-
+    const authUser = await getCurrentAuthUserOrThrow(ctx);
     const userId = assertUserId(authUser, 'User ID not found in auth user');
     const updateData: {
       name?: string;

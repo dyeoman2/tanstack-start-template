@@ -124,9 +124,7 @@ describe('ChatComposer', () => {
     await user.hover(button.parentElement as HTMLElement);
 
     expect(
-      (
-        await screen.findAllByText('Claude 3.5 Sonnet does not support web search.')
-      ).length,
+      (await screen.findAllByText('Claude 3.5 Sonnet does not support web search.')).length,
     ).toBeGreaterThan(0);
   });
 

@@ -5,14 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { NotFound } from '~/components/NotFound';
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({
-    children,
-    to,
-    ...props
-  }: {
-    children: ReactNode;
-    to: string;
-  }) => (
+  Link: ({ children, to, ...props }: { children: ReactNode; to: string }) => (
     <a href={to} {...props}>
       {children}
     </a>
@@ -31,7 +24,9 @@ describe('NotFound', () => {
     render(<NotFound>Custom empty state</NotFound>);
 
     expect(screen.getByText('Custom empty state')).toBeInTheDocument();
-    expect(screen.queryByText(/the page you are looking for does not exist/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/the page you are looking for does not exist/i),
+    ).not.toBeInTheDocument();
   });
 
   it('goes back when the go-back button is clicked', async () => {

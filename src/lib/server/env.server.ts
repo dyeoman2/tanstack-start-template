@@ -40,6 +40,18 @@ function isLoopbackHostname(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1';
 }
 
+function isDevelopmentRuntime(): boolean {
+  return process.env.NODE_ENV !== 'production';
+}
+
+function getLoopbackHostPatterns(): string[] {
+  return ['localhost:*', '127.0.0.1:*'];
+}
+
+function getLoopbackOriginPatterns(): string[] {
+  return ['http://localhost:*', 'http://127.0.0.1:*'];
+}
+
 function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 }
@@ -56,10 +68,7 @@ function matchesWildcardPattern(value: string, pattern: string): boolean {
     return normalizedValue === normalizedPattern;
   }
 
-  const regex = new RegExp(
-    `^${normalizedPattern.split('*').map(escapeRegex).join('.*')}$`,
-    'i',
-  );
+  const regex = new RegExp(`^${normalizedPattern.split('*').map(escapeRegex).join('.*')}$`, 'i');
 
   return regex.test(normalizedValue);
 }
@@ -104,10 +113,10 @@ export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
     const origin = new URL(siteUrl);
     allowedHosts.add(origin.host.toLowerCase());
 
-    if (isLoopbackHostname(origin.hostname)) {
-      const port = origin.port || '3000';
-      allowedHosts.add(`localhost:${port}`);
-      allowedHosts.add(`127.0.0.1:${port}`);
+    if (isLoopbackHostname(origin.hostname) || isDevelopmentRuntime()) {
+      for (const loopbackHostPattern of getLoopbackHostPatterns()) {
+        allowedHosts.add(loopbackHostPattern);
+      }
     }
   } catch {
     // Ignore malformed site url here; caller already has fallback behavior.
@@ -123,10 +132,7 @@ export function getBetterAuthAllowedHosts(siteUrl = getSiteUrl()): string[] {
   return [...allowedHosts];
 }
 
-export function isTrustedBetterAuthOrigin(
-  candidate: string,
-  siteUrl = getSiteUrl(),
-): boolean {
+export function isTrustedBetterAuthOrigin(candidate: string, siteUrl = getSiteUrl()): boolean {
   let origin: URL;
   try {
     origin = new URL(candidate);
@@ -156,11 +162,11 @@ export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[]
 
   try {
     const origin = new URL(siteUrl);
-    const isLoopbackHost = isLoopbackHostname(origin.hostname);
 
-    if (isLoopbackHost) {
-      trustedOrigins.add(`http://localhost:${origin.port || '3000'}`);
-      trustedOrigins.add(`http://127.0.0.1:${origin.port || '3000'}`);
+    if (isLoopbackHostname(origin.hostname) || isDevelopmentRuntime()) {
+      for (const loopbackOriginPattern of getLoopbackOriginPatterns()) {
+        trustedOrigins.add(loopbackOriginPattern);
+      }
     }
   } catch {
     // getSiteUrl already normalizes inputs, so this is only a defensive fallback.
@@ -176,10 +182,7 @@ export function getConfiguredBetterAuthOrigins(siteUrl = getSiteUrl()): string[]
   return [...trustedOrigins];
 }
 
-export function getBetterAuthTrustedOrigins(
-  request?: Request,
-  siteUrl = getSiteUrl(),
-): string[] {
+export function getBetterAuthTrustedOrigins(request?: Request, siteUrl = getSiteUrl()): string[] {
   const trustedOrigins = new Set<string>(getConfiguredBetterAuthOrigins(siteUrl));
 
   if (!request) {
@@ -198,11 +201,13 @@ export function getBetterAuthTrustedOrigins(
   return [...trustedOrigins];
 }
 
-export function getBetterAuthBaseUrlConfig(): string | {
-  allowedHosts: string[];
-  fallback?: string;
-  protocol?: 'auto' | 'http' | 'https';
-} {
+export function getBetterAuthBaseUrlConfig():
+  | string
+  | {
+      allowedHosts: string[];
+      fallback?: string;
+      protocol?: 'auto' | 'http' | 'https';
+    } {
   const siteUrl = getSiteUrl();
   const allowedHosts = getBetterAuthAllowedHosts(siteUrl);
 
@@ -210,11 +215,18 @@ export function getBetterAuthBaseUrlConfig(): string | {
     return siteUrl;
   }
 
+  const isLoopbackSiteUrl = (() => {
+    try {
+      return isLoopbackHostname(new URL(siteUrl).hostname);
+    } catch {
+      return false;
+    }
+  })();
   const protocol = siteUrl.startsWith('http://') ? 'http' : 'auto';
   return {
     allowedHosts,
-    fallback: siteUrl,
     protocol,
+    ...(isLoopbackSiteUrl ? { fallback: siteUrl } : {}),
   };
 }
 

@@ -133,7 +133,10 @@ function VerifyEmailPendingPage() {
         ) : null}
 
         <div className="flex flex-col gap-3">
-          <Button onClick={() => void resendVerificationEmail()} disabled={isSubmitting || !isEmailConfigured}>
+          <Button
+            onClick={() => void resendVerificationEmail()}
+            disabled={isSubmitting || !isEmailConfigured}
+          >
             {isSubmitting ? (
               <>
                 <RefreshCw className="mr-2 h-4 w-4 animate-spin" />

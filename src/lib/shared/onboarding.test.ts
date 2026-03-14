@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getOnboardingStatusLabel,
-  isRetryableOnboardingStatus,
-} from './onboarding';
+import { getOnboardingStatusLabel, isRetryableOnboardingStatus } from './onboarding';
 
 describe('getOnboardingStatusLabel', () => {
   it('renders compact admin-facing labels', () => {

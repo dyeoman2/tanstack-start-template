@@ -123,9 +123,7 @@ async function main() {
     });
 
     if (!authResponse.ok()) {
-      throw new Error(
-        `Auth route failed: ${authResponse.status()} ${await authResponse.text()}`,
-      );
+      throw new Error(`Auth route failed: ${authResponse.status()} ${await authResponse.text()}`);
     }
 
     const payload = (await authResponse.json()) as AuthRoutePayload;
@@ -133,9 +131,7 @@ async function main() {
 
     try {
       const context = await browser.newContext();
-      await context.addCookies(
-        payload.cookies.map(({ path: _path, ...cookie }) => cookie),
-      );
+      await context.addCookies(payload.cookies.map(({ path: _path, ...cookie }) => cookie));
 
       const page = await context.newPage();
       await page.goto(targetUrl, { waitUntil: 'networkidle' });
@@ -153,27 +149,29 @@ async function main() {
         title: await page.title(),
         sawAuthenticatedUser:
           bodyText.includes('e2e-user@local.test') || bodyText.includes('e2e-admin@local.test'),
-        links: await page
-          .getByRole('link')
-          .evaluateAll((elements) =>
-            elements
-              .map((element) => element.textContent?.trim() || '')
-              .filter((text) => text.length > 0)
-              .slice(0, 10),
-          ),
-        buttons: await page
-          .getByRole('button')
-          .evaluateAll((elements) =>
-            elements
-              .map((element) => {
-                const text = element.textContent?.trim();
-                return text && text.length > 0 ? text : element.getAttribute('aria-label') || '';
-              })
-              .filter((text) => text.length > 0)
-              .slice(0, 10),
-          ),
-        textPreview: bodyText.split('\n').map((line) => line.trim()).filter((line) => line.length > 0).slice(0, 20),
-        screenshotPath: options.screenshotPath ? resolve(process.cwd(), options.screenshotPath) : null,
+        links: await page.getByRole('link').evaluateAll((elements) =>
+          elements
+            .map((element) => element.textContent?.trim() || '')
+            .filter((text) => text.length > 0)
+            .slice(0, 10),
+        ),
+        buttons: await page.getByRole('button').evaluateAll((elements) =>
+          elements
+            .map((element) => {
+              const text = element.textContent?.trim();
+              return text && text.length > 0 ? text : element.getAttribute('aria-label') || '';
+            })
+            .filter((text) => text.length > 0)
+            .slice(0, 10),
+        ),
+        textPreview: bodyText
+          .split('\n')
+          .map((line) => line.trim())
+          .filter((line) => line.length > 0)
+          .slice(0, 20),
+        screenshotPath: options.screenshotPath
+          ? resolve(process.cwd(), options.screenshotPath)
+          : null,
       };
 
       console.log(JSON.stringify(summary, null, 2));

@@ -1,12 +1,12 @@
 import { internal } from '@convex/_generated/api';
+import { buildBetterAuthForwardHeaders } from '~/lib/server/better-auth/http';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import {
+  type E2EPrincipalType,
   getE2EPrincipalConfig,
   getE2ETestSecret,
   isE2ETestAuthEnabled,
-  type E2EPrincipalType,
 } from '~/lib/server/env.server';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
-import { buildBetterAuthForwardHeaders } from '~/lib/server/better-auth/http';
 
 const E2E_AUTH_SECRET_HEADER = 'x-e2e-test-secret';
 
@@ -53,13 +53,24 @@ async function readAuthError(response: Response): Promise<AuthRouteResponse> {
   }
 }
 
+export function buildAuthEndpointHeaders(request: Request): Headers {
+  const origin = new URL(request.url).origin;
+  const headers = buildBetterAuthForwardHeaders(request);
+
+  headers.set('content-type', 'application/json');
+  headers.set('origin', request.headers.get('origin') || origin);
+  headers.set('referer', request.headers.get('referer') || `${origin}/`);
+
+  return headers;
+}
+
 async function postToAuthEndpoint(
   request: Request,
   path: '/api/auth/sign-in/email' | '/api/auth/sign-up/email',
   principal: ReturnType<typeof getE2EPrincipalConfig>,
 ) {
   const url = new URL(path, request.url);
-  const origin = new URL(request.url).origin;
+  const headers = buildAuthEndpointHeaders(request);
   const body =
     path === '/api/auth/sign-up/email'
       ? {
@@ -76,12 +87,7 @@ async function postToAuthEndpoint(
 
   return fetch(url, {
     method: 'POST',
-    headers: {
-      ...Object.fromEntries(buildBetterAuthForwardHeaders(request).entries()),
-      'Content-Type': 'application/json',
-      Origin: request.headers.get('origin') || origin,
-      Referer: request.headers.get('referer') || `${origin}/`,
-    },
+    headers,
     body: JSON.stringify(body),
   });
 }
@@ -190,7 +196,10 @@ function normalizeSameSite(value: string): PlaywrightCookiePayload['sameSite'] |
   return undefined;
 }
 
-function parseSetCookieHeader(rawCookie: string, requestUrl: string): PlaywrightCookiePayload | null {
+function parseSetCookieHeader(
+  rawCookie: string,
+  requestUrl: string,
+): PlaywrightCookiePayload | null {
   const segments = rawCookie
     .split(';')
     .map((segment) => segment.trim())

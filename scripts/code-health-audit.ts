@@ -1,74 +1,208 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 
-type ConvexFunctionRecord = {
+export type ConvexFunctionKind =
+  | 'query'
+  | 'mutation'
+  | 'action'
+  | 'internalQuery'
+  | 'internalMutation'
+  | 'internalAction'
+  | 'httpAction';
+
+export type AuthClassification =
+  | 'internal'
+  | 'http'
+  | 'builder-protected'
+  | 'explicit-helper-protected'
+  | 'allowlisted-public'
+  | 'unprotected';
+
+export type ConvexFunctionRecord = {
+  block: string;
+  creator: string;
   file: string;
-  name: string;
-  kind: string;
   hasReturns: boolean;
+  kind: ConvexFunctionKind | 'custom';
+  name: string;
+};
+
+type ClassifiedRecord = ConvexFunctionRecord & {
+  classification: AuthClassification;
+  reason: string;
 };
 
 const ROOT = process.cwd();
 const CONVEX_DIR = path.join(ROOT, 'convex');
 const FUNCTION_PATTERN =
-  /export const (\w+) = (query|mutation|action|internalQuery|internalMutation|internalAction|httpAction)\(/g;
+  /export const (\w+) =\s*(query|mutation|action|internalQuery|internalMutation|internalAction|httpAction|\w+)\s*\(/g;
 
-function listConvexFiles() {
-  return fs
-    .readdirSync(CONVEX_DIR)
-    .filter((entry) => entry.endsWith('.ts'))
-    .sort()
-    .map((entry) => path.join(CONVEX_DIR, entry));
+const PUBLIC_FUNCTION_KINDS = new Set<ConvexFunctionKind>(['query', 'mutation', 'action']);
+const INTERNAL_FUNCTION_KINDS = new Set<ConvexFunctionKind>([
+  'internalQuery',
+  'internalMutation',
+  'internalAction',
+]);
+const BUILDER_CREATORS = new Set([
+  'organizationQuery',
+  'organizationMutation',
+  'organizationAdminMutation',
+  'optionalOrganizationQuery',
+  'siteAdminQuery',
+  'siteAdminMutation',
+  'siteAdminAction',
+]);
+const APPROVED_HELPER_PATTERNS = [
+  /\bgetVerifiedCurrentUserOrThrow\s*\(/,
+  /\bgetVerifiedCurrentAuthUserOrNull\s*\(/,
+  /\bgetCurrentUserOrNull\s*\(/,
+  /\bgetCurrentAuthUserOrThrow\s*\(/,
+  /\bgetCurrentAuthUserOrNull\s*\(/,
+  /\bgetOrganizationAccessContextBySlug\s*\(/,
+  /\brequireSiteAdmin\s*\(/,
+  /\bgetCurrentChatContext\s*\(/,
+  /\bgetCurrentChatContextOrNull\s*\(/,
+  /\bgetAuthenticatedContext\s*\(/,
+];
+const AUTH_ALLOWLIST: Record<string, string> = {
+  'convex/auth.ts:enforcePdfParseRateLimit':
+    'Authenticated self-rate-limit endpoint used by PDF parsing flows.',
+  'convex/auth.ts:getCurrentUser':
+    'Returns the current Better Auth user or null for session hydration.',
+  'convex/emails.ts:checkEmailServiceConfigured':
+    'Public capability check used to decide whether auth email flows are enabled.',
+  'convex/playground.ts:playground':
+    'Agent playground API registration is intentionally public and not a standard Convex function builder.',
+  'convex/users.ts:getUserCount': 'Bootstrap helper used to detect first-user setup state.',
+};
+
+function isConvexSourceFile(filePath: string) {
+  return (
+    filePath.endsWith('.ts') &&
+    !filePath.includes(`${path.sep}_generated${path.sep}`) &&
+    !filePath.includes(`${path.sep}betterAuth${path.sep}_generated${path.sep}`)
+  );
 }
 
-function scanConvexFunctions(filePath: string): ConvexFunctionRecord[] {
-  const source = fs.readFileSync(filePath, 'utf8');
+function listConvexFiles(dir: string = CONVEX_DIR): string[] {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      return listConvexFiles(fullPath);
+    }
+
+    return isConvexSourceFile(fullPath) ? [fullPath] : [];
+  });
+}
+
+export function scanConvexFunctionsFromSource(
+  source: string,
+  relativeFilePath: string,
+): ConvexFunctionRecord[] {
   const matches = [...source.matchAll(FUNCTION_PATTERN)];
 
   return matches.map((match, index) => {
     const start = match.index ?? 0;
     const next = matches[index + 1]?.index ?? source.length;
     const block = source.slice(start, next);
-    const kind = match[2] ?? 'unknown';
+    const creator = match[2] ?? 'unknown';
+    const kind = (
+      PUBLIC_FUNCTION_KINDS.has(creator as ConvexFunctionKind) ||
+      INTERNAL_FUNCTION_KINDS.has(creator as ConvexFunctionKind) ||
+      creator === 'httpAction'
+        ? creator
+        : 'custom'
+    ) as ConvexFunctionRecord['kind'];
 
     return {
-      file: path.relative(ROOT, filePath),
+      block,
+      creator,
+      file: relativeFilePath,
       name: match[1] ?? 'unknown',
       kind,
-      hasReturns: kind === 'httpAction' ? true : /\breturns\s*:/.test(block),
+      hasReturns:
+        kind === 'httpAction' || creator === 'definePlaygroundAPI'
+          ? true
+          : /\breturns\s*:/.test(block),
     };
   });
 }
 
+function scanConvexFunctions(filePath: string): ConvexFunctionRecord[] {
+  const source = fs.readFileSync(filePath, 'utf8');
+  return scanConvexFunctionsFromSource(source, path.relative(ROOT, filePath));
+}
+
+export function classifyConvexFunction(record: ConvexFunctionRecord): ClassifiedRecord {
+  const allowlistKey = `${record.file}:${record.name}`;
+
+  if (record.kind !== 'custom' && INTERNAL_FUNCTION_KINDS.has(record.kind)) {
+    return {
+      ...record,
+      classification: 'internal',
+      reason: 'Convex internal function.',
+    };
+  }
+
+  if (record.kind === 'httpAction') {
+    return {
+      ...record,
+      classification: 'http',
+      reason: 'HTTP actions are audited separately.',
+    };
+  }
+
+  if (BUILDER_CREATORS.has(record.creator)) {
+    return {
+      ...record,
+      classification: 'builder-protected',
+      reason: `Uses approved auth wrapper ${record.creator}.`,
+    };
+  }
+
+  if (AUTH_ALLOWLIST[allowlistKey]) {
+    return {
+      ...record,
+      classification: 'allowlisted-public',
+      reason: AUTH_ALLOWLIST[allowlistKey],
+    };
+  }
+
+  if (
+    (record.kind === 'custom' || PUBLIC_FUNCTION_KINDS.has(record.kind)) &&
+    APPROVED_HELPER_PATTERNS.some((pattern) => pattern.test(record.block))
+  ) {
+    return {
+      ...record,
+      classification: 'explicit-helper-protected',
+      reason: 'Uses an approved auth helper near the handler entrypoint.',
+    };
+  }
+
+  return {
+    ...record,
+    classification: 'unprotected',
+    reason: 'Public Convex function is not wrapped and does not call an approved auth helper.',
+  };
+}
+
 function collectInventory() {
-  return listConvexFiles().flatMap(scanConvexFunctions);
+  return listConvexFiles().sort().flatMap(scanConvexFunctions);
 }
 
-function printInventory(records: ConvexFunctionRecord[]) {
-  const byFile = new Map<string, { total: number; missing: number }>();
-
+function printInventory(records: ClassifiedRecord[]) {
   for (const record of records) {
-    const entry = byFile.get(record.file) ?? { total: 0, missing: 0 };
-    entry.total += 1;
-    if (!record.hasReturns) {
-      entry.missing += 1;
-    }
-    byFile.set(record.file, entry);
-  }
-
-  for (const [file, counts] of [...byFile.entries()].sort(([left], [right]) =>
-    left.localeCompare(right),
-  )) {
-    console.log(`${file}: ${counts.total} functions, ${counts.missing} missing returns`);
+    console.log(
+      `${record.file}:${record.name} [${record.kind}] ${record.classification} - ${record.reason}`,
+    );
   }
 }
 
-function checkReturns(records: ConvexFunctionRecord[]) {
+function checkReturns(records: ClassifiedRecord[]) {
   const missing = records.filter((record) => !record.hasReturns);
-
   if (missing.length === 0) {
-    console.log(`All ${records.length} exported Convex functions define returns.`);
-    return;
+    return true;
   }
 
   console.error(
@@ -76,20 +210,54 @@ function checkReturns(records: ConvexFunctionRecord[]) {
   );
 
   for (const record of missing) {
-    console.error(`- ${record.file}: ${record.name} (${record.kind})`);
+    console.error(`- ${record.file}: ${record.name} (${record.creator})`);
   }
 
+  return false;
+}
+
+function checkProtection(records: ClassifiedRecord[]) {
+  const unprotected = records.filter((record) => record.classification === 'unprotected');
+  if (unprotected.length === 0) {
+    return true;
+  }
+
+  console.error(`Found ${unprotected.length} unprotected public Convex functions.`);
+  for (const record of unprotected) {
+    console.error(`- ${record.file}:${record.name} (${record.creator})`);
+  }
+
+  return false;
+}
+
+function runCli(command: string) {
+  const records = collectInventory().map(classifyConvexFunction);
+
+  if (command === 'inventory') {
+    printInventory(records);
+    return;
+  }
+
+  if (command === 'check') {
+    const returnsOk = checkReturns(records);
+    const protectionOk = checkProtection(records);
+
+    if (returnsOk && protectionOk) {
+      console.log(
+        `All ${records.length} exported Convex functions define returns and satisfy auth guardrails.`,
+      );
+      return;
+    }
+
+    process.exitCode = 1;
+    return;
+  }
+
+  console.error(`Unknown command: ${command}`);
   process.exitCode = 1;
 }
 
-const command = process.argv[2] ?? 'check';
-const records = collectInventory();
-
-if (command === 'inventory') {
-  printInventory(records);
-} else if (command === 'check') {
-  checkReturns(records);
-} else {
-  console.error(`Unknown command: ${command}`);
-  process.exitCode = 1;
+const entryUrl = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+if (entryUrl === import.meta.url) {
+  runCli(process.argv[2] ?? 'check');
 }

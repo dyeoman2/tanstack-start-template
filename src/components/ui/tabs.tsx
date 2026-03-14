@@ -86,4 +86,4 @@ function TabsContent({ value, className, children }: TabsContentProps) {
   return <div className={cn('flex-1 outline-none', className)}>{children}</div>;
 }
 
-export { Tabs, TabsList, TabsTrigger, TabsContent };
+export { Tabs, TabsContent, TabsList, TabsTrigger };

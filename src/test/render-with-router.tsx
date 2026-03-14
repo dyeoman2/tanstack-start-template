@@ -1,10 +1,10 @@
 import {
-  Outlet,
-  RouterProvider,
   createMemoryHistory,
   createRootRoute,
   createRoute,
   createRouter,
+  Outlet,
+  RouterProvider,
 } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
 import type { ReactNode } from 'react';

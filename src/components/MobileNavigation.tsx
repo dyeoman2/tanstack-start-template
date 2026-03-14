@@ -1,5 +1,13 @@
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
-import { Building2, LogOut, type LucideIcon, Menu, MessageSquare, Shield, User } from 'lucide-react';
+import {
+  Building2,
+  LogOut,
+  type LucideIcon,
+  Menu,
+  MessageSquare,
+  Shield,
+  User,
+} from 'lucide-react';
 import { useState } from 'react';
 import {
   Sheet,

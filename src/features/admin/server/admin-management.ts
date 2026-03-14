@@ -3,20 +3,35 @@ import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import {
-  shapeAdminUsers,
   type AdminUserSearchParams,
+  shapeAdminUsers,
 } from '~/features/admin/lib/admin-user-shaping';
 import { normalizeUserRole } from '~/features/auth/lib/user-role';
 import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import type { UserRole } from '~/features/auth/types';
 import { USER_ROLES } from '~/features/auth/types';
-import type { OnboardingStatus } from '~/lib/shared/onboarding';
 import {
-  callBetterAuthEndpoint as callBetterAuthEndpointBase,
-  getBetterAuthRequest,
-} from '~/lib/server/better-auth/http';
+  type BetterAuthAdminListUsersResult,
+  type BetterAuthAdminUser,
+  type BetterAuthAdminUserSession,
+  banBetterAuthUser,
+  createBetterAuthUser,
+  getBetterAuthUser,
+  listBetterAuthUserSessions,
+  listBetterAuthUsers,
+  removeBetterAuthUser,
+  requestBetterAuthPasswordReset,
+  revokeBetterAuthUserSession,
+  revokeBetterAuthUserSessions,
+  setBetterAuthUserPassword,
+  setBetterAuthUserRole,
+  unbanBetterAuthUser,
+  updateBetterAuthUser,
+} from '~/lib/server/better-auth/api';
+import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
+import type { OnboardingStatus } from '~/lib/shared/onboarding';
 
 const userSearchSchema = z.object({
   page: z.number().min(1),
@@ -74,39 +89,6 @@ type SendAdminOnboardingEmailResult = {
   onboardingStatus: OnboardingStatus;
 };
 
-type RawAdminUser = {
-  id?: string;
-  _id?: string;
-  name?: string | null;
-  email: string;
-  emailVerified?: boolean;
-  role?: string | string[];
-  banned?: boolean | null;
-  banReason?: string | null;
-  banExpires?: string | number | Date | null;
-  createdAt?: string | number | Date;
-  updatedAt?: string | number | Date;
-};
-
-type RawAdminSession = {
-  id: string;
-  token: string;
-  userId: string;
-  expiresAt: string | number | Date;
-  createdAt: string | number | Date;
-  updatedAt: string | number | Date;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  impersonatedBy?: string;
-};
-
-type AdminListUsersResponse = {
-  users: RawAdminUser[];
-  total: number;
-  limit?: number;
-  offset?: number;
-};
-
 export type AdminUser = {
   id: string;
   email: string;
@@ -127,17 +109,7 @@ export type AdminUser = {
   updatedAt: number;
 };
 
-export type AdminUserSession = {
-  id: string;
-  token: string;
-  userId: string;
-  expiresAt: number;
-  createdAt: number;
-  updatedAt: number;
-  ipAddress: string | null;
-  userAgent: string | null;
-  impersonatedBy?: string;
-};
+export type AdminUserSession = BetterAuthAdminUserSession;
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
   if (!value) {
@@ -155,17 +127,12 @@ function toTimestamp(value: string | number | Date | undefined | null): number {
   return new Date(value).getTime();
 }
 
-export function normalizeAdminUser(user: RawAdminUser): AdminUser {
-  const id = user.id ?? user._id;
-  if (!id) {
-    throw new Error('Admin user is missing an id');
-  }
-
+export function normalizeAdminUser(user: BetterAuthAdminUser): AdminUser {
   return {
-    id,
+    id: user.id,
     email: user.email,
     name: user.name ?? null,
-    role: normalizeUserRole(user.role),
+    role: normalizeUserRole(user.role ?? undefined),
     emailVerified: user.emailVerified ?? false,
     banned: user.banned === true,
     banReason: user.banReason ?? null,
@@ -182,7 +149,7 @@ export function normalizeAdminUser(user: RawAdminUser): AdminUser {
   };
 }
 
-function normalizeAdminSession(session: RawAdminSession): AdminUserSession {
+function normalizeAdminSession(session: BetterAuthAdminUserSession): AdminUserSession {
   return {
     id: session.id,
     token: session.token,
@@ -226,20 +193,6 @@ function normalizeAuthErrorMessage(
   return message || 'Admin action failed';
 }
 
-async function callBetterAuthEndpoint<TResponse>(
-  path: string,
-  init: {
-    method?: 'GET' | 'POST';
-    body?: Record<string, unknown>;
-    query?: Record<string, string | number | boolean | undefined>;
-  } = {},
-): Promise<TResponse> {
-  return await callBetterAuthEndpointBase<TResponse>(path, init, {
-    mapErrorMessage: ({ code, message, status }) =>
-      normalizeAuthErrorMessage(code, message, status),
-  });
-}
-
 async function listAllAdminUsers(): Promise<AdminUser[]> {
   const limit = 100;
   let offset = 0;
@@ -247,14 +200,12 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
   const users: AdminUser[] = [];
 
   while (offset < total) {
-    const response = await callBetterAuthEndpoint<AdminListUsersResponse>(
-      '/api/auth/admin/list-users',
+    const response: BetterAuthAdminListUsersResult = await listBetterAuthUsers(
       {
-        query: {
-          limit,
-          offset,
-        },
+        limit,
+        offset,
       },
+      ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
     );
 
     const page = response.users.map(normalizeAdminUser);
@@ -272,9 +223,10 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
 
 async function getAdminUserById(userId: string): Promise<AdminUser | null> {
   try {
-    const response = await callBetterAuthEndpoint<RawAdminUser>('/api/auth/admin/get-user', {
-      query: { id: userId },
-    });
+    const response = await getBetterAuthUser(
+      userId,
+      ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+    );
 
     return normalizeAdminUser(response);
   } catch (error) {
@@ -345,15 +297,12 @@ async function requestOnboardingEmail(email: string) {
   const request = getBetterAuthRequest();
   const redirectTo = new URL('/reset-password', request.url).toString();
 
-  await callBetterAuthEndpoint<{ status: boolean; message: string }>(
-    '/api/auth/request-password-reset',
+  await requestBetterAuthPasswordReset(
     {
-      method: 'POST',
-      body: {
-        email,
-        redirectTo,
-      },
+      email,
+      redirectTo,
     },
+    ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
   );
 }
 
@@ -361,6 +310,8 @@ async function updateAdminUserOnboardingState(
   userId: string,
   state: {
     onboardingStatus?: OnboardingStatus;
+    onboardingEmailId?: string | null;
+    onboardingEmailMessageId?: string | null;
     onboardingEmailLastSentAt?: number;
     onboardingDeliveryError?: string | null;
   },
@@ -368,6 +319,8 @@ async function updateAdminUserOnboardingState(
   await convexAuthReactStart.fetchAuthMutation(api.admin.setUserOnboardingStatus, {
     userId,
     onboardingStatus: state.onboardingStatus,
+    onboardingEmailId: state.onboardingEmailId,
+    onboardingEmailMessageId: state.onboardingEmailMessageId,
     onboardingEmailLastSentAt: state.onboardingEmailLastSentAt,
     onboardingDeliveryError: state.onboardingDeliveryError,
   });
@@ -393,17 +346,17 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
       const name = data.name.trim();
       const email = data.email.trim().toLowerCase();
       const password = createOnboardingPassword();
-      const created = await callBetterAuthEndpoint<{ user: RawAdminUser }>('/api/auth/admin/create-user', {
-        method: 'POST',
-        body: {
+      const created = await createBetterAuthUser(
+        {
           name,
           email,
           role: data.role,
           password,
         },
-      });
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      );
 
-      const createdUserId = created.user.id ?? created.user._id;
+      const createdUserId = created.user.id;
       if (!createdUserId) {
         throw new Error('Created user is missing an id');
       }
@@ -416,6 +369,8 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
         const onboardingEmailLastSentAt = Date.now();
         await updateAdminUserOnboardingState(createdUserId, {
           onboardingStatus: 'email_sent',
+          onboardingEmailId: null,
+          onboardingEmailMessageId: null,
           onboardingEmailLastSentAt,
           onboardingDeliveryError: null,
         });
@@ -432,6 +387,8 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
       } catch (emailError) {
         await updateAdminUserOnboardingState(createdUserId, {
           onboardingStatus: 'email_pending',
+          onboardingEmailId: null,
+          onboardingEmailMessageId: null,
           onboardingDeliveryError:
             emailError instanceof Error
               ? emailError.message
@@ -472,6 +429,8 @@ export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'PO
       await requestOnboardingEmail(user.email);
       await updateAdminUserOnboardingState(data.userId, {
         onboardingStatus: 'email_sent',
+        onboardingEmailId: null,
+        onboardingEmailMessageId: null,
         onboardingEmailLastSentAt: Date.now(),
         onboardingDeliveryError: null,
       });
@@ -483,6 +442,8 @@ export const sendAdminUserOnboardingEmailServerFn = createServerFn({ method: 'PO
         if (user && user.onboardingStatus !== 'completed') {
           await updateAdminUserOnboardingState(data.userId, {
             onboardingStatus: user.onboardingStatus,
+            onboardingEmailId: null,
+            onboardingEmailMessageId: null,
             onboardingDeliveryError:
               error instanceof Error ? error.message : 'Failed to send onboarding email',
           });
@@ -523,25 +484,27 @@ export const updateAdminUserServerFn = createServerFn({ method: 'POST' })
 
       if (Object.keys(updateData).length > 0) {
         operations.push(
-          callBetterAuthEndpoint<RawAdminUser>('/api/auth/admin/update-user', {
-            method: 'POST',
-            body: {
+          updateBetterAuthUser(
+            {
               userId: data.userId,
               data: updateData,
             },
-          }),
+            ({ code, message, status }) =>
+              normalizeAuthErrorMessage(code ?? undefined, message, status),
+          ),
         );
       }
 
       if (data.role !== undefined) {
         operations.push(
-          callBetterAuthEndpoint<{ user: RawAdminUser }>('/api/auth/admin/set-role', {
-            method: 'POST',
-            body: {
+          setBetterAuthUserRole(
+            {
               userId: data.userId,
               role: data.role,
             },
-          }),
+            ({ code, message, status }) =>
+              normalizeAuthErrorMessage(code ?? undefined, message, status),
+          ),
         );
       }
 
@@ -561,12 +524,9 @@ export const banAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthEndpoint<{ user: RawAdminUser }>(
-        '/api/auth/admin/ban-user',
-        {
-          method: 'POST',
-          body: data,
-        },
+      const response = await banBetterAuthUser(
+        data,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -583,12 +543,9 @@ export const unbanAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthEndpoint<{ user: RawAdminUser }>(
-        '/api/auth/admin/unban-user',
-        {
-          method: 'POST',
-          body: data,
-        },
+      const response = await unbanBetterAuthUser(
+        data.userId,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -605,12 +562,9 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await callBetterAuthEndpoint<{ sessions: RawAdminSession[] }>(
-        '/api/auth/admin/list-user-sessions',
-        {
-          method: 'POST',
-          body: data,
-        },
+      const response = await listBetterAuthUserSessions(
+        data.userId,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
 
       return response.sessions.map(normalizeAdminSession);
@@ -624,12 +578,9 @@ export const revokeAdminUserSessionServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthEndpoint<{ success: boolean }>(
-        '/api/auth/admin/revoke-user-session',
-        {
-          method: 'POST',
-          body: data,
-        },
+      return await revokeBetterAuthUserSession(
+        data.sessionToken,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user session');
@@ -641,12 +592,9 @@ export const revokeAdminUserSessionsServerFn = createServerFn({ method: 'POST' }
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthEndpoint<{ success: boolean }>(
-        '/api/auth/admin/revoke-user-sessions',
-        {
-          method: 'POST',
-          body: data,
-        },
+      return await revokeBetterAuthUserSessions(
+        data.userId,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user sessions');
@@ -658,10 +606,10 @@ export const setAdminUserPasswordServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await callBetterAuthEndpoint<{ status: boolean }>('/api/auth/admin/set-user-password', {
-        method: 'POST',
-        body: data,
-      });
+      return await setBetterAuthUserPassword(
+        data,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      );
     } catch (error) {
       throw handleServerError(error, 'Set admin user password');
     }
@@ -675,12 +623,9 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       const users = await listAllAdminUsers();
       const target = assertCanDeleteUser(users, currentUser.id, data.userId);
 
-      const result = await callBetterAuthEndpoint<{ success: boolean }>(
-        '/api/auth/admin/remove-user',
-        {
-          method: 'POST',
-          body: data,
-        },
+      const result = await removeBetterAuthUser(
+        data.userId,
+        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
 
       try {

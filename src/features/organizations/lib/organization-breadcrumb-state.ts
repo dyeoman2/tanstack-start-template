@@ -12,9 +12,7 @@ export function getOrganizationBreadcrumbName(state: unknown, slug: string) {
   return breadcrumb.name;
 }
 
-function isOrganizationBreadcrumbState(
-  state: unknown,
-): state is {
+function isOrganizationBreadcrumbState(state: unknown): state is {
   organizationBreadcrumb?: {
     name: string;
     slug: string;

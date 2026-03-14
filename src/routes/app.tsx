@@ -54,7 +54,14 @@ function AppLayout() {
     }).catch(() => {
       redirectRef.current = false;
     });
-  }, [isAuthenticated, isPending, navigate, redirectTarget, requiresEmailVerification, user?.email]);
+  }, [
+    isAuthenticated,
+    isPending,
+    navigate,
+    redirectTarget,
+    requiresEmailVerification,
+    user?.email,
+  ]);
 
   if (isPending || !isAuthenticated || requiresEmailVerification) {
     return <AppLayoutSkeleton />;

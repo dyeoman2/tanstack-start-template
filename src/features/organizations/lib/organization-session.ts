@@ -11,6 +11,7 @@ export async function refreshOrganizationClientState(
   authClient.$store.notify('$sessionSignal');
 
   await Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['session'] }),
     queryClient.invalidateQueries({ queryKey: ['organizations'] }),
     queryClient.invalidateQueries({ queryKey: ['active-organization'] }),
     queryClient.invalidateQueries({ queryKey: ['user-invitations'] }),
@@ -18,10 +19,7 @@ export async function refreshOrganizationClientState(
   ]);
 }
 
-export function getOrganizationActionErrorMessage(
-  error: unknown,
-  fallbackMessage: string,
-) {
+export function getOrganizationActionErrorMessage(error: unknown, fallbackMessage: string) {
   const errorCode =
     error instanceof Error &&
     'code' in error &&

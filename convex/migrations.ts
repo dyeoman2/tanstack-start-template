@@ -4,7 +4,7 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import { isAuthAuditEventType, normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { action, type ActionCtx, internalMutation } from './_generated/server';
+import { type ActionCtx, action, internalMutation } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 

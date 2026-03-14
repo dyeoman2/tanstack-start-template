@@ -2,18 +2,32 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   adminActionMock,
+  cancelBetterAuthOrganizationInvitationMock,
+  checkBetterAuthOrganizationSlugMock,
+  createBetterAuthOrganizationInvitationMock,
+  createBetterAuthOrganizationMock,
+  deleteBetterAuthOrganizationMock,
+  removeBetterAuthOrganizationMemberMock,
   requireAuthMock,
-  fetchAuthMutationMock,
+  fetchAuthActionMock,
   fetchAuthQueryMock,
-  getRequestMock,
   handleServerErrorMock,
+  updateBetterAuthOrganizationMemberRoleMock,
+  updateBetterAuthOrganizationMock,
 } = vi.hoisted(() => ({
   adminActionMock: vi.fn(),
+  cancelBetterAuthOrganizationInvitationMock: vi.fn(),
+  checkBetterAuthOrganizationSlugMock: vi.fn(),
+  createBetterAuthOrganizationInvitationMock: vi.fn(),
+  createBetterAuthOrganizationMock: vi.fn(),
+  deleteBetterAuthOrganizationMock: vi.fn(),
+  removeBetterAuthOrganizationMemberMock: vi.fn(),
   requireAuthMock: vi.fn(),
-  fetchAuthMutationMock: vi.fn(),
+  fetchAuthActionMock: vi.fn(),
   fetchAuthQueryMock: vi.fn(),
-  getRequestMock: vi.fn(),
   handleServerErrorMock: vi.fn((error: unknown) => error),
+  updateBetterAuthOrganizationMemberRoleMock: vi.fn(),
+  updateBetterAuthOrganizationMock: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-start', () => ({
@@ -31,6 +45,7 @@ vi.mock('@convex/_generated/api', () => ({
       ensureCurrentUserContext: 'ensureCurrentUserContext',
     },
     organizationManagement: {
+      getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
     },
   },
@@ -41,17 +56,13 @@ vi.mock('@convex/_generated/api', () => ({
   },
 }));
 
-vi.mock('@tanstack/react-start/server', () => ({
-  getRequest: () => getRequestMock(),
-}));
-
 vi.mock('~/features/auth/server/auth-guards', () => ({
   requireAuth: requireAuthMock,
 }));
 
 vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
   convexAuthReactStart: {
-    fetchAuthMutation: fetchAuthMutationMock,
+    fetchAuthAction: fetchAuthActionMock,
     fetchAuthQuery: fetchAuthQueryMock,
   },
 }));
@@ -76,9 +87,22 @@ vi.mock('~/lib/server/error-utils.server', () => ({
   handleServerError: handleServerErrorMock,
 }));
 
+vi.mock('~/lib/server/better-auth/api', () => ({
+  cancelBetterAuthOrganizationInvitation: cancelBetterAuthOrganizationInvitationMock,
+  checkBetterAuthOrganizationSlug: checkBetterAuthOrganizationSlugMock,
+  createBetterAuthOrganization: createBetterAuthOrganizationMock,
+  createBetterAuthOrganizationInvitation: createBetterAuthOrganizationInvitationMock,
+  deleteBetterAuthOrganization: deleteBetterAuthOrganizationMock,
+  removeBetterAuthOrganizationMember: removeBetterAuthOrganizationMemberMock,
+  updateBetterAuthOrganization: updateBetterAuthOrganizationMock,
+  updateBetterAuthOrganizationMemberRole: updateBetterAuthOrganizationMemberRoleMock,
+}));
+
 import {
+  checkOrganizationSlugServerFn,
   cancelOrganizationInvitationServerFn,
   createOrganizationInvitationServerFn,
+  createOrganizationServerFn,
   deleteOrganizationServerFn,
   removeOrganizationMemberServerFn,
   updateOrganizationMemberRoleServerFn,
@@ -88,43 +112,27 @@ import {
 describe('organization management server functions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    getRequestMock.mockReturnValue(
-      new Request('http://127.0.0.1:3000/app/organizations/cottage-hospital/settings', {
-        headers: {
-          cookie: 'session=abc',
-          origin: 'http://127.0.0.1:3000',
-          referer: 'http://127.0.0.1:3000/app',
-          'user-agent': 'vitest',
-          'x-forwarded-for': '127.0.0.1',
-        },
-      }),
-    );
     fetchAuthQueryMock.mockResolvedValue({ allowed: true });
     adminActionMock.mockResolvedValue({ success: true });
-    vi.stubGlobal('fetch', vi.fn());
+    checkBetterAuthOrganizationSlugMock.mockResolvedValue({ status: true });
+    createBetterAuthOrganizationInvitationMock.mockResolvedValue({ id: 'invite-1' });
+    updateBetterAuthOrganizationMemberRoleMock.mockResolvedValue({
+      member: { id: 'member_1' },
+    });
+    updateBetterAuthOrganizationMock.mockResolvedValue({ id: 'org_1', name: 'Acme' });
+    createBetterAuthOrganizationMock.mockResolvedValue({
+      id: 'org_1',
+      name: 'Acme',
+      slug: 'acme',
+    });
+    removeBetterAuthOrganizationMemberMock.mockResolvedValue({ member: { id: 'member_1' } });
+    deleteBetterAuthOrganizationMock.mockResolvedValue({ id: 'org_1' });
+    cancelBetterAuthOrganizationInvitationMock.mockResolvedValue({
+      invitation: { id: 'invite_1' },
+    });
   });
 
-  it('routes managed organization writes through Better Auth endpoints', async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: 'invite-1' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ member: { id: 'member_1' } }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: 'org_1', name: 'Acme' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
-
+  it('routes managed organization writes through Better Auth actions', async () => {
     await createOrganizationInvitationServerFn({
       data: {
         organizationId: 'org_1',
@@ -164,72 +172,87 @@ describe('organization management server functions', () => {
       action: 'update-settings',
       organizationId: 'org_1',
     });
+    expect(createBetterAuthOrganizationInvitationMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        email: 'person@example.com',
+        role: 'admin',
+        resend: true,
+      },
+      expect.any(Function),
+    );
+    expect(updateBetterAuthOrganizationMemberRoleMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        memberId: 'member_1',
+        role: 'member',
+      },
+      expect.any(Function),
+    );
+    expect(updateBetterAuthOrganizationMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        data: {
+          name: 'Acme',
+          logo: 'https://example.com/logo.png',
+        },
+      },
+      expect.any(Function),
+    );
+  });
 
-    expect(fetch).toHaveBeenNthCalledWith(
-      1,
-      new URL(
-        '/api/auth/organization/invite-member',
-        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
-      ),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          organizationId: 'org_1',
-          email: 'person@example.com',
-          role: 'admin',
-          resend: true,
-        }),
-      }),
+  it('creates organizations through the server flow when the viewer is eligible', async () => {
+    fetchAuthQueryMock.mockResolvedValueOnce({
+      count: 1,
+      limit: 2,
+      canCreate: true,
+      reason: null,
+      isUnlimited: false,
+    });
+
+    const result = await createOrganizationServerFn({
+      data: {
+        name: '  Acme  ',
+        slug: 'acme',
+      },
+    });
+
+    expect(result).toEqual({ id: 'org_1', name: 'Acme', slug: 'acme' });
+    expect(fetchAuthQueryMock).toHaveBeenCalledWith('getOrganizationCreationEligibility', {});
+    expect(checkBetterAuthOrganizationSlugMock).toHaveBeenCalledWith(
+      'acme',
+      expect.any(Function),
     );
-    expect(fetch).toHaveBeenNthCalledWith(
-      2,
-      new URL(
-        '/api/auth/organization/update-member-role',
-        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
-      ),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          organizationId: 'org_1',
-          memberId: 'member_1',
-          role: 'member',
-        }),
-      }),
+    expect(createBetterAuthOrganizationMock).toHaveBeenCalledWith(
+      {
+        keepCurrentActiveOrganization: false,
+        name: 'Acme',
+        slug: 'acme',
+      },
+      expect.any(Function),
     );
-    expect(fetch).toHaveBeenNthCalledWith(
-      3,
-      new URL(
-        '/api/auth/organization/update',
-        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
-      ),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({
-          organizationId: 'org_1',
-          data: {
-            name: 'Acme',
-            logo: 'https://example.com/logo.png',
-          },
-        }),
-      }),
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('ensureCurrentUserContext', {});
+  });
+
+  it('checks slug availability through Better Auth before creation', async () => {
+    const result = await checkOrganizationSlugServerFn({
+      data: {
+        slug: '  Acme Health  ',
+      },
+    });
+
+    expect(result).toEqual({
+      available: true,
+      slug: 'acme-health',
+    });
+    expect(checkBetterAuthOrganizationSlugMock).toHaveBeenCalledWith(
+      'acme-health',
+      expect.any(Function),
     );
   });
 
   it('refreshes user context after member removal and organization deletion', async () => {
-    vi.mocked(fetch)
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ member: { id: 'member_1' } }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ id: 'org_1' }), {
-          status: 200,
-          headers: { 'content-type': 'application/json' },
-        }),
-      );
-    fetchAuthMutationMock.mockResolvedValue({ organizationId: 'org_next' });
+    fetchAuthActionMock.mockResolvedValue({ organizationId: 'org_next' });
 
     await removeOrganizationMemberServerFn({
       data: {
@@ -253,21 +276,25 @@ describe('organization management server functions', () => {
       action: 'delete-organization',
       organizationId: 'org_1',
     });
+    expect(removeBetterAuthOrganizationMemberMock).toHaveBeenCalledWith(
+      {
+        organizationId: 'org_1',
+        memberIdOrEmail: 'member_1',
+      },
+      expect.any(Function),
+    );
+    expect(deleteBetterAuthOrganizationMock).toHaveBeenCalledWith(
+      'org_1',
+      expect.any(Function),
+    );
     expect(adminActionMock).toHaveBeenCalledWith('cleanupOrganizationDataInternal', {
       organizationId: 'org_1',
     });
-    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(1, 'ensureCurrentUserContext', {});
-    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(2, 'ensureCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(1, 'ensureCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(2, 'ensureCurrentUserContext', {});
   });
 
   it('calls the Better Auth invitation cancel endpoint', async () => {
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(JSON.stringify({ invitation: { id: 'invite_1' } }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      }),
-    );
-
     await cancelOrganizationInvitationServerFn({
       data: {
         organizationId: 'org_1',
@@ -279,30 +306,16 @@ describe('organization management server functions', () => {
       action: 'cancel-invitation',
       organizationId: 'org_1',
     });
-    expect(fetch).toHaveBeenCalledWith(
-      new URL(
-        '/api/auth/organization/cancel-invitation',
-        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
-      ),
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ invitationId: 'invite_1' }),
-      }),
+    expect(cancelBetterAuthOrganizationInvitationMock).toHaveBeenCalledWith(
+      'invite_1',
+      expect.any(Function),
     );
   });
 
-  it('wraps Better Auth endpoint failures with mapped org messages', async () => {
+  it('wraps Better Auth action failures with mapped org messages', async () => {
     const failure = new Error('wrapped org failure');
-    vi.mocked(fetch).mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          message: 'User is already invited to this organization',
-        }),
-        {
-          status: 400,
-          headers: { 'content-type': 'application/json' },
-        },
-      ),
+    createBetterAuthOrganizationInvitationMock.mockRejectedValue(
+      new Error('That user already has a pending invitation'),
     );
     handleServerErrorMock.mockReturnValue(failure);
 
@@ -321,6 +334,34 @@ describe('organization management server functions', () => {
         message: 'That user already has a pending invitation',
       }),
       'Create organization invitation',
+    );
+  });
+
+  it('blocks organization creation when the viewer is at the membership limit', async () => {
+    const failure = new Error('wrapped create failure');
+    fetchAuthQueryMock.mockResolvedValueOnce({
+      count: 2,
+      limit: 2,
+      canCreate: false,
+      reason: 'You can belong to up to 2 organizations.',
+      isUnlimited: false,
+    });
+    handleServerErrorMock.mockReturnValue(failure);
+
+    await expect(
+      createOrganizationServerFn({
+        data: {
+          name: 'Acme',
+          slug: 'acme',
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(handleServerErrorMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: 'You can belong to up to 2 organizations.',
+      }),
+      'Create organization',
     );
   });
 });

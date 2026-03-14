@@ -6,7 +6,10 @@ import { healthCheck } from './health';
 
 const http = httpRouter();
 
-authComponent.registerRoutes(http, createAuth as Parameters<typeof authComponent.registerRoutes>[1]);
+authComponent.registerRoutes(
+  http,
+  createAuth as Parameters<typeof authComponent.registerRoutes>[1],
+);
 
 // Health check endpoint
 http.route({

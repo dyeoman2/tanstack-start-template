@@ -1,6 +1,8 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
+import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const WORKER_PATH = join(
@@ -22,6 +24,21 @@ export const Route = createFileRoute('/api/parse-pdf')({
     handlers: {
       POST: async ({ request }) => {
         try {
+          const currentProfile = await convexAuthReactStart.fetchAuthQuery(
+            api.users.getCurrentUserProfile,
+            {},
+          );
+          if (!currentProfile) {
+            return Response.json({ error: 'Authentication required' }, { status: 401 });
+          }
+
+          try {
+            await convexAuthReactStart.fetchAuthMutation(api.auth.enforcePdfParseRateLimit, {});
+          } catch (error) {
+            const message = error instanceof Error ? error.message : 'Too many PDF parse requests';
+            return Response.json({ error: message }, { status: 429 });
+          }
+
           const formData = await request.formData();
           const fileValue = formData.get('file');
 
@@ -78,12 +95,12 @@ export const Route = createFileRoute('/api/parse-pdf')({
               }>;
             }) =>
               page.images.map((image) => ({
-              pageNumber: page.pageNumber,
-              name: image.name,
-              width: image.width,
-              height: image.height,
-              dataUrl: image.dataUrl,
-            })),
+                pageNumber: page.pageNumber,
+                name: image.name,
+                width: image.width,
+                height: image.height,
+                dataUrl: image.dataUrl,
+              })),
           );
 
           return Response.json({

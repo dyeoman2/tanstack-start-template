@@ -84,7 +84,13 @@ async function main() {
     '--redirect-to',
     options.redirectTo,
   ]);
-  runCommand('agent-browser', ['--session-name', options.sessionName, 'wait', '--load', 'networkidle']);
+  runCommand('agent-browser', [
+    '--session-name',
+    options.sessionName,
+    'wait',
+    '--load',
+    'networkidle',
+  ]);
   runCommand('agent-browser', ['--session-name', options.sessionName, 'snapshot', '-i']);
 }
 

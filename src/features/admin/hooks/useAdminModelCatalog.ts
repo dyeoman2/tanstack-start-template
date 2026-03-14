@@ -66,9 +66,7 @@ export function useAdminModelCatalog() {
     }
   };
 
-  const handleSetModelActiveState = async (
-    args: Parameters<typeof setChatModelActiveState>[0],
-  ) => {
+  const handleSetModelActiveState = async (args: Parameters<typeof setChatModelActiveState>[0]) => {
     setIsMutatingModels(true);
     try {
       const result = await setChatModelActiveState(args);

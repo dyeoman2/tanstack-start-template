@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
-import { useQuery } from 'convex/react';
 import { Link } from '@tanstack/react-router';
+import { useQuery } from 'convex/react';
 import { Building2, Plus, Settings } from 'lucide-react';
 import { useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
@@ -13,8 +13,11 @@ import { UserInvitationInbox } from '~/features/organizations/components/UserInv
 export function OrganizationDirectoryPage() {
   const authState = useAuthState();
   const organizations = useQuery(api.organizationManagement.listOrganizationsForDirectory, {});
+  const eligibility = useQuery(api.organizationManagement.getOrganizationCreationEligibility, {});
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const isPending = organizations === undefined;
+  const canCreateOrganization = eligibility?.canCreate ?? false;
+  const creationReason = eligibility?.reason ?? 'Create organization';
 
   return (
     <>
@@ -27,7 +30,12 @@ export function OrganizationDirectoryPage() {
               : 'Open an organization to manage members, invitations, and workspace settings.'
           }
           actions={
-            <Button onClick={() => setCreateDialogOpen(true)} size="sm">
+            <Button
+              onClick={() => setCreateDialogOpen(true)}
+              size="sm"
+              disabled={!canCreateOrganization}
+              title={!canCreateOrganization ? creationReason : undefined}
+            >
               <Plus className="size-4" />
               Create organization
             </Button>
@@ -54,10 +62,19 @@ export function OrganizationDirectoryPage() {
                 Create your first organization to collaborate with teammates and manage access from
                 a shared home.
               </p>
-              <Button onClick={() => setCreateDialogOpen(true)} className="mt-5" size="sm">
+              <Button
+                onClick={() => setCreateDialogOpen(true)}
+                className="mt-5"
+                size="sm"
+                disabled={!canCreateOrganization}
+                title={!canCreateOrganization ? creationReason : undefined}
+              >
                 <Plus className="size-4" />
                 Create organization
               </Button>
+              {!canCreateOrganization ? (
+                <p className="mt-3 text-sm text-muted-foreground">{creationReason}</p>
+              ) : null}
             </div>
           )}
         </div>
@@ -80,11 +97,7 @@ type DirectoryOrganization = {
   isSiteAdminView: boolean;
 };
 
-function OrganizationRow({
-  organization,
-}: {
-  organization: DirectoryOrganization;
-}) {
+function OrganizationRow({ organization }: { organization: DirectoryOrganization }) {
   const slug = organization.slug;
 
   return (

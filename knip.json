@@ -7,15 +7,8 @@
     "*.config.{ts,js,mjs}",
     "convex/**/*.{ts,tsx,js}"
   ],
-  "project": [
-    "src/**/*.{ts,tsx}",
-    "scripts/**/*.{ts,tsx}",
-    "convex/**/*.{ts,tsx,js}"
-  ],
-  "ignore": [
-    "src/components/ui/**/*",
-    "src/router.tsx"
-  ],
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.{ts,tsx}", "convex/**/*.{ts,tsx,js}"],
+  "ignore": ["src/components/ui/**/*", "src/router.tsx"],
   "rules": {
     "files": "error",
     "dependencies": "warn",
@@ -30,11 +23,7 @@
     "enumMembers": "error",
     "classMembers": "error"
   },
-  "ignoreDependencies": [
-    "@napi-rs/canvas",
-    "pdf-parse",
-    "tailwindcss-animate"
-  ],
+  "ignoreDependencies": ["@napi-rs/canvas", "pdf-parse", "tailwindcss-animate"],
   "ignoreBinaries": ["vite-bundle-analyzer"],
   "ignoreExportsUsedInFile": {
     "interface": true,

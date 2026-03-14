@@ -1,7 +1,7 @@
 import { RateLimiter } from '@convex-dev/rate-limiter';
 import { ConvexError } from 'convex/values';
 import { components } from '../_generated/api';
-import type { MutationCtx, QueryCtx } from '../_generated/server';
+import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 
 const MINUTE_MS = 60 * 1000;
 const GLOBAL_CHAT_PROVIDER_KEY = 'chat-provider-global';
@@ -35,17 +35,31 @@ export const CHAT_RATE_LIMITS = {
     maxReserved: 800_000,
     shards: 10,
   },
+  chatAttachmentUploads: {
+    kind: 'token bucket' as const,
+    rate: 10,
+    period: 5 * MINUTE_MS,
+    capacity: 10,
+  },
+  chatAttachmentProcessing: {
+    kind: 'token bucket' as const,
+    rate: 10,
+    period: 5 * MINUTE_MS,
+    capacity: 10,
+  },
 };
 
 const chatRateLimiter = new RateLimiter(components.rateLimiter, CHAT_RATE_LIMITS);
 
 type RateLimitCheckCtx = Pick<QueryCtx, 'runQuery'>;
-type RateLimitMutationCtx = Pick<MutationCtx, 'runQuery' | 'runMutation'>;
+type RateLimitMutationCtx = Pick<MutationCtx | ActionCtx, 'runQuery' | 'runMutation'>;
 
 export type ChatRateLimitStatus = {
   ok: boolean;
   retryAfter?: number;
 };
+
+type ChatRateLimitKind = 'request' | 'token' | 'attachment';
 
 export type AdvisoryChatRateLimit = {
   request: ChatRateLimitStatus;
@@ -113,11 +127,15 @@ function formatRetryAfterMessage(retryAfter?: number) {
 
 export function getChatRateLimitErrorMessage(args: {
   scope: 'user' | 'global';
-  kind: 'request' | 'token';
+  kind: ChatRateLimitKind;
   retryAfter?: number;
 }) {
   if (args.scope === 'global') {
     return `AI capacity is temporarily full. ${formatRetryAfterMessage(args.retryAfter)}`;
+  }
+
+  if (args.kind === 'attachment') {
+    return `Attachment rate limit exceeded. ${formatRetryAfterMessage(args.retryAfter)}`;
   }
 
   if (args.kind === 'request') {
@@ -169,7 +187,7 @@ export async function getAdvisoryChatRateLimit(
 
 async function throwForRateLimit(args: {
   scope: 'user' | 'global';
-  kind: 'request' | 'token';
+  kind: ChatRateLimitKind;
   retryAfter?: number;
 }): Promise<never> {
   throw new ConvexError(getChatRateLimitErrorMessage(args));
@@ -259,4 +277,42 @@ export async function chargeActualChatTokens(
   });
 
   return usage;
+}
+
+export async function enforceChatAttachmentUploadsRateLimitOrThrow(
+  ctx: RateLimitMutationCtx,
+  args: {
+    organizationId: string;
+    userId: string;
+  },
+) {
+  const result = await chatRateLimiter.limit(ctx, 'chatAttachmentUploads', {
+    key: buildChatRateLimitKey(args),
+  });
+  if (!result.ok) {
+    await throwForRateLimit({
+      scope: 'user',
+      kind: 'attachment',
+      retryAfter: result.retryAfter,
+    });
+  }
+}
+
+export async function enforceChatAttachmentProcessingRateLimitOrThrow(
+  ctx: RateLimitMutationCtx,
+  args: {
+    organizationId: string;
+    userId: string;
+  },
+) {
+  const result = await chatRateLimiter.limit(ctx, 'chatAttachmentProcessing', {
+    key: buildChatRateLimitKey(args),
+  });
+  if (!result.ok) {
+    await throwForRateLimit({
+      scope: 'user',
+      kind: 'attachment',
+      retryAfter: result.retryAfter,
+    });
+  }
 }

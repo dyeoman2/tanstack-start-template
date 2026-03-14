@@ -4,8 +4,8 @@ import {
   getOpenRouterWebSearchProviderOptions,
   isAnthropicChatModel,
   OPENROUTER_WEB_SEARCH_PLUGIN,
-  shouldUseOpenRouterWebSearch,
   type OpenRouterWebSearchSource,
+  shouldUseOpenRouterWebSearch,
   toSourceUrlParts,
 } from '~/features/chat/lib/openrouter-web-search';
 

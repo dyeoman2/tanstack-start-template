@@ -1,5 +1,5 @@
-import type { ChatAttachmentKind, ChatComposerPart } from '~/features/chat/types';
 import type { ParsedFile } from '~/features/chat/lib/file-parser';
+import type { ChatAttachmentKind, ChatComposerPart } from '~/features/chat/types';
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
 const SUPPORTED_DOCUMENT_MIME_TYPES = [
@@ -20,10 +20,7 @@ const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
   ['.txt', 'text/plain'],
   ['.csv', 'text/csv'],
   ['.pdf', 'application/pdf'],
-  [
-    '.xlsx',
-    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  ],
+  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
 ]);
 
 export type UploadedImage = { image: string; mimeType: string; name?: string };

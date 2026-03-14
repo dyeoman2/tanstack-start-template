@@ -6,6 +6,7 @@ import { Loader2, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
+import { Button } from '~/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import {
@@ -25,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { Button } from '~/components/ui/button';
 import { Spinner } from '~/components/ui/spinner';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersTable } from '~/features/organizations/components/OrganizationMembersTable';
@@ -69,8 +69,10 @@ export function OrganizationMembersManagement({
   const queryClient = useQueryClient();
   const router = useRouter();
   const { showToast } = useToast();
+  const [directoryAsOf, setDirectoryAsOf] = useState(() => Date.now());
   const directory = useQuery(api.organizationManagement.listOrganizationDirectory, {
     slug,
+    asOf: directoryAsOf,
     ...searchParams,
   });
   const createInvitation = createOrganizationInvitationServerFn;
@@ -110,6 +112,14 @@ export function OrganizationMembersManagement({
     setNextRole(selectedRoleMember.role);
     setRoleError(null);
   }, [selectedRoleMember]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setDirectoryAsOf(Date.now());
+    }, 60_000);
+
+    return () => window.clearInterval(interval);
+  }, []);
 
   const isLoading = directory === undefined;
   const inviteDialogOpen = inviteDialogOpenProp ?? inviteDialogOpenInternal;
@@ -488,7 +498,7 @@ function SummaryCard({
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
         <CardTitle className="flex h-8 items-center text-2xl">
-          {isLoading ? <Spinner className="size-8" /> : value ?? 0}
+          {isLoading ? <Spinner className="size-8" /> : (value ?? 0)}
         </CardTitle>
       </CardHeader>
     </Card>

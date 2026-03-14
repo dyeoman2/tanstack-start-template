@@ -32,9 +32,7 @@ describe('chat utils', () => {
 
   it('derives a title from the full first user content', () => {
     expect(
-      deriveThreadTitle([
-        { type: 'text', text: 'Write me a launch plan for tomorrow morning' },
-      ]),
+      deriveThreadTitle([{ type: 'text', text: 'Write me a launch plan for tomorrow morning' }]),
     ).toBe('Write me a launch plan for tomorrow morning');
   });
 

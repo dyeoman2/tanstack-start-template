@@ -1,5 +1,5 @@
-import type { CSSProperties } from 'react';
 import { useTheme } from 'next-themes';
+import type { CSSProperties } from 'react';
 import { Toaster as Sonner, type ToasterProps } from 'sonner';
 
 export function Toaster(props: ToasterProps) {

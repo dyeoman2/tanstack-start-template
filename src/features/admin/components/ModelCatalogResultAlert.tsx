@@ -22,7 +22,9 @@ export function ModelCatalogResultAlert({ result }: ModelCatalogResultAlertProps
   return (
     <Alert className="mb-6" variant={result.success ? 'success' : 'destructive'}>
       <AlertTriangle className="h-4 w-4" />
-      <AlertTitle>{result.success ? 'AI Model Catalog Updated' : 'AI Model Update Failed'}</AlertTitle>
+      <AlertTitle>
+        {result.success ? 'AI Model Catalog Updated' : 'AI Model Update Failed'}
+      </AlertTitle>
       <AlertDescription>
         <div className="space-y-2">
           <p>{result.message}</p>

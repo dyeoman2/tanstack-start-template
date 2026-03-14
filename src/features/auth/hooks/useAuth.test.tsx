@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const useSessionMock = vi.fn();
 const useAuthStateMock = vi.fn();
+const useConvexAuthMock = vi.fn();
 const useQueryMock = vi.fn();
 
 vi.mock('~/features/auth/auth-client', () => ({
@@ -14,6 +15,7 @@ vi.mock('./useAuthState', () => ({
 }));
 
 vi.mock('convex/react', () => ({
+  useConvexAuth: useConvexAuthMock,
   useQuery: useQueryMock,
 }));
 
@@ -21,7 +23,12 @@ describe('useAuth', () => {
   beforeEach(() => {
     useSessionMock.mockReset();
     useAuthStateMock.mockReset();
+    useConvexAuthMock.mockReset();
     useQueryMock.mockReset();
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+    });
   });
 
   it('reports impersonation metadata from the Better Auth session', async () => {

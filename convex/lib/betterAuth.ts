@@ -1,22 +1,19 @@
 import type { GenericCtx } from '@convex-dev/better-auth';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../../src/lib/server/better-auth/adapter-utils';
-import {
-  deriveIsSiteAdmin,
-  normalizeUserRole,
-} from '../../src/features/auth/lib/user-role';
 import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
 import type { DataModel } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx } from '../_generated/server';
 
-type CtxWithRunMutation = GenericCtx<DataModel> & {
+type CtxWithRunMutation = {
   runMutation: MutationCtx['runMutation'] | ActionCtx['runMutation'];
 };
 
-type BetterAuthModel = 'user' | 'organization' | 'member' | 'invitation';
+type BetterAuthModel = 'user' | 'organization' | 'member' | 'invitation' | 'session';
 
 export type BetterAuthUser = BetterAuthAdapterUserDoc & {
   role?: string | string[];
@@ -54,6 +51,13 @@ export type BetterAuthInvitation = BetterAuthRecord & {
   status: string;
   inviterId: string;
   expiresAt?: Date | string | number;
+};
+
+export type BetterAuthSessionRecord = BetterAuthRecord & {
+  activeOrganizationId?: string | null;
+  expiresAt?: Date | string | number | null;
+  token: string;
+  userId: string;
 };
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
@@ -378,4 +382,45 @@ export async function findBetterAuthInvitationById(
     model: 'invitation',
     where: [{ field: '_id', operator: 'eq', value: invitationId }],
   })) as BetterAuthInvitation | null;
+}
+
+export async function fetchBetterAuthSessionsByUserId(
+  ctx: GenericCtx<DataModel>,
+  userId: string,
+): Promise<BetterAuthSessionRecord[]> {
+  return await fetchAllRecords<BetterAuthSessionRecord>(ctx, 'session', [
+    {
+      field: 'userId',
+      operator: 'eq',
+      value: userId,
+    },
+  ]);
+}
+
+export async function updateBetterAuthSessionRecord(
+  ctx: CtxWithRunMutation,
+  sessionId: string,
+  data: Record<string, unknown>,
+) {
+  await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+    input: {
+      model: 'session',
+      update: {
+        ...data,
+        updatedAt: Date.now(),
+      },
+      where: [
+        {
+          field: '_id',
+          operator: 'eq',
+          value: sessionId,
+        },
+      ],
+    },
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
 }

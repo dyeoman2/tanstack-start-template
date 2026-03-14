@@ -1,5 +1,5 @@
-import type { UserRole } from '../auth/types';
 import type { OnboardingStatus } from '../../lib/shared/onboarding';
+import type { UserRole } from '../auth/types';
 
 /**
  * Admin feature types

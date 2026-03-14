@@ -72,10 +72,7 @@ function AuthNavigation({ currentPath }: { currentPath: string }) {
             </DropdownMenuItem>
           )}
           <DropdownMenuItem asChild>
-            <Link
-              to="/app/organizations"
-              className="flex items-center gap-2 w-full cursor-pointer"
-            >
+            <Link to="/app/organizations" className="flex items-center gap-2 w-full cursor-pointer">
               <Building2 className="w-4 h-4" />
               Organizations
             </Link>

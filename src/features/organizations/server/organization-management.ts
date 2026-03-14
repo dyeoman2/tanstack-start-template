@@ -1,9 +1,19 @@
 import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
+import { normalizeOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { callBetterAuthEndpoint as callBetterAuthEndpointBase } from '~/lib/server/better-auth/http';
+import {
+  cancelBetterAuthOrganizationInvitation,
+  checkBetterAuthOrganizationSlug,
+  createBetterAuthOrganization,
+  createBetterAuthOrganizationInvitation,
+  deleteBetterAuthOrganization,
+  removeBetterAuthOrganizationMember,
+  updateBetterAuthOrganization,
+  updateBetterAuthOrganizationMemberRole,
+} from '~/lib/server/better-auth/api';
 import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 
@@ -40,6 +50,15 @@ const organizationDeleteSchema = z.object({
   organizationId: z.string().min(1),
 });
 
+const organizationCreateSchema = z.object({
+  name: z.string().min(1),
+  slug: z.string().min(1),
+});
+
+const organizationSlugSchema = z.object({
+  slug: z.string().min(1),
+});
+
 type OrganizationWriteAction =
   | 'invite'
   | 'update-member-role'
@@ -48,29 +67,8 @@ type OrganizationWriteAction =
   | 'update-settings'
   | 'delete-organization';
 
-type OrganizationInviteResponse = {
-  id: string;
-};
-
-type OrganizationMemberResponse = {
-  member: {
-    id: string;
-  };
-};
-
-type OrganizationMutationResponse = {
-  id?: string;
-  name?: string;
-};
-
-type OrganizationInvitationResponse = {
-  invitation: {
-    id: string;
-  };
-};
-
 async function refreshCurrentUserContext() {
-  await convexAuthReactStart.fetchAuthMutation(api.users.ensureCurrentUserContext, {});
+  await convexAuthReactStart.fetchAuthAction(api.users.ensureCurrentUserContext, {});
 }
 
 function normalizeOrganizationAuthErrorMessage(
@@ -121,20 +119,6 @@ function normalizeOrganizationAuthErrorMessage(
   }
 }
 
-async function callBetterAuthEndpoint<TResponse>(
-  path: string,
-  init: {
-    method?: 'GET' | 'POST';
-    body?: Record<string, unknown>;
-    query?: Record<string, string | number | boolean | undefined>;
-  } = {},
-): Promise<TResponse> {
-  return await callBetterAuthEndpointBase<TResponse>(path, init, {
-    mapErrorMessage: ({ code, message, status }) =>
-      normalizeOrganizationAuthErrorMessage(code, message, status),
-  });
-}
-
 async function requireOrganizationWriteAccess(input: {
   action: OrganizationWriteAction;
   organizationId: string;
@@ -151,6 +135,92 @@ async function requireOrganizationWriteAccess(input: {
   }
 }
 
+async function requireOrganizationCreationEligibility() {
+  const result = await convexAuthReactStart.fetchAuthQuery(
+    api.organizationManagement.getOrganizationCreationEligibility,
+    {},
+  );
+
+  if (!result.canCreate) {
+    throw new Error(result.reason ?? 'Organization creation limit reached');
+  }
+
+  return result;
+}
+
+function isOrganizationSlugTakenError(error: unknown) {
+  return (
+    error instanceof ServerError &&
+    error.code === 400 &&
+    typeof error.message === 'string' &&
+    error.message.toLowerCase().includes('slug')
+  );
+}
+
+async function assertOrganizationSlugAvailable(slug: string) {
+  try {
+    await checkBetterAuthOrganizationSlug(slug, ({ code, message, status }) =>
+      normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+    );
+  } catch (error) {
+    if (isOrganizationSlugTakenError(error)) {
+      throw new Error('That organization URL is already in use. Try a different name.');
+    }
+
+    throw error;
+  }
+}
+
+export const checkOrganizationSlugServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationSlugSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      const slug = normalizeOrganizationSlug(data.slug);
+      await assertOrganizationSlugAvailable(slug);
+      return {
+        available: true,
+        slug,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('already in use')) {
+        return {
+          available: false,
+          slug: normalizeOrganizationSlug(data.slug),
+        };
+      }
+
+      throw handleServerError(error, 'Check organization slug');
+    }
+  });
+
+export const createOrganizationServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationCreateSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationCreationEligibility();
+      const name = data.name.trim();
+      const slug = normalizeOrganizationSlug(data.slug);
+      await assertOrganizationSlugAvailable(slug);
+
+      const response = await createBetterAuthOrganization(
+        {
+          keepCurrentActiveOrganization: false,
+          name,
+          slug,
+        },
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+      );
+
+      await refreshCurrentUserContext();
+      return response;
+    } catch (error) {
+      throw handleServerError(error, 'Create organization');
+    }
+  });
+
 export const createOrganizationInvitationServerFn = createServerFn({ method: 'POST' })
   .inputValidator(organizationInvitationSchema)
   .handler(async ({ data }) => {
@@ -161,17 +231,15 @@ export const createOrganizationInvitationServerFn = createServerFn({ method: 'PO
         organizationId: data.organizationId,
       });
 
-      return await callBetterAuthEndpoint<OrganizationInviteResponse>(
-        '/api/auth/organization/invite-member',
+      return await createBetterAuthOrganizationInvitation(
         {
-          method: 'POST',
-          body: {
-            organizationId: data.organizationId,
-            email: data.email.trim().toLowerCase(),
-            role: data.role,
-            ...(data.resend === true ? { resend: true } : {}),
-          },
+          organizationId: data.organizationId,
+          email: data.email.trim().toLowerCase(),
+          role: data.role,
+          ...(data.resend === true ? { resend: true } : {}),
         },
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Create organization invitation');
@@ -190,16 +258,14 @@ export const updateOrganizationMemberRoleServerFn = createServerFn({ method: 'PO
         nextRole: data.role,
       });
 
-      return await callBetterAuthEndpoint<OrganizationMemberResponse>(
-        '/api/auth/organization/update-member-role',
+      return await updateBetterAuthOrganizationMemberRole(
         {
-          method: 'POST',
-          body: {
-            organizationId: data.organizationId,
-            memberId: data.membershipId,
-            role: data.role,
-          },
+          organizationId: data.organizationId,
+          memberId: data.membershipId,
+          role: data.role,
         },
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization member role');
@@ -217,15 +283,13 @@ export const removeOrganizationMemberServerFn = createServerFn({ method: 'POST' 
         membershipId: data.membershipId,
       });
 
-      const response = await callBetterAuthEndpoint<OrganizationMemberResponse>(
-        '/api/auth/organization/remove-member',
+      const response = await removeBetterAuthOrganizationMember(
         {
-          method: 'POST',
-          body: {
-            organizationId: data.organizationId,
-            memberIdOrEmail: data.membershipId,
-          },
+          organizationId: data.organizationId,
+          memberIdOrEmail: data.membershipId,
         },
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
       await refreshCurrentUserContext();
       return response;
@@ -244,14 +308,10 @@ export const cancelOrganizationInvitationServerFn = createServerFn({ method: 'PO
         organizationId: data.organizationId,
       });
 
-      return await callBetterAuthEndpoint<OrganizationInvitationResponse>(
-        '/api/auth/organization/cancel-invitation',
-        {
-          method: 'POST',
-          body: {
-            invitationId: data.invitationId,
-          },
-        },
+      return await cancelBetterAuthOrganizationInvitation(
+        data.invitationId,
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Cancel organization invitation');
@@ -268,18 +328,16 @@ export const updateOrganizationSettingsServerFn = createServerFn({ method: 'POST
         organizationId: data.organizationId,
       });
 
-      return await callBetterAuthEndpoint<OrganizationMutationResponse>(
-        '/api/auth/organization/update',
+      return await updateBetterAuthOrganization(
         {
-          method: 'POST',
-          body: {
-            organizationId: data.organizationId,
-            data: {
-              name: data.name.trim(),
-              logo: data.logo?.trim() || undefined,
-            },
+          organizationId: data.organizationId,
+          data: {
+            name: data.name.trim(),
+            ...(data.logo?.trim() ? { logo: data.logo.trim() } : {}),
           },
         },
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization settings');
@@ -296,12 +354,10 @@ export const deleteOrganizationServerFn = createServerFn({ method: 'POST' })
         organizationId: data.organizationId,
       });
 
-      const response = await callBetterAuthEndpoint<OrganizationMutationResponse>(
-        '/api/auth/organization/delete',
-        {
-          method: 'POST',
-          body: data,
-        },
+      const response = await deleteBetterAuthOrganization(
+        data.organizationId,
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
 
       try {

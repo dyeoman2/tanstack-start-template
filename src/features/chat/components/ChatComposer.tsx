@@ -45,9 +45,9 @@ import type {
   SpeechRecognitionInstance,
 } from '~/features/chat/types/speech-recognition';
 import {
-  chatModelSupportsWebSearch,
   type ChatModelId,
   type ChatModelOption,
+  chatModelSupportsWebSearch,
   DEFAULT_CHAT_MODEL_ID,
   getChatModelOption,
 } from '~/lib/shared/chat-models';

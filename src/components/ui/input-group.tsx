@@ -102,4 +102,4 @@ const InputGroupText = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTM
 );
 InputGroupText.displayName = 'InputGroupText';
 
-export { InputGroup, InputGroupInput, InputGroupIcon, InputGroupText, InputGroupAddon };
+export { InputGroup, InputGroupAddon, InputGroupIcon, InputGroupInput, InputGroupText };

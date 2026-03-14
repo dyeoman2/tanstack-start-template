@@ -145,9 +145,8 @@ export function MarketingHome() {
           Server-first by default, progressively enhanced for the richest user experiences.
         </p>
         <p className="mx-auto max-w-2xl text-sm text-muted-foreground">
-          Explore a fully functional demo with AI chat, dashboard analytics, admin user
-          management, and profile settings, all showcasing real-time data updates and
-          production-ready patterns.
+          Explore a fully functional demo with AI chat, dashboard analytics, admin user management,
+          and profile settings, all showcasing real-time data updates and production-ready patterns.
         </p>
         <div className="flex flex-col gap-3 sm:flex-row sm:justify-center">
           <Button asChild size="lg">

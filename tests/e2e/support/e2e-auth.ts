@@ -28,9 +28,7 @@ async function createAuthenticatedContext(
   cookies: AuthRouteCookie[],
 ): Promise<BrowserContext> {
   const context = await browser.newContext();
-  await context.addCookies(
-    cookies.map(({ path: _path, ...cookie }) => cookie),
-  );
+  await context.addCookies(cookies.map(({ path: _path, ...cookie }) => cookie));
   return context;
 }
 

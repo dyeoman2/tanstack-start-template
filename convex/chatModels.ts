@@ -1,18 +1,15 @@
 import { v } from 'convex/values';
+import {
+  type ChatModelCatalogEntry,
+  type ChatModelOption,
+  selectActiveChatModelCatalogEntries,
+  toChatModelOption,
+} from '../src/lib/shared/chat-models';
 import { internal } from './_generated/api';
 import type { QueryCtx } from './_generated/server';
 import { internalQuery, query } from './_generated/server';
 import { getCurrentUserOrNull } from './auth/access';
-import {
-  aiModelCatalogEntryValidator,
-  chatModelOptionValidator,
-} from './lib/returnValidators';
-import {
-  selectActiveChatModelCatalogEntries,
-  type ChatModelCatalogEntry,
-  type ChatModelOption,
-  toChatModelOption,
-} from '../src/lib/shared/chat-models';
+import { aiModelCatalogEntryValidator, chatModelOptionValidator } from './lib/returnValidators';
 
 function sortModels<
   T extends {
@@ -59,6 +56,8 @@ export const listAvailableChatModels = query({
       {},
     );
 
-    return sortModels(activeModels.map((model: ChatModelCatalogEntry) => toChatModelOption(model, isSiteAdmin)));
+    return sortModels(
+      activeModels.map((model: ChatModelCatalogEntry) => toChatModelOption(model, isSiteAdmin)),
+    );
   },
 });

@@ -1,6 +1,6 @@
-import { defineConfig, devices } from '@playwright/test';
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { defineConfig, devices } from '@playwright/test';
 import { ADMIN_AUTH_STATE_PATH, USER_AUTH_STATE_PATH } from './tests/e2e/support/storage-state';
 
 const port = 3000;

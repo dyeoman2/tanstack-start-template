@@ -1,4 +1,6 @@
-import { memo, useCallback, type HTMLAttributes } from 'react';
+import { Check, Copy } from 'lucide-react';
+import { useTheme } from 'next-themes';
+import { type HTMLAttributes, memo, useCallback } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -8,11 +10,9 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeOptions } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import { Check, Copy } from 'lucide-react';
-import { useTheme } from 'next-themes';
 import { Button } from '~/components/ui/button';
-import { cn } from '~/lib/utils';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
+import { cn } from '~/lib/utils';
 
 const sanitizeSchema: SanitizeOptions = {
   ...defaultSchema,
@@ -55,8 +55,7 @@ const CODE_BLOCK_STYLE: React.CSSProperties = {
   background: 'transparent',
 };
 
-const MARKDOWN_BLOCK_PATTERN =
-  /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|~~~|\|.+\||\[[^\]]+\]:\s)/m;
+const MARKDOWN_BLOCK_PATTERN = /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|~~~|\|.+\||\[[^\]]+\]:\s)/m;
 
 function normalizeParagraphBreaks(text: string) {
   if (!text.includes('\n') || text.includes('\n\n') || MARKDOWN_BLOCK_PATTERN.test(text)) {
@@ -121,7 +120,9 @@ export const Markdown = memo(function Markdown({ children }: { children: string 
   const content = normalizeParagraphBreaks(children);
   const components: Components = {
     code: CodeBlock,
-    p: ({ className, ...props }) => <p className={cn('mt-0 mb-6 leading-relaxed last:mb-0', className)} {...props} />,
+    p: ({ className, ...props }) => (
+      <p className={cn('mt-0 mb-6 leading-relaxed last:mb-0', className)} {...props} />
+    ),
   };
 
   return (

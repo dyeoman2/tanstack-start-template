@@ -4,8 +4,7 @@ import { AuthQueryProvider } from '@daveyplate/better-auth-tanstack';
 import { AuthUIProviderTanstack } from '@daveyplate/better-auth-ui/tanstack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
-import { useConvexAuth } from 'convex/react';
-import { useMutation } from 'convex/react';
+import { useAction, useConvexAuth } from 'convex/react';
 import {
   createContext,
   type MouseEvent,
@@ -47,8 +46,9 @@ interface AuthProviderProps {
 
 function AuthProvider({ children }: AuthProviderProps) {
   const { user, isAuthenticated, isPending, isSiteAdmin } = useAuth();
-  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } = useConvexAuth();
-  const ensureCurrentUserContext = useMutation(api.users.ensureCurrentUserContext);
+  const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
+    useConvexAuth();
+  const ensureCurrentUserContext = useAction(api.users.ensureCurrentUserContext);
   const [authContext, setAuthContext] = useState<RouterAuthContext>({
     authenticated: false,
     user: null,

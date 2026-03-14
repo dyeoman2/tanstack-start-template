@@ -39,10 +39,14 @@ describe('routeAdminGuard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.useRealTimers();
-    Object.defineProperty((import.meta as ImportMeta & { env: Record<string, unknown> }).env, 'DEV', {
-      value: false,
-      configurable: true,
-    });
+    Object.defineProperty(
+      (import.meta as ImportMeta & { env: Record<string, unknown> }).env,
+      'DEV',
+      {
+        value: false,
+        configurable: true,
+      },
+    );
   });
 
   afterEach(() => {
@@ -82,7 +86,9 @@ describe('routeAdminGuard', () => {
       },
     });
 
-    await expect(routeAdminGuard({ location: adminLocation })).rejects.toMatchObject({ status: 302 });
+    await expect(routeAdminGuard({ location: adminLocation })).rejects.toMatchObject({
+      status: 302,
+    });
     expect(redirectMock).toHaveBeenCalledWith({
       to: '/login',
       search: { reset: '', redirectTo: adminLocation.href },

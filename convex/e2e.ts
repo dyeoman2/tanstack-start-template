@@ -4,11 +4,11 @@ import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
+import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 import {
   e2eEnsurePrincipalRoleValidator,
   e2eResetPrincipalValidator,
 } from './lib/returnValidators';
-import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 
 const deletePaginationOpts = {
   cursor: null,

@@ -1,10 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  fetchAuthQueryMock,
-  actionMock,
-  handleServerErrorMock,
-} = vi.hoisted(() => ({
+const { fetchAuthQueryMock, actionMock, handleServerErrorMock } = vi.hoisted(() => ({
   fetchAuthQueryMock: vi.fn(),
   actionMock: vi.fn(),
   handleServerErrorMock: vi.fn((error: unknown) => error),
@@ -23,6 +19,7 @@ vi.mock('@convex/_generated/api', () => ({
   api: {
     users: {
       getUserCount: 'getUserCount',
+      getCurrentUserProfile: 'getCurrentUserProfile',
     },
   },
   internal: {
@@ -57,15 +54,12 @@ describe('bootstrapSignedUpUserServerFn', () => {
   });
 
   it('assigns the first signed up user the admin role', async () => {
-    fetchAuthQueryMock.mockResolvedValue({ totalUsers: 1 });
+    fetchAuthQueryMock
+      .mockResolvedValueOnce({ totalUsers: 1 })
+      .mockResolvedValueOnce({ id: 'user_1', email: 'admin@example.com' });
     actionMock.mockResolvedValue({ found: true });
 
-    const result = await bootstrapSignedUpUserServerFn({
-      data: {
-        authUserId: 'user_1',
-        email: 'admin@example.com',
-      },
-    });
+    const result = await bootstrapSignedUpUserServerFn();
 
     expect(actionMock).toHaveBeenCalledWith('bootstrapUserContext', {
       authUserId: 'user_1',
@@ -82,19 +76,12 @@ describe('bootstrapSignedUpUserServerFn', () => {
 
   it('rolls back the auth user when bootstrap fails', async () => {
     const bootstrapError = new Error('bootstrap failed');
-    fetchAuthQueryMock.mockResolvedValue({ totalUsers: 2 });
-    actionMock
-      .mockRejectedValueOnce(bootstrapError)
-      .mockResolvedValueOnce({ success: true });
+    fetchAuthQueryMock
+      .mockResolvedValueOnce({ totalUsers: 2 })
+      .mockResolvedValueOnce({ id: 'user_2', email: 'user@example.com' });
+    actionMock.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({ success: true });
 
-    await expect(
-      bootstrapSignedUpUserServerFn({
-        data: {
-          authUserId: 'user_2',
-          email: 'user@example.com',
-        },
-      }),
-    ).rejects.toBe(bootstrapError);
+    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(bootstrapError);
 
     expect(actionMock).toHaveBeenNthCalledWith(1, 'bootstrapUserContext', {
       authUserId: 'user_2',
@@ -105,6 +92,22 @@ describe('bootstrapSignedUpUserServerFn', () => {
     expect(actionMock).toHaveBeenNthCalledWith(2, 'rollbackBootstrapUserContext', {
       authUserId: 'user_2',
       email: 'user@example.com',
+    });
+  });
+
+  it('fails closed when counting users fails before bootstrap', async () => {
+    const countError = new Error('count failed');
+    fetchAuthQueryMock
+      .mockRejectedValueOnce(countError)
+      .mockResolvedValueOnce({ id: 'user_3', email: 'user3@example.com' });
+    actionMock.mockResolvedValueOnce({ success: true });
+
+    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(countError);
+
+    expect(actionMock).toHaveBeenCalledTimes(1);
+    expect(actionMock).toHaveBeenCalledWith('rollbackBootstrapUserContext', {
+      authUserId: 'user_3',
+      email: 'user3@example.com',
     });
   });
 });

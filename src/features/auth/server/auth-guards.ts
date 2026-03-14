@@ -4,8 +4,8 @@ import { getRequest } from '@tanstack/react-start/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-role';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
-import { convexAuthReactStart } from './convex-better-auth-react-start';
 import type { UserRole } from '../types';
+import { convexAuthReactStart } from './convex-better-auth-react-start';
 
 export interface AuthenticatedUser {
   id: UserId;

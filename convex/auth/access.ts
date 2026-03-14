@@ -4,12 +4,12 @@ import {
   EDIT_ORGANIZATION_ACCESS,
   getOrganizationAccess,
   NO_ORGANIZATION_ACCESS,
-  SITE_ADMIN_ORGANIZATION_ACCESS,
   type OrganizationAccess,
+  SITE_ADMIN_ORGANIZATION_ACCESS,
   VIEW_ORGANIZATION_ACCESS,
 } from '../../src/features/organizations/lib/organization-permissions';
-import { isEmailVerificationRequiredForUser } from '../../src/lib/shared/email-verification';
 import { getEmailVerificationEnforcedAt } from '../../src/lib/server/env.server';
+import { isEmailVerificationRequiredForUser } from '../../src/lib/shared/email-verification';
 import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
@@ -141,6 +141,18 @@ export async function getCurrentAuthUserOrNull(
   return (await authComponent.safeGetAuthUser(ctx)) as BetterAuthUserWithRole | null;
 }
 
+export function ensureAuthUserIsSiteAdminOrThrow<T extends BetterAuthUserWithRole>(authUser: T): T {
+  if (!deriveIsSiteAdmin(normalizeUserRole(authUser.role))) {
+    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
+  }
+
+  return authUser;
+}
+
+export async function getCurrentSiteAdminAuthUserOrThrow(ctx: AuthzCtx) {
+  return ensureAuthUserIsSiteAdminOrThrow(await getCurrentAuthUserOrThrow(ctx));
+}
+
 export async function getVerifiedCurrentAuthUserOrNull(
   ctx: QueryCtx | MutationCtx,
 ): Promise<BetterAuthUserWithRole | null> {
@@ -164,35 +176,20 @@ async function resolveActiveOrganizationIdForUser(
   authUserId: string,
   session?: BetterAuthSession | null,
 ): Promise<string | null> {
-  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
-  if (memberships.length === 0) {
+  if (
+    typeof session?.activeOrganizationId !== 'string' ||
+    session.activeOrganizationId.length === 0
+  ) {
     return null;
   }
 
-  const organizations = await fetchBetterAuthOrganizationsByIds(
-    ctx,
-    memberships.map((membership) => membership.organizationId),
-  );
-  const organizationsById = new Set(
-    organizations.map((organization) => organization._id ?? organization.id).filter(Boolean),
-  );
-
-  if (typeof session?.activeOrganizationId === 'string' && session.activeOrganizationId.length > 0) {
-    const hasMembership = memberships.some(
-      (membership) => membership.organizationId === session.activeOrganizationId,
-    );
-    if (hasMembership && organizationsById.has(session.activeOrganizationId)) {
-      return session.activeOrganizationId;
-    }
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  if (!memberships.some((membership) => membership.organizationId === session.activeOrganizationId)) {
+    return null;
   }
 
-  for (const membership of memberships) {
-    if (organizationsById.has(membership.organizationId)) {
-      return membership.organizationId;
-    }
-  }
-
-  return null;
+  const organization = await findBetterAuthOrganizationById(ctx, session.activeOrganizationId);
+  return organization ? session.activeOrganizationId : null;
 }
 
 export async function getCurrentUserOrNull(
@@ -254,6 +251,18 @@ export async function getVerifiedCurrentUserOrThrow(
   }
 
   return user;
+}
+
+export function ensureCurrentUserIsSiteAdminOrThrow<T extends CurrentUser>(user: T): T {
+  if (!user.isSiteAdmin) {
+    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
+  }
+
+  return user;
+}
+
+export async function getVerifiedCurrentSiteAdminUserOrThrow(ctx: QueryCtx | MutationCtx) {
+  return ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserOrThrow(ctx));
 }
 
 export async function getCurrentOrganizationOrNull(
@@ -367,7 +376,7 @@ export async function buildCurrentUserProfile(
   const emailVerified = user.authUser.emailVerified ?? false;
   const organizations = await resolveOrganizationsForUser(ctx, user.authUserId);
   const currentOrganization = user.activeOrganizationId
-    ? organizations.find((organization) => organization.id === user.activeOrganizationId) ?? null
+    ? (organizations.find((organization) => organization.id === user.activeOrganizationId) ?? null)
     : null;
 
   return {

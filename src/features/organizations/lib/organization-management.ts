@@ -30,6 +30,14 @@ export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALU
 
 export type OrganizationDirectorySearchParams = z.infer<typeof organizationDirectorySearchSchema>;
 
+export type OrganizationCreationEligibility = {
+  count: number;
+  limit: number | null;
+  canCreate: boolean;
+  reason: string | null;
+  isUnlimited: boolean;
+};
+
 export type OrganizationMemberRow = {
   id: string;
   kind: 'member';

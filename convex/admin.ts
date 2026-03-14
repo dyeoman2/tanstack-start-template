@@ -1,22 +1,21 @@
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
-import { assertUserId } from '../src/lib/shared/user-id';
 import {
-  normalizeAdapterFindManyResult,
   type BetterAuthAdapterUserDoc,
+  normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
+import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
+import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
-import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
-import { authComponent } from './auth';
+import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import { siteAdminAction, siteAdminMutation, siteAdminQuery } from './auth/authorized';
 import { throwConvexError } from './auth/errors';
 import {
   fetchAllBetterAuthUsers,
-  fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthMembersByUserId,
+  fetchBetterAuthOrganizationsByIds,
   findBetterAuthUserByEmail,
   normalizeBetterAuthUserProfile,
   updateBetterAuthUserRecord,
@@ -98,19 +97,6 @@ const storedChatModelCatalogEntryValidator = v.object({
   deprecationDate: v.optional(v.string()),
 });
 
-async function requireSiteAdmin(ctx: QueryCtx | MutationCtx | ActionCtx) {
-  const authUser = await authComponent.getAuthUser(ctx);
-  if (!authUser) {
-    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
-  }
-
-  if (!deriveIsSiteAdmin(normalizeUserRole((authUser as { role?: string | string[] }).role))) {
-    throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
-  }
-
-  return authUser;
-}
-
 function toTimestamp(value: string | number | Date | undefined) {
   if (!value) {
     return Date.now();
@@ -188,9 +174,7 @@ function buildChatModelCatalogEntry(
   };
 }
 
-function mapAdminUserSortField(
-  sortBy: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt',
-) {
+function mapAdminUserSortField(sortBy: 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt') {
   switch (sortBy) {
     case 'createdAt':
       return 'createdAt';
@@ -218,10 +202,7 @@ function matchesAdminUserSearch(
     return true;
   }
 
-  return (
-    user.emailLower.includes(searchValue) ||
-    (user.nameLower?.includes(searchValue) ?? false)
-  );
+  return user.emailLower.includes(searchValue) || (user.nameLower?.includes(searchValue) ?? false);
 }
 
 function compareAdminUserValues(
@@ -286,7 +267,7 @@ function sortAdminUsersPage(
   });
 }
 
-export const listUsers = query({
+export const listUsers = siteAdminQuery({
   args: {
     page: v.number(),
     pageSize: v.number(),
@@ -312,10 +293,10 @@ export const listUsers = query({
   },
   returns: adminUsersResponseValidator,
   handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
     const pageSize = Math.max(1, Math.min(args.pageSize, ADMIN_USER_PAGE_BATCH_SIZE));
-    const page = Math.max(1, args.page);
+    const cursorPage = args.cursor ? Number.parseInt(args.cursor, 10) : Number.NaN;
+    const page =
+      Number.isFinite(cursorPage) && cursorPage > 0 ? cursorPage : Math.max(1, args.page);
     const startIndex = (page - 1) * pageSize;
     const endIndex = startIndex + pageSize;
     const searchValue = normalizeSearchValue(args.search);
@@ -330,8 +311,7 @@ export const listUsers = query({
             },
           ];
 
-    const pageUsers: Array<ReturnType<typeof normalizeBetterAuthUserProfile>> = [];
-    let matchedUsers = 0;
+    const matchedUsers: Array<ReturnType<typeof normalizeBetterAuthUserProfile>> = [];
     let cursor: string | null = null;
 
     while (true) {
@@ -344,7 +324,7 @@ export const listUsers = query({
         },
         paginationOpts: {
           cursor,
-          numItems: pageSize,
+          numItems: ADMIN_USER_PAGE_BATCH_SIZE,
           id: 0,
         },
       });
@@ -357,11 +337,7 @@ export const listUsers = query({
           continue;
         }
 
-        if (matchedUsers >= startIndex && matchedUsers < endIndex) {
-          pageUsers.push(normalizedUser);
-        }
-
-        matchedUsers += 1;
+        matchedUsers.push(normalizedUser);
       }
 
       if (result.isDone || !result.continueCursor) {
@@ -371,7 +347,8 @@ export const listUsers = query({
       cursor = result.continueCursor;
     }
 
-    const sortedPageUsers = sortAdminUsersPage(pageUsers, args);
+    const totalUsers = matchedUsers.length;
+    const sortedPageUsers = sortAdminUsersPage(matchedUsers, args).slice(startIndex, endIndex);
     const pageUserIds = sortedPageUsers.map((user) => user.authUserId);
 
     const [profileEntries, pageMemberships] = await Promise.all([
@@ -466,16 +443,16 @@ export const listUsers = query({
       pagination: {
         page,
         pageSize,
-        total: matchedUsers,
-        totalPages: Math.ceil(matchedUsers / pageSize),
-        hasNextPage: endIndex < matchedUsers,
-        nextCursor: endIndex < matchedUsers ? String(page + 1) : null,
+        total: totalUsers,
+        totalPages: Math.ceil(totalUsers / pageSize),
+        hasNextPage: endIndex < totalUsers,
+        nextCursor: endIndex < totalUsers ? String(page + 1) : null,
       },
     };
   },
 });
 
-export const ensureUserIndex = action({
+export const ensureUserIndex = siteAdminAction({
   args: {
     force: v.optional(v.boolean()),
   },
@@ -485,8 +462,6 @@ export const ensureUserIndex = action({
     totalUsers: v.number(),
   }),
   handler: async (ctx, args): Promise<{ success: true; synced: boolean; totalUsers: number }> => {
-    await requireSiteAdmin(ctx);
-
     const syncState = await ctx.runQuery(internal.admin.getUserIndexSyncStateInternal, {});
     const shouldSync =
       args.force === true ||
@@ -527,20 +502,19 @@ export const getUserIndexSyncStateInternal = internalQuery({
   },
 });
 
-export const syncUserIndexEntry = mutation({
+export const syncUserIndexEntry = siteAdminMutation({
   args: {
     userId: v.string(),
   },
   returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.syncAuthUserProfile, {
       authUserId: args.userId,
     });
   },
 });
 
-export const setUserOnboardingStatus = mutation({
+export const setUserOnboardingStatus = siteAdminMutation({
   args: {
     userId: v.string(),
     onboardingStatus: v.optional(
@@ -554,8 +528,8 @@ export const setUserOnboardingStatus = mutation({
         v.literal('completed'),
       ),
     ),
-    onboardingEmailId: v.optional(v.string()),
-    onboardingEmailMessageId: v.optional(v.string()),
+    onboardingEmailId: v.optional(v.union(v.string(), v.null())),
+    onboardingEmailMessageId: v.optional(v.union(v.string(), v.null())),
     onboardingEmailLastSentAt: v.optional(v.number()),
     onboardingCompletedAt: v.optional(v.number()),
     onboardingDeliveryUpdatedAt: v.optional(v.number()),
@@ -563,7 +537,6 @@ export const setUserOnboardingStatus = mutation({
   },
   returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
       authUserId: args.userId,
       onboardingStatus: args.onboardingStatus as OnboardingStatus | undefined,
@@ -577,24 +550,22 @@ export const setUserOnboardingStatus = mutation({
   },
 });
 
-export const deleteUserIndexEntry = mutation({
+export const deleteUserIndexEntry = siteAdminMutation({
   args: {
     userId: v.string(),
   },
   returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.deleteAuthUserProfile, {
       authUserId: args.userId,
     });
   },
 });
 
-export const getSystemStats = query({
+export const getSystemStats = siteAdminQuery({
   args: {},
   returns: systemStatsValidator,
   handler: async (ctx) => {
-    await requireSiteAdmin(ctx);
     const users = await fetchAllBetterAuthUsers(ctx);
     return {
       users: users.length,
@@ -634,12 +605,10 @@ export const promoteUserByEmail = internalAction({
   },
 });
 
-export const getChatModelCatalogStatus = query({
+export const getChatModelCatalogStatus = siteAdminQuery({
   args: {},
   returns: chatModelCatalogStatusValidator,
   handler: async (ctx) => {
-    await requireSiteAdmin(ctx);
-
     const activeModels = await ctx.db
       .query('aiModelCatalog')
       .withIndex('by_isActive', (q) => q.eq('isActive', true))
@@ -659,12 +628,10 @@ export const getChatModelCatalogStatus = query({
   },
 });
 
-export const listChatModelCatalog = query({
+export const listChatModelCatalog = siteAdminQuery({
   args: {},
   returns: v.array(aiModelCatalogEntryValidator),
   handler: async (ctx): Promise<ChatModelCatalogEntry[]> => {
-    await requireSiteAdmin(ctx);
-
     const [activeModels, inactiveModels] = await Promise.all([
       ctx.db
         .query('aiModelCatalog')
@@ -725,7 +692,7 @@ export const upsertImportedChatModels = internalMutation({
   },
 });
 
-export const createChatModel = mutation({
+export const createChatModel = siteAdminMutation({
   args: {
     modelId: v.string(),
     label: v.string(),
@@ -741,8 +708,6 @@ export const createChatModel = mutation({
   },
   returns: createdChatModelResultValidator,
   handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
     const modelId = args.modelId.trim();
     if (!modelId) {
       throwConvexError('VALIDATION', 'Model ID is required.');
@@ -775,15 +740,13 @@ export const createChatModel = mutation({
   },
 });
 
-export const updateChatModel = mutation({
+export const updateChatModel = siteAdminMutation({
   args: {
     existingModelId: v.string(),
     model: chatModelCatalogInputValidator,
   },
   returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
     const modelId = args.model.modelId.trim();
     if (!modelId) {
       throwConvexError('VALIDATION', 'Model ID is required.');
@@ -826,15 +789,13 @@ export const updateChatModel = mutation({
   },
 });
 
-export const setChatModelActiveState = mutation({
+export const setChatModelActiveState = siteAdminMutation({
   args: {
     modelId: v.string(),
     isActive: v.boolean(),
   },
   returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
-    await requireSiteAdmin(ctx);
-
     const existingModel = await ctx.db
       .query('aiModelCatalog')
       .withIndex('by_modelId', (q) => q.eq('modelId', args.modelId))
@@ -891,7 +852,7 @@ export const truncateAuditLogsBatch = internalMutation({
   },
 });
 
-export const truncateData = action({
+export const truncateData = siteAdminAction({
   args: {},
   returns: v.object({
     success: v.boolean(),
@@ -903,8 +864,6 @@ export const truncateData = action({
     invalidateAllCaches: v.boolean(),
   }),
   handler: async (ctx): Promise<TruncateDataResult> => {
-    await requireSiteAdmin(ctx);
-
     let deletedCount = 0;
     let failedCount = 0;
 
@@ -1007,7 +966,7 @@ export const deleteAppUserContextInternal = internalMutation({
   },
 });
 
-export const cleanupDeletedUserData = action({
+export const cleanupDeletedUserData = siteAdminAction({
   args: {
     userId: v.string(),
     email: v.string(),
@@ -1019,8 +978,6 @@ export const cleanupDeletedUserData = action({
     email: v.string(),
   }),
   handler: async (ctx, args): Promise<CleanupDeletedUserDataResult> => {
-    await requireSiteAdmin(ctx);
-
     const deleteAppUserResult: { deletedAppUser: number } = await ctx.runMutation(
       internal.admin.deleteAppUserContextInternal,
       {

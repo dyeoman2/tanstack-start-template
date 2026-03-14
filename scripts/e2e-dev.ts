@@ -65,20 +65,16 @@ async function main() {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true for authenticated Playwright E2E');
   }
 
-  const child = spawn(
-    'pnpm',
-    ['exec', 'vite', 'dev', '--host', HOST, '--port', PORT],
-    {
-      cwd: process.cwd(),
-      env: {
-        ...process.env,
-        BETTER_AUTH_BASE_URL: BASE_URL,
-        BETTER_AUTH_SITE_URL: BASE_URL,
-        NODE_OPTIONS: withInstrumentServerImport(process.env.NODE_OPTIONS),
-      },
-      stdio: 'inherit',
+  const child = spawn('pnpm', ['exec', 'vite', 'dev', '--host', HOST, '--port', PORT], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      BETTER_AUTH_BASE_URL: BASE_URL,
+      BETTER_AUTH_SITE_URL: BASE_URL,
+      NODE_OPTIONS: withInstrumentServerImport(process.env.NODE_OPTIONS),
     },
-  );
+    stdio: 'inherit',
+  });
 
   child.on('exit', (code) => {
     process.exit(code ?? 0);

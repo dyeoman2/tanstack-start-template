@@ -70,7 +70,8 @@ describe('env.server', () => {
 
     expect(getBetterAuthTrustedOrigins()).toEqual([
       'http://127.0.0.1:3000',
-      'http://localhost:3000',
+      'http://localhost:*',
+      'http://127.0.0.1:*',
     ]);
   });
 
@@ -88,6 +89,8 @@ describe('env.server', () => {
 
     expect(getBetterAuthAllowedHosts()).toEqual([
       'app.example.com',
+      'localhost:*',
+      '127.0.0.1:*',
       '*.netlify.app',
       'preview-*.example.dev',
     ]);
@@ -96,20 +99,26 @@ describe('env.server', () => {
   it('preserves explicit ports in allowed host patterns', () => {
     process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
 
-    expect(getBetterAuthAllowedHosts()).toEqual([
-      '127.0.0.1:3000',
-      'localhost:3000',
-    ]);
+    expect(getBetterAuthAllowedHosts()).toEqual(['127.0.0.1:3000', 'localhost:*', '127.0.0.1:*']);
   });
 
-  it('builds a dynamic Better Auth base url config when allowed hosts are configured', () => {
+  it('builds a dynamic Better Auth base url config without fallback for non-local hosts', () => {
     process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
     process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app';
 
     expect(getBetterAuthBaseUrlConfig()).toEqual({
-      allowedHosts: ['app.example.com', '*.netlify.app'],
-      fallback: 'https://app.example.com',
+      allowedHosts: ['app.example.com', 'localhost:*', '127.0.0.1:*', '*.netlify.app'],
       protocol: 'auto',
+    });
+  });
+
+  it('preserves fallback for loopback site urls', () => {
+    process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
+
+    expect(getBetterAuthBaseUrlConfig()).toEqual({
+      allowedHosts: ['127.0.0.1:3000', 'localhost:*', '127.0.0.1:*'],
+      fallback: 'http://127.0.0.1:3000',
+      protocol: 'http',
     });
   });
 
@@ -125,7 +134,7 @@ describe('env.server', () => {
     process.env.BETTER_AUTH_SITE_URL = 'http://127.0.0.1:3000';
 
     expect(isTrustedBetterAuthOrigin('http://localhost:3000')).toBe(true);
-    expect(isTrustedBetterAuthOrigin('http://localhost:4000')).toBe(false);
+    expect(isTrustedBetterAuthOrigin('http://localhost:4000')).toBe(true);
   });
 
   it('adds a trusted request origin when the request host matches the configured policy', () => {
@@ -136,8 +145,19 @@ describe('env.server', () => {
 
     expect(getBetterAuthTrustedOrigins(request)).toEqual([
       'https://app.example.com',
+      'http://localhost:*',
+      'http://127.0.0.1:*',
       'https://feature-123.netlify.app',
     ]);
+  });
+
+  it('does not add development loopback wildcards in production', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.BETTER_AUTH_SITE_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = '*.netlify.app';
+
+    expect(getBetterAuthAllowedHosts()).toEqual(['app.example.com', '*.netlify.app']);
+    expect(getBetterAuthTrustedOrigins()).toEqual(['https://app.example.com']);
   });
 
   it('returns the configured email verification rollout timestamp when present', () => {
@@ -153,6 +173,8 @@ describe('env.server', () => {
   });
 
   it('throws when Better Auth secret is missing', () => {
-    expect(() => getBetterAuthSecret()).toThrow(/BETTER_AUTH_SECRET environment variable is required/);
+    expect(() => getBetterAuthSecret()).toThrow(
+      /BETTER_AUTH_SECRET environment variable is required/,
+    );
   });
 });

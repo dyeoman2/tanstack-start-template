@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { callBetterAuthEndpoint } from '~/lib/server/better-auth/http';
+import { leaveBetterAuthOrganization } from '~/lib/server/better-auth/api';
 import { handleServerError } from '~/lib/server/error-utils.server';
 
 const organizationIdSchema = z.object({
@@ -15,14 +15,13 @@ export const leaveOrganizationServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAuth();
+      await leaveBetterAuthOrganization(data.organizationId);
 
-      await callBetterAuthEndpoint<{ success: boolean }>('/api/auth/organization/leave', {
-        method: 'POST',
-        body: data,
-      });
-
-      await convexAuthReactStart.fetchAuthMutation(api.users.ensureCurrentUserContext, {});
-      const profile = await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {});
+      await convexAuthReactStart.fetchAuthAction(api.users.ensureCurrentUserContext, {});
+      const profile = await convexAuthReactStart.fetchAuthQuery(
+        api.users.getCurrentUserProfile,
+        {},
+      );
       return {
         success: true,
         nextOrganizationId: profile?.currentOrganization?.id ?? null,

@@ -38,7 +38,7 @@ function RegisterPage() {
 
   // Use Convex query directly instead of server function wrapper
   const userCountResult = useQuery(api.users.getUserCount, {});
-  const isFirstUser = userCountResult?.isFirstUser ?? false;
+  const isFirstUser = userCountResult !== undefined && userCountResult.isFirstUser === true;
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -105,7 +105,7 @@ function RegisterPage() {
             ? undefined
             : new URL('/login?verified=success', window.location.origin).toString();
 
-        const result = await authClient.signUp.email({
+        await authClient.signUp.email({
           email,
           password,
           name,
@@ -115,20 +115,7 @@ function RegisterPage() {
           },
         });
 
-        const authUserId =
-          typeof result === 'object' && result !== null && 'user' in result
-            ? (result.user as { id?: string } | undefined)?.id
-            : undefined;
-
-        const bootstrapResult = authUserId
-          ? await bootstrapSignedUpUserServerFn({
-              data: { authUserId, email },
-            })
-          : {
-              success: false,
-              isFirstUser: false,
-              message: 'Account created. Check your inbox to verify your email.',
-            };
+        const bootstrapResult = await bootstrapSignedUpUserServerFn();
 
         setSuccessMessage(bootstrapResult.message);
         setTimeout(() => {

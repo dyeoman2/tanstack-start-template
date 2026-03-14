@@ -1,29 +1,37 @@
 import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
-import { z } from 'zod';
 import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { convexAuthReactStart } from './convex-better-auth-react-start';
+import { normalizeUserId } from '~/lib/shared/user-id';
 import { USER_ROLES } from '../types';
+import { convexAuthReactStart } from './convex-better-auth-react-start';
 
-// Zod schemas for user management
-const bootstrapSignedUpUserSchema = z.object({
-  authUserId: z.string().min(1, 'Auth user id is required'),
-  email: z.string().email('Valid email is required'),
-});
+export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    let currentProfile: { email?: string | null } | null | undefined;
 
-export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' })
-  .inputValidator(bootstrapSignedUpUserSchema)
-  .handler(async ({ data }) => {
     try {
       const userCountResult = await convexAuthReactStart.fetchAuthQuery(api.users.getUserCount, {});
       const isFirstUser = userCountResult.totalUsers === 1;
+      currentProfile = await convexAuthReactStart.fetchAuthQuery(
+        api.users.getCurrentUserProfile,
+        {},
+      );
+      const authUserId = normalizeUserId(currentProfile);
+      const email =
+        typeof currentProfile?.email === 'string' && currentProfile.email.length > 0
+          ? currentProfile.email
+          : null;
+
+      if (!authUserId || !email) {
+        throw new Error('Authenticated signup context is unavailable');
+      }
 
       const roleToSet = isFirstUser ? USER_ROLES.ADMIN : USER_ROLES.USER;
       const bootstrapResult = await createConvexAdminClient().action(
         internal.users.bootstrapUserContext,
         {
-          authUserId: data.authUserId,
+          authUserId,
           createdAt: Date.now(),
           updatedAt: Date.now(),
           role: roleToSet,
@@ -47,9 +55,12 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' })
       };
     } catch (error) {
       try {
+        const rollbackProfile =
+          currentProfile ??
+          (await convexAuthReactStart.fetchAuthQuery(api.users.getCurrentUserProfile, {}));
         await createConvexAdminClient().action(internal.users.rollbackBootstrapUserContext, {
-          authUserId: data.authUserId,
-          email: data.email,
+          authUserId: normalizeUserId(rollbackProfile) ?? '',
+          email: rollbackProfile?.email ?? '',
         });
       } catch {
         // Preserve the original bootstrap error; rollback is best-effort.
@@ -57,4 +68,5 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' })
 
       throw handleServerError(error, 'Bootstrap signed up user');
     }
-  });
+  },
+);

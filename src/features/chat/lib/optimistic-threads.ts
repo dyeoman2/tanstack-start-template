@@ -50,7 +50,10 @@ export function clearOptimisticThread(threadId: string) {
   emitChange();
 }
 
-export function setOptimisticThreadBootstrap(threadId: string, bootstrap: OptimisticThreadBootstrap) {
+export function setOptimisticThreadBootstrap(
+  threadId: string,
+  bootstrap: OptimisticThreadBootstrap,
+) {
   bootstrapStore = {
     ...bootstrapStore,
     [threadId]: bootstrap,

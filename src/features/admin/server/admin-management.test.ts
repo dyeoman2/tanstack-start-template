@@ -13,9 +13,9 @@ describe('normalizeAdminUser', () => {
       emailVerified: true,
       banned: true,
       banReason: 'Abuse',
-      banExpires: '2026-03-12T10:00:00.000Z',
-      createdAt: '2026-03-10T10:00:00.000Z',
-      updatedAt: '2026-03-11T10:00:00.000Z',
+      banExpires: Date.parse('2026-03-12T10:00:00.000Z'),
+      createdAt: Date.parse('2026-03-10T10:00:00.000Z'),
+      updatedAt: Date.parse('2026-03-11T10:00:00.000Z'),
     });
 
     expect(result).toMatchObject({

@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   chatModelSupportsWebSearch,
   DEFAULT_CHAT_MODEL_ID,
+  getAuthorizedChatModel,
   getChatModelCatalogEntry,
   getChatModelOption,
-  getAuthorizedChatModel,
   getDefaultChatModelCatalogEntry,
   selectActiveChatModelCatalogEntries,
   toChatModelOption,

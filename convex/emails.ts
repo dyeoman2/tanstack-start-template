@@ -4,15 +4,12 @@ import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {
-  emailServiceConfiguredValidator,
-  successTrueValidator,
-} from './lib/returnValidators';
-import {
   buildInvitationTemplate,
   buildResetPasswordTemplate,
   buildVerifyEmailTemplate,
   type EmailTemplateId,
 } from './emailTemplates';
+import { emailServiceConfiguredValidator, successTrueValidator } from './lib/returnValidators';
 
 export {
   AVAILABLE_EMAIL_TEMPLATE_IDS,
@@ -266,6 +263,8 @@ export const sendPasswordResetEmailMutation = internalAction({
       await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
         authUserId: args.user.id,
         onboardingStatus: 'email_pending',
+        onboardingEmailId: null,
+        onboardingEmailMessageId: null,
         onboardingEmailLastSentAt: sentAt,
         onboardingDeliveryError:
           error instanceof Error ? error.message : 'Failed to send password reset email',

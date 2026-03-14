@@ -1,6 +1,6 @@
 import { APIError } from 'better-auth/api';
 import { describe, expect, it, vi } from 'vitest';
-import { ServerError, handleServerError } from '~/lib/server/error-utils.server';
+import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 
 describe('handleServerError', () => {
   it('wraps Better Auth API errors with normalized status codes', () => {

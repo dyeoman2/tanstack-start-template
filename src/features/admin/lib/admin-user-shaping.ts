@@ -1,5 +1,5 @@
-import type { UserRole } from '../../auth/types';
 import type { OnboardingStatus } from '../../../lib/shared/onboarding';
+import type { UserRole } from '../../auth/types';
 
 export type AdminUserSortField = 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
 export type AdminUserSortDirection = 'asc' | 'desc';

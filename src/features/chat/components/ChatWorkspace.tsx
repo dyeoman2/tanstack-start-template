@@ -15,10 +15,10 @@ import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants'
 import { toPersonaId, toRunId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
 import { optimisticallySendChatMessage } from '~/features/chat/lib/optimistic-send';
 import {
-  clearOptimisticThreadBootstrap,
   clearOptimisticThread,
-  setOptimisticThreadBootstrap,
+  clearOptimisticThreadBootstrap,
   setOptimisticThread,
+  setOptimisticThreadBootstrap,
   useOptimisticThreadBootstrap,
 } from '~/features/chat/lib/optimistic-threads';
 import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
@@ -323,8 +323,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         message.role === 'user' &&
         message.clientMessageId === pendingAssistantPlaceholder.clientMessageId,
     );
-    const anchorMessage =
-      targetIndex === -1 ? baseMessages.at(-1) : baseMessages[targetIndex];
+    const anchorMessage = targetIndex === -1 ? baseMessages.at(-1) : baseMessages[targetIndex];
     if (!anchorMessage) {
       return baseMessages;
     }
@@ -353,7 +352,11 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       return [...baseMessages, placeholder];
     }
 
-    return [...baseMessages.slice(0, targetIndex + 1), placeholder, ...baseMessages.slice(targetIndex + 1)];
+    return [
+      ...baseMessages.slice(0, targetIndex + 1),
+      placeholder,
+      ...baseMessages.slice(targetIndex + 1),
+    ];
   }, [currentMessages, optimisticThreadBootstrap, pendingAssistantPlaceholder, threadId]);
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
@@ -484,8 +487,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       .slice(targetIndex + 1)
       .find((message) => message.role === 'assistant');
     const hasCommittedAssistantAfterTarget =
-      Boolean(assistantAfterTarget) &&
-      assistantAfterTarget?.status !== 'pending';
+      Boolean(assistantAfterTarget) && assistantAfterTarget?.status !== 'pending';
 
     if (hasCommittedAssistantAfterTarget || latestRunState?.status === 'error') {
       setPendingAssistantPlaceholder(null);
@@ -640,9 +642,20 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   };
 
   const handleUploadAttachment = async (file: File): Promise<ChatAttachment> => {
-    const uploadUrl = await generateChatAttachmentUploadUrl({});
+    const uploadUrlWithToken = await generateChatAttachmentUploadUrl({});
+    const uploadUrl = new URL(uploadUrlWithToken);
+    const fragmentParams = new URLSearchParams(
+      uploadUrl.hash.startsWith('#') ? uploadUrl.hash.slice(1) : uploadUrl.hash,
+    );
+    const uploadToken = fragmentParams.get('chat-upload-token');
+
+    if (!uploadToken) {
+      throw new Error('Upload token was not issued for this attachment.');
+    }
+
+    uploadUrl.hash = '';
     const mimeType = inferChatAttachmentMimeType(file);
-    const uploadResponse = await fetch(uploadUrl, {
+    const uploadResponse = await fetch(uploadUrl.toString(), {
       method: 'POST',
       headers: {
         'Content-Type': mimeType,
@@ -666,6 +679,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
 
     const attachment = await createChatAttachmentFromUpload({
       storageId: toStorageId(uploadPayload.storageId),
+      uploadToken,
       name: file.name,
       mimeType,
       sizeBytes: file.size,
@@ -723,17 +737,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           lastMessageAt: Date.now(),
           canManage: true,
         });
-        setOptimisticThreadBootstrap(
-          createdThreadId,
-          {
-            messages: createOptimisticBootstrapMessages({
-              clientMessageId,
-              parts,
-              text,
-              threadId: createdThreadId,
-            }),
-          },
-        );
+        setOptimisticThreadBootstrap(createdThreadId, {
+          messages: createOptimisticBootstrapMessages({
+            clientMessageId,
+            parts,
+            text,
+            threadId: createdThreadId,
+          }),
+        });
         setPendingAssistantPlaceholder({
           threadId: createdThreadId,
           clientMessageId,

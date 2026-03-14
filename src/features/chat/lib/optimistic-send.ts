@@ -10,10 +10,7 @@ type SendMessageArgs = {
   clientMessageId?: string;
 };
 
-export function optimisticallySendChatMessage(
-  store: OptimisticLocalStore,
-  args: SendMessageArgs,
-) {
+export function optimisticallySendChatMessage(store: OptimisticLocalStore, args: SendMessageArgs) {
   optimisticallySendMessage(api.agentChat.listThreadMessages)(store, {
     threadId: args.threadId,
     prompt: args.text,
@@ -29,14 +26,12 @@ export function optimisticallySendChatMessage(
       continue;
     }
 
-    const maxOrder = Math.max(...value.page.map((message: (typeof value.page)[number]) => message.order));
+    const maxOrder = Math.max(
+      ...value.page.map((message: (typeof value.page)[number]) => message.order),
+    );
     let pendingUserOrder: number | null = null;
     const nextPage = value.page.map((message: (typeof value.page)[number]) => {
-      if (
-        message.order !== maxOrder ||
-        message.role !== 'user' ||
-        message.status !== 'pending'
-      ) {
+      if (message.order !== maxOrder || message.role !== 'user' || message.status !== 'pending') {
         return message;
       }
 

@@ -3,6 +3,8 @@ import {
   buildChatRateLimitKey,
   buildChatUsageAggregatePatch,
   chargeActualChatTokens,
+  enforceChatAttachmentProcessingRateLimitOrThrow,
+  enforceChatAttachmentUploadsRateLimitOrThrow,
   enforceChatPreflightOrThrow,
   estimateChatInputTokens,
   getAdvisoryChatRateLimit,
@@ -152,6 +154,48 @@ describe('chatRateLimits', () => {
         key: 'chat-provider-global',
         count: 150,
         reserve: true,
+      }),
+    );
+  });
+
+  it('rejects when the attachment upload URL rate limit is exceeded', async () => {
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn().mockResolvedValueOnce({ ok: false, retryAfter: 7_000 }),
+    };
+
+    await expect(
+      enforceChatAttachmentUploadsRateLimitOrThrow(ctx, {
+        organizationId: 'org_123',
+        userId: 'user_456',
+      }),
+    ).rejects.toThrow('Attachment rate limit exceeded. Try again in 7 seconds.');
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'chatAttachmentUploads',
+        key: 'org_123:user_456',
+      }),
+    );
+  });
+
+  it('rejects when the attachment processing rate limit is exceeded', async () => {
+    const ctx = {
+      runQuery: vi.fn(),
+      runMutation: vi.fn().mockResolvedValueOnce({ ok: false, retryAfter: 9_000 }),
+    };
+
+    await expect(
+      enforceChatAttachmentProcessingRateLimitOrThrow(ctx, {
+        organizationId: 'org_123',
+        userId: 'user_456',
+      }),
+    ).rejects.toThrow('Attachment rate limit exceeded. Try again in 9 seconds.');
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: 'chatAttachmentProcessing',
+        key: 'org_123:user_456',
       }),
     );
   });

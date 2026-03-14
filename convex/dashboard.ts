@@ -1,7 +1,7 @@
 import { v } from 'convex/values';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
-import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { getVerifiedCurrentAuthUserOrNull } from './auth/access';
 import { dashboardDataValidator } from './lib/returnValidators';
 

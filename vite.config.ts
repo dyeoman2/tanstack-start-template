@@ -11,10 +11,7 @@ export default defineConfig((env) => {
 
   return {
     optimizeDeps: {
-      include: [
-        '@tanstack/router-core',
-        '@tanstack/router-core/ssr/client',
-      ],
+      include: ['@tanstack/router-core', '@tanstack/router-core/ssr/client'],
     },
     resolve: {
       tsconfigPaths: true,

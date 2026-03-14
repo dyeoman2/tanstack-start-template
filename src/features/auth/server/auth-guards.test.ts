@@ -34,10 +34,14 @@ import { requireAdmin, requireAuth } from './auth-guards';
 describe('auth-guards', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    Object.defineProperty((import.meta as ImportMeta & { env: Record<string, unknown> }).env, 'SSR', {
-      value: true,
-      configurable: true,
-    });
+    Object.defineProperty(
+      (import.meta as ImportMeta & { env: Record<string, unknown> }).env,
+      'SSR',
+      {
+        value: true,
+        configurable: true,
+      },
+    );
     getRequestMock.mockReturnValue(new Request('http://127.0.0.1:3000/app'));
   });
 

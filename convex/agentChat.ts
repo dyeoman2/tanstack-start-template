@@ -22,6 +22,7 @@ import {
   abortRunWithReason,
   buildUserMessage,
   deleteMessagesAfterPrompt,
+  isValidContinuationPromptMessage,
   isTextOnlyUserMessage,
   resolveThread,
 } from './agentChatActions';
@@ -41,6 +42,7 @@ import {
   type AdvisoryChatRateLimit,
   buildChatUsageAggregatePatch,
   chargeActualChatTokens,
+  enforceChatAttachmentUploadsRateLimitOrThrow,
   enforceChatPreflightOrThrow,
   getAdvisoryChatRateLimit,
 } from './lib/chatRateLimits';
@@ -74,17 +76,29 @@ function getCurrentUserDisplayName(
   return user.authUser.email ?? 'Unknown user';
 }
 
+const CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+function createChatAttachmentUploadToken() {
+  return crypto.randomUUID();
+}
+
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
   const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const identity = await ctx.auth.getUserIdentity();
   const organizationId = user.activeOrganizationId;
 
   if (!organizationId) {
     throw new ConvexError('No active organization is selected.');
   }
 
+  if (!identity?.sessionId) {
+    throw new ConvexError('Authentication session is unavailable.');
+  }
+
   return {
     userId: user._id,
     organizationId,
+    sessionId: String(identity.sessionId),
     isSiteAdmin: user.isSiteAdmin,
     currentUserName: getCurrentUserDisplayName(user),
   };
@@ -92,15 +106,17 @@ async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
 
 async function getCurrentChatContextOrNull(ctx: QueryCtx | MutationCtx) {
   const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const identity = await ctx.auth.getUserIdentity();
   const organizationId = user.activeOrganizationId;
 
-  if (!organizationId) {
+  if (!organizationId || !identity?.sessionId) {
     return null;
   }
 
   return {
     userId: user._id,
     organizationId,
+    sessionId: String(identity.sessionId),
     isSiteAdmin: user.isSiteAdmin,
     currentUserName: getCurrentUserDisplayName(user),
   };
@@ -540,6 +556,51 @@ export const createAttachmentInternal = internalMutation({
       ...args,
       updatedAt: args.createdAt,
     });
+  },
+});
+
+export const issueAttachmentUploadTokenInternal = internalMutation({
+  args: {
+    token: v.string(),
+    userId: v.string(),
+    organizationId: v.string(),
+    sessionId: v.string(),
+    expiresAt: v.number(),
+    createdAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert('chatAttachmentUploadTokens', args);
+    return null;
+  },
+});
+
+export const consumeAttachmentUploadTokenInternal = internalMutation({
+  args: {
+    token: v.string(),
+    userId: v.string(),
+    organizationId: v.string(),
+    sessionId: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const tokenRecord = await ctx.db
+      .query('chatAttachmentUploadTokens')
+      .withIndex('by_token', (q) => q.eq('token', args.token))
+      .unique();
+
+    if (!tokenRecord) {
+      return false;
+    }
+
+    const isValid =
+      tokenRecord.userId === args.userId &&
+      tokenRecord.organizationId === args.organizationId &&
+      tokenRecord.sessionId === args.sessionId &&
+      tokenRecord.expiresAt > Date.now();
+
+    await ctx.db.delete(tokenRecord._id);
+    return isValid;
   },
 });
 
@@ -1515,7 +1576,7 @@ export const retryAssistantResponse = mutation({
       messageIds: [run.promptMessageId],
     })) as Array<AgentMessageDoc | null>;
 
-    if (!promptMessage) {
+    if (!isValidContinuationPromptMessage(promptMessage, thread.agentThreadId)) {
       throw new ConvexError('Prompt message not found.');
     }
 
@@ -1603,13 +1664,14 @@ export const continuePrompt = mutation({
       }
     }
 
-    const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
+    const [candidatePromptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
       messageIds: [args.promptMessageId],
     })) as Array<AgentMessageDoc | null>;
 
-    if (!promptMessage) {
+    if (!isValidContinuationPromptMessage(candidatePromptMessage, thread.agentThreadId)) {
       throw new ConvexError('Prompt message not found.');
     }
+    const promptMessage = candidatePromptMessage;
 
     await enforceChatPreflightOrThrow(ctx, {
       organizationId,
@@ -1670,8 +1732,25 @@ export const generateChatAttachmentUploadUrl = mutation({
   args: {},
   returns: v.string(),
   handler: async (ctx) => {
-    await getCurrentChatContext(ctx);
-    return await ctx.storage.generateUploadUrl();
+    const viewer = await getCurrentChatContext(ctx);
+    await enforceChatAttachmentUploadsRateLimitOrThrow(ctx, {
+      organizationId: viewer.organizationId,
+      userId: viewer.userId,
+    });
+    const uploadUrl = await ctx.storage.generateUploadUrl();
+    const token = createChatAttachmentUploadToken();
+    const now = Date.now();
+
+    await ctx.runMutation(internal.agentChat.issueAttachmentUploadTokenInternal, {
+      token,
+      userId: viewer.userId,
+      organizationId: viewer.organizationId,
+      sessionId: viewer.sessionId,
+      expiresAt: now + CHAT_ATTACHMENT_UPLOAD_TOKEN_TTL_MS,
+      createdAt: now,
+    });
+
+    return `${uploadUrl}#chat-upload-token=${encodeURIComponent(token)}`;
   },
 });
 

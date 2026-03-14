@@ -4,8 +4,8 @@ import {
   canManageOrganization,
   canRemoveMember,
   deriveViewerRole,
-  getOrganizationAccess,
   getAssignableRoles,
+  getOrganizationAccess,
 } from './organization-permissions';
 
 describe('organization permission rules', () => {

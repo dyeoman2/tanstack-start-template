@@ -1,7 +1,4 @@
-import {
-  AccountSettingsCards,
-  SecuritySettingsCards,
-} from '@daveyplate/better-auth-ui';
+import { AccountSettingsCards, SecuritySettingsCards } from '@daveyplate/better-auth-ui';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';

@@ -2,13 +2,13 @@
 
 import { OpenRouter } from '@openrouter/sdk';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 import { importedModelsResultValidator } from './lib/returnValidators';
-import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
 
 const TOP_FREE_MODEL_IDS = [
   'stepfun/step-3.5-flash:free',
@@ -154,7 +154,9 @@ export const importTopFreeModels = action({
     await requireSiteAdmin(ctx);
 
     const response = await listZdrModelsForCurrentUser();
-    const models = response.data.filter((model) => TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]));
+    const models = response.data.filter((model) =>
+      TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]),
+    );
 
     if (models.length === 0) {
       throw new Error('OpenRouter did not return any of the configured top free models.');
@@ -169,7 +171,8 @@ export const importTopFreeModels = action({
         modelId: model.id,
         label: formatImportedLabel(model.name),
         description:
-          model.description?.trim() || 'Top free OpenRouter model imported from the current rankings.',
+          model.description?.trim() ||
+          'Top free OpenRouter model imported from the current rankings.',
         task: 'Text Generation',
         access: 'public' as const,
         supportsWebSearch: true,
@@ -194,10 +197,13 @@ export const importTopFreeModels = action({
       };
     });
 
-    const result: { modelCount: number } = await ctx.runMutation(internal.admin.upsertImportedChatModels, {
-      entries,
-      refreshedAt,
-    });
+    const result: { modelCount: number } = await ctx.runMutation(
+      internal.admin.upsertImportedChatModels,
+      {
+        entries,
+        refreshedAt,
+      },
+    );
 
     return {
       success: true,
@@ -237,7 +243,8 @@ export const importTopPaidModels = action({
           modelId: model.id,
           label: formatImportedLabel(model.name),
           description:
-            model.description?.trim() || 'Top paid OpenRouter model imported from the current rankings.',
+            model.description?.trim() ||
+            'Top paid OpenRouter model imported from the current rankings.',
           task: 'Text Generation',
           access: 'admin' as const,
           supportsWebSearch: true,
@@ -273,10 +280,13 @@ export const importTopPaidModels = action({
       refreshedAt,
     }));
 
-    const result: { modelCount: number } = await ctx.runMutation(internal.admin.upsertImportedChatModels, {
-      entries,
-      refreshedAt,
-    });
+    const result: { modelCount: number } = await ctx.runMutation(
+      internal.admin.upsertImportedChatModels,
+      {
+        entries,
+        refreshedAt,
+      },
+    );
 
     return {
       success: true,

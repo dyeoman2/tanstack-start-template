@@ -12,7 +12,10 @@ const principalSchema = z.object({
 
 async function buildPlaywrightAuthPayload(request: Request, principal: 'user' | 'admin') {
   const session = await establishE2EAuthSession(request, principal);
-  const cookies = getPlaywrightCookiesFromResponse(session.authResponse, new URL(request.url).origin);
+  const cookies = getPlaywrightCookiesFromResponse(
+    session.authResponse,
+    new URL(request.url).origin,
+  );
 
   if (cookies.length === 0) {
     throw new Response('No auth cookies were issued for e2e principal', { status: 500 });

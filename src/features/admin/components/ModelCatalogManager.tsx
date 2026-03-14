@@ -21,7 +21,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '~/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '~/components/ui/table';
 import type { ChatModelAccess } from '~/lib/shared/chat-models';
 
 type ModelCatalogEntry = {
@@ -58,7 +65,10 @@ interface ModelCatalogManagerProps {
   models: ModelCatalogEntry[] | undefined;
   isMutating: boolean;
   onCreateModel: (payload: ModelCatalogPayload) => Promise<unknown>;
-  onUpdateModel: (args: { existingModelId: string; model: ModelCatalogPayload }) => Promise<unknown>;
+  onUpdateModel: (args: {
+    existingModelId: string;
+    model: ModelCatalogPayload;
+  }) => Promise<unknown>;
   onSetModelActiveState: (args: { modelId: string; isActive: boolean }) => Promise<unknown>;
   onImportTopFreeModels: () => Promise<unknown>;
   onImportTopPaidModels: () => Promise<unknown>;
@@ -187,11 +197,21 @@ export function ModelCatalogManager({
         </div>
 
         <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" disabled={isMutating} onClick={() => void onImportTopFreeModels()}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isMutating}
+            onClick={() => void onImportTopFreeModels()}
+          >
             <Download className="size-4" />
             Import top free models
           </Button>
-          <Button type="button" variant="outline" disabled={isMutating} onClick={() => void onImportTopPaidModels()}>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={isMutating}
+            onClick={() => void onImportTopPaidModels()}
+          >
             <Download className="size-4" />
             Import top paid models
           </Button>
@@ -427,7 +447,9 @@ export function ModelCatalogManager({
                 name="contextWindow"
                 validators={{
                   onChange: ({ value }) =>
-                    value !== undefined && value <= 0 ? 'Context window must be positive' : undefined,
+                    value !== undefined && value <= 0
+                      ? 'Context window must be positive'
+                      : undefined,
                 }}
               >
                 {(field) => (
@@ -548,7 +570,9 @@ export function ModelCatalogManager({
                     onBlur={field.handleBlur}
                     placeholder="2026-12-31"
                   />
-                  <FieldDescription>Optional ISO date string for planned retirement.</FieldDescription>
+                  <FieldDescription>
+                    Optional ISO date string for planned retirement.
+                  </FieldDescription>
                 </Field>
               )}
             </form.Field>
