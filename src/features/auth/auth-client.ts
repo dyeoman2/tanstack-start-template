@@ -5,7 +5,12 @@ import { createAuthClient } from 'better-auth/react';
 import { useSyncExternalStore } from 'react';
 
 export const authClient = createAuthClient({
-  plugins: [convexClient(), adminClient(), organizationClient()],
+  plugins: [
+    convexClient(),
+    adminClient(),
+    // Match the server plugin configuration: organizations enabled, teams intentionally omitted.
+    organizationClient(),
+  ],
 });
 
 export const authHooks = createAuthHooks(authClient);

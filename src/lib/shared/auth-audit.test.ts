@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
-  AUTH_AUDIT_EVENT_TYPES,
   AUTH_AUDIT_EVENT_OWNERS,
+  AUTH_AUDIT_EVENT_TYPES,
   AUTH_AUDIT_HANDLER_OWNERS,
-  isAuthAuditHandlerOwner,
   isAuthAuditEventType,
+  isAuthAuditHandlerOwner,
   normalizeAuditIdentifier,
 } from './auth-audit';
 
@@ -20,9 +20,9 @@ describe('auth audit helpers', () => {
     expect(normalizeAuditIdentifier(undefined)).toBeUndefined();
   });
 
-  it('includes organization and team events in the supported list', () => {
+  it('includes organization events in the supported list', () => {
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('member_invited');
-    expect(AUTH_AUDIT_EVENT_TYPES).toContain('team_member_removed');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('invite_cancelled');
   });
 
   it('maps every supported event to at least one handler owner', () => {

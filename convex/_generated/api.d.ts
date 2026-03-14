@@ -34,6 +34,7 @@ import type * as lib_betterAuth from "../lib/betterAuth.js";
 import type * as lib_chatAgentRuntime from "../lib/chatAgentRuntime.js";
 import type * as lib_chatAttachments from "../lib/chatAttachments.js";
 import type * as lib_chatRateLimits from "../lib/chatRateLimits.js";
+import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as migrations from "../migrations.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
@@ -73,6 +74,7 @@ declare const fullApi: ApiFromModules<{
   "lib/chatAgentRuntime": typeof lib_chatAgentRuntime;
   "lib/chatAttachments": typeof lib_chatAttachments;
   "lib/chatRateLimits": typeof lib_chatRateLimits;
+  "lib/returnValidators": typeof lib_returnValidators;
   migrations: typeof migrations;
   organizationManagement: typeof organizationManagement;
   playground: typeof playground;

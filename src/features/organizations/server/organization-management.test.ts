@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
+  adminActionMock,
   requireAuthMock,
   fetchAuthMutationMock,
   fetchAuthQueryMock,
   getRequestMock,
   handleServerErrorMock,
 } = vi.hoisted(() => ({
+  adminActionMock: vi.fn(),
   requireAuthMock: vi.fn(),
   fetchAuthMutationMock: vi.fn(),
   fetchAuthQueryMock: vi.fn(),
@@ -32,6 +34,11 @@ vi.mock('@convex/_generated/api', () => ({
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
     },
   },
+  internal: {
+    organizationManagement: {
+      cleanupOrganizationDataInternal: 'cleanupOrganizationDataInternal',
+    },
+  },
 }));
 
 vi.mock('@tanstack/react-start/server', () => ({
@@ -47,6 +54,12 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
     fetchAuthMutation: fetchAuthMutationMock,
     fetchAuthQuery: fetchAuthQueryMock,
   },
+}));
+
+vi.mock('~/lib/server/convex-admin.server', () => ({
+  createConvexAdminClient: () => ({
+    action: adminActionMock,
+  }),
 }));
 
 vi.mock('~/lib/server/error-utils.server', () => ({
@@ -87,6 +100,7 @@ describe('organization management server functions', () => {
       }),
     );
     fetchAuthQueryMock.mockResolvedValue({ allowed: true });
+    adminActionMock.mockResolvedValue({ success: true });
     vi.stubGlobal('fetch', vi.fn());
   });
 
@@ -153,7 +167,10 @@ describe('organization management server functions', () => {
 
     expect(fetch).toHaveBeenNthCalledWith(
       1,
-      new URL('/api/auth/organization/invite-member', 'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings'),
+      new URL(
+        '/api/auth/organization/invite-member',
+        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
+      ),
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -166,7 +183,10 @@ describe('organization management server functions', () => {
     );
     expect(fetch).toHaveBeenNthCalledWith(
       2,
-      new URL('/api/auth/organization/update-member-role', 'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings'),
+      new URL(
+        '/api/auth/organization/update-member-role',
+        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
+      ),
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -178,7 +198,10 @@ describe('organization management server functions', () => {
     );
     expect(fetch).toHaveBeenNthCalledWith(
       3,
-      new URL('/api/auth/organization/update', 'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings'),
+      new URL(
+        '/api/auth/organization/update',
+        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
+      ),
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({
@@ -230,6 +253,9 @@ describe('organization management server functions', () => {
       action: 'delete-organization',
       organizationId: 'org_1',
     });
+    expect(adminActionMock).toHaveBeenCalledWith('cleanupOrganizationDataInternal', {
+      organizationId: 'org_1',
+    });
     expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(1, 'ensureCurrentUserContext', {});
     expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(2, 'ensureCurrentUserContext', {});
   });
@@ -254,7 +280,10 @@ describe('organization management server functions', () => {
       organizationId: 'org_1',
     });
     expect(fetch).toHaveBeenCalledWith(
-      new URL('/api/auth/organization/cancel-invitation', 'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings'),
+      new URL(
+        '/api/auth/organization/cancel-invitation',
+        'http://127.0.0.1:3000/app/organizations/cottage-hospital/settings',
+      ),
       expect.objectContaining({
         method: 'POST',
         body: JSON.stringify({ invitationId: 'invite_1' }),

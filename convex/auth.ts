@@ -11,6 +11,7 @@ import {
   type SharedSendInvitationEmail,
 } from './betterAuth/sharedOptions';
 import { createAuthAuditPlugin } from './lib/authAudit';
+import { authUserValidator, rateLimitResultValidator } from './lib/returnValidators';
 import betterAuthSchema from './betterAuth/schema';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -272,6 +273,7 @@ export const rateLimitAction = internalAction({
       }),
     ),
   },
+  returns: rateLimitResultValidator,
   handler: async (ctx, args) => {
     return await ctx.runMutation(components.rateLimiter.lib.rateLimit, args);
   },
@@ -279,6 +281,7 @@ export const rateLimitAction = internalAction({
 
 export const rotateKeys = internalAction({
   args: {},
+  returns: v.string(),
   handler: async (ctx, args) => {
     void args;
     const auth = createAuth(ctx);
@@ -302,6 +305,7 @@ export const rotateKeys = internalAction({
 
 export const getCurrentUser = query({
   args: {},
+  returns: v.union(authUserValidator, v.null()),
   handler: async (ctx) => {
     return authComponent.getAuthUser(ctx);
   },

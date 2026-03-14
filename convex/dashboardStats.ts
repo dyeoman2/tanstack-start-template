@@ -1,6 +1,7 @@
 import { v } from 'convex/values';
 import type { MutationCtx } from './_generated/server';
 import { internalMutation } from './_generated/server';
+import { dashboardCountsValidator } from './lib/returnValidators';
 
 const DASHBOARD_STATS_KEY = 'global';
 const USER_COUNT_BATCH_SIZE = 256;
@@ -30,6 +31,7 @@ export const adjustUserCounts = internalMutation({
     totalDelta: v.number(),
     activeDelta: v.optional(v.number()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const statsDoc = await ctx.db
       .query('dashboardStats')
@@ -49,7 +51,7 @@ export const adjustUserCounts = internalMutation({
         activeUsers,
         updatedAt: now,
       });
-      return;
+      return null;
     }
 
     const nextTotal = Math.max(0, statsDoc.totalUsers + args.totalDelta);
@@ -60,11 +62,14 @@ export const adjustUserCounts = internalMutation({
       activeUsers: nextActive,
       updatedAt: now,
     });
+
+    return null;
   },
 });
 
 export const recomputeUserCounts = internalMutation({
   args: {},
+  returns: dashboardCountsValidator,
   handler: async (ctx) => {
     const totalUsers = await countUsers(ctx);
     const activeUsers = totalUsers;

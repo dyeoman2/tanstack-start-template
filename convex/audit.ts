@@ -11,6 +11,7 @@ import type { Doc } from './_generated/dataModel';
 import { internalMutation, query, type QueryCtx } from './_generated/server';
 import { getVerifiedCurrentAuthUserOrNull } from './auth/access';
 import { throwConvexError } from './auth/errors';
+import { auditLogsResponseValidator } from './lib/returnValidators';
 
 type AuditLogDoc = Doc<'auditLogs'>;
 const AUDIT_FETCH_BATCH_SIZE = 128;
@@ -145,6 +146,7 @@ export const insertAuditLog = internalMutation({
     userAgent: v.optional(v.string()),
     createdAt: v.optional(v.number()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     if (!isAuthAuditEventType(args.eventType)) {
       throw new Error(`Unsupported audit event type: ${args.eventType}`);
@@ -171,6 +173,8 @@ export const insertAuditLog = internalMutation({
         ? { userAgent: normalizeOptionalString(args.userAgent) }
         : {}),
     });
+
+    return null;
   },
 });
 
@@ -183,6 +187,7 @@ export const getAuditLogs = query({
     eventType: v.optional(v.string()),
     userId: v.optional(v.string()),
   },
+  returns: auditLogsResponseValidator,
   handler: async (ctx, args) => {
     const authUser = await getVerifiedCurrentAuthUserOrNull(ctx);
     if (!authUser) {

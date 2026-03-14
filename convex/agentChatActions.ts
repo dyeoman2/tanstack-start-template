@@ -20,6 +20,9 @@ import {
 } from './lib/agentChat';
 import { baseChatAgent, buildChatRequestConfig } from './lib/chatAgentRuntime';
 import { buildAttachmentPromptSummary, extractDocumentText } from './lib/chatAttachments';
+import {
+  chatAttachmentWithPreviewValidator,
+} from './lib/returnValidators';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -623,6 +626,7 @@ export const createChatAttachmentFromUpload = action({
     mimeType: v.string(),
     sizeBytes: v.number(),
   },
+  returns: chatAttachmentWithPreviewValidator,
   handler: async (ctx, args) => {
     const { userId, organizationId } = await getAuthenticatedContext(ctx);
     const kind = args.mimeType.toLowerCase().startsWith('image/') ? 'image' : 'document';
@@ -717,13 +721,14 @@ export const runChatGenerationInternal = internalAction({
   args: {
     runId: v.id('chatRuns'),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const run = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
       runId: args.runId,
     })) as Doc<'chatRuns'> | null;
 
     if (!run || run.status !== 'streaming' || !run.promptMessageId) {
-      return;
+      return null;
     }
 
     const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
@@ -740,7 +745,7 @@ export const runChatGenerationInternal = internalAction({
           failureKind: 'unknown',
         },
       });
-      return;
+      return null;
     }
 
     try {
@@ -797,7 +802,7 @@ export const runChatGenerationInternal = internalAction({
       ]);
 
       if (!currentRun) {
-        return;
+        return null;
       }
 
       if (currentRun.status !== 'streaming') {
@@ -815,6 +820,7 @@ export const runChatGenerationInternal = internalAction({
         }
 
         return;
+        
       }
 
       await ctx.runMutation(internal.agentChat.patchRunInternal, {
@@ -834,7 +840,7 @@ export const runChatGenerationInternal = internalAction({
         runId: args.runId,
       })) as Doc<'chatRuns'> | null;
       if (!finalizedRun || finalizedRun.status !== 'streaming') {
-        return;
+        return null;
       }
 
       if (assistantMessage?._id && allSources.length > 0) {
@@ -868,7 +874,7 @@ export const runChatGenerationInternal = internalAction({
       })) as Doc<'chatRuns'> | null;
 
       if (!latestRun || latestRun.status === 'aborted') {
-        return;
+        return null;
       }
 
       await abortRunWithReason(ctx, {
@@ -878,6 +884,8 @@ export const runChatGenerationInternal = internalAction({
         failureKind: classifyChatRunFailure(error),
       });
     }
+
+    return null;
   },
 });
 
@@ -886,6 +894,7 @@ export const stopRun = action({
     threadId: v.optional(v.id('chatThreads')),
     runId: v.optional(v.id('chatRuns')),
   },
+  returns: v.boolean(),
   handler: async (ctx, args) => {
     const viewer = await getAuthenticatedContext(ctx);
     let run: Doc<'chatRuns'> | null = null;

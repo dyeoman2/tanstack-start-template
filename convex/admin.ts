@@ -21,6 +21,18 @@ import {
   normalizeBetterAuthUserProfile,
   updateBetterAuthUserRecord,
 } from './lib/betterAuth';
+import {
+  adminUsersResponseValidator,
+  aiModelCatalogEntryValidator,
+  chatModelCatalogStatusValidator,
+  createdChatModelResultValidator,
+  importedModelCountValidator,
+  mutationMessageResultValidator,
+  promotedUserResultValidator,
+  successValidator,
+  systemStatsValidator,
+  userProfileSyncStateDocValidator,
+} from './lib/returnValidators';
 
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
@@ -298,6 +310,7 @@ export const listUsers = query({
     role: v.union(v.literal('all'), v.literal('admin'), v.literal('user')),
     cursor: v.optional(v.string()),
   },
+  returns: adminUsersResponseValidator,
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
@@ -466,6 +479,11 @@ export const ensureUserIndex = action({
   args: {
     force: v.optional(v.boolean()),
   },
+  returns: v.object({
+    success: v.literal(true),
+    synced: v.boolean(),
+    totalUsers: v.number(),
+  }),
   handler: async (ctx, args): Promise<{ success: true; synced: boolean; totalUsers: number }> => {
     await requireSiteAdmin(ctx);
 
@@ -500,6 +518,7 @@ export const ensureUserIndex = action({
 
 export const getUserIndexSyncStateInternal = internalQuery({
   args: {},
+  returns: v.union(userProfileSyncStateDocValidator, v.null()),
   handler: async (ctx) => {
     return await ctx.db
       .query('userProfileSyncState')
@@ -512,6 +531,7 @@ export const syncUserIndexEntry = mutation({
   args: {
     userId: v.string(),
   },
+  returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.syncAuthUserProfile, {
@@ -541,6 +561,7 @@ export const setUserOnboardingStatus = mutation({
     onboardingDeliveryUpdatedAt: v.optional(v.number()),
     onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
   },
+  returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
@@ -560,6 +581,7 @@ export const deleteUserIndexEntry = mutation({
   args: {
     userId: v.string(),
   },
+  returns: successValidator,
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     await requireSiteAdmin(ctx);
     return await ctx.runMutation(internal.users.deleteAuthUserProfile, {
@@ -570,6 +592,7 @@ export const deleteUserIndexEntry = mutation({
 
 export const getSystemStats = query({
   args: {},
+  returns: systemStatsValidator,
   handler: async (ctx) => {
     await requireSiteAdmin(ctx);
     const users = await fetchAllBetterAuthUsers(ctx);
@@ -584,6 +607,7 @@ export const promoteUserByEmail = internalAction({
   args: {
     email: v.string(),
   },
+  returns: promotedUserResultValidator,
   handler: async (ctx, args) => {
     const email = args.email.trim().toLowerCase();
     const authUser = await findBetterAuthUserByEmail(ctx, email);
@@ -612,6 +636,7 @@ export const promoteUserByEmail = internalAction({
 
 export const getChatModelCatalogStatus = query({
   args: {},
+  returns: chatModelCatalogStatusValidator,
   handler: async (ctx) => {
     await requireSiteAdmin(ctx);
 
@@ -636,6 +661,7 @@ export const getChatModelCatalogStatus = query({
 
 export const listChatModelCatalog = query({
   args: {},
+  returns: v.array(aiModelCatalogEntryValidator),
   handler: async (ctx): Promise<ChatModelCatalogEntry[]> => {
     await requireSiteAdmin(ctx);
 
@@ -669,6 +695,7 @@ export const upsertImportedChatModels = internalMutation({
     entries: v.array(storedChatModelCatalogEntryValidator),
     refreshedAt: v.number(),
   },
+  returns: importedModelCountValidator,
   handler: async (ctx, args) => {
     for (const entry of args.entries) {
       const existingModel = await ctx.db
@@ -712,6 +739,7 @@ export const createChatModel = mutation({
     deprecated: v.optional(v.boolean()),
     deprecationDate: v.optional(v.string()),
   },
+  returns: createdChatModelResultValidator,
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
@@ -752,6 +780,7 @@ export const updateChatModel = mutation({
     existingModelId: v.string(),
     model: chatModelCatalogInputValidator,
   },
+  returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 
@@ -802,6 +831,7 @@ export const setChatModelActiveState = mutation({
     modelId: v.string(),
     isActive: v.boolean(),
   },
+  returns: mutationMessageResultValidator,
   handler: async (ctx, args) => {
     await requireSiteAdmin(ctx);
 

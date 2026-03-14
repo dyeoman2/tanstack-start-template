@@ -36,6 +36,16 @@ import {
   fetchBetterAuthOrganizationsByIds,
   normalizeBetterAuthUserProfile,
 } from './lib/betterAuth';
+import {
+  bootstrapUserContextResultValidator,
+  currentAppUserValidator,
+  currentUserProfileValidator,
+  ensureUserContextResultValidator,
+  successTrueValidator,
+  successValidator,
+  userContextRecordsValidator,
+  userCountValidator,
+} from './lib/returnValidators';
 
 type EnsureUserContextArgs = {
   authUserId: string;
@@ -279,6 +289,7 @@ async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string)
 
 export const getUserCount = query({
   args: {},
+  returns: userCountValidator,
   handler: async (ctx) => {
     let totalUsers = 0;
     let cursor: string | null = null;
@@ -320,6 +331,7 @@ export const ensureUserContextForAuthUser = internalMutation({
     createdAt: v.number(),
     updatedAt: v.number(),
   },
+  returns: ensureUserContextResultValidator,
   handler: async (ctx, args) => {
     return await ensureUserContextRecord(ctx, args);
   },
@@ -329,6 +341,7 @@ export const syncAuthUserProfile = internalMutation({
   args: {
     authUserId: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     await syncUserProfileByAuthUserId(ctx, args.authUserId);
     return { success: true };
@@ -356,6 +369,7 @@ export const setAuthUserOnboardingState = internalMutation({
     onboardingDeliveryUpdatedAt: v.optional(v.number()),
     onboardingDeliveryError: v.optional(v.union(v.string(), v.null())),
   },
+  returns: successValidator,
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('userProfiles')
@@ -379,6 +393,7 @@ export const deleteAuthUserProfile = internalMutation({
   args: {
     authUserId: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const existing = await ctx.db
       .query('userProfiles')
@@ -431,6 +446,10 @@ export const syncUserProfilesSnapshot = internalMutation({
       }),
     ),
   },
+  returns: v.object({
+    success: v.literal(true),
+    totalUsers: v.number(),
+  }),
   handler: async (ctx, args) => {
     const existingProfiles: UserProfileDocument[] = [];
     let cursor: string | null = null;
@@ -499,7 +518,7 @@ export const syncUserProfilesSnapshot = internalMutation({
     }
 
     return {
-      success: true,
+      success: true as const,
       totalUsers: args.users.length,
     };
   },
@@ -512,6 +531,7 @@ export const bootstrapUserContext = internalAction({
     updatedAt: v.number(),
     role: v.optional(v.union(v.literal('user'), v.literal('admin'))),
   },
+  returns: bootstrapUserContextResultValidator,
   handler: async (ctx, args): Promise<BootstrapUserContextResult> => {
     const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'user',
@@ -572,6 +592,7 @@ export const rollbackBootstrapUserContext = internalAction({
     authUserId: v.string(),
     email: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args): Promise<{ success: true }> => {
     const deletePaginationOpts = {
       cursor: null,
@@ -679,6 +700,7 @@ export const getUserContextRecordIds = internalQuery({
   args: {
     authUserId: v.string(),
   },
+  returns: userContextRecordsValidator,
   handler: async (ctx, args): Promise<UserContextRecords> => {
     const [appUser, userProfile] = await Promise.all([
       ctx.db
@@ -703,6 +725,7 @@ export const deleteUserContextRecords = internalMutation({
     appUserId: v.union(v.id('users'), v.null()),
     userProfileId: v.union(v.id('userProfiles'), v.null()),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     if (args.appUserId) {
       await ctx.db.delete(args.appUserId);
@@ -711,11 +734,14 @@ export const deleteUserContextRecords = internalMutation({
     if (args.userProfileId) {
       await ctx.db.delete(args.userProfileId);
     }
+
+    return null;
   },
 });
 
 export const ensureCurrentUserContext = mutation({
   args: {},
+  returns: ensureUserContextResultValidator,
   handler: async (ctx) => {
     const authUser = await authComponent.getAuthUser(ctx);
     if (!authUser) {
@@ -736,6 +762,7 @@ export const updateCurrentUserProfile = mutation({
     name: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const authUser = await authComponent.getAuthUser(ctx);
     if (!authUser) {
@@ -786,6 +813,15 @@ export const updateCurrentUserProfile = mutation({
 
 export const markCurrentUserOnboardingComplete = mutation({
   args: {},
+  returns: v.union(
+    v.object({
+      success: v.literal(false),
+    }),
+    v.object({
+      success: v.literal(true),
+      onboardingCompletedAt: v.number(),
+    }),
+  ),
   handler: async (ctx) => {
     const authUser = await getCurrentAuthUserOrNull(ctx);
     if (!authUser) {
@@ -799,7 +835,7 @@ export const markCurrentUserOnboardingComplete = mutation({
       .first();
 
     if (!existing) {
-      return { success: false };
+      return { success: false as const };
     }
 
     const onboardingCompletedAt = existing.onboardingCompletedAt ?? Date.now();
@@ -811,7 +847,7 @@ export const markCurrentUserOnboardingComplete = mutation({
     });
 
     return {
-      success: true,
+      success: true as const,
       onboardingCompletedAt,
     };
   },
@@ -819,6 +855,7 @@ export const markCurrentUserOnboardingComplete = mutation({
 
 export const getCurrentUserProfile = query({
   args: {},
+  returns: v.union(currentUserProfileValidator, v.null()),
   handler: async (ctx): Promise<CurrentUserProfile | null> => {
     const authUser = await getCurrentAuthUserOrNull(ctx);
     if (!authUser) {
@@ -860,6 +897,7 @@ export const getCurrentUserProfile = query({
 
 export const getCurrentAppUser = query({
   args: {},
+  returns: v.union(currentAppUserValidator, v.null()),
   handler: async (ctx) => {
     return await getCurrentUserOrNull(ctx);
   },

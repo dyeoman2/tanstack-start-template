@@ -1,10 +1,11 @@
-import { api } from '@convex/_generated/api';
+import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import { callBetterAuthEndpoint as callBetterAuthEndpointBase } from '~/lib/server/better-auth/http';
-import { handleServerError } from '~/lib/server/error-utils.server';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
+import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 
 const organizationInvitationSchema = z.object({
   organizationId: z.string().min(1),
@@ -46,11 +47,6 @@ type OrganizationWriteAction =
   | 'cancel-invitation'
   | 'update-settings'
   | 'delete-organization';
-
-type OrganizationWriteAccessResult = {
-  allowed: boolean;
-  reason?: string;
-};
 
 type OrganizationInviteResponse = {
   id: string;
@@ -307,6 +303,22 @@ export const deleteOrganizationServerFn = createServerFn({ method: 'POST' })
           body: data,
         },
       );
+
+      try {
+        await createConvexAdminClient().action(
+          internal.organizationManagement.cleanupOrganizationDataInternal,
+          {
+            organizationId: data.organizationId,
+          },
+        );
+      } catch (error) {
+        throw new ServerError(
+          'Organization removal succeeded, but app cleanup failed. Retry the cleanup flow to reconcile remaining organization data.',
+          error instanceof ServerError ? error.code : 500,
+          error,
+        );
+      }
+
       await refreshCurrentUserContext();
       return response;
     } catch (error) {

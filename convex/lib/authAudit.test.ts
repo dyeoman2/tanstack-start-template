@@ -2,12 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AUTH_AUDIT_EVENT_TYPES } from '../../src/lib/shared/auth-audit';
 import {
   AUTH_AUDIT_ALL_HANDLER_REGISTRY,
+  type AuthAuditEndpointContext,
   buildSessionCreateAuditRecordsForTesting,
   buildUserCreateAuditRecordsForTesting,
   maybeWarnOnUnmappedAuditEndpointForTesting,
   processAuthAuditAfterHookForTesting,
   resetUnmappedAuditWarningsForTesting,
-  type AuthAuditEndpointContext,
 } from './authAudit';
 
 function createTestContext(options: {
@@ -193,33 +193,6 @@ describe('auth audit handlers', () => {
       invitationId: 'invite_1',
       method: 'POST',
       path: '/organization/accept-invitation',
-    });
-  });
-
-  it('emits organization team events with team identifiers in metadata', async () => {
-    const result = await processAuthAuditAfterHookForTesting(
-      createTestContext({
-        body: { teamId: 'team_1', userId: 'user_member' },
-        path: '/organization/add-team-member',
-        returned: { organizationId: 'org_1' },
-        session: {
-          user: { email: 'owner@example.com', id: 'user_owner' },
-        },
-      }),
-    );
-
-    expect(result.matchedHandlerNames).toEqual(['organization.team-member-added']);
-    expect(result.events).toHaveLength(1);
-    expect(result.events[0]).toMatchObject({
-      eventType: 'team_member_added',
-      organizationId: 'org_1',
-      userId: 'user_member',
-    });
-    expect(parseMetadata(result.events[0].metadata)).toMatchObject({
-      actorUserId: 'user_owner',
-      method: 'POST',
-      path: '/organization/add-team-member',
-      teamId: 'team_1',
     });
   });
 });

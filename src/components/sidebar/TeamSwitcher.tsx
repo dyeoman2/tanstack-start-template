@@ -1,15 +1,14 @@
-import * as React from 'react';
-import type { Organization } from 'better-auth/plugins/organization';
-import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import type { Organization } from 'better-auth/plugins/organization';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
+import * as React from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
 import {
@@ -24,14 +23,14 @@ import { authClient, authHooks } from '~/features/auth/auth-client';
 import { CreateOrganizationDialog } from '~/features/organizations/components/CreateOrganizationDialog';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 
-export type TeamSwitcherItem = {
+type OrganizationSwitcherItem = {
   name: string;
   logo: React.ElementType;
-  plan: string;
+  description: string;
   to: string;
 };
 
-export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
+export function OrganizationSwitcher() {
   const { isMobile } = useSidebar();
   const queryClient = useQueryClient();
   const location = useLocation();
@@ -40,39 +39,39 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
   const { showToast } = useToast();
   const { data: organizations, isPending: organizationsPending } = authHooks.useListOrganizations();
   const { data: activeOrganization } = authHooks.useActiveOrganization();
-  const [activeTeam, setActiveTeam] = React.useState<TeamSwitcherItem | null>(teams[0] ?? null);
+  const [activeOrganizationItem, setActiveOrganizationItem] =
+    React.useState<OrganizationSwitcherItem | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
 
-  const organizationItems = React.useMemo<TeamSwitcherItem[]>(() => {
+  const organizationItems = React.useMemo<OrganizationSwitcherItem[]>(() => {
     return (organizations ?? []).map((organization) => ({
       name: organization.name,
       logo: Building2,
-      plan: 'Organization workspace',
+      description: 'Organization workspace',
       to: `/app/organizations/${organization.slug}/settings`,
     }));
   }, [organizations]);
 
   React.useEffect(() => {
     const organizationSlug = getOrganizationSlugFromPath(location.pathname);
-    const matchedOrganization =
+    const matchedOrganizationItem =
       (organizationSlug
-        ? organizationItems.find((team) => team.to.startsWith(`/app/organizations/${organizationSlug}/`))
+        ? organizationItems.find((organization) =>
+            organization.to.startsWith(`/app/organizations/${organizationSlug}/`),
+          )
         : null) ??
       (location.pathname.startsWith('/app/organizations') && activeOrganization
-        ? organizationItems.find((team) => team.name === activeOrganization.name) ?? null
-        : null);
-
-    const matchedTeam =
-      matchedOrganization ??
-      teams.find((team) => location.pathname === team.to || location.pathname.startsWith(`${team.to}/`)) ??
-      teams[0] ??
+        ? (organizationItems.find(
+            (organization) => organization.name === activeOrganization.name,
+          ) ?? null)
+        : null) ??
       organizationItems[0] ??
       null;
 
-    setActiveTeam(matchedTeam);
-  }, [activeOrganization, location.pathname, organizationItems, teams]);
+    setActiveOrganizationItem(matchedOrganizationItem);
+  }, [activeOrganization, location.pathname, organizationItems]);
 
-  if (!activeTeam) {
+  if (!activeOrganizationItem) {
     return null;
   }
 
@@ -86,11 +85,11 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <activeTeam.logo className="size-4" />
+                <activeOrganizationItem.logo className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
-                <span className="truncate font-semibold">{activeTeam.name}</span>
-                <span className="truncate text-xs">{activeTeam.plan}</span>
+                <span className="truncate font-semibold">{activeOrganizationItem.name}</span>
+                <span className="truncate text-xs">{activeOrganizationItem.description}</span>
               </div>
               <ChevronsUpDown className="ml-auto" />
             </SidebarMenuButton>
@@ -101,25 +100,9 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
             side={isMobile ? 'bottom' : 'right'}
             sideOffset={4}
           >
-            {teams.map((team, index) => (
-              <DropdownMenuItem
-                key={team.name}
-                className="gap-2 p-2"
-                onClick={() => {
-                  setActiveTeam(team);
-                  void navigate({
-                    to: team.to,
-                  });
-                }}
-              >
-                <div className="flex size-6 items-center justify-center rounded-sm border">
-                  <team.logo className="size-4 shrink-0" />
-                </div>
-                {team.name}
-                <DropdownMenuShortcut>⌘{index + 1}</DropdownMenuShortcut>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuLabel className="text-xs text-muted-foreground">Organizations</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs text-muted-foreground">
+              Organizations
+            </DropdownMenuLabel>
             {organizationsPending ? (
               <div className="space-y-2 px-2 py-1">
                 <Skeleton className="h-9 w-full rounded-md" />
@@ -134,7 +117,7 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
                     void handleOrganizationSelect({
                       organization,
                       navigate,
-                      onActiveTeamChange: setActiveTeam,
+                      onActiveOrganizationChange: setActiveOrganizationItem,
                       onError: showToast,
                       queryClient,
                       routerInvalidate: async () => {
@@ -147,7 +130,9 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
                     {getInitials(organization.name)}
                   </div>
                   <span className="truncate">{organization.name}</span>
-                  {activeOrganization?.id === organization.id ? <Check className="ml-auto size-4" /> : null}
+                  {activeOrganization?.id === organization.id ? (
+                    <Check className="ml-auto size-4" />
+                  ) : null}
                 </DropdownMenuItem>
               ))
             ) : (
@@ -177,14 +162,14 @@ export function TeamSwitcher({ teams }: { teams: TeamSwitcherItem[] }) {
 async function handleOrganizationSelect({
   organization,
   navigate,
-  onActiveTeamChange,
+  onActiveOrganizationChange,
   onError,
   queryClient,
   routerInvalidate,
 }: {
   organization: Organization;
   navigate: ReturnType<typeof useNavigate>;
-  onActiveTeamChange: (team: TeamSwitcherItem) => void;
+  onActiveOrganizationChange: (organization: OrganizationSwitcherItem) => void;
   onError: (message: string, variant: 'error' | 'success' | 'info') => void;
   queryClient: Pick<QueryClient, 'invalidateQueries'>;
   routerInvalidate: () => Promise<void>;
@@ -198,14 +183,14 @@ async function handleOrganizationSelect({
       invalidateRouter: routerInvalidate,
     });
 
-    const team = {
+    const nextOrganization = {
       name: organization.name,
       logo: Building2,
-      plan: 'Organization workspace',
+      description: 'Organization workspace',
       to: `/app/organizations/${organization.slug}/settings`,
-    } satisfies TeamSwitcherItem;
+    } satisfies OrganizationSwitcherItem;
 
-    onActiveTeamChange(team);
+    onActiveOrganizationChange(nextOrganization);
     await navigate({
       to: '/app/organizations/$slug/settings',
       params: { slug: organization.slug },

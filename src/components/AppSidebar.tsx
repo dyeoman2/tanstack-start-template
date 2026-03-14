@@ -3,7 +3,7 @@ import { LayoutDashboard, MessageSquare } from 'lucide-react';
 import * as React from 'react';
 import { NavMain, type NavMainItem } from '~/components/sidebar/NavMain';
 import { NavUser } from '~/components/sidebar/NavUser';
-import { TeamSwitcher } from '~/components/sidebar/TeamSwitcher';
+import { OrganizationSwitcher } from '~/components/sidebar/TeamSwitcher';
 import {
   Sidebar,
   SidebarContent,
@@ -26,16 +26,13 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
         title: 'Dashboard',
         to: '/app',
         icon: LayoutDashboard,
-        isActive:
-          location.pathname === '/app' ||
-          location.pathname === '/app/profile',
+        isActive: location.pathname === '/app' || location.pathname === '/app/profile',
       },
       {
         title: 'Chat',
         to: '/app/chat',
         icon: MessageSquare,
-        isActive:
-          location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/'),
+        isActive: location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/'),
       },
     ];
 
@@ -54,7 +51,7 @@ export function AppSidebar(props: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={[]} />
+        <OrganizationSwitcher />
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={navMain} />

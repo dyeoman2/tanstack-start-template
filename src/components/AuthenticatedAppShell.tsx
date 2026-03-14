@@ -1,14 +1,12 @@
 import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, useLocation } from '@tanstack/react-router';
-import { useNavigate, useRouter } from '@tanstack/react-router';
+import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { AppSidebar } from '~/components/AppSidebar';
 import { ThemeToggle } from '~/components/theme-toggle';
-import { Button } from '~/components/ui/button';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -17,6 +15,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '~/components/ui/breadcrumb';
+import { Button } from '~/components/ui/button';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/sidebar';
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
@@ -39,7 +38,6 @@ const routeLabels = new Map<string, string>([
   ['profile', 'Profile'],
   ['settings', 'Settings'],
   ['stats', 'Stats'],
-  ['teams', 'Teams'],
   ['users', 'Users'],
 ]);
 
@@ -99,13 +97,7 @@ function OrganizationBreadcrumbLabel({ fallback, slug }: { fallback: string; slu
   return optimisticName ?? organization?.organization.name ?? fallback;
 }
 
-function ChatThreadBreadcrumbLabel({
-  fallback,
-  threadId,
-}: {
-  fallback: string;
-  threadId: string;
-}) {
+function ChatThreadBreadcrumbLabel({ fallback, threadId }: { fallback: string; threadId: string }) {
   const optimisticTitle = useOptimisticThreadTitle(threadId);
   const title = useQuery(api.agentChat.getThreadTitle, { threadId });
 
@@ -156,7 +148,8 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
   const { isImpersonating, isPending, isSiteAdmin, user } = useAuth();
   const [isStoppingImpersonation, setIsStoppingImpersonation] = useState(false);
   const [isRestoringAdminContext, setIsRestoringAdminContext] = useState(false);
-  const isChatRoute = location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/');
+  const isChatRoute =
+    location.pathname === '/app/chat' || location.pathname.startsWith('/app/chat/');
 
   useEffect(() => {
     if (!isRestoringAdminContext || isPending || isImpersonating || !isSiteAdmin) {

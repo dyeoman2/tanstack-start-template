@@ -1,8 +1,10 @@
 import { internal } from './_generated/api';
 import { httpAction, internalQuery } from './_generated/server';
+import { probeHealthValidator } from './lib/returnValidators';
 
 export const probeHealth = internalQuery({
   args: {},
+  returns: probeHealthValidator,
   handler: async (ctx) => {
     await ctx.db.query('users').take(1);
     return { connected: true as const };

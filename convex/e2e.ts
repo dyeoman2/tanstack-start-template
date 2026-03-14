@@ -4,6 +4,10 @@ import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import { internalMutation } from './_generated/server';
+import {
+  e2eEnsurePrincipalRoleValidator,
+  e2eResetPrincipalValidator,
+} from './lib/returnValidators';
 import { findBetterAuthUserByEmail, updateBetterAuthUserRecord } from './lib/betterAuth';
 
 const deletePaginationOpts = {
@@ -23,6 +27,7 @@ export const ensurePrincipalRole = internalMutation({
     email: v.string(),
     role: v.union(v.literal('user'), v.literal('admin')),
   },
+  returns: e2eEnsurePrincipalRoleValidator,
   handler: async (ctx, args) => {
     assertE2EAccess();
 
@@ -53,6 +58,7 @@ export const resetPrincipalByEmail = internalMutation({
   args: {
     email: v.string(),
   },
+  returns: e2eResetPrincipalValidator,
   handler: async (ctx, args) => {
     assertE2EAccess();
 

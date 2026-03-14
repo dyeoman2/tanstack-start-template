@@ -4,8 +4,8 @@ import type { BetterAuthOptions } from 'better-auth';
 import { admin, organization } from 'better-auth/plugins';
 import {
   getBetterAuthBaseUrlConfig,
-  getSiteUrl,
   getBetterAuthTrustedOrigins,
+  getSiteUrl,
 } from '../../src/lib/server/env.server';
 import authConfig from '../auth.config';
 
@@ -162,9 +162,11 @@ export function createSharedBetterAuthOptions(
       }),
       organization({
         allowUserToCreateOrganization: true,
+        creatorRole: 'owner',
         invitationExpiresIn: 7 * 24 * 60 * 60,
         cancelPendingInvitationsOnReInvite: true,
         requireEmailVerificationOnInvitation: true,
+        // Keep the plugin in organizations-only mode; team support is intentionally not enabled.
         sendInvitationEmail: callbacks.sendInvitationEmail,
       }),
       convex({

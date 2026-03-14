@@ -4,6 +4,10 @@ import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {
+  emailServiceConfiguredValidator,
+  successTrueValidator,
+} from './lib/returnValidators';
+import {
   buildInvitationTemplate,
   buildResetPasswordTemplate,
   buildVerifyEmailTemplate,
@@ -95,6 +99,7 @@ export function shouldApplyOnboardingDeliveryEvent(args: {
  */
 export const checkEmailServiceConfigured = query({
   args: {},
+  returns: emailServiceConfiguredValidator,
   handler: async () => {
     const resendApiKey = process.env.RESEND_API_KEY;
     return {
@@ -201,6 +206,7 @@ export const sendPasswordResetEmailMutation = internalAction({
     url: v.string(),
     token: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     void args.token;
     const resendApiKey = process.env.RESEND_API_KEY;
@@ -255,6 +261,7 @@ export const sendPasswordResetEmailMutation = internalAction({
         onboardingDeliveryUpdatedAt: sentAt,
         onboardingDeliveryError: null,
       });
+      return { success: true };
     } catch (error) {
       await ctx.runMutation(internal.users.setAuthUserOnboardingState, {
         authUserId: args.user.id,
@@ -278,6 +285,7 @@ export const sendVerificationEmailMutation = internalAction({
     url: v.string(),
     token: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const resendApiKey = process.env.RESEND_API_KEY;
     if (!resendApiKey) {
@@ -318,6 +326,8 @@ export const sendVerificationEmailMutation = internalAction({
         });
       },
     );
+
+    return { success: true };
   },
 });
 
@@ -329,6 +339,7 @@ export const sendOrganizationInviteEmailMutation = internalMutation({
     organizationName: v.string(),
     role: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const appName = process.env.APP_NAME || 'Hackathon';
     const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
@@ -350,6 +361,8 @@ export const sendOrganizationInviteEmailMutation = internalMutation({
       replyTo: [supportEmail],
       headers: buildEmailHeaders('invitation', appName),
     });
+
+    return { success: true };
   },
 });
 
@@ -358,6 +371,7 @@ export const handleResendEmailEvent = internalMutation({
     id: vEmailId,
     event: vEmailEvent,
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const occurredAt = toEmailEventTimestamp(args.event.created_at);
     const messageId = args.event.data.email_id;
@@ -381,7 +395,7 @@ export const handleResendEmailEvent = internalMutation({
     });
 
     if (!profile) {
-      return;
+      return null;
     }
 
     const next = deriveOnboardingStatusFromEmailEvent(args.event);
@@ -392,7 +406,7 @@ export const handleResendEmailEvent = internalMutation({
           lastSyncedAt: Date.now(),
         });
       }
-      return;
+      return null;
     }
 
     if (
@@ -402,7 +416,7 @@ export const handleResendEmailEvent = internalMutation({
         incomingOccurredAt: occurredAt,
       })
     ) {
-      return;
+      return null;
     }
 
     await ctx.db.patch(profile._id, {
@@ -412,6 +426,8 @@ export const handleResendEmailEvent = internalMutation({
       onboardingDeliveryError: next.deliveryError,
       lastSyncedAt: Date.now(),
     });
+
+    return null;
   },
 });
 
@@ -425,7 +441,9 @@ export const sendPasswordResetEmail = internalAction({
     url: v.string(),
     token: v.string(),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     await ctx.scheduler.runAfter(0, internal.emails.sendPasswordResetEmailMutation, args);
+    return { success: true };
   },
 });

@@ -7,6 +7,7 @@ import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
+import { importedModelsResultValidator } from './lib/returnValidators';
 import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
 
 const TOP_FREE_MODEL_IDS = [
@@ -148,6 +149,7 @@ async function requireSiteAdmin(ctx: ActionCtx) {
 
 export const importTopFreeModels = action({
   args: {},
+  returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
     await requireSiteAdmin(ctx);
 
@@ -206,6 +208,7 @@ export const importTopFreeModels = action({
 
 export const importTopPaidModels = action({
   args: {},
+  returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
     await requireSiteAdmin(ctx);
 

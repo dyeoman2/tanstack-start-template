@@ -2,11 +2,13 @@ import { ConvexError, v } from 'convex/values';
 import { components } from './_generated/api';
 import { mutation } from './_generated/server';
 import { getVerifiedCurrentUserOrThrow } from './auth/access';
+import { inviteApiKeyDestroyResultValidator } from './lib/returnValidators';
 
 export const issueChatPlaygroundApiKey = mutation({
   args: {
     name: v.optional(v.string()),
   },
+  returns: v.string(),
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     if (!user.isSiteAdmin) {
@@ -24,6 +26,7 @@ export const revokeChatPlaygroundApiKey = mutation({
     apiKey: v.optional(v.string()),
     name: v.optional(v.string()),
   },
+  returns: inviteApiKeyDestroyResultValidator,
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     if (!user.isSiteAdmin) {

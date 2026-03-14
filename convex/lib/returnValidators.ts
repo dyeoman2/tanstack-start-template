@@ -1,0 +1,713 @@
+import { v } from 'convex/values';
+
+export const userRoleValidator = v.union(v.literal('user'), v.literal('admin'));
+export const organizationRoleValidator = v.union(
+  v.literal('owner'),
+  v.literal('admin'),
+  v.literal('member'),
+);
+export const organizationViewerRoleValidator = v.union(
+  organizationRoleValidator,
+  v.literal('site-admin'),
+  v.null(),
+);
+export const organizationAccessValidator = v.object({
+  admin: v.boolean(),
+  delete: v.boolean(),
+  edit: v.boolean(),
+  view: v.boolean(),
+  siteAdmin: v.boolean(),
+});
+export const onboardingStatusValidator = v.union(
+  v.literal('not_started'),
+  v.literal('email_pending'),
+  v.literal('email_sent'),
+  v.literal('delivered'),
+  v.literal('delivery_delayed'),
+  v.literal('bounced'),
+  v.literal('completed'),
+);
+export const chatAttachmentKindValidator = v.union(
+  v.literal('image'),
+  v.literal('document'),
+);
+export const chatAttachmentStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('ready'),
+  v.literal('error'),
+);
+export const chatRunStatusValidator = v.union(
+  v.literal('idle'),
+  v.literal('streaming'),
+  v.literal('complete'),
+  v.literal('aborted'),
+  v.literal('error'),
+);
+export const chatRunFailureKindValidator = v.union(
+  v.literal('provider_policy'),
+  v.literal('provider_unavailable'),
+  v.literal('tool_error'),
+  v.literal('unknown'),
+);
+export const chatThreadVisibilityValidator = v.union(
+  v.literal('private'),
+  v.literal('shared'),
+);
+export const chatUsageOperationKindValidator = v.union(
+  v.literal('chat_turn'),
+  v.literal('web_search'),
+  v.literal('thread_title'),
+  v.literal('thread_summary'),
+);
+export const chatModelAccessValidator = v.union(
+  v.literal('public'),
+  v.literal('admin'),
+);
+
+export const successValidator = v.object({
+  success: v.boolean(),
+});
+export const successTrueValidator = v.object({
+  success: v.boolean(),
+});
+export const allowedResultValidator = v.union(
+  v.object({
+    allowed: v.literal(true),
+  }),
+  v.object({
+    allowed: v.literal(false),
+    reason: v.string(),
+  }),
+);
+export const rateLimitResultValidator = v.object({
+  ok: v.boolean(),
+  retryAfter: v.optional(v.number()),
+});
+export const advisoryChatRateLimitValidator = v.object({
+  request: rateLimitResultValidator,
+  estimatedTokens: rateLimitResultValidator,
+  estimatedInputTokens: v.number(),
+});
+
+export const authUserValidator = v.any();
+
+export const usersDocValidator = v.object({
+  _id: v.id('users'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  lastActiveOrganizationId: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+export const userProfilesDocValidator = v.object({
+  _id: v.id('userProfiles'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  email: v.string(),
+  emailLower: v.string(),
+  name: v.union(v.string(), v.null()),
+  nameLower: v.union(v.string(), v.null()),
+  phoneNumber: v.union(v.string(), v.null()),
+  role: userRoleValidator,
+  isSiteAdmin: v.boolean(),
+  emailVerified: v.boolean(),
+  banned: v.boolean(),
+  banReason: v.union(v.string(), v.null()),
+  banExpires: v.union(v.number(), v.null()),
+  onboardingStatus: onboardingStatusValidator,
+  onboardingEmailId: v.optional(v.string()),
+  onboardingEmailMessageId: v.optional(v.string()),
+  onboardingEmailLastSentAt: v.optional(v.number()),
+  onboardingCompletedAt: v.optional(v.number()),
+  onboardingDeliveryUpdatedAt: v.optional(v.number()),
+  onboardingDeliveryError: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  lastSyncedAt: v.number(),
+});
+
+export const userProfileSyncStateDocValidator = v.object({
+  _id: v.id('userProfileSyncState'),
+  _creationTime: v.number(),
+  key: v.string(),
+  lastFullSyncAt: v.number(),
+  totalUsers: v.number(),
+});
+
+export const auditLogsDocValidator = v.object({
+  _id: v.id('auditLogs'),
+  _creationTime: v.number(),
+  id: v.string(),
+  eventType: v.string(),
+  userId: v.optional(v.string()),
+  organizationId: v.optional(v.string()),
+  identifier: v.optional(v.string()),
+  metadata: v.optional(v.string()),
+  createdAt: v.number(),
+  ipAddress: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+});
+
+export const dashboardStatsDocValidator = v.object({
+  _id: v.id('dashboardStats'),
+  _creationTime: v.number(),
+  key: v.string(),
+  totalUsers: v.number(),
+  activeUsers: v.number(),
+  updatedAt: v.number(),
+});
+
+export const chatThreadsDocValidator = v.object({
+  _id: v.id('chatThreads'),
+  _creationTime: v.number(),
+  ownerUserId: v.string(),
+  organizationId: v.string(),
+  agentThreadId: v.string(),
+  title: v.string(),
+  pinned: v.boolean(),
+  visibility: chatThreadVisibilityValidator,
+  personaId: v.optional(v.id('aiPersonas')),
+  model: v.optional(v.string()),
+  titleManuallyEdited: v.boolean(),
+  summary: v.optional(v.string()),
+  summaryUpdatedAt: v.optional(v.number()),
+  summaryThroughOrder: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  lastMessageAt: v.number(),
+});
+
+export const chatRunsDocValidator = v.object({
+  _id: v.id('chatRuns'),
+  _creationTime: v.number(),
+  threadId: v.id('chatThreads'),
+  agentThreadId: v.string(),
+  organizationId: v.string(),
+  initiatedByUserId: v.string(),
+  ownerSessionId: v.string(),
+  agentStreamId: v.optional(v.string()),
+  status: chatRunStatusValidator,
+  startedAt: v.number(),
+  endedAt: v.optional(v.number()),
+  errorMessage: v.optional(v.string()),
+  failureKind: v.optional(chatRunFailureKindValidator),
+  activeAssistantMessageId: v.optional(v.string()),
+  promptMessageId: v.optional(v.string()),
+  provider: v.optional(v.string()),
+  model: v.optional(v.string()),
+  useWebSearch: v.boolean(),
+  actualInputTokens: v.optional(v.number()),
+  actualOutputTokens: v.optional(v.number()),
+  actualTotalTokens: v.optional(v.number()),
+  usageEventCount: v.optional(v.number()),
+  usageRecordedAt: v.optional(v.number()),
+});
+
+export const chatUsageEventsDocValidator = v.object({
+  _id: v.id('chatUsageEvents'),
+  _creationTime: v.number(),
+  organizationId: v.string(),
+  actorUserId: v.string(),
+  threadOwnerUserId: v.string(),
+  threadId: v.id('chatThreads'),
+  runId: v.optional(v.id('chatRuns')),
+  agentThreadId: v.string(),
+  agentName: v.optional(v.string()),
+  operationKind: chatUsageOperationKindValidator,
+  model: v.string(),
+  provider: v.string(),
+  totalTokens: v.optional(v.number()),
+  inputTokens: v.optional(v.number()),
+  outputTokens: v.optional(v.number()),
+  providerMetadataJson: v.optional(v.string()),
+  createdAt: v.number(),
+});
+
+export const chatAttachmentsDocValidator = v.object({
+  _id: v.id('chatAttachments'),
+  _creationTime: v.number(),
+  threadId: v.optional(v.id('chatThreads')),
+  agentMessageId: v.optional(v.string()),
+  userId: v.string(),
+  organizationId: v.string(),
+  kind: chatAttachmentKindValidator,
+  name: v.string(),
+  mimeType: v.string(),
+  sizeBytes: v.number(),
+  rawStorageId: v.optional(v.id('_storage')),
+  extractedTextStorageId: v.optional(v.id('_storage')),
+  agentFileId: v.optional(v.string()),
+  promptSummary: v.string(),
+  status: chatAttachmentStatusValidator,
+  errorMessage: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+export const aiPersonasDocValidator = v.object({
+  _id: v.id('aiPersonas'),
+  _creationTime: v.number(),
+  userId: v.string(),
+  organizationId: v.string(),
+  name: v.string(),
+  prompt: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+});
+
+export const aiModelPriceValidator = v.object({
+  unit: v.string(),
+  price: v.number(),
+  currency: v.string(),
+});
+
+export const aiModelCatalogEntryValidator = v.object({
+  modelId: v.string(),
+  label: v.string(),
+  description: v.string(),
+  task: v.string(),
+  access: chatModelAccessValidator,
+  supportsWebSearch: v.optional(v.boolean()),
+  priceLabel: v.optional(v.string()),
+  prices: v.optional(v.array(aiModelPriceValidator)),
+  contextWindow: v.optional(v.number()),
+  source: v.string(),
+  isActive: v.boolean(),
+  refreshedAt: v.number(),
+  beta: v.optional(v.boolean()),
+  deprecated: v.optional(v.boolean()),
+  deprecationDate: v.optional(v.string()),
+});
+
+export const aiModelCatalogDocValidator = v.object({
+  _id: v.id('aiModelCatalog'),
+  _creationTime: v.number(),
+  modelId: v.string(),
+  label: v.string(),
+  description: v.string(),
+  task: v.string(),
+  access: chatModelAccessValidator,
+  supportsWebSearch: v.optional(v.boolean()),
+  priceLabel: v.optional(v.string()),
+  prices: v.optional(v.array(aiModelPriceValidator)),
+  contextWindow: v.optional(v.number()),
+  source: v.string(),
+  isActive: v.boolean(),
+  refreshedAt: v.number(),
+  beta: v.optional(v.boolean()),
+  deprecated: v.optional(v.boolean()),
+  deprecationDate: v.optional(v.string()),
+});
+
+export const emailLifecycleEventsDocValidator = v.object({
+  _id: v.id('emailLifecycleEvents'),
+  _creationTime: v.number(),
+  messageId: v.string(),
+  emailId: v.optional(v.string()),
+  authUserId: v.optional(v.string()),
+  email: v.string(),
+  category: v.literal('onboarding'),
+  eventType: v.string(),
+  rawPayload: v.string(),
+  occurredAt: v.number(),
+  createdAt: v.number(),
+});
+
+export const currentUserContextValidator = v.object({
+  userId: v.id('users'),
+  organizationId: v.string(),
+  isSiteAdmin: v.boolean(),
+  currentUserName: v.string(),
+});
+
+export const threadWithAccessValidator = v.object({
+  _id: v.id('chatThreads'),
+  _creationTime: v.number(),
+  ownerUserId: v.string(),
+  organizationId: v.string(),
+  agentThreadId: v.string(),
+  title: v.string(),
+  pinned: v.boolean(),
+  visibility: chatThreadVisibilityValidator,
+  personaId: v.optional(v.id('aiPersonas')),
+  model: v.optional(v.string()),
+  titleManuallyEdited: v.boolean(),
+  summary: v.optional(v.string()),
+  summaryUpdatedAt: v.optional(v.number()),
+  summaryThroughOrder: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  lastMessageAt: v.number(),
+  canManage: v.boolean(),
+});
+
+export const activeRunWithAccessValidator = v.object({
+  _id: v.id('chatRuns'),
+  _creationTime: v.number(),
+  threadId: v.id('chatThreads'),
+  agentThreadId: v.string(),
+  organizationId: v.string(),
+  initiatedByUserId: v.string(),
+  ownerSessionId: v.string(),
+  agentStreamId: v.optional(v.string()),
+  status: chatRunStatusValidator,
+  startedAt: v.number(),
+  endedAt: v.optional(v.number()),
+  errorMessage: v.optional(v.string()),
+  failureKind: v.optional(chatRunFailureKindValidator),
+  activeAssistantMessageId: v.optional(v.string()),
+  promptMessageId: v.optional(v.string()),
+  provider: v.optional(v.string()),
+  model: v.optional(v.string()),
+  useWebSearch: v.boolean(),
+  actualInputTokens: v.optional(v.number()),
+  actualOutputTokens: v.optional(v.number()),
+  actualTotalTokens: v.optional(v.number()),
+  usageEventCount: v.optional(v.number()),
+  usageRecordedAt: v.optional(v.number()),
+  canStop: v.boolean(),
+});
+
+export const chatLatestRunStateValidator = v.object({
+  runId: v.id('chatRuns'),
+  status: chatRunStatusValidator,
+  canStop: v.boolean(),
+  errorMessage: v.optional(v.string()),
+  failureKind: v.optional(chatRunFailureKindValidator),
+  endedAt: v.optional(v.number()),
+  promptMessageId: v.optional(v.string()),
+});
+
+export const chatAttachmentWithPreviewValidator = v.object({
+  _id: v.id('chatAttachments'),
+  _creationTime: v.number(),
+  threadId: v.optional(v.id('chatThreads')),
+  agentMessageId: v.optional(v.string()),
+  userId: v.string(),
+  organizationId: v.string(),
+  kind: chatAttachmentKindValidator,
+  name: v.string(),
+  mimeType: v.string(),
+  sizeBytes: v.number(),
+  rawStorageId: v.optional(v.id('_storage')),
+  extractedTextStorageId: v.optional(v.id('_storage')),
+  agentFileId: v.optional(v.string()),
+  promptSummary: v.string(),
+  status: chatAttachmentStatusValidator,
+  errorMessage: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  previewUrl: v.union(v.string(), v.null()),
+});
+
+export const chatMessagePageValidator = v.object({
+  page: v.array(v.any()),
+  isDone: v.boolean(),
+  continueCursor: v.string(),
+  streams: v.optional(v.any()),
+});
+
+export const organizationSummaryValidator = v.object({
+  id: v.string(),
+  slug: v.string(),
+  name: v.string(),
+  logo: v.union(v.string(), v.null()),
+});
+
+export const directoryOrganizationValidator = v.object({
+  id: v.string(),
+  slug: v.string(),
+  name: v.string(),
+  logo: v.union(v.string(), v.null()),
+  viewerRole: organizationViewerRoleValidator,
+  canManage: v.boolean(),
+  isSiteAdminView: v.boolean(),
+});
+
+export const organizationSettingsValidator = v.object({
+  organization: organizationSummaryValidator,
+  access: organizationAccessValidator,
+  isMember: v.boolean(),
+  viewerRole: organizationViewerRoleValidator,
+  canManage: v.boolean(),
+});
+
+export const organizationMemberRowValidator = v.object({
+  id: v.string(),
+  kind: v.literal('member'),
+  membershipId: v.string(),
+  authUserId: v.string(),
+  name: v.union(v.string(), v.null()),
+  email: v.string(),
+  role: organizationRoleValidator,
+  status: v.literal('active'),
+  createdAt: v.number(),
+  isSiteAdmin: v.boolean(),
+  availableRoles: v.array(organizationRoleValidator),
+  canChangeRole: v.boolean(),
+  canRemove: v.boolean(),
+});
+
+export const organizationInvitationRowValidator = v.object({
+  id: v.string(),
+  kind: v.literal('invite'),
+  invitationId: v.string(),
+  name: v.null(),
+  email: v.string(),
+  role: v.union(v.literal('admin'), v.literal('member')),
+  status: v.union(v.literal('pending'), v.literal('expired')),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  canRevoke: v.boolean(),
+});
+
+export const organizationDirectoryRowValidator = v.union(
+  organizationMemberRowValidator,
+  organizationInvitationRowValidator,
+);
+
+export const organizationDirectoryResponseValidator = v.object({
+  organization: organizationSummaryValidator,
+  access: organizationAccessValidator,
+  viewerRole: organizationViewerRoleValidator,
+  rows: v.array(organizationDirectoryRowValidator),
+  counts: v.object({
+    members: v.number(),
+    invites: v.number(),
+  }),
+  pagination: v.object({
+    page: v.number(),
+    pageSize: v.number(),
+    total: v.number(),
+    totalPages: v.number(),
+  }),
+});
+
+export const currentUserOrganizationSummaryValidator = v.object({
+  id: v.string(),
+  name: v.string(),
+  role: v.string(),
+});
+
+export const currentUserProfileValidator = v.object({
+  id: v.string(),
+  email: v.string(),
+  name: v.union(v.string(), v.null()),
+  phoneNumber: v.union(v.string(), v.null()),
+  role: userRoleValidator,
+  isSiteAdmin: v.boolean(),
+  emailVerified: v.boolean(),
+  requiresEmailVerification: v.boolean(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  currentOrganization: v.union(currentUserOrganizationSummaryValidator, v.null()),
+  organizations: v.array(currentUserOrganizationSummaryValidator),
+});
+
+export const currentAppUserValidator = v.object({
+  _id: v.id('users'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  lastActiveOrganizationId: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  activeOrganizationId: v.union(v.string(), v.null()),
+  authUser: authUserValidator,
+  isSiteAdmin: v.boolean(),
+});
+
+export const ensureUserContextResultValidator = v.object({
+  userId: v.id('users'),
+  organizationId: v.string(),
+});
+
+export const bootstrapUserContextResultValidator = v.union(
+  v.object({
+    found: v.literal(false),
+  }),
+  v.object({
+    found: v.literal(true),
+    userId: v.id('users'),
+    organizationId: v.string(),
+  }),
+);
+
+export const userContextRecordsValidator = v.object({
+  appUserId: v.union(v.id('users'), v.null()),
+  userProfileId: v.union(v.id('userProfiles'), v.null()),
+});
+
+export const userCountValidator = v.object({
+  totalUsers: v.number(),
+  isFirstUser: v.boolean(),
+});
+
+export const dashboardDataValidator = v.union(
+  v.object({
+    status: v.literal('unauthenticated'),
+  }),
+  v.object({
+    status: v.literal('forbidden'),
+  }),
+  v.object({
+    status: v.literal('success'),
+    stats: v.object({
+      totalUsers: v.number(),
+      activeUsers: v.number(),
+      recentSignups: v.number(),
+      lastUpdated: v.string(),
+    }),
+  }),
+);
+
+export const dashboardCountsValidator = v.object({
+  totalUsers: v.number(),
+  activeUsers: v.number(),
+  updatedAt: v.number(),
+});
+
+export const adminOrganizationSummaryValidator = v.object({
+  id: v.string(),
+  slug: v.string(),
+  name: v.string(),
+  logo: v.union(v.string(), v.null()),
+});
+
+export const adminUserValidator = v.object({
+  id: v.string(),
+  email: v.string(),
+  name: v.union(v.string(), v.null()),
+  role: userRoleValidator,
+  emailVerified: v.boolean(),
+  banned: v.boolean(),
+  banReason: v.union(v.string(), v.null()),
+  banExpires: v.union(v.number(), v.null()),
+  onboardingStatus: onboardingStatusValidator,
+  onboardingEmailId: v.optional(v.string()),
+  onboardingEmailMessageId: v.optional(v.string()),
+  onboardingEmailLastSentAt: v.optional(v.number()),
+  onboardingCompletedAt: v.optional(v.number()),
+  onboardingDeliveryUpdatedAt: v.optional(v.number()),
+  onboardingDeliveryError: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  organizations: v.array(adminOrganizationSummaryValidator),
+});
+
+export const adminUsersResponseValidator = v.object({
+  users: v.array(adminUserValidator),
+  pagination: v.object({
+    page: v.number(),
+    pageSize: v.number(),
+    total: v.number(),
+    totalPages: v.number(),
+    hasNextPage: v.boolean(),
+    nextCursor: v.union(v.string(), v.null()),
+  }),
+});
+
+export const chatModelOptionValidator = v.object({
+  id: v.string(),
+  label: v.string(),
+  description: v.string(),
+  access: chatModelAccessValidator,
+  selectable: v.boolean(),
+  supportsWebSearch: v.optional(v.boolean()),
+  priceLabel: v.optional(v.string()),
+  badge: v.optional(v.string()),
+});
+
+export const auditEventValidator = v.object({
+  id: v.string(),
+  eventType: v.string(),
+  userId: v.optional(v.string()),
+  organizationId: v.optional(v.string()),
+  identifier: v.optional(v.string()),
+  createdAt: v.number(),
+  ipAddress: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+  metadata: v.optional(v.any()),
+});
+
+export const auditLogsResponseValidator = v.object({
+  events: v.array(auditEventValidator),
+  limit: v.number(),
+  continueCursor: v.union(v.string(), v.null()),
+  isDone: v.boolean(),
+});
+
+export const emailServiceConfiguredValidator = v.object({
+  isConfigured: v.boolean(),
+  message: v.union(v.string(), v.null()),
+});
+
+export const e2eEnsurePrincipalRoleValidator = v.union(
+  v.object({
+    found: v.literal(false),
+  }),
+  v.object({
+    found: v.literal(true),
+    userId: v.string(),
+    role: userRoleValidator,
+  }),
+);
+
+export const e2eResetPrincipalValidator = v.union(
+  v.object({
+    deleted: v.literal(false),
+  }),
+  v.object({
+    deleted: v.literal(true),
+    userId: v.string(),
+  }),
+);
+
+export const systemStatsValidator = v.object({
+  users: v.number(),
+  admins: v.number(),
+});
+
+export const chatModelCatalogStatusValidator = v.object({
+  activeModelsCount: v.number(),
+  publicModelsCount: v.number(),
+  adminModelsCount: v.number(),
+  lastRefreshedAt: v.union(v.number(), v.null()),
+});
+
+export const mutationMessageResultValidator = v.object({
+  success: v.boolean(),
+  message: v.string(),
+});
+
+export const createdChatModelResultValidator = v.object({
+  success: v.boolean(),
+  message: v.string(),
+  modelId: v.id('aiModelCatalog'),
+});
+
+export const promotedUserResultValidator = v.object({
+  success: v.boolean(),
+  email: v.string(),
+  userId: v.string(),
+});
+
+export const importedModelsResultValidator = v.object({
+  success: v.boolean(),
+  message: v.string(),
+});
+
+export const importedModelCountValidator = v.object({
+  modelCount: v.number(),
+});
+
+export const probeHealthValidator = v.object({
+  connected: v.literal(true),
+});
+
+export const inviteApiKeyDestroyResultValidator = v.union(
+  v.literal('missing'),
+  v.literal('deleted'),
+  v.literal('name mismatch'),
+  v.literal('must provide either apiKey or name'),
+);

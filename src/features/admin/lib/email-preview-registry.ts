@@ -321,7 +321,7 @@ export const EMAIL_PREVIEW_TEMPLATES = [
       {
         id: 'member-invite',
         label: 'Member invite',
-        description: 'A standard member invitation into a team workspace.',
+        description: 'A standard member invitation into an organization workspace.',
         props: {
           appName: 'Acme Workspace',
           inviterName: 'Sam Ortiz',

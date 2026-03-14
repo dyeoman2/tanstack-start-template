@@ -44,6 +44,18 @@ import {
   enforceChatPreflightOrThrow,
   getAdvisoryChatRateLimit,
 } from './lib/chatRateLimits';
+import {
+  activeRunWithAccessValidator,
+  advisoryChatRateLimitValidator,
+  aiPersonasDocValidator,
+  chatAttachmentsDocValidator,
+  chatLatestRunStateValidator,
+  chatMessagePageValidator,
+  chatRunsDocValidator,
+  chatThreadsDocValidator,
+  currentUserContextValidator,
+  threadWithAccessValidator,
+} from './lib/returnValidators';
 
 type PersonaDoc = Doc<'aiPersonas'>;
 type ChatViewerContext = Awaited<ReturnType<typeof getCurrentChatContext>>;
@@ -51,7 +63,9 @@ type ThreadWithAccess = ChatThreadDoc & {
   canManage: boolean;
 };
 
-function getCurrentUserDisplayName(user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>) {
+function getCurrentUserDisplayName(
+  user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>,
+) {
   const normalizedName = user.authUser.name?.trim();
   if (normalizedName) {
     return normalizedName;
@@ -252,10 +266,7 @@ function getMessageTextLength(message: AgentMessageDoc | null) {
 
 const THREAD_DELETE_BATCH_SIZE = 128;
 
-async function deleteThreadDocumentsInBatches(
-  ctx: MutationCtx,
-  threadId: Id<'chatThreads'>,
-) {
+async function deleteThreadDocumentsInBatches(ctx: MutationCtx, threadId: Id<'chatThreads'>) {
   while (true) {
     const runs = await ctx.db
       .query('chatRuns')
@@ -299,8 +310,24 @@ async function deleteThreadDocumentsInBatches(
   }
 }
 
+async function deleteThreadForCleanup(ctx: MutationCtx, threadId: Id<'chatThreads'>) {
+  const thread = await ctx.db.get(threadId);
+  if (!thread) {
+    return { deleted: false as const };
+  }
+
+  await deleteThreadDocumentsInBatches(ctx, threadId);
+  await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
+    threadId: thread.agentThreadId,
+  });
+  await ctx.db.delete(threadId);
+
+  return { deleted: true as const, organizationId: thread.organizationId };
+}
+
 export const getCurrentChatContextInternal = internalQuery({
   args: {},
+  returns: currentUserContextValidator,
   handler: async (ctx) => {
     return await getCurrentChatContext(ctx);
   },
@@ -311,6 +338,7 @@ export const getThreadForOrganizationInternal = internalQuery({
     threadId: v.id('chatThreads'),
     organizationId: v.string(),
   },
+  returns: v.union(chatThreadsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const thread = await ctx.db.get(args.threadId);
     if (!thread || thread.organizationId !== args.organizationId) {
@@ -321,11 +349,30 @@ export const getThreadForOrganizationInternal = internalQuery({
   },
 });
 
+export const deleteThreadForCleanupInternal = internalMutation({
+  args: {
+    threadId: v.id('chatThreads'),
+  },
+  returns: v.union(
+    v.object({
+      deleted: v.literal(false),
+    }),
+    v.object({
+      deleted: v.literal(true),
+      organizationId: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    return await deleteThreadForCleanup(ctx, args.threadId);
+  },
+});
+
 export const getThreadByAgentThreadIdInternal = internalQuery({
   args: {
     agentThreadId: v.string(),
     organizationId: v.string(),
   },
+  returns: v.union(chatThreadsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const thread = await ctx.db
       .query('chatThreads')
@@ -345,6 +392,7 @@ export const getPersonaByIdInternal = internalQuery({
     personaId: v.id('aiPersonas'),
     organizationId: v.string(),
   },
+  returns: v.union(aiPersonasDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await getPersonaForOrganization(ctx, args.personaId, args.organizationId);
   },
@@ -356,6 +404,7 @@ export const getAttachmentsForSendInternal = internalQuery({
     userId: v.string(),
     organizationId: v.string(),
   },
+  returns: v.array(chatAttachmentsDocValidator),
   handler: async (ctx, args) => {
     const attachments = await Promise.all(
       args.attachmentIds.map(async (attachmentId) => {
@@ -385,6 +434,7 @@ export const getAttachmentByIdInternal = internalQuery({
     attachmentId: v.id('chatAttachments'),
     organizationId: v.string(),
   },
+  returns: v.union(chatAttachmentsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const attachment = await ctx.db.get(args.attachmentId);
     if (!attachment || attachment.organizationId !== args.organizationId) {
@@ -406,6 +456,7 @@ export const createThreadShellInternal = internalMutation({
     titleManuallyEdited: v.boolean(),
     createdAt: v.number(),
   },
+  returns: v.id('chatThreads'),
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatThreads', {
       ...args,
@@ -434,6 +485,7 @@ export const patchThreadInternal = internalMutation({
       lastMessageAt: v.optional(v.number()),
     }),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const patch: Partial<Doc<'chatThreads'>> = {};
     if (args.patch.agentThreadId !== undefined) patch.agentThreadId = args.patch.agentThreadId;
@@ -460,6 +512,7 @@ export const patchThreadInternal = internalMutation({
     if (args.patch.updatedAt !== undefined) patch.updatedAt = args.patch.updatedAt;
     if (args.patch.lastMessageAt !== undefined) patch.lastMessageAt = args.patch.lastMessageAt;
     await ctx.db.patch(args.threadId, patch);
+    return null;
   },
 });
 
@@ -481,6 +534,7 @@ export const createAttachmentInternal = internalMutation({
     errorMessage: v.optional(v.string()),
     createdAt: v.number(),
   },
+  returns: v.id('chatAttachments'),
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatAttachments', {
       ...args,
@@ -503,6 +557,7 @@ export const updateAttachmentInternal = internalMutation({
       updatedAt: v.number(),
     }),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const patch: Partial<Doc<'chatAttachments'>> = {};
     if (args.patch.threadId !== undefined) patch.threadId = args.patch.threadId ?? undefined;
@@ -522,6 +577,7 @@ export const updateAttachmentInternal = internalMutation({
     }
     patch.updatedAt = args.patch.updatedAt;
     await ctx.db.patch(args.attachmentId, patch);
+    return null;
   },
 });
 
@@ -532,6 +588,7 @@ export const assignAttachmentsToMessageInternal = internalMutation({
     agentMessageId: v.string(),
     updatedAt: v.number(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     await Promise.all(
       args.attachmentIds.map((attachmentId) =>
@@ -542,6 +599,7 @@ export const assignAttachmentsToMessageInternal = internalMutation({
         }),
       ),
     );
+    return null;
   },
 });
 
@@ -580,6 +638,7 @@ export const createRunInternal = internalMutation({
     usageEventCount: v.optional(v.number()),
     usageRecordedAt: v.optional(v.number()),
   },
+  returns: v.id('chatRuns'),
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatRuns', args);
   },
@@ -620,6 +679,7 @@ export const patchRunInternal = internalMutation({
       usageRecordedAt: v.optional(v.union(v.number(), v.null())),
     }),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const patch: Partial<Doc<'chatRuns'>> = {};
     if (args.patch.agentStreamId !== undefined) {
@@ -654,6 +714,7 @@ export const patchRunInternal = internalMutation({
       patch.usageRecordedAt = args.patch.usageRecordedAt ?? undefined;
     }
     await ctx.db.patch(args.runId, patch);
+    return null;
   },
 });
 
@@ -662,6 +723,7 @@ export const getRunByIdInternal = internalQuery({
     runId: v.id('chatRuns'),
     organizationId: v.string(),
   },
+  returns: v.union(chatRunsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const run = await ctx.db.get(args.runId);
     if (!run || run.organizationId !== args.organizationId) {
@@ -676,6 +738,7 @@ export const getRunByIdAnyInternal = internalQuery({
   args: {
     runId: v.id('chatRuns'),
   },
+  returns: v.union(chatRunsDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.runId);
   },
@@ -685,6 +748,7 @@ export const getLatestRunForThreadInternal = internalQuery({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(chatRunsDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('chatRuns')
@@ -698,6 +762,7 @@ export const getLatestActiveRunForThreadInternal = internalQuery({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(chatRunsDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('chatRuns')
@@ -713,6 +778,7 @@ export const listStaleStreamingRunsInternal = internalQuery({
     startedBefore: v.number(),
     limit: v.number(),
   },
+  returns: v.array(chatRunsDocValidator),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('chatRuns')
@@ -728,6 +794,7 @@ export const getThreadByIdInternal = internalQuery({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(chatThreadsDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db.get(args.threadId);
   },
@@ -737,6 +804,7 @@ export const getThreadByAgentThreadIdAnyInternal = internalQuery({
   args: {
     agentThreadId: v.string(),
   },
+  returns: v.union(chatThreadsDocValidator, v.null()),
   handler: async (ctx, args) => {
     return await ctx.db
       .query('chatThreads')
@@ -768,6 +836,7 @@ export const recordUsageEventInternal = internalMutation({
     providerMetadataJson: v.optional(v.string()),
     createdAt: v.number(),
   },
+  returns: v.id('chatUsageEvents'),
   handler: async (ctx, args) => {
     const recordedAt = args.createdAt;
     const usage = await chargeActualChatTokens(ctx, {
@@ -798,6 +867,7 @@ export const recordUsageEventInternal = internalMutation({
 
 export const listThreads = query({
   args: {},
+  returns: v.array(threadWithAccessValidator),
   handler: async (ctx) => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
@@ -812,6 +882,7 @@ export const listThreads = query({
 
 export const getLatestThreadId = query({
   args: {},
+  returns: v.union(v.id('chatThreads'), v.null()),
   handler: async (ctx) => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
@@ -828,9 +899,7 @@ export const getLatestThreadId = query({
           .take(1)
       : await ctx.db
           .query('chatThreads')
-          .withIndex('by_ownerUserId_and_lastMessageAt', (q) =>
-            q.eq('ownerUserId', viewer.userId),
-          )
+          .withIndex('by_ownerUserId_and_lastMessageAt', (q) => q.eq('ownerUserId', viewer.userId))
           .order('desc')
           .take(1);
 
@@ -842,6 +911,7 @@ export const getThread = query({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(threadWithAccessValidator, v.null()),
   handler: async (ctx, args): Promise<ThreadWithAccess | null> => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -853,6 +923,7 @@ export const getThreadTitle = query({
   args: {
     threadId: v.string(),
   },
+  returns: v.union(v.string(), v.null()),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const normalizedThreadId = ensureThreadId(ctx, args.threadId);
@@ -871,6 +942,7 @@ export const listThreadMessages = query({
     paginationOpts: paginationOptsValidator,
     streamArgs: vStreamArgs,
   },
+  returns: chatMessagePageValidator,
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const normalizedThreadId = ensureThreadId(ctx, args.threadId);
@@ -923,6 +995,7 @@ export const getActiveRun = query({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(activeRunWithAccessValidator, v.null()),
   handler: async (ctx, args): Promise<(ChatRunDoc & { canStop: boolean }) | null> => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -940,6 +1013,7 @@ export const getLatestRunState = query({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.union(chatLatestRunStateValidator, v.null()),
   handler: async (
     ctx,
     args,
@@ -981,6 +1055,7 @@ export const getRetryableRunIds = query({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.record(v.string(), v.string()),
   handler: async (ctx, args): Promise<Record<string, string>> => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -1013,6 +1088,7 @@ export const getChatRateLimit = query({
     textLength: v.optional(v.number()),
     hasAttachments: v.optional(v.boolean()),
   },
+  returns: advisoryChatRateLimitValidator,
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
@@ -1119,6 +1195,9 @@ export const precreateThread = mutation({
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
   },
+  returns: v.object({
+    threadId: v.id('chatThreads'),
+  }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'> }> => {
     const { userId, organizationId } = await getCurrentChatContext(ctx);
 
@@ -1158,6 +1237,10 @@ export const sendMessage = mutation({
     model: v.optional(v.string()),
     useWebSearch: v.optional(v.boolean()),
   },
+  returns: v.object({
+    threadId: v.id('chatThreads'),
+    runId: v.id('chatRuns'),
+  }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
     const { userId, organizationId, isSiteAdmin, currentUserName } =
       await getCurrentChatContext(ctx);
@@ -1277,6 +1360,10 @@ export const editUserMessage = mutation({
     model: v.optional(v.string()),
     useWebSearch: v.optional(v.boolean()),
   },
+  returns: v.object({
+    threadId: v.id('chatThreads'),
+    runId: v.id('chatRuns'),
+  }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
     const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
     const nextText = args.text.trim();
@@ -1400,6 +1487,10 @@ export const retryAssistantResponse = mutation({
     model: v.optional(v.string()),
     useWebSearch: v.optional(v.boolean()),
   },
+  returns: v.object({
+    threadId: v.id('chatThreads'),
+    runId: v.id('chatRuns'),
+  }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
     const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
     const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
@@ -1490,6 +1581,10 @@ export const continuePrompt = mutation({
     model: v.optional(v.string()),
     useWebSearch: v.optional(v.boolean()),
   },
+  returns: v.object({
+    threadId: v.id('chatThreads'),
+    runId: v.id('chatRuns'),
+  }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
     const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, {
@@ -1573,6 +1668,7 @@ export const continuePrompt = mutation({
 
 export const generateChatAttachmentUploadUrl = mutation({
   args: {},
+  returns: v.string(),
   handler: async (ctx) => {
     await getCurrentChatContext(ctx);
     return await ctx.storage.generateUploadUrl();
@@ -1581,6 +1677,7 @@ export const generateChatAttachmentUploadUrl = mutation({
 
 export const listPersonas = query({
   args: {},
+  returns: v.array(aiPersonasDocValidator),
   handler: async (ctx): Promise<PersonaDoc[]> => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
@@ -1601,6 +1698,7 @@ export const setThreadPersona = mutation({
     threadId: v.id('chatThreads'),
     personaId: v.optional(v.id('aiPersonas')),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -1622,6 +1720,7 @@ export const setThreadPersona = mutation({
       personaId: args.personaId,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
@@ -1630,6 +1729,7 @@ export const renameThread = mutation({
     threadId: v.id('chatThreads'),
     title: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -1653,6 +1753,7 @@ export const renameThread = mutation({
         title,
       },
     });
+    return null;
   },
 });
 
@@ -1661,6 +1762,7 @@ export const setThreadPinned = mutation({
     threadId: v.id('chatThreads'),
     pinned: v.boolean(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -1671,13 +1773,14 @@ export const setThreadPinned = mutation({
       throw new ConvexError('You do not have permission to update this thread.');
     }
     if (thread.pinned === args.pinned) {
-      return;
+      return null;
     }
 
     await ctx.db.patch(args.threadId, {
       pinned: args.pinned,
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
@@ -1685,6 +1788,7 @@ export const deleteThread = mutation({
   args: {
     threadId: v.id('chatThreads'),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
     const thread = await getThreadForViewer(ctx, args.threadId, viewer);
@@ -1695,11 +1799,8 @@ export const deleteThread = mutation({
       throw new ConvexError('You do not have permission to delete this thread.');
     }
 
-    await deleteThreadDocumentsInBatches(ctx, args.threadId);
-    await ctx.runMutation(components.agent.threads.deleteAllForThreadIdAsync, {
-      threadId: thread.agentThreadId,
-    });
-    await ctx.db.delete(args.threadId);
+    await deleteThreadForCleanup(ctx, args.threadId);
+    return null;
   },
 });
 
@@ -1708,6 +1809,7 @@ export const createPersona = mutation({
     name: v.string(),
     prompt: v.string(),
   },
+  returns: v.id('aiPersonas'),
   handler: async (ctx, args) => {
     const { userId, organizationId } = await getCurrentChatContext(ctx);
     const now = Date.now();
@@ -1729,6 +1831,7 @@ export const updatePersona = mutation({
     name: v.string(),
     prompt: v.string(),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const { organizationId } = await getCurrentChatContext(ctx);
     const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
@@ -1741,6 +1844,7 @@ export const updatePersona = mutation({
       prompt: args.prompt.trim(),
       updatedAt: Date.now(),
     });
+    return null;
   },
 });
 
@@ -1748,6 +1852,7 @@ export const deletePersona = mutation({
   args: {
     personaId: v.id('aiPersonas'),
   },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const { organizationId } = await getCurrentChatContext(ctx);
     const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
@@ -1772,5 +1877,6 @@ export const deletePersona = mutation({
     );
 
     await ctx.db.delete(args.personaId);
+    return null;
   },
 });

@@ -10,8 +10,10 @@ import {
   type OrganizationRole,
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
+import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import type { QueryCtx } from './_generated/server';
-import { query } from './_generated/server';
+import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
 import {
   checkOrganizationAccess,
   getVerifiedCurrentUserOrThrow,
@@ -27,6 +29,13 @@ import {
   findBetterAuthOrganizationById,
   findBetterAuthOrganizationBySlug,
 } from './lib/betterAuth';
+import {
+  allowedResultValidator,
+  chatThreadsDocValidator,
+  directoryOrganizationValidator,
+  organizationDirectoryResponseValidator,
+  organizationSettingsValidator,
+} from './lib/returnValidators';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -69,6 +78,7 @@ type OrganizationInvitationRow = {
 };
 
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
+const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
   if (!value) {
@@ -84,10 +94,6 @@ function toTimestamp(value: string | number | Date | undefined | null): number {
   }
 
   return new Date(value).getTime();
-}
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
 }
 
 function isInvitationExpired(expiresAt: string | number | Date | undefined | null) {
@@ -163,6 +169,7 @@ function sortValue(
 
 export const listOrganizationsForDirectory = query({
   args: {},
+  returns: v.array(directoryOrganizationValidator),
   handler: async (ctx) => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
 
@@ -223,6 +230,7 @@ export const getOrganizationSettings = query({
   args: {
     slug: v.string(),
   },
+  returns: v.union(organizationSettingsValidator, v.null()),
   handler: async (ctx, args) => {
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
     if (!context || !context.access.view) {
@@ -261,17 +269,18 @@ export const getOrganizationWriteAccess = query({
     membershipId: v.optional(v.string()),
     nextRole: v.optional(v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))),
   },
+  returns: allowedResultValidator,
   handler: async (ctx, args) => {
     const organization = await findBetterAuthOrganizationById(ctx, args.organizationId);
     if (!organization) {
       return {
-        allowed: false,
+        allowed: false as const,
         reason: 'Organization not found',
       };
     }
 
     const user = await getVerifiedCurrentUserOrThrow(ctx);
-    const [access, viewerMembership] = await Promise.all([
+    const [_access, viewerMembership] = await Promise.all([
       checkOrganizationAccess(ctx, args.organizationId, { user }),
       findBetterAuthMember(ctx, args.organizationId, user.authUserId),
     ]);
@@ -288,16 +297,16 @@ export const getOrganizationWriteAccess = query({
       args.action === 'delete-organization'
     ) {
       return canManageOrganization(viewerRole)
-        ? { allowed: true }
+        ? { allowed: true as const }
         : {
-            allowed: false,
+            allowed: false as const,
             reason: 'Organization admin access required',
           };
     }
 
     if (!args.membershipId) {
       return {
-        allowed: false,
+        allowed: false as const,
         reason: 'Organization member not found',
       };
     }
@@ -306,7 +315,7 @@ export const getOrganizationWriteAccess = query({
     const membership = memberships.find((candidate) => (candidate._id ?? '') === args.membershipId);
     if (!membership) {
       return {
-        allowed: false,
+        allowed: false as const,
         reason: 'Organization member not found',
       };
     }
@@ -321,9 +330,9 @@ export const getOrganizationWriteAccess = query({
         membership.userId === user.authUserId,
         ownerCount,
       )
-        ? { allowed: true }
+        ? { allowed: true as const }
         : {
-            allowed: false,
+            allowed: false as const,
             reason: 'Not authorized to remove this member',
           };
     }
@@ -340,11 +349,11 @@ export const getOrganizationWriteAccess = query({
       args.nextRole &&
       availableRoles.includes(args.nextRole)
     ) {
-      return { allowed: true };
+      return { allowed: true as const };
     }
 
     return {
-      allowed: false,
+      allowed: false as const,
       reason: 'Not authorized to change this member role',
     };
   },
@@ -376,6 +385,7 @@ export const listOrganizationDirectory = query({
     search: v.string(),
     kind: v.union(v.literal('all'), v.literal('member'), v.literal('invite')),
   },
+  returns: v.union(organizationDirectoryResponseValidator, v.null()),
   handler: async (ctx, args) => {
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
     if (!context || !context.access.view) {
@@ -416,9 +426,7 @@ export const listOrganizationDirectory = query({
         role,
         status: 'active',
         createdAt: toTimestamp(membership.createdAt),
-        isSiteAdmin: authUser
-          ? deriveIsSiteAdmin(normalizeUserRole(authUser.role))
-          : false,
+        isSiteAdmin: authUser ? deriveIsSiteAdmin(normalizeUserRole(authUser.role)) : false,
         availableRoles,
         canChangeRole: canChangeMemberRole(
           context.viewerRole,
@@ -521,3 +529,155 @@ export const listOrganizationDirectory = query({
 async function listOrganizationMembersForUser(ctx: QueryCtx, authUserId: string) {
   return await fetchBetterAuthMembersByUserId(ctx, authUserId);
 }
+
+export const listOrganizationThreadsBatch = internalQuery({
+  args: {
+    organizationId: v.string(),
+    limit: v.number(),
+  },
+  returns: v.array(chatThreadsDocValidator),
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query('chatThreads')
+      .withIndex('by_organizationId_and_updatedAt', (q) =>
+        q.eq('organizationId', args.organizationId),
+      )
+      .order('asc')
+      .take(args.limit);
+  },
+});
+
+export const deleteOrganizationStandaloneAttachmentsBatch = internalMutation({
+  args: {
+    organizationId: v.string(),
+    limit: v.number(),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const attachments = await ctx.db
+      .query('chatAttachments')
+      .withIndex('by_organizationId_and_createdAt', (q) =>
+        q.eq('organizationId', args.organizationId),
+      )
+      .order('asc')
+      .take(args.limit);
+
+    const standaloneAttachments = attachments.filter(
+      (attachment) => attachment.threadId === undefined,
+    );
+    await Promise.all(
+      standaloneAttachments.map(async (attachment) => {
+        if (attachment.rawStorageId) {
+          await ctx.storage.delete(attachment.rawStorageId);
+        }
+
+        if (attachment.extractedTextStorageId) {
+          await ctx.storage.delete(attachment.extractedTextStorageId);
+        }
+
+        await ctx.db.delete(attachment._id);
+      }),
+    );
+    return standaloneAttachments.length;
+  },
+});
+
+export const deleteOrganizationPersonasBatch = internalMutation({
+  args: {
+    organizationId: v.string(),
+    limit: v.number(),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const personas = await ctx.db
+      .query('aiPersonas')
+      .withIndex('by_organizationId_and_createdAt', (q) =>
+        q.eq('organizationId', args.organizationId),
+      )
+      .order('asc')
+      .take(args.limit);
+
+    await Promise.all(personas.map((persona) => ctx.db.delete(persona._id)));
+    return personas.length;
+  },
+});
+
+export const cleanupOrganizationDataInternal = internalAction({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: v.object({
+    success: v.boolean(),
+    deletedThreads: v.number(),
+    deletedStandaloneAttachments: v.number(),
+    deletedPersonas: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    let deletedThreads = 0;
+    let deletedStandaloneAttachments = 0;
+    let deletedPersonas = 0;
+
+    while (true) {
+      const threads = await ctx.runQuery(
+        internal.organizationManagement.listOrganizationThreadsBatch,
+        {
+          organizationId: args.organizationId,
+          limit: ORGANIZATION_CLEANUP_BATCH_SIZE,
+        },
+      );
+
+      if (threads.length === 0) {
+        break;
+      }
+
+      for (const thread of threads as Array<{ _id: Id<'chatThreads'> }>) {
+        const result = await ctx.runMutation(internal.agentChat.deleteThreadForCleanupInternal, {
+          threadId: thread._id,
+        });
+
+        if (result.deleted) {
+          deletedThreads += 1;
+        }
+      }
+    }
+
+    while (true) {
+      const deletedCount = await ctx.runMutation(
+        internal.organizationManagement.deleteOrganizationStandaloneAttachmentsBatch,
+        {
+          organizationId: args.organizationId,
+          limit: ORGANIZATION_CLEANUP_BATCH_SIZE,
+        },
+      );
+
+      if (deletedCount === 0) {
+        break;
+      }
+
+      deletedStandaloneAttachments += deletedCount;
+    }
+
+    while (true) {
+      const deletedCount = await ctx.runMutation(
+        internal.organizationManagement.deleteOrganizationPersonasBatch,
+        {
+          organizationId: args.organizationId,
+          limit: ORGANIZATION_CLEANUP_BATCH_SIZE,
+        },
+      );
+
+      if (deletedCount === 0) {
+        break;
+      }
+
+      deletedPersonas += deletedCount;
+    }
+
+    return {
+      success: true,
+      deletedThreads,
+      deletedStandaloneAttachments,
+      deletedPersonas,
+    };
+  },
+});

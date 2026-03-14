@@ -28,11 +28,6 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'invite_accepted',
   'invite_rejected',
   'invite_cancelled',
-  'team_created',
-  'team_updated',
-  'team_deleted',
-  'team_member_added',
-  'team_member_removed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -90,11 +85,6 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   invite_accepted: ['organization'],
   invite_rejected: ['organization'],
   invite_cancelled: ['organization'],
-  team_created: ['organization'],
-  team_updated: ['organization'],
-  team_deleted: ['organization'],
-  team_member_added: ['organization'],
-  team_member_removed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

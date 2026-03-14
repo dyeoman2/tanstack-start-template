@@ -12,6 +12,7 @@ import {
   getChatLanguageModel,
   getOpenRouterProviderOptions,
 } from './lib/agentChat';
+import { successTrueValidator } from './lib/returnValidators';
 import { trackedGenerateText } from './lib/chatAgentRuntime';
 
 const STALE_STREAM_TIMEOUT_MS = 15 * 60 * 1000;
@@ -186,25 +187,26 @@ export const runPostCompletionJobs = internalAction({
   args: {
     runId: v.id('chatRuns'),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const run = (await ctx.runQuery(internal.agentChat.getRunByIdAnyInternal, {
       runId: args.runId,
     })) as Doc<'chatRuns'> | null;
 
     if (!run) {
-      return;
+      return { success: true };
     }
 
     const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
       threadId: run.threadId,
     })) as ChatThreadDoc | null;
     if (!thread) {
-      return;
+      return { success: true };
     }
 
     const transcript = await buildRecentTranscript(ctx, run.agentThreadId);
     if (!transcript) {
-      return;
+      return { success: true };
     }
 
     const modelId = DEFAULT_CHAT_MODEL_ID;
@@ -257,7 +259,7 @@ export const runPostCompletionJobs = internalAction({
       thread.summaryThroughOrder,
     );
     if (!transcriptDelta || latestOrder === undefined) {
-      return;
+      return { success: true };
     }
     const summaryPrompt = priorSummary
       ? `Update the existing internal chat summary using the new transcript delta. Keep the result under 500 characters and focus on durable facts, goals, and decisions.
@@ -285,7 +287,7 @@ ${transcriptDelta}`;
     });
     const summary = summaryResult.text.trim().slice(0, 500);
     if (!summary) {
-      return;
+      return { success: true };
     }
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
@@ -302,6 +304,8 @@ ${transcriptDelta}`;
         summary,
       },
     });
+
+    return { success: true };
   },
 });
 
@@ -309,6 +313,7 @@ export const cleanupStaleChatRuns = internalAction({
   args: {
     limit: v.optional(v.number()),
   },
+  returns: successTrueValidator,
   handler: async (ctx, args) => {
     const staleRuns = (await ctx.runQuery(internal.agentChat.listStaleStreamingRunsInternal, {
       startedBefore: Date.now() - STALE_STREAM_TIMEOUT_MS,
@@ -346,5 +351,7 @@ export const cleanupStaleChatRuns = internalAction({
         });
       }
     }
+
+    return { success: true };
   },
 });

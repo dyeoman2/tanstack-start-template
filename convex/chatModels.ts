@@ -1,7 +1,12 @@
+import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { QueryCtx } from './_generated/server';
 import { internalQuery, query } from './_generated/server';
 import { getCurrentUserOrNull } from './auth/access';
+import {
+  aiModelCatalogEntryValidator,
+  chatModelOptionValidator,
+} from './lib/returnValidators';
 import {
   selectActiveChatModelCatalogEntries,
   type ChatModelCatalogEntry,
@@ -37,6 +42,7 @@ async function getActiveCatalogModels(ctx: QueryCtx) {
 
 export const listActiveChatModelsInternal = internalQuery({
   args: {},
+  returns: v.array(aiModelCatalogEntryValidator),
   handler: async (ctx): Promise<ChatModelCatalogEntry[]> => {
     return await getActiveCatalogModels(ctx);
   },
@@ -44,6 +50,7 @@ export const listActiveChatModelsInternal = internalQuery({
 
 export const listAvailableChatModels = query({
   args: {},
+  returns: v.array(chatModelOptionValidator),
   handler: async (ctx): Promise<ChatModelOption[]> => {
     const user = await getCurrentUserOrNull(ctx);
     const isSiteAdmin = user?.isSiteAdmin === true;
