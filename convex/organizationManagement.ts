@@ -1,6 +1,5 @@
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { getSiteUrl } from '../src/lib/server/env.server';
 import {
   canChangeMemberRole,
   canManageOrganization,
@@ -11,29 +10,24 @@ import {
   type OrganizationRole,
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
-import { components, internal } from './_generated/api';
-import type { MutationCtx, QueryCtx } from './_generated/server';
-import { mutation, query } from './_generated/server';
+import type { QueryCtx } from './_generated/server';
+import { query } from './_generated/server';
 import {
   checkOrganizationAccess,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
 } from './auth/access';
-import { throwConvexError } from './auth/errors';
 import {
-  createBetterAuthInvitation,
   fetchAllBetterAuthOrganizations,
   fetchBetterAuthInvitationsByOrganizationId,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthUsersByIds,
-  findBetterAuthUserByEmail,
   findBetterAuthMember,
   findBetterAuthOrganizationById,
   findBetterAuthOrganizationBySlug,
 } from './lib/betterAuth';
 
-const INVITE_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000;
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
 
@@ -131,37 +125,6 @@ async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
   } satisfies OrganizationAccessContext;
 }
 
-async function requireOrganizationManagerById(ctx: MutationCtx, organizationId: string) {
-  const user = await getVerifiedCurrentUserOrThrow(ctx);
-  const organization = await findBetterAuthOrganizationById(ctx, organizationId);
-  if (!organization) {
-    throwConvexError('NOT_FOUND', 'Organization not found');
-  }
-
-  const [access, viewerMembership] = await Promise.all([
-    checkOrganizationAccess(ctx, organizationId, { user }),
-    findBetterAuthMember(ctx, organizationId, user.authUserId),
-  ]);
-
-  const viewerRole = deriveViewerRole({
-    isSiteAdmin: user.isSiteAdmin,
-    membershipRole: viewerMembership?.role,
-  });
-  const canManage = canManageOrganization(viewerRole);
-
-  if (!canManage) {
-    throwConvexError('FORBIDDEN', 'Organization admin access required');
-  }
-
-  return {
-    user,
-    organization,
-    access,
-    viewerMembership,
-    viewerRole,
-  } satisfies OrganizationAccessContext;
-}
-
 function compareValues(
   left: string | number,
   right: string | number,
@@ -196,30 +159,6 @@ function sortValue(
     default:
       return row.createdAt;
   }
-}
-
-async function repairUserContexts(ctx: MutationCtx, authUserIds: string[]) {
-  const uniqueAuthUserIds = [...new Set(authUserIds)];
-  const users = await Promise.all(
-    uniqueAuthUserIds.map(async (authUserId) => {
-      return await ctx.db
-        .query('users')
-        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
-        .first();
-    }),
-  );
-
-  await Promise.all(
-    users
-      .filter((user): user is NonNullable<typeof user> => user !== null)
-      .map((user) =>
-        ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
-          authUserId: user.authUserId,
-          createdAt: user.createdAt,
-          updatedAt: Date.now(),
-        }),
-      ),
-  );
 }
 
 export const listOrganizationsForDirectory = query({
@@ -304,6 +243,109 @@ export const getOrganizationSettings = query({
         context.access.siteAdmin ||
         context.viewerRole === 'owner' ||
         context.viewerRole === 'admin',
+    };
+  },
+});
+
+export const getOrganizationWriteAccess = query({
+  args: {
+    organizationId: v.string(),
+    action: v.union(
+      v.literal('invite'),
+      v.literal('update-member-role'),
+      v.literal('remove-member'),
+      v.literal('cancel-invitation'),
+      v.literal('update-settings'),
+      v.literal('delete-organization'),
+    ),
+    membershipId: v.optional(v.string()),
+    nextRole: v.optional(v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))),
+  },
+  handler: async (ctx, args) => {
+    const organization = await findBetterAuthOrganizationById(ctx, args.organizationId);
+    if (!organization) {
+      return {
+        allowed: false,
+        reason: 'Organization not found',
+      };
+    }
+
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    const [access, viewerMembership] = await Promise.all([
+      checkOrganizationAccess(ctx, args.organizationId, { user }),
+      findBetterAuthMember(ctx, args.organizationId, user.authUserId),
+    ]);
+
+    const viewerRole = deriveViewerRole({
+      isSiteAdmin: user.isSiteAdmin,
+      membershipRole: viewerMembership?.role,
+    });
+
+    if (
+      args.action === 'invite' ||
+      args.action === 'cancel-invitation' ||
+      args.action === 'update-settings' ||
+      args.action === 'delete-organization'
+    ) {
+      return canManageOrganization(viewerRole)
+        ? { allowed: true }
+        : {
+            allowed: false,
+            reason: 'Organization admin access required',
+          };
+    }
+
+    if (!args.membershipId) {
+      return {
+        allowed: false,
+        reason: 'Organization member not found',
+      };
+    }
+
+    const memberships = await listOrganizationMembers(ctx, args.organizationId);
+    const membership = memberships.find((candidate) => (candidate._id ?? '') === args.membershipId);
+    if (!membership) {
+      return {
+        allowed: false,
+        reason: 'Organization member not found',
+      };
+    }
+
+    const currentRole = normalizeOrganizationRole(membership.role);
+    const ownerCount = memberships.filter((candidate) => candidate.role === 'owner').length;
+
+    if (args.action === 'remove-member') {
+      return canRemoveMember(
+        viewerRole,
+        currentRole,
+        membership.userId === user.authUserId,
+        ownerCount,
+      )
+        ? { allowed: true }
+        : {
+            allowed: false,
+            reason: 'Not authorized to remove this member',
+          };
+    }
+
+    const availableRoles = getAssignableRoles(viewerRole, currentRole, ownerCount);
+
+    if (
+      canChangeMemberRole(
+        viewerRole,
+        currentRole,
+        availableRoles,
+        membership.userId === user.authUserId,
+      ) &&
+      args.nextRole &&
+      availableRoles.includes(args.nextRole)
+    ) {
+      return { allowed: true };
+    }
+
+    return {
+      allowed: false,
+      reason: 'Not authorized to change this member role',
     };
   },
 });
@@ -476,310 +518,6 @@ export const listOrganizationDirectory = query({
   },
 });
 
-export const createOrganizationInvitation = mutation({
-  args: {
-    organizationId: v.string(),
-    email: v.string(),
-    role: v.union(v.literal('admin'), v.literal('member')),
-  },
-  handler: async (ctx, args) => {
-    const context = await requireOrganizationManagerById(ctx, args.organizationId);
-    const email = normalizeEmail(args.email);
-    if (!email) {
-      throwConvexError('VALIDATION', 'Email is required');
-    }
-
-    const existingMember = await findBetterAuthUserByEmailAddress(ctx, email);
-    if (existingMember) {
-      const membership = await findBetterAuthMember(ctx, args.organizationId, existingMember.id);
-      if (membership) {
-        throwConvexError('VALIDATION', 'That user is already a member of this organization');
-      }
-    }
-
-    const existingInvitations = await fetchBetterAuthInvitationsByOrganizationId(
-      ctx,
-      args.organizationId,
-    );
-    const pendingInvitations = existingInvitations.filter(
-      (invitation) => invitation.status === 'pending' && normalizeEmail(invitation.email) === email,
-    );
-
-    await Promise.all(
-      pendingInvitations.map((invitation) =>
-        ctx.runMutation(components.betterAuth.adapter.updateMany, {
-          input: {
-            model: 'invitation',
-            update: {
-              status: 'canceled',
-            },
-            where: [{ field: '_id', operator: 'eq', value: invitation._id }],
-          },
-          paginationOpts: {
-            cursor: null,
-            numItems: 1,
-            id: 0,
-          },
-        }),
-      ),
-    );
-
-    const now = Date.now();
-    const invitation = await createBetterAuthInvitation(ctx, {
-      organizationId: args.organizationId,
-      email,
-      role: args.role,
-      status: 'pending',
-      inviterId: context.user.authUserId,
-      expiresAt: now + INVITE_EXPIRY_MS,
-      createdAt: now,
-    });
-
-    const invitationId = invitation._id ?? invitation.id;
-    if (!invitationId) {
-      throw new Error('Failed to create organization invitation');
-    }
-
-    await ctx.scheduler.runAfter(0, internal.emails.sendOrganizationInviteEmailMutation, {
-      email,
-      inviteUrl: `${getSiteUrl()}/invite/${invitationId}`,
-      inviterName: context.user.authUser.name ?? context.user.authUser.email ?? 'An admin',
-      organizationName: context.organization.name,
-      role: args.role,
-    });
-
-    return { success: true, invitationId };
-  },
-});
-
-export const updateOrganizationMemberRole = mutation({
-  args: {
-    organizationId: v.string(),
-    membershipId: v.string(),
-    role: v.union(v.literal('owner'), v.literal('admin'), v.literal('member')),
-  },
-  handler: async (ctx, args) => {
-    const context = await requireOrganizationManagerById(ctx, args.organizationId);
-    const memberships = await listOrganizationMembers(ctx, args.organizationId);
-    const membership = memberships.find((candidate) => (candidate._id ?? '') === args.membershipId);
-    if (!membership) {
-      throwConvexError('NOT_FOUND', 'Organization member not found');
-    }
-
-    const currentRole = normalizeOrganizationRole(membership.role);
-    const ownerCount = memberships.filter((candidate) => candidate.role === 'owner').length;
-    const availableRoles = getAssignableRoles(context.viewerRole, currentRole, ownerCount);
-
-    if (
-      !canChangeMemberRole(
-        context.viewerRole,
-        currentRole,
-        availableRoles,
-        membership.userId === context.user.authUserId,
-      )
-    ) {
-      throwConvexError('FORBIDDEN', 'Not authorized to change this member role');
-    }
-
-    if (!availableRoles.includes(args.role)) {
-      throwConvexError('VALIDATION', 'That role change is not allowed');
-    }
-
-    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
-      input: {
-        model: 'member',
-        update: {
-          role: args.role,
-        },
-        where: [{ field: '_id', operator: 'eq', value: args.membershipId }],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1,
-        id: 0,
-      },
-    });
-
-    return { success: true };
-  },
-});
-
-export const removeOrganizationMember = mutation({
-  args: {
-    organizationId: v.string(),
-    membershipId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const context = await requireOrganizationManagerById(ctx, args.organizationId);
-    const memberships = await listOrganizationMembers(ctx, args.organizationId);
-    const membership = memberships.find((candidate) => (candidate._id ?? '') === args.membershipId);
-    if (!membership) {
-      throwConvexError('NOT_FOUND', 'Organization member not found');
-    }
-
-    const role = normalizeOrganizationRole(membership.role);
-    const ownerCount = memberships.filter((candidate) => candidate.role === 'owner').length;
-
-    if (
-      !canRemoveMember(
-        context.viewerRole,
-        role,
-        membership.userId === context.user.authUserId,
-        ownerCount,
-      )
-    ) {
-      throwConvexError('FORBIDDEN', 'Not authorized to remove this member');
-    }
-
-    await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
-      input: {
-        model: 'member',
-        where: [{ field: '_id', operator: 'eq', value: args.membershipId }],
-      },
-    });
-
-    await repairUserContexts(ctx, [membership.userId]);
-
-    return { success: true };
-  },
-});
-
-export const cancelOrganizationInvitation = mutation({
-  args: {
-    organizationId: v.string(),
-    invitationId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireOrganizationManagerById(ctx, args.organizationId);
-
-    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
-      input: {
-        model: 'invitation',
-        update: {
-          status: 'canceled',
-        },
-        where: [
-          { field: '_id', operator: 'eq', value: args.invitationId },
-          {
-            field: 'organizationId',
-            operator: 'eq',
-            value: args.organizationId,
-            connector: 'AND',
-          },
-        ],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1,
-        id: 0,
-      },
-    });
-
-    return { success: true };
-  },
-});
-
-export const updateOrganizationSettings = mutation({
-  args: {
-    organizationId: v.string(),
-    name: v.string(),
-    logo: v.union(v.string(), v.null()),
-  },
-  handler: async (ctx, args) => {
-    await requireOrganizationManagerById(ctx, args.organizationId);
-    const name = args.name.trim();
-    if (!name) {
-      throwConvexError('VALIDATION', 'Organization name is required');
-    }
-
-    const logo = args.logo?.trim() ?? null;
-
-    await ctx.runMutation(components.betterAuth.adapter.updateMany, {
-      input: {
-        model: 'organization',
-        update: {
-          name,
-          logo,
-        },
-        where: [{ field: '_id', operator: 'eq', value: args.organizationId }],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1,
-        id: 0,
-      },
-    });
-
-    return { success: true };
-  },
-});
-
-export const deleteOrganization = mutation({
-  args: {
-    organizationId: v.string(),
-  },
-  handler: async (ctx, args) => {
-    await requireOrganizationManagerById(ctx, args.organizationId);
-
-    const memberships = await listOrganizationMembers(ctx, args.organizationId);
-
-    await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-      input: {
-        model: 'invitation',
-        where: [{ field: 'organizationId', operator: 'eq', value: args.organizationId }],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1000,
-        id: 0,
-      },
-    });
-
-    await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
-      input: {
-        model: 'member',
-        where: [{ field: 'organizationId', operator: 'eq', value: args.organizationId }],
-      },
-      paginationOpts: {
-        cursor: null,
-        numItems: 1000,
-        id: 0,
-      },
-    });
-
-    await ctx.runMutation(components.betterAuth.adapter.deleteOne, {
-      input: {
-        model: 'organization',
-        where: [{ field: '_id', operator: 'eq', value: args.organizationId }],
-      },
-    });
-
-    await repairUserContexts(
-      ctx,
-      memberships.map((membership) => membership.userId),
-    );
-
-    return { success: true };
-  },
-});
-
 async function listOrganizationMembersForUser(ctx: QueryCtx, authUserId: string) {
   return await fetchBetterAuthMembersByUserId(ctx, authUserId);
-}
-
-async function findBetterAuthUserByEmailAddress(ctx: MutationCtx, email: string) {
-  const authUser = await findBetterAuthUserByEmail(ctx, email);
-  if (!authUser) {
-    return null;
-  }
-
-  const authUserId = authUser.id ?? authUser._id;
-  if (!authUserId) {
-    return null;
-  }
-
-  return {
-    id: authUserId,
-    email: authUser.email ?? email,
-  };
 }

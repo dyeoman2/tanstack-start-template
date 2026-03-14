@@ -243,6 +243,10 @@ describe('OrganizationSettingsManagement', () => {
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Organization settings updated.', 'success');
+    expect(notifyMock).toHaveBeenCalledWith('$activeOrgSignal');
+    expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
+    expect(routerInvalidateMock).toHaveBeenCalled();
   });
 
   it('opens the delete confirmation dialog from the actions menu', async () => {

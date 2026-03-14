@@ -164,10 +164,6 @@ async function resolveActiveOrganizationIdForUser(
   authUserId: string,
   session?: BetterAuthSession | null,
 ): Promise<string | null> {
-  if (typeof session?.activeOrganizationId === 'string' && session.activeOrganizationId.length > 0) {
-    return session.activeOrganizationId;
-  }
-
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
   if (memberships.length === 0) {
     return null;
@@ -180,6 +176,15 @@ async function resolveActiveOrganizationIdForUser(
   const organizationsById = new Set(
     organizations.map((organization) => organization._id ?? organization.id).filter(Boolean),
   );
+
+  if (typeof session?.activeOrganizationId === 'string' && session.activeOrganizationId.length > 0) {
+    const hasMembership = memberships.some(
+      (membership) => membership.organizationId === session.activeOrganizationId,
+    );
+    if (hasMembership && organizationsById.has(session.activeOrganizationId)) {
+      return session.activeOrganizationId;
+    }
+  }
 
   for (const membership of memberships) {
     if (organizationsById.has(membership.organizationId)) {

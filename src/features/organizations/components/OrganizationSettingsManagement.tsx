@@ -115,6 +115,11 @@ export function OrganizationSettingsManagement({
           logo: logo.trim().length > 0 ? logo.trim() : null,
         },
       });
+      await refreshOrganizationClientState(queryClient, {
+        invalidateRouter: async () => {
+          await router.invalidate();
+        },
+      });
       setIsEditDialogOpen(false);
       showToast('Organization settings updated.', 'success');
     } catch (error) {
@@ -134,6 +139,11 @@ export function OrganizationSettingsManagement({
       await deleteOrganization({
         data: {
           organizationId: settings.organization.id,
+        },
+      });
+      await refreshOrganizationClientState(queryClient, {
+        invalidateRouter: async () => {
+          await router.invalidate();
         },
       });
       setIsDeleteDialogOpen(false);

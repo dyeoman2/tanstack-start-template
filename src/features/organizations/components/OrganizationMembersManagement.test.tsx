@@ -4,21 +4,52 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationMembersManagement } from './OrganizationMembersManagement';
 
-const navigateMock = vi.fn();
-const showToastMock = vi.fn();
-const createInvitationMock = vi.fn();
-const updateMemberRoleMock = vi.fn();
-const removeMemberMock = vi.fn();
-const cancelInvitationMock = vi.fn();
-const useQueryMock = vi.fn();
+const {
+  navigateMock,
+  routerInvalidateMock,
+  showToastMock,
+  createInvitationMock,
+  updateMemberRoleMock,
+  removeMemberMock,
+  cancelInvitationMock,
+  useQueryMock,
+  invalidateQueriesMock,
+  notifyMock,
+} = vi.hoisted(() => ({
+  navigateMock: vi.fn(),
+  routerInvalidateMock: vi.fn(),
+  showToastMock: vi.fn(),
+  createInvitationMock: vi.fn(),
+  updateMemberRoleMock: vi.fn(),
+  removeMemberMock: vi.fn(),
+  cancelInvitationMock: vi.fn(),
+  useQueryMock: vi.fn(),
+  invalidateQueriesMock: vi.fn(),
+  notifyMock: vi.fn(),
+}));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigateMock,
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
   Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+  }),
 }));
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
+vi.mock('~/features/auth/auth-client', () => ({
+  authClient: {
+    $store: {
+      notify: notifyMock,
+    },
+  },
 }));
 
 vi.mock('~/features/organizations/server/organization-management', () => ({
@@ -116,6 +147,10 @@ describe('OrganizationMembersManagement', () => {
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Invitation resent.', 'success');
+    expect(notifyMock).toHaveBeenCalledWith('$activeOrgSignal');
+    expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
+    expect(routerInvalidateMock).toHaveBeenCalled();
   });
 
   it('navigates sorting changes to the consolidated settings route', async () => {

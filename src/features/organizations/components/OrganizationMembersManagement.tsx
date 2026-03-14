@@ -1,5 +1,6 @@
 import { api } from '@convex/_generated/api';
-import { useNavigate } from '@tanstack/react-router';
+import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Loader2, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -35,6 +36,7 @@ import type {
   OrganizationDirectoryRow,
   OrganizationDirectorySearchParams,
 } from '~/features/organizations/lib/organization-management';
+import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
   cancelOrganizationInvitationServerFn,
   createOrganizationInvitationServerFn,
@@ -64,6 +66,8 @@ export function OrganizationMembersManagement({
   slug: string;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const router = useRouter();
   const { showToast } = useToast();
   const directory = useQuery(api.organizationManagement.listOrganizationDirectory, {
     slug,
@@ -129,6 +133,14 @@ export function OrganizationMembersManagement({
     }
   };
 
+  const refreshOrganizationState = async () => {
+    await refreshOrganizationClientState(queryClient, {
+      invalidateRouter: async () => {
+        await router.invalidate();
+      },
+    });
+  };
+
   const handleSearchChange = (search: string) => {
     void navigate({
       to: '/app/organizations/$slug/settings',
@@ -169,6 +181,7 @@ export function OrganizationMembersManagement({
           role: inviteRole,
         },
       });
+      await refreshOrganizationState();
       setInviteDialogOpen(false);
       setInviteEmail('');
       setInviteRole('member');
@@ -198,6 +211,7 @@ export function OrganizationMembersManagement({
           role: nextRole,
         },
       });
+      await refreshOrganizationState();
       setSelectedRoleMember(null);
       showToast('Member role updated.', 'success');
     } catch (error) {
@@ -224,6 +238,7 @@ export function OrganizationMembersManagement({
           membershipId: selectedRemovalMember.membershipId,
         },
       });
+      await refreshOrganizationState();
       setSelectedRemovalMember(null);
       showToast('Member removed.', 'success');
     } catch (error) {
@@ -250,6 +265,7 @@ export function OrganizationMembersManagement({
           invitationId: selectedInvitation.invitationId,
         },
       });
+      await refreshOrganizationState();
       setSelectedInvitation(null);
       showToast('Invitation revoked.', 'success');
     } catch (error) {
@@ -280,6 +296,7 @@ export function OrganizationMembersManagement({
           resend: true,
         },
       });
+      await refreshOrganizationState();
       showToast('Invitation resent.', 'success');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to resend invitation';
