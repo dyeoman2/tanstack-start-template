@@ -45,6 +45,7 @@ import type {
   SpeechRecognitionInstance,
 } from '~/features/chat/types/speech-recognition';
 import {
+  chatModelSupportsWebSearch,
   type ChatModelId,
   type ChatModelOption,
   DEFAULT_CHAT_MODEL_ID,
@@ -229,9 +230,17 @@ export function ChatComposer({
   const personaButtonLabel =
     !isDefaultPersona && selectedPersonaLabel ? selectedPersonaLabel : null;
   const selectedModel = getChatModelOption(modelOptions, selectedModelId);
+  const selectedModelSupportsWebSearch = chatModelSupportsWebSearch(selectedModel);
   const selectedModelLabel = modelsReady ? selectedModel.label : 'Loading models...';
   const personaControlDisabled = disabled || isEditing || !personasReady;
   const modelControlDisabled = disabled || isEditing || !modelsReady;
+  const webSearchControlDisabled = disabled || !selectedModelSupportsWebSearch;
+  const webSearchEnabled = selectedModelSupportsWebSearch && useWebSearch;
+  const webSearchTooltip = !selectedModelSupportsWebSearch
+    ? `${selectedModel.label} does not support web search.`
+    : webSearchEnabled
+      ? 'Web search enabled for next message'
+      : 'Enable web search for next message';
   const editingMessageId = editingMessage?.messageId ?? null;
   const editingMessageText = editingMessage?.text ?? '';
 
@@ -712,28 +721,32 @@ export function ChatComposer({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={disabled}
-                onClick={onToggleWebSearch}
-                aria-pressed={useWebSearch}
-                aria-label={useWebSearch ? 'Disable web search' : 'Enable web search'}
-                className={
-                  useWebSearch
-                    ? 'size-9 rounded-full bg-[#e7f0ff] text-[#1f5cab] shadow-none hover:bg-[#d8e7ff] hover:text-[#184f96]'
-                    : 'size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
-                }
-              >
-                <Globe className="size-4" />
-              </Button>
+              <span className="inline-flex">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={webSearchControlDisabled}
+                  onClick={onToggleWebSearch}
+                  aria-pressed={webSearchEnabled}
+                  aria-label={
+                    !selectedModelSupportsWebSearch
+                      ? 'Web search unavailable for selected model'
+                      : webSearchEnabled
+                        ? 'Disable web search'
+                        : 'Enable web search'
+                  }
+                  className={
+                    webSearchEnabled
+                      ? 'size-9 rounded-full bg-[#e7f0ff] text-[#1f5cab] shadow-none hover:bg-[#d8e7ff] hover:text-[#184f96]'
+                      : 'size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]'
+                  }
+                >
+                  <Globe className="size-4" />
+                </Button>
+              </span>
             </TooltipTrigger>
-            <TooltipContent>
-              {useWebSearch
-                ? 'Web search enabled for next message'
-                : 'Enable web search for next message'}
-            </TooltipContent>
+            <TooltipContent>{webSearchTooltip}</TooltipContent>
           </Tooltip>
           <DropdownMenu>
             <Tooltip>

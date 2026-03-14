@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react';
-import type { ChatThread } from '~/features/chat/types';
+import type { ChatMessage, ChatThread } from '~/features/chat/types';
 
 export type OptimisticChatThread = {
   _id: ChatThread['_id'];
@@ -8,17 +8,23 @@ export type OptimisticChatThread = {
   pinned: false;
   title: string;
   updatedAt: number;
+  canManage: true;
 };
 
 type OptimisticThreadStore = Record<string, OptimisticChatThread | undefined>;
+type OptimisticThreadBootstrap = {
+  messages: ChatMessage[];
+};
+type OptimisticBootstrapStore = Record<string, OptimisticThreadBootstrap | undefined>;
 
 let store: OptimisticThreadStore = {};
+let bootstrapStore: OptimisticBootstrapStore = {};
 const listeners = new Set<() => void>();
 let cachedThreadsSnapshot: OptimisticChatThread[] = [];
 
 function emitChange() {
-  cachedThreadsSnapshot = Object.values(store).filter(
-    (thread): thread is OptimisticChatThread => Boolean(thread),
+  cachedThreadsSnapshot = Object.values(store).filter((thread): thread is OptimisticChatThread =>
+    Boolean(thread),
   );
 
   for (const listener of listeners) {
@@ -44,6 +50,24 @@ export function clearOptimisticThread(threadId: string) {
   emitChange();
 }
 
+export function setOptimisticThreadBootstrap(threadId: string, bootstrap: OptimisticThreadBootstrap) {
+  bootstrapStore = {
+    ...bootstrapStore,
+    [threadId]: bootstrap,
+  };
+  emitChange();
+}
+
+export function clearOptimisticThreadBootstrap(threadId: string) {
+  if (!(threadId in bootstrapStore)) {
+    return;
+  }
+
+  const { [threadId]: _removed, ...rest } = bootstrapStore;
+  bootstrapStore = rest;
+  emitChange();
+}
+
 export function useOptimisticThreads() {
   return useSyncExternalStore(
     (listener) => {
@@ -66,6 +90,19 @@ export function useOptimisticThreadTitle(threadId?: string) {
       };
     },
     () => (threadId ? store[threadId]?.title : undefined),
+    () => undefined,
+  );
+}
+
+export function useOptimisticThreadBootstrap(threadId?: string) {
+  return useSyncExternalStore(
+    (listener) => {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    () => (threadId ? bootstrapStore[threadId] : undefined),
     () => undefined,
   );
 }

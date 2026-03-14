@@ -1,21 +1,27 @@
 'use node';
 
 import { Agent, createTool, getThreadMetadata } from '@convex-dev/agent';
-import { generateText, stepCountIs } from 'ai';
+import { generateText, type ModelMessage, stepCountIs } from 'ai';
 import { z } from 'zod';
+import { getOpenRouterWebSearchPlugin } from '../../src/features/chat/lib/openrouter-web-search';
 import {
-  getOpenRouterWebSearchPlugin,
-  getOpenRouterWebSearchProviderOptions,
-} from '../../src/features/chat/lib/openrouter-web-search';
-import { type ChatModelId, DEFAULT_CHAT_MODEL_ID } from '../../src/lib/shared/chat-models';
+  type ChatModelCatalogEntry,
+  type ChatModelId,
+  chatModelSupportsWebSearch,
+  DEFAULT_CHAT_MODEL_ID,
+} from '../../src/lib/shared/chat-models';
 import { components, internal } from '../_generated/api';
-import type { Doc } from '../_generated/dataModel';
+import type { Doc, Id } from '../_generated/dataModel';
 import type { ActionCtx } from '../_generated/server';
 import {
+  type ChatThreadDoc,
+  type ChatUsageOperationKind,
   DEFAULT_CHAT_AGENT_NAME,
   DEFAULT_PERSONA_PROMPT,
+  getChatEmbeddingModel,
   getChatLanguageModel,
   getOpenRouterProvider,
+  getOpenRouterProviderOptions,
 } from './agentChat';
 import { normalizeChatUsage } from './chatRateLimits';
 
@@ -25,7 +31,7 @@ export const CHAT_AGENT_CONTEXT_OPTIONS = {
   searchOptions: {
     limit: 8,
     textSearch: true,
-    vectorSearch: false,
+    vectorSearch: true,
     messageRange: { before: 2, after: 1 },
   },
   searchOtherThreads: false,
@@ -36,6 +42,21 @@ export type ChatWebSearchSource = {
   url: string;
   title?: string;
 };
+
+type ChatContextMessages = {
+  search: ModelMessage[];
+  recent: ModelMessage[];
+  inputMessages: ModelMessage[];
+  inputPrompt: ModelMessage[];
+  existingResponses: ModelMessage[];
+};
+
+type ChatUsageMutationCtx = Pick<ActionCtx, 'runQuery' | 'runMutation'>;
+type ChatProviderOptions = NonNullable<Parameters<typeof generateText>[0]['providerOptions']>;
+type ChatUsageThreadRef = Pick<
+  ChatThreadDoc,
+  '_id' | 'agentThreadId' | 'organizationId' | 'ownerUserId'
+>;
 
 function serializeProviderMetadata(value: unknown) {
   if (value === undefined) {
@@ -49,8 +70,53 @@ function serializeProviderMetadata(value: unknown) {
   }
 }
 
+function getProviderMetadata(value: unknown) {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  return value;
+}
+
+async function persistChatUsageEvent(
+  ctx: ChatUsageMutationCtx,
+  args: {
+    thread: ChatUsageThreadRef;
+    actorUserId: string;
+    runId?: Id<'chatRuns'>;
+    operationKind: ChatUsageOperationKind;
+    model: string;
+    provider: string;
+    totalTokens?: number;
+    inputTokens?: number;
+    outputTokens?: number;
+    providerMetadata?: unknown;
+    agentName?: string;
+  },
+) {
+  const usage = normalizeChatUsage(args);
+
+  await ctx.runMutation(internal.agentChat.recordUsageEventInternal, {
+    organizationId: args.thread.organizationId,
+    actorUserId: args.actorUserId,
+    threadOwnerUserId: args.thread.ownerUserId,
+    threadId: args.thread._id,
+    runId: args.runId,
+    agentThreadId: args.thread.agentThreadId,
+    agentName: args.agentName,
+    operationKind: args.operationKind,
+    model: args.model,
+    provider: args.provider,
+    totalTokens: usage.totalTokens,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    providerMetadataJson: serializeProviderMetadata(args.providerMetadata),
+    createdAt: Date.now(),
+  });
+}
+
 export async function recordChatUsageEvent(
-  ctx: Pick<ActionCtx, 'runQuery' | 'runMutation'>,
+  ctx: ChatUsageMutationCtx,
   args: {
     agentThreadId: string;
     model: string;
@@ -62,7 +128,6 @@ export async function recordChatUsageEvent(
     agentName?: string;
   },
 ) {
-  const usage = normalizeChatUsage(args);
   const thread = (await ctx.runQuery(internal.agentChat.getThreadByAgentThreadIdAnyInternal, {
     agentThreadId: args.agentThreadId,
   })) as Doc<'chatThreads'> | null;
@@ -75,21 +140,55 @@ export async function recordChatUsageEvent(
     threadId: thread._id,
   })) as Doc<'chatRuns'> | null;
 
-  await ctx.runMutation(internal.agentChat.recordUsageEventInternal, {
-    organizationId: thread.organizationId,
-    userId: thread.userId,
-    threadId: thread._id,
+  await persistChatUsageEvent(ctx, {
+    thread,
+    actorUserId: run?.initiatedByUserId ?? thread.ownerUserId,
     runId: run?._id,
-    agentThreadId: args.agentThreadId,
-    agentName: args.agentName,
+    operationKind: 'chat_turn',
     model: args.model,
     provider: args.provider,
-    totalTokens: usage.totalTokens,
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    providerMetadataJson: serializeProviderMetadata(args.providerMetadata),
-    createdAt: Date.now(),
+    totalTokens: args.totalTokens,
+    inputTokens: args.inputTokens,
+    outputTokens: args.outputTokens,
+    providerMetadata: args.providerMetadata,
+    agentName: args.agentName,
   });
+}
+
+export async function trackedGenerateText(
+  ctx: ChatUsageMutationCtx,
+  args: {
+    thread: ChatUsageThreadRef;
+    actorUserId: string;
+    runId?: Id<'chatRuns'>;
+    operationKind: Exclude<ChatUsageOperationKind, 'chat_turn'>;
+    model: ReturnType<ReturnType<typeof getOpenRouterProvider>['chat']>;
+    modelId: string;
+    provider?: string;
+    prompt: string;
+    providerOptions?: ChatProviderOptions;
+  },
+) {
+  const result = await generateText({
+    model: args.model,
+    prompt: args.prompt,
+    ...(args.providerOptions ? { providerOptions: args.providerOptions } : {}),
+  });
+
+  await persistChatUsageEvent(ctx, {
+    thread: args.thread,
+    actorUserId: args.actorUserId,
+    runId: args.runId,
+    operationKind: args.operationKind,
+    model: args.modelId,
+    provider: args.provider ?? 'openrouter',
+    totalTokens: result.usage?.totalTokens,
+    inputTokens: result.usage?.inputTokens,
+    outputTokens: result.usage?.outputTokens,
+    providerMetadata: getProviderMetadata(result.providerMetadata),
+  });
+
+  return result;
 }
 
 function dedupeSearchSources(sources: ChatWebSearchSource[]) {
@@ -115,23 +214,67 @@ export function buildChatSystemPrompt(args: { instructions?: string; useWebSearc
   return promptSections.join('\n\n');
 }
 
-export async function runChatWebSearch(args: { query: string; modelId?: ChatModelId }) {
+export function buildChatContextMessages(args: { summary?: string; context: ChatContextMessages }) {
+  const summary = args.summary?.trim();
+  const summaryMessage = summary
+    ? [{ role: 'system' as const, content: `Conversation summary:\n${summary}` }]
+    : [];
+
+  return [
+    ...summaryMessage,
+    ...args.context.search,
+    ...args.context.recent,
+    ...args.context.inputMessages,
+    ...args.context.inputPrompt,
+    ...args.context.existingResponses,
+  ];
+}
+
+type ChatRequestConfig = {
+  model: ReturnType<typeof getChatLanguageModel>;
+  system: string;
+} & (
+  | {
+      stopWhen: ReturnType<typeof stepCountIs>;
+      providerOptions?: undefined;
+      tools?: undefined;
+    }
+  | {
+      stopWhen: ReturnType<typeof stepCountIs>;
+      providerOptions?: undefined;
+      tools: {
+        web_search: ReturnType<typeof createChatWebSearchTool>;
+      };
+    }
+);
+
+export async function runChatWebSearch(
+  ctx: ChatUsageMutationCtx,
+  args: {
+    query: string;
+    modelId?: ChatModelId;
+    thread: ChatUsageThreadRef;
+    actorUserId: string;
+    runId?: Id<'chatRuns'>;
+  },
+) {
   const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
   const searchModel = getOpenRouterProvider().chat(modelId, {
     plugins: [getOpenRouterWebSearchPlugin(modelId)],
   });
-  const searchResult = await generateText({
+  const searchResult = await trackedGenerateText(ctx, {
+    thread: args.thread,
+    actorUserId: args.actorUserId,
+    runId: args.runId,
+    operationKind: 'web_search',
     model: searchModel,
+    modelId,
+    provider: 'openrouter',
     prompt: `Search the web for: ${args.query}\n\nReturn a concise factual summary of the most relevant results.`,
-    providerOptions: {
-      openrouter: {
-        provider: {
-          zdr: true,
-          data_collection: 'deny',
-          ...(getOpenRouterWebSearchProviderOptions(modelId) ?? {}),
-        },
-      },
-    },
+    providerOptions: getOpenRouterProviderOptions({
+      modelId,
+      useWebSearch: true,
+    }),
   });
   const results = dedupeSearchSources(
     (
@@ -150,8 +293,11 @@ export async function runChatWebSearch(args: { query: string; modelId?: ChatMode
   };
 }
 
-export function createChatWebSearchTool(args?: {
+export function createChatWebSearchTool(args: {
   modelId?: ChatModelId;
+  thread: ChatUsageThreadRef;
+  actorUserId: string;
+  runId?: Id<'chatRuns'>;
   onResults?: (results: ChatWebSearchSource[]) => void;
 }) {
   return createTool({
@@ -160,12 +306,15 @@ export function createChatWebSearchTool(args?: {
     args: z.object({
       query: z.string().min(2),
     }),
-    handler: async (_toolCtx, { query }) => {
-      const result = await runChatWebSearch({
+    handler: async (toolCtx, { query }) => {
+      const result = await runChatWebSearch(toolCtx, {
         query,
-        modelId: args?.modelId,
+        modelId: args.modelId,
+        thread: args.thread,
+        actorUserId: args.actorUserId,
+        runId: args.runId,
       });
-      args?.onResults?.(result.results);
+      args.onResults?.(result.results);
       return result;
     },
   });
@@ -187,6 +336,7 @@ async function debugRawRequestResponse(args: {
 export const baseChatAgent = new Agent(components.agent, {
   name: DEFAULT_CHAT_AGENT_NAME,
   languageModel: getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false),
+  textEmbeddingModel: getChatEmbeddingModel(),
   contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
   usageHandler: async (ctx, usageArgs) => {
     if (!usageArgs.threadId) {
@@ -212,18 +362,10 @@ export const baseChatAgent = new Agent(components.agent, {
     const thread = await getThreadMetadata(ctx, components.agent, {
       threadId: contextArgs.threadId,
     });
-    const summary = thread.summary?.trim();
-    const summaryMessage = summary
-      ? [{ role: 'system' as const, content: `Conversation summary:\n${summary}` }]
-      : [];
-
-    return [
-      ...summaryMessage,
-      ...contextArgs.search,
-      ...contextArgs.recent,
-      ...contextArgs.inputMessages,
-      ...contextArgs.inputPrompt,
-    ];
+    return buildChatContextMessages({
+      summary: thread.summary,
+      context: contextArgs,
+    });
   },
   rawRequestResponseHandler: async (_ctx, args) => {
     await debugRawRequestResponse(args);
@@ -231,32 +373,43 @@ export const baseChatAgent = new Agent(components.agent, {
 });
 
 export function buildChatRequestConfig(args: {
-  modelId?: ChatModelId;
+  model: Pick<ChatModelCatalogEntry, 'modelId' | 'supportsWebSearch'>;
   instructions?: string;
   useWebSearch?: boolean;
+  thread: ChatUsageThreadRef;
+  actorUserId: string;
+  runId?: Id<'chatRuns'>;
   onWebSearchResults?: (results: ChatWebSearchSource[]) => void;
-}) {
-  const modelId = args.modelId ?? DEFAULT_CHAT_MODEL_ID;
-  const useWebSearch = args.useWebSearch ?? false;
-
-  return {
+}): ChatRequestConfig {
+  const modelId = args.model.modelId ?? DEFAULT_CHAT_MODEL_ID;
+  const supportsWebSearch = chatModelSupportsWebSearch(args.model);
+  const useWebSearch = (args.useWebSearch ?? false) && supportsWebSearch;
+  const baseConfig = {
     model: getChatLanguageModel(modelId, false),
     system: buildChatSystemPrompt({
       instructions: args.instructions,
       useWebSearch,
     }),
-    ...(useWebSearch
-      ? {
-          tools: {
-            web_search: createChatWebSearchTool({
-              modelId,
-              onResults: args.onWebSearchResults,
-            }),
-          },
-          stopWhen: stepCountIs(4),
-        }
-      : {
-          stopWhen: stepCountIs(1),
-        }),
+  };
+
+  if (!useWebSearch) {
+    return {
+      ...baseConfig,
+      stopWhen: stepCountIs(1),
+    };
+  }
+
+  return {
+    ...baseConfig,
+    tools: {
+      web_search: createChatWebSearchTool({
+        modelId,
+        thread: args.thread,
+        actorUserId: args.actorUserId,
+        runId: args.runId,
+        onResults: args.onWebSearchResults,
+      }),
+    },
+    stopWhen: stepCountIs(4),
   };
 }

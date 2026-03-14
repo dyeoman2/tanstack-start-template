@@ -78,9 +78,7 @@ function isFilePart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'fi
   );
 }
 
-function isAttachmentPart(
-  part: AgentUIPart,
-): part is Extract<AgentUIPart, { type: 'attachment' }> {
+function isAttachmentPart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'attachment' }> {
   return (
     part.type === 'attachment' &&
     typeof part.attachmentId === 'string' &&
@@ -92,9 +90,7 @@ function isAttachmentPart(
   );
 }
 
-function isDocumentPart(
-  part: AgentUIPart,
-): part is Extract<AgentUIPart, { type: 'document' }> {
+function isDocumentPart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'document' }> {
   return (
     part.type === 'document' &&
     typeof part.name === 'string' &&
@@ -112,9 +108,7 @@ function isImagePart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'i
   );
 }
 
-function isSourceUrlPart(
-  part: AgentUIPart,
-): part is Extract<AgentUIPart, { type: 'source-url' }> {
+function isSourceUrlPart(part: AgentUIPart): part is Extract<AgentUIPart, { type: 'source-url' }> {
   return (
     part.type === 'source-url' &&
     typeof part.sourceId === 'string' &&
@@ -247,16 +241,18 @@ function toUsage(value: unknown): ChatUsage | undefined {
   }
 
   const totalTokens = typeof value.totalTokens === 'number' ? value.totalTokens : undefined;
-  const inputTokens = typeof value.promptTokens === 'number'
-    ? value.promptTokens
-    : typeof value.inputTokens === 'number'
-      ? value.inputTokens
-      : undefined;
-  const outputTokens = typeof value.completionTokens === 'number'
-    ? value.completionTokens
-    : typeof value.outputTokens === 'number'
-      ? value.outputTokens
-      : undefined;
+  const inputTokens =
+    typeof value.promptTokens === 'number'
+      ? value.promptTokens
+      : typeof value.inputTokens === 'number'
+        ? value.inputTokens
+        : undefined;
+  const outputTokens =
+    typeof value.completionTokens === 'number'
+      ? value.completionTokens
+      : typeof value.outputTokens === 'number'
+        ? value.outputTokens
+        : undefined;
 
   if (totalTokens === undefined && inputTokens === undefined && outputTokens === undefined) {
     return undefined;
@@ -289,14 +285,18 @@ export function mapAgentMessagesToChatMessages(
     const metadata = isRecord(message.metadata) ? message.metadata : undefined;
     const model = typeof metadata?.model === 'string' ? metadata.model : undefined;
     const provider = typeof metadata?.provider === 'string' ? metadata.provider : undefined;
-    const errorMessage = typeof metadata?.error === 'string'
-      ? metadata.error
-      : typeof metadata?.errorMessage === 'string'
-        ? metadata.errorMessage
-        : undefined;
-    const clientMessageId = typeof metadata?.clientMessageId === 'string'
-      ? metadata.clientMessageId
-      : undefined;
+    const errorMessage =
+      typeof metadata?.error === 'string'
+        ? metadata.error
+        : typeof metadata?.errorMessage === 'string'
+          ? metadata.errorMessage
+          : undefined;
+    const clientMessageId =
+      typeof metadata?.clientMessageId === 'string' ? metadata.clientMessageId : undefined;
+    const authorUserId =
+      typeof metadata?.authorUserId === 'string' ? metadata.authorUserId : undefined;
+    const authorName = typeof metadata?.authorName === 'string' ? metadata.authorName : undefined;
+    const canEdit = typeof metadata?.canEdit === 'boolean' ? metadata.canEdit : undefined;
 
     return [
       {
@@ -314,6 +314,9 @@ export function mapAgentMessagesToChatMessages(
         createdAt: message._creationTime,
         updatedAt: message._creationTime,
         clientMessageId,
+        authorUserId,
+        authorName,
+        canEdit,
         metadata: message.metadata,
       },
     ];

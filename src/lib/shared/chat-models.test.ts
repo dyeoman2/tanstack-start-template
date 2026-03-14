@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  chatModelSupportsWebSearch,
   DEFAULT_CHAT_MODEL_ID,
+  getChatModelCatalogEntry,
   getChatModelOption,
   getAuthorizedChatModel,
   getDefaultChatModelCatalogEntry,
+  selectActiveChatModelCatalogEntries,
   toChatModelOption,
 } from '~/lib/shared/chat-models';
 
@@ -72,6 +75,54 @@ describe('getChatModelOption', () => {
 
     expect(getChatModelOption(options, 'missing/model')).toEqual(options[0]);
   });
+
+  it('falls back to the first real selectable model before fabricating the curated default', () => {
+    const options = [
+      {
+        id: 'openai/gpt-5-mini',
+        label: 'GPT-5 Mini',
+        description: 'Available model',
+        access: 'public' as const,
+        selectable: true,
+      },
+    ];
+
+    expect(getChatModelOption(options, 'missing/model')).toEqual(options[0]);
+  });
+});
+
+describe('getChatModelCatalogEntry', () => {
+  it('returns the requested catalog model when present', () => {
+    const searchableModel = {
+      ...getDefaultChatModelCatalogEntry(),
+      modelId: 'openai/gpt-4o-search-preview',
+      label: 'GPT-4o Search',
+      supportsWebSearch: true,
+    };
+
+    expect(getChatModelCatalogEntry([searchableModel], searchableModel.modelId)).toEqual(
+      searchableModel,
+    );
+  });
+
+  it('falls back to the curated default model when the requested model is unavailable', () => {
+    const fallback = getChatModelCatalogEntry([], 'missing/model');
+
+    expect(fallback).toMatchObject({
+      modelId: DEFAULT_CHAT_MODEL_ID,
+      supportsWebSearch: true,
+    });
+  });
+
+  it('falls back to the first real catalog model before fabricating the curated default', () => {
+    const availableModel = {
+      ...getDefaultChatModelCatalogEntry(),
+      modelId: 'openai/gpt-5-mini',
+      label: 'GPT-5 Mini',
+    };
+
+    expect(getChatModelCatalogEntry([availableModel], 'missing/model')).toEqual(availableModel);
+  });
 });
 
 describe('toChatModelOption', () => {
@@ -85,5 +136,48 @@ describe('toChatModelOption', () => {
       id: model.modelId,
       supportsWebSearch: true,
     });
+  });
+});
+
+describe('chatModelSupportsWebSearch', () => {
+  it('returns false when the catalog disables web search', () => {
+    expect(chatModelSupportsWebSearch({ supportsWebSearch: false })).toBe(false);
+  });
+
+  it('defaults to true when support metadata is omitted', () => {
+    expect(chatModelSupportsWebSearch({})).toBe(true);
+  });
+});
+
+describe('selectActiveChatModelCatalogEntries', () => {
+  it('keeps the curated default model available when catalog models omit it', () => {
+    const activeModels = [
+      {
+        ...getDefaultChatModelCatalogEntry(),
+        modelId: 'openai/gpt-5-mini',
+        label: 'GPT-5 Mini',
+      },
+    ];
+
+    expect(selectActiveChatModelCatalogEntries(activeModels).map((model) => model.modelId)).toEqual(
+      expect.arrayContaining([DEFAULT_CHAT_MODEL_ID, 'openai/gpt-5-mini']),
+    );
+  });
+
+  it('does not duplicate the curated default model when the catalog already includes it', () => {
+    const activeModels = [
+      getDefaultChatModelCatalogEntry(),
+      {
+        ...getDefaultChatModelCatalogEntry(),
+        modelId: 'openai/gpt-5-mini',
+        label: 'GPT-5 Mini',
+      },
+    ];
+
+    expect(
+      selectActiveChatModelCatalogEntries(activeModels).filter(
+        (model) => model.modelId === DEFAULT_CHAT_MODEL_ID,
+      ),
+    ).toHaveLength(1);
   });
 });

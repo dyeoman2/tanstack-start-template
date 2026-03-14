@@ -3,33 +3,44 @@
 import { createOpenRouter } from '@openrouter/ai-sdk-provider';
 import type { ModelMessage } from 'ai';
 import { ConvexError } from 'convex/values';
-import type { Doc, Id } from '../_generated/dataModel';
-import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
-import {
-  DEFAULT_CHAT_MODEL_ID,
-  getAuthorizedChatModel,
-  type ChatModelCatalogEntry,
-  type ChatModelId,
-} from '../../src/lib/shared/chat-models';
 import {
   getOpenRouterWebSearchPlugin,
   getOpenRouterWebSearchProviderOptions,
   shouldUseOpenRouterWebSearch,
 } from '../../src/features/chat/lib/openrouter-web-search';
 import { getOpenRouterConfig } from '../../src/lib/server/openrouter';
+import {
+  type ChatModelCatalogEntry,
+  type ChatModelId,
+  chatModelSupportsWebSearch,
+  DEFAULT_CHAT_MODEL_ID,
+  getAuthorizedChatModel,
+} from '../../src/lib/shared/chat-models';
+import type { Doc, Id } from '../_generated/dataModel';
+import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 
 export type ChatThreadDoc = Doc<'chatThreads'>;
 export type ChatAttachmentDoc = Doc<'chatAttachments'>;
 export type ChatRunDoc = Doc<'chatRuns'>;
 export type ChatPersonaDoc = Doc<'aiPersonas'>;
+export type ChatUsageOperationKind = 'chat_turn' | 'web_search' | 'thread_title' | 'thread_summary';
+export type ChatRunFailureKind =
+  | 'provider_policy'
+  | 'provider_unavailable'
+  | 'tool_error'
+  | 'unknown';
 
 export const DEFAULT_CHAT_AGENT_NAME = 'chat-assistant';
-export const DEFAULT_PERSONA_PROMPT =
-  'You are an AI assistant that helps people find information.';
+export const DEFAULT_PERSONA_PROMPT = 'You are an AI assistant that helps people find information.';
+export const DEFAULT_CHAT_EMBEDDING_MODEL_ID = 'nvidia/llama-nemotron-embed-vl-1b-v2:free';
 
 let openRouterProvider: ReturnType<typeof createOpenRouter> | null = null;
 const modelCache = new Map<string, ReturnType<ReturnType<typeof createOpenRouter>['chat']>>();
 const SEARCHABLE_MODEL_CACHE_SUFFIX = ':web-search';
+const embeddingModelCache = new Map<
+  string,
+  ReturnType<ReturnType<typeof createOpenRouter>['textEmbeddingModel']>
+>();
 
 function stripHtmlTags(text: string) {
   return text.replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '');
@@ -55,9 +66,25 @@ export function deriveThreadTitle(args: {
 }
 
 function getModelCacheKey(modelId: ChatModelId, supportsWebSearch: boolean) {
+  const config = getOpenRouterConfig();
   return supportsWebSearch && shouldUseOpenRouterWebSearch(modelId)
-    ? `${modelId}${SEARCHABLE_MODEL_CACHE_SUFFIX}`
-    : modelId;
+    ? `${modelId}:${config.privacyMode}${SEARCHABLE_MODEL_CACHE_SUFFIX}`
+    : `${modelId}:${config.privacyMode}`;
+}
+
+function getOpenRouterProviderRoutingSettings() {
+  const config = getOpenRouterConfig();
+
+  if (config.privacyMode !== 'strict') {
+    return undefined;
+  }
+
+  return {
+    provider: {
+      zdr: true,
+      data_collection: 'deny' as const,
+    },
+  };
 }
 
 export function getOpenRouterProvider() {
@@ -89,20 +116,34 @@ export function getChatLanguageModel(modelId: ChatModelId, supportsWebSearch: bo
   return nextModel;
 }
 
+export function getChatEmbeddingModel() {
+  const config = getOpenRouterConfig();
+  const cacheKey = `${DEFAULT_CHAT_EMBEDDING_MODEL_ID}:${config.privacyMode}`;
+  const cached = embeddingModelCache.get(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  const embeddingModel = getOpenRouterProvider().textEmbeddingModel(
+    DEFAULT_CHAT_EMBEDDING_MODEL_ID,
+    getOpenRouterProviderRoutingSettings(),
+  );
+  embeddingModelCache.set(cacheKey, embeddingModel);
+  return embeddingModel;
+}
+
 export function getOpenRouterProviderOptions(args: {
   modelId: ChatModelId;
   useWebSearch: boolean;
   supportsWebSearch?: boolean;
 }) {
   const useProviderSearch = args.useWebSearch && args.supportsWebSearch !== false;
+  const routingSettings = getOpenRouterProviderRoutingSettings();
 
   return {
     openrouter: {
-      provider: {
-        zdr: true,
-        data_collection: 'deny',
-        ...(useProviderSearch ? getOpenRouterWebSearchProviderOptions(args.modelId) : {}),
-      },
+      ...(routingSettings ?? {}),
+      ...(useProviderSearch ? (getOpenRouterWebSearchProviderOptions(args.modelId) ?? {}) : {}),
     },
   } as const;
 }
@@ -150,14 +191,23 @@ export function resolveChatModelId(args: {
     return fallback.model;
   }
 
-  const firstAvailable = args.availableModels.find((model) =>
-    model.access === 'public' || args.isSiteAdmin,
+  const firstAvailable = args.availableModels.find(
+    (model) => model.access === 'public' || args.isSiteAdmin,
   );
   if (!firstAvailable) {
     throw new ConvexError('No chat models are currently available.');
   }
 
   return firstAvailable;
+}
+
+export function assertChatModelSupportsWebSearch(args: {
+  useWebSearch: boolean;
+  model: Pick<ChatModelCatalogEntry, 'supportsWebSearch'>;
+}) {
+  if (args.useWebSearch && !chatModelSupportsWebSearch(args.model)) {
+    throw new ConvexError('Web search is not supported for the selected model.');
+  }
 }
 
 export function buildUsageMetadata(usage: {
@@ -245,6 +295,34 @@ export function isRunActive(run: ChatRunDoc | null | undefined) {
 
 export function toFailureStatus(reason: 'abort' | 'error') {
   return reason === 'abort' ? 'aborted' : 'error';
+}
+
+export function classifyChatRunFailure(error: unknown): ChatRunFailureKind {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  const normalized = message.toLowerCase();
+
+  if (
+    normalized.includes('guardrail restrictions') ||
+    normalized.includes('data policy') ||
+    normalized.includes('privacy')
+  ) {
+    return 'provider_policy';
+  }
+
+  if (
+    normalized.includes('no endpoints available') ||
+    normalized.includes('provider unavailable') ||
+    normalized.includes('temporarily unavailable') ||
+    normalized.includes('no compatible endpoint')
+  ) {
+    return 'provider_unavailable';
+  }
+
+  if (normalized.includes('tool')) {
+    return 'tool_error';
+  }
+
+  return 'unknown';
 }
 
 export function getLatestRun<R extends Pick<ChatRunDoc, 'startedAt'>>(runs: R[]) {

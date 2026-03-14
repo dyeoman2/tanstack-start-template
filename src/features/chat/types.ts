@@ -79,6 +79,11 @@ export type ChatComposerPart = ChatTextPart | ChatImagePart | ChatDocumentPart;
 export type ChatMessageStatus = 'pending' | 'streaming' | 'complete' | 'error';
 
 export type ChatRole = 'assistant' | 'user';
+export type ChatRunFailureKind =
+  | 'provider_policy'
+  | 'provider_unavailable'
+  | 'tool_error'
+  | 'unknown';
 
 export type ChatThread = {
   _id: Id<'chatThreads'>;
@@ -91,6 +96,7 @@ export type ChatThread = {
   createdAt: number;
   updatedAt: number;
   lastMessageAt: number;
+  canManage: boolean;
 };
 
 export type ChatPersona = {
@@ -122,6 +128,9 @@ export type ChatMessage = {
   createdAt: number;
   updatedAt: number;
   clientMessageId?: string;
+  authorUserId?: string;
+  authorName?: string;
+  canEdit?: boolean;
   metadata?: unknown;
 };
 
@@ -139,4 +148,14 @@ export type ChatAttachment = {
   errorMessage?: string;
   createdAt: number;
   updatedAt: number;
+};
+
+export type ChatLatestRunState = {
+  runId: Id<'chatRuns'>;
+  status: 'idle' | 'streaming' | 'complete' | 'aborted' | 'error';
+  canStop: boolean;
+  errorMessage?: string;
+  failureKind?: ChatRunFailureKind;
+  endedAt?: number;
+  promptMessageId?: string;
 };

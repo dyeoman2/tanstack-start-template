@@ -5,6 +5,7 @@ import { getCurrentUserOrNull } from './auth/access';
 import {
   DEFAULT_CHAT_MODEL_ID,
   getDefaultChatModelCatalogEntry,
+  selectActiveChatModelCatalogEntries,
   type ChatModelCatalogEntry,
   type ChatModelOption,
   toChatModelOption,
@@ -32,13 +33,8 @@ async function getActiveCatalogModels(ctx: QueryCtx) {
     .query('aiModelCatalog')
     .withIndex('by_isActive', (q) => q.eq('isActive', true))
     .collect();
-  const openRouterModels = activeModels.filter((model) => model.source === 'openrouter');
 
-  if (openRouterModels.some((model) => model.modelId === DEFAULT_CHAT_MODEL_ID)) {
-    return sortModels(openRouterModels);
-  }
-
-  return sortModels([...openRouterModels, getDefaultChatModelCatalogEntry()]);
+  return sortModels(selectActiveChatModelCatalogEntries(activeModels));
 }
 
 export const listActiveChatModelsInternal = internalQuery({

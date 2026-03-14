@@ -4,12 +4,14 @@ import { getOpenRouterConfig } from './openrouter';
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
 const originalOpenRouterSiteUrl = process.env.OPENROUTER_SITE_URL;
 const originalOpenRouterSiteName = process.env.OPENROUTER_SITE_NAME;
+const originalOpenRouterPrivacyMode = process.env.OPENROUTER_PRIVACY_MODE;
 
 describe('getOpenRouterConfig', () => {
   afterEach(() => {
     restoreEnv('OPENROUTER_API_KEY', originalOpenRouterApiKey);
     restoreEnv('OPENROUTER_SITE_URL', originalOpenRouterSiteUrl);
     restoreEnv('OPENROUTER_SITE_NAME', originalOpenRouterSiteName);
+    restoreEnv('OPENROUTER_PRIVACY_MODE', originalOpenRouterPrivacyMode);
   });
 
   it('throws when the API key is missing', () => {
@@ -32,6 +34,7 @@ describe('getOpenRouterConfig', () => {
         'X-Title': 'Example App',
       },
       compatibility: 'strict',
+      privacyMode: 'standard',
     });
   });
 
@@ -43,7 +46,28 @@ describe('getOpenRouterConfig', () => {
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',
       compatibility: 'strict',
+      privacyMode: 'standard',
     });
+  });
+
+  it('uses strict privacy mode when configured', () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    process.env.OPENROUTER_PRIVACY_MODE = 'strict';
+
+    expect(getOpenRouterConfig()).toEqual({
+      apiKey: 'test-key',
+      compatibility: 'strict',
+      privacyMode: 'strict',
+    });
+  });
+
+  it('throws when the privacy mode is invalid', () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    process.env.OPENROUTER_PRIVACY_MODE = 'invalid';
+
+    expect(() => getOpenRouterConfig()).toThrowError(
+      'OPENROUTER_PRIVACY_MODE must be "standard" or "strict"',
+    );
   });
 });
 

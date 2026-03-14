@@ -1,5 +1,5 @@
-import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { MessageList } from '~/features/chat/components/MessageList';
 
@@ -55,6 +55,28 @@ describe('MessageList', () => {
     );
 
     expect(screen.getByRole('heading', { name: 'Streaming title' })).toBeInTheDocument();
+  });
+
+  it('renders Thinking... for an empty pending assistant message', () => {
+    render(
+      <MessageList
+        messages={[
+          {
+            _id: 'assistant-1',
+            threadId: 'thread-1',
+            order: 1,
+            stepOrder: 0,
+            role: 'assistant',
+            parts: [{ type: 'text', text: '' }],
+            status: 'pending',
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Thinking...')).toBeInTheDocument();
   });
 
   it('renders a retry icon next to copy and calls retry for a saved assistant message', async () => {
@@ -212,5 +234,53 @@ describe('MessageList', () => {
 
     expect(screen.getByText('Updated answer')).toBeInTheDocument();
     expect(screen.queryByText('Thinking...')).not.toBeInTheDocument();
+  });
+
+  it('renders the user author name and edit affordance only when editing is allowed', () => {
+    const { rerender } = render(
+      <MessageList
+        messages={[
+          {
+            _id: 'user-1',
+            threadId: 'thread-1',
+            order: 1,
+            stepOrder: 0,
+            role: 'user',
+            parts: [{ type: 'text', text: 'Draft message' }],
+            status: 'complete',
+            createdAt: 1,
+            updatedAt: 1,
+            authorName: 'Casey',
+            canEdit: true,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Casey')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit message' })).toBeInTheDocument();
+
+    rerender(
+      <MessageList
+        messages={[
+          {
+            _id: 'user-1',
+            threadId: 'thread-1',
+            order: 1,
+            stepOrder: 0,
+            role: 'user',
+            parts: [{ type: 'text', text: 'Draft message' }],
+            status: 'complete',
+            createdAt: 1,
+            updatedAt: 1,
+            authorName: 'Casey',
+            canEdit: false,
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Casey')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Edit message' })).not.toBeInTheDocument();
   });
 });

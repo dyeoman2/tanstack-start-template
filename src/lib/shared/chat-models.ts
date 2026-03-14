@@ -40,6 +40,10 @@ export const DEFAULT_CHAT_MODEL_ID = 'openai/gpt-4o-mini';
 export const DEFAULT_CHAT_MODEL_LABEL = 'GPT-4o Mini';
 const DEFAULT_CHAT_MODEL_DESCRIPTION = 'Fast OpenRouter text-generation model for everyday chat.';
 
+type ChatModelWithWebSearch = {
+  supportsWebSearch?: boolean;
+};
+
 export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatModelCatalogEntry {
   return {
     modelId: DEFAULT_CHAT_MODEL_ID,
@@ -57,6 +61,20 @@ export function getDefaultChatModelCatalogEntry(refreshedAt: number = 0): ChatMo
     isActive: true,
     refreshedAt,
   };
+}
+
+export function chatModelSupportsWebSearch(model?: ChatModelWithWebSearch | null): boolean {
+  return model?.supportsWebSearch ?? true;
+}
+
+export function selectActiveChatModelCatalogEntries(models: ChatModelCatalogEntry[]) {
+  const openRouterModels = models.filter((model) => model.source === 'openrouter');
+
+  if (openRouterModels.some((model) => model.modelId === DEFAULT_CHAT_MODEL_ID)) {
+    return openRouterModels;
+  }
+
+  return [...openRouterModels, getDefaultChatModelCatalogEntry()];
 }
 
 export function formatChatModelLabel(modelId: string): string {
@@ -90,7 +108,7 @@ export function toChatModelOption(
     description: model.description,
     access: model.access,
     selectable,
-    supportsWebSearch: model.supportsWebSearch ?? true,
+    supportsWebSearch: chatModelSupportsWebSearch(model),
     priceLabel: model.priceLabel,
     badge:
       model.access === 'admin'
@@ -117,7 +135,41 @@ export function getChatModelOption(
     return defaultModel;
   }
 
+  const firstSelectableModel = models.find((model) => model.selectable);
+  if (firstSelectableModel) {
+    return firstSelectableModel;
+  }
+
+  const firstModel = models[0];
+  if (firstModel) {
+    return firstModel;
+  }
+
   return toChatModelOption(getDefaultChatModelCatalogEntry(), true);
+}
+
+export function getChatModelCatalogEntry(
+  models: ChatModelCatalogEntry[],
+  modelId?: string,
+): ChatModelCatalogEntry {
+  if (modelId) {
+    const matchedModel = models.find((model) => model.modelId === modelId);
+    if (matchedModel) {
+      return matchedModel;
+    }
+  }
+
+  const defaultModel = models.find((model) => model.modelId === DEFAULT_CHAT_MODEL_ID);
+  if (defaultModel) {
+    return defaultModel;
+  }
+
+  const firstModel = models[0];
+  if (firstModel) {
+    return firstModel;
+  }
+
+  return getDefaultChatModelCatalogEntry();
 }
 
 export function getAuthorizedChatModel(

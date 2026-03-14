@@ -27,8 +27,10 @@ import {
 } from './agentChatActions';
 import { getCurrentUserOrThrow } from './auth/access';
 import {
+  assertChatModelSupportsWebSearch,
   type ChatAttachmentDoc,
   type ChatRunDoc,
+  type ChatRunFailureKind,
   type ChatThreadDoc,
   deriveThreadTitle,
   ensureThreadId,
@@ -43,6 +45,19 @@ import {
 } from './lib/chatRateLimits';
 
 type PersonaDoc = Doc<'aiPersonas'>;
+type ChatViewerContext = Awaited<ReturnType<typeof getCurrentChatContext>>;
+type ThreadWithAccess = ChatThreadDoc & {
+  canManage: boolean;
+};
+
+function getCurrentUserDisplayName(user: Awaited<ReturnType<typeof getCurrentUserOrThrow>>) {
+  const normalizedName = user.authUser.name?.trim();
+  if (normalizedName) {
+    return normalizedName;
+  }
+
+  return user.authUser.email ?? 'Unknown user';
+}
 
 async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
   const user = await getCurrentUserOrThrow(ctx);
@@ -56,20 +71,115 @@ async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
     userId: user._id,
     organizationId,
     isSiteAdmin: user.isSiteAdmin,
+    currentUserName: getCurrentUserDisplayName(user),
   };
 }
 
-async function getThreadForOrganization(
+function canViewThread(
+  thread: ChatThreadDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (thread.organizationId !== viewer.organizationId) {
+    return false;
+  }
+
+  if (viewer.isSiteAdmin) {
+    return true;
+  }
+
+  return thread.ownerUserId === viewer.userId;
+}
+
+function canManageThread(
+  thread: ChatThreadDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (thread.organizationId !== viewer.organizationId) {
+    return false;
+  }
+
+  return viewer.isSiteAdmin || thread.ownerUserId === viewer.userId;
+}
+
+function getMessageMetadataRecord(message: { metadata?: unknown } | null) {
+  const metadata =
+    message?.metadata && typeof message.metadata === 'object' ? message.metadata : null;
+
+  return metadata as Record<string, unknown> | null;
+}
+
+function getMessageAuthorUserId(
+  message: AgentMessageDoc | { metadata?: unknown } | null,
+  thread: ChatThreadDoc,
+) {
+  const metadata = getMessageMetadataRecord(message);
+  return typeof metadata?.authorUserId === 'string' ? metadata.authorUserId : thread.ownerUserId;
+}
+
+function canEditUserMessage(
+  message: AgentMessageDoc | { metadata?: unknown } | null,
+  thread: ChatThreadDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (!message || !canViewThread(thread, viewer)) {
+    return false;
+  }
+
+  return viewer.isSiteAdmin || getMessageAuthorUserId(message, thread) === viewer.userId;
+}
+
+function canStopRun(
+  run: ChatRunDoc,
+  thread: ChatThreadDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (!canViewThread(thread, viewer)) {
+    return false;
+  }
+
+  return viewer.isSiteAdmin || run.initiatedByUserId === viewer.userId;
+}
+
+function toThreadWithAccess(
+  thread: ChatThreadDoc,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+): ThreadWithAccess {
+  return {
+    ...thread,
+    canManage: canManageThread(thread, viewer),
+  };
+}
+
+async function getThreadForViewer(
   ctx: QueryCtx | MutationCtx,
   threadId: Id<'chatThreads'>,
-  organizationId: string,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
 ) {
   const thread = await ctx.db.get(threadId);
-  if (!thread || thread.organizationId !== organizationId) {
+  if (!thread || !canViewThread(thread, viewer)) {
     return null;
   }
 
   return thread;
+}
+
+async function listAccessibleThreads(
+  ctx: QueryCtx | MutationCtx,
+  viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
+) {
+  if (viewer.isSiteAdmin) {
+    return await ctx.db
+      .query('chatThreads')
+      .withIndex('by_organizationId_and_updatedAt', (q) =>
+        q.eq('organizationId', viewer.organizationId),
+      )
+      .collect();
+  }
+
+  return await ctx.db
+    .query('chatThreads')
+    .withIndex('by_ownerUserId_and_updatedAt', (q) => q.eq('ownerUserId', viewer.userId))
+    .collect();
 }
 
 async function getPersonaForOrganization(
@@ -134,7 +244,12 @@ export const getThreadForOrganizationInternal = internalQuery({
     organizationId: v.string(),
   },
   handler: async (ctx, args) => {
-    return await getThreadForOrganization(ctx, args.threadId, args.organizationId);
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread || thread.organizationId !== args.organizationId) {
+      return null;
+    }
+
+    return thread;
   },
 });
 
@@ -214,7 +329,7 @@ export const getAttachmentByIdInternal = internalQuery({
 
 export const createThreadShellInternal = internalMutation({
   args: {
-    userId: v.string(),
+    ownerUserId: v.string(),
     organizationId: v.string(),
     agentThreadId: v.string(),
     title: v.string(),
@@ -226,6 +341,7 @@ export const createThreadShellInternal = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatThreads', {
       ...args,
+      visibility: 'private',
       pinned: false,
       updatedAt: args.createdAt,
       lastMessageAt: args.createdAt,
@@ -245,6 +361,7 @@ export const patchThreadInternal = internalMutation({
       titleManuallyEdited: v.optional(v.boolean()),
       summary: v.optional(v.union(v.string(), v.null())),
       summaryUpdatedAt: v.optional(v.union(v.number(), v.null())),
+      summaryThroughOrder: v.optional(v.union(v.number(), v.null())),
       updatedAt: v.optional(v.number()),
       lastMessageAt: v.optional(v.number()),
     }),
@@ -268,6 +385,9 @@ export const patchThreadInternal = internalMutation({
     }
     if (args.patch.summaryUpdatedAt !== undefined) {
       patch.summaryUpdatedAt = args.patch.summaryUpdatedAt ?? undefined;
+    }
+    if (args.patch.summaryThroughOrder !== undefined) {
+      patch.summaryThroughOrder = args.patch.summaryThroughOrder ?? undefined;
     }
     if (args.patch.updatedAt !== undefined) patch.updatedAt = args.patch.updatedAt;
     if (args.patch.lastMessageAt !== undefined) patch.lastMessageAt = args.patch.lastMessageAt;
@@ -362,6 +482,7 @@ export const createRunInternal = internalMutation({
     threadId: v.id('chatThreads'),
     agentThreadId: v.string(),
     organizationId: v.string(),
+    initiatedByUserId: v.string(),
     ownerSessionId: v.string(),
     agentStreamId: v.optional(v.string()),
     status: v.union(
@@ -374,6 +495,14 @@ export const createRunInternal = internalMutation({
     startedAt: v.number(),
     activeAssistantMessageId: v.optional(v.string()),
     promptMessageId: v.optional(v.string()),
+    failureKind: v.optional(
+      v.union(
+        v.literal('provider_policy'),
+        v.literal('provider_unavailable'),
+        v.literal('tool_error'),
+        v.literal('unknown'),
+      ),
+    ),
     provider: v.optional(v.string()),
     model: v.optional(v.string()),
     useWebSearch: v.boolean(),
@@ -404,6 +533,15 @@ export const patchRunInternal = internalMutation({
       ),
       endedAt: v.optional(v.union(v.number(), v.null())),
       errorMessage: v.optional(v.union(v.string(), v.null())),
+      failureKind: v.optional(
+        v.union(
+          v.literal('provider_policy'),
+          v.literal('provider_unavailable'),
+          v.literal('tool_error'),
+          v.literal('unknown'),
+          v.null(),
+        ),
+      ),
       activeAssistantMessageId: v.optional(v.union(v.string(), v.null())),
       provider: v.optional(v.union(v.string(), v.null())),
       model: v.optional(v.union(v.string(), v.null())),
@@ -423,6 +561,9 @@ export const patchRunInternal = internalMutation({
     if (args.patch.endedAt !== undefined) patch.endedAt = args.patch.endedAt ?? undefined;
     if (args.patch.errorMessage !== undefined) {
       patch.errorMessage = args.patch.errorMessage ?? undefined;
+    }
+    if (args.patch.failureKind !== undefined) {
+      patch.failureKind = args.patch.failureKind ?? undefined;
     }
     if (args.patch.activeAssistantMessageId !== undefined) {
       patch.activeAssistantMessageId = args.patch.activeAssistantMessageId ?? undefined;
@@ -539,11 +680,18 @@ export const getThreadByAgentThreadIdAnyInternal = internalQuery({
 export const recordUsageEventInternal = internalMutation({
   args: {
     organizationId: v.string(),
-    userId: v.string(),
+    actorUserId: v.string(),
+    threadOwnerUserId: v.string(),
     threadId: v.id('chatThreads'),
     runId: v.optional(v.id('chatRuns')),
     agentThreadId: v.string(),
     agentName: v.optional(v.string()),
+    operationKind: v.union(
+      v.literal('chat_turn'),
+      v.literal('web_search'),
+      v.literal('thread_title'),
+      v.literal('thread_summary'),
+    ),
     model: v.string(),
     provider: v.string(),
     totalTokens: v.optional(v.number()),
@@ -556,7 +704,7 @@ export const recordUsageEventInternal = internalMutation({
     const recordedAt = args.createdAt;
     const usage = await chargeActualChatTokens(ctx, {
       organizationId: args.organizationId,
-      userId: args.userId,
+      userId: args.actorUserId,
       totalTokens: args.totalTokens,
       inputTokens: args.inputTokens,
       outputTokens: args.outputTokens,
@@ -583,28 +731,22 @@ export const recordUsageEventInternal = internalMutation({
 export const listThreads = query({
   args: {},
   handler: async (ctx) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContext(ctx);
+    const threads = await listAccessibleThreads(ctx, viewer);
 
-    return await ctx.db
-      .query('chatThreads')
-      .withIndex('by_organizationId_and_updatedAt', (q) => q.eq('organizationId', organizationId))
-      .collect();
+    return threads.map((thread) => toThreadWithAccess(thread, viewer));
   },
 });
 
 export const getLatestThreadId = query({
   args: {},
   handler: async (ctx) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const threads = await ctx.db
-      .query('chatThreads')
-      .withIndex('by_organizationId_and_lastMessageAt', (q) =>
-        q.eq('organizationId', organizationId),
-      )
-      .order('desc')
-      .take(1);
+    const viewer = await getCurrentChatContext(ctx);
+    const threads = await listAccessibleThreads(ctx, viewer);
 
-    return threads[0]?._id ?? null;
+    return (
+      [...threads].sort((left, right) => right.lastMessageAt - left.lastMessageAt)[0]?._id ?? null
+    );
   },
 });
 
@@ -612,9 +754,10 @@ export const getThread = query({
   args: {
     threadId: v.id('chatThreads'),
   },
-  handler: async (ctx, args): Promise<ChatThreadDoc | null> => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    return await getThreadForOrganization(ctx, args.threadId, organizationId);
+  handler: async (ctx, args): Promise<ThreadWithAccess | null> => {
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
+    return thread ? toThreadWithAccess(thread, viewer) : null;
   },
 });
 
@@ -623,13 +766,13 @@ export const getThreadTitle = query({
     threadId: v.string(),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContext(ctx);
     const normalizedThreadId = ensureThreadId(ctx, args.threadId);
     if (!normalizedThreadId) {
       return null;
     }
 
-    const thread = await getThreadForOrganization(ctx, normalizedThreadId, organizationId);
+    const thread = await getThreadForViewer(ctx, normalizedThreadId, viewer);
     return thread?.title ?? null;
   },
 });
@@ -641,7 +784,7 @@ export const listThreadMessages = query({
     streamArgs: vStreamArgs,
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
+    const viewer = await getCurrentChatContext(ctx);
     const normalizedThreadId = ensureThreadId(ctx, args.threadId);
 
     if (!normalizedThreadId) {
@@ -653,7 +796,7 @@ export const listThreadMessages = query({
       };
     }
 
-    const thread = await getThreadForOrganization(ctx, normalizedThreadId, organizationId);
+    const thread = await getThreadForViewer(ctx, normalizedThreadId, viewer);
     if (!thread) {
       return {
         page: [],
@@ -673,6 +816,16 @@ export const listThreadMessages = query({
     });
     return {
       ...paginated,
+      page: paginated.page.map((message) => ({
+        ...message,
+        metadata: {
+          ...(message.metadata && typeof message.metadata === 'object' ? message.metadata : {}),
+          canEdit:
+            message.role === 'user'
+              ? canEditUserMessage(message as { metadata?: unknown }, thread, viewer)
+              : false,
+        },
+      })),
       streams,
     };
   },
@@ -682,15 +835,57 @@ export const getActiveRun = query({
   args: {
     threadId: v.id('chatThreads'),
   },
-  handler: async (ctx, args): Promise<ChatRunDoc | null> => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+  handler: async (ctx, args): Promise<(ChatRunDoc & { canStop: boolean }) | null> => {
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       return null;
     }
 
     const runs = await getChatRunsForThread(ctx, args.threadId);
-    return runs.find((run) => run.status === 'streaming') ?? null;
+    const run = runs.find((nextRun) => nextRun.status === 'streaming') ?? null;
+    return run ? { ...run, canStop: canStopRun(run, thread, viewer) } : null;
+  },
+});
+
+export const getLatestRunState = query({
+  args: {
+    threadId: v.id('chatThreads'),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    runId: Id<'chatRuns'>;
+    status: ChatRunDoc['status'];
+    canStop: boolean;
+    errorMessage?: string;
+    failureKind?: ChatRunFailureKind;
+    endedAt?: number;
+    promptMessageId?: string;
+  } | null> => {
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
+    if (!thread) {
+      return null;
+    }
+
+    const run = (await ctx.runQuery(internal.agentChat.getLatestRunForThreadInternal, {
+      threadId: args.threadId,
+    })) as ChatRunDoc | null;
+    if (!run) {
+      return null;
+    }
+
+    return {
+      runId: run._id,
+      status: run.status,
+      canStop: canStopRun(run, thread, viewer),
+      errorMessage: run.errorMessage,
+      failureKind: run.failureKind,
+      endedAt: run.endedAt,
+      promptMessageId: run.promptMessageId,
+    };
   },
 });
 
@@ -699,8 +894,8 @@ export const getRetryableRunIds = query({
     threadId: v.id('chatThreads'),
   },
   handler: async (ctx, args): Promise<Record<string, string>> => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       return {};
     }
@@ -746,6 +941,7 @@ async function abortExistingRunForThread(
   args: {
     threadId: Id<'chatThreads'>;
     reason: string;
+    viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>;
   },
 ) {
   const activeRun = (await ctx.runQuery(internal.agentChat.getLatestActiveRunForThreadInternal, {
@@ -754,6 +950,13 @@ async function abortExistingRunForThread(
 
   if (!activeRun) {
     return;
+  }
+
+  const thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
+    threadId: args.threadId,
+  })) as ChatThreadDoc | null;
+  if (!thread || !canStopRun(activeRun, thread, args.viewer)) {
+    throw new ConvexError('Another user is generating a response for this thread.');
   }
 
   await abortRunWithReason(ctx, {
@@ -784,6 +987,7 @@ async function createStreamingRun(
   ctx: MutationCtx,
   args: {
     thread: ChatThreadDoc;
+    initiatedByUserId: string;
     organizationId: string;
     ownerSessionId: string;
     promptMessageId: string;
@@ -795,6 +999,7 @@ async function createStreamingRun(
     threadId: args.thread._id,
     agentThreadId: args.thread.agentThreadId,
     organizationId: args.organizationId,
+    initiatedByUserId: args.initiatedByUserId,
     ownerSessionId: args.ownerSessionId,
     status: 'streaming',
     startedAt: Date.now(),
@@ -802,6 +1007,7 @@ async function createStreamingRun(
     provider: 'openrouter',
     model: args.model,
     useWebSearch: args.useWebSearch,
+    failureKind: undefined,
     actualInputTokens: 0,
     actualOutputTokens: 0,
     actualTotalTokens: 0,
@@ -856,13 +1062,18 @@ export const sendMessage = mutation({
     useWebSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
-    const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const { userId, organizationId, isSiteAdmin, currentUserName } =
+      await getCurrentChatContext(ctx);
 
     if (!args.text.trim() && args.attachmentIds.length === 0) {
       throw new ConvexError('Message content is required.');
     }
 
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const thread = await getThreadForViewer(ctx, args.threadId, {
+      userId,
+      organizationId,
+      isSiteAdmin,
+    });
     if (!thread) {
       throw new ConvexError('Thread not found.');
     }
@@ -876,6 +1087,7 @@ export const sendMessage = mutation({
     await abortExistingRunForThread(ctx, {
       threadId: thread._id,
       reason: 'Superseded by a newer request.',
+      viewer: { userId, organizationId, isSiteAdmin },
     });
 
     if (args.personaId) {
@@ -895,15 +1107,21 @@ export const sendMessage = mutation({
       threadModelId: thread.model,
       isSiteAdmin,
     });
+    assertChatModelSupportsWebSearch({
+      useWebSearch: args.useWebSearch ?? false,
+      model: selectedModel,
+    });
     const userMessage = await buildUserMessage(ctx, args.text, attachments);
     const savedPrompt = await baseChatAgent.saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
       messages: [userMessage.message],
+      skipEmbeddings: true,
       metadata: [
         {
           ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
           ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
+          ...{ authorUserId: userId, authorName: currentUserName },
         },
       ],
       failPendingSteps: false,
@@ -926,6 +1144,7 @@ export const sendMessage = mutation({
     const resolvedPersonaId = args.personaId ?? thread.personaId;
     const runId = await createStreamingRun(ctx, {
       thread,
+      initiatedByUserId: userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: promptMessage._id,
@@ -962,7 +1181,7 @@ export const editUserMessage = mutation({
     useWebSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
-    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
     const nextText = args.text.trim();
 
     if (!nextText) {
@@ -989,15 +1208,26 @@ export const editUserMessage = mutation({
       throw new ConvexError('Thread not found.');
     }
 
+    if (
+      !canEditUserMessage(message, thread, {
+        userId,
+        organizationId,
+        isSiteAdmin,
+      })
+    ) {
+      throw new ConvexError('You do not have permission to edit this message.');
+    }
+
     await enforceChatPreflightOrThrow(ctx, {
       organizationId,
-      userId: thread.userId,
+      userId,
       textLength: nextText.length,
       hasAttachments: false,
     });
     await abortExistingRunForThread(ctx, {
       threadId: thread._id,
       reason: 'Superseded by a newer request.',
+      viewer: { userId, organizationId, isSiteAdmin },
     });
     await deleteMessagesAfterPrompt(ctx, message.threadId, message);
 
@@ -1033,8 +1263,13 @@ export const editUserMessage = mutation({
       threadModelId: thread.model,
       isSiteAdmin,
     });
+    assertChatModelSupportsWebSearch({
+      useWebSearch: args.useWebSearch ?? false,
+      model: selectedModel,
+    });
     const runId = await createStreamingRun(ctx, {
       thread,
+      initiatedByUserId: userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: args.messageId,
@@ -1069,7 +1304,7 @@ export const retryAssistantResponse = mutation({
     useWebSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
-    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
     const run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
       runId: args.runId,
       organizationId,
@@ -1079,7 +1314,11 @@ export const retryAssistantResponse = mutation({
       throw new ConvexError('Run not found.');
     }
 
-    const thread = await getThreadForOrganization(ctx, run.threadId, organizationId);
+    const thread = await getThreadForViewer(ctx, run.threadId, {
+      userId,
+      organizationId,
+      isSiteAdmin,
+    });
     if (!thread) {
       throw new ConvexError('Thread not found.');
     }
@@ -1094,13 +1333,14 @@ export const retryAssistantResponse = mutation({
 
     await enforceChatPreflightOrThrow(ctx, {
       organizationId,
-      userId: thread.userId,
+      userId,
       textLength: getMessageTextLength(promptMessage),
       hasAttachments: (promptMessage.fileIds?.length ?? 0) > 0,
     });
     await abortExistingRunForThread(ctx, {
       threadId: thread._id,
       reason: 'Superseded by a newer request.',
+      viewer: { userId, organizationId, isSiteAdmin },
     });
 
     await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
@@ -1110,13 +1350,19 @@ export const retryAssistantResponse = mutation({
       threadModelId: thread.model ?? run.model,
       isSiteAdmin,
     });
+    const useWebSearch = args.useWebSearch ?? run.useWebSearch;
+    assertChatModelSupportsWebSearch({
+      useWebSearch,
+      model: selectedModel,
+    });
     const runId = await createStreamingRun(ctx, {
       thread,
+      initiatedByUserId: userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: run.promptMessageId,
       model: selectedModel.modelId,
-      useWebSearch: args.useWebSearch ?? run.useWebSearch,
+      useWebSearch,
     });
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
@@ -1148,8 +1394,12 @@ export const continuePrompt = mutation({
     useWebSearch: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
-    const { organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, {
+      userId,
+      organizationId,
+      isSiteAdmin,
+    });
     if (!thread) {
       throw new ConvexError('Thread not found.');
     }
@@ -1171,13 +1421,14 @@ export const continuePrompt = mutation({
 
     await enforceChatPreflightOrThrow(ctx, {
       organizationId,
-      userId: thread.userId,
+      userId,
       textLength: getMessageTextLength(promptMessage),
       hasAttachments: (promptMessage.fileIds?.length ?? 0) > 0,
     });
     await abortExistingRunForThread(ctx, {
       threadId: thread._id,
       reason: 'Superseded by a newer request.',
+      viewer: { userId, organizationId, isSiteAdmin },
     });
 
     await deleteMessagesAfterPrompt(ctx, thread.agentThreadId, promptMessage);
@@ -1188,13 +1439,19 @@ export const continuePrompt = mutation({
       isSiteAdmin,
     });
     const resolvedPersonaId = args.personaId ?? thread.personaId;
+    const useWebSearch = args.useWebSearch ?? false;
+    assertChatModelSupportsWebSearch({
+      useWebSearch,
+      model: selectedModel,
+    });
     const runId = await createStreamingRun(ctx, {
       thread,
+      initiatedByUserId: userId,
       organizationId,
       ownerSessionId: args.ownerSessionId,
       promptMessageId: args.promptMessageId,
       model: selectedModel.modelId,
-      useWebSearch: args.useWebSearch ?? false,
+      useWebSearch,
     });
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
@@ -1243,14 +1500,17 @@ export const setThreadPersona = mutation({
     personaId: v.optional(v.id('aiPersonas')),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       throw new ConvexError('Thread not found.');
     }
+    if (!canManageThread(thread, viewer)) {
+      throw new ConvexError('You do not have permission to update this thread.');
+    }
 
     if (args.personaId) {
-      const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
+      const persona = await getPersonaForOrganization(ctx, args.personaId, viewer.organizationId);
       if (!persona) {
         throw new ConvexError('Persona not found.');
       }
@@ -1269,10 +1529,13 @@ export const renameThread = mutation({
     title: v.string(),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       throw new ConvexError('Thread not found.');
+    }
+    if (!canManageThread(thread, viewer)) {
+      throw new ConvexError('You do not have permission to rename this thread.');
     }
 
     const title = args.title.trim();
@@ -1297,10 +1560,13 @@ export const setThreadPinned = mutation({
     pinned: v.boolean(),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       throw new ConvexError('Thread not found.');
+    }
+    if (!canManageThread(thread, viewer)) {
+      throw new ConvexError('You do not have permission to update this thread.');
     }
 
     await ctx.db.patch(args.threadId, {
@@ -1315,10 +1581,13 @@ export const deleteThread = mutation({
     threadId: v.id('chatThreads'),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForOrganization(ctx, args.threadId, organizationId);
+    const viewer = await getCurrentChatContext(ctx);
+    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
     if (!thread) {
       throw new ConvexError('Thread not found.');
+    }
+    if (!canManageThread(thread, viewer)) {
+      throw new ConvexError('You do not have permission to delete this thread.');
     }
 
     const runs = await getChatRunsForThread(ctx, args.threadId);

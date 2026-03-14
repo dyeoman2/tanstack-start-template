@@ -8,7 +8,7 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react';
-import { memo, useCallback, useMemo, useState, type RefObject } from 'react';
+import { memo, type RefObject, useCallback, useMemo, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import {
   DropdownMenu,
@@ -18,10 +18,7 @@ import {
 import { Markdown } from '~/features/chat/components/Markdown';
 import { useCopyToClipboard } from '~/features/chat/hooks/useCopyToClipboard';
 import { useSmoothStreamText } from '~/features/chat/hooks/useSmoothStreamText';
-import type {
-  ChatMessage,
-  ChatMessagePart,
-} from '~/features/chat/types';
+import type { ChatMessage, ChatMessagePart } from '~/features/chat/types';
 import { cn } from '~/lib/utils';
 
 type ChatMessageSource =
@@ -354,7 +351,7 @@ function UserPart({ part }: { part: ChatMessagePart }) {
           {part.status !== 'ready' ? (
             <p className="mt-2 text-xs text-primary-foreground/80">
               {part.status === 'error'
-                ? part.errorMessage ?? 'Attachment failed.'
+                ? (part.errorMessage ?? 'Attachment failed.')
                 : 'Uploading attachment...'}
             </p>
           ) : null}
@@ -368,13 +365,11 @@ function UserPart({ part }: { part: ChatMessagePart }) {
           <FileText className="size-4" />
           <span>{part.name}</span>
         </div>
-        <p className="whitespace-pre-wrap text-xs text-muted-foreground">
-          {part.promptSummary}
-        </p>
+        <p className="whitespace-pre-wrap text-xs text-muted-foreground">{part.promptSummary}</p>
         {part.status !== 'ready' ? (
           <p className="mt-2 text-xs text-muted-foreground">
             {part.status === 'error'
-              ? part.errorMessage ?? 'Attachment failed.'
+              ? (part.errorMessage ?? 'Attachment failed.')
               : 'Attachment is still processing.'}
           </p>
         ) : null}
@@ -416,6 +411,9 @@ function EditableUserMessage({
 
   return (
     <div className="group/message ml-auto flex max-w-[90%] flex-col items-end md:max-w-[80%]">
+      {message.authorName ? (
+        <p className="mb-1 text-xs font-medium text-muted-foreground">{message.authorName}</p>
+      ) : null}
       <div className="rounded-2xl rounded-br-md bg-primary px-4 py-3 text-primary-foreground shadow-sm">
         {message.parts.map((part) => (
           <UserPart key={`${message._id}-${getUserPartKey(part)}`} part={part} />
@@ -440,7 +438,7 @@ function EditableUserMessage({
         >
           {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
         </Button>
-        {textPart ? (
+        {textPart && message.canEdit ? (
           <Button
             size="icon-sm"
             variant="ghost"
@@ -710,16 +708,6 @@ export function MessageList({
           : message;
         const persistedAssistantText = getTextFromParts(renderedMessage.parts);
         const assistantText = persistedAssistantText;
-        const hideEmptyAssistantMessage =
-          (renderedMessage.status === 'pending' || renderedMessage.status === 'streaming') &&
-          !assistantText.trim() &&
-          !renderedMessage.errorMessage &&
-          !isRegeneratingMessage;
-
-        if (hideEmptyAssistantMessage) {
-          return null;
-        }
-
         return (
           <MemoAssistantMessage
             key={message._id}

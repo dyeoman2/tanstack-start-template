@@ -2,34 +2,40 @@ import { api } from '@convex/_generated/api';
 import { useUIMessages } from '@convex-dev/agent/react';
 import { useNavigate } from '@tanstack/react-router';
 import { useAction, useMutation, useQuery } from 'convex/react';
+import { AlertCircle } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
 import { MessageList } from '~/features/chat/components/MessageList';
 import { PersonaDialog } from '~/features/chat/components/PersonaDialog';
+import { mapAgentMessagesToChatMessages } from '~/features/chat/lib/agent-messages';
 import { inferChatAttachmentMimeType } from '~/features/chat/lib/attachments';
 import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants';
-import { mapAgentMessagesToChatMessages } from '~/features/chat/lib/agent-messages';
-import {
-  toPersonaId,
-  toRunId,
-  toStorageId,
-  toThreadId,
-} from '~/features/chat/lib/ids';
+import { toPersonaId, toRunId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
 import { optimisticallySendChatMessage } from '~/features/chat/lib/optimistic-send';
-import { clearOptimisticThread, setOptimisticThread } from '~/features/chat/lib/optimistic-threads';
+import {
+  clearOptimisticThreadBootstrap,
+  clearOptimisticThread,
+  setOptimisticThreadBootstrap,
+  setOptimisticThread,
+  useOptimisticThreadBootstrap,
+  useOptimisticThreadTitle,
+} from '~/features/chat/lib/optimistic-threads';
+import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import type {
   ChatAttachment,
+  ChatLatestRunState,
   ChatMessage,
   ChatMessagePart,
   ChatPersona,
+  ChatRunFailureKind,
 } from '~/features/chat/types';
-import { deriveThreadTitle, resolveRequestedModelId } from '~/features/chat/lib/utils';
 import {
+  type ChatModelId,
+  chatModelSupportsWebSearch,
   DEFAULT_CHAT_MODEL_ID,
   getChatModelOption,
-  type ChatModelId,
 } from '~/lib/shared/chat-models';
 
 const OWNER_SESSION_STORAGE_KEY = 'chat-owner-session-id';
@@ -79,6 +85,105 @@ function ChatMessagesSkeleton() {
   );
 }
 
+function createOptimisticBootstrapMessages({
+  clientMessageId,
+  parts,
+  text,
+  threadId,
+}: {
+  clientMessageId: string;
+  parts: ChatMessagePart[];
+  text: string;
+  threadId: string;
+}): ChatMessage[] {
+  const now = Date.now();
+
+  return [
+    {
+      _id: `optimistic-user-${clientMessageId}`,
+      threadId,
+      order: 1,
+      stepOrder: 0,
+      role: 'user',
+      parts,
+      status: 'complete',
+      createdAt: now,
+      updatedAt: now,
+      clientMessageId,
+    },
+    {
+      _id: `optimistic-assistant-${clientMessageId}`,
+      threadId,
+      order: 2,
+      stepOrder: 0,
+      role: 'assistant',
+      parts: [{ type: 'text', text: '' }],
+      status: 'pending',
+      createdAt: now + 1,
+      updatedAt: now + 1,
+      metadata: { promptText: text },
+    },
+  ];
+}
+
+function getRunFailureCopy(failureKind: ChatRunFailureKind | undefined, errorMessage?: string) {
+  switch (failureKind) {
+    case 'provider_policy':
+      return {
+        title: 'No compatible private endpoint is available for this model.',
+        detail:
+          errorMessage ??
+          'The current OpenRouter privacy mode blocks all compatible endpoints for this request.',
+      };
+    case 'provider_unavailable':
+      return {
+        title: 'No compatible endpoint is currently available.',
+        detail:
+          errorMessage ??
+          'The selected model is temporarily unavailable through the configured provider.',
+      };
+    default:
+      return {
+        title: 'The assistant response failed.',
+        detail: errorMessage ?? 'The request did not complete successfully.',
+      };
+  }
+}
+
+function RunErrorBanner({
+  runState,
+  onRetry,
+  onDismiss,
+}: {
+  runState: ChatLatestRunState;
+  onRetry: () => void;
+  onDismiss: () => void;
+}) {
+  const copy = getRunFailureCopy(runState.failureKind, runState.errorMessage);
+
+  return (
+    <div className="mb-5 rounded-2xl border border-destructive/25 bg-destructive/5 p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3">
+          <AlertCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+          <div>
+            <p className="text-sm font-medium text-foreground">{copy.title}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{copy.detail}</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button size="sm" variant="outline" onClick={onRetry}>
+            Retry response
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onDismiss}>
+            Dismiss
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -102,12 +207,18 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   } | null>(null);
   const [optimisticEdits, setOptimisticEdits] = useState<Record<string, string>>({});
   const [scrollAnchorClientMessageId, setScrollAnchorClientMessageId] = useState<string>();
+  const [dismissedRunErrorKey, setDismissedRunErrorKey] = useState<string | null>(null);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const scrollTargetMessageRef = useRef<HTMLDivElement | null>(null);
   const optimisticPartsByClientMessageIdRef = useRef<Record<string, ChatMessagePart[]>>({});
 
   const typedThreadId = threadId ? toThreadId(threadId) : undefined;
-  const thread = useQuery(api.agentChat.getThread, typedThreadId ? { threadId: typedThreadId } : 'skip');
+  const optimisticThreadTitle = useOptimisticThreadTitle(threadId);
+  const optimisticThreadBootstrap = useOptimisticThreadBootstrap(threadId);
+  const thread = useQuery(
+    api.agentChat.getThread,
+    typedThreadId ? { threadId: typedThreadId } : 'skip',
+  );
   const messageFeed = useUIMessages(
     api.agentChat.listThreadMessages,
     threadId ? { threadId } : 'skip',
@@ -116,8 +227,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       stream: true,
     },
   );
-  const activeRun = useQuery(
-    api.agentChat.getActiveRun,
+  const latestRunState = useQuery(
+    api.agentChat.getLatestRunState,
     typedThreadId ? { threadId: typedThreadId } : 'skip',
   );
   const retryableRunIds = useQuery(
@@ -126,9 +237,13 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   );
   const personas = useQuery(api.agentChat.listPersonas, {});
   const modelOptions = useQuery(api.chatModels.listAvailableChatModels, {});
-  const createChatAttachmentFromUpload = useAction(api.agentChatActions.createChatAttachmentFromUpload);
+  const createChatAttachmentFromUpload = useAction(
+    api.agentChatActions.createChatAttachmentFromUpload,
+  );
   const stopRun = useAction(api.agentChatActions.stopRun);
-  const generateChatAttachmentUploadUrl = useMutation(api.agentChat.generateChatAttachmentUploadUrl);
+  const generateChatAttachmentUploadUrl = useMutation(
+    api.agentChat.generateChatAttachmentUploadUrl,
+  );
   const precreateThread = useMutation(api.agentChat.precreateThread);
   const sendMessage = useMutation(api.agentChat.sendMessage).withOptimisticUpdate((store, args) => {
     if (!args.clientMessageId) {
@@ -171,6 +286,24 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     () => (threadId ? mapAgentMessagesToChatMessages(threadId, messageFeed.results) : []),
     [messageFeed.results, threadId],
   );
+  const displayedMessages = useMemo(() => {
+    const bootstrapMessages = optimisticThreadBootstrap?.messages ?? [];
+
+    if (currentMessages.length === 0) {
+      return bootstrapMessages;
+    }
+
+    const bootstrapAssistantMessage = bootstrapMessages.find(
+      (message) => message.role === 'assistant',
+    );
+    const hasAssistantMessage = currentMessages.some((message) => message.role === 'assistant');
+
+    if (!bootstrapAssistantMessage || hasAssistantMessage) {
+      return currentMessages;
+    }
+
+    return [...currentMessages, bootstrapAssistantMessage];
+  }, [currentMessages, optimisticThreadBootstrap]);
   const inferredThreadModelId = useMemo(() => {
     for (let index = currentMessages.length - 1; index >= 0; index -= 1) {
       const message = currentMessages[index];
@@ -189,18 +322,46 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     inferredThreadModelId,
   });
   const selectedModelOption = getChatModelOption(availableModelOptions, requestedModelId);
+  const selectedModelSupportsWebSearch = chatModelSupportsWebSearch(selectedModelOption);
   const effectiveModelId = selectedModelOption.selectable
     ? selectedModelOption.id
     : DEFAULT_CHAT_MODEL_ID;
   const shouldAutoFocusComposer = !threadId;
-  const showEmptyState = currentMessages.length === 0 && !activeRun;
+  const showEmptyState = displayedMessages.length === 0 && !latestRunState;
+  const hasThreadActivity = displayedMessages.length > 0 || Boolean(latestRunState);
   const isThreadPending = Boolean(
     threadId &&
+      !hasThreadActivity &&
       (thread === undefined || messageFeed.status === 'LoadingFirstPage'),
   );
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
-  const composerDisabled = isThreadPending;
-  const canStopGeneration = activeRun?.status === 'streaming';
+  const composerDisabled =
+    isThreadPending || (latestRunState?.status === 'streaming' && latestRunState.canStop === false);
+  const canStopGeneration =
+    latestRunState?.status === 'streaming' && latestRunState.canStop !== false;
+  const latestRunErrorKey =
+    threadId && latestRunState ? `${threadId}:${latestRunState.runId}` : null;
+  const threadTitle = thread?.title ?? optimisticThreadTitle;
+  const promptMessageOrder =
+    latestRunState?.promptMessageId !== undefined
+      ? currentMessages.find((message) => message._id === latestRunState.promptMessageId)?.order
+      : undefined;
+  const hasRenderedAssistantErrorForLatestRun =
+    promptMessageOrder !== undefined &&
+    currentMessages.some(
+      (message) =>
+        message.role === 'assistant' &&
+        message.order > promptMessageOrder &&
+        message.status === 'error' &&
+        Boolean(message.errorMessage),
+    );
+  const shouldShowRunErrorBanner = Boolean(
+    latestRunState &&
+      latestRunState.status === 'error' &&
+      latestRunState.runId &&
+      latestRunErrorKey !== dismissedRunErrorKey &&
+      !hasRenderedAssistantErrorForLatestRun,
+  );
 
   useEffect(() => {
     setOptimisticEdits((current) => {
@@ -237,19 +398,56 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   }, [thread?.title, threadId]);
 
   useEffect(() => {
-    if (activeRun?.status === 'streaming') {
+    if (!threadId) {
+      return;
+    }
+
+    if (
+      thread !== null &&
+      !currentMessages.some((message) => message.role === 'assistant') &&
+      latestRunState?.status !== 'error'
+    ) {
+      return;
+    }
+
+    clearOptimisticThreadBootstrap(threadId);
+  }, [currentMessages, latestRunState?.status, thread, threadId]);
+
+  useEffect(() => {
+    if (selectedModelSupportsWebSearch || !useWebSearch) {
+      return;
+    }
+
+    setUseWebSearch(false);
+  }, [selectedModelSupportsWebSearch, useWebSearch]);
+
+  useEffect(() => {
+    if (latestRunState?.status === 'streaming') {
       return;
     }
 
     setIsStoppingRun(false);
-  }, [activeRun?.status]);
+  }, [latestRunState?.status]);
+
+  useEffect(() => {
+    if (!latestRunErrorKey) {
+      setDismissedRunErrorKey(null);
+      return;
+    }
+
+    if (dismissedRunErrorKey && dismissedRunErrorKey !== latestRunErrorKey) {
+      setDismissedRunErrorKey(null);
+    }
+  }, [dismissedRunErrorKey, latestRunErrorKey]);
 
   useEffect(() => {
     if (!editingMessage) {
       return;
     }
 
-    const matchingMessage = currentMessages.find((message) => message._id === editingMessage.messageId);
+    const matchingMessage = currentMessages.find(
+      (message) => message._id === editingMessage.messageId,
+    );
     if (!matchingMessage || matchingMessage.role !== 'user') {
       setEditingMessage(null);
       return;
@@ -312,14 +510,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     requestAnimationFrame(() => {
       scrollTargetMessageRef.current?.scrollIntoView({ block: 'start' });
     });
-  }, [currentMessages, scrollAnchorClientMessageId]);
+  }, [scrollAnchorClientMessageId]);
 
   if (threadId && thread === null) {
     return (
       <div className="flex min-h-[60vh] flex-col items-center justify-center rounded-3xl border border-dashed border-border/70 bg-card/40 px-6 text-center">
         <h2 className="text-2xl font-medium tracking-tight">Thread not found</h2>
         <p className="mt-2 max-w-md text-sm text-muted-foreground">
-          This conversation does not exist in your active organization, or it was deleted.
+          This conversation does not exist, is not visible to you, or it was deleted.
         </p>
         <Button className="mt-6" onClick={() => void navigate({ to: CHAT_ROUTE })}>
           Back to chat
@@ -338,6 +536,14 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
 
     setDraftModelId(modelId);
+  };
+
+  const handleToggleWebSearch = () => {
+    if (!selectedModelSupportsWebSearch) {
+      return;
+    }
+
+    setUseWebSearch((current) => !current);
   };
 
   const handleSelectPersona = (personaId?: string) => {
@@ -418,6 +624,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     setIsSending(true);
 
     try {
+      let navigatePromise: Promise<void> | null = null;
+
       if (!threadId) {
         const created = await precreateThread({
           text,
@@ -434,8 +642,20 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
           createdAt: Date.now(),
           updatedAt: Date.now(),
           lastMessageAt: Date.now(),
+          canManage: true,
         });
-        await navigate({
+        setOptimisticThreadBootstrap(
+          createdThreadId,
+          {
+            messages: createOptimisticBootstrapMessages({
+              clientMessageId,
+              parts,
+              text,
+              threadId: createdThreadId,
+            }),
+          },
+        );
+        navigatePromise = navigate({
           to: '/app/chat/$threadId',
           params: { threadId: createdThreadId },
         });
@@ -446,7 +666,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
       }
 
       clear();
-      await sendMessage({
+      const sendPromise = sendMessage({
         threadId: toThreadId(targetThreadId),
         text,
         attachmentIds,
@@ -456,7 +676,12 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         model: effectiveModelId,
         useWebSearch,
       });
+
+      await Promise.all([sendPromise, navigatePromise]);
     } catch (error) {
+      if (!threadId && targetThreadId) {
+        clearOptimisticThreadBootstrap(targetThreadId);
+      }
       showToast(error instanceof Error ? error.message : 'Failed to send message.', 'error');
     } finally {
       delete optimisticPartsByClientMessageIdRef.current[clientMessageId];
@@ -481,18 +706,22 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
   };
 
-  const handleRetryRun = async (messageId: string, runId: string) => {
+  const handleRetryRun = async (messageId: string | undefined, runId: string) => {
     if (!runId) {
       return;
     }
 
-    const targetMessage = currentMessages.find((message) => message._id === messageId);
+    const targetMessage = messageId
+      ? currentMessages.find((message) => message._id === messageId)
+      : undefined;
     setIsSending(true);
-    setRegeneratingTarget({
-      messageId,
-      hideMessage: true,
-      originalUpdatedAt: targetMessage?.updatedAt ?? 0,
-    });
+    if (messageId) {
+      setRegeneratingTarget({
+        messageId,
+        hideMessage: true,
+        originalUpdatedAt: targetMessage?.updatedAt ?? 0,
+      });
+    }
 
     try {
       await retryAssistantResponse({
@@ -502,7 +731,9 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
         useWebSearch,
       });
     } catch (error) {
-      setRegeneratingTarget(null);
+      if (messageId) {
+        setRegeneratingTarget(null);
+      }
       showToast(error instanceof Error ? error.message : 'Failed to retry message.', 'error');
     } finally {
       setIsSending(false);
@@ -538,7 +769,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                   selectedPersonaLabel={currentPersonaLabel}
                   onSelectModel={handleSelectModel}
                   onSelectPersona={handleSelectPersona}
-                  onToggleWebSearch={() => setUseWebSearch((current) => !current)}
+                  onToggleWebSearch={handleToggleWebSearch}
                   onManagePersonas={() => setPersonaDialogOpen(true)}
                   onStop={() => {
                     void handleStopActiveRun();
@@ -555,8 +786,19 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               ) : (
                 <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-6">
                   <div className="mx-auto w-full max-w-5xl">
+                    {shouldShowRunErrorBanner && latestRunState ? (
+                      <RunErrorBanner
+                        runState={latestRunState}
+                        onRetry={() => {
+                          void handleRetryRun(latestRunState.promptMessageId, latestRunState.runId);
+                        }}
+                        onDismiss={() => {
+                          setDismissedRunErrorKey(latestRunErrorKey);
+                        }}
+                      />
+                    ) : null}
                     <MessageList
-                      messages={currentMessages}
+                      messages={displayedMessages}
                       retryRunIdByMessageId={retryableRunIds ?? {}}
                       onRetryMessage={(messageId, runId) => {
                         void handleRetryRun(messageId, runId);
@@ -565,6 +807,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                       optimisticEdits={optimisticEdits}
                       onStartEditMessage={(message) => {
                         if (
+                          !message.canEdit ||
                           message.role !== 'user' ||
                           message.parts.length !== 1 ||
                           message.parts[0]?.type !== 'text'
@@ -602,7 +845,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
                     selectedPersonaLabel={currentPersonaLabel}
                     onSelectModel={handleSelectModel}
                     onSelectPersona={handleSelectPersona}
-                    onToggleWebSearch={() => setUseWebSearch((current) => !current)}
+                    onToggleWebSearch={handleToggleWebSearch}
                     onManagePersonas={() => setPersonaDialogOpen(true)}
                     onStop={() => {
                       void handleStopActiveRun();

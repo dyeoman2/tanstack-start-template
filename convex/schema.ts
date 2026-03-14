@@ -14,6 +14,12 @@ const chatRunStatusValidator = v.union(
   v.literal('aborted'),
   v.literal('error'),
 );
+const chatRunFailureKindValidator = v.union(
+  v.literal('provider_policy'),
+  v.literal('provider_unavailable'),
+  v.literal('tool_error'),
+  v.literal('unknown'),
+);
 const chatThreadVisibilityValidator = v.union(v.literal('private'), v.literal('shared'));
 const chatUsageOperationKindValidator = v.union(
   v.literal('chat_turn'),
@@ -144,13 +150,18 @@ export default defineSchema({
     titleManuallyEdited: v.boolean(),
     summary: v.optional(v.string()),
     summaryUpdatedAt: v.optional(v.number()),
+    summaryThroughOrder: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastMessageAt: v.number(),
   })
     .index('by_agentThreadId', ['agentThreadId'])
     .index('by_organizationId_and_updatedAt', ['organizationId', 'updatedAt'])
-    .index('by_organizationId_and_visibility_and_updatedAt', ['organizationId', 'visibility', 'updatedAt'])
+    .index('by_organizationId_and_visibility_and_updatedAt', [
+      'organizationId',
+      'visibility',
+      'updatedAt',
+    ])
     .index('by_organizationId_and_pinned', ['organizationId', 'pinned'])
     .index('by_organizationId_and_lastMessageAt', ['organizationId', 'lastMessageAt'])
     .index('by_organizationId_and_visibility_and_lastMessageAt', [
@@ -172,6 +183,7 @@ export default defineSchema({
     startedAt: v.number(),
     endedAt: v.optional(v.number()),
     errorMessage: v.optional(v.string()),
+    failureKind: v.optional(chatRunFailureKindValidator),
     activeAssistantMessageId: v.optional(v.string()),
     promptMessageId: v.optional(v.string()),
     provider: v.optional(v.string()),

@@ -17,6 +17,7 @@ import type * as auth from "../auth.js";
 import type * as auth_access from "../auth/access.js";
 import type * as auth_authorized from "../auth/authorized.js";
 import type * as auth_errors from "../auth/errors.js";
+import type * as brandTheme from "../brandTheme.js";
 import type * as chatBackground from "../chatBackground.js";
 import type * as chatModels from "../chatModels.js";
 import type * as crons from "../crons.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   "auth/access": typeof auth_access;
   "auth/authorized": typeof auth_authorized;
   "auth/errors": typeof auth_errors;
+  brandTheme: typeof brandTheme;
   chatBackground: typeof chatBackground;
   chatModels: typeof chatModels;
   crons: typeof crons;

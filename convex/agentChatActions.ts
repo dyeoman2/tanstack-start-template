@@ -1,42 +1,39 @@
 'use node';
 
-import {
-  getFile,
-  serializeMessage,
-  storeFile,
-} from '@convex-dev/agent';
-import { ConvexError, v } from 'convex/values';
+import { getFile, serializeMessage, storeFile } from '@convex-dev/agent';
 import type { ModelMessage } from 'ai';
+import { ConvexError, v } from 'convex/values';
+import {
+  type ChatModelCatalogEntry,
+  DEFAULT_CHAT_MODEL_ID,
+  getChatModelCatalogEntry,
+} from '../src/lib/shared/chat-models';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { type ActionCtx, action, internalAction, type MutationCtx } from './_generated/server';
 import {
-  action,
-  internalAction,
-  type ActionCtx,
-  type MutationCtx,
-} from './_generated/server';
-import {
-  buildAttachmentPromptSummary,
-  extractDocumentText,
-} from './lib/chatAttachments';
-import {
-  deriveThreadTitle,
   type ChatAttachmentDoc,
+  type ChatRunFailureKind,
   type ChatThreadDoc,
+  classifyChatRunFailure,
+  deriveThreadTitle,
 } from './lib/agentChat';
 import {
   baseChatAgent,
   buildChatRequestConfig,
   type ChatWebSearchSource,
 } from './lib/chatAgentRuntime';
-import { DEFAULT_CHAT_MODEL_ID, type ChatModelId } from '../src/lib/shared/chat-models';
+import { buildAttachmentPromptSummary, extractDocumentText } from './lib/chatAttachments';
 
-type ChatDataCtx = Pick<ActionCtx, 'runQuery' | 'runMutation'> | Pick<MutationCtx, 'runQuery' | 'runMutation'>;
+type ChatDataCtx =
+  | Pick<ActionCtx, 'runQuery' | 'runMutation'>
+  | Pick<MutationCtx, 'runQuery' | 'runMutation'>;
 
 export type AuthenticatedChatContext = {
   userId: string;
   organizationId: string;
   isSiteAdmin: boolean;
+  currentUserName: string;
 };
 
 export type AgentMessageDoc = {
@@ -47,6 +44,7 @@ export type AgentMessageDoc = {
   status: string;
   error?: string;
   fileIds?: string[];
+  metadata?: unknown;
   message?: {
     role: string;
     content:
@@ -60,6 +58,13 @@ export type AgentMessageDoc = {
           id?: string;
         }>;
   };
+};
+
+type StreamTextResult = {
+  order: number;
+  text: Promise<string> | string;
+  sources: Promise<unknown[] | undefined> | unknown[] | undefined;
+  consumeStream: () => Promise<void>;
 };
 
 function mapOpenRouterSources(sources: unknown[] | undefined) {
@@ -112,11 +117,7 @@ function dedupeSources(
   });
 }
 
-async function getAssistantMessageForOrder(
-  ctx: ChatDataCtx,
-  agentThreadId: string,
-  order: number,
-) {
+async function getAssistantMessageForOrder(ctx: ChatDataCtx, agentThreadId: string, order: number) {
   const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
     threadId: agentThreadId,
     order: 'desc',
@@ -133,11 +134,7 @@ async function getAssistantMessageForOrder(
   );
 }
 
-async function getStreamIdForOrder(
-  ctx: ChatDataCtx,
-  agentThreadId: string,
-  order: number,
-) {
+async function getStreamIdForOrder(ctx: ChatDataCtx, agentThreadId: string, order: number) {
   const streams = await ctx.runQuery(components.agent.streams.list, {
     threadId: agentThreadId,
     startOrder: order,
@@ -199,9 +196,7 @@ async function appendSourcesToAssistantMessage(
   const existingSourceUrls = new Set(
     Array.isArray(existingContent)
       ? existingContent.flatMap((part) =>
-          part?.type === 'source' &&
-          part.sourceType === 'url' &&
-          typeof part.url === 'string'
+          part?.type === 'source' && part.sourceType === 'url' && typeof part.url === 'string'
             ? [part.url]
             : [],
         )
@@ -228,10 +223,7 @@ async function appendSourcesToAssistantMessage(
   });
 }
 
-async function getAgentMessageById(
-  ctx: ChatDataCtx,
-  messageId: string,
-) {
+async function getAgentMessageById(ctx: ChatDataCtx, messageId: string) {
   const [message] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
     messageIds: [messageId],
   })) as Array<AgentMessageDoc | null>;
@@ -276,7 +268,10 @@ async function getStreamPartialText(
 }
 
 export async function getAuthenticatedContext(ctx: ActionCtx): Promise<AuthenticatedChatContext> {
-  return (await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {})) as AuthenticatedChatContext;
+  return (await ctx.runQuery(
+    internal.agentChat.getCurrentChatContextInternal,
+    {},
+  )) as AuthenticatedChatContext;
 }
 
 export async function resolveThread(
@@ -292,10 +287,13 @@ export async function resolveThread(
   },
 ) {
   if (args.threadId) {
-    const existingThread = (await ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
-      threadId: args.threadId,
-      organizationId: args.organizationId,
-    })) as ChatThreadDoc | null;
+    const existingThread = (await ctx.runQuery(
+      internal.agentChat.getThreadForOrganizationInternal,
+      {
+        threadId: args.threadId,
+        organizationId: args.organizationId,
+      },
+    )) as ChatThreadDoc | null;
 
     if (!existingThread) {
       throw new ConvexError('Thread not found.');
@@ -319,7 +317,7 @@ export async function resolveThread(
     title,
   });
   const threadId = (await ctx.runMutation(internal.agentChat.createThreadShellInternal, {
-    userId: args.userId,
+    ownerUserId: args.userId,
     organizationId: args.organizationId,
     agentThreadId,
     title,
@@ -332,11 +330,12 @@ export async function resolveThread(
   const thread: ChatThreadDoc = {
     _id: threadId,
     _creationTime: now,
-    userId: args.userId,
+    ownerUserId: args.userId,
     organizationId: args.organizationId,
     agentThreadId,
     title,
     pinned: false,
+    visibility: 'private',
     personaId: args.personaId,
     model: args.model,
     titleManuallyEdited: false,
@@ -474,6 +473,7 @@ export async function abortRunWithReason(
     run: Doc<'chatRuns'>;
     reason: string;
     status: 'aborted' | 'error';
+    failureKind?: ChatRunFailureKind;
     partialText?: string;
   },
 ) {
@@ -544,6 +544,7 @@ export async function abortRunWithReason(
       status: args.status,
       endedAt: Date.now(),
       errorMessage: args.reason,
+      failureKind: args.status === 'error' ? (args.failureKind ?? 'unknown') : null,
       ...(args.status === 'aborted' && !partialText ? { activeAssistantMessageId: null } : {}),
     },
   });
@@ -740,6 +741,7 @@ export const runChatGenerationInternal = internalAction({
           status: 'error',
           endedAt: Date.now(),
           errorMessage: 'Thread not found.',
+          failureKind: 'unknown',
         },
       });
       return;
@@ -748,18 +750,36 @@ export const runChatGenerationInternal = internalAction({
     const collectedSources: ChatWebSearchSource[] = [];
 
     try {
-      const { thread: continuedThread } = await baseChatAgent.continueThread(ctx, {
-        threadId: run.agentThreadId,
-        userId: thread.userId,
-      });
+      const activeModels = (await ctx.runQuery(
+        internal.chatModels.listActiveChatModelsInternal,
+        {},
+      )) as ChatModelCatalogEntry[];
+      const selectedModel = getChatModelCatalogEntry(
+        activeModels,
+        run.model ?? DEFAULT_CHAT_MODEL_ID,
+      );
       const requestConfig = buildChatRequestConfig({
-        modelId: (run.model as ChatModelId | undefined) ?? DEFAULT_CHAT_MODEL_ID,
+        model: selectedModel,
         instructions: await resolveSystemPrompt(ctx, thread.organizationId, thread.personaId),
         useWebSearch: run.useWebSearch,
+        thread,
+        actorUserId: run.initiatedByUserId,
+        runId: run._id,
         onWebSearchResults: (results) => {
           collectedSources.push(...results);
         },
       });
+      const threadTarget = {
+        threadId: run.agentThreadId,
+        userId: run.initiatedByUserId,
+      };
+      const streamOptions = {
+        saveStreamDeltas: {
+          chunking: 'word' as const,
+          throttleMs: 250,
+          returnImmediately: true as const,
+        },
+      };
       const streamArgs =
         'tools' in requestConfig
           ? {
@@ -767,30 +787,26 @@ export const runChatGenerationInternal = internalAction({
               model: requestConfig.model,
               system: requestConfig.system,
               tools: requestConfig.tools,
-              stopWhen: requestConfig.stopWhen as any,
+              stopWhen: requestConfig.stopWhen as unknown,
             }
           : {
               promptMessageId: run.promptMessageId,
               model: requestConfig.model,
               system: requestConfig.system,
-              stopWhen: requestConfig.stopWhen as any,
+              stopWhen: requestConfig.stopWhen as unknown,
             };
-      const result = await (continuedThread.streamText as unknown as (
-        args: typeof streamArgs,
-        options: {
-          saveStreamDeltas: {
-            chunking: 'word';
-            throttleMs: number;
-            returnImmediately: true;
-          };
-        },
-      ) => Promise<any>)(streamArgs, {
-        saveStreamDeltas: {
-          chunking: 'word',
-          throttleMs: 250,
-          returnImmediately: true,
-        },
-      });
+      const result = await (
+        baseChatAgent.streamText as unknown as (
+          ctx: ActionCtx,
+          thread: typeof threadTarget,
+          args: typeof streamArgs,
+          options: typeof streamOptions,
+        ) => Promise<StreamTextResult>
+      )(ctx, threadTarget, streamArgs, streamOptions);
+
+      if (result.order === undefined) {
+        throw new Error('Streaming response did not return a message order.');
+      }
 
       const [assistantMessage, streamId, currentRun] = await Promise.all([
         getAssistantMessageForOrder(ctx, run.agentThreadId, result.order),
@@ -824,7 +840,8 @@ export const runChatGenerationInternal = internalAction({
       await ctx.runMutation(internal.agentChat.patchRunInternal, {
         runId: args.runId,
         patch: {
-          activeAssistantMessageId: assistantMessage?._id ?? currentRun.activeAssistantMessageId ?? null,
+          activeAssistantMessageId:
+            assistantMessage?._id ?? currentRun.activeAssistantMessageId ?? null,
           agentStreamId: streamId ?? currentRun.agentStreamId ?? null,
         },
       });
@@ -859,6 +876,7 @@ export const runChatGenerationInternal = internalAction({
           status: 'complete',
           endedAt: Date.now(),
           errorMessage: null,
+          failureKind: null,
           ...(assistantMessage?._id ? { activeAssistantMessageId: assistantMessage._id } : {}),
         },
       });
@@ -885,6 +903,7 @@ export const runChatGenerationInternal = internalAction({
         run: latestRun,
         reason: error instanceof Error ? error.message : 'Streaming failed.',
         status: 'error',
+        failureKind: classifyChatRunFailure(error),
       });
     }
   },
@@ -896,13 +915,14 @@ export const stopRun = action({
     runId: v.optional(v.id('chatRuns')),
   },
   handler: async (ctx, args) => {
-    const { organizationId } = await getAuthenticatedContext(ctx);
+    const viewer = await getAuthenticatedContext(ctx);
     let run: Doc<'chatRuns'> | null = null;
+    let thread: ChatThreadDoc | null = null;
 
     if (args.threadId) {
-      const thread = (await ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
+      thread = (await ctx.runQuery(internal.agentChat.getThreadForOrganizationInternal, {
         threadId: args.threadId,
-        organizationId,
+        organizationId: viewer.organizationId,
       })) as ChatThreadDoc | null;
       if (!thread) {
         return true;
@@ -914,12 +934,23 @@ export const stopRun = action({
     } else if (args.runId) {
       run = (await ctx.runQuery(internal.agentChat.getRunByIdInternal, {
         runId: args.runId,
-        organizationId,
+        organizationId: viewer.organizationId,
       })) as Doc<'chatRuns'> | null;
+      if (run) {
+        thread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
+          threadId: run.threadId,
+        })) as ChatThreadDoc | null;
+      }
     }
 
     if (!run) {
       return true;
+    }
+    if (!thread || thread.organizationId !== viewer.organizationId) {
+      return true;
+    }
+    if (!viewer.isSiteAdmin && run.initiatedByUserId !== viewer.userId) {
+      throw new ConvexError('You do not have permission to stop this run.');
     }
 
     return await abortRunWithReason(ctx, {

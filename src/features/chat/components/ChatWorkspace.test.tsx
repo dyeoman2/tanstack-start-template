@@ -6,6 +6,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '~/components/ui/toast';
 import { TooltipProvider } from '~/components/ui/tooltip';
 import { ChatWorkspace } from '~/features/chat/components/ChatWorkspace';
+import {
+  clearOptimisticThreadBootstrap,
+  setOptimisticThreadBootstrap,
+} from '~/features/chat/lib/optimistic-threads';
 
 const navigateMock = vi.fn();
 const useQueryMock = vi.fn();
@@ -25,6 +29,7 @@ let threadQueryResult:
   | {
       _id: string;
       title: string;
+      canManage: boolean;
       personaId: string | undefined;
       model: string | undefined;
     }
@@ -72,6 +77,7 @@ function createMutationMock(fn: ReturnType<typeof vi.fn>) {
 describe('ChatWorkspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearOptimisticThreadBootstrap('thread-123');
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     uploadAttachmentMock.mockResolvedValue(null);
@@ -98,10 +104,10 @@ describe('ChatWorkspace', () => {
     useMutationMock.mockReset();
     let mutationCallIndex = 0;
     useMutationMock.mockImplementation(() => {
-      const slot = mutationCallIndex % 9;
+      const normalizedSlot = mutationCallIndex % 9;
       mutationCallIndex += 1;
 
-      switch (slot) {
+      switch (normalizedSlot) {
         case 0:
           return uploadAttachmentMock;
         case 1:
@@ -124,6 +130,7 @@ describe('ChatWorkspace', () => {
     threadQueryResult = {
       _id: 'thread-123',
       title: 'Thread',
+      canManage: true,
       personaId: undefined,
       model: undefined,
     };
@@ -207,7 +214,7 @@ describe('ChatWorkspace', () => {
     );
   });
 
-  it('keeps the composer text until the new thread navigation resolves', async () => {
+  it('starts sending the first message before the new thread navigation resolves', async () => {
     let resolveNavigate: (() => void) | undefined;
     navigateMock.mockImplementation(
       () =>
@@ -234,7 +241,19 @@ describe('ChatWorkspace', () => {
       expect(createThreadMock).toHaveBeenCalled();
     });
 
-    expect(messageInput).toHaveValue('Hold draft until route change');
+    await waitFor(() => {
+      expect(sendMessageMock).toHaveBeenCalledWith({
+        threadId: 'thread-123',
+        text: 'Hold draft until route change',
+        attachmentIds: [],
+        clientMessageId: expect.any(String),
+        ownerSessionId: expect.any(String),
+        personaId: undefined,
+        model: 'openai/gpt-4o-mini',
+        useWebSearch: false,
+      });
+    });
+    expect(messageInput).toHaveValue('');
     resolveNavigate?.();
   });
 
@@ -273,6 +292,172 @@ describe('ChatWorkspace', () => {
     });
   });
 
+  it('renders the message list while a new thread is still loading if optimistic messages already exist', async () => {
+    threadQueryResult = undefined;
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'user-123',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Start a new conversation' }],
+          metadata: { clientMessageId: 'client-123' },
+        },
+        {
+          id: 'assistant-123',
+          _creationTime: 2,
+          order: 2,
+          stepOrder: 0,
+          role: 'assistant',
+          status: 'pending',
+          parts: [{ type: 'text', text: '' }],
+          metadata: {},
+        },
+      ],
+      status: 'LoadingFirstPage',
+      loadMore: vi.fn(),
+    });
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'user', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
+  it('renders bootstrap messages immediately for a newly created thread before the feed hydrates', async () => {
+    threadQueryResult = undefined;
+    useUIMessagesMock.mockReturnValue({
+      results: [],
+      status: 'LoadingFirstPage',
+      loadMore: vi.fn(),
+    });
+    setOptimisticThreadBootstrap('thread-123', {
+      messages: [
+        {
+          _id: 'optimistic-user-1',
+          threadId: 'thread-123',
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          parts: [{ type: 'text', text: 'Start a new conversation' }],
+          status: 'complete',
+          createdAt: 1,
+          updatedAt: 1,
+          clientMessageId: 'client-123',
+        },
+        {
+          _id: 'optimistic-assistant-1',
+          threadId: 'thread-123',
+          order: 2,
+          stepOrder: 0,
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          status: 'pending',
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'user', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
+  it('keeps the bootstrap assistant placeholder visible while the hydrated feed only contains the user prompt', async () => {
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'user-123',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Start a new conversation' }],
+          metadata: { clientMessageId: 'client-123' },
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+    setOptimisticThreadBootstrap('thread-123', {
+      messages: [
+        {
+          _id: 'optimistic-user-1',
+          threadId: 'thread-123',
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          parts: [{ type: 'text', text: 'Start a new conversation' }],
+          status: 'complete',
+          createdAt: 1,
+          updatedAt: 1,
+          clientMessageId: 'client-123',
+        },
+        {
+          _id: 'optimistic-assistant-1',
+          threadId: 'thread-123',
+          order: 2,
+          stepOrder: 0,
+          role: 'assistant',
+          parts: [{ type: 'text', text: '' }],
+          status: 'pending',
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+    });
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await waitFor(() => {
+      const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
+        messages: Array<{ role: string; status: string }>;
+      };
+      expect(props.messages).toEqual([
+        expect.objectContaining({ role: 'user', status: 'complete' }),
+        expect.objectContaining({ role: 'assistant', status: 'pending' }),
+      ]);
+    });
+  });
+
   it('shows the provider-capacity error when sendMessage fails fast', async () => {
     const user = userEvent.setup();
     sendMessageMock.mockRejectedValueOnce(
@@ -295,11 +480,54 @@ describe('ChatWorkspace', () => {
     ).toBeInTheDocument();
   });
 
+  it('clears pending web search when the selected model does not support it', async () => {
+    const user = userEvent.setup();
+    modelOptionsQueryResult = [
+      {
+        id: 'openai/gpt-4o-mini',
+        label: 'GPT-4o Mini',
+        description: 'Default model',
+        access: 'public',
+        selectable: true,
+        supportsWebSearch: true,
+      },
+      {
+        id: 'anthropic/claude-3.5-sonnet',
+        label: 'Claude 3.5 Sonnet',
+        description: 'Reasoning model',
+        access: 'public',
+        selectable: true,
+        supportsWebSearch: false,
+      },
+    ];
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.click(screen.getByLabelText('Enable web search'));
+    expect(screen.getByLabelText('Disable web search')).toHaveAttribute('aria-pressed', 'true');
+
+    await user.click(screen.getByLabelText('Choose model: GPT-4o Mini'));
+    await user.click(await screen.findByText('Claude 3.5 Sonnet'));
+
+    await waitFor(() => {
+      const button = screen.getByLabelText('Web search unavailable for selected model');
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+    });
+  });
+
   it('stops the active thread by thread id and exits stop mode once the run clears', async () => {
     const user = userEvent.setup();
     activeRunQueryResult = {
-      _id: 'run-123',
+      runId: 'run-123',
       status: 'streaming',
+      canStop: true,
     };
 
     const view = render(
@@ -330,5 +558,132 @@ describe('ChatWorkspace', () => {
       expect(screen.queryByLabelText('Stop generating')).not.toBeInTheDocument();
     });
     expect(screen.getByLabelText('Send message')).toBeInTheDocument();
+  });
+
+  it('disables the composer when another user owns the active streaming run', () => {
+    activeRunQueryResult = {
+      runId: 'run-123',
+      status: 'streaming',
+      canStop: false,
+    };
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    expect(screen.getByLabelText('Send message')).toBeDisabled();
+    expect(screen.queryByLabelText('Stop generating')).not.toBeInTheDocument();
+  });
+
+  it('shows a run failure banner and retries using the failed run id', async () => {
+    const user = userEvent.setup();
+    activeRunQueryResult = {
+      runId: 'run-999',
+      status: 'error',
+      canStop: false,
+      failureKind: 'provider_policy',
+      errorMessage: 'No endpoints available matching your guardrail restrictions and data policy.',
+      promptMessageId: 'user-123',
+    };
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'user-123',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Existing thread' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    expect(
+      screen.getByText('No compatible private endpoint is available for this model.'),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Retry response' }));
+
+    expect(retryAssistantResponseMock).toHaveBeenCalledWith({
+      runId: 'run-999',
+      ownerSessionId: expect.any(String),
+      model: 'openai/gpt-4o-mini',
+      useWebSearch: false,
+    });
+  });
+
+  it('dismisses the run failure banner until a newer run appears', async () => {
+    const user = userEvent.setup();
+    activeRunQueryResult = {
+      runId: 'run-999',
+      status: 'error',
+      canStop: false,
+      failureKind: 'unknown',
+      errorMessage: 'Streaming failed.',
+      promptMessageId: 'user-123',
+    };
+    useUIMessagesMock.mockReturnValue({
+      results: [
+        {
+          id: 'user-123',
+          _creationTime: 1,
+          order: 1,
+          stepOrder: 0,
+          role: 'user',
+          status: 'complete',
+          parts: [{ type: 'text', text: 'Existing thread' }],
+          metadata: {},
+        },
+      ],
+      status: 'Loaded',
+      loadMore: vi.fn(),
+    });
+
+    const view = render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+
+    expect(screen.queryByText('The assistant response failed.')).not.toBeInTheDocument();
+
+    activeRunQueryResult = {
+      runId: 'run-1000',
+      status: 'error',
+      canStop: false,
+      failureKind: 'provider_unavailable',
+      errorMessage: 'No endpoints available for this request.',
+      promptMessageId: 'user-123',
+    };
+
+    view.rerender(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatWorkspace threadId="thread-123" />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    expect(screen.getByText('No compatible endpoint is currently available.')).toBeInTheDocument();
   });
 });

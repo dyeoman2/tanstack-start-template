@@ -83,6 +83,53 @@ describe('ChatComposer', () => {
     expect(screen.getByLabelText('Enable web search')).toBeInTheDocument();
   });
 
+  it('disables web search for models that do not support it and explains why', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ToastProvider>
+        <TooltipProvider>
+          <ChatComposer
+            isSending={false}
+            selectedModelId="anthropic/claude-3.5-sonnet"
+            modelOptions={[
+              {
+                id: 'openai/gpt-4o-mini',
+                label: 'GPT-4o Mini',
+                description: 'Default model',
+                access: 'public',
+                selectable: true,
+                supportsWebSearch: true,
+              },
+              {
+                id: 'anthropic/claude-3.5-sonnet',
+                label: 'Claude 3.5 Sonnet',
+                description: 'Reasoning model',
+                access: 'public',
+                selectable: true,
+                supportsWebSearch: false,
+              },
+            ]}
+            onToggleWebSearch={vi.fn()}
+            onUploadAttachment={vi.fn().mockResolvedValue(null)}
+            onSend={vi.fn().mockResolvedValue(undefined)}
+          />
+        </TooltipProvider>
+      </ToastProvider>,
+    );
+
+    const button = screen.getByLabelText('Web search unavailable for selected model');
+    expect(button).toBeDisabled();
+
+    await user.hover(button.parentElement as HTMLElement);
+
+    expect(
+      (
+        await screen.findAllByText('Claude 3.5 Sonnet does not support web search.')
+      ).length,
+    ).toBeGreaterThan(0);
+  });
+
   it('focuses the message input when autoFocus is enabled', () => {
     render(
       <ToastProvider>

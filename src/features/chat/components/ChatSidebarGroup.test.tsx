@@ -10,7 +10,19 @@ const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children }: { children: ReactNode }) => <a href="/">{children}</a>,
+  Link: ({
+    children,
+    onClick,
+    className,
+  }: {
+    children: ReactNode;
+    onClick?: () => void;
+    className?: string;
+  }) => (
+    <a href="/" onClick={onClick} className={className}>
+      {children}
+    </a>
+  ),
   useLocation: () => ({ pathname: '/app/chat/thread-1' }),
   useNavigate: () => navigateMock,
 }));
@@ -62,7 +74,8 @@ describe('ChatSidebarGroup', () => {
     const button = screen.getByRole('button', { name: 'New chat' });
 
     expect(screen.queryByText('New chat')).not.toBeInTheDocument();
-    expect(button).toHaveAttribute('title', 'New chat');
+    expect(button).not.toHaveAttribute('title');
+    expect(button).toHaveClass('mb-0.5');
 
     await user.click(button);
 
@@ -70,5 +83,65 @@ describe('ChatSidebarGroup', () => {
       to: '/app/chat',
       search: { new: true },
     });
+  });
+
+  it('shows a visible pinned marker directly in the thread list', () => {
+    useQueryMock.mockReturnValue([
+      {
+        _id: 'thread-1',
+        title: 'Pinned thread',
+        pinned: true,
+        canManage: true,
+        updatedAt: Date.now(),
+      },
+    ]);
+
+    render(
+      <SidebarProvider defaultOpen>
+        <ChatSidebarGroup />
+      </SidebarProvider>,
+    );
+
+    const pinnedThreadLink = screen.getByRole('link', { name: 'Pinned thread' });
+    const pinnedButton = screen.getByRole('button', { name: 'Unpin Pinned thread' });
+
+    expect(pinnedThreadLink).toBeInTheDocument();
+    expect(pinnedButton.querySelector('svg')).toBeInTheDocument();
+    expect(screen.queryByText('Pinned')).not.toBeInTheDocument();
+  });
+
+  it('unpins a thread when the visible pin is clicked', async () => {
+    const user = userEvent.setup();
+    const renameThreadMock = createMutationMock(vi.fn());
+    const setThreadPinnedMock = createMutationMock(vi.fn());
+    const deleteThreadMock = createMutationMock(vi.fn());
+
+    useQueryMock.mockReturnValue([
+      {
+        _id: 'thread-1',
+        title: 'Pinned thread',
+        pinned: true,
+        canManage: true,
+        updatedAt: Date.now(),
+      },
+    ]);
+    useMutationMock
+      .mockImplementationOnce(() => renameThreadMock)
+      .mockImplementationOnce(() => setThreadPinnedMock)
+      .mockImplementationOnce(() => deleteThreadMock);
+
+    render(
+      <SidebarProvider defaultOpen>
+        <ChatSidebarGroup />
+      </SidebarProvider>,
+    );
+
+    await user.click(screen.getByRole('button', { name: 'Unpin Pinned thread' }));
+
+    expect(setThreadPinnedMock).toHaveBeenCalledWith({
+      threadId: 'thread-1',
+      pinned: false,
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 });

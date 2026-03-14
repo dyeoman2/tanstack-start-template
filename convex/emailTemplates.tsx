@@ -30,7 +30,7 @@ import {
   type VerifyEmailOtpTemplateArgs,
   type VerifyEmailTemplateArgs,
 } from '../src/features/admin/lib/email-preview-registry';
-import { brandTheme } from '../src/lib/shared/brand-theme';
+import { brandTheme } from './brandTheme';
 
 export type { EmailTemplateId } from '../src/features/admin/lib/email-preview-registry';
 export { AVAILABLE_EMAIL_TEMPLATE_IDS };

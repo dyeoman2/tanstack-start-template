@@ -2,7 +2,22 @@ export type OpenRouterConfig = {
   apiKey: string;
   headers?: Record<string, string>;
   compatibility: 'strict';
+  privacyMode: 'standard' | 'strict';
 };
+
+function getOpenRouterPrivacyMode() {
+  const privacyMode = process.env.OPENROUTER_PRIVACY_MODE?.trim();
+
+  if (!privacyMode) {
+    return 'standard' as const;
+  }
+
+  if (privacyMode === 'standard' || privacyMode === 'strict') {
+    return privacyMode;
+  }
+
+  throw new Error('OPENROUTER_PRIVACY_MODE must be "standard" or "strict"');
+}
 
 export function getOpenRouterConfig(): OpenRouterConfig {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
@@ -25,6 +40,7 @@ export function getOpenRouterConfig(): OpenRouterConfig {
     apiKey,
     headers,
     compatibility: 'strict',
+    privacyMode: getOpenRouterPrivacyMode(),
   };
 }
 

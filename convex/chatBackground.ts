@@ -1,17 +1,18 @@
 'use node';
 
 import { updateThreadMetadata } from '@convex-dev/agent';
-import { generateText } from 'ai';
 import { v } from 'convex/values';
+import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
 import { components, internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { internalAction, type ActionCtx } from './_generated/server';
+import { type ActionCtx, internalAction } from './_generated/server';
 import { abortRunWithReason } from './agentChatActions';
 import {
-  getChatLanguageModel,
   type ChatThreadDoc,
+  getChatLanguageModel,
+  getOpenRouterProviderOptions,
 } from './lib/agentChat';
-import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
+import { trackedGenerateText } from './lib/chatAgentRuntime';
 
 const STALE_STREAM_TIMEOUT_MS = 15 * 60 * 1000;
 const DEFAULT_STALE_CLEANUP_LIMIT = 20;
@@ -45,11 +46,11 @@ function getMessageText(message: {
     .join('\n');
 }
 
-async function buildRecentTranscript(ctx: ActionCtx, agentThreadId: string) {
+async function buildRecentTranscript(ctx: ActionCtx, agentThreadId: string, limit = 12) {
   const messages = await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
     threadId: agentThreadId,
     order: 'desc',
-    paginationOpts: { cursor: null, numItems: 8 },
+    paginationOpts: { cursor: null, numItems: limit },
     excludeToolMessages: true,
   });
 
@@ -69,10 +70,86 @@ async function buildRecentTranscript(ctx: ActionCtx, agentThreadId: string) {
     .join('\n\n');
 }
 
-async function getStaleStreamPartialText(
+type ThreadTranscriptMessage = {
+  order: number;
+  stepOrder: number;
+  message?: {
+    role?: string;
+    content?: unknown;
+  };
+};
+
+async function buildTranscriptDeltaSinceOrder(
   ctx: ActionCtx,
-  run: Doc<'chatRuns'>,
+  agentThreadId: string,
+  afterOrder: number | undefined,
 ) {
+  let cursor: string | null = null;
+  const unsummarizedMessages: ThreadTranscriptMessage[] = [];
+
+  while (true) {
+    const page = (await ctx.runQuery(components.agent.messages.listMessagesByThreadId, {
+      threadId: agentThreadId,
+      order: 'desc',
+      paginationOpts: { cursor, numItems: 50 },
+      excludeToolMessages: true,
+    })) as {
+      page: ThreadTranscriptMessage[];
+      isDone: boolean;
+      continueCursor: string | null;
+    };
+
+    for (const message of page.page) {
+      if (
+        (message.message?.role === 'assistant' || message.message?.role === 'user') &&
+        (afterOrder === undefined || message.order > afterOrder)
+      ) {
+        unsummarizedMessages.push(message);
+      }
+    }
+
+    const oldestOrderInPage = page.page[page.page.length - 1]?.order;
+    if (page.isDone || !page.continueCursor) {
+      break;
+    }
+    if (
+      afterOrder !== undefined &&
+      oldestOrderInPage !== undefined &&
+      oldestOrderInPage <= afterOrder
+    ) {
+      break;
+    }
+
+    cursor = page.continueCursor;
+  }
+
+  const sortedMessages = [...unsummarizedMessages].sort((left, right) => {
+    if (left.order === right.order) {
+      return left.stepOrder - right.stepOrder;
+    }
+
+    return left.order - right.order;
+  });
+  const transcript = sortedMessages
+    .map((message) => {
+      const role = message.message?.role;
+      if (!role) {
+        return '';
+      }
+
+      const content = getMessageText(message).trim();
+      return content ? `${role}: ${content}` : '';
+    })
+    .filter(Boolean)
+    .join('\n\n');
+
+  return {
+    transcript,
+    latestOrder: sortedMessages[sortedMessages.length - 1]?.order,
+  };
+}
+
+async function getStaleStreamPartialText(ctx: ActionCtx, run: Doc<'chatRuns'>) {
   if (!run.agentStreamId) {
     return '';
   }
@@ -99,7 +176,7 @@ async function getStaleStreamPartialText(
             'delta' in part &&
             typeof part.delta === 'string'
           ? [part.delta]
-        : [],
+          : [],
     )
     .join('')
     .trim();
@@ -130,14 +207,27 @@ export const runPostCompletionJobs = internalAction({
       return;
     }
 
-    const model = getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false);
+    const modelId = DEFAULT_CHAT_MODEL_ID;
+    const model = getChatLanguageModel(modelId, false);
 
     if (!thread.titleManuallyEdited) {
-      const titleResult = await generateText({
+      const titleResult = await trackedGenerateText(ctx, {
+        thread,
+        actorUserId: run.initiatedByUserId,
+        runId: run._id,
+        operationKind: 'thread_title',
         model,
+        modelId,
+        providerOptions: getOpenRouterProviderOptions({
+          modelId,
+          useWebSearch: false,
+        }),
         prompt: `Write a concise title under 60 characters for this chat.\n\n${transcript}`,
       });
-      const title = titleResult.text.trim().replace(/^["']|["']$/g, '').slice(0, 60);
+      const title = titleResult.text
+        .trim()
+        .replace(/^["']|["']$/g, '')
+        .slice(0, 60);
       if (title) {
         const latestThread = (await ctx.runQuery(internal.agentChat.getThreadByIdInternal, {
           threadId: run.threadId,
@@ -160,9 +250,38 @@ export const runPostCompletionJobs = internalAction({
       }
     }
 
-    const summaryResult = await generateText({
+    const priorSummary = thread.summary?.trim();
+    const { transcript: transcriptDelta, latestOrder } = await buildTranscriptDeltaSinceOrder(
+      ctx,
+      run.agentThreadId,
+      thread.summaryThroughOrder,
+    );
+    if (!transcriptDelta || latestOrder === undefined) {
+      return;
+    }
+    const summaryPrompt = priorSummary
+      ? `Update the existing internal chat summary using the new transcript delta. Keep the result under 500 characters and focus on durable facts, goals, and decisions.
+
+Existing summary:
+${priorSummary}
+
+Recent transcript delta:
+${transcriptDelta}`
+      : `Summarize this chat in 2 sentences for internal retrieval context. Keep the result under 500 characters and focus on durable facts, goals, and decisions.
+
+${transcriptDelta}`;
+    const summaryResult = await trackedGenerateText(ctx, {
+      thread,
+      actorUserId: run.initiatedByUserId,
+      runId: run._id,
+      operationKind: 'thread_summary',
       model,
-      prompt: `Summarize this chat in 2 sentences for internal retrieval context.\n\n${transcript}`,
+      modelId,
+      providerOptions: getOpenRouterProviderOptions({
+        modelId,
+        useWebSearch: false,
+      }),
+      prompt: summaryPrompt,
     });
     const summary = summaryResult.text.trim().slice(0, 500);
     if (!summary) {
@@ -174,6 +293,7 @@ export const runPostCompletionJobs = internalAction({
       patch: {
         summary,
         summaryUpdatedAt: Date.now(),
+        summaryThroughOrder: latestOrder,
       },
     });
     await updateThreadMetadata(ctx, components.agent, {
