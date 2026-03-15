@@ -9,7 +9,9 @@ import {
   checkBetterAuthOrganizationSlug,
   createBetterAuthOrganization,
   createBetterAuthOrganizationInvitation,
+  deleteBetterAuthOrganizationScimProvider,
   deleteBetterAuthOrganization,
+  generateBetterAuthOrganizationScimToken,
   removeBetterAuthOrganizationMember,
   updateBetterAuthOrganization,
   updateBetterAuthOrganizationMemberRole,
@@ -58,6 +60,15 @@ const organizationPoliciesSchema = z.object({
   verifiedDomainsOnly: z.boolean(),
   memberCap: z.number().int().positive().nullable(),
   mfaRequired: z.boolean(),
+  enterpriseAuthMode: z.enum(['off', 'optional', 'required']),
+  enterpriseProviderKey: z.enum(['google-workspace', 'entra', 'okta']).nullable(),
+  enterpriseProtocol: z.enum(['oidc']).nullable(),
+  allowBreakGlassPasswordLogin: z.boolean(),
+});
+
+const organizationEnterpriseProviderSchema = z.object({
+  organizationId: z.string().min(1),
+  providerKey: z.enum(['google-workspace', 'entra', 'okta']),
 });
 
 const organizationBulkActionSchema = z.object({
@@ -303,6 +314,46 @@ export const updateOrganizationPoliciesServerFn = createServerFn({ method: 'POST
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization policies');
+    }
+  });
+
+export const generateOrganizationScimTokenServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationEnterpriseProviderSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationWriteAccess({
+        action: 'update-settings',
+        organizationId: data.organizationId,
+      });
+
+      return await generateBetterAuthOrganizationScimToken(
+        data,
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Generate organization SCIM token');
+    }
+  });
+
+export const deleteOrganizationScimProviderServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationEnterpriseProviderSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationWriteAccess({
+        action: 'update-settings',
+        organizationId: data.organizationId,
+      });
+
+      return await deleteBetterAuthOrganizationScimProvider(
+        data,
+        ({ code, message, status }) =>
+          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Delete organization SCIM provider');
     }
   });
 

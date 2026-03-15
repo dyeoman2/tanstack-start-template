@@ -44,6 +44,7 @@ import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
+import type * as scimLifecycle from "../scimLifecycle.js";
 import type * as users from "../users.js";
 
 import type {
@@ -89,6 +90,7 @@ declare const fullApi: ApiFromModules<{
   organizationManagement: typeof organizationManagement;
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;
+  scimLifecycle: typeof scimLifecycle;
   users: typeof users;
 }>;
 
@@ -151,7 +153,11 @@ export declare const components: {
             | {
                 data: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -295,6 +301,15 @@ export declare const components: {
                   lastRequest?: null | number;
                 };
                 model: "rateLimit";
+              }
+            | {
+                data: {
+                  organizationId?: null | string;
+                  providerId: string;
+                  scimToken: string;
+                  userId?: null | string;
+                };
+                model: "scimProvider";
               };
           onCreateHandle?: string;
           select?: Array<string>;
@@ -364,6 +379,10 @@ export declare const components: {
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -755,6 +774,37 @@ export declare const components: {
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -851,6 +901,10 @@ export declare const components: {
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1262,6 +1316,37 @@ export declare const components: {
                     | Array<number>
                     | null;
                 }>;
+              }
+            | {
+                model: "scimProvider";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
               };
           onDeleteHandle?: string;
         },
@@ -1287,7 +1372,8 @@ export declare const components: {
             | "organization"
             | "member"
             | "invitation"
-            | "rateLimit";
+            | "rateLimit"
+            | "scimProvider";
           offset?: number;
           paginationOpts: {
             cursor: string | null;
@@ -1344,7 +1430,8 @@ export declare const components: {
             | "organization"
             | "member"
             | "invitation"
-            | "rateLimit";
+            | "rateLimit"
+            | "scimProvider";
           select?: Array<string>;
           where?: Array<{
             connector?: "AND" | "OR";
@@ -1444,7 +1531,11 @@ export declare const components: {
                 model: "session";
                 update: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt?: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -1465,6 +1556,10 @@ export declare const components: {
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1958,6 +2053,43 @@ export declare const components: {
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                update: {
+                  organizationId?: null | string;
+                  providerId?: string;
+                  scimToken?: string;
+                  userId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -2063,7 +2195,11 @@ export declare const components: {
                 model: "session";
                 update: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt?: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -2084,6 +2220,10 @@ export declare const components: {
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -2577,6 +2717,43 @@ export declare const components: {
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                update: {
+                  organizationId?: null | string;
+                  providerId?: string;
+                  scimToken?: string;
+                  userId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"

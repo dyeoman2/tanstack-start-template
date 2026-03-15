@@ -226,6 +226,10 @@ describe('organization management server functions', () => {
         verifiedDomainsOnly: true,
         memberCap: 25,
         mfaRequired: true,
+        enterpriseAuthMode: 'off',
+        enterpriseProviderKey: null,
+        enterpriseProtocol: null,
+        allowBreakGlassPasswordLogin: true,
       },
     });
 
@@ -235,6 +239,10 @@ describe('organization management server functions', () => {
       verifiedDomainsOnly: true,
       memberCap: 25,
       mfaRequired: true,
+      enterpriseAuthMode: 'off',
+      enterpriseProviderKey: null,
+      enterpriseProtocol: null,
+      allowBreakGlassPasswordLogin: true,
     });
   });
 

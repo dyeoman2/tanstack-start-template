@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from '@tanstack/react-router';
 import { useAction, useQuery } from 'convex/react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { Download, Loader2 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import {
   createSortableHeader,
   DataTable,
@@ -43,6 +43,17 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Domain token regenerated', value: 'domain_verification_token_regenerated' },
   { label: 'Domain removed', value: 'domain_removed' },
   { label: 'Policies updated', value: 'organization_policy_updated' },
+  { label: 'Enterprise auth mode updated', value: 'enterprise_auth_mode_updated' },
+  { label: 'Enterprise login succeeded', value: 'enterprise_login_succeeded' },
+  { label: 'SCIM token generated', value: 'enterprise_scim_token_generated' },
+  { label: 'SCIM token revoked', value: 'enterprise_scim_token_deleted' },
+  { label: 'SCIM user provisioned', value: 'enterprise_scim_user_provisioned' },
+  { label: 'SCIM user updated', value: 'enterprise_scim_user_updated' },
+  { label: 'SCIM user deactivated', value: 'enterprise_scim_user_deactivated' },
+  { label: 'SCIM user reactivated', value: 'enterprise_scim_user_reactivated' },
+  { label: 'SCIM member deprovisioned', value: 'scim_member_deprovisioned' },
+  { label: 'SCIM member reactivated', value: 'scim_member_reactivated' },
+  { label: 'SCIM member deprovision failed', value: 'scim_member_deprovision_failed' },
   { label: 'Bulk invite revoked', value: 'bulk_invite_revoked' },
   { label: 'Bulk invite resent', value: 'bulk_invite_resent' },
   { label: 'Bulk member removed', value: 'bulk_member_removed' },
@@ -83,7 +94,7 @@ export function OrganizationAuditPage({
     sortBy: searchParams.sortBy,
     sortOrder: searchParams.sortOrder,
     search: searchParams.search,
-    eventType: searchParams.eventType,
+    eventType: searchParams.eventType as never,
   });
   const isLoading = response === undefined;
   const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
@@ -115,7 +126,7 @@ export function OrganizationAuditPage({
     });
   };
 
-  const handleSorting = (columnId: OrganizationAuditSortField) => {
+  const handleSorting = useCallback((columnId: OrganizationAuditSortField) => {
     const nextSortOrder =
       searchParams.sortBy === columnId && searchParams.sortOrder === 'asc' ? 'desc' : 'asc';
 
@@ -129,7 +140,7 @@ export function OrganizationAuditPage({
         sortOrder: nextSortOrder,
       },
     });
-  };
+  }, [navigate, searchParams, slug]);
 
   const handlePageChange = (page: number) => {
     void navigate({
@@ -162,7 +173,7 @@ export function OrganizationAuditPage({
         slug,
         sortBy: searchParams.sortBy,
         sortOrder: searchParams.sortOrder,
-        eventType: searchParams.eventType,
+        eventType: searchParams.eventType as never,
         search: searchParams.search,
       });
       const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });

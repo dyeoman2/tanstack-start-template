@@ -75,6 +75,10 @@ export function OrganizationPoliciesPage({
           verifiedDomainsOnly,
           memberCap: memberCap.trim().length > 0 ? Number.parseInt(memberCap, 10) : null,
           mfaRequired,
+          enterpriseAuthMode: settings.policies.enterpriseAuthMode,
+          enterpriseProviderKey: settings.policies.enterpriseProviderKey,
+          enterpriseProtocol: settings.policies.enterpriseProtocol,
+          allowBreakGlassPasswordLogin: settings.policies.allowBreakGlassPasswordLogin,
         },
       });
       await refreshOrganizationClientState(queryClient, {
@@ -96,7 +100,7 @@ export function OrganizationPoliciesPage({
     <div className="space-y-6">
       <OrganizationWorkspaceNav
         title={organizationName}
-        description="Manage organization-wide invitation, domain, and MFA guardrails."
+        description="Manage invitation, join, and membership guardrails for this organization."
       />
       <OrganizationWorkspaceTabs slug={slug} organizationName={organizationName} />
 

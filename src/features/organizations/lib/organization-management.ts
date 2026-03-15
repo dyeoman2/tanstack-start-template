@@ -37,6 +37,17 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'domain_verification_token_regenerated',
   'domain_removed',
   'organization_policy_updated',
+  'enterprise_auth_mode_updated',
+  'enterprise_login_succeeded',
+  'enterprise_scim_token_generated',
+  'enterprise_scim_token_deleted',
+  'enterprise_scim_user_provisioned',
+  'enterprise_scim_user_updated',
+  'enterprise_scim_user_deactivated',
+  'enterprise_scim_user_reactivated',
+  'scim_member_deprovisioned',
+  'scim_member_reactivated',
+  'scim_member_deprovision_failed',
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
@@ -109,7 +120,49 @@ export type OrganizationPolicies = {
   verifiedDomainsOnly: boolean;
   memberCap: number | null;
   mfaRequired: boolean;
+  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
+  enterpriseProviderKey: OrganizationEnterpriseProviderKey | null;
+  enterpriseProtocol: OrganizationEnterpriseAuthProtocol | null;
+  enterpriseEnabledAt: number | null;
+  enterpriseEnforcedAt: number | null;
+  allowBreakGlassPasswordLogin: boolean;
 };
+
+export const ORGANIZATION_ENTERPRISE_PROVIDER_KEYS = [
+  'google-workspace',
+  'entra',
+  'okta',
+] as const;
+export const ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES = [
+  'active',
+  'not_configured',
+  'coming_soon',
+] as const;
+
+export type OrganizationEnterpriseAuthMode = 'off' | 'optional' | 'required';
+export type OrganizationEnterpriseAuthProtocol = 'oidc';
+export type OrganizationEnterpriseProviderKey =
+  (typeof ORGANIZATION_ENTERPRISE_PROVIDER_KEYS)[number];
+export type OrganizationEnterpriseProviderStatus =
+  (typeof ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES)[number];
+
+export type OrganizationEnterpriseProviderOption = {
+  key: OrganizationEnterpriseProviderKey;
+  label: string;
+  protocol: OrganizationEnterpriseAuthProtocol;
+  status: OrganizationEnterpriseProviderStatus;
+  selectable: boolean;
+};
+
+export type OrganizationEnterpriseAuthSummary = {
+  providerKey: OrganizationEnterpriseProviderKey;
+  providerLabel: string;
+  protocol: OrganizationEnterpriseAuthProtocol;
+  providerStatus: OrganizationEnterpriseProviderStatus;
+  managedDomains: string[];
+  scimProviderId: string;
+  scimConnectionConfigured: boolean;
+} | null;
 
 export type OrganizationMemberRow = {
   id: string;
@@ -167,6 +220,28 @@ export type OrganizationDomainVerificationResult = {
   checkedAt: number;
   domain: OrganizationDomain;
   reason: string | null;
+};
+
+export type OrganizationEnterpriseAuthResolutionResult = {
+  organizationId: string;
+  organizationSlug: string;
+  organizationName: string;
+  providerKey: OrganizationEnterpriseProviderKey;
+  providerLabel: string;
+  providerStatus: OrganizationEnterpriseProviderStatus;
+  protocol: OrganizationEnterpriseAuthProtocol;
+  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
+  managedDomain: string;
+  verifiedDomains: string[];
+  canUsePasswordFallback: boolean;
+} | null;
+
+export type OrganizationEnterpriseAccessResult = {
+  allowed: boolean;
+  reason: string | null;
+  requiresEnterpriseAuth: boolean;
+  providerKey: OrganizationEnterpriseProviderKey | null;
+  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
 };
 
 export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];

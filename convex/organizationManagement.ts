@@ -2,6 +2,7 @@ import { anyApi } from 'convex/server';
 import type { PaginationResult } from 'convex/server';
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
 import {
   canChangeMemberRole,
   canDeleteOrganization,
@@ -37,6 +38,7 @@ import {
   findBetterAuthMember,
   findBetterAuthOrganizationById,
   findBetterAuthOrganizationBySlug,
+  findBetterAuthScimProviderByOrganizationId,
 } from './lib/betterAuth';
 import {
   allowedResultValidator,
@@ -49,6 +51,8 @@ import {
   organizationDomainValidator,
   organizationDirectoryResponseValidator,
   organizationDomainsResponseValidator,
+  organizationEnterpriseAccessResultValidator,
+  organizationEnterpriseAuthResolutionResultValidator,
   organizationAuditResponseValidator,
   organizationSettingsValidator,
 } from './lib/returnValidators';
@@ -111,6 +115,12 @@ type OrganizationPolicies = {
   verifiedDomainsOnly: boolean;
   memberCap: number | null;
   mfaRequired: boolean;
+  enterpriseAuthMode: 'off' | 'optional' | 'required';
+  enterpriseProviderKey: 'google-workspace' | 'entra' | 'okta' | null;
+  enterpriseProtocol: 'oidc' | null;
+  enterpriseEnabledAt: number | null;
+  enterpriseEnforcedAt: number | null;
+  allowBreakGlassPasswordLogin: boolean;
 };
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
@@ -133,6 +143,17 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'domain_verification_token_regenerated',
   'domain_removed',
   'organization_policy_updated',
+  'enterprise_auth_mode_updated',
+  'enterprise_login_succeeded',
+  'enterprise_scim_token_generated',
+  'enterprise_scim_token_deleted',
+  'enterprise_scim_user_provisioned',
+  'enterprise_scim_user_updated',
+  'enterprise_scim_user_deactivated',
+  'enterprise_scim_user_reactivated',
+  'scim_member_deprovisioned',
+  'scim_member_reactivated',
+  'scim_member_deprovision_failed',
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
@@ -154,7 +175,59 @@ const DEFAULT_ORGANIZATION_POLICIES: OrganizationPolicies = {
   verifiedDomainsOnly: false,
   memberCap: null,
   mfaRequired: false,
+  enterpriseAuthMode: 'off',
+  enterpriseProviderKey: null,
+  enterpriseProtocol: null,
+  enterpriseEnabledAt: null,
+  enterpriseEnforcedAt: null,
+  allowBreakGlassPasswordLogin: true,
 };
+
+const GOOGLE_WORKSPACE_PROVIDER_KEY = 'google-workspace' as const;
+
+function getEnterpriseProviderLabel(providerKey: 'google-workspace' | 'entra' | 'okta') {
+  switch (providerKey) {
+    case 'google-workspace':
+      return 'Google Workspace';
+    case 'entra':
+      return 'Microsoft Entra ID';
+    case 'okta':
+      return 'Okta';
+  }
+}
+
+function getOrganizationScimProviderId(
+  organizationId: string,
+  providerKey: 'google-workspace' | 'entra' | 'okta',
+) {
+  return `${providerKey}--${organizationId}`;
+}
+
+function getAvailableEnterpriseProviders() {
+  return [
+    {
+      key: GOOGLE_WORKSPACE_PROVIDER_KEY,
+      label: getEnterpriseProviderLabel(GOOGLE_WORKSPACE_PROVIDER_KEY),
+      protocol: 'oidc' as const,
+      status: isGoogleWorkspaceOAuthConfigured() ? 'active' as const : 'not_configured' as const,
+      selectable: isGoogleWorkspaceOAuthConfigured(),
+    },
+    {
+      key: 'entra' as const,
+      label: getEnterpriseProviderLabel('entra'),
+      protocol: 'oidc' as const,
+      status: 'coming_soon' as const,
+      selectable: false,
+    },
+    {
+      key: 'okta' as const,
+      label: getEnterpriseProviderLabel('okta'),
+      protocol: 'oidc' as const,
+      status: 'coming_soon' as const,
+      selectable: false,
+    },
+  ];
+}
 
 function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): OrganizationRole[] {
   if (viewerRole === 'site-admin' || viewerRole === 'owner') {
@@ -175,6 +248,19 @@ function toOrganizationPolicies(policy: OrganizationPolicyDoc | null | undefined
       policy?.verifiedDomainsOnly ?? DEFAULT_ORGANIZATION_POLICIES.verifiedDomainsOnly,
     memberCap: policy?.memberCap ?? DEFAULT_ORGANIZATION_POLICIES.memberCap,
     mfaRequired: policy?.mfaRequired ?? DEFAULT_ORGANIZATION_POLICIES.mfaRequired,
+    enterpriseAuthMode:
+      policy?.enterpriseAuthMode ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseAuthMode,
+    enterpriseProviderKey:
+      policy?.enterpriseProviderKey ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseProviderKey,
+    enterpriseProtocol:
+      policy?.enterpriseProtocol ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseProtocol,
+    enterpriseEnabledAt:
+      policy?.enterpriseEnabledAt ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseEnabledAt,
+    enterpriseEnforcedAt:
+      policy?.enterpriseEnforcedAt ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseEnforcedAt,
+    allowBreakGlassPasswordLogin:
+      policy?.allowBreakGlassPasswordLogin ??
+      DEFAULT_ORGANIZATION_POLICIES.allowBreakGlassPasswordLogin,
   };
 }
 
@@ -343,6 +429,11 @@ function createOrganizationDomainVerificationToken() {
   return crypto.randomUUID().replaceAll('-', '');
 }
 
+function normalizeEmailDomain(email: string) {
+  const [, domain = ''] = email.trim().toLowerCase().split('@');
+  return domain;
+}
+
 function getOrganizationDomainVerificationRecordName(domain: string) {
   return `${ORGANIZATION_DOMAIN_VERIFICATION_PREFIX}.${domain}`;
 }
@@ -365,6 +456,128 @@ function toOrganizationDomain(domain: OrganizationDomainDoc) {
     verifiedAt: domain.verifiedAt,
     createdByUserId: domain.createdByUserId,
     createdAt: domain.createdAt,
+  } as const;
+}
+
+async function getOrganizationEnterpriseAuthSummary(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+  policies: OrganizationPolicies,
+) {
+  if (!policies.enterpriseProviderKey) {
+    return null;
+  }
+
+  const managedDomains = (
+    await ctx.db
+      .query('organizationDomains')
+      .withIndex('by_organization_id', (q) => q.eq('organizationId', organizationId))
+      .collect()
+  )
+    .filter((domain) => domain.status === 'verified')
+    .map((domain) => domain.normalizedDomain)
+    .sort((left, right) => left.localeCompare(right));
+  const scimProvider = await findBetterAuthScimProviderByOrganizationId(ctx, organizationId);
+  const providerOption = getAvailableEnterpriseProviders().find(
+    (option) => option.key === policies.enterpriseProviderKey,
+  );
+  if (!providerOption) {
+    return null;
+  }
+
+  return {
+    providerKey: policies.enterpriseProviderKey,
+    providerLabel: providerOption.label,
+    protocol: 'oidc' as const,
+    providerStatus: providerOption.status,
+    managedDomains,
+    scimProviderId: getOrganizationScimProviderId(organizationId, policies.enterpriseProviderKey),
+    scimConnectionConfigured: scimProvider !== null,
+  } as const;
+}
+
+async function getOrganizationVerifiedDomains(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  return (
+    await ctx.db
+      .query('organizationDomains')
+      .withIndex('by_organization_id', (q) => q.eq('organizationId', organizationId))
+      .collect()
+  )
+    .filter((domain) => domain.status === 'verified')
+    .map((domain) => domain.normalizedDomain);
+}
+
+async function getOrganizationEnterpriseAccessForUser(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    organizationId: string;
+    user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>;
+    policies?: OrganizationPolicies;
+  },
+) {
+  const policies = input.policies ?? (await getOrganizationPolicies(ctx, input.organizationId));
+  if (policies.enterpriseAuthMode !== 'required') {
+    return {
+      allowed: true,
+      reason: null,
+      requiresEnterpriseAuth: false,
+      providerKey: policies.enterpriseProviderKey,
+      enterpriseAuthMode: policies.enterpriseAuthMode,
+    } as const;
+  }
+
+  if (input.user.isSiteAdmin) {
+    return {
+      allowed: true,
+      reason: null,
+      requiresEnterpriseAuth: true,
+      providerKey: policies.enterpriseProviderKey,
+      enterpriseAuthMode: policies.enterpriseAuthMode,
+    } as const;
+  }
+
+  const email = typeof input.user.authUser.email === 'string' ? input.user.authUser.email : '';
+  const emailDomain = normalizeEmailDomain(email);
+  const verifiedDomains = await getOrganizationVerifiedDomains(ctx, input.organizationId);
+  const matchesManagedDomain = verifiedDomains.includes(emailDomain);
+  if (!matchesManagedDomain) {
+    return {
+      allowed: true,
+      reason: null,
+      requiresEnterpriseAuth: true,
+      providerKey: policies.enterpriseProviderKey,
+      enterpriseAuthMode: policies.enterpriseAuthMode,
+    } as const;
+  }
+
+  if (policies.allowBreakGlassPasswordLogin) {
+    const membership = await findBetterAuthMember(ctx, input.organizationId, input.user.authUserId);
+    if (membership?.role === 'owner') {
+      return {
+        allowed: true,
+        reason: null,
+        requiresEnterpriseAuth: true,
+        providerKey: policies.enterpriseProviderKey,
+        enterpriseAuthMode: policies.enterpriseAuthMode,
+      } as const;
+    }
+  }
+
+  const session = input.user.authSession;
+  const hasMatchingEnterpriseSession =
+    session?.authMethod === 'enterprise' &&
+    session.enterpriseOrganizationId === input.organizationId &&
+    session.enterpriseProviderKey === policies.enterpriseProviderKey;
+
+  return {
+    allowed: hasMatchingEnterpriseSession,
+    reason: hasMatchingEnterpriseSession ? null : 'This organization requires enterprise sign-in',
+    requiresEnterpriseAuth: true,
+    providerKey: policies.enterpriseProviderKey,
+    enterpriseAuthMode: policies.enterpriseAuthMode,
   } as const;
 }
 
@@ -426,6 +639,12 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Domain removed';
     case 'organization_policy_updated':
       return 'Organization policies updated';
+    case 'scim_member_deprovisioned':
+      return 'SCIM member deprovisioned';
+    case 'scim_member_reactivated':
+      return 'SCIM member reactivated';
+    case 'scim_member_deprovision_failed':
+      return 'SCIM member deprovision failed';
     case 'bulk_invite_revoked':
       return 'Bulk invitation revoked';
     case 'bulk_invite_resent':
@@ -1097,6 +1316,7 @@ export const getOrganizationSettings = query({
         ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
         : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
+    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(ctx, organizationId, policies);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
@@ -1112,11 +1332,92 @@ export const getOrganizationSettings = query({
         logo: context.organization.logo ?? null,
       },
       policies,
+      enterpriseAuth,
+      availableEnterpriseProviders: getAvailableEnterpriseProviders(),
       access: context.access,
       capabilities,
       isMember: context.viewerMembership !== null,
       viewerRole: context.viewerRole,
       canManage: capabilities.canManageMembers || capabilities.canUpdateSettings,
+    };
+  },
+});
+
+export const getOrganizationEnterpriseAuthSettings = query({
+  args: {
+    slug: v.string(),
+  },
+  returns: v.union(organizationSettingsValidator, v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.runQuery(anyApi.organizationManagement.getOrganizationSettings, args);
+  },
+});
+
+export const getOrganizationEnterpriseAccess = query({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: organizationEnterpriseAccessResultValidator,
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    return await getOrganizationEnterpriseAccessForUser(ctx, {
+      organizationId: args.organizationId,
+      user,
+    });
+  },
+});
+
+export const resolveOrganizationEnterpriseAuthByEmail = query({
+  args: {
+    email: v.string(),
+  },
+  returns: organizationEnterpriseAuthResolutionResultValidator,
+  handler: async (ctx, args) => {
+    const emailDomain = normalizeEmailDomain(args.email);
+    if (!emailDomain) {
+      return null;
+    }
+
+    const domainRecord = await ctx.db
+      .query('organizationDomains')
+      .withIndex('by_normalized_domain', (q) => q.eq('normalizedDomain', emailDomain))
+      .first();
+    if (!domainRecord || domainRecord.status !== 'verified') {
+      return null;
+    }
+
+    const organization = await findBetterAuthOrganizationById(ctx, domainRecord.organizationId);
+    if (!organization) {
+      return null;
+    }
+
+    const policies = await getOrganizationPolicies(ctx, domainRecord.organizationId);
+    if (!policies.enterpriseProviderKey || !policies.enterpriseProtocol) {
+      return null;
+    }
+
+    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
+      ctx,
+      domainRecord.organizationId,
+      policies,
+    );
+    if (!enterpriseAuth) {
+      return null;
+    }
+
+    return {
+      organizationId: domainRecord.organizationId,
+      organizationSlug: organization.slug,
+      organizationName: organization.name,
+      providerKey: enterpriseAuth.providerKey,
+      providerLabel: enterpriseAuth.providerLabel,
+      providerStatus: enterpriseAuth.providerStatus,
+      protocol: enterpriseAuth.protocol,
+      enterpriseAuthMode: policies.enterpriseAuthMode,
+      managedDomain: emailDomain,
+      verifiedDomains: enterpriseAuth.managedDomains,
+      canUsePasswordFallback:
+        policies.enterpriseAuthMode !== 'required' || policies.allowBreakGlassPasswordLogin,
     };
   },
 });
@@ -1128,6 +1429,15 @@ export const updateOrganizationPolicies = mutation({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
+    enterpriseProviderKey: v.union(
+      v.literal('google-workspace'),
+      v.literal('entra'),
+      v.literal('okta'),
+      v.null(),
+    ),
+    enterpriseProtocol: v.union(v.literal('oidc'), v.null()),
+    allowBreakGlassPasswordLogin: v.boolean(),
   },
   returns: v.object({
     success: v.literal(true),
@@ -1136,6 +1446,17 @@ export const updateOrganizationPolicies = mutation({
       verifiedDomainsOnly: v.boolean(),
       memberCap: v.union(v.number(), v.null()),
       mfaRequired: v.boolean(),
+      enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
+      enterpriseProviderKey: v.union(
+        v.literal('google-workspace'),
+        v.literal('entra'),
+        v.literal('okta'),
+        v.null(),
+      ),
+      enterpriseProtocol: v.union(v.literal('oidc'), v.null()),
+      enterpriseEnabledAt: v.union(v.number(), v.null()),
+      enterpriseEnforcedAt: v.union(v.number(), v.null()),
+      allowBreakGlassPasswordLogin: v.boolean(),
     }),
   }),
   handler: async (ctx, args) => {
@@ -1152,13 +1473,60 @@ export const updateOrganizationPolicies = mutation({
       throwConvexError('VALIDATION', 'Member cap must be at least 1');
     }
 
+    if (
+      args.enterpriseAuthMode !== 'off' &&
+      (!args.enterpriseProviderKey || !args.enterpriseProtocol)
+    ) {
+      throwConvexError(
+        'VALIDATION',
+        'Select an enterprise provider before enabling enterprise sign-in policy',
+      );
+    }
+
+    if (args.enterpriseProviderKey && args.enterpriseProviderKey !== GOOGLE_WORKSPACE_PROVIDER_KEY) {
+      throwConvexError('VALIDATION', 'Only Google Workspace enterprise auth is available today');
+    }
+
+    if (
+      args.enterpriseProviderKey === GOOGLE_WORKSPACE_PROVIDER_KEY &&
+      !isGoogleWorkspaceOAuthConfigured()
+    ) {
+      throwConvexError(
+        'VALIDATION',
+        'Google Workspace enterprise auth is not configured for this deployment',
+      );
+    }
+
+    if (args.enterpriseAuthMode === 'required') {
+      const verifiedDomains = await getOrganizationVerifiedDomains(ctx, args.organizationId);
+      if (verifiedDomains.length === 0) {
+        throwConvexError(
+          'VALIDATION',
+          'Verify at least one organization domain before requiring enterprise sign-in',
+        );
+      }
+    }
+
+    const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
+    const now = Date.now();
     const nextPolicies = {
       invitePolicy: args.invitePolicy,
       verifiedDomainsOnly: args.verifiedDomainsOnly,
       memberCap: args.memberCap,
       mfaRequired: args.mfaRequired,
+      enterpriseAuthMode: args.enterpriseAuthMode,
+      enterpriseProviderKey: args.enterpriseProviderKey,
+      enterpriseProtocol: args.enterpriseProtocol,
+      enterpriseEnabledAt:
+        args.enterpriseAuthMode === 'off'
+          ? null
+          : currentPolicies.enterpriseEnabledAt ?? now,
+      enterpriseEnforcedAt:
+        args.enterpriseAuthMode === 'required'
+          ? currentPolicies.enterpriseEnforcedAt ?? now
+          : null,
+      allowBreakGlassPasswordLogin: args.allowBreakGlassPasswordLogin,
     } satisfies OrganizationPolicies;
-    const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
     const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
       (key) => currentPolicies[key] !== nextPolicies[key],
     );
@@ -1166,8 +1534,6 @@ export const updateOrganizationPolicies = mutation({
       .query('organizationPolicies')
       .withIndex('by_organization_id', (q) => q.eq('organizationId', args.organizationId))
       .first();
-    const now = Date.now();
-
     if (existing) {
       await ctx.db.patch(existing._id, {
         ...nextPolicies,
@@ -1194,6 +1560,20 @@ export const updateOrganizationPolicies = mutation({
         nextPolicies,
       }),
     });
+
+    if (currentPolicies.enterpriseAuthMode !== nextPolicies.enterpriseAuthMode) {
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'enterprise_auth_mode_updated',
+        organizationId: args.organizationId,
+        userId: context.user.authUserId,
+        identifier: context.user.authUser.email?.toLowerCase(),
+        metadata: JSON.stringify({
+          nextMode: nextPolicies.enterpriseAuthMode,
+          previousMode: currentPolicies.enterpriseAuthMode,
+          providerKey: nextPolicies.enterpriseProviderKey,
+        }),
+      });
+    }
 
     return {
       success: true as const,
@@ -1442,6 +1822,14 @@ export const listOrganizationDirectory = query({
     const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
     const ownerCount = await countActiveOwners(ctx, memberships);
     const policies = await getOrganizationPolicies(ctx, organizationId);
+    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
+      organizationId,
+      user: context.user,
+      policies,
+    });
+    if (!enterpriseAccess.allowed) {
+      return null;
+    }
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
@@ -1702,12 +2090,21 @@ export const listOrganizationDomains = query({
       ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
       : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
+    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
+      organizationId,
+      user: context.user,
+      policies,
+    });
+    if (!enterpriseAccess.allowed) {
+      return null;
+    }
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
+    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(ctx, organizationId, policies);
     const domains = await ctx.db
       .query('organizationDomains')
       .withIndex('by_organization_id_and_created_at', (q) => q.eq('organizationId', organizationId))
@@ -1721,6 +2118,7 @@ export const listOrganizationDomains = query({
         name: context.organization.name,
         logo: context.organization.logo ?? null,
       },
+      enterpriseAuth,
       capabilities: {
         canManageDomains: capabilities.canManageDomains,
         canViewAudit: capabilities.canViewAudit,
@@ -2130,6 +2528,14 @@ export const listOrganizationAuditEvents = query({
       ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
       : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
+    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
+      organizationId,
+      user: context.user,
+      policies,
+    });
+    if (!enterpriseAccess.allowed) {
+      return null;
+    }
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,

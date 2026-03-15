@@ -43,7 +43,7 @@ export function OrganizationPoliciesCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Organization policies</CardTitle>
+        <CardTitle>Access policies</CardTitle>
         <CardDescription>
           Control who can invite, whether invites must use verified domains, member caps, and MFA requirements for new joins.
         </CardDescription>
@@ -124,10 +124,10 @@ export function OrganizationPoliciesCard({
             {isSavingPolicies ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Saving policies...
+                Saving access policies...
               </>
             ) : (
-              'Save policies'
+              'Save access policies'
             )}
           </Button>
         </div>

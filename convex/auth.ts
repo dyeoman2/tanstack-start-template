@@ -1,3 +1,5 @@
+"use node";
+
 import {
   createClient,
   type CreateAuth as ConvexBetterAuthCreateAuth,
@@ -11,10 +13,13 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import { normalizeOrganizationRole } from '../src/features/organizations/lib/organization-permissions';
 import {
   getBetterAuthSecret,
+  getGoogleOAuthCredentials,
   isE2EPrincipalEmail,
   getRequiredBetterAuthUrl,
   isTrustedBetterAuthOrigin,
+  isGoogleWorkspaceOAuthConfigured,
 } from '../src/lib/server/env.server';
+import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -30,16 +35,25 @@ import {
   type SharedSendInvitationEmail,
 } from './betterAuth/sharedOptions';
 import {
+  createBetterAuthMember,
+  deleteBetterAuthMemberRecord,
   findBetterAuthInvitationById,
   findBetterAuthMember,
   findBetterAuthOrganizationById,
+  findBetterAuthAccountByAccountIdAndProviderId,
   findBetterAuthUserByEmail,
   fetchBetterAuthInvitationsByOrganizationAndEmail,
+  findBetterAuthAccountByUserIdAndProviderId,
   fetchBetterAuthMembersByOrganizationId,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
+  findBetterAuthScimProviderById,
+  findBetterAuthScimProviderByOrganizationId,
   fetchBetterAuthSessionsByUserId,
+  fetchBetterAuthUsersByIds,
+  updateBetterAuthAccountRecord,
   updateBetterAuthSessionRecord,
+  updateBetterAuthUserRecord,
 } from './lib/betterAuth';
 import { getOrganizationMembershipStatuses } from './lib/organizationMembershipState';
 import {
@@ -55,6 +69,7 @@ import {
 } from './lib/returnValidators';
 
 const secret = getBetterAuthSecret();
+const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
 
 export function shouldSkipE2EAuthEmailForTesting(targetEmail: string): boolean {
   return isE2EPrincipalEmail(targetEmail);
@@ -164,6 +179,40 @@ const betterAuthOrganizationInvitationResultValidator = v.object({
   invitation: v.object({
     id: v.string(),
   }),
+});
+
+const enterpriseProviderKeyValidator = v.union(
+  v.literal('google-workspace'),
+  v.literal('entra'),
+  v.literal('okta'),
+);
+
+const betterAuthScimProviderValidator = v.object({
+  id: v.string(),
+  providerId: v.string(),
+  organizationId: v.union(v.string(), v.null()),
+});
+
+const betterAuthScimProviderListValidator = v.object({
+  providers: v.array(betterAuthScimProviderValidator),
+});
+
+const betterAuthScimTokenResultValidator = v.object({
+  scimToken: v.string(),
+});
+
+const scimLifecycleOperationValidator = v.union(
+  v.literal('delete'),
+  v.literal('patch'),
+  v.literal('post'),
+  v.literal('put'),
+);
+
+const scimLifecycleResponseValidator = v.object({
+  body: v.union(v.string(), v.null()),
+  handled: v.boolean(),
+  location: v.union(v.string(), v.null()),
+  status: v.number(),
 });
 
 const betterAuthActionResultValidator = <TValidator extends ReturnType<typeof v.object> | ReturnType<typeof v.union> | ReturnType<typeof v.array> | ReturnType<typeof v.literal> | ReturnType<typeof v.string> | ReturnType<typeof v.boolean> | ReturnType<typeof v.number>>(dataValidator: TValidator) =>
@@ -347,6 +396,36 @@ type BetterAuthApiSurface = {
     body: { organizationId?: string | null; organizationSlug?: string };
     headers: Headers;
   }): Promise<Parameters<typeof normalizeOrganizationSummaryRecord>[0] | null>;
+  generateSCIMToken(input: {
+    body: {
+      organizationId: string;
+      providerId: string;
+    };
+    headers: Headers;
+  }): Promise<{
+    scimToken: string;
+  }>;
+  listSCIMProviderConnections(input: {
+    headers: Headers;
+  }): Promise<{
+    providers: Array<{
+      id: string;
+      organizationId: string | null;
+      providerId: string;
+    }>;
+  }>;
+  deleteSCIMProviderConnection(input: {
+    body: { providerId: string };
+    headers: Headers;
+  }): Promise<{ success: boolean }>;
+  getSCIMProviderConnection(input: {
+    query: { providerId: string };
+    headers: Headers;
+  }): Promise<{
+    id: string;
+    organizationId: string | null;
+    providerId: string;
+  }>;
 };
 
 type BetterAuthActionContext = {
@@ -521,6 +600,19 @@ async function assertSiteAdminWriteAccess(
   }
 
   return currentUser;
+}
+
+async function assertOrganizationSettingsWriteAccess(ctx: ActionCtx, organizationId: string) {
+  const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
+    action: 'update-settings',
+    organizationId,
+  });
+
+  if (!access.allowed) {
+    throw new APIError('FORBIDDEN', {
+      message: access.reason ?? 'Organization admin access required',
+    });
+  }
 }
 
 async function createSystemOrganizationForUser(
@@ -1049,6 +1141,203 @@ function normalizeOrganizationSummaryRecord(record: {
   };
 }
 
+function toOptionalString(value: unknown) {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+const GOOGLE_WORKSPACE_PROVIDER_KEY = 'google-workspace' as const;
+
+function getEnterpriseProviderLabel(providerKey: 'google-workspace' | 'entra' | 'okta'): string {
+  switch (providerKey) {
+    case 'google-workspace':
+      return 'Google Workspace';
+    case 'entra':
+      return 'Microsoft Entra ID';
+    case 'okta':
+      return 'Okta';
+  }
+}
+
+function getOrganizationScimProviderId(
+  organizationId: string,
+  providerKey: 'google-workspace' | 'entra' | 'okta' = GOOGLE_WORKSPACE_PROVIDER_KEY,
+) {
+  return `${providerKey}--${organizationId}`;
+}
+
+async function isSiteAdminUser(
+  ctx: GenericCtx<DataModel>,
+  authUserId: string,
+): Promise<boolean> {
+  const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'user',
+    where: [{ field: '_id', operator: 'eq', value: authUserId }],
+  });
+
+  if (!authUser || typeof authUser !== 'object') {
+    return false;
+  }
+
+  const normalizedRole = (authUser as { role?: string | string[] | null }).role ?? undefined;
+  return deriveIsSiteAdmin(normalizeUserRole(normalizedRole));
+}
+
+async function isOrganizationOwner(
+  ctx: GenericCtx<DataModel>,
+  authUserId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const membership = await findBetterAuthMember(ctx, organizationId, authUserId);
+  return membership?.role === 'owner';
+}
+
+async function ensureEnterpriseOrganizationMembership(
+  ctx: GenericCtx<DataModel>,
+  input: {
+    organizationId: string;
+    userId: string;
+  },
+) {
+  const existingMembership = await findBetterAuthMember(ctx, input.organizationId, input.userId);
+  if (existingMembership || !('runMutation' in ctx) || typeof ctx.runMutation !== 'function') {
+    return;
+  }
+
+  await ctx.runMutation!(components.betterAuth.adapter.create, {
+    input: {
+      model: 'member',
+      data: {
+        createdAt: Date.now(),
+        organizationId: input.organizationId,
+        role: 'member',
+        userId: input.userId,
+      },
+    },
+  });
+}
+
+async function resolveEnterpriseAuthSessionForUser(
+  ctx: GenericCtx<DataModel>,
+  input: {
+    providerId: string;
+    userEmail: string;
+    userId: string;
+  },
+): Promise<{
+  organizationId: string;
+  protocol: 'oidc';
+  providerKey: 'google-workspace' | 'entra' | 'okta';
+} | null> {
+  if (input.providerId !== 'google' || !isGoogleWorkspaceOAuthConfigured()) {
+    return null;
+  }
+
+  const googleAccount = await findBetterAuthAccountByUserIdAndProviderId(ctx, input.userId, 'google');
+  if (!googleAccount?.idToken) {
+    return null;
+  }
+
+  let hostedDomain: string | null = null;
+  try {
+    hostedDomain = await verifyGoogleHostedDomain(googleAccount.idToken);
+  } catch (error) {
+    console.error('[auth] Failed to verify Google Workspace hosted domain claim', error);
+    return null;
+  }
+
+  const resolution = await ctx.runQuery(
+    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
+    { email: input.userEmail },
+  );
+  if (!resolution || resolution.providerKey !== GOOGLE_WORKSPACE_PROVIDER_KEY) {
+    return null;
+  }
+
+  if (resolution.providerStatus !== 'active') {
+    return null;
+  }
+
+  if (
+    !hostedDomain ||
+    hostedDomain !== resolution.managedDomain ||
+    !resolution.verifiedDomains.includes(hostedDomain)
+  ) {
+    return null;
+  }
+
+  await ensureEnterpriseOrganizationMembership(ctx, {
+    organizationId: resolution.organizationId,
+    userId: input.userId,
+  });
+
+  return {
+    organizationId: resolution.organizationId,
+    protocol: 'oidc',
+    providerKey: resolution.providerKey,
+  };
+}
+
+async function getBlockedPasswordAuthMessage(
+  ctx: GenericCtx<DataModel>,
+  email: string,
+): Promise<string | null> {
+  const resolution = await ctx.runQuery(
+    anyApi.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
+    { email },
+  );
+  if (!resolution) {
+    return null;
+  }
+
+  if (
+    resolution.enterpriseAuthMode === 'required' &&
+    resolution.providerStatus === 'active' &&
+    !resolution.canUsePasswordFallback
+  ) {
+    return `${resolution.organizationName} requires ${resolution.providerLabel} sign-in for this email domain.`;
+  }
+
+  return null;
+}
+
+async function assertEnterpriseSCIMManagementAccess(
+  ctx: GenericCtx<DataModel>,
+  input: {
+    organizationId?: string;
+    providerId?: string;
+    userId: string;
+  },
+) {
+  if (await isSiteAdminUser(ctx, input.userId)) {
+    return;
+  }
+
+  let organizationId = input.organizationId ?? null;
+  if (!organizationId && input.providerId) {
+    organizationId =
+      (await findBetterAuthScimProviderById(ctx, input.providerId))?.organizationId ?? null;
+  }
+
+  if (organizationId) {
+    if (await isOrganizationOwner(ctx, input.userId, organizationId)) {
+      return;
+    }
+
+    throw new APIError('FORBIDDEN', {
+      message: 'Organization owner access required to manage SCIM.',
+    });
+  }
+
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, input.userId);
+  if (memberships.some((membership) => membership.role === 'owner')) {
+    return;
+  }
+
+  throw new APIError('FORBIDDEN', {
+    message: 'Organization owner access required to manage SCIM.',
+  });
+}
+
 type CtxWithRunMutation = GenericCtx<DataModel> & {
   runMutation?: (fn: unknown, args: unknown) => Promise<unknown>;
 };
@@ -1059,6 +1348,257 @@ type CtxWithRequiredRunMutation = GenericCtx<DataModel> & {
 
 function normalizeOptionalId(value: string | null | undefined) {
   return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+type ParsedScimAuthorization = {
+  organizationId: string | null;
+  providerId: string;
+  rawToken: string;
+};
+
+type ParsedScimUserPayload = {
+  accountId: string;
+  email: string;
+  name: string;
+};
+
+function createScimErrorBody(
+  status: number,
+  detail: string,
+  scimType?: string,
+) {
+  return JSON.stringify({
+    schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
+    status: status.toString(),
+    detail,
+    ...(scimType ? { scimType } : {}),
+  });
+}
+
+function createScimUserResource(
+  baseUrl: string,
+  input: {
+    accountId: string;
+    createdAt?: string | number | Date | null;
+    email: string;
+    name: string;
+    updatedAt?: string | number | Date | null;
+    userId: string;
+  },
+) {
+  const normalizedBaseUrl = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
+  return {
+    id: input.userId,
+    externalId: input.accountId,
+    meta: {
+      resourceType: 'User',
+      created: toTimestamp(input.createdAt ?? Date.now()),
+      lastModified: toTimestamp(input.updatedAt ?? Date.now()),
+      location: new URL(`scim/v2/Users/${input.userId}`, normalizedBaseUrl).toString(),
+    },
+    userName: input.email,
+    name: { formatted: input.name },
+    displayName: input.name,
+    active: true,
+    emails: [
+      {
+        primary: true,
+        value: input.email,
+      },
+    ],
+    schemas: ['urn:ietf:params:scim:schemas:core:2.0:User'],
+  };
+}
+
+function normalizeScimPrimaryEmail(
+  userName: string,
+  emails: unknown,
+) {
+  if (Array.isArray(emails)) {
+    const normalizedEmails = emails.filter(
+      (entry): entry is { primary?: boolean; value?: string } =>
+        typeof entry === 'object' && entry !== null,
+    );
+    const primaryEmail = normalizedEmails.find((entry) => entry.primary === true)?.value;
+    if (typeof primaryEmail === 'string' && primaryEmail.trim().length > 0) {
+      return primaryEmail.trim().toLowerCase();
+    }
+
+    const firstEmail = normalizedEmails.find(
+      (entry) => typeof entry.value === 'string' && entry.value.trim().length > 0,
+    )?.value;
+    if (typeof firstEmail === 'string' && firstEmail.trim().length > 0) {
+      return firstEmail.trim().toLowerCase();
+    }
+  }
+
+  return userName.trim().toLowerCase();
+}
+
+function normalizeScimFullName(
+  email: string,
+  name: unknown,
+) {
+  if (!name || typeof name !== 'object') {
+    return email;
+  }
+
+  const formatted =
+    'formatted' in name && typeof name.formatted === 'string' ? name.formatted.trim() : '';
+  if (formatted.length > 0) {
+    return formatted;
+  }
+
+  const givenName =
+    'givenName' in name && typeof name.givenName === 'string' ? name.givenName.trim() : '';
+  const familyName =
+    'familyName' in name && typeof name.familyName === 'string' ? name.familyName.trim() : '';
+  const fullName = [givenName, familyName].filter((segment) => segment.length > 0).join(' ').trim();
+  return fullName.length > 0 ? fullName : email;
+}
+
+function parseScimUserPayload(bodyJson: string | undefined) {
+  if (!bodyJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyJson) as Record<string, unknown>;
+    const userName = typeof parsed.userName === 'string' ? parsed.userName.trim() : '';
+    if (userName.length === 0) {
+      return null;
+    }
+
+    const externalId =
+      typeof parsed.externalId === 'string' && parsed.externalId.trim().length > 0
+        ? parsed.externalId.trim()
+        : null;
+    const email = normalizeScimPrimaryEmail(userName, parsed.emails);
+    const name = normalizeScimFullName(email, parsed.name);
+
+    return {
+      accountId: externalId ?? userName,
+      email,
+      name,
+    } satisfies ParsedScimUserPayload;
+  } catch {
+    return null;
+  }
+}
+
+function parseScimPatchOperations(bodyJson: string | undefined) {
+  if (!bodyJson) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyJson) as Record<string, unknown>;
+    const operations = Array.isArray(parsed.Operations) ? parsed.Operations : [];
+
+    let active: boolean | null = null;
+    let hasNonActiveChanges = false;
+
+    for (const operation of operations) {
+      if (!operation || typeof operation !== 'object') {
+        continue;
+      }
+
+      const path = typeof operation.path === 'string' ? operation.path.trim().toLowerCase() : '';
+      const value = 'value' in operation ? operation.value : undefined;
+
+      if (path === 'active') {
+        if (typeof value === 'boolean') {
+          active = value;
+          continue;
+        }
+      }
+
+      if (
+        (!path && typeof value === 'object' && value !== null && 'active' in value) ||
+        path === 'active'
+      ) {
+        const nestedActive =
+          typeof value === 'object' && value !== null && 'active' in value
+            ? value.active
+            : value;
+        if (typeof nestedActive === 'boolean') {
+          active = nestedActive;
+          continue;
+        }
+      }
+
+      hasNonActiveChanges = true;
+    }
+
+    return {
+      active,
+      hasNonActiveChanges,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function decodeScimAuthorizationHeader(authorizationHeader: string): ParsedScimAuthorization | null {
+  const bearerToken = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
+  if (bearerToken.length === 0) {
+    return null;
+  }
+
+  const normalized = bearerToken.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+
+  try {
+    const decoded = atob(padded);
+    const [rawToken, providerId, ...organizationParts] = decoded.split(':');
+    if (!rawToken || !providerId) {
+      return null;
+    }
+
+    const organizationId = organizationParts.join(':').trim();
+    return {
+      rawToken,
+      providerId,
+      organizationId: organizationId.length > 0 ? organizationId : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function encodeBase64Url(bytes: Uint8Array) {
+  let binary = '';
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+async function hashScimToken(scimToken: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(scimToken));
+  return encodeBase64Url(new Uint8Array(digest));
+}
+
+async function verifyGoogleHostedDomain(idToken: string): Promise<string | null> {
+  const credentials = getGoogleOAuthCredentials();
+  if (!credentials) {
+    return null;
+  }
+
+  const { payload } = await jwtVerify(idToken, GOOGLE_JWKS, {
+    audience: credentials.clientId,
+    issuer: ['https://accounts.google.com', 'accounts.google.com'],
+  });
+
+  const hostedDomain = typeof payload.hd === 'string' ? payload.hd.trim().toLowerCase() : null;
+  const emailVerified = payload.email_verified === true;
+
+  if (!emailVerified || !hostedDomain) {
+    return null;
+  }
+
+  return hostedDomain;
 }
 
 async function resolvePreferredActiveOrganizationId(
@@ -1201,6 +1741,61 @@ async function syncActiveOrganizationForUserSessions(
   );
 }
 
+async function clearEnterpriseOrganizationForUserSessions(
+  ctx: CtxWithRunMutation,
+  authUserId: string,
+  organizationId: string,
+) {
+  if (!ctx.runMutation) {
+    return;
+  }
+
+  const sessions = await fetchBetterAuthSessionsByUserId(ctx, authUserId);
+  await Promise.all(
+    sessions.map(async (session) => {
+      if (normalizeOptionalId(session.enterpriseOrganizationId) !== organizationId) {
+        return;
+      }
+
+      await updateBetterAuthSessionRecord(ctx as CtxWithRequiredRunMutation, session._id, {
+        authMethod: 'social',
+        enterpriseOrganizationId: null,
+        enterpriseProviderKey: null,
+        enterpriseProtocol: null,
+      });
+    }),
+  );
+}
+
+async function resolveScimProviderFromAuthorizationHeader(
+  ctx: GenericCtx<DataModel>,
+  authorizationHeader: string,
+) {
+  const parsed = decodeScimAuthorizationHeader(authorizationHeader);
+  if (!parsed) {
+    return null;
+  }
+
+  const scimProvider =
+    parsed.organizationId !== null
+      ? await findBetterAuthScimProviderByOrganizationId(ctx, parsed.organizationId)
+      : await findBetterAuthScimProviderById(ctx, parsed.providerId);
+
+  if (!scimProvider || scimProvider.providerId !== parsed.providerId) {
+    return null;
+  }
+
+  if (scimProvider.scimToken !== (await hashScimToken(parsed.rawToken))) {
+    return null;
+  }
+
+  return {
+    organizationId: parsed.organizationId,
+    providerId: parsed.providerId,
+    scimProvider,
+  };
+}
+
 export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
@@ -1234,6 +1829,27 @@ export const createAuth = (
       }
 
       return (await countActiveMembershipsForUser(ctx, user.id)) < 2;
+    },
+    afterSCIMTokenGenerated: async ({ organizationId, providerId, userId }) => {
+      await recordAuditEvent({
+        createdAt: Date.now(),
+        eventType: 'enterprise_scim_token_generated',
+        identifier: providerId,
+        metadata: JSON.stringify({
+          organizationId,
+          providerId,
+          userId,
+        }),
+        organizationId: organizationId ?? undefined,
+        userId,
+      });
+    },
+    assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {
+      await assertEnterpriseSCIMManagementAccess(ctx, {
+        organizationId,
+        providerId,
+        userId,
+      });
     },
     databaseHooks: {
       session: {
@@ -1321,6 +1937,30 @@ export const createAuth = (
           removedOrganizationId: member.organizationId,
         });
       },
+    },
+    resolveEnterpriseAuthSession: async ({ providerId, userEmail, userId }) => {
+      const enterpriseSession = await resolveEnterpriseAuthSessionForUser(ctx, {
+        providerId,
+        userEmail,
+        userId,
+      });
+      if (!enterpriseSession) {
+        return null;
+      }
+
+      await recordAuditEvent({
+        createdAt: Date.now(),
+        eventType: 'enterprise_login_succeeded',
+        identifier: userEmail.toLowerCase(),
+        metadata: JSON.stringify({
+          providerKey: enterpriseSession.providerKey,
+          providerLabel: getEnterpriseProviderLabel(enterpriseSession.providerKey),
+        }),
+        organizationId: enterpriseSession.organizationId,
+        userId,
+      });
+
+      return enterpriseSession;
     },
     sendResetPassword: async ({ user, url, token }, request) => {
       if (shouldSkipE2EAuthEmailForTesting(user.email)) {
@@ -1460,6 +2100,9 @@ export const createAuth = (
         },
       );
     },
+    shouldBlockPasswordAuth: async ({ email }) => {
+      return await getBlockedPasswordAuthMessage(ctx, email);
+    },
   });
 
   return betterAuth({
@@ -1538,7 +2181,7 @@ export const rateLimitAction = internalAction({
   },
 });
 
-export const enforcePdfParseRateLimit = mutation({
+export const enforcePdfParseRateLimit = action({
   args: {},
   returns: rateLimitResultValidator,
   handler: async (ctx) => {
@@ -2263,6 +2906,420 @@ export const deleteOrganizationServer = action({
   },
 });
 
+export const generateOrganizationScimTokenServer = action({
+  args: {
+    organizationId: v.string(),
+    providerKey: enterpriseProviderKeyValidator,
+  },
+  returns: betterAuthActionResultValidator(betterAuthScimTokenResultValidator),
+  handler: async (ctx, args) => {
+    if (args.providerKey !== GOOGLE_WORKSPACE_PROVIDER_KEY || !isGoogleWorkspaceOAuthConfigured()) {
+      return {
+        ok: false as const,
+        error: {
+          code: 'PROVIDER_NOT_AVAILABLE',
+          message: 'Google Workspace enterprise auth is not configured.',
+          status: 400,
+        },
+      };
+    }
+
+    try {
+      await assertOrganizationSettingsWriteAccess(ctx, args.organizationId);
+
+      return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+        return await auth.api.generateSCIMToken({
+          body: {
+            organizationId: args.organizationId,
+            providerId: getOrganizationScimProviderId(args.organizationId, args.providerKey),
+          },
+          headers,
+        });
+      });
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: normalizeBetterAuthApiError(error),
+      };
+    }
+  },
+});
+
+export const listOrganizationScimProvidersServer = action({
+  args: {},
+  returns: betterAuthActionResultValidator(betterAuthScimProviderListValidator),
+  handler: async (ctx) => {
+    try {
+      return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+        return await auth.api.listSCIMProviderConnections({
+          headers,
+        });
+      });
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: normalizeBetterAuthApiError(error),
+      };
+    }
+  },
+});
+
+export const deleteOrganizationScimProviderServer = action({
+  args: {
+    organizationId: v.string(),
+    providerKey: enterpriseProviderKeyValidator,
+  },
+  returns: betterAuthActionResultValidator(
+    v.object({
+      success: v.boolean(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    try {
+      await assertOrganizationSettingsWriteAccess(ctx, args.organizationId);
+
+      const providerId = getOrganizationScimProviderId(args.organizationId, args.providerKey);
+      const result = await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+        return await auth.api.deleteSCIMProviderConnection({
+          body: {
+            providerId,
+          },
+          headers,
+        });
+      });
+
+      if (result.ok) {
+        const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
+        await ctx.runMutation(anyApi.audit.insertAuditLog, {
+          createdAt: Date.now(),
+          eventType: 'enterprise_scim_token_deleted',
+          identifier: providerId,
+          metadata: JSON.stringify({
+            organizationId: args.organizationId,
+            providerKey: args.providerKey,
+          }),
+          organizationId: args.organizationId,
+          userId: currentUser.id,
+        });
+      }
+
+      return result;
+    } catch (error) {
+      return {
+        ok: false as const,
+        error: normalizeBetterAuthApiError(error),
+      };
+    }
+  },
+});
+
+export const handleScimOrganizationLifecycleInternal = internalAction({
+  args: {
+    authorizationHeader: v.string(),
+    baseUrl: v.string(),
+    bodyJson: v.optional(v.string()),
+    operation: scimLifecycleOperationValidator,
+    userId: v.optional(v.string()),
+  },
+  returns: scimLifecycleResponseValidator,
+  handler: async (ctx, args) => {
+    const scimContext = await resolveScimProviderFromAuthorizationHeader(ctx, args.authorizationHeader);
+    if (!scimContext) {
+      return {
+        handled: true,
+        status: 401,
+        location: null,
+        body: createScimErrorBody(401, 'Invalid SCIM token'),
+      };
+    }
+
+    if (!scimContext.organizationId) {
+      return {
+        handled: true,
+        status: 400,
+        location: null,
+        body: createScimErrorBody(400, 'Organization-scoped SCIM token required'),
+      };
+    }
+
+    const organizationId = scimContext.organizationId;
+
+    const recordScimAuditEvent = async (input: {
+      eventType: string;
+      identifier?: string;
+      metadata?: Record<string, unknown>;
+      userId?: string;
+    }) => {
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        createdAt: Date.now(),
+        eventType: input.eventType,
+        identifier: input.identifier,
+        metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
+        organizationId,
+        userId: input.userId,
+      });
+    };
+
+    const resolveUserRecord = async (userId: string | undefined) => {
+      if (!userId) {
+        return null;
+      }
+
+      return (await fetchBetterAuthUsersByIds(ctx, [userId]))[0] ?? null;
+    };
+
+    const deprovisionMembership = async (userId: string | undefined) => {
+      if (!userId) {
+        return;
+      }
+
+      const user = await resolveUserRecord(userId);
+      const membership = await findBetterAuthMember(ctx, organizationId, userId);
+      if (!membership) {
+        return;
+      }
+
+      try {
+        await deleteBetterAuthMemberRecord(ctx as CtxWithRequiredRunMutation, membership._id);
+        await ctx.runMutation(internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal, {
+          organizationId,
+          userId,
+        });
+        await syncActiveOrganizationForUserSessions(
+          ctx as unknown as CtxWithRunMutation,
+          userId,
+          {
+          removedOrganizationId: organizationId,
+          },
+        );
+        await clearEnterpriseOrganizationForUserSessions(
+          ctx as unknown as CtxWithRunMutation,
+          userId,
+          organizationId,
+        );
+        await recordScimAuditEvent({
+          eventType: 'scim_member_deprovisioned',
+          identifier: user?.email?.toLowerCase(),
+          metadata: {
+            actorType: 'scim',
+            providerId: scimContext.providerId,
+            targetMembershipId: membership._id,
+            targetUserId: userId,
+          },
+          userId,
+        });
+      } catch (error) {
+        await recordScimAuditEvent({
+          eventType: 'scim_member_deprovision_failed',
+          identifier: user?.email?.toLowerCase(),
+          metadata: {
+            actorType: 'scim',
+            error: error instanceof Error ? error.message : 'Unknown SCIM deprovision error',
+            providerId: scimContext.providerId,
+            targetMembershipId: membership._id,
+            targetUserId: userId,
+          },
+          userId,
+        });
+        throw error;
+      }
+    };
+
+    const ensureMembership = async (input: {
+      payload?: ParsedScimUserPayload | null;
+      userId?: string;
+    }) => {
+      const existingAccount =
+        input.payload?.accountId
+          ? await findBetterAuthAccountByAccountIdAndProviderId(
+              ctx,
+              input.payload.accountId,
+              scimContext.providerId,
+            )
+          : input.userId
+            ? await findBetterAuthAccountByUserIdAndProviderId(ctx, input.userId, scimContext.providerId)
+            : null;
+
+      if (!existingAccount) {
+        return null;
+      }
+
+      const user = (await fetchBetterAuthUsersByIds(ctx, [existingAccount.userId]))[0] ?? null;
+      if (!user) {
+        return null;
+      }
+
+      const existingMembership = await findBetterAuthMember(
+        ctx,
+        organizationId,
+        existingAccount.userId,
+      );
+
+      if (!existingMembership) {
+        await createBetterAuthMember(ctx as CtxWithRequiredRunMutation, {
+          organizationId,
+          userId: existingAccount.userId,
+          role: 'member',
+          createdAt: Date.now(),
+        });
+        await ctx.runMutation(internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal, {
+          organizationId,
+          userId: existingAccount.userId,
+        });
+        await recordScimAuditEvent({
+          eventType: 'scim_member_reactivated',
+          identifier: user.email?.toLowerCase(),
+          metadata: {
+            actorType: 'scim',
+            providerId: scimContext.providerId,
+            targetUserId: existingAccount.userId,
+          },
+          userId: existingAccount.userId,
+        });
+      }
+
+      if (input.payload) {
+        await Promise.all([
+          updateBetterAuthUserRecord(
+            ctx as CtxWithRequiredRunMutation,
+            user._id ?? existingAccount.userId,
+            {
+            email: input.payload.email,
+            name: input.payload.name,
+            },
+          ),
+          updateBetterAuthAccountRecord(ctx as CtxWithRequiredRunMutation, existingAccount._id, {
+            accountId: input.payload.accountId,
+          }),
+        ]);
+      }
+
+      const nextUser = input.payload
+        ? {
+            ...user,
+            email: input.payload.email,
+            name: input.payload.name,
+          }
+        : user;
+      const nextAccount = input.payload
+        ? {
+            ...existingAccount,
+            accountId: input.payload.accountId,
+          }
+        : existingAccount;
+
+      return {
+        account: nextAccount,
+        hadMembership: existingMembership !== null,
+        user: nextUser,
+      };
+    };
+
+    if (args.operation === 'delete') {
+      await deprovisionMembership(args.userId);
+      return {
+        handled: true,
+        status: 204,
+        location: null,
+        body: null,
+      };
+    }
+
+    if (args.operation === 'patch') {
+      const patch = parseScimPatchOperations(args.bodyJson);
+      if (!patch || patch.active === null) {
+        return {
+          handled: false,
+          status: 200,
+          location: null,
+          body: null,
+        };
+      }
+
+      if (patch.active === false) {
+        await deprovisionMembership(args.userId);
+        return {
+          handled: true,
+          status: 204,
+          location: null,
+          body: null,
+        };
+      }
+
+      await ensureMembership({
+        userId: args.userId,
+      });
+
+      return {
+        handled: !patch.hasNonActiveChanges,
+        status: 204,
+        location: null,
+        body: null,
+      };
+    }
+
+    if (args.operation === 'put') {
+      const ensured = await ensureMembership({
+        userId: args.userId,
+      });
+
+      if (!ensured || ensured.hadMembership) {
+        return {
+          handled: false,
+          status: 200,
+          location: null,
+          body: null,
+        };
+      }
+
+      return {
+        handled: false,
+        status: 200,
+        location: null,
+        body: null,
+      };
+    }
+
+    const payload = parseScimUserPayload(args.bodyJson);
+    if (!payload) {
+      return {
+        handled: false,
+        status: 200,
+        location: null,
+        body: null,
+      };
+    }
+
+    const ensured = await ensureMembership({
+      payload,
+    });
+    if (!ensured || ensured.hadMembership) {
+      return {
+        handled: false,
+        status: 200,
+        location: null,
+        body: null,
+      };
+    }
+
+    const resource = createScimUserResource(args.baseUrl, {
+      accountId: ensured.account.accountId,
+      createdAt: ensured.user.createdAt,
+      email: ensured.user.email,
+      name: ensured.user.name ?? ensured.user.email,
+      updatedAt: ensured.user.updatedAt,
+      userId: ensured.user._id ?? ensured.user.id ?? ensured.account.userId,
+    });
+
+    return {
+      handled: true,
+      status: 201,
+      location: resource.meta.location,
+      body: JSON.stringify(resource),
+    };
+  },
+});
+
 export const rotateKeys = internalAction({
   args: {},
   returns: v.string(),
@@ -2284,13 +3341,5 @@ export const rotateKeys = internalAction({
           key.expiresAt instanceof Date ? key.expiresAt.getTime() : (key.expiresAt ?? undefined),
       })),
     );
-  },
-});
-
-export const getCurrentUser = query({
-  args: {},
-  returns: v.union(authUserValidator, v.null()),
-  handler: async (ctx) => {
-    return authComponent.getAuthUser(ctx);
   },
 });

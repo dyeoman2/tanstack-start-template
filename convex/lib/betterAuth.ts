@@ -13,7 +13,14 @@ type CtxWithRunMutation = {
   runMutation: MutationCtx['runMutation'] | ActionCtx['runMutation'];
 };
 
-type BetterAuthModel = 'user' | 'organization' | 'member' | 'invitation' | 'session';
+type BetterAuthModel =
+  | 'user'
+  | 'account'
+  | 'organization'
+  | 'member'
+  | 'invitation'
+  | 'session'
+  | 'scimProvider';
 
 export type BetterAuthUser = BetterAuthAdapterUserDoc & {
   role?: string | string[];
@@ -53,11 +60,32 @@ export type BetterAuthInvitation = BetterAuthRecord & {
   expiresAt?: Date | string | number;
 };
 
+export type BetterAuthAccountRecord = BetterAuthRecord & {
+  accessToken?: string | null;
+  accountId: string;
+  idToken?: string | null;
+  providerId: string;
+  refreshToken?: string | null;
+  scope?: string | null;
+  userId: string;
+};
+
 export type BetterAuthSessionRecord = BetterAuthRecord & {
   activeOrganizationId?: string | null;
+  authMethod?: string | null;
+  enterpriseOrganizationId?: string | null;
+  enterpriseProviderKey?: string | null;
+  enterpriseProtocol?: string | null;
   expiresAt?: Date | string | number | null;
   token: string;
   userId: string;
+};
+
+export type BetterAuthScimProviderRecord = BetterAuthRecord & {
+  organizationId?: string | null;
+  providerId: string;
+  scimToken: string;
+  userId?: string | null;
 };
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
@@ -126,7 +154,7 @@ async function fetchAllRecords<T extends BetterAuthRecord>(
 
   while (true) {
     const rawResult: unknown = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-      model,
+      model: model as never,
       where,
       paginationOpts: {
         cursor,
@@ -374,6 +402,34 @@ export async function fetchBetterAuthInvitationsByOrganizationId(
   ]);
 }
 
+export async function findBetterAuthAccountByUserIdAndProviderId(
+  ctx: GenericCtx<DataModel>,
+  userId: string,
+  providerId: string,
+): Promise<BetterAuthAccountRecord | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'account',
+    where: [
+      { field: 'userId', operator: 'eq', value: userId },
+      { field: 'providerId', operator: 'eq', value: providerId },
+    ],
+  })) as BetterAuthAccountRecord | null;
+}
+
+export async function findBetterAuthAccountByAccountIdAndProviderId(
+  ctx: GenericCtx<DataModel>,
+  accountId: string,
+  providerId: string,
+): Promise<BetterAuthAccountRecord | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'account',
+    where: [
+      { field: 'accountId', operator: 'eq', value: accountId },
+      { field: 'providerId', operator: 'eq', value: providerId, connector: 'AND' },
+    ],
+  })) as BetterAuthAccountRecord | null;
+}
+
 export async function fetchBetterAuthInvitationsByOrganizationAndEmail(
   ctx: GenericCtx<DataModel>,
   organizationId: string,
@@ -443,4 +499,81 @@ export async function updateBetterAuthSessionRecord(
       id: 0,
     },
   });
+}
+
+export async function updateBetterAuthAccountRecord(
+  ctx: CtxWithRunMutation,
+  accountRecordId: string,
+  data: Record<string, unknown>,
+) {
+  await ctx.runMutation(components.betterAuth.adapter.updateMany, {
+    input: {
+      model: 'account',
+      update: {
+        ...data,
+        updatedAt: Date.now(),
+      },
+      where: [
+        {
+          field: '_id',
+          operator: 'eq',
+          value: accountRecordId,
+        },
+      ],
+    },
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+}
+
+export async function deleteBetterAuthMemberRecord(
+  ctx: CtxWithRunMutation,
+  memberId: string,
+) {
+  await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
+    input: {
+      model: 'member',
+      where: [
+        {
+          field: '_id',
+          operator: 'eq',
+          value: memberId,
+        },
+      ],
+    },
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+}
+
+export async function findBetterAuthScimProviderById(
+  ctx: GenericCtx<DataModel>,
+  providerId: string,
+): Promise<BetterAuthScimProviderRecord | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'scimProvider' as never,
+    where: [{ field: 'providerId', operator: 'eq', value: providerId }],
+  })) as BetterAuthScimProviderRecord | null;
+}
+
+export async function findBetterAuthScimProviderByOrganizationId(
+  ctx: GenericCtx<DataModel>,
+  organizationId: string,
+): Promise<BetterAuthScimProviderRecord | null> {
+  return (await ctx.runQuery(components.betterAuth.adapter.findOne, {
+    model: 'scimProvider' as never,
+    where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+  })) as BetterAuthScimProviderRecord | null;
+}
+
+export async function fetchAllBetterAuthScimProviders(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthScimProviderRecord[]> {
+  return await fetchAllRecords<BetterAuthScimProviderRecord>(ctx, 'scimProvider');
 }

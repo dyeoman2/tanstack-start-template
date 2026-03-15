@@ -170,10 +170,10 @@ export function OrganizationDomainManagement({
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4">
           <div className="space-y-1.5">
-            <CardTitle>Domains</CardTitle>
+            <CardTitle>Verified domains</CardTitle>
             <CardDescription>
-              Verified domains establish organization ownership and identity. They do not change
-              sign-in or membership behavior in this release.
+              Verified domains confirm which company email addresses belong to your organization.
+              They are used for SSO routing and enforcement.
             </CardDescription>
           </div>
           {canManageDomains ? (
@@ -195,19 +195,20 @@ export function OrganizationDomainManagement({
               <Loader2 className="mr-2 size-4 animate-spin" />
               Loading domains...
             </div>
+          ) : sortedDomains.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">No verified domains yet.</p>
+              <p className="mt-2">
+                Add and verify a company domain before turning on required SSO.
+              </p>
+            </div>
           ) : (
-            <>
-              {sortedDomains.length === 0 ? (
-                <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                  No domains added yet.
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {sortedDomains.map((item) => {
-                    const isPending = pendingDomainId === item.id;
+            <div className="space-y-4">
+              {sortedDomains.map((item) => {
+                const isPending = pendingDomainId === item.id;
 
-                    return (
-                      <div key={item.id} className="rounded-lg border border-border p-4">
+                return (
+                  <div key={item.id} className="rounded-lg border border-border p-4">
                         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                           <div className="space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
@@ -296,12 +297,10 @@ export function OrganizationDomainManagement({
                             ) : null}
                           </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </>
+                  </div>
+                );
+              })}
+            </div>
           )}
         </CardContent>
       </Card>

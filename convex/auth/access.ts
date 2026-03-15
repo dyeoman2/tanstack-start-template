@@ -46,9 +46,13 @@ type BetterAuthUserWithRole = {
 type BetterAuthSession = {
   _id?: string;
   id?: string;
+  authMethod?: string | null;
   userId?: string;
   activeOrganizationId?: string | null;
-  expiresAt?: string | number | Date;
+  enterpriseOrganizationId?: string | null;
+  enterpriseProviderKey?: string | null;
+  enterpriseProtocol?: string | null;
+  expiresAt?: string | number;
 };
 
 export type ACCESS = OrganizationAccess;
@@ -76,6 +80,7 @@ export const NO_ACCESS: ACCESS = {
 export type CurrentUser = Doc<'users'> & {
   activeOrganizationId: string | null;
   authUserId: string;
+  authSession: BetterAuthSession | null;
   authUser: BetterAuthUserWithRole;
   isSiteAdmin: boolean;
 };
@@ -229,6 +234,7 @@ export async function getCurrentUserOrNull(
     ...user,
     activeOrganizationId,
     authUserId,
+    authSession: session,
     authUser,
     isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
   };
@@ -251,6 +257,7 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx | MutationCtx): Promis
     ...user,
     activeOrganizationId,
     authUserId,
+    authSession: session,
     authUser,
     isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
   };

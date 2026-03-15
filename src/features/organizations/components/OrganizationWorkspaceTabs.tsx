@@ -14,9 +14,10 @@ export function OrganizationWorkspaceTabs({
   const breadcrumbName =
     organizationName ?? getOrganizationBreadcrumbName(location.state, slug);
   const tabs = [
-    { label: 'Settings', to: '/app/organizations/$slug/settings' as const },
-    { label: 'Policies', to: '/app/organizations/$slug/policies' as const },
-    { label: 'Domains', to: '/app/organizations/$slug/domains' as const },
+    { label: 'General', to: '/app/organizations/$slug/settings' as const },
+    { label: 'Members', to: '/app/organizations/$slug/members' as const },
+    { label: 'SSO & Provisioning', to: '/app/organizations/$slug/identity' as const },
+    { label: 'Access policies', to: '/app/organizations/$slug/policies' as const },
     { label: 'Audit', to: '/app/organizations/$slug/audit' as const },
   ];
 

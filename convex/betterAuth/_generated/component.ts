@@ -54,7 +54,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | {
                 data: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -198,6 +202,15 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   lastRequest?: null | number;
                 };
                 model: "rateLimit";
+              }
+            | {
+                data: {
+                  organizationId?: null | string;
+                  providerId: string;
+                  scimToken: string;
+                  userId?: null | string;
+                };
+                model: "scimProvider";
               };
           onCreateHandle?: string;
           select?: Array<string>;
@@ -268,6 +281,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -659,6 +676,37 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -756,6 +804,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1167,6 +1219,37 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | Array<number>
                     | null;
                 }>;
+              }
+            | {
+                model: "scimProvider";
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
               };
           onDeleteHandle?: string;
         },
@@ -1193,7 +1276,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | "organization"
             | "member"
             | "invitation"
-            | "rateLimit";
+            | "rateLimit"
+            | "scimProvider";
           offset?: number;
           paginationOpts: {
             cursor: string | null;
@@ -1251,7 +1335,8 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
             | "organization"
             | "member"
             | "invitation"
-            | "rateLimit";
+            | "rateLimit"
+            | "scimProvider";
           select?: Array<string>;
           where?: Array<{
             connector?: "AND" | "OR";
@@ -1352,7 +1437,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "session";
                 update: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt?: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -1373,6 +1462,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1866,6 +1959,43 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                update: {
+                  organizationId?: null | string;
+                  providerId?: string;
+                  scimToken?: string;
+                  userId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"
@@ -1972,7 +2102,11 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 model: "session";
                 update: {
                   activeOrganizationId?: null | string;
+                  authMethod?: null | string;
                   createdAt?: number;
+                  enterpriseOrganizationId?: null | string;
+                  enterpriseProtocol?: null | string;
+                  enterpriseProviderKey?: null | string;
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
@@ -1993,6 +2127,10 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "userId"
                     | "impersonatedBy"
                     | "activeOrganizationId"
+                    | "authMethod"
+                    | "enterpriseOrganizationId"
+                    | "enterpriseProviderKey"
+                    | "enterpriseProtocol"
                     | "_id";
                   operator?:
                     | "lt"
@@ -2486,6 +2624,43 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                 where?: Array<{
                   connector?: "AND" | "OR";
                   field: "key" | "count" | "lastRequest" | "_id";
+                  operator?:
+                    | "lt"
+                    | "lte"
+                    | "gt"
+                    | "gte"
+                    | "eq"
+                    | "in"
+                    | "not_in"
+                    | "ne"
+                    | "contains"
+                    | "starts_with"
+                    | "ends_with";
+                  value:
+                    | string
+                    | number
+                    | boolean
+                    | Array<string>
+                    | Array<number>
+                    | null;
+                }>;
+              }
+            | {
+                model: "scimProvider";
+                update: {
+                  organizationId?: null | string;
+                  providerId?: string;
+                  scimToken?: string;
+                  userId?: null | string;
+                };
+                where?: Array<{
+                  connector?: "AND" | "OR";
+                  field:
+                    | "providerId"
+                    | "scimToken"
+                    | "organizationId"
+                    | "userId"
+                    | "_id";
                   operator?:
                     | "lt"
                     | "lte"

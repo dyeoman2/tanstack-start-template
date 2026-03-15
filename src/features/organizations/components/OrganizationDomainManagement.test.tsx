@@ -95,10 +95,25 @@ describe('OrganizationDomainManagement', () => {
   it('renders verification details for existing domains', () => {
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
+    expect(screen.getByText('Verified domains')).toBeInTheDocument();
     expect(screen.getByText('example.com')).toBeInTheDocument();
     expect(screen.getByText('_ba-verify.example.com')).toBeInTheDocument();
     expect(screen.getByText('better-auth-verify=token-1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add domain/i })).toBeEnabled();
+  });
+
+  it('renders the updated empty-state guidance', () => {
+    useQueryMock.mockReturnValue({
+      ...domainResponse,
+      domains: [],
+    });
+
+    render(<OrganizationDomainManagement slug="cottage-hospital" />);
+
+    expect(screen.getByText('No verified domains yet.')).toBeInTheDocument();
+    expect(
+      screen.getByText('Add and verify a company domain before turning on required SSO.'),
+    ).toBeInTheDocument();
   });
 
   it('opens the add-domain modal and enables creation after input', async () => {

@@ -80,10 +80,6 @@ vi.mock('~/components/ui/toast', () => ({
   }),
 }));
 
-vi.mock('~/features/organizations/components/OrganizationDomainManagement', () => ({
-  OrganizationDomainManagement: () => <div>Organization domains</div>,
-}));
-
 vi.mock('~/features/organizations/components/OrganizationWorkspaceTabs', () => ({
   OrganizationWorkspaceTabs: () => <div>Organization tabs</div>,
 }));
@@ -98,49 +94,6 @@ describe('OrganizationSettingsManagement', () => {
     secondarySortOrder: 'asc' as const,
     search: '',
     kind: 'all' as const,
-  };
-
-  const directoryResponse = {
-    organization: {
-      id: 'org-1',
-      slug: 'cottage-hospital',
-      name: 'Cottage Hospital',
-      logo: null,
-    },
-    access: {
-      admin: true,
-      delete: true,
-      edit: true,
-      view: true,
-      siteAdmin: true,
-    },
-    capabilities: {
-      availableInviteRoles: ['owner', 'admin', 'member'],
-      canInvite: true,
-      canUpdateSettings: true,
-      canDeleteOrganization: true,
-      canLeaveOrganization: false,
-      canManageMembers: true,
-      canManagePolicies: true,
-    },
-    policies: {
-      invitePolicy: 'owners_admins',
-      verifiedDomainsOnly: false,
-      memberCap: null,
-      mfaRequired: false,
-    },
-    viewerRole: 'site-admin' as const,
-    rows: [],
-    counts: {
-      members: 0,
-      invites: 0,
-    },
-    pagination: {
-      page: 1,
-      pageSize: 10,
-      total: 0,
-      totalPages: 0,
-    },
   };
 
   beforeEach(() => {
@@ -183,40 +136,12 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'member' as const,
       canManage: false,
     };
-    const memberDirectoryResponse = {
-      ...directoryResponse,
-      access: {
-        admin: false,
-        delete: false,
-        edit: false,
-        view: true,
-        siteAdmin: false,
-      },
-      capabilities: {
-        availableInviteRoles: [],
-        canInvite: false,
-        canUpdateSettings: false,
-        canDeleteOrganization: false,
-        canLeaveOrganization: true,
-        canManageMembers: false,
-        canManagePolicies: false,
-      },
-      policies: {
-        invitePolicy: 'owners_admins',
-        verifiedDomainsOnly: false,
-        memberCap: null,
-        mfaRequired: false,
-      },
-      viewerRole: 'member' as const,
-    };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? memberDirectoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     expect(screen.getByText('Management access required')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /actions/i })).toBeInTheDocument();
+    expect(screen.getByText('Danger zone')).toBeInTheDocument();
   });
 
   it('uses the seeded organization name while settings are loading', () => {
@@ -234,7 +159,7 @@ describe('OrganizationSettingsManagement', () => {
     expect(screen.queryByRole('heading', { name: 'Loading organization' })).not.toBeInTheDocument();
   });
 
-  it('renders the actions menu and updates an organization from the edit modal', async () => {
+  it('renders the profile card and updates an organization from the edit modal', async () => {
     const user = userEvent.setup();
 
     const settingsResponse = {
@@ -270,21 +195,17 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'site-admin',
       canManage: true,
     };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? directoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
     updateSettingsMock.mockResolvedValueOnce({ success: true });
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
+    expect(screen.getByText('Organization profile')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit profile/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /leave organization/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete organization/i })).toBeInTheDocument();
 
-    expect(screen.getByRole('menuitem', { name: /^edit$/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /invite member/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /leave organization/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /^delete$/i })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('menuitem', { name: /^edit$/i }));
+    await user.click(screen.getAllByRole('button', { name: /edit profile/i })[0]!);
 
     const nameInput = await screen.findByLabelText('Name');
     await user.clear(nameInput);
@@ -343,16 +264,12 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'site-admin' as const,
       canManage: true,
     };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? directoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
-
-    expect(screen.queryByRole('menuitem', { name: /leave organization/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /^delete$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /leave organization/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /delete organization/i })).toBeInTheDocument();
   });
 
   it('hides delete for organization admins while keeping management actions', async () => {
@@ -391,47 +308,16 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'admin' as const,
       canManage: true,
     };
-    const adminDirectoryResponse = {
-      ...directoryResponse,
-      access: {
-        admin: true,
-        delete: false,
-        edit: true,
-        view: true,
-        siteAdmin: false,
-      },
-      capabilities: {
-        availableInviteRoles: ['admin', 'member'],
-        canInvite: true,
-        canUpdateSettings: true,
-        canDeleteOrganization: false,
-        canLeaveOrganization: true,
-        canManageMembers: true,
-        canManagePolicies: false,
-      },
-      policies: {
-        invitePolicy: 'owners_admins',
-        verifiedDomainsOnly: false,
-        memberCap: null,
-        mfaRequired: false,
-      },
-      viewerRole: 'admin' as const,
-    };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? adminDirectoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
-
-    expect(screen.getByRole('menuitem', { name: /^edit$/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /invite member/i })).toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /leave organization/i })).toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /^delete$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit profile/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /leave organization/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete organization/i })).not.toBeInTheDocument();
   });
 
-  it('opens the delete confirmation dialog from the actions menu', async () => {
+  it('opens the delete confirmation dialog from the danger zone', async () => {
     const user = userEvent.setup();
 
     const settingsResponse = {
@@ -467,14 +353,11 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'site-admin',
       canManage: true,
     };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? directoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
-    await user.click(screen.getByRole('menuitem', { name: /^delete$/i }));
+    await user.click(screen.getByRole('button', { name: /delete organization/i }));
 
     expect(screen.getByRole('heading', { name: /delete organization/i })).toBeInTheDocument();
     expect(
@@ -482,7 +365,7 @@ describe('OrganizationSettingsManagement', () => {
     ).toBeInTheDocument();
   });
 
-  it('allows members to leave an organization from the actions menu', async () => {
+  it('allows members to leave an organization from the danger zone', async () => {
     const user = userEvent.setup();
 
     const settingsResponse = {
@@ -518,35 +401,7 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'member' as const,
       canManage: false,
     };
-    const memberDirectoryResponse = {
-      ...directoryResponse,
-      access: {
-        admin: false,
-        delete: false,
-        edit: false,
-        view: true,
-        siteAdmin: false,
-      },
-      capabilities: {
-        availableInviteRoles: [],
-        canInvite: false,
-        canUpdateSettings: false,
-        canDeleteOrganization: false,
-        canLeaveOrganization: true,
-        canManageMembers: false,
-        canManagePolicies: false,
-      },
-      policies: {
-        invitePolicy: 'owners_admins',
-        verifiedDomainsOnly: false,
-        memberCap: null,
-        mfaRequired: false,
-      },
-      viewerRole: 'member' as const,
-    };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? memberDirectoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
     leaveOrganizationMock.mockResolvedValueOnce({
       success: true,
       nextOrganizationId: 'org-2',
@@ -554,8 +409,7 @@ describe('OrganizationSettingsManagement', () => {
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
-    await user.click(screen.getByRole('menuitem', { name: /leave organization/i }));
+    await user.click(screen.getByRole('button', { name: /leave organization/i }));
     await user.type(screen.getByPlaceholderText('Cottage Hospital'), 'Cottage Hospital');
     await user.click(screen.getByRole('button', { name: /^leave organization$/i }));
 
@@ -569,9 +423,7 @@ describe('OrganizationSettingsManagement', () => {
     expect(showToastMock).toHaveBeenCalledWith('You left the organization.', 'success');
   });
 
-  it('does not show management actions for members who can only leave', async () => {
-    const user = userEvent.setup();
-
+  it('shows only the leave control for members who can only leave', () => {
     const settingsResponse = {
       organization: {
         id: 'org-1',
@@ -605,43 +457,12 @@ describe('OrganizationSettingsManagement', () => {
       viewerRole: 'member' as const,
       canManage: false,
     };
-    const memberDirectoryResponse = {
-      ...directoryResponse,
-      access: {
-        admin: false,
-        delete: false,
-        edit: false,
-        view: true,
-        siteAdmin: false,
-      },
-      capabilities: {
-        availableInviteRoles: [],
-        canInvite: false,
-        canUpdateSettings: false,
-        canDeleteOrganization: false,
-        canLeaveOrganization: true,
-        canManageMembers: false,
-        canManagePolicies: false,
-      },
-      policies: {
-        invitePolicy: 'owners_admins',
-        verifiedDomainsOnly: false,
-        memberCap: null,
-        mfaRequired: false,
-      },
-      viewerRole: 'member' as const,
-    };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? memberDirectoryResponse : settingsResponse,
-    );
+    useQueryMock.mockReturnValue(settingsResponse);
 
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
-    await user.click(screen.getByRole('button', { name: /actions/i }));
-
-    expect(screen.queryByRole('menuitem', { name: /^edit$/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /invite member/i })).not.toBeInTheDocument();
-    expect(screen.queryByRole('menuitem', { name: /^delete$/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('menuitem', { name: /leave organization/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /edit profile/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /delete organization/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /leave organization/i })).toBeInTheDocument();
   });
 });

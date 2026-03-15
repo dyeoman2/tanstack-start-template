@@ -2,10 +2,10 @@ import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { Loader2, LogOut, MoreHorizontal, Pencil, Trash2, UserRoundPlus } from 'lucide-react';
+import { Loader2, LogOut, Pencil, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Button } from '~/components/ui/button';
-import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import {
   Dialog,
@@ -15,17 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '~/components/ui/dropdown-menu';
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
-import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
@@ -38,7 +30,7 @@ import {
 import { leaveOrganizationServerFn } from '~/features/organizations/server/organization-membership';
 
 export function OrganizationSettingsManagement({
-  searchParams,
+  searchParams: _searchParams,
   slug,
 }: {
   searchParams: OrganizationDirectorySearchParams;
@@ -58,7 +50,6 @@ export function OrganizationSettingsManagement({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
-  const [isInviteDialogOpen, setIsInviteDialogOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -102,11 +93,9 @@ export function OrganizationSettingsManagement({
   }
 
   const canUpdateSettings = settings.capabilities.canUpdateSettings;
-  const canInvite = settings.capabilities.canInvite;
-  const canManageMembers = settings.capabilities.canManageMembers;
   const canLeaveOrganization = settings.capabilities.canLeaveOrganization;
   const canDelete = settings.capabilities.canDeleteOrganization;
-  const canManage = canUpdateSettings || canManageMembers;
+  const canShowAccessWarning = !canUpdateSettings;
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -190,84 +179,81 @@ export function OrganizationSettingsManagement({
     }
   };
 
-  const canShowActions = canManage || canLeaveOrganization;
-
   return (
     <div className="space-y-6">
       <OrganizationWorkspaceNav
         title={settings.organization.name}
-        description="Manage organization settings with site-admin-aware controls."
+        description="Manage the organization profile and sensitive lifecycle controls."
         actions={
-          canShowActions ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" variant="outline" size="sm">
-                  <MoreHorizontal className="size-4" />
-                  Actions
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                {canUpdateSettings ? (
-                  <DropdownMenuItem onSelect={() => setIsEditDialogOpen(true)}>
-                    <Pencil className="size-4" />
-                    Edit
-                  </DropdownMenuItem>
-                ) : null}
-                {canInvite ? (
-                  <DropdownMenuItem onSelect={() => setIsInviteDialogOpen(true)}>
-                    <UserRoundPlus className="size-4" />
-                    Invite member
-                  </DropdownMenuItem>
-                ) : null}
-                {(canUpdateSettings || canInvite) && (canLeaveOrganization || canDelete) ? (
-                  <DropdownMenuSeparator />
-                ) : null}
-                {canLeaveOrganization ? (
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => setIsLeaveDialogOpen(true)}
-                  >
-                    <LogOut className="size-4" />
-                    Leave organization
-                  </DropdownMenuItem>
-                ) : null}
-                {canDelete ? (
-                  <DropdownMenuItem
-                    variant="destructive"
-                    onSelect={() => setIsDeleteDialogOpen(true)}
-                  >
-                    <Trash2 className="size-4" />
-                    Delete
-                  </DropdownMenuItem>
-                ) : null}
-              </DropdownMenuContent>
-            </DropdownMenu>
+          canUpdateSettings ? (
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditDialogOpen(true)}>
+              <Pencil className="size-4" />
+              Edit profile
+            </Button>
           ) : undefined
         }
       />
       <OrganizationWorkspaceTabs slug={slug} organizationName={settings.organization.name} />
 
-      {!canManage ? (
+      {canShowAccessWarning ? (
         <Card>
           <CardHeader>
             <CardTitle>Management access required</CardTitle>
             <CardDescription>
-              Organization owners, organization admins, and site admins can edit settings here.
+              Organization owners, organization admins, and site admins can manage general settings
+              here.
             </CardDescription>
           </CardHeader>
         </Card>
       ) : null}
 
-      {canManageMembers ? (
-        <OrganizationMembersManagement
-          slug={slug}
-          searchParams={searchParams}
-          showHeader={false}
-          inviteDialogOpen={isInviteDialogOpen}
-          onInviteDialogOpenChange={(open) => {
-            setIsInviteDialogOpen(open);
-          }}
-        />
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization profile</CardTitle>
+          <CardDescription>
+            Update the core identity used across the app for this organization.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border border-border p-4">
+              <p className="text-sm font-medium text-foreground">Display name</p>
+              <p className="mt-2 text-sm text-muted-foreground">{settings.organization.name}</p>
+            </div>
+            <div className="rounded-lg border border-border p-4">
+              <p className="text-sm font-medium text-foreground">Logo URL</p>
+              <p className="mt-2 break-all text-sm text-muted-foreground">
+                {settings.organization.logo ?? 'Not set'}
+              </p>
+            </div>
+          </div>
+
+        </CardContent>
+      </Card>
+
+      {(canLeaveOrganization || canDelete) ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Danger zone</CardTitle>
+            <CardDescription>
+              Destructive organization actions live here so they remain visible and clearly scoped.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-3">
+            {canLeaveOrganization ? (
+              <Button type="button" variant="outline" onClick={() => setIsLeaveDialogOpen(true)}>
+                <LogOut className="size-4" />
+                Leave organization
+              </Button>
+            ) : null}
+            {canDelete ? (
+              <Button type="button" variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+                <Trash2 className="size-4" />
+                Delete organization
+              </Button>
+            ) : null}
+          </CardContent>
+        </Card>
       ) : null}
       <Dialog
         open={isEditDialogOpen}

@@ -94,6 +94,10 @@ describe('OrganizationPoliciesPage', () => {
         verifiedDomainsOnly: false,
         memberCap: null,
         mfaRequired: false,
+        enterpriseAuthMode: 'off',
+        enterpriseProviderKey: null,
+        enterpriseProtocol: null,
+        allowBreakGlassPasswordLogin: true,
       },
       isMember: true,
       viewerRole: 'site-admin' as const,
@@ -111,7 +115,7 @@ describe('OrganizationPoliciesPage', () => {
     await user.clear(screen.getByLabelText(/member cap/i));
     await user.type(screen.getByLabelText(/member cap/i), '25');
     await user.click(screen.getByRole('checkbox', { name: /require mfa/i }));
-    await user.click(screen.getByRole('button', { name: /save policies/i }));
+    await user.click(screen.getByRole('button', { name: /save access policies/i }));
 
     await waitFor(() => {
       expect(updatePoliciesMock).toHaveBeenCalledWith({
@@ -121,6 +125,10 @@ describe('OrganizationPoliciesPage', () => {
           verifiedDomainsOnly: true,
           memberCap: 25,
           mfaRequired: true,
+          enterpriseAuthMode: 'off',
+          enterpriseProviderKey: null,
+          enterpriseProtocol: null,
+          allowBreakGlassPasswordLogin: true,
         },
       });
     });

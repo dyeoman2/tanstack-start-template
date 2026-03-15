@@ -58,18 +58,22 @@ const KIND_FILTER_OPTIONS: TableFilterOption<OrganizationDirectoryKind>[] = [
 
 export function OrganizationMembersManagement({
   actions,
+  fallbackOrganizationName,
   inviteDialogOpen: inviteDialogOpenProp,
   onInviteDialogOpenChange,
   searchParams,
   showHeader = true,
   slug,
+  subnav,
 }: {
   actions?: ReactNode;
+  fallbackOrganizationName?: string;
   inviteDialogOpen?: boolean;
   onInviteDialogOpenChange?: (open: boolean) => void;
   searchParams: OrganizationDirectorySearchParams;
   showHeader?: boolean;
   slug: string;
+  subnav?: ReactNode;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -163,7 +167,7 @@ export function OrganizationMembersManagement({
   };
   const capabilities: OrganizationCapabilities | undefined = directory?.capabilities;
   const canInvite = capabilities?.canInvite ?? false;
-  const organizationName = directory?.organization.name ?? 'Organization';
+  const organizationName = directory?.organization.name ?? fallbackOrganizationName ?? 'Organization';
   const policies = directory?.policies;
   const setInviteDialogOpen = (open: boolean) => {
     onInviteDialogOpenChange?.(open);
@@ -183,7 +187,7 @@ export function OrganizationMembersManagement({
 
   const handleSearchChange = (search: string) => {
     void navigate({
-      to: '/app/organizations/$slug/settings',
+      to: '/app/organizations/$slug/members',
       params: { slug },
       search: {
         ...searchParams,
@@ -195,7 +199,7 @@ export function OrganizationMembersManagement({
 
   const handleKindChange = (kind: OrganizationDirectoryKind) => {
     void navigate({
-      to: '/app/organizations/$slug/settings',
+      to: '/app/organizations/$slug/members',
       params: { slug },
       search: {
         ...searchParams,
@@ -354,8 +358,7 @@ export function OrganizationMembersManagement({
         'success',
       );
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : 'Failed to update member status';
+      const message = error instanceof Error ? error.message : 'Failed to update member status';
       setMemberStatusError(message);
       showToast(message, 'error');
     } finally {
@@ -466,7 +469,9 @@ export function OrganizationMembersManagement({
     });
   };
 
-  const handleBulkAction = async (action: 'revoke-invites' | 'resend-invites' | 'remove-members') => {
+  const handleBulkAction = async (
+    action: 'revoke-invites' | 'resend-invites' | 'remove-members',
+  ) => {
     if (!directory) {
       return;
     }
@@ -550,6 +555,7 @@ export function OrganizationMembersManagement({
           }
         />
       ) : null}
+      {subnav}
 
       <div className="grid gap-4 md:grid-cols-2">
         <SummaryCard label="Members" value={directory?.counts.members} isLoading={isLoading} />
@@ -579,23 +585,15 @@ export function OrganizationMembersManagement({
               ariaLabel="Search organization members and invitations"
             />
             <Button type="button" variant="outline" onClick={handleExport} disabled={isExporting}>
-              {isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              {isExporting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Download className="size-4" />
+              )}
               <span className="sr-only">Export CSV</span>
             </Button>
           </div>
         </div>
-
-        {policies ? (
-          <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-            <p className="font-medium text-foreground">Invite policy</p>
-            <p>
-              {formatInvitePolicy(policies.invitePolicy)}
-              {policies.verifiedDomainsOnly ? ' · Verified domains required' : ''}
-              {policies.memberCap !== null ? ` · Member cap ${policies.memberCap}` : ''}
-              {policies.mfaRequired ? ' · MFA required on join' : ''}
-            </p>
-          </div>
-        ) : null}
 
         {selectedRows.length > 0 ? (
           <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -1011,12 +1009,10 @@ function getMemberStatusDialogActionLabel(
 }
 
 function getMemberStatusDialogDescription(
-  state:
-    | {
-        action: 'suspend' | 'deactivate' | 'reactivate';
-        row: Extract<OrganizationDirectoryRow, { kind: 'member' }>;
-      }
-    | null,
+  state: {
+    action: 'suspend' | 'deactivate' | 'reactivate';
+    row: Extract<OrganizationDirectoryRow, { kind: 'member' }>;
+  } | null,
   organizationName: string,
 ) {
   if (!state) {
@@ -1033,8 +1029,4 @@ function getMemberStatusDialogDescription(
     default:
       return 'Update this member status.';
   }
-}
-
-function formatInvitePolicy(value: OrganizationInvitePolicy) {
-  return value === 'owners_only' ? 'Only owners can invite' : 'Owners and admins can invite';
 }

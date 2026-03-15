@@ -151,6 +151,17 @@ export default defineSchema({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
+    enterpriseProviderKey: v.union(
+      v.literal('google-workspace'),
+      v.literal('entra'),
+      v.literal('okta'),
+      v.null(),
+    ),
+    enterpriseProtocol: v.union(v.literal('oidc'), v.null()),
+    enterpriseEnabledAt: v.union(v.number(), v.null()),
+    enterpriseEnforcedAt: v.union(v.number(), v.null()),
+    allowBreakGlassPasswordLogin: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

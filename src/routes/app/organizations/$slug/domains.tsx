@@ -1,14 +1,11 @@
-import { createFileRoute } from '@tanstack/react-router';
-import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
-import { OrganizationDomainsPage } from '~/features/organizations/components/OrganizationDomainsPage';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
 export const Route = createFileRoute('/app/organizations/$slug/domains')({
-  component: OrganizationDomainsRoute,
-  errorComponent: DashboardErrorBoundary,
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      to: '/app/organizations/$slug/identity',
+      params,
+      replace: true,
+    });
+  },
 });
-
-function OrganizationDomainsRoute() {
-  const { slug } = Route.useParams();
-
-  return <OrganizationDomainsPage slug={slug} />;
-}

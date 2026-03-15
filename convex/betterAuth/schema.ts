@@ -43,6 +43,10 @@ export const tables = {
     userId: v.string(),
     impersonatedBy: v.optional(v.union(v.null(), v.string())),
     activeOrganizationId: v.optional(v.union(v.null(), v.string())),
+    authMethod: v.optional(v.union(v.null(), v.string())),
+    enterpriseOrganizationId: v.optional(v.union(v.null(), v.string())),
+    enterpriseProviderKey: v.optional(v.union(v.null(), v.string())),
+    enterpriseProtocol: v.optional(v.union(v.null(), v.string())),
   })
     .index('expiresAt', ['expiresAt'])
     .index('expiresAt_userId', ['expiresAt', 'userId'])
@@ -180,6 +184,16 @@ export const tables = {
     count: v.optional(v.union(v.null(), v.number())),
     lastRequest: v.optional(v.union(v.null(), v.number())),
   }).index('key', ['key']),
+  scimProvider: defineTable({
+    providerId: v.string(),
+    scimToken: v.string(),
+    organizationId: v.optional(v.union(v.null(), v.string())),
+    userId: v.optional(v.union(v.null(), v.string())),
+  })
+    .index('providerId', ['providerId'])
+    .index('organizationId', ['organizationId'])
+    .index('userId', ['userId'])
+    .index('scimToken', ['scimToken']),
 };
 
 const schema = defineSchema(tables);

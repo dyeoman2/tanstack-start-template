@@ -270,7 +270,7 @@ describe('OrganizationMembersManagement', () => {
     });
   });
 
-  it('navigates sorting changes to the consolidated settings route', async () => {
+  it('navigates sorting changes to the dedicated members route', async () => {
     const user = userEvent.setup();
 
     render(
@@ -292,7 +292,7 @@ describe('OrganizationMembersManagement', () => {
     await user.click(screen.getByRole('button', { name: /^email$/i }));
 
     expect(navigateMock).toHaveBeenCalledWith({
-      to: '/app/organizations/$slug/settings',
+      to: '/app/organizations/$slug/members',
       params: { slug: 'cottage-hospital' },
       search: {
         page: 1,

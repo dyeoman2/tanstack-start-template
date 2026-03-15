@@ -355,6 +355,36 @@ export function getE2ETestSecret(): string {
   return getRequiredServerEnv('E2E_TEST_SECRET');
 }
 
+function readOptionalServerEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value ? value : null;
+}
+
+export function getGoogleOAuthCredentials(): {
+  clientId: string;
+  clientSecret: string;
+} | null {
+  const clientId =
+    readOptionalServerEnv('GOOGLE_CLIENT_ID') ??
+    readOptionalServerEnv('BETTER_AUTH_GOOGLE_CLIENT_ID');
+  const clientSecret =
+    readOptionalServerEnv('GOOGLE_CLIENT_SECRET') ??
+    readOptionalServerEnv('BETTER_AUTH_GOOGLE_CLIENT_SECRET');
+
+  if (!clientId || !clientSecret) {
+    return null;
+  }
+
+  return {
+    clientId,
+    clientSecret,
+  };
+}
+
+export function isGoogleWorkspaceOAuthConfigured(): boolean {
+  return getGoogleOAuthCredentials() !== null;
+}
+
 export function getE2EPrincipalConfig(principal: E2EPrincipalType): E2EPrincipalConfig {
   if (principal === 'admin') {
     return {

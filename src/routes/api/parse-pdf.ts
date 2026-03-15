@@ -33,7 +33,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           }
 
           try {
-            await convexAuthReactStart.fetchAuthMutation(api.auth.enforcePdfParseRateLimit, {});
+            await convexAuthReactStart.fetchAuthAction(api.auth.enforcePdfParseRateLimit, {});
           } catch (error) {
             const message = error instanceof Error ? error.message : 'Too many PDF parse requests';
             return Response.json({ error: message }, { status: 429 });

@@ -445,6 +445,47 @@ export const directoryOrganizationValidator = v.object({
   isSiteAdminView: v.boolean(),
 });
 
+export const organizationEnterpriseAuthModeValidator = v.union(
+  v.literal('off'),
+  v.literal('optional'),
+  v.literal('required'),
+);
+
+export const organizationEnterpriseProviderKeyValidator = v.union(
+  v.literal('google-workspace'),
+  v.literal('entra'),
+  v.literal('okta'),
+);
+
+export const organizationEnterpriseAuthProtocolValidator = v.literal('oidc');
+
+export const organizationEnterpriseProviderStatusValidator = v.union(
+  v.literal('active'),
+  v.literal('not_configured'),
+  v.literal('coming_soon'),
+);
+
+export const organizationEnterpriseProviderOptionValidator = v.object({
+  key: organizationEnterpriseProviderKeyValidator,
+  label: v.string(),
+  protocol: organizationEnterpriseAuthProtocolValidator,
+  status: organizationEnterpriseProviderStatusValidator,
+  selectable: v.boolean(),
+});
+
+export const organizationEnterpriseAuthSummaryValidator = v.union(
+  v.null(),
+  v.object({
+    providerKey: organizationEnterpriseProviderKeyValidator,
+    providerLabel: v.string(),
+    protocol: organizationEnterpriseAuthProtocolValidator,
+    providerStatus: organizationEnterpriseProviderStatusValidator,
+    managedDomains: v.array(v.string()),
+    scimProviderId: v.string(),
+    scimConnectionConfigured: v.boolean(),
+  }),
+);
+
 export const organizationSettingsValidator = v.object({
   organization: organizationSummaryValidator,
   access: organizationAccessValidator,
@@ -453,7 +494,15 @@ export const organizationSettingsValidator = v.object({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
+    enterpriseProviderKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
+    enterpriseProtocol: v.union(organizationEnterpriseAuthProtocolValidator, v.null()),
+    enterpriseEnabledAt: v.union(v.number(), v.null()),
+    enterpriseEnforcedAt: v.union(v.number(), v.null()),
+    allowBreakGlassPasswordLogin: v.boolean(),
   }),
+  enterpriseAuth: organizationEnterpriseAuthSummaryValidator,
+  availableEnterpriseProviders: v.array(organizationEnterpriseProviderOptionValidator),
   capabilities: v.object({
     availableInviteRoles: v.array(organizationRoleValidator),
     canInvite: v.boolean(),
@@ -515,6 +564,12 @@ export const organizationDirectoryResponseValidator = v.object({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
+    enterpriseProviderKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
+    enterpriseProtocol: v.union(organizationEnterpriseAuthProtocolValidator, v.null()),
+    enterpriseEnabledAt: v.union(v.number(), v.null()),
+    enterpriseEnforcedAt: v.union(v.number(), v.null()),
+    allowBreakGlassPasswordLogin: v.boolean(),
   }),
   capabilities: v.object({
     availableInviteRoles: v.array(organizationRoleValidator),
@@ -577,11 +632,37 @@ export const organizationDomainValidator = v.object({
 
 export const organizationDomainsResponseValidator = v.object({
   organization: organizationSummaryValidator,
+  enterpriseAuth: organizationEnterpriseAuthSummaryValidator,
   capabilities: v.object({
     canManageDomains: v.boolean(),
     canViewAudit: v.boolean(),
   }),
   domains: v.array(organizationDomainValidator),
+});
+
+export const organizationEnterpriseAuthResolutionResultValidator = v.union(
+  v.null(),
+  v.object({
+    organizationId: v.string(),
+    organizationSlug: v.string(),
+    organizationName: v.string(),
+    providerKey: organizationEnterpriseProviderKeyValidator,
+    providerLabel: v.string(),
+    providerStatus: organizationEnterpriseProviderStatusValidator,
+    protocol: organizationEnterpriseAuthProtocolValidator,
+    enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
+    managedDomain: v.string(),
+    verifiedDomains: v.array(v.string()),
+    canUsePasswordFallback: v.boolean(),
+  }),
+);
+
+export const organizationEnterpriseAccessResultValidator = v.object({
+  allowed: v.boolean(),
+  reason: v.union(v.string(), v.null()),
+  requiresEnterpriseAuth: v.boolean(),
+  providerKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
+  enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
 });
 
 export const organizationDomainVerificationResultValidator = v.object({
@@ -650,6 +731,20 @@ export const currentAppUserValidator = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
   activeOrganizationId: v.union(v.string(), v.null()),
+  authSession: v.union(
+    v.null(),
+    v.object({
+      _id: v.optional(v.string()),
+      id: v.optional(v.string()),
+      authMethod: v.optional(v.union(v.string(), v.null())),
+      userId: v.optional(v.string()),
+      activeOrganizationId: v.optional(v.union(v.string(), v.null())),
+      enterpriseOrganizationId: v.optional(v.union(v.string(), v.null())),
+      enterpriseProviderKey: v.optional(v.union(v.string(), v.null())),
+      enterpriseProtocol: v.optional(v.union(v.string(), v.null())),
+      expiresAt: v.optional(v.union(v.number(), v.string())),
+    }),
+  ),
   authUser: authUserValidator,
   isSiteAdmin: v.boolean(),
 });

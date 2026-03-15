@@ -92,6 +92,10 @@ export type BetterAuthOrganizationSlugCheckResult = {
   status: boolean;
 };
 
+export type BetterAuthScimTokenResult = {
+  scimToken: string;
+};
+
 function toServerError(error: BetterAuthActionError, mapErrorMessage?: BetterAuthErrorMapper): ServerError {
   return new ServerError(mapErrorMessage?.(error) ?? error.message, error.status, error);
 }
@@ -390,6 +394,32 @@ export async function deleteBetterAuthOrganization(
     await convexAuthReactStart.fetchAuthAction(api.auth.deleteOrganizationServer, {
       organizationId,
     }),
+    mapErrorMessage,
+  );
+}
+
+export async function generateBetterAuthOrganizationScimToken(
+  input: {
+    organizationId: string;
+    providerKey: 'google-workspace' | 'entra' | 'okta';
+  },
+  mapErrorMessage?: BetterAuthErrorMapper,
+): Promise<BetterAuthScimTokenResult> {
+  return unwrapResult(
+    await convexAuthReactStart.fetchAuthAction(api.auth.generateOrganizationScimTokenServer, input),
+    mapErrorMessage,
+  );
+}
+
+export async function deleteBetterAuthOrganizationScimProvider(
+  input: {
+    organizationId: string;
+    providerKey: 'google-workspace' | 'entra' | 'okta';
+  },
+  mapErrorMessage?: BetterAuthErrorMapper,
+): Promise<{ success: boolean }> {
+  return unwrapResult(
+    await convexAuthReactStart.fetchAuthAction(api.auth.deleteOrganizationScimProviderServer, input),
     mapErrorMessage,
   );
 }
