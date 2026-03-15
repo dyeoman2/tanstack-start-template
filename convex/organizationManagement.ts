@@ -1,10 +1,14 @@
+import { anyApi } from 'convex/server';
+import type { PaginationResult } from 'convex/server';
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   canChangeMemberRole,
   canDeleteOrganization,
+  canManageDomains,
   canManageOrganization,
   canRemoveMember,
+  canViewOrganizationAudit,
   deriveViewerRole,
   getAssignableRoles,
   normalizeOrganizationRole,
@@ -12,14 +16,15 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
-import type { QueryCtx } from './_generated/server';
-import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import {
   checkOrganizationAccess,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
 } from './auth/access';
+import { throwConvexError } from './auth/errors';
 import {
   fetchAllBetterAuthOrganizations,
   fetchBetterAuthInvitationsByOrganizationId,
@@ -35,13 +40,18 @@ import {
   chatThreadsDocValidator,
   directoryOrganizationValidator,
   organizationCreationEligibilityValidator,
+  organizationDomainDocValidator,
+  organizationDomainValidator,
   organizationDirectoryResponseValidator,
+  organizationDomainsResponseValidator,
+  organizationAuditResponseValidator,
   organizationSettingsValidator,
 } from './lib/returnValidators';
 import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
+type OrganizationAuditSortField = 'createdAt';
 
 type OrganizationAccessContext = {
   access: Awaited<ReturnType<typeof checkOrganizationAccess>>;
@@ -83,6 +93,33 @@ type OrganizationInvitationRow = {
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
+const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
+  'organization_created',
+  'organization_updated',
+  'member_added',
+  'member_removed',
+  'member_role_updated',
+  'member_invited',
+  'invite_accepted',
+  'invite_rejected',
+  'invite_cancelled',
+  'domain_added',
+  'domain_verification_succeeded',
+  'domain_verification_failed',
+  'domain_verification_token_regenerated',
+  'domain_removed',
+]);
+const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
+
+type OrganizationAccessContextForWrite = {
+  access: Awaited<ReturnType<typeof checkOrganizationAccess>>;
+  organization: NonNullable<Awaited<ReturnType<typeof findBetterAuthOrganizationById>>>;
+  user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>;
+  viewerMembership: Awaited<ReturnType<typeof findBetterAuthMember>>;
+  viewerRole: OrganizationViewerRole;
+};
+
+type OrganizationDomainDoc = Doc<'organizationDomains'>;
 
 function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): OrganizationRole[] {
   if (viewerRole === 'site-admin' || viewerRole === 'owner') {
@@ -119,7 +156,158 @@ function buildOrganizationCapabilities(input: {
     canDeleteOrganization: canDeleteOrganization(input.viewerRole),
     canLeaveOrganization: canLeaveOrganization(input),
     canManageMembers: canManageOrganization(input.viewerRole),
+    canManageDomains: canManageDomains(input.viewerRole),
+    canViewAudit: canViewOrganizationAudit(input.viewerRole),
   };
+}
+
+function normalizeOrganizationDomain(value: string) {
+  const normalized = value.trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+
+  if (
+    normalized.length < 3 ||
+    normalized.length > 253 ||
+    !normalized.includes('.') ||
+    normalized.includes('..') ||
+    !/^[a-z0-9.-]+$/.test(normalized)
+  ) {
+    throwConvexError('VALIDATION', 'Enter a valid domain name');
+  }
+
+  return normalized;
+}
+
+function createOrganizationDomainVerificationToken() {
+  return crypto.randomUUID().replaceAll('-', '');
+}
+
+function getOrganizationDomainVerificationRecordName(domain: string) {
+  return `${ORGANIZATION_DOMAIN_VERIFICATION_PREFIX}.${domain}`;
+}
+
+function getOrganizationDomainVerificationRecordValue(token: string) {
+  return `better-auth-verify=${token}`;
+}
+
+function toOrganizationDomain(domain: OrganizationDomainDoc) {
+  return {
+    id: domain._id,
+    organizationId: domain.organizationId,
+    domain: domain.domain,
+    normalizedDomain: domain.normalizedDomain,
+    status: domain.status,
+    verificationMethod: domain.verificationMethod,
+    verificationToken: domain.verificationToken,
+    verificationRecordName: getOrganizationDomainVerificationRecordName(domain.normalizedDomain),
+    verificationRecordValue: getOrganizationDomainVerificationRecordValue(domain.verificationToken),
+    verifiedAt: domain.verifiedAt,
+    createdByUserId: domain.createdByUserId,
+    createdAt: domain.createdAt,
+  } as const;
+}
+
+function auditEventMatchesSearch(event: {
+  eventType: string;
+  identifier?: string;
+  userId?: string;
+  metadata?: unknown;
+}, searchValue: string) {
+  if (searchValue.length === 0) {
+    return true;
+  }
+
+  const haystacks = [
+    event.eventType,
+    event.identifier,
+    event.userId,
+    typeof event.metadata === 'string' ? event.metadata : JSON.stringify(event.metadata ?? ''),
+  ];
+
+  return haystacks.some((value) => value?.toLowerCase().includes(searchValue) ?? false);
+}
+
+function getOrganizationAuditEventLabel(eventType: string) {
+  switch (eventType) {
+    case 'organization_created':
+      return 'Organization created';
+    case 'organization_updated':
+      return 'Organization updated';
+    case 'member_added':
+      return 'Member added';
+    case 'member_removed':
+      return 'Member removed';
+    case 'member_role_updated':
+      return 'Member role updated';
+    case 'member_invited':
+      return 'Invitation sent';
+    case 'invite_accepted':
+      return 'Invitation accepted';
+    case 'invite_rejected':
+      return 'Invitation rejected';
+    case 'invite_cancelled':
+      return 'Invitation cancelled';
+    case 'domain_added':
+      return 'Domain added';
+    case 'domain_verification_succeeded':
+      return 'Domain verified';
+    case 'domain_verification_failed':
+      return 'Domain verification failed';
+    case 'domain_verification_token_regenerated':
+      return 'Domain verification token regenerated';
+    case 'domain_removed':
+      return 'Domain removed';
+    default:
+      return eventType;
+  }
+}
+
+function parseAuditMetadata(metadata: string | undefined) {
+  if (!metadata) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(metadata) as unknown;
+  } catch {
+    return metadata;
+  }
+}
+
+function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
+  return {
+    id: event.id,
+    eventType: event.eventType,
+    label: getOrganizationAuditEventLabel(event.eventType),
+    ...(event.userId ? { userId: event.userId } : {}),
+    ...(event.organizationId ? { organizationId: event.organizationId } : {}),
+    ...(event.identifier ? { identifier: event.identifier } : {}),
+    createdAt: event.createdAt,
+    ...(event.ipAddress ? { ipAddress: event.ipAddress } : {}),
+    ...(event.userAgent ? { userAgent: event.userAgent } : {}),
+    ...(event.metadata ? { metadata: parseAuditMetadata(event.metadata) } : {}),
+  };
+}
+
+async function insertOrganizationAuditLog(
+  ctx: MutationCtx | ActionCtx,
+  input: {
+    eventType:
+      | 'domain_added'
+      | 'domain_verification_succeeded'
+      | 'domain_verification_failed'
+      | 'domain_verification_token_regenerated'
+      | 'domain_removed';
+    organizationId: string;
+    userId?: string;
+    metadata?: Record<string, unknown>;
+  },
+) {
+  await ctx.runMutation(internal.audit.insertAuditLog, {
+    eventType: input.eventType,
+    organizationId: input.organizationId,
+    ...(input.userId ? { userId: input.userId } : {}),
+    ...(input.metadata ? { metadata: JSON.stringify(input.metadata) } : {}),
+  });
 }
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
@@ -207,6 +395,35 @@ async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
   } satisfies OrganizationAccessContext;
 }
 
+async function getOrganizationAccessContextById(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const organization = await findBetterAuthOrganizationById(ctx, organizationId);
+  if (!organization) {
+    return null;
+  }
+
+  const [access, viewerMembership] = await Promise.all([
+    checkOrganizationAccess(ctx, organizationId, { user }),
+    findBetterAuthMember(ctx, organizationId, user.authUserId),
+  ]);
+
+  const viewerRole = deriveViewerRole({
+    isSiteAdmin: user.isSiteAdmin,
+    membershipRole: viewerMembership?.role,
+  });
+
+  return {
+    user,
+    organization,
+    access,
+    viewerMembership,
+    viewerRole,
+  } satisfies OrganizationAccessContextForWrite;
+}
+
 function compareValues(
   left: string | number,
   right: string | number,
@@ -242,6 +459,41 @@ function sortValue(
       return row.createdAt;
   }
 }
+
+export const getOrganizationDomainInternal = internalQuery({
+  args: {
+    domainId: v.id('organizationDomains'),
+  },
+  returns: v.union(organizationDomainDocValidator, v.null()),
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.domainId);
+  },
+});
+
+export const setOrganizationDomainVerifiedInternal = internalMutation({
+  args: {
+    domainId: v.id('organizationDomains'),
+    verifiedAt: v.number(),
+  },
+  returns: organizationDomainValidator,
+  handler: async (ctx, args) => {
+    const domain = await ctx.db.get(args.domainId);
+    if (!domain) {
+      throw new Error('Domain not found');
+    }
+
+    await ctx.db.patch(args.domainId, {
+      status: 'verified',
+      verifiedAt: args.verifiedAt,
+    });
+
+    return toOrganizationDomain({
+      ...domain,
+      status: 'verified',
+      verifiedAt: args.verifiedAt,
+    });
+  },
+});
 
 export const listOrganizationsForDirectory = query({
   args: {},
@@ -756,6 +1008,525 @@ export const listOrganizationDirectory = query({
         total,
         totalPages: Math.ceil(total / args.pageSize),
       },
+    };
+  },
+});
+
+export const listOrganizationDomains = query({
+  args: {
+    slug: v.string(),
+  },
+  returns: v.union(organizationDomainsResponseValidator, v.null()),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+    if (!context || !context.access.view) {
+      return null;
+    }
+
+    const organizationId = context.organization._id ?? context.organization.id;
+    if (!organizationId) {
+      throw new Error('Organization is missing an id');
+    }
+
+    const ownerCount =
+      context.viewerMembership
+        ? (await listOrganizationMembers(ctx, organizationId)).filter(
+            (membership) => membership.role === 'owner',
+          ).length
+        : 0;
+    const capabilities = buildOrganizationCapabilities({
+      ownerCount,
+      viewerMembership: context.viewerMembership,
+      viewerRole: context.viewerRole,
+    });
+    const domains = await ctx.db
+      .query('organizationDomains')
+      .withIndex('by_organization_id_and_created_at', (q) => q.eq('organizationId', organizationId))
+      .order('desc')
+      .collect();
+
+    return {
+      organization: {
+        id: organizationId,
+        slug: context.organization.slug,
+        name: context.organization.name,
+        logo: context.organization.logo ?? null,
+      },
+      capabilities: {
+        canManageDomains: capabilities.canManageDomains,
+        canViewAudit: capabilities.canViewAudit,
+      },
+      domains: domains.map(toOrganizationDomain),
+    };
+  },
+});
+
+export const addOrganizationDomain = mutation({
+  args: {
+    organizationId: v.string(),
+    domain: v.string(),
+  },
+  returns: organizationDomainValidator,
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageDomains(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const normalizedDomain = normalizeOrganizationDomain(args.domain);
+    const existing = await ctx.db
+      .query('organizationDomains')
+      .withIndex('by_normalized_domain', (q) => q.eq('normalizedDomain', normalizedDomain))
+      .first();
+
+    if (existing) {
+      throwConvexError(
+        'VALIDATION',
+        existing.organizationId === args.organizationId
+          ? 'That domain is already added to this organization'
+          : 'That domain is already claimed by another organization',
+      );
+    }
+
+    const token = createOrganizationDomainVerificationToken();
+    const domainId = await ctx.db.insert('organizationDomains', {
+      organizationId: args.organizationId,
+      domain: normalizedDomain,
+      normalizedDomain,
+      status: 'pending_verification',
+      verificationMethod: 'dns_txt',
+      verificationToken: token,
+      verifiedAt: null,
+      createdByUserId: context.user.authUserId,
+      createdAt: Date.now(),
+    });
+
+    const domain = await ctx.db.get(domainId);
+    if (!domain) {
+      throw new Error('Failed to create organization domain');
+    }
+
+    await insertOrganizationAuditLog(ctx, {
+      eventType: 'domain_added',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      metadata: {
+        domain: normalizedDomain,
+        domainId,
+      },
+    });
+
+    return toOrganizationDomain(domain);
+  },
+});
+
+export const removeOrganizationDomain = mutation({
+  args: {
+    organizationId: v.string(),
+    domainId: v.id('organizationDomains'),
+  },
+  returns: v.object({
+    success: v.literal(true),
+  }),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageDomains(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const domain = await ctx.db.get(args.domainId);
+    if (!domain || domain.organizationId !== args.organizationId) {
+      throwConvexError('NOT_FOUND', 'Organization domain not found');
+    }
+
+    await ctx.db.delete(args.domainId);
+    await insertOrganizationAuditLog(ctx, {
+      eventType: 'domain_removed',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      metadata: {
+        domain: domain.domain,
+        domainId: args.domainId,
+      },
+    });
+    return { success: true as const };
+  },
+});
+
+export const regenerateOrganizationDomainToken = mutation({
+  args: {
+    organizationId: v.string(),
+    domainId: v.id('organizationDomains'),
+  },
+  returns: organizationDomainValidator,
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageDomains(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const domain = await ctx.db.get(args.domainId);
+    if (!domain || domain.organizationId !== args.organizationId) {
+      throwConvexError('NOT_FOUND', 'Organization domain not found');
+    }
+
+    const nextToken = createOrganizationDomainVerificationToken();
+    await ctx.db.patch(args.domainId, {
+      verificationToken: nextToken,
+      status: 'pending_verification',
+      verifiedAt: null,
+    });
+
+    await insertOrganizationAuditLog(ctx, {
+      eventType: 'domain_verification_token_regenerated',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      metadata: {
+        domain: domain.domain,
+        domainId: args.domainId,
+      },
+    });
+
+    return toOrganizationDomain({
+      ...domain,
+      verificationToken: nextToken,
+      status: 'pending_verification',
+      verifiedAt: null,
+    });
+  },
+});
+
+export const listOrganizationAuditEvents = query({
+  args: {
+    slug: v.string(),
+    page: v.optional(v.number()),
+    pageSize: v.optional(v.number()),
+    sortBy: v.optional(v.literal('createdAt')),
+    sortOrder: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    eventType: v.union(
+      v.literal('all'),
+      v.literal('organization_created'),
+      v.literal('organization_updated'),
+      v.literal('member_added'),
+      v.literal('member_removed'),
+      v.literal('member_role_updated'),
+      v.literal('member_invited'),
+      v.literal('invite_accepted'),
+      v.literal('invite_rejected'),
+      v.literal('invite_cancelled'),
+      v.literal('domain_added'),
+      v.literal('domain_verification_succeeded'),
+      v.literal('domain_verification_failed'),
+      v.literal('domain_verification_token_regenerated'),
+      v.literal('domain_removed'),
+    ),
+    search: v.string(),
+  },
+  returns: v.union(organizationAuditResponseValidator, v.null()),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+    if (!context || !context.access.view) {
+      return null;
+    }
+
+    const organizationId = context.organization._id ?? context.organization.id;
+    if (!organizationId) {
+      throw new Error('Organization is missing an id');
+    }
+
+    const ownerCount =
+      context.viewerMembership
+        ? (await listOrganizationMembers(ctx, organizationId)).filter(
+            (membership) => membership.role === 'owner',
+          ).length
+        : 0;
+    const capabilities = buildOrganizationCapabilities({
+      ownerCount,
+      viewerMembership: context.viewerMembership,
+      viewerRole: context.viewerRole,
+    });
+
+    if (!capabilities.canViewAudit) {
+      return null;
+    }
+
+    const requestedEventType = args.eventType === 'all' ? null : args.eventType;
+    const searchValue = args.search.trim().toLowerCase();
+    const sortOrder = args.sortOrder ?? 'desc';
+    const pageSize = Math.max(1, Math.min(args.pageSize ?? args.limit ?? 10, 100));
+    const page = Math.max(1, args.page ?? 1);
+    const targetStart = (page - 1) * pageSize;
+    const targetEnd = targetStart + pageSize;
+    const pagedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
+    let total = 0;
+    let cursor: string | null = null;
+    let isDone = false;
+
+    while (!isDone) {
+      const auditPage: PaginationResult<Doc<'auditLogs'>> = requestedEventType
+        ? await ctx.db
+            .query('auditLogs')
+            .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
+              q.eq('organizationId', organizationId).eq('eventType', requestedEventType),
+            )
+            .order(sortOrder)
+            .paginate({ cursor, numItems: 100 })
+        : await ctx.db
+            .query('auditLogs')
+            .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+            .order(sortOrder)
+            .paginate({ cursor, numItems: 100 });
+
+      for (const event of auditPage.page) {
+        if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
+          continue;
+        }
+
+        if (
+          searchValue.length > 0 &&
+          !auditEventMatchesSearch(
+            {
+              eventType: event.eventType,
+              identifier: event.identifier,
+              userId: event.userId,
+              metadata: event.metadata,
+            },
+            searchValue,
+          )
+        ) {
+          continue;
+        }
+
+        if (total >= targetStart && total < targetEnd) {
+          pagedEvents.push(toOrganizationAuditEventViewModel(event));
+        }
+
+        total += 1;
+      }
+
+      cursor = auditPage.isDone ? null : auditPage.continueCursor;
+      isDone = auditPage.isDone;
+    }
+
+    return {
+      organization: {
+        id: organizationId,
+        slug: context.organization.slug,
+        name: context.organization.name,
+        logo: context.organization.logo ?? null,
+      },
+      capabilities: {
+        canViewAudit: capabilities.canViewAudit,
+      },
+      events: pagedEvents,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
+  },
+});
+
+export const exportOrganizationAuditCsv = action({
+  args: {
+    slug: v.string(),
+    sortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    eventType: v.union(
+      v.literal('all'),
+      v.literal('organization_created'),
+      v.literal('organization_updated'),
+      v.literal('member_added'),
+      v.literal('member_removed'),
+      v.literal('member_role_updated'),
+      v.literal('member_invited'),
+      v.literal('invite_accepted'),
+      v.literal('invite_rejected'),
+      v.literal('invite_cancelled'),
+      v.literal('domain_added'),
+      v.literal('domain_verification_succeeded'),
+      v.literal('domain_verification_failed'),
+      v.literal('domain_verification_token_regenerated'),
+      v.literal('domain_removed'),
+    ),
+    search: v.string(),
+  },
+  returns: v.object({
+    filename: v.string(),
+    csv: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const rows: Array<Record<string, string>> = [];
+    let pageNumber = 1;
+    let organizationName = 'organization';
+
+    while (true) {
+      const auditPage = await ctx.runQuery(anyApi.organizationManagement.listOrganizationAuditEvents, {
+        slug: args.slug,
+        page: pageNumber,
+        pageSize: 100,
+        sortBy: 'createdAt',
+        sortOrder: args.sortOrder,
+        eventType: args.eventType,
+        search: args.search,
+      });
+
+      if (!auditPage) {
+        throw new Error('Organization audit log is unavailable');
+      }
+
+      organizationName = auditPage.organization.slug;
+      for (const event of auditPage.events) {
+        rows.push({
+          timestamp: new Date(event.createdAt).toISOString(),
+          event_type: event.eventType,
+          organization_id: event.organizationId ?? '',
+          user_id: event.userId ?? '',
+          identifier: event.identifier ?? '',
+          ip_address: event.ipAddress ?? '',
+          user_agent: event.userAgent ?? '',
+          metadata: JSON.stringify(event.metadata ?? null),
+        });
+      }
+
+      if (
+        auditPage.pagination.page >= auditPage.pagination.totalPages ||
+        auditPage.pagination.totalPages === 0
+      ) {
+        break;
+      }
+
+      pageNumber += 1;
+    }
+
+    const header = [
+      'timestamp',
+      'event_type',
+      'organization_id',
+      'user_id',
+      'identifier',
+      'ip_address',
+      'user_agent',
+      'metadata',
+    ];
+    const csv = [
+      header.join(','),
+      ...rows.map((row) =>
+        header
+          .map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`)
+          .join(','),
+      ),
+    ].join('\n');
+
+    return {
+      filename: `${organizationName}-audit-log.csv`,
+      csv,
+    };
+  },
+});
+
+export const exportOrganizationDirectoryCsv = action({
+  args: {
+    slug: v.string(),
+    asOf: v.number(),
+    sortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('kind'),
+      v.literal('role'),
+      v.literal('status'),
+      v.literal('createdAt'),
+    ),
+    sortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    secondarySortBy: v.union(
+      v.literal('name'),
+      v.literal('email'),
+      v.literal('kind'),
+      v.literal('role'),
+      v.literal('status'),
+      v.literal('createdAt'),
+    ),
+    secondarySortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    search: v.string(),
+    kind: v.union(v.literal('all'), v.literal('member'), v.literal('invite')),
+  },
+  returns: v.object({
+    filename: v.string(),
+    csv: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const rows: Array<Record<string, string>> = [];
+    let pageNumber = 1;
+    let organizationName = 'organization';
+
+    while (true) {
+      const directoryPage = await ctx.runQuery(anyApi.organizationManagement.listOrganizationDirectory, {
+        slug: args.slug,
+        asOf: args.asOf,
+        page: pageNumber,
+        pageSize: 100,
+        sortBy: args.sortBy,
+        sortOrder: args.sortOrder,
+        secondarySortBy: args.secondarySortBy,
+        secondarySortOrder: args.secondarySortOrder,
+        search: args.search,
+        kind: args.kind,
+      });
+
+      if (!directoryPage) {
+        throw new Error('Organization directory export is unavailable');
+      }
+
+      organizationName = directoryPage.organization.slug;
+      for (const row of directoryPage.rows) {
+        rows.push({
+          name: row.name ?? '',
+          email: row.email,
+          type: row.kind,
+          role: row.role,
+          status: row.status,
+          created_at: new Date(row.createdAt).toISOString(),
+        });
+      }
+
+      if (
+        directoryPage.pagination.page >= directoryPage.pagination.totalPages ||
+        directoryPage.pagination.totalPages === 0
+      ) {
+        break;
+      }
+
+      pageNumber += 1;
+    }
+
+    const header = ['name', 'email', 'type', 'role', 'status', 'created_at'];
+    const csv = [
+      header.join(','),
+      ...rows.map((row) =>
+        header
+          .map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`)
+          .join(','),
+      ),
+    ].join('\n');
+
+    return {
+      filename: `${organizationName}-directory.csv`,
+      csv,
     };
   },
 });

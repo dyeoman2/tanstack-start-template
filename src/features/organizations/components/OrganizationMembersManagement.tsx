@@ -1,8 +1,8 @@
 import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
-import { useQuery } from 'convex/react';
-import { Loader2, Plus } from 'lucide-react';
+import { useAction, useQuery } from 'convex/react';
+import { Download, Loader2, Plus } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { TableFilter, type TableFilterOption, TableSearch } from '~/components/data-table';
@@ -70,6 +70,7 @@ export function OrganizationMembersManagement({
   const queryClient = useQueryClient();
   const router = useRouter();
   const { showToast } = useToast();
+  const exportDirectoryCsv = useAction(api.organizationManagement.exportOrganizationDirectoryCsv);
   const [directoryAsOf, setDirectoryAsOf] = useState(() => Date.now());
   const directory = useQuery(api.organizationManagement.listOrganizationDirectory, {
     slug,
@@ -104,6 +105,7 @@ export function OrganizationMembersManagement({
   const [roleError, setRoleError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (!selectedRoleMember) {
@@ -183,6 +185,37 @@ export function OrganizationMembersManagement({
         page: 1,
       },
     });
+  };
+
+  const handleExport = async () => {
+    setIsExporting(true);
+
+    try {
+      const result = await exportDirectoryCsv({
+        slug,
+        asOf: directoryAsOf,
+        sortBy: searchParams.sortBy,
+        sortOrder: searchParams.sortOrder,
+        secondarySortBy: searchParams.secondarySortBy,
+        secondarySortOrder: searchParams.secondarySortOrder,
+        search: searchParams.search,
+        kind: searchParams.kind,
+      });
+      const blob = new Blob([result.csv], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = result.filename;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('Directory exported.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to export directory', 'error');
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleInviteSubmit = async () => {
@@ -395,13 +428,19 @@ export function OrganizationMembersManagement({
             className="sm:w-44"
             ariaLabel="Filter organization rows by type"
           />
-          <TableSearch
-            initialValue={searchParams.search}
-            onSearch={handleSearchChange}
-            placeholder="Search by name or email"
-            className="min-w-[260px] sm:max-w-lg"
-            ariaLabel="Search organization members and invitations"
-          />
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end sm:flex-1">
+            <TableSearch
+              initialValue={searchParams.search}
+              onSearch={handleSearchChange}
+              placeholder="Search by name or email"
+              className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
+              ariaLabel="Search organization members and invitations"
+            />
+            <Button type="button" variant="outline" onClick={handleExport} disabled={isExporting}>
+              {isExporting ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+              <span className="sr-only">Export CSV</span>
+            </Button>
+          </div>
         </div>
 
         <OrganizationMembersTable

@@ -80,7 +80,6 @@ describe('ensurePrincipalRole', () => {
       authUserId: 'user_1',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
-      role: 'user',
     });
     expect(result).toEqual({
       found: true,

@@ -55,10 +55,21 @@ function parseMetadata(metadata: string | undefined) {
 describe('auth audit coverage', () => {
   it('keeps every supported event represented in the handler registry', () => {
     const coveredEvents = new Set<string>();
+    const manuallyRecordedEvents = [
+      'domain_added',
+      'domain_verification_succeeded',
+      'domain_verification_failed',
+      'domain_verification_token_regenerated',
+      'domain_removed',
+    ] as const;
     for (const handler of AUTH_AUDIT_ALL_HANDLER_REGISTRY) {
       for (const eventType of handler.events) {
         coveredEvents.add(eventType);
       }
+    }
+
+    for (const eventType of manuallyRecordedEvents) {
+      coveredEvents.add(eventType);
     }
 
     expect(Array.from(coveredEvents).sort()).toEqual([...AUTH_AUDIT_EVENT_TYPES].sort());

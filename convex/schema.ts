@@ -123,7 +123,27 @@ export default defineSchema({
     .index('by_createdAt', ['createdAt'])
     .index('by_eventType_and_createdAt', ['eventType', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_organizationId_and_eventType_and_createdAt', [
+      'organizationId',
+      'eventType',
+      'createdAt',
+    ])
     .index('by_identifier_and_createdAt', ['identifier', 'createdAt']),
+
+  organizationDomains: defineTable({
+    organizationId: v.string(),
+    domain: v.string(),
+    normalizedDomain: v.string(),
+    status: v.union(v.literal('pending_verification'), v.literal('verified')),
+    verificationMethod: v.literal('dns_txt'),
+    verificationToken: v.string(),
+    verifiedAt: v.union(v.number(), v.null()),
+    createdByUserId: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_organization_id', ['organizationId'])
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_normalized_domain', ['normalizedDomain']),
 
   dashboardStats: defineTable({
     key: v.string(),

@@ -23,6 +23,8 @@ describe('auth audit helpers', () => {
   it('includes organization events in the supported list', () => {
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('member_invited');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('invite_cancelled');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_added');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_removed');
   });
 
   it('maps every supported event to at least one handler owner', () => {

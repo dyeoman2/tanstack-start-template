@@ -245,26 +245,12 @@ async function assignBootstrapUserRole(
     return 'admin';
   }
 
-  const existingAdminPage = await ctx.runQuery(components.betterAuth.adapter.findMany, {
-    model: 'user',
-    where: [
-      {
-        field: 'role',
-        operator: 'eq',
-        value: 'admin',
-      },
-    ],
-    paginationOpts: {
-      cursor: null,
-      numItems: 1,
-      id: 0,
-    },
-  });
-  const existingAdmins = normalizeAdapterFindManyResult<BetterAuthAdapterUserDoc>(
-    existingAdminPage,
-  ).page;
+  const existingAdmin = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_role', (q) => q.eq('role', 'admin'))
+    .first();
 
-  const nextRole: 'admin' | 'user' = existingAdmins.length === 0 ? 'admin' : 'user';
+  const nextRole: 'admin' | 'user' = existingAdmin ? 'user' : 'admin';
 
   if (currentRole !== nextRole) {
     await ctx.runMutation(components.betterAuth.adapter.updateMany, {

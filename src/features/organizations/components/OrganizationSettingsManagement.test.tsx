@@ -75,6 +75,14 @@ vi.mock('~/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('~/features/organizations/components/OrganizationDomainManagement', () => ({
+  OrganizationDomainManagement: () => <div>Organization domains</div>,
+}));
+
+vi.mock('~/features/organizations/components/OrganizationWorkspaceTabs', () => ({
+  OrganizationWorkspaceTabs: () => <div>Organization tabs</div>,
+}));
+
 describe('OrganizationSettingsManagement', () => {
   const searchParams = {
     page: 1,

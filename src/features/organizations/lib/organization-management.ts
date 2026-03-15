@@ -1,3 +1,4 @@
+import type { Id } from '../../../../convex/_generated/dataModel';
 import { z } from 'zod';
 
 export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
@@ -11,6 +12,27 @@ export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
 
 export const ORGANIZATION_DIRECTORY_KIND_VALUES = ['all', 'member', 'invite'] as const;
 export const ORGANIZATION_DIRECTORY_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export const ORGANIZATION_AUDIT_EVENT_TYPES = [
+  'organization_created',
+  'organization_updated',
+  'member_added',
+  'member_removed',
+  'member_role_updated',
+  'member_invited',
+  'invite_accepted',
+  'invite_rejected',
+  'invite_cancelled',
+  'domain_added',
+  'domain_verification_succeeded',
+  'domain_verification_failed',
+  'domain_verification_token_regenerated',
+  'domain_removed',
+] as const;
+export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
+  'all',
+  ...ORGANIZATION_AUDIT_EVENT_TYPES,
+] as const;
+export const ORGANIZATION_AUDIT_SORT_FIELDS = ['createdAt'] as const;
 
 export const organizationDirectorySearchSchema = z.object({
   page: z.number().default(1),
@@ -30,6 +52,18 @@ export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALU
 
 export type OrganizationDirectorySearchParams = z.infer<typeof organizationDirectorySearchSchema>;
 
+export const organizationAuditSearchSchema = z.object({
+  page: z.number().default(1),
+  pageSize: z.number().default(10),
+  sortBy: z.enum(ORGANIZATION_AUDIT_SORT_FIELDS).default('createdAt'),
+  sortOrder: z.enum(['asc', 'desc']).default('desc'),
+  search: z.string().default(''),
+  eventType: z.enum(ORGANIZATION_AUDIT_EVENT_FILTER_VALUES).default('all'),
+});
+
+export type OrganizationAuditSearchParams = z.infer<typeof organizationAuditSearchSchema>;
+export type OrganizationAuditSortField = (typeof ORGANIZATION_AUDIT_SORT_FIELDS)[number];
+
 export type OrganizationCreationEligibility = {
   count: number;
   limit: number | null;
@@ -45,6 +79,8 @@ export type OrganizationCapabilities = {
   canDeleteOrganization: boolean;
   canLeaveOrganization: boolean;
   canManageMembers: boolean;
+  canManageDomains: boolean;
+  canViewAudit: boolean;
 };
 
 export type OrganizationMemberRow = {
@@ -77,3 +113,49 @@ export type OrganizationInvitationRow = {
 };
 
 export type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
+
+export type OrganizationDomainStatus = 'pending_verification' | 'verified';
+
+export type OrganizationDomain = {
+  id: Id<'organizationDomains'>;
+  organizationId: string;
+  domain: string;
+  normalizedDomain: string;
+  status: OrganizationDomainStatus;
+  verificationMethod: 'dns_txt';
+  verificationToken: string;
+  verificationRecordName: string;
+  verificationRecordValue: string;
+  verifiedAt: number | null;
+  createdByUserId: string;
+  createdAt: number;
+};
+
+export type OrganizationDomainVerificationResult = {
+  verified: boolean;
+  checkedAt: number;
+  domain: OrganizationDomain;
+  reason: string | null;
+};
+
+export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];
+
+export type OrganizationAuditEventViewModel = {
+  id: string;
+  eventType: OrganizationAuditEventType;
+  label: string;
+  userId?: string;
+  organizationId?: string;
+  identifier?: string;
+  createdAt: number;
+  ipAddress?: string;
+  userAgent?: string;
+  metadata?: unknown;
+};
+
+export type OrganizationAuditPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};

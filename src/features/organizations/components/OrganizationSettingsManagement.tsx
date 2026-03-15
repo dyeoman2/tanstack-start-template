@@ -27,6 +27,7 @@ import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
+import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
@@ -244,6 +245,7 @@ export function OrganizationSettingsManagement({
           ) : undefined
         }
       />
+      <OrganizationWorkspaceTabs slug={slug} organizationName={settings.organization.name} />
 
       {!canManage ? (
         <Card>
@@ -267,7 +269,6 @@ export function OrganizationSettingsManagement({
           }}
         />
       ) : null}
-
       <Dialog
         open={isEditDialogOpen}
         onOpenChange={(open) => {

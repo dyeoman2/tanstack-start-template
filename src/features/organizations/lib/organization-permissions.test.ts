@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   canDeleteOrganization,
   canChangeMemberRole,
+  canManageDomains,
   canManageOrganization,
   canRemoveMember,
+  canViewOrganizationAudit,
   deriveViewerRole,
   getAssignableRoles,
   getOrganizationAccess,
@@ -73,6 +75,17 @@ describe('organization permission rules', () => {
     expect(canDeleteOrganization('admin')).toBe(false);
     expect(canDeleteOrganization('member')).toBe(false);
     expect(canDeleteOrganization(null)).toBe(false);
+  });
+
+  it('keeps domain management owner-only while allowing audit for admins', () => {
+    expect(canManageDomains('site-admin')).toBe(true);
+    expect(canManageDomains('owner')).toBe(true);
+    expect(canManageDomains('admin')).toBe(false);
+    expect(canManageDomains('member')).toBe(false);
+    expect(canViewOrganizationAudit('site-admin')).toBe(true);
+    expect(canViewOrganizationAudit('owner')).toBe(true);
+    expect(canViewOrganizationAudit('admin')).toBe(true);
+    expect(canViewOrganizationAudit('member')).toBe(false);
   });
 
   it('prevents demoting or removing the last owner', () => {

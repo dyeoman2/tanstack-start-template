@@ -446,6 +446,8 @@ export const organizationSettingsValidator = v.object({
     canDeleteOrganization: v.boolean(),
     canLeaveOrganization: v.boolean(),
     canManageMembers: v.boolean(),
+    canManageDomains: v.boolean(),
+    canViewAudit: v.boolean(),
   }),
   isMember: v.boolean(),
   viewerRole: organizationViewerRoleValidator,
@@ -496,6 +498,8 @@ export const organizationDirectoryResponseValidator = v.object({
     canDeleteOrganization: v.boolean(),
     canLeaveOrganization: v.boolean(),
     canManageMembers: v.boolean(),
+    canManageDomains: v.boolean(),
+    canViewAudit: v.boolean(),
   }),
   viewerRole: organizationViewerRoleValidator,
   rows: v.array(organizationDirectoryRowValidator),
@@ -503,6 +507,83 @@ export const organizationDirectoryResponseValidator = v.object({
     members: v.number(),
     invites: v.number(),
   }),
+  pagination: v.object({
+    page: v.number(),
+    pageSize: v.number(),
+    total: v.number(),
+    totalPages: v.number(),
+  }),
+});
+
+export const organizationDomainStatusValidator = v.union(
+  v.literal('pending_verification'),
+  v.literal('verified'),
+);
+
+export const organizationDomainDocValidator = v.object({
+  _id: v.id('organizationDomains'),
+  _creationTime: v.number(),
+  organizationId: v.string(),
+  domain: v.string(),
+  normalizedDomain: v.string(),
+  status: organizationDomainStatusValidator,
+  verificationMethod: v.literal('dns_txt'),
+  verificationToken: v.string(),
+  verifiedAt: v.union(v.number(), v.null()),
+  createdByUserId: v.string(),
+  createdAt: v.number(),
+});
+
+export const organizationDomainValidator = v.object({
+  id: v.id('organizationDomains'),
+  organizationId: v.string(),
+  domain: v.string(),
+  normalizedDomain: v.string(),
+  status: organizationDomainStatusValidator,
+  verificationMethod: v.literal('dns_txt'),
+  verificationToken: v.string(),
+  verificationRecordName: v.string(),
+  verificationRecordValue: v.string(),
+  verifiedAt: v.union(v.number(), v.null()),
+  createdByUserId: v.string(),
+  createdAt: v.number(),
+});
+
+export const organizationDomainsResponseValidator = v.object({
+  organization: organizationSummaryValidator,
+  capabilities: v.object({
+    canManageDomains: v.boolean(),
+    canViewAudit: v.boolean(),
+  }),
+  domains: v.array(organizationDomainValidator),
+});
+
+export const organizationDomainVerificationResultValidator = v.object({
+  verified: v.boolean(),
+  checkedAt: v.number(),
+  domain: organizationDomainValidator,
+  reason: v.union(v.string(), v.null()),
+});
+
+export const organizationAuditEventViewModelValidator = v.object({
+  id: v.string(),
+  eventType: v.string(),
+  label: v.string(),
+  userId: v.optional(v.string()),
+  organizationId: v.optional(v.string()),
+  identifier: v.optional(v.string()),
+  createdAt: v.number(),
+  ipAddress: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+  metadata: v.optional(v.any()),
+});
+
+export const organizationAuditResponseValidator = v.object({
+  organization: organizationSummaryValidator,
+  capabilities: v.object({
+    canViewAudit: v.boolean(),
+  }),
+  events: v.array(organizationAuditEventViewModelValidator),
   pagination: v.object({
     page: v.number(),
     pageSize: v.number(),

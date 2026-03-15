@@ -39,6 +39,7 @@ import type * as lib_onboardingState from "../lib/onboardingState.js";
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as migrations from "../migrations.js";
+import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
@@ -82,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   "lib/organizationCleanup": typeof lib_organizationCleanup;
   "lib/returnValidators": typeof lib_returnValidators;
   migrations: typeof migrations;
+  organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;

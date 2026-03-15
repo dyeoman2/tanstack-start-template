@@ -8,6 +8,7 @@ const {
   navigateMock,
   routerInvalidateMock,
   showToastMock,
+  exportDirectoryCsvMock,
   createInvitationMock,
   updateMemberRoleMock,
   removeMemberMock,
@@ -19,6 +20,7 @@ const {
   navigateMock: vi.fn(),
   routerInvalidateMock: vi.fn(),
   showToastMock: vi.fn(),
+  exportDirectoryCsvMock: vi.fn(),
   createInvitationMock: vi.fn(),
   updateMemberRoleMock: vi.fn(),
   removeMemberMock: vi.fn(),
@@ -42,6 +44,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
+  useAction: () => (...args: unknown[]) => exportDirectoryCsvMock(...args),
 }));
 
 vi.mock('~/features/auth/auth-client', () => ({
