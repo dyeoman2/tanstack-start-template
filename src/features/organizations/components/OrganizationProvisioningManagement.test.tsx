@@ -110,11 +110,6 @@ describe('OrganizationProvisioningManagement', () => {
         'Optional: automatically create and update users from your identity provider using SCIM.',
       ),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Set this up after your identity provider and verified domains are in place. SCIM deprovisioning removes access to this organization only, and deactivated users do not regain access by signing in again. Restore access through SCIM reprovisioning or an admin action.',
-      ),
-    ).toBeInTheDocument();
   });
 
   it('hides SCIM setup details until provisioning is configured or started', async () => {

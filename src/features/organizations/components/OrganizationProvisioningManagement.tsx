@@ -2,7 +2,7 @@ import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { ChevronDown, ChevronUp, Copy, Loader2, RefreshCcw, Trash2 } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Copy, Loader2, RefreshCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -11,10 +11,13 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '~/component
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import { useToast } from '~/components/ui/toast';
 import type {
-  OrganizationEnterpriseProviderOption,
   OrganizationEnterpriseProviderKey,
+  OrganizationEnterpriseProviderOption,
 } from '~/features/organizations/lib/organization-management';
-import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import {
+  getServerFunctionErrorMessage,
+  refreshOrganizationClientState,
+} from '~/features/organizations/lib/organization-session';
 import {
   deleteOrganizationScimProviderServerFn,
   generateOrganizationScimTokenServerFn,
@@ -43,13 +46,16 @@ export function OrganizationProvisioningManagement({
   const router = useRouter();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const settings = useQuery(api.organizationManagement.getOrganizationEnterpriseAuthSettings, { slug });
+  const settings = useQuery(api.organizationManagement.getOrganizationEnterpriseAuthSettings, {
+    slug,
+  });
   const [providerKey, setProviderKey] = useState<OrganizationEnterpriseProviderKey | null>(null);
   const [revealedScimToken, setRevealedScimToken] = useState<string | null>(null);
   const [isGeneratingScimToken, setIsGeneratingScimToken] = useState(false);
   const [isDeletingScimProvider, setIsDeletingScimProvider] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [uncontrolledDetailsOpen, setUncontrolledDetailsOpen] = useState(false);
+  const [tokenCopied, setTokenCopied] = useState(false);
 
   useEffect(() => {
     if (!settings) {
@@ -113,7 +119,10 @@ export function OrganizationProvisioningManagement({
       });
       setRevealedScimToken(result.scimToken);
       await refreshState();
-      showToast(scimConnectionConfigured ? 'Provisioning token rotated.' : 'Provisioning token created.', 'success');
+      showToast(
+        scimConnectionConfigured ? 'Provisioning token rotated.' : 'Provisioning token created.',
+        'success',
+      );
     } catch (error) {
       showToast(
         getServerFunctionErrorMessage(
@@ -162,6 +171,10 @@ export function OrganizationProvisioningManagement({
 
     try {
       await navigator.clipboard.writeText(revealedScimToken);
+      setTokenCopied(true);
+      window.setTimeout(() => {
+        setTokenCopied(false);
+      }, 1500);
       showToast('Provisioning token copied.', 'success');
     } catch (error) {
       showToast(
@@ -176,9 +189,7 @@ export function OrganizationProvisioningManagement({
 
   const provisioningContent = (
     <div className="space-y-4">
-      {embedded ? (
-        null
-      ) : null}
+      {embedded ? null : null}
       {embedded && !blockedMessage ? (
         <div className="rounded-lg border border-border/70 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
           Optional: automatically create and update users from your identity provider using SCIM.
@@ -186,25 +197,20 @@ export function OrganizationProvisioningManagement({
       ) : null}
       {!blockedMessage ? (
         <div className="flex flex-wrap items-center gap-2">
-        <Badge variant={scimConnectionConfigured ? 'success' : 'secondary'}>
-          {scimConnectionConfigured ? 'Configured' : 'Not configured'}
-        </Badge>
-        {selectedProvider ? <Badge variant="outline">{selectedProvider.label}</Badge> : null}
+          <Badge variant={scimConnectionConfigured ? 'success' : 'secondary'}>
+            {scimConnectionConfigured ? 'Configured' : 'Not configured'}
+          </Badge>
+          {selectedProvider ? <Badge variant="outline">{selectedProvider.label}</Badge> : null}
         </div>
       ) : null}
-
-      <p className="text-sm text-muted-foreground">
-        Set this up after your identity provider and verified domains are in place. SCIM
-        deprovisioning removes access to this organization only, and deactivated users do not
-        regain access by signing in again. Restore access through SCIM reprovisioning or an
-        admin action.
-      </p>
 
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
           onClick={() => void handleGenerateScimToken()}
-          disabled={isGeneratingScimToken || !selectedProvider?.selectable || blockedMessage !== null}
+          disabled={
+            isGeneratingScimToken || !selectedProvider?.selectable || blockedMessage !== null
+          }
         >
           {isGeneratingScimToken ? (
             <Loader2 className="size-4 animate-spin" />
@@ -224,7 +230,7 @@ export function OrganizationProvisioningManagement({
             Revoke Token
           </Button>
         ) : null}
-        {(showProvisioningDetails || scimConnectionConfigured) ? (
+        {showProvisioningDetails || scimConnectionConfigured ? (
           <Collapsible
             open={resolvedDetailsOpen}
             onOpenChange={(open) => {
@@ -242,7 +248,11 @@ export function OrganizationProvisioningManagement({
           >
             <CollapsibleTrigger asChild>
               <Button type="button" variant="outline">
-                {resolvedDetailsOpen ? <ChevronUp className="size-4" /> : <ChevronDown className="size-4" />}
+                {resolvedDetailsOpen ? (
+                  <ChevronUp className="size-4" />
+                ) : (
+                  <ChevronDown className="size-4" />
+                )}
                 {resolvedDetailsOpen ? 'Hide Setup Details' : 'View Setup Details'}
               </Button>
             </CollapsibleTrigger>
@@ -251,22 +261,29 @@ export function OrganizationProvisioningManagement({
                 <p className="font-medium text-foreground">SCIM base URL</p>
                 <p className="mt-1 font-mono text-foreground">/api/auth/scim/v2</p>
                 <p className="mt-3">
-                  Provisioned users are added to the organization as <span className="font-medium">member</span>,
-                  and deprovisioning removes only this organization membership without deleting
-                  the global user.
+                  Provisioned users are added to the organization as{' '}
+                  <span className="font-medium">member</span>, and deprovisioning removes only this
+                  organization membership without deleting the global user.
                 </p>
               </div>
 
               {revealedScimToken ? (
                 <div className="mt-4 rounded-lg border border-primary/20 bg-primary/5 p-4">
                   <p className="text-sm font-medium">Provisioning token</p>
-                  <p className="mt-2 break-all font-mono text-sm text-foreground">{revealedScimToken}</p>
+                  <p className="mt-2 break-all font-mono text-sm text-foreground">
+                    {revealedScimToken}
+                  </p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     This token is only shown once. Copy it now and store it securely.
                   </p>
-                  <Button className="mt-3" variant="outline" type="button" onClick={() => void copyScimToken()}>
-                    <Copy className="size-4" />
-                    Copy Token
+                  <Button
+                    className="mt-3"
+                    variant="outline"
+                    type="button"
+                    onClick={() => void copyScimToken()}
+                  >
+                    {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                    {tokenCopied ? 'Copied' : 'Copy Token'}
                   </Button>
                 </div>
               ) : null}
@@ -279,17 +296,18 @@ export function OrganizationProvisioningManagement({
 
   return (
     <>
-      {embedded ? provisioningContent : (
+      {embedded ? (
+        provisioningContent
+      ) : (
         <Card className={cn(highlight ? 'border-primary shadow-md shadow-primary/5' : undefined)}>
           <CardHeader>
             <CardTitle>Step 4: Provisioning</CardTitle>
             <CardDescription>
-              Optional: automatically create and update users from your identity provider using SCIM.
+              Optional: automatically create and update users from your identity provider using
+              SCIM.
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            {provisioningContent}
-          </CardContent>
+          <CardContent className="space-y-4">{provisioningContent}</CardContent>
         </Card>
       )}
 

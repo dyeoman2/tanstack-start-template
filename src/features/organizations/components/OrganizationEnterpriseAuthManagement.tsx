@@ -4,6 +4,8 @@ import { useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { BiLogoMicrosoft } from 'react-icons/bi';
+import { SiGoogle, SiOkta } from 'react-icons/si';
 import { Badge } from '~/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { useToast } from '~/components/ui/toast';
@@ -17,6 +19,19 @@ import {
 } from '~/features/organizations/lib/organization-session';
 import { updateOrganizationPoliciesServerFn } from '~/features/organizations/server/organization-management';
 import { cn } from '~/lib/utils';
+
+function getProviderLogo(providerKey: OrganizationEnterpriseProviderKey) {
+  switch (providerKey) {
+    case 'google-workspace':
+      return <SiGoogle className="size-5 text-[#4285F4]" aria-hidden="true" />;
+    case 'entra':
+      return <BiLogoMicrosoft className="size-5 text-[#5E5E5E]" aria-hidden="true" />;
+    case 'okta':
+      return <SiOkta className="size-5 text-[#007DC1]" aria-hidden="true" />;
+    default:
+      return null;
+  }
+}
 
 export function OrganizationEnterpriseAuthManagement({
   slug,
@@ -170,7 +185,10 @@ export function OrganizationEnterpriseAuthManagement({
                 )}
               >
                 <span className="flex w-full items-start justify-between gap-3">
-                  <span>
+                  <span className="flex items-center gap-3">
+                    <span className="flex size-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
+                      {getProviderLogo(provider.key)}
+                    </span>
                     <span className="block text-sm font-semibold text-foreground">
                       {provider.label}
                     </span>

@@ -44,13 +44,16 @@ export function OrganizationIdentityPage({
   const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
   const organizationName =
     settings?.organization.name ?? optimisticOrganizationName ?? 'Loading organization';
+  const availableEnterpriseProviders = settings?.availableEnterpriseProviders ?? [];
 
   const hasProviderSelected = settings?.policies.enterpriseProviderKey != null;
   const selectedProvider = hasProviderSelected
-    ? (settings?.availableEnterpriseProviders.find(
-        (provider) => provider.key === settings?.policies.enterpriseProviderKey,
+    ? (availableEnterpriseProviders.find(
+        (provider: (typeof availableEnterpriseProviders)[number]) =>
+          provider.key === settings?.policies.enterpriseProviderKey,
       ) ?? null)
     : null;
+  const settingsLoaded = settings !== undefined;
   const providerReady = selectedProvider?.status === 'active';
   const hasVerifiedDomains = (settings?.enterpriseAuth?.managedDomains.length ?? 0) > 0;
   const enforcementConfigured =
@@ -68,17 +71,21 @@ export function OrganizationIdentityPage({
           ? 'step-4'
           : null;
 
-  const domainBlockedMessage = !hasProviderSelected
+  const domainBlockedMessage = settingsLoaded && !hasProviderSelected
     ? 'Select and save an identity provider before verifying domains.'
     : null;
 
-  const enforcementBlockedMessage = !providerReady
+  const enforcementBlockedMessage = !settingsLoaded
+    ? null
+    : !providerReady
     ? 'Complete identity provider setup before choosing an enforcement level.'
     : !hasVerifiedDomains
       ? 'Verify at least one company domain before choosing an enforcement level.'
       : null;
 
-  const provisioningBlockedMessage = !providerReady
+  const provisioningBlockedMessage = !settingsLoaded
+    ? null
+    : !providerReady
     ? 'Complete identity provider setup before provisioning users.'
     : !hasVerifiedDomains
       ? 'Verify at least one company domain before provisioning users.'

@@ -8,9 +8,12 @@ const {
   removeDomainMock,
   regenerateTokenMock,
   verifyDomainMock,
+  detectDnsProviderMock,
   useQueryMock,
   useMutationMock,
+  useActionMock,
   mutationHookCallCount,
+  actionHookCallCount,
   invalidateQueriesMock,
   showToastMock,
 } = vi.hoisted(() => ({
@@ -18,9 +21,12 @@ const {
   removeDomainMock: vi.fn(),
   regenerateTokenMock: vi.fn(),
   verifyDomainMock: vi.fn(),
+  detectDnsProviderMock: vi.fn(),
   useQueryMock: vi.fn(),
   useMutationMock: vi.fn(),
+  useActionMock: vi.fn(),
   mutationHookCallCount: { value: 0 },
+  actionHookCallCount: { value: 0 },
   invalidateQueriesMock: vi.fn(),
   showToastMock: vi.fn(),
 }));
@@ -28,7 +34,7 @@ const {
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
-  useAction: () => (...args: unknown[]) => verifyDomainMock(...args),
+  useAction: (reference: unknown) => useActionMock(reference),
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -85,7 +91,14 @@ describe('OrganizationDomainManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useQueryMock.mockReturnValue(domainResponse);
+    detectDnsProviderMock.mockResolvedValue({
+      domainId: 'domain-1',
+      providerName: null,
+      providerUrl: null,
+      confidence: null,
+    });
     mutationHookCallCount.value = 0;
+    actionHookCallCount.value = 0;
     useMutationMock.mockImplementation(() => {
       mutationHookCallCount.value += 1;
 
@@ -99,6 +112,15 @@ describe('OrganizationDomainManagement', () => {
 
       return (...args: unknown[]) => regenerateTokenMock(...args);
     });
+    useActionMock.mockImplementation(() => {
+      actionHookCallCount.value += 1;
+
+      if (actionHookCallCount.value === 1) {
+        return (...args: unknown[]) => verifyDomainMock(...args);
+      }
+
+      return (...args: unknown[]) => detectDnsProviderMock(...args);
+    });
   });
 
   it('renders verification details for existing domains', () => {
@@ -108,7 +130,27 @@ describe('OrganizationDomainManagement', () => {
     expect(screen.getByText('example.com')).toBeInTheDocument();
     expect(screen.getByText('_ba-verify.example.com')).toBeInTheDocument();
     expect(screen.getByText('better-auth-verify=token-1')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /add domain/i })).toBeEnabled();
+    expect(screen.getByText('Check DNS Record')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add another domain/i })).toBeEnabled();
+  });
+
+  it('shows the likely DNS provider hint when one can be inferred', async () => {
+    detectDnsProviderMock.mockResolvedValueOnce({
+      domainId: 'domain-1',
+      providerName: 'Cloudflare',
+      providerUrl: 'https://dash.cloudflare.com/',
+      confidence: 'high',
+    });
+
+    render(<OrganizationDomainManagement slug="cottage-hospital" />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/most likely managed in/i)).toBeInTheDocument();
+    });
+    expect(screen.getByRole('link', { name: /^cloudflare$/i })).toHaveAttribute(
+      'href',
+      'https://dash.cloudflare.com/',
+    );
   });
 
   it('renders an inline domain input prefilled from the user email when no domains exist', () => {
@@ -130,7 +172,7 @@ describe('OrganizationDomainManagement', () => {
 
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    await user.click(screen.getByRole('button', { name: /add domain/i }));
+    await user.click(screen.getByRole('button', { name: /add another domain/i }));
     const dialog = await screen.findByRole('dialog', { name: /add domain/i });
     const submitButton = within(dialog).getByRole('button', { name: /^add domain$/i });
     const domainInput = within(dialog).getByLabelText(/^domain$/i);
@@ -157,7 +199,7 @@ describe('OrganizationDomainManagement', () => {
 
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    await user.click(screen.getByRole('button', { name: /^verify now$/i }));
+    await user.click(screen.getByRole('button', { name: /^check dns record$/i }));
 
     await waitFor(() => {
       expect(verifyDomainMock).toHaveBeenCalledWith({
@@ -176,7 +218,7 @@ describe('OrganizationDomainManagement', () => {
 
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    await user.click(screen.getByRole('button', { name: /^verify now$/i }));
+    await user.click(screen.getByRole('button', { name: /^check dns record$/i }));
 
     await waitFor(() => {
       expect(showToastMock).toHaveBeenCalledWith(
