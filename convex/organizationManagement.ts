@@ -6,6 +6,7 @@ import {
   canChangeMemberRole,
   canDeleteOrganization,
   canManageDomains,
+  canManageOrganizationPolicies,
   canManageOrganization,
   canRemoveMember,
   canViewOrganizationAudit,
@@ -40,6 +41,7 @@ import {
   chatThreadsDocValidator,
   directoryOrganizationValidator,
   organizationCreationEligibilityValidator,
+  organizationInvitePolicyValidator,
   organizationDomainDocValidator,
   organizationDomainValidator,
   organizationDirectoryResponseValidator,
@@ -91,6 +93,13 @@ type OrganizationInvitationRow = {
 };
 
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
+type OrganizationInvitePolicy = 'owners_admins' | 'owners_only';
+type OrganizationPolicies = {
+  invitePolicy: OrganizationInvitePolicy;
+  verifiedDomainsOnly: boolean;
+  memberCap: number | null;
+  mfaRequired: boolean;
+};
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
 const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
@@ -108,6 +117,10 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'domain_verification_failed',
   'domain_verification_token_regenerated',
   'domain_removed',
+  'organization_policy_updated',
+  'bulk_invite_revoked',
+  'bulk_invite_resent',
+  'bulk_member_removed',
 ]);
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
 
@@ -120,6 +133,14 @@ type OrganizationAccessContextForWrite = {
 };
 
 type OrganizationDomainDoc = Doc<'organizationDomains'>;
+type OrganizationPolicyDoc = Doc<'organizationPolicies'>;
+
+const DEFAULT_ORGANIZATION_POLICIES: OrganizationPolicies = {
+  invitePolicy: 'owners_admins',
+  verifiedDomainsOnly: false,
+  memberCap: null,
+  mfaRequired: false,
+};
 
 function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): OrganizationRole[] {
   if (viewerRole === 'site-admin' || viewerRole === 'owner') {
@@ -131,6 +152,43 @@ function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): Organizati
   }
 
   return [];
+}
+
+function toOrganizationPolicies(policy: OrganizationPolicyDoc | null | undefined): OrganizationPolicies {
+  return {
+    invitePolicy: policy?.invitePolicy ?? DEFAULT_ORGANIZATION_POLICIES.invitePolicy,
+    verifiedDomainsOnly:
+      policy?.verifiedDomainsOnly ?? DEFAULT_ORGANIZATION_POLICIES.verifiedDomainsOnly,
+    memberCap: policy?.memberCap ?? DEFAULT_ORGANIZATION_POLICIES.memberCap,
+    mfaRequired: policy?.mfaRequired ?? DEFAULT_ORGANIZATION_POLICIES.mfaRequired,
+  };
+}
+
+async function getOrganizationPolicies(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+): Promise<OrganizationPolicies> {
+  const policy = await ctx.db
+    .query('organizationPolicies')
+    .withIndex('by_organization_id', (q) => q.eq('organizationId', organizationId))
+    .first();
+
+  return toOrganizationPolicies(policy);
+}
+
+function canInviteUnderPolicy(
+  viewerRole: OrganizationViewerRole,
+  invitePolicy: OrganizationInvitePolicy,
+) {
+  if (viewerRole === 'site-admin' || viewerRole === 'owner') {
+    return true;
+  }
+
+  if (viewerRole === 'admin') {
+    return invitePolicy === 'owners_admins';
+  }
+
+  return false;
 }
 
 function canLeaveOrganization(input: {
@@ -146,19 +204,33 @@ function canLeaveOrganization(input: {
 
 function buildOrganizationCapabilities(input: {
   ownerCount: number;
+  policies: OrganizationPolicies;
   viewerMembership: Awaited<ReturnType<typeof findBetterAuthMember>>;
   viewerRole: OrganizationViewerRole;
 }) {
   return {
     availableInviteRoles: getAvailableInviteRoles(input.viewerRole),
-    canInvite: getAvailableInviteRoles(input.viewerRole).length > 0,
+    canInvite:
+      getAvailableInviteRoles(input.viewerRole).length > 0 &&
+      canInviteUnderPolicy(input.viewerRole, input.policies.invitePolicy),
     canUpdateSettings: canManageOrganization(input.viewerRole),
     canDeleteOrganization: canDeleteOrganization(input.viewerRole),
     canLeaveOrganization: canLeaveOrganization(input),
     canManageMembers: canManageOrganization(input.viewerRole),
     canManageDomains: canManageDomains(input.viewerRole),
     canViewAudit: canViewOrganizationAudit(input.viewerRole),
+    canManagePolicies: canManageOrganizationPolicies(input.viewerRole),
   };
+}
+
+function normalizeOrganizationEmailDomain(email: string) {
+  const normalizedEmail = email.trim().toLowerCase();
+  const atIndex = normalizedEmail.lastIndexOf('@');
+  if (atIndex <= 0 || atIndex === normalizedEmail.length - 1) {
+    throwConvexError('VALIDATION', 'Enter a valid email address');
+  }
+
+  return normalizedEmail.slice(atIndex + 1);
 }
 
 function normalizeOrganizationDomain(value: string) {
@@ -256,6 +328,14 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Domain verification token regenerated';
     case 'domain_removed':
       return 'Domain removed';
+    case 'organization_policy_updated':
+      return 'Organization policies updated';
+    case 'bulk_invite_revoked':
+      return 'Bulk invitation revoked';
+    case 'bulk_invite_resent':
+      return 'Bulk invitation resent';
+    case 'bulk_member_removed':
+      return 'Bulk member removed';
     default:
       return eventType;
   }
@@ -273,6 +353,62 @@ function parseAuditMetadata(metadata: string | undefined) {
   }
 }
 
+function getAuditMetadataRecord(metadata: unknown) {
+  return typeof metadata === 'object' && metadata !== null
+    ? (metadata as Record<string, unknown>)
+    : null;
+}
+
+function toAuditMetadataDisplayValue(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function getAuditActorLabel(event: Doc<'auditLogs'>, metadata: unknown) {
+  const metadataRecord = getAuditMetadataRecord(metadata);
+
+  return (
+    toAuditMetadataDisplayValue(metadataRecord?.actorEmail) ??
+    toAuditMetadataDisplayValue(metadataRecord?.inviterEmail) ??
+    event.identifier ??
+    event.userId
+  );
+}
+
+function getAuditTargetLabel(event: Doc<'auditLogs'>, metadata: unknown) {
+  const metadataRecord = getAuditMetadataRecord(metadata);
+
+  return (
+    toAuditMetadataDisplayValue(metadataRecord?.targetEmail) ??
+    toAuditMetadataDisplayValue(metadataRecord?.email) ??
+    toAuditMetadataDisplayValue(metadataRecord?.domain) ??
+    event.identifier
+  );
+}
+
+function getAuditSummary(eventType: string, metadata: unknown) {
+  const metadataRecord = getAuditMetadataRecord(metadata);
+
+  if (eventType === 'organization_policy_updated') {
+    const changedKeys = Array.isArray(metadataRecord?.changedKeys)
+      ? metadataRecord.changedKeys.filter((value): value is string => typeof value === 'string')
+      : [];
+
+    return changedKeys.length > 0 ? `Changed: ${changedKeys.join(', ')}` : undefined;
+  }
+
+  if (eventType === 'bulk_invite_revoked' || eventType === 'bulk_invite_resent') {
+    const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
+    return targetRole ? `Role: ${targetRole}` : undefined;
+  }
+
+  if (eventType === 'bulk_member_removed') {
+    const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
+    return targetRole ? `Removed ${targetRole}` : undefined;
+  }
+
+  return undefined;
+}
+
 function compareNullableStrings(
   left: string | undefined,
   right: string | undefined,
@@ -286,17 +422,25 @@ function compareNullableStrings(
 }
 
 function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
+  const metadata = parseAuditMetadata(event.metadata);
+  const actorLabel = getAuditActorLabel(event, metadata);
+  const targetLabel = getAuditTargetLabel(event, metadata);
+  const summary = getAuditSummary(event.eventType, metadata);
+
   return {
     id: event.id,
     eventType: event.eventType,
     label: getOrganizationAuditEventLabel(event.eventType),
+    ...(actorLabel ? { actorLabel } : {}),
+    ...(targetLabel ? { targetLabel } : {}),
+    ...(summary ? { summary } : {}),
     ...(event.userId ? { userId: event.userId } : {}),
     ...(event.organizationId ? { organizationId: event.organizationId } : {}),
     ...(event.identifier ? { identifier: event.identifier } : {}),
     createdAt: event.createdAt,
     ...(event.ipAddress ? { ipAddress: event.ipAddress } : {}),
     ...(event.userAgent ? { userAgent: event.userAgent } : {}),
-    ...(event.metadata ? { metadata: parseAuditMetadata(event.metadata) } : {}),
+    ...(event.metadata ? { metadata } : {}),
   };
 }
 
@@ -566,6 +710,95 @@ async function getOrganizationAccessContextById(
   } satisfies OrganizationAccessContextForWrite;
 }
 
+async function getVerifiedOrganizationDomains(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  const domains = await ctx.db
+    .query('organizationDomains')
+    .withIndex('by_organization_id', (q) => q.eq('organizationId', organizationId))
+    .collect();
+
+  return domains.filter((domain) => domain.status === 'verified');
+}
+
+async function getOrganizationSeatUsage(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  const [memberships, invitations] = await Promise.all([
+    listOrganizationMembers(ctx, organizationId),
+    fetchBetterAuthInvitationsByOrganizationId(ctx, organizationId),
+  ]);
+
+  return {
+    activeMembers: memberships.length,
+    pendingInvites: invitations.filter((invitation) => invitation.status === 'pending').length,
+  };
+}
+
+async function evaluateOrganizationInvitePolicy(
+  ctx: QueryCtx,
+  input: {
+    email?: string;
+    organizationId: string;
+    resend?: boolean;
+    viewerRole: OrganizationViewerRole;
+  },
+) {
+  const policies = await getOrganizationPolicies(ctx, input.organizationId);
+
+  if (input.viewerRole === 'site-admin') {
+    return { allowed: true as const, policies };
+  }
+
+  if (!canInviteUnderPolicy(input.viewerRole, policies.invitePolicy)) {
+    return {
+      allowed: false as const,
+      policies,
+      reason:
+        policies.invitePolicy === 'owners_only'
+          ? 'Only organization owners can invite members'
+          : 'Organization admin access required',
+    };
+  }
+
+  if (policies.verifiedDomainsOnly) {
+    if (!input.email) {
+      return {
+        allowed: false as const,
+        policies,
+        reason: 'Invite email is required',
+      };
+    }
+
+    const normalizedDomain = normalizeOrganizationEmailDomain(input.email);
+    const verifiedDomains = await getVerifiedOrganizationDomains(ctx, input.organizationId);
+    if (!verifiedDomains.some((domain) => domain.normalizedDomain === normalizedDomain)) {
+      return {
+        allowed: false as const,
+        policies,
+        reason: 'Invites must use a verified organization domain',
+      };
+    }
+  }
+
+  if (policies.memberCap !== null) {
+    const { activeMembers, pendingInvites } = await getOrganizationSeatUsage(ctx, input.organizationId);
+    const totalSeats = activeMembers + pendingInvites;
+
+    if (!input.resend && totalSeats >= policies.memberCap) {
+      return {
+        allowed: false as const,
+        policies,
+        reason: `Organization member cap reached (${policies.memberCap})`,
+      };
+    }
+  }
+
+  return { allowed: true as const, policies };
+}
+
 function compareValues(
   left: string | number,
   right: string | number,
@@ -747,8 +980,10 @@ export const getOrganizationSettings = query({
             (membership) => membership.role === 'owner',
           ).length
         : 0;
+    const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
+      policies,
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
@@ -760,11 +995,93 @@ export const getOrganizationSettings = query({
         name: context.organization.name,
         logo: context.organization.logo ?? null,
       },
+      policies,
       access: context.access,
       capabilities,
       isMember: context.viewerMembership !== null,
       viewerRole: context.viewerRole,
       canManage: capabilities.canManageMembers || capabilities.canUpdateSettings,
+    };
+  },
+});
+
+export const updateOrganizationPolicies = mutation({
+  args: {
+    organizationId: v.string(),
+    invitePolicy: organizationInvitePolicyValidator,
+    verifiedDomainsOnly: v.boolean(),
+    memberCap: v.union(v.number(), v.null()),
+    mfaRequired: v.boolean(),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    policies: v.object({
+      invitePolicy: organizationInvitePolicyValidator,
+      verifiedDomainsOnly: v.boolean(),
+      memberCap: v.union(v.number(), v.null()),
+      mfaRequired: v.boolean(),
+    }),
+  }),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageOrganizationPolicies(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    if (args.memberCap !== null && args.memberCap < 1) {
+      throwConvexError('VALIDATION', 'Member cap must be at least 1');
+    }
+
+    const nextPolicies = {
+      invitePolicy: args.invitePolicy,
+      verifiedDomainsOnly: args.verifiedDomainsOnly,
+      memberCap: args.memberCap,
+      mfaRequired: args.mfaRequired,
+    } satisfies OrganizationPolicies;
+    const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
+    const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
+      (key) => currentPolicies[key] !== nextPolicies[key],
+    );
+    const existing = await ctx.db
+      .query('organizationPolicies')
+      .withIndex('by_organization_id', (q) => q.eq('organizationId', args.organizationId))
+      .first();
+    const now = Date.now();
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...nextPolicies,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('organizationPolicies', {
+        organizationId: args.organizationId,
+        ...nextPolicies,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'organization_policy_updated',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      identifier: context.user.authUser.email?.toLowerCase(),
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        changedKeys,
+        previousPolicies: currentPolicies,
+        nextPolicies,
+      }),
+    });
+
+    return {
+      success: true as const,
+      policies: nextPolicies,
     };
   },
 });
@@ -782,6 +1099,8 @@ export const getOrganizationWriteAccess = query({
     ),
     membershipId: v.optional(v.string()),
     nextRole: v.optional(v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))),
+    email: v.optional(v.string()),
+    resend: v.optional(v.boolean()),
   },
   returns: allowedResultValidator,
   handler: async (ctx, args) => {
@@ -803,7 +1122,6 @@ export const getOrganizationWriteAccess = query({
       isSiteAdmin: user.isSiteAdmin,
       membershipRole: viewerMembership?.role,
     });
-
     if (args.action === 'invite') {
       const availableInviteRoles = getAvailableInviteRoles(viewerRole);
       if (availableInviteRoles.length === 0) {
@@ -820,7 +1138,19 @@ export const getOrganizationWriteAccess = query({
         };
       }
 
-      return { allowed: true as const };
+      const policyAccess = await evaluateOrganizationInvitePolicy(ctx, {
+        organizationId: args.organizationId,
+        viewerRole,
+        email: args.email,
+        resend: args.resend,
+      });
+
+      return policyAccess.allowed
+        ? { allowed: true as const }
+        : {
+            allowed: false as const,
+            reason: policyAccess.reason,
+          };
     }
 
     if (args.action === 'cancel-invitation' || args.action === 'update-settings') {
@@ -896,6 +1226,29 @@ export const getOrganizationWriteAccess = query({
   },
 });
 
+export const getOrganizationMemberJoinAccess = query({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: allowedResultValidator,
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    const policies = await getOrganizationPolicies(ctx, args.organizationId);
+    const authUser = (await fetchBetterAuthUsersByIds(ctx, [user.authUserId]))[0];
+
+    if (policies.mfaRequired && authUser?.twoFactorEnabled !== true) {
+      return {
+        allowed: false as const,
+        reason: 'Two-factor authentication is required to join this organization',
+      };
+    }
+
+    return {
+      allowed: true as const,
+    };
+  },
+});
+
 export const listOrganizationDirectory = query({
   args: {
     slug: v.string(),
@@ -941,8 +1294,10 @@ export const listOrganizationDirectory = query({
     ]);
 
     const ownerCount = memberships.filter((membership) => membership.role === 'owner').length;
+    const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
+      policies,
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
@@ -1097,6 +1452,7 @@ export const listOrganizationDirectory = query({
           name: context.organization.name,
           logo: context.organization.logo ?? null,
         },
+        policies,
         access: context.access,
         capabilities,
         viewerRole: context.viewerRole,
@@ -1136,6 +1492,7 @@ export const listOrganizationDirectory = query({
         name: context.organization.name,
         logo: context.organization.logo ?? null,
       },
+      policies,
       access: context.access,
       capabilities,
       viewerRole: context.viewerRole,
@@ -1176,8 +1533,10 @@ export const listOrganizationDomains = query({
             (membership) => membership.role === 'owner',
           ).length
         : 0;
+    const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
+      policies,
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
@@ -1350,6 +1709,58 @@ export const regenerateOrganizationDomainToken = mutation({
   },
 });
 
+export const recordOrganizationBulkAuditEvents = mutation({
+  args: {
+    organizationId: v.string(),
+    eventType: v.union(
+      v.literal('bulk_invite_revoked'),
+      v.literal('bulk_invite_resent'),
+      v.literal('bulk_member_removed'),
+    ),
+    entries: v.array(
+      v.object({
+        targetId: v.string(),
+        targetEmail: v.string(),
+        targetRole: v.optional(v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))),
+      }),
+    ),
+  },
+  returns: v.object({
+    success: v.literal(true),
+  }),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (!canManageOrganization(context.viewerRole)) {
+      throwConvexError('FORBIDDEN', 'Organization admin access required');
+    }
+
+    await Promise.all(
+      args.entries.map(async (entry) => {
+        await ctx.runMutation(internal.audit.insertAuditLog, {
+          eventType: args.eventType,
+          organizationId: args.organizationId,
+          userId: context.user.authUserId,
+          identifier: entry.targetEmail.toLowerCase(),
+          metadata: JSON.stringify({
+            actorEmail: context.user.authUser.email ?? undefined,
+            targetId: entry.targetId,
+            targetEmail: entry.targetEmail,
+            ...(entry.targetRole ? { targetRole: entry.targetRole } : {}),
+          }),
+        });
+      }),
+    );
+
+    return {
+      success: true as const,
+    };
+  },
+});
+
 export const listOrganizationAuditEvents = query({
   args: {
     slug: v.string(),
@@ -1382,6 +1793,10 @@ export const listOrganizationAuditEvents = query({
       v.literal('domain_verification_failed'),
       v.literal('domain_verification_token_regenerated'),
       v.literal('domain_removed'),
+      v.literal('organization_policy_updated'),
+      v.literal('bulk_invite_revoked'),
+      v.literal('bulk_invite_resent'),
+      v.literal('bulk_member_removed'),
     ),
     search: v.string(),
   },
@@ -1403,8 +1818,10 @@ export const listOrganizationAuditEvents = query({
             (membership) => membership.role === 'owner',
           ).length
         : 0;
+    const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
+      policies,
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
@@ -1529,6 +1946,10 @@ export const exportOrganizationAuditCsv = action({
       v.literal('domain_verification_failed'),
       v.literal('domain_verification_token_regenerated'),
       v.literal('domain_removed'),
+      v.literal('organization_policy_updated'),
+      v.literal('bulk_invite_revoked'),
+      v.literal('bulk_invite_resent'),
+      v.literal('bulk_member_removed'),
     ),
     search: v.string(),
   },

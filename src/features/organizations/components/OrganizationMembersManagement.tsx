@@ -35,10 +35,12 @@ import type {
   OrganizationDirectoryKind,
   OrganizationDirectoryRole,
   OrganizationDirectoryRow,
+  OrganizationInvitePolicy,
   OrganizationDirectorySearchParams,
 } from '~/features/organizations/lib/organization-management';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
+  bulkOrganizationDirectoryActionServerFn,
   cancelOrganizationInvitationServerFn,
   createOrganizationInvitationServerFn,
   removeOrganizationMemberServerFn,
@@ -81,6 +83,7 @@ export function OrganizationMembersManagement({
   const updateMemberRole = updateOrganizationMemberRoleServerFn;
   const removeMember = removeOrganizationMemberServerFn;
   const cancelInvitation = cancelOrganizationInvitationServerFn;
+  const runBulkAction = bulkOrganizationDirectoryActionServerFn;
   const [inviteDialogOpenInternal, setInviteDialogOpenInternal] = useState(false);
   const [selectedRoleMember, setSelectedRoleMember] = useState<Extract<
     OrganizationDirectoryRow,
@@ -106,6 +109,8 @@ export function OrganizationMembersManagement({
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [selectedRowIds, setSelectedRowIds] = useState<Set<string>>(new Set());
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
 
   useEffect(() => {
     if (!selectedRoleMember) {
@@ -135,6 +140,10 @@ export function OrganizationMembersManagement({
     return () => window.clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    setSelectedRowIds(new Set());
+  }, [searchParams.kind, searchParams.page, searchParams.pageSize, searchParams.search, slug]);
+
   const isLoading = directory === undefined;
   const inviteDialogOpen = inviteDialogOpenProp ?? inviteDialogOpenInternal;
   const rows = directory?.rows ?? [];
@@ -147,6 +156,7 @@ export function OrganizationMembersManagement({
   const capabilities: OrganizationCapabilities | undefined = directory?.capabilities;
   const canInvite = capabilities?.canInvite ?? false;
   const organizationName = directory?.organization.name ?? 'Organization';
+  const policies = directory?.policies;
   const setInviteDialogOpen = (open: boolean) => {
     onInviteDialogOpenChange?.(open);
 
@@ -377,6 +387,88 @@ export function OrganizationMembersManagement({
     () => selectedRoleMember?.availableRoles ?? [],
     [selectedRoleMember],
   );
+  const selectedRows = useMemo(
+    () => rows.filter((row) => selectedRowIds.has(row.id)),
+    [rows, selectedRowIds],
+  );
+  const selectedMembers = selectedRows.filter(
+    (row): row is Extract<OrganizationDirectoryRow, { kind: 'member' }> => row.kind === 'member',
+  );
+  const selectedInvites = selectedRows.filter(
+    (row): row is Extract<OrganizationDirectoryRow, { kind: 'invite' }> => row.kind === 'invite',
+  );
+
+  const toggleAllRows = (checked: boolean) => {
+    setSelectedRowIds(checked ? new Set(rows.map((row) => row.id)) : new Set());
+  };
+
+  const toggleRow = (rowId: string, checked: boolean) => {
+    setSelectedRowIds((current) => {
+      const next = new Set(current);
+
+      if (checked) {
+        next.add(rowId);
+      } else {
+        next.delete(rowId);
+      }
+
+      return next;
+    });
+  };
+
+  const handleBulkAction = async (action: 'revoke-invites' | 'resend-invites' | 'remove-members') => {
+    if (!directory) {
+      return;
+    }
+
+    setIsBulkSubmitting(true);
+
+    try {
+      const result = await runBulkAction({
+        data: {
+          organizationId: directory.organization.id,
+          action,
+          invitations: selectedInvites.map((invitation) => ({
+            invitationId: invitation.invitationId,
+            email: invitation.email,
+            role: invitation.role,
+          })),
+          members: selectedMembers.map((member) => ({
+            membershipId: member.membershipId,
+            email: member.email,
+            role: member.role,
+          })),
+        },
+      });
+
+      await refreshOrganizationState();
+      setSelectedRowIds(new Set());
+
+      if (result.failureCount === 0) {
+        showToast(
+          action === 'revoke-invites'
+            ? 'Invitations revoked.'
+            : action === 'resend-invites'
+              ? 'Invitations resent.'
+              : 'Members removed.',
+          'success',
+        );
+      } else {
+        const firstFailure = result.results.find((entry) => !entry.success);
+        showToast(
+          `${result.successCount} succeeded, ${result.failureCount} failed${firstFailure?.message ? `: ${firstFailure.message}` : ''}`,
+          result.successCount > 0 ? 'success' : 'error',
+        );
+      }
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to run bulk organization action',
+        'error',
+      );
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  };
 
   if (!isLoading && !directory) {
     return (
@@ -443,11 +535,76 @@ export function OrganizationMembersManagement({
           </div>
         </div>
 
+        {policies ? (
+          <div className="rounded-xl border border-border/60 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">Invite policy</p>
+            <p>
+              {formatInvitePolicy(policies.invitePolicy)}
+              {policies.verifiedDomainsOnly ? ' · Verified domains required' : ''}
+              {policies.memberCap !== null ? ` · Member cap ${policies.memberCap}` : ''}
+              {policies.mfaRequired ? ' · MFA required on join' : ''}
+            </p>
+          </div>
+        ) : null}
+
+        {selectedRows.length > 0 ? (
+          <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-background px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-muted-foreground">
+              {selectedRows.length} selected
+              {selectedMembers.length > 0
+                ? ` · ${selectedMembers.length} member${selectedMembers.length === 1 ? '' : 's'}`
+                : ''}
+              {selectedInvites.length > 0
+                ? ` · ${selectedInvites.length} invite${selectedInvites.length === 1 ? '' : 's'}`
+                : ''}
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isBulkSubmitting || selectedInvites.length === 0}
+                onClick={() => {
+                  void handleBulkAction('resend-invites');
+                }}
+              >
+                {isBulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
+                Resend invites
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={isBulkSubmitting || selectedInvites.length === 0}
+                onClick={() => {
+                  void handleBulkAction('revoke-invites');
+                }}
+              >
+                {isBulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
+                Revoke invites
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                disabled={isBulkSubmitting || selectedMembers.length === 0}
+                onClick={() => {
+                  void handleBulkAction('remove-members');
+                }}
+              >
+                {isBulkSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
+                Remove members
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         <OrganizationMembersTable
           slug={slug}
           rows={rows}
           pagination={pagination}
           searchParams={searchParams}
+          selectedRowIds={selectedRowIds}
           isLoading={isLoading}
           onChangeRole={(row) => {
             setSelectedRoleMember(row);
@@ -463,6 +620,8 @@ export function OrganizationMembersManagement({
             setRevokeError(null);
           }}
           onResendInvitation={handleResendInvitation}
+          onToggleAllRows={toggleAllRows}
+          onToggleRow={toggleRow}
         />
       </div>
 
@@ -744,4 +903,8 @@ function ChangeRoleDialog({
 
 function capitalize(value: string) {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function formatInvitePolicy(value: OrganizationInvitePolicy) {
+  return value === 'owners_only' ? 'Only owners can invite' : 'Owners and admins can invite';
 }

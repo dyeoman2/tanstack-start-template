@@ -28,6 +28,9 @@ const baseProps = {
   onRemoveMember: vi.fn(),
   onRevokeInvitation: vi.fn(),
   onResendInvitation: vi.fn(),
+  onToggleAllRows: vi.fn(),
+  onToggleRow: vi.fn(),
+  selectedRowIds: new Set<string>(),
 };
 
 describe('OrganizationMembersTable', () => {

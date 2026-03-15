@@ -145,6 +145,18 @@ export default defineSchema({
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_normalized_domain', ['normalizedDomain']),
 
+  organizationPolicies: defineTable({
+    organizationId: v.string(),
+    invitePolicy: v.union(v.literal('owners_admins'), v.literal('owners_only')),
+    verifiedDomainsOnly: v.boolean(),
+    memberCap: v.union(v.number(), v.null()),
+    mfaRequired: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_organization_id', ['organizationId'])
+    .index('by_organization_id_and_updated_at', ['organizationId', 'updatedAt']),
+
   dashboardStats: defineTable({
     key: v.string(),
     totalUsers: v.number(),

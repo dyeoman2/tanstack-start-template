@@ -46,6 +46,37 @@ const organizationSettingsSchema = z.object({
   logo: z.string().nullable(),
 });
 
+const organizationPoliciesSchema = z.object({
+  organizationId: z.string().min(1),
+  invitePolicy: z.enum(['owners_admins', 'owners_only']),
+  verifiedDomainsOnly: z.boolean(),
+  memberCap: z.number().int().positive().nullable(),
+  mfaRequired: z.boolean(),
+});
+
+const organizationBulkActionSchema = z.object({
+  organizationId: z.string().min(1),
+  action: z.enum(['revoke-invites', 'resend-invites', 'remove-members']),
+  invitations: z
+    .array(
+      z.object({
+        invitationId: z.string().min(1),
+        email: z.string().email(),
+        role: z.enum(['owner', 'admin', 'member']),
+      }),
+    )
+    .default([]),
+  members: z
+    .array(
+      z.object({
+        membershipId: z.string().min(1),
+        email: z.string().email(),
+        role: z.enum(['owner', 'admin', 'member']),
+      }),
+    )
+    .default([]),
+});
+
 const organizationDeleteSchema = z.object({
   organizationId: z.string().min(1),
 });
@@ -122,8 +153,10 @@ function normalizeOrganizationAuthErrorMessage(
 async function requireOrganizationWriteAccess(input: {
   action: OrganizationWriteAction;
   organizationId: string;
+  email?: string;
   membershipId?: string;
   nextRole?: 'owner' | 'admin' | 'member';
+  resend?: boolean;
 }) {
   const result = await convexAuthReactStart.fetchAuthQuery(
     api.organizationManagement.getOrganizationWriteAccess,
@@ -229,7 +262,9 @@ export const createOrganizationInvitationServerFn = createServerFn({ method: 'PO
       await requireOrganizationWriteAccess({
         action: 'invite',
         organizationId: data.organizationId,
+        email: data.email.trim().toLowerCase(),
         nextRole: data.role,
+        resend: data.resend === true,
       });
 
       return await createBetterAuthOrganizationInvitation(
@@ -244,6 +279,21 @@ export const createOrganizationInvitationServerFn = createServerFn({ method: 'PO
       );
     } catch (error) {
       throw handleServerError(error, 'Create organization invitation');
+    }
+  });
+
+export const updateOrganizationPoliciesServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationPoliciesSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.updateOrganizationPolicies,
+        data,
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Update organization policies');
     }
   });
 
@@ -380,5 +430,166 @@ export const deleteOrganizationServerFn = createServerFn({ method: 'POST' })
       return response;
     } catch (error) {
       throw handleServerError(error, 'Delete organization');
+    }
+  });
+
+export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationBulkActionSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      const results: Array<{
+        key: string;
+        message?: string;
+        success: boolean;
+      }> = [];
+
+      if (data.action === 'revoke-invites') {
+        for (const invitation of data.invitations) {
+          try {
+            await requireOrganizationWriteAccess({
+              action: 'cancel-invitation',
+              organizationId: data.organizationId,
+            });
+            await cancelBetterAuthOrganizationInvitation(
+              invitation.invitationId,
+              ({ code, message, status }) =>
+                normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+            );
+            results.push({ key: invitation.invitationId, success: true });
+          } catch (error) {
+            results.push({
+              key: invitation.invitationId,
+              success: false,
+              message: error instanceof Error ? error.message : 'Failed to revoke invitation',
+            });
+          }
+        }
+
+        const successful = data.invitations.filter((invitation) =>
+          results.some((result) => result.key === invitation.invitationId && result.success),
+        );
+        if (successful.length > 0) {
+          await convexAuthReactStart.fetchAuthMutation(
+            api.organizationManagement.recordOrganizationBulkAuditEvents,
+            {
+              organizationId: data.organizationId,
+              eventType: 'bulk_invite_revoked',
+              entries: successful.map((invitation) => ({
+                targetEmail: invitation.email.toLowerCase(),
+                targetId: invitation.invitationId,
+                targetRole: invitation.role,
+              })),
+            },
+          );
+        }
+      }
+
+      if (data.action === 'resend-invites') {
+        for (const invitation of data.invitations) {
+          try {
+            await requireOrganizationWriteAccess({
+              action: 'invite',
+              organizationId: data.organizationId,
+              email: invitation.email.toLowerCase(),
+              nextRole: invitation.role,
+              resend: true,
+            });
+            await createBetterAuthOrganizationInvitation(
+              {
+                organizationId: data.organizationId,
+                email: invitation.email.toLowerCase(),
+                role: invitation.role,
+                resend: true,
+              },
+              ({ code, message, status }) =>
+                normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+            );
+            results.push({ key: invitation.invitationId, success: true });
+          } catch (error) {
+            results.push({
+              key: invitation.invitationId,
+              success: false,
+              message: error instanceof Error ? error.message : 'Failed to resend invitation',
+            });
+          }
+        }
+
+        const successful = data.invitations.filter((invitation) =>
+          results.some((result) => result.key === invitation.invitationId && result.success),
+        );
+        if (successful.length > 0) {
+          await convexAuthReactStart.fetchAuthMutation(
+            api.organizationManagement.recordOrganizationBulkAuditEvents,
+            {
+              organizationId: data.organizationId,
+              eventType: 'bulk_invite_resent',
+              entries: successful.map((invitation) => ({
+                targetEmail: invitation.email.toLowerCase(),
+                targetId: invitation.invitationId,
+                targetRole: invitation.role,
+              })),
+            },
+          );
+        }
+      }
+
+      if (data.action === 'remove-members') {
+        for (const member of data.members) {
+          try {
+            await requireOrganizationWriteAccess({
+              action: 'remove-member',
+              organizationId: data.organizationId,
+              membershipId: member.membershipId,
+            });
+            await removeBetterAuthOrganizationMember(
+              {
+                organizationId: data.organizationId,
+                memberIdOrEmail: member.membershipId,
+              },
+              ({ code, message, status }) =>
+                normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+            );
+            results.push({ key: member.membershipId, success: true });
+          } catch (error) {
+            results.push({
+              key: member.membershipId,
+              success: false,
+              message: error instanceof Error ? error.message : 'Failed to remove member',
+            });
+          }
+        }
+
+        const successful = data.members.filter((member) =>
+          results.some((result) => result.key === member.membershipId && result.success),
+        );
+        if (successful.length > 0) {
+          await convexAuthReactStart.fetchAuthMutation(
+            api.organizationManagement.recordOrganizationBulkAuditEvents,
+            {
+              organizationId: data.organizationId,
+              eventType: 'bulk_member_removed',
+              entries: successful.map((member) => ({
+                targetEmail: member.email.toLowerCase(),
+                targetId: member.membershipId,
+                targetRole: member.role,
+              })),
+            },
+          );
+          await refreshCurrentUserContext();
+        }
+      }
+
+      const successCount = results.filter((result) => result.success).length;
+      const failures = results.filter((result) => !result.success);
+
+      return {
+        results,
+        successCount,
+        failureCount: failures.length,
+      };
+    } catch (error) {
+      throw handleServerError(error, 'Run bulk organization action');
     }
   });

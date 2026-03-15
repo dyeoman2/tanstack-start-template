@@ -22,17 +22,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '~/components/ui/dropdown-menu';
+import { Checkbox } from '~/components/ui/checkbox';
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationMembersManagement } from '~/features/organizations/components/OrganizationMembersManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
-import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
+import type {
+  OrganizationDirectorySearchParams,
+  OrganizationInvitePolicy,
+} from '~/features/organizations/lib/organization-management';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
   deleteOrganizationServerFn,
+  updateOrganizationPoliciesServerFn,
   updateOrganizationSettingsServerFn,
 } from '~/features/organizations/server/organization-management';
 import { leaveOrganizationServerFn } from '~/features/organizations/server/organization-membership';
@@ -51,6 +63,7 @@ export function OrganizationSettingsManagement({
   const { showToast } = useToast();
   const settings = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
   const updateSettings = updateOrganizationSettingsServerFn;
+  const updatePolicies = updateOrganizationPoliciesServerFn;
   const deleteOrganization = deleteOrganizationServerFn;
 
   const [name, setName] = useState('');
@@ -65,6 +78,12 @@ export function OrganizationSettingsManagement({
   const [isLeaveDialogOpen, setIsLeaveDialogOpen] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
+  const [invitePolicy, setInvitePolicy] = useState<OrganizationInvitePolicy>('owners_admins');
+  const [verifiedDomainsOnly, setVerifiedDomainsOnly] = useState(false);
+  const [memberCap, setMemberCap] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [policyError, setPolicyError] = useState<string | null>(null);
+  const [isSavingPolicies, setIsSavingPolicies] = useState(false);
 
   useEffect(() => {
     if (!settings) {
@@ -73,6 +92,10 @@ export function OrganizationSettingsManagement({
 
     setName(settings.organization.name);
     setLogo(settings.organization.logo ?? '');
+    setInvitePolicy(settings.policies.invitePolicy);
+    setVerifiedDomainsOnly(settings.policies.verifiedDomainsOnly);
+    setMemberCap(settings.policies.memberCap?.toString() ?? '');
+    setMfaRequired(settings.policies.mfaRequired);
   }, [settings]);
 
   const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
@@ -104,6 +127,7 @@ export function OrganizationSettingsManagement({
   const canUpdateSettings = settings.capabilities.canUpdateSettings;
   const canInvite = settings.capabilities.canInvite;
   const canManageMembers = settings.capabilities.canManageMembers;
+  const canManagePolicies = settings.capabilities.canManagePolicies;
   const canLeaveOrganization = settings.capabilities.canLeaveOrganization;
   const canDelete = settings.capabilities.canDeleteOrganization;
   const canManage = canUpdateSettings || canManageMembers;
@@ -160,6 +184,35 @@ export function OrganizationSettingsManagement({
       showToast(message, 'error');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleSavePolicies = async () => {
+    setIsSavingPolicies(true);
+    setPolicyError(null);
+
+    try {
+      await updatePolicies({
+        data: {
+          organizationId: settings.organization.id,
+          invitePolicy,
+          verifiedDomainsOnly,
+          memberCap: memberCap.trim().length > 0 ? Number.parseInt(memberCap, 10) : null,
+          mfaRequired,
+        },
+      });
+      await refreshOrganizationClientState(queryClient, {
+        invalidateRouter: async () => {
+          await router.invalidate();
+        },
+      });
+      showToast('Organization policies updated.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to update organization policies';
+      setPolicyError(message);
+      showToast(message, 'error');
+    } finally {
+      setIsSavingPolicies(false);
     }
   };
 
@@ -257,6 +310,99 @@ export function OrganizationSettingsManagement({
           </CardHeader>
         </Card>
       ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Organization policies</CardTitle>
+          <CardDescription>
+            Control who can invite, whether invites must use verified domains, member caps, and MFA requirements for new joins.
+          </CardDescription>
+        </CardHeader>
+        <div className="space-y-4 px-6 pb-6">
+          <Field>
+            <FieldLabel>Invite permissions</FieldLabel>
+            <Select
+              value={invitePolicy}
+              onValueChange={(value) => setInvitePolicy(value as OrganizationInvitePolicy)}
+              disabled={isSavingPolicies || !canManagePolicies}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="owners_admins">Owners and admins</SelectItem>
+                <SelectItem value="owners_only">Owners only</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+
+          <Field orientation="horizontal">
+            <Checkbox
+              checked={verifiedDomainsOnly}
+              onCheckedChange={(checked) => setVerifiedDomainsOnly(checked === true)}
+              disabled={isSavingPolicies || !canManagePolicies}
+              aria-label="Require verified domains for invitations"
+            />
+            <div className="space-y-1">
+              <FieldLabel>Require verified domains for invitations</FieldLabel>
+              <p className="text-sm text-muted-foreground">
+                New invitations must use one of this organization&apos;s verified domains.
+              </p>
+            </div>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="organization-member-cap">Member cap</FieldLabel>
+            <Input
+              id="organization-member-cap"
+              type="number"
+              min="1"
+              step="1"
+              value={memberCap}
+              onChange={(event) => setMemberCap(event.target.value)}
+              disabled={isSavingPolicies || !canManagePolicies}
+              placeholder="Unlimited"
+            />
+            <p className="text-sm text-muted-foreground">
+              Counts active members and pending invitations.
+            </p>
+          </Field>
+
+          <Field orientation="horizontal">
+            <Checkbox
+              checked={mfaRequired}
+              onCheckedChange={(checked) => setMfaRequired(checked === true)}
+              disabled={isSavingPolicies || !canManagePolicies}
+              aria-label="Require MFA to join the organization"
+            />
+            <div className="space-y-1">
+              <FieldLabel>Require MFA for new joins</FieldLabel>
+              <p className="text-sm text-muted-foreground">
+                Users without Better Auth two-factor enabled will be blocked from accepting invitations.
+              </p>
+            </div>
+          </Field>
+
+          {policyError ? <FieldError>{policyError}</FieldError> : null}
+
+          <div className="flex justify-end">
+            <Button
+              type="button"
+              onClick={handleSavePolicies}
+              disabled={isSavingPolicies || !canManagePolicies}
+            >
+              {isSavingPolicies ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  Saving policies...
+                </>
+              ) : (
+                'Save policies'
+              )}
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       {canManageMembers ? (
         <OrganizationMembersManagement

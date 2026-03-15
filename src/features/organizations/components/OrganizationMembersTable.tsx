@@ -5,6 +5,7 @@ import { useCallback, useMemo } from 'react';
 import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { Checkbox } from '~/components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -24,6 +25,8 @@ interface OrganizationMembersTableProps {
   onRemoveMember: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
   onRevokeInvitation: (row: Extract<OrganizationDirectoryRow, { kind: 'invite' }>) => void;
   onResendInvitation: (row: Extract<OrganizationDirectoryRow, { kind: 'invite' }>) => void;
+  onToggleAllRows: (checked: boolean) => void;
+  onToggleRow: (rowId: string, checked: boolean) => void;
   pagination: {
     page: number;
     pageSize: number;
@@ -32,6 +35,7 @@ interface OrganizationMembersTableProps {
   };
   rows: OrganizationDirectoryRow[];
   searchParams: OrganizationDirectorySearchParams;
+  selectedRowIds: Set<string>;
   slug: string;
 }
 
@@ -43,12 +47,17 @@ export function OrganizationMembersTable({
   onRemoveMember,
   onRevokeInvitation,
   onResendInvitation,
+  onToggleAllRows,
+  onToggleRow,
   pagination,
   rows,
   searchParams,
+  selectedRowIds,
   slug,
 }: OrganizationMembersTableProps) {
   const navigate = useNavigate();
+  const allRowsSelected = rows.length > 0 && rows.every((row) => selectedRowIds.has(row.id));
+  const someRowsSelected = rows.some((row) => selectedRowIds.has(row.id));
 
   const handleSorting = useCallback(
     (columnId: string) => {
@@ -100,6 +109,27 @@ export function OrganizationMembersTable({
 
   const columns = useMemo<ColumnDef<OrganizationDirectoryRow, unknown>[]>(
     () => [
+      {
+        id: 'select',
+        header: () => (
+          <div className="flex items-center">
+            <Checkbox
+              checked={allRowsSelected ? true : someRowsSelected ? 'indeterminate' : false}
+              onCheckedChange={(checked) => onToggleAllRows(checked === true)}
+              aria-label="Select all visible organization rows"
+            />
+          </div>
+        ),
+        cell: ({ row }) => (
+          <div className="flex items-center">
+            <Checkbox
+              checked={selectedRowIds.has(row.original.id)}
+              onCheckedChange={(checked) => onToggleRow(row.original.id, checked === true)}
+              aria-label={`Select ${row.original.email}`}
+            />
+          </div>
+        ),
+      },
       {
         accessorKey: 'name',
         header: createSortableHeader('Name', 'name', searchParams, handleSorting),
@@ -229,7 +259,12 @@ export function OrganizationMembersTable({
       onRemoveMember,
       onResendInvitation,
       onRevokeInvitation,
+      onToggleAllRows,
+      onToggleRow,
       searchParams,
+      allRowsSelected,
+      selectedRowIds,
+      someRowsSelected,
     ],
   );
 

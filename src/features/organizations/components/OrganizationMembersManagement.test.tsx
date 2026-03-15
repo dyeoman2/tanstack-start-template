@@ -13,6 +13,7 @@ const {
   updateMemberRoleMock,
   removeMemberMock,
   cancelInvitationMock,
+  bulkActionMock,
   useQueryMock,
   invalidateQueriesMock,
   notifyMock,
@@ -25,6 +26,7 @@ const {
   updateMemberRoleMock: vi.fn(),
   removeMemberMock: vi.fn(),
   cancelInvitationMock: vi.fn(),
+  bulkActionMock: vi.fn(),
   useQueryMock: vi.fn(),
   invalidateQueriesMock: vi.fn(),
   notifyMock: vi.fn(),
@@ -60,6 +62,7 @@ vi.mock('~/features/organizations/server/organization-management', () => ({
   updateOrganizationMemberRoleServerFn: (...args: unknown[]) => updateMemberRoleMock(...args),
   removeOrganizationMemberServerFn: (...args: unknown[]) => removeMemberMock(...args),
   cancelOrganizationInvitationServerFn: (...args: unknown[]) => cancelInvitationMock(...args),
+  bulkOrganizationDirectoryActionServerFn: (...args: unknown[]) => bulkActionMock(...args),
 }));
 
 vi.mock('~/components/ui/toast', () => ({
@@ -89,6 +92,13 @@ const directoryResponse = {
     canDeleteOrganization: true,
     canLeaveOrganization: false,
     canManageMembers: true,
+    canManagePolicies: true,
+  },
+  policies: {
+    invitePolicy: 'owners_admins' as const,
+    verifiedDomainsOnly: false,
+    memberCap: null,
+    mfaRequired: false,
   },
   viewerRole: 'site-admin' as const,
   rows: [
@@ -121,6 +131,51 @@ describe('OrganizationMembersManagement', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useQueryMock.mockReturnValue(directoryResponse);
+  });
+
+  it('runs bulk invite actions for selected rows', async () => {
+    const user = userEvent.setup();
+    bulkActionMock.mockResolvedValueOnce({
+      successCount: 1,
+      failureCount: 0,
+      results: [{ key: 'invite-1', success: true }],
+    });
+
+    render(
+      <OrganizationMembersManagement
+        slug="cottage-hospital"
+        searchParams={{
+          page: 1,
+          pageSize: 10,
+          sortBy: 'createdAt',
+          sortOrder: 'desc',
+          secondarySortBy: 'email',
+          secondarySortOrder: 'asc',
+          search: '',
+          kind: 'all',
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole('checkbox', { name: /select invitee@example.com/i }));
+    await user.click(screen.getByRole('button', { name: /revoke invites/i }));
+
+    await waitFor(() => {
+      expect(bulkActionMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          action: 'revoke-invites',
+          invitations: [
+            {
+              invitationId: 'invite-1',
+              email: 'invitee@example.com',
+              role: 'member',
+            },
+          ],
+          members: [],
+        },
+      });
+    });
   });
 
   it('resends organization invitations from the invite row actions', async () => {

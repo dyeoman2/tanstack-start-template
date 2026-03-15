@@ -12,6 +12,7 @@ export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
 
 export const ORGANIZATION_DIRECTORY_KIND_VALUES = ['all', 'member', 'invite'] as const;
 export const ORGANIZATION_DIRECTORY_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export const ORGANIZATION_INVITE_POLICY_VALUES = ['owners_admins', 'owners_only'] as const;
 export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'organization_created',
   'organization_updated',
@@ -27,6 +28,10 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'domain_verification_failed',
   'domain_verification_token_regenerated',
   'domain_removed',
+  'organization_policy_updated',
+  'bulk_invite_revoked',
+  'bulk_invite_resent',
+  'bulk_member_removed',
 ] as const;
 export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
   'all',
@@ -54,6 +59,7 @@ export type OrganizationDirectorySortField = (typeof ORGANIZATION_DIRECTORY_SORT
 export type OrganizationDirectorySortOrder = 'asc' | 'desc';
 export type OrganizationDirectoryKind = (typeof ORGANIZATION_DIRECTORY_KIND_VALUES)[number];
 export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALUES)[number];
+export type OrganizationInvitePolicy = (typeof ORGANIZATION_INVITE_POLICY_VALUES)[number];
 
 export type OrganizationDirectorySearchParams = z.infer<typeof organizationDirectorySearchSchema>;
 
@@ -86,6 +92,14 @@ export type OrganizationCapabilities = {
   canManageMembers: boolean;
   canManageDomains: boolean;
   canViewAudit: boolean;
+  canManagePolicies: boolean;
+};
+
+export type OrganizationPolicies = {
+  invitePolicy: OrganizationInvitePolicy;
+  verifiedDomainsOnly: boolean;
+  memberCap: number | null;
+  mfaRequired: boolean;
 };
 
 export type OrganizationMemberRow = {
@@ -149,6 +163,9 @@ export type OrganizationAuditEventViewModel = {
   id: string;
   eventType: OrganizationAuditEventType;
   label: string;
+  actorLabel?: string;
+  targetLabel?: string;
+  summary?: string;
   userId?: string;
   organizationId?: string;
   identifier?: string;

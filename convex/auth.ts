@@ -8,6 +8,7 @@ import { APIError } from 'better-auth/api';
 import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { normalizeOrganizationRole } from '../src/features/organizations/lib/organization-permissions';
 import {
   getBetterAuthSecret,
   isE2EPrincipalEmail,
@@ -683,11 +684,11 @@ async function createSiteAdminInvitation(
   if (orgOptions?.organizationHooks?.beforeCreateInvitation) {
     const response = await orgOptions.organizationHooks.beforeCreateInvitation({
       invitation: invitationSeed,
+      inviter: hookUser,
       organization: {
         id: args.organizationId,
         name: organization.name,
       },
-      user: hookUser,
     } as never);
     if (response?.data) {
       invitationData = {
@@ -744,11 +745,11 @@ async function createSiteAdminInvitation(
         organizationId: args.organizationId,
         role: args.role,
       },
+      inviter: hookUser,
       organization: {
         id: args.organizationId,
         name: organization.name,
       },
-      user: hookUser,
     } as never);
   }
 
@@ -1222,6 +1223,32 @@ export const createAuth = (
       },
     },
     organizationHooks: {
+      beforeCreateInvitation: async ({ invitation, inviter, organization }) => {
+        const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
+          action: 'invite',
+          organizationId: organization.id,
+          nextRole: normalizeOrganizationRole(invitation.role),
+          email: invitation.email,
+          resend: false,
+        });
+
+        if (!access.allowed) {
+          throw new APIError('FORBIDDEN', {
+            message: access.reason ?? 'Organization invitation not allowed',
+          });
+        }
+      },
+      beforeAcceptInvitation: async ({ organization }) => {
+        const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationMemberJoinAccess, {
+          organizationId: organization.id,
+        });
+
+        if (!access.allowed) {
+          throw new APIError('FORBIDDEN', {
+            message: access.reason ?? 'Organization join not allowed',
+          });
+        }
+      },
       afterAddMember: async ({ member }) => {
         await syncActiveOrganizationForUserSessions(ctxWithRunMutation, member.userId, {
           preferredOrganizationId: member.organizationId,

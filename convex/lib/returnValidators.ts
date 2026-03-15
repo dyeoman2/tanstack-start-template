@@ -6,6 +6,10 @@ export const organizationRoleValidator = v.union(
   v.literal('admin'),
   v.literal('member'),
 );
+export const organizationInvitePolicyValidator = v.union(
+  v.literal('owners_admins'),
+  v.literal('owners_only'),
+);
 export const organizationViewerRoleValidator = v.union(
   organizationRoleValidator,
   v.literal('site-admin'),
@@ -439,6 +443,12 @@ export const directoryOrganizationValidator = v.object({
 export const organizationSettingsValidator = v.object({
   organization: organizationSummaryValidator,
   access: organizationAccessValidator,
+  policies: v.object({
+    invitePolicy: organizationInvitePolicyValidator,
+    verifiedDomainsOnly: v.boolean(),
+    memberCap: v.union(v.number(), v.null()),
+    mfaRequired: v.boolean(),
+  }),
   capabilities: v.object({
     availableInviteRoles: v.array(organizationRoleValidator),
     canInvite: v.boolean(),
@@ -448,6 +458,7 @@ export const organizationSettingsValidator = v.object({
     canManageMembers: v.boolean(),
     canManageDomains: v.boolean(),
     canViewAudit: v.boolean(),
+    canManagePolicies: v.boolean(),
   }),
   isMember: v.boolean(),
   viewerRole: organizationViewerRoleValidator,
@@ -491,6 +502,12 @@ export const organizationDirectoryRowValidator = v.union(
 export const organizationDirectoryResponseValidator = v.object({
   organization: organizationSummaryValidator,
   access: organizationAccessValidator,
+  policies: v.object({
+    invitePolicy: organizationInvitePolicyValidator,
+    verifiedDomainsOnly: v.boolean(),
+    memberCap: v.union(v.number(), v.null()),
+    mfaRequired: v.boolean(),
+  }),
   capabilities: v.object({
     availableInviteRoles: v.array(organizationRoleValidator),
     canInvite: v.boolean(),
@@ -500,6 +517,7 @@ export const organizationDirectoryResponseValidator = v.object({
     canManageMembers: v.boolean(),
     canManageDomains: v.boolean(),
     canViewAudit: v.boolean(),
+    canManagePolicies: v.boolean(),
   }),
   viewerRole: organizationViewerRoleValidator,
   rows: v.array(organizationDirectoryRowValidator),
@@ -569,6 +587,9 @@ export const organizationAuditEventViewModelValidator = v.object({
   id: v.string(),
   eventType: v.string(),
   label: v.string(),
+  actorLabel: v.optional(v.string()),
+  targetLabel: v.optional(v.string()),
+  summary: v.optional(v.string()),
   userId: v.optional(v.string()),
   organizationId: v.optional(v.string()),
   identifier: v.optional(v.string()),

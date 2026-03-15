@@ -81,6 +81,10 @@ export function canManageDomains(viewerRole: OrganizationViewerRole) {
   return viewerRole === 'site-admin' || viewerRole === 'owner';
 }
 
+export function canManageOrganizationPolicies(viewerRole: OrganizationViewerRole) {
+  return viewerRole === 'site-admin' || viewerRole === 'owner';
+}
+
 export function getOrganizationAccess(viewerRole: OrganizationViewerRole): OrganizationAccess {
   switch (viewerRole) {
     case 'site-admin':

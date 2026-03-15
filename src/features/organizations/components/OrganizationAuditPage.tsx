@@ -39,12 +39,19 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Domain verification failed', value: 'domain_verification_failed' },
   { label: 'Domain token regenerated', value: 'domain_verification_token_regenerated' },
   { label: 'Domain removed', value: 'domain_removed' },
+  { label: 'Policies updated', value: 'organization_policy_updated' },
+  { label: 'Bulk invite revoked', value: 'bulk_invite_revoked' },
+  { label: 'Bulk invite resent', value: 'bulk_invite_resent' },
+  { label: 'Bulk member removed', value: 'bulk_member_removed' },
 ];
 
 type OrganizationAuditRow = {
   id: string;
   eventType: string;
   label: string;
+  actorLabel?: string;
+  targetLabel?: string;
+  summary?: string;
   userId?: string;
   organizationId?: string;
   identifier?: string;
@@ -180,17 +187,21 @@ export function OrganizationAuditPage({
         cell: ({ row }) => <span className="text-sm font-medium text-foreground">{row.original.label}</span>,
       },
       {
-        accessorKey: 'identifier',
-        header: createSortableHeader('Identifier', 'identifier', searchParams, handleSorting),
+        accessorKey: 'actorLabel',
+        header: () => <div>Actor</div>,
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">{row.original.identifier ?? '—'}</span>
+          <span className="text-sm text-muted-foreground">
+            {row.original.actorLabel ?? row.original.userId ?? '—'}
+          </span>
         ),
       },
       {
-        accessorKey: 'userId',
-        header: createSortableHeader('User', 'userId', searchParams, handleSorting),
+        accessorKey: 'targetLabel',
+        header: () => <div>Target</div>,
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">{row.original.userId ?? '—'}</span>
+          <span className="text-sm text-muted-foreground">
+            {row.original.targetLabel ?? row.original.identifier ?? '—'}
+          </span>
         ),
       },
       {
@@ -222,6 +233,9 @@ export function OrganizationAuditPage({
                   {JSON.stringify(row.original.metadata, null, 2)}
                 </pre>
               </details>
+            ) : null}
+            {row.original.summary ? (
+              <div className="mt-2 text-xs text-foreground">{row.original.summary}</div>
             ) : null}
           </div>
         ),
