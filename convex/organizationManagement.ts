@@ -6,6 +6,7 @@ import {
   canChangeMemberRole,
   canDeleteOrganization,
   canManageDomains,
+  canManageMemberState,
   canManageOrganizationPolicies,
   canManageOrganization,
   canRemoveMember,
@@ -29,6 +30,7 @@ import { throwConvexError } from './auth/errors';
 import {
   fetchAllBetterAuthOrganizations,
   fetchBetterAuthInvitationsByOrganizationId,
+  type BetterAuthMember,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthUsersByIds,
@@ -41,6 +43,7 @@ import {
   chatThreadsDocValidator,
   directoryOrganizationValidator,
   organizationCreationEligibilityValidator,
+  organizationMemberStatusValidator,
   organizationInvitePolicyValidator,
   organizationDomainDocValidator,
   organizationDomainValidator,
@@ -50,6 +53,12 @@ import {
   organizationSettingsValidator,
 } from './lib/returnValidators';
 import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
+import {
+  getOrganizationMembershipStateRecord,
+  getOrganizationMembershipStatus,
+  getOrganizationMembershipStatuses,
+  type OrganizationMembershipStatus,
+} from './lib/organizationMembershipState';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -71,12 +80,15 @@ type OrganizationMemberRow = {
   name: string | null;
   email: string;
   role: OrganizationRole;
-  status: 'active';
+  status: OrganizationMembershipStatus;
   createdAt: number;
   isSiteAdmin: boolean;
   availableRoles: OrganizationRole[];
   canChangeRole: boolean;
   canRemove: boolean;
+  canSuspend: boolean;
+  canDeactivate: boolean;
+  canReactivate: boolean;
 };
 
 type OrganizationInvitationRow = {
@@ -108,6 +120,9 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'member_added',
   'member_removed',
   'member_role_updated',
+  'member_suspended',
+  'member_deactivated',
+  'member_reactivated',
   'member_invited',
   'invite_accepted',
   'invite_rejected',
@@ -134,7 +149,6 @@ type OrganizationAccessContextForWrite = {
 
 type OrganizationDomainDoc = Doc<'organizationDomains'>;
 type OrganizationPolicyDoc = Doc<'organizationPolicies'>;
-
 const DEFAULT_ORGANIZATION_POLICIES: OrganizationPolicies = {
   invitePolicy: 'owners_admins',
   verifiedDomainsOnly: false,
@@ -174,6 +188,82 @@ async function getOrganizationPolicies(
     .first();
 
   return toOrganizationPolicies(policy);
+}
+
+async function countActiveOwners(
+  ctx: QueryCtx | MutationCtx,
+  memberships: BetterAuthMember[],
+) {
+  const membershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
+
+  return memberships.filter(
+    (membership) =>
+      membership.role === 'owner' && (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+  ).length;
+}
+
+async function getMembershipStatusMap(
+  ctx: QueryCtx | MutationCtx,
+  memberships: BetterAuthMember[],
+) {
+  return await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
+}
+
+async function upsertOrganizationMembershipState(
+  ctx: MutationCtx,
+  input: {
+    membership: BetterAuthMember;
+    nextStatus: Exclude<OrganizationMembershipStatus, 'active'>;
+    reason?: string | null;
+    updatedByUserId: string;
+  },
+) {
+  const existing = await getOrganizationMembershipStateRecord(ctx, input.membership._id);
+  const now = Date.now();
+  const reason = input.reason?.trim() ? input.reason.trim() : null;
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      status: input.nextStatus,
+      reason,
+      updatedAt: now,
+      updatedByUserId: input.updatedByUserId,
+      ...(input.nextStatus === 'deactivated' ? { deactivatedAt: now } : {}),
+    });
+    return;
+  }
+
+  await ctx.db.insert('organizationMembershipStates', {
+    organizationId: input.membership.organizationId,
+    membershipId: input.membership._id,
+    userId: input.membership.userId,
+    status: input.nextStatus,
+    reason,
+    createdAt: now,
+    updatedAt: now,
+    updatedByUserId: input.updatedByUserId,
+    ...(input.nextStatus === 'deactivated' ? { deactivatedAt: now } : {}),
+  });
+}
+
+async function clearOrganizationMembershipState(
+  ctx: MutationCtx,
+  input: {
+    membership: BetterAuthMember;
+  },
+) {
+  const existing = await getOrganizationMembershipStateRecord(ctx, input.membership._id);
+  if (!existing) {
+    return;
+  }
+
+  await ctx.db.delete(existing._id);
 }
 
 function canInviteUnderPolicy(
@@ -310,6 +400,12 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Member removed';
     case 'member_role_updated':
       return 'Member role updated';
+    case 'member_suspended':
+      return 'Member suspended';
+    case 'member_deactivated':
+      return 'Member deactivated';
+    case 'member_reactivated':
+      return 'Member reactivated';
     case 'member_invited':
       return 'Invitation sent';
     case 'invite_accepted':
@@ -404,6 +500,14 @@ function getAuditSummary(eventType: string, metadata: unknown) {
   if (eventType === 'bulk_member_removed') {
     const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
     return targetRole ? `Removed ${targetRole}` : undefined;
+  }
+
+  if (
+    eventType === 'member_suspended' ||
+    eventType === 'member_deactivated' ||
+    eventType === 'member_reactivated'
+  ) {
+    return toAuditMetadataDisplayValue(metadataRecord?.reason);
   }
 
   return undefined;
@@ -669,7 +773,7 @@ async function getOrganizationAccessContextBySlug(ctx: QueryCtx, slug: string) {
 
   const viewerRole = deriveViewerRole({
     isSiteAdmin: user.isSiteAdmin,
-    membershipRole: viewerMembership?.role,
+    membershipRole: access.view ? viewerMembership?.role : null,
   });
 
   return {
@@ -698,7 +802,7 @@ async function getOrganizationAccessContextById(
 
   const viewerRole = deriveViewerRole({
     isSiteAdmin: user.isSiteAdmin,
-    membershipRole: viewerMembership?.role,
+    membershipRole: access.view ? viewerMembership?.role : null,
   });
 
   return {
@@ -730,9 +834,12 @@ async function getOrganizationSeatUsage(
     listOrganizationMembers(ctx, organizationId),
     fetchBetterAuthInvitationsByOrganizationId(ctx, organizationId),
   ]);
+  const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
 
   return {
-    activeMembers: memberships.length,
+    activeMembers: memberships.filter(
+      (membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+    ).length,
     pendingInvites: invitations.filter((invitation) => invitation.status === 'pending').length,
   };
 }
@@ -894,6 +1001,7 @@ export const listOrganizationsForDirectory = query({
     }
 
     const memberships = await listOrganizationMembersForUser(ctx, user.authUserId);
+    const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
     const organizations = await fetchBetterAuthOrganizationsByIds(
       ctx,
       memberships.map((membership) => membership.organizationId),
@@ -907,6 +1015,10 @@ export const listOrganizationsForDirectory = query({
 
     return memberships
       .map((membership) => {
+        if ((membershipStatuses.get(membership._id) ?? 'active') !== 'active') {
+          return null;
+        }
+
         const organization = organizationById.get(membership.organizationId);
         if (!organization) {
           return null;
@@ -937,8 +1049,11 @@ export const getOrganizationCreationEligibility = query({
 
     if (user.isSiteAdmin) {
       const memberships = await listOrganizationMembersForUser(ctx, user.authUserId);
+      const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
       return {
-        count: memberships.length,
+        count: memberships.filter(
+          (membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+        ).length,
         limit: null,
         canCreate: true,
         reason: null,
@@ -947,7 +1062,10 @@ export const getOrganizationCreationEligibility = query({
     }
 
     const memberships = await listOrganizationMembersForUser(ctx, user.authUserId);
-    const count = memberships.length;
+    const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
+    const count = memberships.filter(
+      (membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+    ).length;
     const canCreate = count < SELF_SERVE_ORGANIZATION_LIMIT;
 
     return {
@@ -976,9 +1094,7 @@ export const getOrganizationSettings = query({
     const organizationId = context.organization._id ?? context.organization.id;
     const ownerCount =
       organizationId && context.viewerMembership
-        ? (await listOrganizationMembers(ctx, organizationId)).filter(
-            (membership) => membership.role === 'owner',
-          ).length
+        ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
         : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
@@ -1093,6 +1209,9 @@ export const getOrganizationWriteAccess = query({
       v.literal('invite'),
       v.literal('update-member-role'),
       v.literal('remove-member'),
+      v.literal('suspend-member'),
+      v.literal('deactivate-member'),
+      v.literal('reactivate-member'),
       v.literal('cancel-invitation'),
       v.literal('update-settings'),
       v.literal('delete-organization'),
@@ -1120,7 +1239,7 @@ export const getOrganizationWriteAccess = query({
 
     const viewerRole = deriveViewerRole({
       isSiteAdmin: user.isSiteAdmin,
-      membershipRole: viewerMembership?.role,
+      membershipRole: _access.view ? viewerMembership?.role : null,
     });
     if (args.action === 'invite') {
       const availableInviteRoles = getAvailableInviteRoles(viewerRole);
@@ -1188,7 +1307,8 @@ export const getOrganizationWriteAccess = query({
     }
 
     const currentRole = normalizeOrganizationRole(membership.role);
-    const ownerCount = memberships.filter((candidate) => candidate.role === 'owner').length;
+    const currentStatus = await getOrganizationMembershipStatus(ctx, membership._id);
+    const ownerCount = await countActiveOwners(ctx, memberships);
 
     if (args.action === 'remove-member') {
       return canRemoveMember(
@@ -1201,6 +1321,32 @@ export const getOrganizationWriteAccess = query({
         : {
             allowed: false as const,
             reason: 'Not authorized to remove this member',
+        };
+    }
+
+    if (
+      args.action === 'suspend-member' ||
+      args.action === 'deactivate-member' ||
+      args.action === 'reactivate-member'
+    ) {
+      const memberStateAccess = canManageMemberState(
+        viewerRole,
+        currentRole,
+        currentStatus,
+        membership.userId === user.authUserId,
+        ownerCount,
+      );
+
+      const allowed =
+        (args.action === 'suspend-member' && memberStateAccess.canSuspend) ||
+        (args.action === 'deactivate-member' && memberStateAccess.canDeactivate) ||
+        (args.action === 'reactivate-member' && memberStateAccess.canReactivate);
+
+      return allowed
+        ? { allowed: true as const }
+        : {
+            allowed: false as const,
+            reason: `Not authorized to ${args.action.replace('-', ' ')} this member`,
           };
     }
 
@@ -1210,6 +1356,7 @@ export const getOrganizationWriteAccess = query({
       canChangeMemberRole(
         viewerRole,
         currentRole,
+        currentStatus,
         availableRoles,
         membership.userId === user.authUserId,
       ) &&
@@ -1292,8 +1439,8 @@ export const listOrganizationDirectory = query({
       listOrganizationMembers(ctx, organizationId),
       fetchBetterAuthInvitationsByOrganizationId(ctx, organizationId),
     ]);
-
-    const ownerCount = memberships.filter((membership) => membership.role === 'owner').length;
+    const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
+    const ownerCount = await countActiveOwners(ctx, memberships);
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
@@ -1348,7 +1495,15 @@ export const listOrganizationDirectory = query({
       memberRows = memberships.map((membership) => {
         const authUser = authUsersById.get(membership.userId);
         const role = normalizeOrganizationRole(membership.role);
+        const status = membershipStatuses.get(membership._id) ?? 'active';
         const availableRoles = getAssignableRoles(context.viewerRole, role, ownerCount);
+        const memberStateActions = canManageMemberState(
+          context.viewerRole,
+          role,
+          status,
+          membership.userId === context.user.authUserId,
+          ownerCount,
+        );
 
         return {
           id: `member:${membership._id ?? membership.userId}`,
@@ -1358,13 +1513,14 @@ export const listOrganizationDirectory = query({
           name: authUser?.name ?? null,
           email: authUser?.email ?? '',
           role,
-          status: 'active',
+          status,
           createdAt: toTimestamp(membership.createdAt),
           isSiteAdmin: authUser ? deriveIsSiteAdmin(normalizeUserRole(authUser.role)) : false,
           availableRoles,
           canChangeRole: canChangeMemberRole(
             context.viewerRole,
             role,
+            status,
             availableRoles,
             membership.userId === context.user.authUserId,
           ),
@@ -1374,13 +1530,24 @@ export const listOrganizationDirectory = query({
             membership.userId === context.user.authUserId,
             ownerCount,
           ),
+          canSuspend: memberStateActions.canSuspend,
+          canDeactivate: memberStateActions.canDeactivate,
+          canReactivate: memberStateActions.canReactivate,
         };
       });
     } else if (shouldIncludeMembers) {
       const lightweightMemberRows = sortOrganizationDirectoryRows(
         memberships.map((membership) => {
           const role = normalizeOrganizationRole(membership.role);
+          const status = membershipStatuses.get(membership._id) ?? 'active';
           const availableRoles = getAssignableRoles(context.viewerRole, role, ownerCount);
+          const memberStateActions = canManageMemberState(
+            context.viewerRole,
+            role,
+            status,
+            membership.userId === context.user.authUserId,
+            ownerCount,
+          );
 
           return {
             id: `member:${membership._id ?? membership.userId}`,
@@ -1390,13 +1557,14 @@ export const listOrganizationDirectory = query({
             name: null,
             email: '',
             role,
-            status: 'active' as const,
+            status,
             createdAt: toTimestamp(membership.createdAt),
             isSiteAdmin: false,
             availableRoles,
             canChangeRole: canChangeMemberRole(
               context.viewerRole,
               role,
+              status,
               availableRoles,
               membership.userId === context.user.authUserId,
             ),
@@ -1406,6 +1574,9 @@ export const listOrganizationDirectory = query({
               membership.userId === context.user.authUserId,
               ownerCount,
             ),
+            canSuspend: memberStateActions.canSuspend,
+            canDeactivate: memberStateActions.canDeactivate,
+            canReactivate: memberStateActions.canReactivate,
           };
         }),
         args,
@@ -1527,12 +1698,9 @@ export const listOrganizationDomains = query({
       throw new Error('Organization is missing an id');
     }
 
-    const ownerCount =
-      context.viewerMembership
-        ? (await listOrganizationMembers(ctx, organizationId)).filter(
-            (membership) => membership.role === 'owner',
-          ).length
-        : 0;
+    const ownerCount = context.viewerMembership
+      ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
+      : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
@@ -1761,6 +1929,149 @@ export const recordOrganizationBulkAuditEvents = mutation({
   },
 });
 
+async function changeOrganizationMemberStatus(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    membershipId: string;
+    reason?: string | null;
+    targetStatus: OrganizationMembershipStatus;
+  },
+) {
+  const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+  if (!context || !context.access.view) {
+    throwConvexError('NOT_FOUND', 'Organization not found');
+  }
+
+  const memberships = await listOrganizationMembers(ctx, args.organizationId);
+  const membership = memberships.find((candidate) => candidate._id === args.membershipId);
+  if (!membership) {
+    throwConvexError('NOT_FOUND', 'Organization member not found');
+  }
+
+  const currentRole = normalizeOrganizationRole(membership.role);
+  const currentStatus = await getOrganizationMembershipStatus(ctx, membership._id);
+  const ownerCount = await countActiveOwners(ctx, memberships);
+  const memberStateAccess = canManageMemberState(
+    context.viewerRole,
+    currentRole,
+    currentStatus,
+    membership.userId === context.user.authUserId,
+    ownerCount,
+  );
+
+  if (args.targetStatus === 'active' && !memberStateAccess.canReactivate) {
+    throwConvexError('FORBIDDEN', 'Not authorized to reactivate this member');
+  }
+
+  if (args.targetStatus === 'suspended' && !memberStateAccess.canSuspend) {
+    throwConvexError('FORBIDDEN', 'Not authorized to suspend this member');
+  }
+
+  if (args.targetStatus === 'deactivated' && !memberStateAccess.canDeactivate) {
+    throwConvexError('FORBIDDEN', 'Not authorized to deactivate this member');
+  }
+
+  if (args.targetStatus === currentStatus) {
+    throwConvexError('VALIDATION', `Member is already ${currentStatus}`);
+  }
+
+  const targetUser = (await fetchBetterAuthUsersByIds(ctx, [membership.userId]))[0];
+  const targetEmail = targetUser?.email ?? undefined;
+
+  if (args.targetStatus === 'active') {
+    await clearOrganizationMembershipState(ctx, {
+      membership,
+    });
+  } else {
+    await upsertOrganizationMembershipState(ctx, {
+      membership,
+      nextStatus: args.targetStatus,
+      reason: args.reason,
+      updatedByUserId: context.user.authUserId,
+    });
+  }
+
+  const eventType =
+    args.targetStatus === 'active'
+      ? 'member_reactivated'
+      : args.targetStatus === 'suspended'
+        ? 'member_suspended'
+        : 'member_deactivated';
+
+  await ctx.runMutation(internal.audit.insertAuditLog, {
+    eventType,
+    organizationId: args.organizationId,
+    userId: context.user.authUserId,
+    identifier: targetEmail?.toLowerCase(),
+    metadata: JSON.stringify({
+      actorEmail: context.user.authUser.email ?? undefined,
+      targetEmail,
+      targetUserId: membership.userId,
+      targetMembershipId: membership._id,
+      targetRole: currentRole,
+      previousStatus: currentStatus,
+      nextStatus: args.targetStatus,
+      reason: args.reason?.trim() ? args.reason.trim() : undefined,
+    }),
+  });
+
+  return {
+    success: true as const,
+    status: args.targetStatus,
+  };
+}
+
+export const suspendOrganizationMember = mutation({
+  args: {
+    organizationId: v.string(),
+    membershipId: v.string(),
+    reason: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    status: organizationMemberStatusValidator,
+  }),
+  handler: async (ctx, args) =>
+    await changeOrganizationMemberStatus(ctx, {
+      ...args,
+      targetStatus: 'suspended',
+    }),
+});
+
+export const deactivateOrganizationMember = mutation({
+  args: {
+    organizationId: v.string(),
+    membershipId: v.string(),
+    reason: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    status: organizationMemberStatusValidator,
+  }),
+  handler: async (ctx, args) =>
+    await changeOrganizationMemberStatus(ctx, {
+      ...args,
+      targetStatus: 'deactivated',
+    }),
+});
+
+export const reactivateOrganizationMember = mutation({
+  args: {
+    organizationId: v.string(),
+    membershipId: v.string(),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    status: organizationMemberStatusValidator,
+  }),
+  handler: async (ctx, args) =>
+    await changeOrganizationMemberStatus(ctx, {
+      ...args,
+      targetStatus: 'active',
+    }),
+});
+
 export const listOrganizationAuditEvents = query({
   args: {
     slug: v.string(),
@@ -1784,6 +2095,9 @@ export const listOrganizationAuditEvents = query({
       v.literal('member_added'),
       v.literal('member_removed'),
       v.literal('member_role_updated'),
+      v.literal('member_suspended'),
+      v.literal('member_deactivated'),
+      v.literal('member_reactivated'),
       v.literal('member_invited'),
       v.literal('invite_accepted'),
       v.literal('invite_rejected'),
@@ -1812,12 +2126,9 @@ export const listOrganizationAuditEvents = query({
       throw new Error('Organization is missing an id');
     }
 
-    const ownerCount =
-      context.viewerMembership
-        ? (await listOrganizationMembers(ctx, organizationId)).filter(
-            (membership) => membership.role === 'owner',
-          ).length
-        : 0;
+    const ownerCount = context.viewerMembership
+      ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
+      : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
@@ -1937,6 +2248,9 @@ export const exportOrganizationAuditCsv = action({
       v.literal('member_added'),
       v.literal('member_removed'),
       v.literal('member_role_updated'),
+      v.literal('member_suspended'),
+      v.literal('member_deactivated'),
+      v.literal('member_reactivated'),
       v.literal('member_invited'),
       v.literal('invite_accepted'),
       v.literal('invite_rejected'),

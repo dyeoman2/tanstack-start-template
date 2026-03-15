@@ -43,6 +43,7 @@ export const organizationAccessControl = createAccessControl({
   ac: ['create', 'read', 'update', 'delete'],
 });
 
+// Custom organization roles are intentionally out of scope for now.
 export const organizationOwnerRole = organizationAccessControl.newRole({
   organization: ['update', 'delete'],
   member: ['create', 'update', 'delete'],

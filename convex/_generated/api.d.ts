@@ -37,6 +37,7 @@ import type * as lib_chatAttachments from "../lib/chatAttachments.js";
 import type * as lib_chatRateLimits from "../lib/chatRateLimits.js";
 import type * as lib_onboardingState from "../lib/onboardingState.js";
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
+import type * as lib_organizationMembershipState from "../lib/organizationMembershipState.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as migrations from "../migrations.js";
 import type * as organizationDomains from "../organizationDomains.js";
@@ -81,6 +82,7 @@ declare const fullApi: ApiFromModules<{
   "lib/chatRateLimits": typeof lib_chatRateLimits;
   "lib/onboardingState": typeof lib_onboardingState;
   "lib/organizationCleanup": typeof lib_organizationCleanup;
+  "lib/organizationMembershipState": typeof lib_organizationMembershipState;
   "lib/returnValidators": typeof lib_returnValidators;
   migrations: typeof migrations;
   organizationDomains: typeof organizationDomains;

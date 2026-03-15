@@ -35,6 +35,12 @@ const organizationMemberRemovalSchema = z.object({
   membershipId: z.string().min(1),
 });
 
+const organizationMemberStateSchema = z.object({
+  organizationId: z.string().min(1),
+  membershipId: z.string().min(1),
+  reason: z.string().trim().nullable().optional(),
+});
+
 const organizationInvitationCancelSchema = z.object({
   organizationId: z.string().min(1),
   invitationId: z.string().min(1),
@@ -94,6 +100,9 @@ type OrganizationWriteAction =
   | 'invite'
   | 'update-member-role'
   | 'remove-member'
+  | 'suspend-member'
+  | 'deactivate-member'
+  | 'reactivate-member'
   | 'cancel-invitation'
   | 'update-settings'
   | 'delete-organization';
@@ -320,6 +329,77 @@ export const updateOrganizationMemberRoleServerFn = createServerFn({ method: 'PO
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization member role');
+    }
+  });
+
+export const suspendOrganizationMemberServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationMemberStateSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationWriteAccess({
+        action: 'suspend-member',
+        organizationId: data.organizationId,
+        membershipId: data.membershipId,
+      });
+
+      const result = await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.suspendOrganizationMember,
+        data,
+      );
+      await refreshCurrentUserContext();
+      return result;
+    } catch (error) {
+      throw handleServerError(error, 'Suspend organization member');
+    }
+  });
+
+export const deactivateOrganizationMemberServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationMemberStateSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationWriteAccess({
+        action: 'deactivate-member',
+        organizationId: data.organizationId,
+        membershipId: data.membershipId,
+      });
+
+      const result = await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.deactivateOrganizationMember,
+        data,
+      );
+      await refreshCurrentUserContext();
+      return result;
+    } catch (error) {
+      throw handleServerError(error, 'Deactivate organization member');
+    }
+  });
+
+export const reactivateOrganizationMemberServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(
+    z.object({
+      organizationId: z.string().min(1),
+      membershipId: z.string().min(1),
+    }),
+  )
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      await requireOrganizationWriteAccess({
+        action: 'reactivate-member',
+        organizationId: data.organizationId,
+        membershipId: data.membershipId,
+      });
+
+      const result = await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.reactivateOrganizationMember,
+        data,
+      );
+      await refreshCurrentUserContext();
+      return result;
+    } catch (error) {
+      throw handleServerError(error, 'Reactivate organization member');
     }
   });
 

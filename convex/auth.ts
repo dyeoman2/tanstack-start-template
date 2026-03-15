@@ -41,6 +41,7 @@ import {
   fetchBetterAuthSessionsByUserId,
   updateBetterAuthSessionRecord,
 } from './lib/betterAuth';
+import { getOrganizationMembershipStatuses } from './lib/organizationMembershipState';
 import {
   createActorScopedRateLimitKey,
   createEmailScopedRateLimitKey,
@@ -1070,6 +1071,11 @@ async function resolvePreferredActiveOrganizationId(
     return null;
   }
 
+  const membershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
+
   const organizations = await fetchBetterAuthOrganizationsByIds(
     ctx,
     memberships.map((membership) => membership.organizationId),
@@ -1079,12 +1085,24 @@ async function resolvePreferredActiveOrganizationId(
   );
 
   const normalizedPreferredOrganizationId = normalizeOptionalId(preferredOrganizationId);
-  if (normalizedPreferredOrganizationId && organizationIds.has(normalizedPreferredOrganizationId)) {
+  if (
+    normalizedPreferredOrganizationId &&
+    organizationIds.has(normalizedPreferredOrganizationId) &&
+    memberships.some(
+      (membership) =>
+        membership.organizationId === normalizedPreferredOrganizationId &&
+        (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+    )
+  ) {
     return normalizedPreferredOrganizationId;
   }
 
   return memberships
-    .filter((membership) => organizationIds.has(membership.organizationId))
+    .filter(
+      (membership) =>
+        organizationIds.has(membership.organizationId) &&
+        (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+    )
     .sort((left, right) => {
       const leftCreatedAt = typeof left.createdAt === 'number' ? left.createdAt : left._creationTime;
       const rightCreatedAt =
@@ -1096,6 +1114,22 @@ async function resolvePreferredActiveOrganizationId(
 
       return left.organizationId.localeCompare(right.organizationId);
     })[0]?.organizationId;
+}
+
+async function countActiveMembershipsForUser(ctx: GenericCtx<DataModel>, authUserId: string) {
+  const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  if (memberships.length === 0) {
+    return 0;
+  }
+
+  const membershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
+
+  return memberships.filter(
+    (membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+  ).length;
 }
 
 async function syncActiveOrganizationForUserSessions(
@@ -1119,12 +1153,21 @@ async function syncActiveOrganizationForUserSessions(
   }
 
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  const membershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
   const organizations = await fetchBetterAuthOrganizationsByIds(
     ctx,
     memberships.map((membership) => membership.organizationId),
   );
   const validOrganizationIds = new Set(
-    organizations.map((organization) => organization._id ?? organization.id).filter(Boolean),
+    memberships
+      .filter((membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active')
+      .map((membership) => membership.organizationId)
+      .filter((organizationId) =>
+        organizations.some((organization) => (organization._id ?? organization.id) === organizationId),
+      ),
   );
 
   const nextOrganizationId =
@@ -1190,8 +1233,7 @@ export const createAuth = (
         return true;
       }
 
-      const memberships = await fetchBetterAuthMembersByUserId(ctx, user.id);
-      return memberships.length < 2;
+      return (await countActiveMembershipsForUser(ctx, user.id)) < 2;
     },
     databaseHooks: {
       session: {

@@ -10,7 +10,6 @@ const {
   locationMock,
   showToastMock,
   updateSettingsMock,
-  updatePoliciesMock,
   deleteOrganizationMock,
   leaveOrganizationMock,
   invalidateQueriesMock,
@@ -25,7 +24,6 @@ const {
   },
   showToastMock: vi.fn(),
   updateSettingsMock: vi.fn(),
-  updatePoliciesMock: vi.fn(),
   deleteOrganizationMock: vi.fn(),
   leaveOrganizationMock: vi.fn(),
   invalidateQueriesMock: vi.fn(),
@@ -66,11 +64,13 @@ vi.mock('~/features/organizations/server/organization-membership', () => ({
 vi.mock('~/features/organizations/server/organization-management', () => ({
   createOrganizationInvitationServerFn: vi.fn(),
   updateOrganizationMemberRoleServerFn: vi.fn(),
+  suspendOrganizationMemberServerFn: vi.fn(),
+  deactivateOrganizationMemberServerFn: vi.fn(),
+  reactivateOrganizationMemberServerFn: vi.fn(),
   removeOrganizationMemberServerFn: vi.fn(),
   cancelOrganizationInvitationServerFn: vi.fn(),
   bulkOrganizationDirectoryActionServerFn: vi.fn(),
   updateOrganizationSettingsServerFn: (...args: unknown[]) => updateSettingsMock(...args),
-  updateOrganizationPoliciesServerFn: (...args: unknown[]) => updatePoliciesMock(...args),
   deleteOrganizationServerFn: (...args: unknown[]) => deleteOrganizationMock(...args),
 }));
 
@@ -305,69 +305,6 @@ describe('OrganizationSettingsManagement', () => {
     expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');
     expect(invalidateQueriesMock).toHaveBeenCalledWith({ queryKey: ['organizations'] });
     expect(routerInvalidateMock).toHaveBeenCalled();
-  });
-
-  it('updates organization policies from the policy card', async () => {
-    const user = userEvent.setup();
-
-    const settingsResponse = {
-      organization: {
-        id: 'org-1',
-        slug: 'cottage-hospital',
-        name: 'Cottage Hospital',
-        logo: null,
-      },
-      access: {
-        admin: true,
-        delete: true,
-        edit: true,
-        view: true,
-        siteAdmin: true,
-      },
-      capabilities: {
-        availableInviteRoles: ['owner', 'admin', 'member'],
-        canInvite: true,
-        canUpdateSettings: true,
-        canDeleteOrganization: true,
-        canLeaveOrganization: true,
-        canManageMembers: true,
-        canManagePolicies: true,
-      },
-      policies: {
-        invitePolicy: 'owners_admins',
-        verifiedDomainsOnly: false,
-        memberCap: null,
-        mfaRequired: false,
-      },
-      isMember: true,
-      viewerRole: 'site-admin' as const,
-      canManage: true,
-    };
-    useQueryMock.mockImplementation((_: unknown, args: Record<string, unknown>) =>
-      'page' in args ? directoryResponse : settingsResponse,
-    );
-    updatePoliciesMock.mockResolvedValueOnce({ success: true });
-
-    render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
-
-    await user.click(screen.getByRole('checkbox', { name: /require verified domains/i }));
-    await user.clear(screen.getByLabelText(/member cap/i));
-    await user.type(screen.getByLabelText(/member cap/i), '25');
-    await user.click(screen.getByRole('checkbox', { name: /require mfa/i }));
-    await user.click(screen.getByRole('button', { name: /save policies/i }));
-
-    await waitFor(() => {
-      expect(updatePoliciesMock).toHaveBeenCalledWith({
-        data: {
-          organizationId: 'org-1',
-          invitePolicy: 'owners_admins',
-          verifiedDomainsOnly: true,
-          memberCap: 25,
-          mfaRequired: true,
-        },
-      });
-    });
-    expect(showToastMock).toHaveBeenCalledWith('Organization policies updated.', 'success');
   });
 
   it('does not show leave organization for a site admin who is not a member', async () => {

@@ -1,6 +1,12 @@
 export const ORGANIZATION_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export const ORGANIZATION_MEMBER_STATUS_VALUES = [
+  'active',
+  'suspended',
+  'deactivated',
+] as const;
 
 export type OrganizationRole = (typeof ORGANIZATION_ROLE_VALUES)[number];
+export type OrganizationMemberStatus = (typeof ORGANIZATION_MEMBER_STATUS_VALUES)[number];
 export type OrganizationViewerRole = OrganizationRole | 'site-admin' | null;
 export type OrganizationAccess = {
   admin: boolean;
@@ -133,10 +139,15 @@ export function getAssignableRoles(
 export function canChangeMemberRole(
   viewerRole: OrganizationViewerRole,
   targetRole: OrganizationRole,
+  targetStatus: OrganizationMemberStatus,
   availableRoles: OrganizationRole[],
   isSelf: boolean,
 ) {
   if (!viewerRole || availableRoles.length === 0) {
+    return false;
+  }
+
+  if (targetStatus !== 'active') {
     return false;
   }
 
@@ -170,4 +181,49 @@ export function canRemoveMember(
   }
 
   return viewerRole === 'site-admin' || viewerRole === 'owner' || viewerRole === 'admin';
+}
+
+// Custom roles are intentionally out of scope. Keep organization permissions aligned
+// to Better Auth's fixed owner/admin/member roles until a dedicated permission model exists.
+export function canManageMemberState(
+  viewerRole: OrganizationViewerRole,
+  targetRole: OrganizationRole,
+  targetStatus: OrganizationMemberStatus,
+  isSelf: boolean,
+  activeOwnerCount: number,
+) {
+  if (!viewerRole || (viewerRole !== 'site-admin' && isSelf)) {
+    return {
+      canSuspend: false,
+      canDeactivate: false,
+      canReactivate: false,
+    };
+  }
+
+  if (targetRole === 'owner' && activeOwnerCount <= 1) {
+    return {
+      canSuspend: false,
+      canDeactivate: false,
+      canReactivate: targetStatus !== 'active',
+    };
+  }
+
+  const canManageTarget =
+    viewerRole === 'site-admin' ||
+    viewerRole === 'owner' ||
+    (viewerRole === 'admin' && targetRole === 'member');
+
+  if (!canManageTarget) {
+    return {
+      canSuspend: false,
+      canDeactivate: false,
+      canReactivate: false,
+    };
+  }
+
+  return {
+    canSuspend: targetStatus === 'active',
+    canDeactivate: targetStatus === 'active',
+    canReactivate: targetStatus !== 'active',
+  };
 }

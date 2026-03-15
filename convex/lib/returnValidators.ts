@@ -6,6 +6,11 @@ export const organizationRoleValidator = v.union(
   v.literal('admin'),
   v.literal('member'),
 );
+export const organizationMemberStatusValidator = v.union(
+  v.literal('active'),
+  v.literal('suspended'),
+  v.literal('deactivated'),
+);
 export const organizationInvitePolicyValidator = v.union(
   v.literal('owners_admins'),
   v.literal('owners_only'),
@@ -473,12 +478,15 @@ export const organizationMemberRowValidator = v.object({
   name: v.union(v.string(), v.null()),
   email: v.string(),
   role: organizationRoleValidator,
-  status: v.literal('active'),
+  status: organizationMemberStatusValidator,
   createdAt: v.number(),
   isSiteAdmin: v.boolean(),
   availableRoles: v.array(organizationRoleValidator),
   canChangeRole: v.boolean(),
   canRemove: v.boolean(),
+  canSuspend: v.boolean(),
+  canDeactivate: v.boolean(),
+  canReactivate: v.boolean(),
 });
 
 export const organizationInvitationRowValidator = v.object({

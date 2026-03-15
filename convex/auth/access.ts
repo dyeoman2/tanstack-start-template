@@ -23,6 +23,10 @@ import {
   findBetterAuthMember,
   findBetterAuthOrganizationById,
 } from '../lib/betterAuth';
+import {
+  getOrganizationMembershipStatus,
+  getOrganizationMembershipStatuses,
+} from '../lib/organizationMembershipState';
 import { throwConvexError } from './errors';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -184,7 +188,17 @@ async function resolveActiveOrganizationIdForUser(
   }
 
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
-  if (!memberships.some((membership) => membership.organizationId === session.activeOrganizationId)) {
+  const activeMembershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
+  if (
+    !memberships.some(
+      (membership) =>
+        membership.organizationId === session.activeOrganizationId &&
+        (activeMembershipStatuses.get(membership._id) ?? 'active') === 'active',
+    )
+  ) {
     return null;
   }
 
@@ -322,6 +336,11 @@ export async function checkOrganizationAccess(
     return NO_ACCESS;
   }
 
+  const membershipStatus = await getOrganizationMembershipStatus(ctx, membership._id);
+  if (membershipStatus !== 'active') {
+    return NO_ACCESS;
+  }
+
   return getOrganizationAccess(
     membership.role === 'owner' || membership.role === 'admin' || membership.role === 'member'
       ? membership.role
@@ -357,6 +376,10 @@ async function resolveOrganizationsForUser(
   authUserId: string,
 ): Promise<Array<{ id: string; name: string; role: string }>> {
   const memberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
+  const membershipStatuses = await getOrganizationMembershipStatuses(
+    ctx,
+    memberships.map((membership) => membership._id),
+  );
   const organizations = await fetchBetterAuthOrganizationsByIds(
     ctx,
     memberships
@@ -369,6 +392,10 @@ async function resolveOrganizationsForUser(
 
   return memberships
     .map((membership) => {
+      if ((membershipStatuses.get(membership._id) ?? 'active') !== 'active') {
+        return null;
+      }
+
       const organization = organizationsById.get(membership.organizationId);
       if (!organization) {
         return null;

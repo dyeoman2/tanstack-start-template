@@ -12,6 +12,11 @@ export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
 
 export const ORGANIZATION_DIRECTORY_KIND_VALUES = ['all', 'member', 'invite'] as const;
 export const ORGANIZATION_DIRECTORY_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
+export const ORGANIZATION_MEMBER_STATUS_VALUES = [
+  'active',
+  'suspended',
+  'deactivated',
+] as const;
 export const ORGANIZATION_INVITE_POLICY_VALUES = ['owners_admins', 'owners_only'] as const;
 export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'organization_created',
@@ -19,6 +24,9 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'member_added',
   'member_removed',
   'member_role_updated',
+  'member_suspended',
+  'member_deactivated',
+  'member_reactivated',
   'member_invited',
   'invite_accepted',
   'invite_rejected',
@@ -59,6 +67,7 @@ export type OrganizationDirectorySortField = (typeof ORGANIZATION_DIRECTORY_SORT
 export type OrganizationDirectorySortOrder = 'asc' | 'desc';
 export type OrganizationDirectoryKind = (typeof ORGANIZATION_DIRECTORY_KIND_VALUES)[number];
 export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALUES)[number];
+export type OrganizationMemberStatus = (typeof ORGANIZATION_MEMBER_STATUS_VALUES)[number];
 export type OrganizationInvitePolicy = (typeof ORGANIZATION_INVITE_POLICY_VALUES)[number];
 
 export type OrganizationDirectorySearchParams = z.infer<typeof organizationDirectorySearchSchema>;
@@ -110,12 +119,15 @@ export type OrganizationMemberRow = {
   name: string | null;
   email: string;
   role: OrganizationDirectoryRole;
-  status: 'active';
+  status: OrganizationMemberStatus;
   createdAt: number;
   isSiteAdmin: boolean;
   availableRoles: OrganizationDirectoryRole[];
   canChangeRole: boolean;
   canRemove: boolean;
+  canSuspend: boolean;
+  canDeactivate: boolean;
+  canReactivate: boolean;
 };
 
 export type OrganizationInvitationRow = {

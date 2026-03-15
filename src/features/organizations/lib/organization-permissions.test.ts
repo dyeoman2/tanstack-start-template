@@ -92,21 +92,21 @@ describe('organization permission rules', () => {
     const ownerRoles = getAssignableRoles('owner', 'owner', 1);
     expect(ownerRoles).toEqual([]);
     expect(canRemoveMember('owner', 'owner', false, 1)).toBe(false);
-    expect(canChangeMemberRole('owner', 'owner', ownerRoles, false)).toBe(false);
+    expect(canChangeMemberRole('owner', 'owner', 'active', ownerRoles, false)).toBe(false);
   });
 
   it('prevents non-site-admins from changing their own role or removing themselves', () => {
     const adminAssignableRoles = getAssignableRoles('admin', 'member', 2);
-    expect(canChangeMemberRole('admin', 'member', adminAssignableRoles, true)).toBe(false);
+    expect(canChangeMemberRole('admin', 'member', 'active', adminAssignableRoles, true)).toBe(false);
     expect(canRemoveMember('admin', 'member', true, 2)).toBe(false);
-    expect(canChangeMemberRole('site-admin', 'member', adminAssignableRoles, true)).toBe(true);
+    expect(canChangeMemberRole('site-admin', 'member', 'active', adminAssignableRoles, true)).toBe(true);
     expect(canRemoveMember('site-admin', 'member', true, 2)).toBe(true);
   });
 
   it('prevents org admins from modifying owners', () => {
     const adminAssignableOwnerRoles = getAssignableRoles('admin', 'owner', 2);
     expect(adminAssignableOwnerRoles).toEqual([]);
-    expect(canChangeMemberRole('admin', 'owner', adminAssignableOwnerRoles, false)).toBe(false);
+    expect(canChangeMemberRole('admin', 'owner', 'active', adminAssignableOwnerRoles, false)).toBe(false);
     expect(canRemoveMember('admin', 'owner', false, 2)).toBe(false);
   });
 });

@@ -47,9 +47,12 @@ vi.mock('@convex/_generated/api', () => ({
       ensureCurrentUserContext: 'ensureCurrentUserContext',
     },
     organizationManagement: {
+      deactivateOrganizationMember: 'deactivateOrganizationMember',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
+      reactivateOrganizationMember: 'reactivateOrganizationMember',
       recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
+      suspendOrganizationMember: 'suspendOrganizationMember',
       updateOrganizationPolicies: 'updateOrganizationPolicies',
     },
   },
@@ -111,6 +114,9 @@ import {
   createOrganizationServerFn,
   deleteOrganizationServerFn,
   removeOrganizationMemberServerFn,
+  reactivateOrganizationMemberServerFn,
+  deactivateOrganizationMemberServerFn,
+  suspendOrganizationMemberServerFn,
   updateOrganizationPoliciesServerFn,
   updateOrganizationMemberRoleServerFn,
   updateOrganizationSettingsServerFn,
@@ -230,6 +236,60 @@ describe('organization management server functions', () => {
       memberCap: 25,
       mfaRequired: true,
     });
+  });
+
+  it('routes membership state changes through Convex mutations with preflight access', async () => {
+    await suspendOrganizationMemberServerFn({
+      data: {
+        organizationId: 'org_1',
+        membershipId: 'member_1',
+      },
+    });
+
+    await deactivateOrganizationMemberServerFn({
+      data: {
+        organizationId: 'org_1',
+        membershipId: 'member_1',
+      },
+    });
+
+    await reactivateOrganizationMemberServerFn({
+      data: {
+        organizationId: 'org_1',
+        membershipId: 'member_1',
+      },
+    });
+
+    expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(1, 'getOrganizationWriteAccess', {
+      action: 'suspend-member',
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(2, 'getOrganizationWriteAccess', {
+      action: 'deactivate-member',
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthQueryMock).toHaveBeenNthCalledWith(3, 'getOrganizationWriteAccess', {
+      action: 'reactivate-member',
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(1, 'suspendOrganizationMember', {
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(2, 'deactivateOrganizationMember', {
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(3, 'reactivateOrganizationMember', {
+      organizationId: 'org_1',
+      membershipId: 'member_1',
+    });
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(1, 'ensureCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(2, 'ensureCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(3, 'ensureCurrentUserContext', {});
   });
 
   it('creates organizations through the server flow when the viewer is eligible', async () => {

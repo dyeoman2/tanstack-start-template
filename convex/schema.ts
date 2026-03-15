@@ -157,6 +157,22 @@ export default defineSchema({
     .index('by_organization_id', ['organizationId'])
     .index('by_organization_id_and_updated_at', ['organizationId', 'updatedAt']),
 
+  organizationMembershipStates: defineTable({
+    organizationId: v.string(),
+    membershipId: v.string(),
+    userId: v.string(),
+    status: v.union(v.literal('suspended'), v.literal('deactivated')),
+    reason: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    updatedByUserId: v.string(),
+    deactivatedAt: v.optional(v.number()),
+    reactivatedAt: v.optional(v.number()),
+  })
+    .index('by_membership_id', ['membershipId'])
+    .index('by_organization_id_and_user_id', ['organizationId', 'userId'])
+    .index('by_organization_id_and_status', ['organizationId', 'status']),
+
   dashboardStats: defineTable({
     key: v.string(),
     totalUsers: v.number(),

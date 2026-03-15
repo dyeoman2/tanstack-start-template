@@ -1,6 +1,15 @@
 import { useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
-import { Copy, MoreHorizontal, Shield, Trash2, UserCog, UserRoundPlus } from 'lucide-react';
+import {
+  Copy,
+  MoreHorizontal,
+  Shield,
+  Trash2,
+  UserCheck,
+  UserCog,
+  UserRoundPlus,
+  UserX,
+} from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { createSortableHeader, DataTable, formatTableDate } from '~/components/data-table';
 import { Badge } from '~/components/ui/badge';
@@ -22,9 +31,12 @@ interface OrganizationMembersTableProps {
   isLoading: boolean;
   onChangeRole: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
   onCopyInvitationLink: (row: Extract<OrganizationDirectoryRow, { kind: 'invite' }>) => void;
+  onDeactivateMember: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
   onRemoveMember: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
+  onReactivateMember: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
   onRevokeInvitation: (row: Extract<OrganizationDirectoryRow, { kind: 'invite' }>) => void;
   onResendInvitation: (row: Extract<OrganizationDirectoryRow, { kind: 'invite' }>) => void;
+  onSuspendMember: (row: Extract<OrganizationDirectoryRow, { kind: 'member' }>) => void;
   onToggleAllRows: (checked: boolean) => void;
   onToggleRow: (rowId: string, checked: boolean) => void;
   pagination: {
@@ -44,9 +56,12 @@ export function OrganizationMembersTable({
   isLoading,
   onChangeRole,
   onCopyInvitationLink,
+  onDeactivateMember,
   onRemoveMember,
+  onReactivateMember,
   onRevokeInvitation,
   onResendInvitation,
+  onSuspendMember,
   onToggleAllRows,
   onToggleRow,
   pagination,
@@ -173,11 +188,16 @@ export function OrganizationMembersTable({
       {
         accessorKey: 'status',
         header: createSortableHeader('Status', 'status', searchParams, handleSorting),
-        cell: ({ row }) => (
-          <Badge variant={row.original.status === 'expired' ? 'destructive' : 'secondary'}>
-            {capitalize(row.original.status)}
-          </Badge>
-        ),
+        cell: ({ row }) => {
+          const variant =
+            row.original.status === 'expired' || row.original.status === 'suspended'
+              ? 'destructive'
+              : row.original.status === 'deactivated'
+                ? 'outline'
+                : 'secondary';
+
+          return <Badge variant={variant}>{capitalize(row.original.status)}</Badge>;
+        },
       },
       {
         accessorKey: 'createdAt',
@@ -213,6 +233,32 @@ export function OrganizationMembersTable({
                         <UserCog className="size-4" />
                         Change role
                       </DropdownMenuItem>
+                      {rowData.status === 'active' ? (
+                        <>
+                          <DropdownMenuItem
+                            onSelect={() => onSuspendMember(rowData)}
+                            disabled={!rowData.canSuspend}
+                          >
+                            <UserX className="size-4" />
+                            Suspend member
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => onDeactivateMember(rowData)}
+                            disabled={!rowData.canDeactivate}
+                          >
+                            <UserX className="size-4" />
+                            Deactivate member
+                          </DropdownMenuItem>
+                        </>
+                      ) : (
+                        <DropdownMenuItem
+                          onSelect={() => onReactivateMember(rowData)}
+                          disabled={!rowData.canReactivate}
+                        >
+                          <UserCheck className="size-4" />
+                          Reactivate member
+                        </DropdownMenuItem>
+                      )}
                       <DropdownMenuItem
                         variant="destructive"
                         onSelect={() => onRemoveMember(rowData)}
@@ -256,9 +302,12 @@ export function OrganizationMembersTable({
       handleSorting,
       onChangeRole,
       onCopyInvitationLink,
+      onDeactivateMember,
       onRemoveMember,
+      onReactivateMember,
       onResendInvitation,
       onRevokeInvitation,
+      onSuspendMember,
       onToggleAllRows,
       onToggleRow,
       searchParams,

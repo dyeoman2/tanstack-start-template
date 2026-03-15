@@ -35,15 +35,18 @@ import type {
   OrganizationDirectoryKind,
   OrganizationDirectoryRole,
   OrganizationDirectoryRow,
-  OrganizationInvitePolicy,
   OrganizationDirectorySearchParams,
+  OrganizationInvitePolicy,
 } from '~/features/organizations/lib/organization-management';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
   bulkOrganizationDirectoryActionServerFn,
   cancelOrganizationInvitationServerFn,
   createOrganizationInvitationServerFn,
+  deactivateOrganizationMemberServerFn,
+  reactivateOrganizationMemberServerFn,
   removeOrganizationMemberServerFn,
+  suspendOrganizationMemberServerFn,
   updateOrganizationMemberRoleServerFn,
 } from '~/features/organizations/server/organization-management';
 
@@ -81,6 +84,9 @@ export function OrganizationMembersManagement({
   });
   const createInvitation = createOrganizationInvitationServerFn;
   const updateMemberRole = updateOrganizationMemberRoleServerFn;
+  const suspendMember = suspendOrganizationMemberServerFn;
+  const deactivateMember = deactivateOrganizationMemberServerFn;
+  const reactivateMember = reactivateOrganizationMemberServerFn;
   const removeMember = removeOrganizationMemberServerFn;
   const cancelInvitation = cancelOrganizationInvitationServerFn;
   const runBulkAction = bulkOrganizationDirectoryActionServerFn;
@@ -97,8 +103,13 @@ export function OrganizationMembersManagement({
     OrganizationDirectoryRow,
     { kind: 'invite' }
   > | null>(null);
+  const [memberStatusAction, setMemberStatusAction] = useState<{
+    action: 'suspend' | 'deactivate' | 'reactivate';
+    row: Extract<OrganizationDirectoryRow, { kind: 'member' }>;
+  } | null>(null);
   const [isInviting, setIsInviting] = useState(false);
   const [isUpdatingRole, setIsUpdatingRole] = useState(false);
+  const [isUpdatingMemberStatus, setIsUpdatingMemberStatus] = useState(false);
   const [isRemovingMember, setIsRemovingMember] = useState(false);
   const [isRevokingInvitation, setIsRevokingInvitation] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
@@ -106,6 +117,7 @@ export function OrganizationMembersManagement({
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [nextRole, setNextRole] = useState<OrganizationDirectoryRole>('member');
   const [roleError, setRoleError] = useState<string | null>(null);
+  const [memberStatusError, setMemberStatusError] = useState<string | null>(null);
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [revokeError, setRevokeError] = useState<string | null>(null);
   const [isExporting, setIsExporting] = useState(false);
@@ -139,10 +151,6 @@ export function OrganizationMembersManagement({
 
     return () => window.clearInterval(interval);
   }, []);
-
-  useEffect(() => {
-    setSelectedRowIds(new Set());
-  }, [searchParams.kind, searchParams.page, searchParams.pageSize, searchParams.search, slug]);
 
   const isLoading = directory === undefined;
   const inviteDialogOpen = inviteDialogOpenProp ?? inviteDialogOpenInternal;
@@ -310,6 +318,48 @@ export function OrganizationMembersManagement({
       showToast(message, 'error');
     } finally {
       setIsRemovingMember(false);
+    }
+  };
+
+  const handleMemberStatusSubmit = async () => {
+    if (!directory || !memberStatusAction) {
+      return;
+    }
+
+    setIsUpdatingMemberStatus(true);
+    setMemberStatusError(null);
+
+    try {
+      const payload = {
+        organizationId: directory.organization.id,
+        membershipId: memberStatusAction.row.membershipId,
+      };
+
+      if (memberStatusAction.action === 'suspend') {
+        await suspendMember({ data: payload });
+      } else if (memberStatusAction.action === 'deactivate') {
+        await deactivateMember({ data: payload });
+      } else {
+        await reactivateMember({ data: payload });
+      }
+
+      await refreshOrganizationState();
+      setMemberStatusAction(null);
+      showToast(
+        memberStatusAction.action === 'suspend'
+          ? 'Member suspended.'
+          : memberStatusAction.action === 'deactivate'
+            ? 'Member deactivated.'
+            : 'Member reactivated.',
+        'success',
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'Failed to update member status';
+      setMemberStatusError(message);
+      showToast(message, 'error');
+    } finally {
+      setIsUpdatingMemberStatus(false);
     }
   };
 
@@ -610,6 +660,18 @@ export function OrganizationMembersManagement({
             setSelectedRoleMember(row);
             setRoleError(null);
           }}
+          onSuspendMember={(row) => {
+            setMemberStatusAction({ action: 'suspend', row });
+            setMemberStatusError(null);
+          }}
+          onDeactivateMember={(row) => {
+            setMemberStatusAction({ action: 'deactivate', row });
+            setMemberStatusError(null);
+          }}
+          onReactivateMember={(row) => {
+            setMemberStatusAction({ action: 'reactivate', row });
+            setMemberStatusError(null);
+          }}
           onRemoveMember={(row) => {
             setSelectedRemovalMember(row);
             setRemoveError(null);
@@ -658,6 +720,21 @@ export function OrganizationMembersManagement({
         onSubmit={handleRoleSubmit}
         open={selectedRoleMember !== null}
         row={selectedRoleMember}
+      />
+
+      <DeleteConfirmationDialog
+        open={memberStatusAction !== null}
+        onClose={() => {
+          setMemberStatusAction(null);
+          setMemberStatusError(null);
+        }}
+        title={getMemberStatusDialogTitle(memberStatusAction?.action)}
+        description={getMemberStatusDialogDescription(memberStatusAction, organizationName)}
+        deleteText={getMemberStatusDialogActionLabel(memberStatusAction?.action)}
+        isDeleting={isUpdatingMemberStatus}
+        error={memberStatusError ?? undefined}
+        onConfirm={handleMemberStatusSubmit}
+        variant={memberStatusAction?.action === 'reactivate' ? 'normal' : 'danger'}
       />
 
       <DeleteConfirmationDialog
@@ -903,6 +980,59 @@ function ChangeRoleDialog({
 
 function capitalize(value: string) {
   return `${value.slice(0, 1).toUpperCase()}${value.slice(1)}`;
+}
+
+function getMemberStatusDialogTitle(action: 'suspend' | 'deactivate' | 'reactivate' | undefined) {
+  switch (action) {
+    case 'suspend':
+      return 'Suspend member';
+    case 'deactivate':
+      return 'Deactivate member';
+    case 'reactivate':
+      return 'Reactivate member';
+    default:
+      return 'Update member';
+  }
+}
+
+function getMemberStatusDialogActionLabel(
+  action: 'suspend' | 'deactivate' | 'reactivate' | undefined,
+) {
+  switch (action) {
+    case 'suspend':
+      return 'Suspend member';
+    case 'deactivate':
+      return 'Deactivate member';
+    case 'reactivate':
+      return 'Reactivate member';
+    default:
+      return 'Continue';
+  }
+}
+
+function getMemberStatusDialogDescription(
+  state:
+    | {
+        action: 'suspend' | 'deactivate' | 'reactivate';
+        row: Extract<OrganizationDirectoryRow, { kind: 'member' }>;
+      }
+    | null,
+  organizationName: string,
+) {
+  if (!state) {
+    return 'Update this member status.';
+  }
+
+  switch (state.action) {
+    case 'suspend':
+      return `Suspend ${state.row.email} from ${organizationName}. They will lose organization access until reactivated.`;
+    case 'deactivate':
+      return `Deactivate ${state.row.email} in ${organizationName}. They will lose organization access until reactivated.`;
+    case 'reactivate':
+      return `Reactivate ${state.row.email} in ${organizationName}. Their organization access will be restored.`;
+    default:
+      return 'Update this member status.';
+  }
 }
 
 function formatInvitePolicy(value: OrganizationInvitePolicy) {
