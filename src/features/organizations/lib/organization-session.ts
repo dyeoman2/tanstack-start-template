@@ -30,11 +30,23 @@ export function getServerFunctionErrorMessage(error: unknown, fallback: string):
     return fallback;
   }
 
+  if (error.message.includes('Unsupported audit event type:')) {
+    return 'We ran into an internal problem while saving this change. Try again in a moment.';
+  }
+
   if (error.message.includes('ConvexError')) {
     const match = error.message.match(/"message"\s*:\s*"([^"]+)"/);
     if (match) {
       return match[1];
     }
+  }
+
+  if (
+    error.message.includes('[Request ID:') ||
+    error.message.includes('Server Error') ||
+    error.message.includes(' at handler')
+  ) {
+    return fallback;
   }
 
   return error.message;

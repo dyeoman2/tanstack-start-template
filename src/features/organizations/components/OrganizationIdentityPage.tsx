@@ -30,7 +30,6 @@ export function OrganizationIdentityPage({
   slug: string;
   searchParams: {
     step?: StepKey;
-    provisioningDetails: boolean;
   };
 }) {
   const location = useLocation();
@@ -190,7 +189,6 @@ export function OrganizationIdentityPage({
         <OrganizationProvisioningManagement
           slug={slug}
           blockedMessage={provisioningBlockedMessage}
-          detailsOpen={searchParams.provisioningDetails}
           embedded
         />
       ),

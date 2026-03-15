@@ -25,6 +25,10 @@ describe('auth audit helpers', () => {
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('invite_cancelled');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_added');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_removed');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_auth_mode_updated');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_login_succeeded');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_scim_token_generated');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_scim_token_deleted');
   });
 
   it('maps every supported event to at least one handler owner', () => {

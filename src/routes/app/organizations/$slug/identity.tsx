@@ -5,7 +5,6 @@ import { OrganizationIdentityPage } from '~/features/organizations/components/Or
 
 const organizationIdentitySearchSchema = z.object({
   step: z.enum(['step-1', 'step-2', 'step-3', 'step-4']).optional(),
-  provisioningDetails: z.boolean().default(false),
 });
 
 export const Route = createFileRoute('/app/organizations/$slug/identity')({

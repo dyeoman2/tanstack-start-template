@@ -21,11 +21,8 @@ const {
   deleteScimProviderMock: vi.fn(),
 }));
 
-const navigateMock = vi.fn();
-
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ invalidate: routerInvalidateMock }),
-  useNavigate: () => navigateMock,
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -110,17 +107,19 @@ describe('OrganizationProvisioningManagement', () => {
         'Optional: automatically create and update users from your identity provider using SCIM.',
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText('SCIM endpoint URL')).toBeInTheDocument();
   });
 
-  it('hides SCIM setup details until provisioning is configured or started', async () => {
+  it('shows the endpoint immediately and reveals the token after generation', async () => {
     const user = userEvent.setup();
     generateScimTokenMock.mockResolvedValueOnce({ scimToken: 'scim-secret-token' });
 
     render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
 
-    expect(screen.queryByText('SCIM base URL')).not.toBeInTheDocument();
+    expect(screen.getByText('SCIM endpoint URL')).toBeInTheDocument();
+    expect(screen.queryByText('scim-secret-token')).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /set up provisioning/i }));
+    await user.click(screen.getByRole('button', { name: /^generate token$/i }));
 
     await waitFor(() => {
       expect(generateScimTokenMock).toHaveBeenCalledWith({
@@ -131,13 +130,11 @@ describe('OrganizationProvisioningManagement', () => {
       });
     });
 
-    expect(screen.getByRole('button', { name: /hide setup details/i })).toBeInTheDocument();
-    expect(screen.getByText('Provisioning token')).toBeInTheDocument();
-    expect(navigateMock).toHaveBeenCalled();
+    expect(screen.getByText('scim-secret-token')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copied/i })).toBeInTheDocument();
   });
 
-  it('keeps setup details hidden until requested for an existing provisioning connection', async () => {
-    const user = userEvent.setup();
+  it('shows token management copy for an existing provisioning connection', () => {
     useQueryMock.mockReturnValue(
       buildSettings({
         enterpriseAuth: {
@@ -146,12 +143,10 @@ describe('OrganizationProvisioningManagement', () => {
       }),
     );
 
-    render(<OrganizationProvisioningManagement slug="cottage-hospital" detailsOpen={false} />);
+    render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
 
-    expect(screen.queryByText('SCIM base URL')).not.toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: /view setup details/i }));
-
-    expect(navigateMock).toHaveBeenCalled();
+    expect(screen.getByText(/current bearer token is hidden after setup/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /generate new token/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /revoke token/i })).toBeInTheDocument();
   });
 });
