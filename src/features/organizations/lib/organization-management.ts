@@ -32,7 +32,12 @@ export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
   'all',
   ...ORGANIZATION_AUDIT_EVENT_TYPES,
 ] as const;
-export const ORGANIZATION_AUDIT_SORT_FIELDS = ['createdAt'] as const;
+export const ORGANIZATION_AUDIT_SORT_FIELDS = [
+  'label',
+  'identifier',
+  'userId',
+  'createdAt',
+] as const;
 
 export const organizationDirectorySearchSchema = z.object({
   page: z.number().default(1),

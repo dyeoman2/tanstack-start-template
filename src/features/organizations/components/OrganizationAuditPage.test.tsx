@@ -152,6 +152,7 @@ describe('OrganizationAuditPage', () => {
     await waitFor(() => {
       expect(exportAuditCsvMock).toHaveBeenCalledWith({
         slug: 'cottage-hospital',
+        sortBy: 'createdAt',
         sortOrder: 'desc',
         eventType: 'member_invited',
         search: 'invitee',

@@ -51,7 +51,7 @@ import { listStandaloneAttachmentsForOrganization } from './lib/organizationClea
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
-type OrganizationAuditSortField = 'createdAt';
+type OrganizationAuditSortField = 'label' | 'identifier' | 'userId' | 'createdAt';
 
 type OrganizationAccessContext = {
   access: Awaited<ReturnType<typeof checkOrganizationAccess>>;
@@ -273,6 +273,18 @@ function parseAuditMetadata(metadata: string | undefined) {
   }
 }
 
+function compareNullableStrings(
+  left: string | undefined,
+  right: string | undefined,
+  sortOrder: 'asc' | 'desc',
+) {
+  const leftValue = left?.trim().toLowerCase() ?? '';
+  const rightValue = right?.trim().toLowerCase() ?? '';
+  const result = leftValue.localeCompare(rightValue);
+
+  return sortOrder === 'asc' ? result : -result;
+}
+
 function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
   return {
     id: event.id,
@@ -286,6 +298,136 @@ function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
     ...(event.userAgent ? { userAgent: event.userAgent } : {}),
     ...(event.metadata ? { metadata: parseAuditMetadata(event.metadata) } : {}),
   };
+}
+
+function compareOrganizationAuditEvents(
+  left: ReturnType<typeof toOrganizationAuditEventViewModel>,
+  right: ReturnType<typeof toOrganizationAuditEventViewModel>,
+  sortBy: OrganizationAuditSortField,
+  sortOrder: 'asc' | 'desc',
+) {
+  switch (sortBy) {
+    case 'label': {
+      const labelResult = compareNullableStrings(left.label, right.label, sortOrder);
+      if (labelResult !== 0) {
+        return labelResult;
+      }
+      break;
+    }
+    case 'identifier': {
+      const identifierResult = compareNullableStrings(left.identifier, right.identifier, sortOrder);
+      if (identifierResult !== 0) {
+        return identifierResult;
+      }
+      break;
+    }
+    case 'userId': {
+      const userIdResult = compareNullableStrings(left.userId, right.userId, sortOrder);
+      if (userIdResult !== 0) {
+        return userIdResult;
+      }
+      break;
+    }
+    case 'createdAt': {
+      const createdAtResult =
+        sortOrder === 'asc' ? left.createdAt - right.createdAt : right.createdAt - left.createdAt;
+      if (createdAtResult !== 0) {
+        return createdAtResult;
+      }
+      break;
+    }
+    default:
+      break;
+  }
+
+  const createdAtResult =
+    sortOrder === 'asc' ? left.createdAt - right.createdAt : right.createdAt - left.createdAt;
+  if (createdAtResult !== 0) {
+    return createdAtResult;
+  }
+
+  return sortOrder === 'asc' ? left.id.localeCompare(right.id) : right.id.localeCompare(left.id);
+}
+
+function getAuditSearchStrategy(searchValue: string) {
+  const normalizedValue = searchValue.trim().toLowerCase();
+  if (!normalizedValue) {
+    return { kind: 'organization' as const };
+  }
+
+  const matchingEventType = Array.from(ORGANIZATION_AUDIT_EVENT_TYPES).find(
+    (eventType) =>
+      eventType === normalizedValue || getOrganizationAuditEventLabel(eventType).toLowerCase() === normalizedValue,
+  );
+  if (matchingEventType) {
+    return { kind: 'eventType' as const, eventType: matchingEventType };
+  }
+
+  if (normalizedValue.includes('@')) {
+    return { kind: 'identifier' as const, identifier: normalizedValue };
+  }
+
+  if (/^[a-z0-9_-]+$/i.test(normalizedValue)) {
+    return { kind: 'userId' as const, userId: normalizedValue };
+  }
+
+  return { kind: 'organization' as const };
+}
+
+async function collectOrganizationAuditPage(
+  ctx: QueryCtx,
+  input: {
+    organizationId: string;
+    requestedEventType: string | null;
+    searchStrategy:
+      | { kind: 'organization' }
+      | { kind: 'eventType'; eventType: string }
+      | { kind: 'identifier'; identifier: string }
+      | { kind: 'userId'; userId: string };
+    sortOrder: 'asc' | 'desc';
+    cursor: string | null;
+    numItems: number;
+  },
+) {
+  const { organizationId, requestedEventType, searchStrategy, sortOrder, cursor, numItems } = input;
+
+  if (searchStrategy.kind === 'identifier') {
+    return await ctx.db
+      .query('auditLogs')
+      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', searchStrategy.identifier))
+      .order(sortOrder)
+      .paginate({ cursor, numItems });
+  }
+
+  if (searchStrategy.kind === 'userId') {
+    return await ctx.db
+      .query('auditLogs')
+      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', searchStrategy.userId))
+      .order(sortOrder)
+      .paginate({ cursor, numItems });
+  }
+
+  if (requestedEventType || searchStrategy.kind === 'eventType') {
+    const eventType =
+      requestedEventType ?? (searchStrategy.kind === 'eventType' ? searchStrategy.eventType : null);
+    if (!eventType) {
+      throw new Error('Audit event type is required for event-type scoped queries');
+    }
+
+    return await ctx.db
+      .query('auditLogs')
+      .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
+        q.eq('organizationId', organizationId).eq('eventType', eventType),
+      )
+      .order(sortOrder)
+      .paginate({ cursor, numItems });
+  }
+
+  return await ctx.db
+    .query('auditLogs')
+    .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+    .order(sortOrder)
+    .paginate({ cursor, numItems });
 }
 
 async function insertOrganizationAuditLog(
@@ -1213,7 +1355,14 @@ export const listOrganizationAuditEvents = query({
     slug: v.string(),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
-    sortBy: v.optional(v.literal('createdAt')),
+    sortBy: v.optional(
+      v.union(
+        v.literal('label'),
+        v.literal('identifier'),
+        v.literal('userId'),
+        v.literal('createdAt'),
+      ),
+    ),
     sortOrder: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
@@ -1266,33 +1415,38 @@ export const listOrganizationAuditEvents = query({
 
     const requestedEventType = args.eventType === 'all' ? null : args.eventType;
     const searchValue = args.search.trim().toLowerCase();
+    const searchStrategy = getAuditSearchStrategy(searchValue);
+    const sortBy = args.sortBy ?? 'createdAt';
     const sortOrder = args.sortOrder ?? 'desc';
     const pageSize = Math.max(1, Math.min(args.pageSize ?? args.limit ?? 10, 100));
     const page = Math.max(1, args.page ?? 1);
     const targetStart = (page - 1) * pageSize;
     const targetEnd = targetStart + pageSize;
-    const pagedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
+    const matchedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
     let total = 0;
     let cursor: string | null = null;
     let isDone = false;
 
     while (!isDone) {
-      const auditPage: PaginationResult<Doc<'auditLogs'>> = requestedEventType
-        ? await ctx.db
-            .query('auditLogs')
-            .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
-              q.eq('organizationId', organizationId).eq('eventType', requestedEventType),
-            )
-            .order(sortOrder)
-            .paginate({ cursor, numItems: 100 })
-        : await ctx.db
-            .query('auditLogs')
-            .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
-            .order(sortOrder)
-            .paginate({ cursor, numItems: 100 });
+      const auditPage: PaginationResult<Doc<'auditLogs'>> = await collectOrganizationAuditPage(ctx, {
+        organizationId,
+        requestedEventType,
+        searchStrategy,
+        sortOrder,
+        cursor,
+        numItems: 100,
+      });
 
       for (const event of auditPage.page) {
         if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
+          continue;
+        }
+
+        if (event.organizationId !== organizationId) {
+          continue;
+        }
+
+        if (requestedEventType && event.eventType !== requestedEventType) {
           continue;
         }
 
@@ -1311,9 +1465,7 @@ export const listOrganizationAuditEvents = query({
           continue;
         }
 
-        if (total >= targetStart && total < targetEnd) {
-          pagedEvents.push(toOrganizationAuditEventViewModel(event));
-        }
+        matchedEvents.push(toOrganizationAuditEventViewModel(event));
 
         total += 1;
       }
@@ -1321,6 +1473,14 @@ export const listOrganizationAuditEvents = query({
       cursor = auditPage.isDone ? null : auditPage.continueCursor;
       isDone = auditPage.isDone;
     }
+
+    const sortedEvents =
+      sortBy === 'createdAt'
+        ? matchedEvents
+        : [...matchedEvents].sort((left, right) =>
+            compareOrganizationAuditEvents(left, right, sortBy, sortOrder),
+          );
+    const pagedEvents = sortedEvents.slice(targetStart, targetEnd);
 
     return {
       organization: {
@@ -1346,6 +1506,12 @@ export const listOrganizationAuditEvents = query({
 export const exportOrganizationAuditCsv = action({
   args: {
     slug: v.string(),
+    sortBy: v.union(
+      v.literal('label'),
+      v.literal('identifier'),
+      v.literal('userId'),
+      v.literal('createdAt'),
+    ),
     sortOrder: v.union(v.literal('asc'), v.literal('desc')),
     eventType: v.union(
       v.literal('all'),
@@ -1380,7 +1546,7 @@ export const exportOrganizationAuditCsv = action({
         slug: args.slug,
         page: pageNumber,
         pageSize: 100,
-        sortBy: 'createdAt',
+        sortBy: args.sortBy,
         sortOrder: args.sortOrder,
         eventType: args.eventType,
         search: args.search,

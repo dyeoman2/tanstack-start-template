@@ -19,6 +19,7 @@ import { OrganizationWorkspaceTabs } from '~/features/organizations/components/O
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type {
   OrganizationAuditEventType,
+  OrganizationAuditSortField,
   OrganizationAuditSearchParams,
 } from '~/features/organizations/lib/organization-management';
 
@@ -104,7 +105,7 @@ export function OrganizationAuditPage({
     });
   };
 
-  const handleSorting = (columnId: 'createdAt') => {
+  const handleSorting = (columnId: OrganizationAuditSortField) => {
     const nextSortOrder =
       searchParams.sortBy === columnId && searchParams.sortOrder === 'asc' ? 'desc' : 'asc';
 
@@ -149,6 +150,7 @@ export function OrganizationAuditPage({
     try {
       const result = await exportAuditCsv({
         slug,
+        sortBy: searchParams.sortBy,
         sortOrder: searchParams.sortOrder,
         eventType: searchParams.eventType,
         search: searchParams.search,
@@ -174,19 +176,19 @@ export function OrganizationAuditPage({
     () => [
       {
         accessorKey: 'label',
-        header: () => <div>Event</div>,
+        header: createSortableHeader('Event', 'label', searchParams, handleSorting),
         cell: ({ row }) => <span className="text-sm font-medium text-foreground">{row.original.label}</span>,
       },
       {
         accessorKey: 'identifier',
-        header: () => <div>Identifier</div>,
+        header: createSortableHeader('Identifier', 'identifier', searchParams, handleSorting),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">{row.original.identifier ?? '—'}</span>
         ),
       },
       {
         accessorKey: 'userId',
-        header: () => <div>User</div>,
+        header: createSortableHeader('User', 'userId', searchParams, handleSorting),
         cell: ({ row }) => (
           <span className="text-sm text-muted-foreground">{row.original.userId ?? '—'}</span>
         ),
