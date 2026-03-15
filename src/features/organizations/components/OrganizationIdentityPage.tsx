@@ -205,10 +205,10 @@ export function OrganizationIdentityPage({
 
       <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader className="flex flex-col gap-1">
-          <CardTitle>Set Up Sign-In & Provisioning</CardTitle>
+          <CardTitle>Set Up SSO & Provisioning</CardTitle>
           <CardDescription>
-            Complete these steps in order to route users through SSO, enforce access rules, and
-            optionally automate account lifecycle management.
+            Complete these steps to configure SSO, domain verification, enforcement, and optional
+            SCIM provisioning.
           </CardDescription>
         </CardHeader>
         <Separator />

@@ -2,7 +2,7 @@ import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { Check, Copy, Loader2, RefreshCcw, Trash2 } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, Loader2, RefreshCcw, Trash2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -46,6 +46,7 @@ export function OrganizationProvisioningManagement({
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [tokenCopied, setTokenCopied] = useState(false);
   const [endpointCopied, setEndpointCopied] = useState(false);
+  const [tokenVisible, setTokenVisible] = useState(false);
 
   useEffect(() => {
     if (!settings) {
@@ -93,6 +94,7 @@ export function OrganizationProvisioningManagement({
         },
       });
       setRevealedScimToken(result.scimToken);
+      setTokenVisible(false);
       let copiedToClipboard = false;
       try {
         await navigator.clipboard.writeText(result.scimToken);
@@ -143,6 +145,7 @@ export function OrganizationProvisioningManagement({
         },
       });
       setRevealedScimToken(null);
+      setTokenVisible(false);
       setIsDeleteDialogOpen(false);
       await refreshState();
       showToast('Provisioning token revoked.', 'success');
@@ -204,34 +207,87 @@ export function OrganizationProvisioningManagement({
   const provisioningContent = (
     <div className="space-y-4">
       <div className="space-y-4">
-        <p className="text-sm text-muted-foreground">
-          Use this endpoint URL and bearer token in your identity provider&apos;s SCIM settings.
-        </p>
+        <div className="space-y-2">
+          <p className="text-sm text-muted-foreground">
+            Copy the SCIM endpoint URL, generate a bearer token, and paste both into your identity
+            provider&apos;s SCIM provisioning settings.
+          </p>
+          <p className="text-sm text-muted-foreground">
+            After saving these values in your identity provider, test the SCIM connection there
+            before enabling provisioning.
+          </p>
+        </div>
 
-        <div className="overflow-hidden rounded-lg border border-border/70 bg-muted/20">
-          <div className="p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium text-foreground">SCIM endpoint URL</p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void copyScimBaseUrl()}
-              >
-                {endpointCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                {endpointCopied ? 'Copied' : 'Copy URL'}
-              </Button>
-            </div>
-            <p className="mt-2 break-all font-mono text-sm text-foreground">{scimBaseUrl}</p>
+        <div>
+          <p className="text-sm font-medium text-foreground">SCIM endpoint URL</p>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/80 p-3">
+            <p className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+              {scimBaseUrl}
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void copyScimBaseUrl()}
+            >
+              {endpointCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+              {endpointCopied ? 'Copied' : 'Copy URL'}
+            </Button>
+          </div>
+        </div>
+
+        <div>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-foreground">Bearer token</p>
           </div>
 
-          <div className="border-t border-border/70 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="text-sm font-medium text-foreground">Bearer token</p>
+          {revealedScimToken ? (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/80 p-3">
+              <p className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+                {tokenVisible
+                  ? revealedScimToken
+                  : `••••••••••••••••••••••••••••••••${revealedScimToken.slice(-4)}`}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => setTokenVisible((current) => !current)}
+                >
+                  {tokenVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  {tokenVisible ? 'Hide' : 'Show'}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  type="button"
+                  onClick={() => void copyScimToken()}
+                >
+                  {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
+                  {tokenCopied ? 'Copied' : 'Copy'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={isDeletingScimProvider}
+                >
+                  <Trash2 className="size-4" />
+                  Revoke
+                </Button>
+              </div>
+            </div>
+          ) : scimConnectionConfigured ? (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/80 p-3">
+              <p className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">
+                ••••••••••••••••••••••••••••••••••••••••
+              </p>
               <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
-                  variant={scimConnectionConfigured ? 'outline' : 'default'}
+                  variant="outline"
                   size="sm"
                   onClick={() => void handleGenerateScimToken()}
                   disabled={
@@ -243,65 +299,55 @@ export function OrganizationProvisioningManagement({
                   ) : (
                     <RefreshCcw className="size-4" />
                   )}
-                  {scimConnectionConfigured ? 'Generate New Token' : 'Generate Token'}
+                  Generate Replacement Token
                 </Button>
-                {revealedScimToken ? (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      type="button"
-                      onClick={() => void copyScimToken()}
-                    >
-                      {tokenCopied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                      {tokenCopied ? 'Copied' : 'Copy'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsDeleteDialogOpen(true)}
-                      disabled={isDeletingScimProvider}
-                    >
-                      <Trash2 className="size-4" />
-                      Revoke
-                    </Button>
-                  </>
-                ) : scimConnectionConfigured ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setIsDeleteDialogOpen(true)}
-                    disabled={isDeletingScimProvider}
-                  >
-                    <Trash2 className="size-4" />
-                    Revoke Token
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsDeleteDialogOpen(true)}
+                  disabled={isDeletingScimProvider}
+                >
+                  <Trash2 className="size-4" />
+                  Revoke Token
+                </Button>
               </div>
             </div>
-
-            {revealedScimToken ? (
-              <>
-                <p className="mt-2 break-all font-mono text-sm text-foreground">
-                  {revealedScimToken}
-                </p>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  This token is only shown once and was copied automatically. Store it securely.
-                </p>
-              </>
-            ) : scimConnectionConfigured ? (
-              <p className="mt-2 text-sm text-muted-foreground">
-                The current bearer token is hidden after setup. Generate a new token if you need to
-                reconnect your identity provider.
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/70 bg-background/80 p-3">
+              <p className="min-w-0 flex-1 text-sm text-muted-foreground">
+                Generate a bearer token to connect your identity provider.
               </p>
-            ) : (
-              <p className="mt-2 text-sm text-muted-foreground">
-                Generate a bearer token to finish SCIM setup.
-              </p>
-            )}
-          </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  onClick={() => void handleGenerateScimToken()}
+                  disabled={
+                    isGeneratingScimToken || !selectedProvider?.selectable || blockedMessage !== null
+                  }
+                >
+                  {isGeneratingScimToken ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="size-4" />
+                  )}
+                  Generate Token
+                </Button>
+              </div>
+            </div>
+          )}
+          {revealedScimToken ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              This token is only shown once and was copied automatically. Store it securely.
+            </p>
+          ) : scimConnectionConfigured ? (
+            <p className="mt-2 text-sm text-muted-foreground">
+              Your existing bearer token is hidden. Generate a new token only if you need to
+              reconnect or update your identity provider.
+            </p>
+          ) : null}
         </div>
       </div>
     </div>

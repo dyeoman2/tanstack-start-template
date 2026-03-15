@@ -130,7 +130,8 @@ describe('OrganizationProvisioningManagement', () => {
       });
     });
 
-    expect(screen.getByText('scim-secret-token')).toBeInTheDocument();
+    expect(screen.queryByText('scim-secret-token')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /show/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copied/i })).toBeInTheDocument();
   });
 
@@ -145,8 +146,13 @@ describe('OrganizationProvisioningManagement', () => {
 
     render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText(/current bearer token is hidden after setup/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /generate new token/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /your existing bearer token is hidden\. generate a new token only if you need to reconnect or update your identity provider\./i,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/•{8,}/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /generate replacement token/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /revoke token/i })).toBeInTheDocument();
   });
 });
