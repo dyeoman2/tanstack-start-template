@@ -1,0 +1,164 @@
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { OrganizationProvisioningManagement } from './OrganizationProvisioningManagement';
+
+const {
+  routerInvalidateMock,
+  useQueryMock,
+  invalidateQueriesMock,
+  showToastMock,
+  notifyMock,
+  generateScimTokenMock,
+  deleteScimProviderMock,
+} = vi.hoisted(() => ({
+  routerInvalidateMock: vi.fn(),
+  useQueryMock: vi.fn(),
+  invalidateQueriesMock: vi.fn(),
+  showToastMock: vi.fn(),
+  notifyMock: vi.fn(),
+  generateScimTokenMock: vi.fn(),
+  deleteScimProviderMock: vi.fn(),
+}));
+
+vi.mock('@tanstack/react-router', () => ({
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+  }),
+}));
+
+vi.mock('convex/react', () => ({
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
+}));
+
+vi.mock('~/features/auth/auth-client', () => ({
+  authClient: {
+    $store: {
+      notify: notifyMock,
+    },
+  },
+}));
+
+vi.mock('~/features/organizations/server/organization-management', () => ({
+  generateOrganizationScimTokenServerFn: (...args: unknown[]) => generateScimTokenMock(...args),
+  deleteOrganizationScimProviderServerFn: (...args: unknown[]) => deleteScimProviderMock(...args),
+}));
+
+vi.mock('~/components/ui/toast', () => ({
+  useToast: () => ({
+    showToast: showToastMock,
+  }),
+}));
+
+function buildSettings(overrides?: Record<string, unknown>) {
+  return {
+    organization: {
+      id: 'org-1',
+      slug: 'cottage-hospital',
+      name: 'Cottage Hospital',
+      logo: null,
+    },
+    capabilities: {
+      canUpdateSettings: true,
+    },
+    policies: {
+      enterpriseProviderKey: null,
+      ...(overrides?.policies as Record<string, unknown> | undefined),
+    },
+    enterpriseAuth: {
+      providerKey: 'google-workspace',
+      providerLabel: 'Google Workspace',
+      protocol: 'oidc',
+      providerStatus: 'active',
+      managedDomains: [],
+      scimProviderId: 'google-workspace--org-1',
+      scimConnectionConfigured: false,
+      ...(overrides?.enterpriseAuth as Record<string, unknown> | undefined),
+    },
+    availableEnterpriseProviders: [
+      {
+        key: 'google-workspace',
+        label: 'Google Workspace',
+        protocol: 'oidc',
+        status: 'active',
+        selectable: true,
+      },
+    ],
+    ...(overrides ?? {}),
+  };
+}
+
+describe('OrganizationProvisioningManagement', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useQueryMock.mockReturnValue(buildSettings());
+  });
+
+  it('renders provisioning as a later setup step', () => {
+    render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
+
+    expect(screen.getByText('User provisioning')).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Optional: automatically create and update users from your identity provider using SCIM.',
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        'Set this up after your identity provider and verified domains are in place. SCIM deprovisioning removes access to this organization only, and deactivated users do not regain access by signing in again. Restore access through SCIM reprovisioning or an admin action.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('hides SCIM setup details until provisioning is configured or started', async () => {
+    const user = userEvent.setup();
+    generateScimTokenMock.mockResolvedValueOnce({ scimToken: 'scim-secret-token' });
+
+    render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
+
+    expect(screen.queryByText('SCIM base URL')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /set up provisioning/i }));
+
+    await waitFor(() => {
+      expect(generateScimTokenMock).toHaveBeenCalledWith({
+        data: {
+          organizationId: 'org-1',
+          providerKey: 'google-workspace',
+        },
+      });
+    });
+
+    expect(screen.getByRole('button', { name: /hide setup details/i })).toBeInTheDocument();
+    expect(screen.getByText('Provisioning token')).toBeInTheDocument();
+  });
+
+  it('keeps setup details hidden until requested for an existing provisioning connection', async () => {
+    const user = userEvent.setup();
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        enterpriseAuth: {
+          scimConnectionConfigured: true,
+        },
+      }),
+    );
+
+    render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
+
+    expect(screen.queryByText('SCIM base URL')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /view setup details/i }));
+
+    expect(screen.getByText('SCIM base URL')).toBeInTheDocument();
+    expect(
+      screen.getByText((_, element) =>
+        element?.textContent ===
+        'Provisioned users are added to the organization as member, and deprovisioning removes only this organization membership without deleting the global user.',
+      ),
+    ).toBeInTheDocument();
+  });
+});

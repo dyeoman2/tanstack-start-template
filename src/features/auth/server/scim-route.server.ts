@@ -39,6 +39,40 @@ function createScimResponse(input: {
   });
 }
 
+function shouldHandleScimPatchLifecycle(bodyJson: string | undefined) {
+  if (!bodyJson) {
+    return false;
+  }
+
+  try {
+    const parsed = JSON.parse(bodyJson) as Record<string, unknown>;
+    const operations = Array.isArray(parsed.Operations) ? parsed.Operations : [];
+
+    return operations.some((operation) => {
+      if (!operation || typeof operation !== 'object') {
+        return false;
+      }
+
+      const path = typeof operation.path === 'string' ? operation.path.trim().toLowerCase() : '';
+      const value = 'value' in operation ? operation.value : undefined;
+
+      if (path === 'active') {
+        return true;
+      }
+
+      return Boolean(
+        !path &&
+          typeof value === 'object' &&
+          value !== null &&
+          'active' in value &&
+          typeof value.active === 'boolean',
+      );
+    });
+  } catch {
+    return false;
+  }
+}
+
 export async function handleScimOrganizationLifecycleRequest(request: Request) {
   const pathname = new URL(request.url).pathname;
   const method = request.method.toUpperCase();
@@ -78,6 +112,10 @@ export async function handleScimOrganizationLifecycleRequest(request: Request) {
 
   const bodyJson =
     operation === 'delete' ? undefined : await request.text().catch(() => undefined);
+
+  if (operation === 'patch' && !shouldHandleScimPatchLifecycle(bodyJson)) {
+    return null;
+  }
 
   const convex = createConvexAdminClient();
   const result = await convex.action(internal.auth.handleScimOrganizationLifecycleInternal, {

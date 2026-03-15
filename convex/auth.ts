@@ -10,6 +10,7 @@ import { APIError } from 'better-auth/api';
 import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { shouldCreateEnterpriseJitMembership } from '../src/features/auth/lib/enterprise-jit';
 import { normalizeOrganizationRole } from '../src/features/organizations/lib/organization-permissions';
 import {
   getBetterAuthSecret,
@@ -56,6 +57,7 @@ import {
   updateBetterAuthUserRecord,
 } from './lib/betterAuth';
 import { getOrganizationMembershipStatuses } from './lib/organizationMembershipState';
+import { getOrganizationMembershipStateByOrganizationUser } from './lib/organizationMembershipState';
 import {
   createActorScopedRateLimitKey,
   createEmailScopedRateLimitKey,
@@ -1199,8 +1201,22 @@ async function ensureEnterpriseOrganizationMembership(
   },
 ) {
   const existingMembership = await findBetterAuthMember(ctx, input.organizationId, input.userId);
-  if (existingMembership || !('runMutation' in ctx) || typeof ctx.runMutation !== 'function') {
-    return;
+  const existingState = await getOrganizationMembershipStateByOrganizationUser(
+    ctx,
+    input.organizationId,
+    input.userId,
+  );
+  if (
+    !shouldCreateEnterpriseJitMembership({
+      existingMembership: existingMembership !== null,
+      membershipStateStatus: existingState?.status ?? null,
+    })
+  ) {
+    return existingMembership !== null;
+  }
+
+  if (!('runMutation' in ctx) || typeof ctx.runMutation !== 'function') {
+    return false;
   }
 
   await ctx.runMutation!(components.betterAuth.adapter.create, {
@@ -1214,6 +1230,8 @@ async function ensureEnterpriseOrganizationMembership(
       },
     },
   });
+
+  return true;
 }
 
 async function resolveEnterpriseAuthSessionForUser(
@@ -1265,10 +1283,13 @@ async function resolveEnterpriseAuthSessionForUser(
     return null;
   }
 
-  await ensureEnterpriseOrganizationMembership(ctx, {
+  const hasEnterpriseMembership = await ensureEnterpriseOrganizationMembership(ctx, {
     organizationId: resolution.organizationId,
     userId: input.userId,
   });
+  if (!hasEnterpriseMembership) {
+    return null;
+  }
 
   return {
     organizationId: resolution.organizationId,
@@ -3081,8 +3102,10 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
 
       try {
         await deleteBetterAuthMemberRecord(ctx as CtxWithRequiredRunMutation, membership._id);
-        await ctx.runMutation(internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal, {
+        await ctx.runMutation(internal.scimLifecycle.markOrganizationMembershipDeactivatedForUserInternal, {
+          membershipId: membership._id,
           organizationId,
+          reason: 'SCIM deprovisioned membership',
           userId,
         });
         await syncActiveOrganizationForUserSessions(
@@ -3156,6 +3179,11 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
       );
 
       if (!existingMembership) {
+        const existingState = await getOrganizationMembershipStateByOrganizationUser(
+          ctx,
+          organizationId,
+          existingAccount.userId,
+        );
         await createBetterAuthMember(ctx as CtxWithRequiredRunMutation, {
           organizationId,
           userId: existingAccount.userId,
@@ -3171,6 +3199,7 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
           identifier: user.email?.toLowerCase(),
           metadata: {
             actorType: 'scim',
+            previousStatus: existingState?.status ?? null,
             providerId: scimContext.providerId,
             targetUserId: existingAccount.userId,
           },

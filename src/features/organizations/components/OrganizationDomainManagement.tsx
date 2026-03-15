@@ -172,8 +172,7 @@ export function OrganizationDomainManagement({
           <div className="space-y-1.5">
             <CardTitle>Verified domains</CardTitle>
             <CardDescription>
-              Verified domains confirm which company email addresses belong to your organization.
-              They are used for SSO routing and enforcement.
+              Verify company domains so SSO can route and enforce sign-in for the right users.
             </CardDescription>
           </div>
           {canManageDomains ? (

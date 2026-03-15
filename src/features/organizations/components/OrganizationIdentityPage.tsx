@@ -4,6 +4,7 @@ import { useQuery } from 'convex/react';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { OrganizationDomainManagement } from '~/features/organizations/components/OrganizationDomainManagement';
 import { OrganizationEnterpriseAuthManagement } from '~/features/organizations/components/OrganizationEnterpriseAuthManagement';
+import { OrganizationProvisioningManagement } from '~/features/organizations/components/OrganizationProvisioningManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
@@ -41,6 +42,7 @@ export function OrganizationIdentityPage({
       <OrganizationWorkspaceTabs slug={slug} organizationName={organizationName} />
       <OrganizationEnterpriseAuthManagement slug={slug} />
       <OrganizationDomainManagement slug={slug} />
+      <OrganizationProvisioningManagement slug={slug} />
     </div>
   );
 }

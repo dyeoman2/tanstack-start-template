@@ -147,10 +147,6 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'enterprise_login_succeeded',
   'enterprise_scim_token_generated',
   'enterprise_scim_token_deleted',
-  'enterprise_scim_user_provisioned',
-  'enterprise_scim_user_updated',
-  'enterprise_scim_user_deactivated',
-  'enterprise_scim_user_reactivated',
   'scim_member_deprovisioned',
   'scim_member_reactivated',
   'scim_member_deprovision_failed',
@@ -639,6 +635,14 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Domain removed';
     case 'organization_policy_updated':
       return 'Organization policies updated';
+    case 'enterprise_scim_user_provisioned':
+      return 'SCIM user provisioned';
+    case 'enterprise_scim_user_updated':
+      return 'SCIM user updated';
+    case 'enterprise_scim_user_deactivated':
+      return 'SCIM member deprovisioned';
+    case 'enterprise_scim_user_reactivated':
+      return 'SCIM member reactivated';
     case 'scim_member_deprovisioned':
       return 'SCIM member deprovisioned';
     case 'scim_member_reactivated':
