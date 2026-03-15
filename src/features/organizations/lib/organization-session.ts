@@ -19,6 +19,27 @@ export async function refreshOrganizationClientState(
   ]);
 }
 
+/**
+ * Extract the human-readable message from an error thrown by a server function
+ * that wraps a Convex mutation/action. Raw ConvexError payloads propagated
+ * through TanStack Start server functions include the full JSON payload and a
+ * stack trace — this strips the noise and returns just the message.
+ */
+export function getServerFunctionErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof Error) || !error.message) {
+    return fallback;
+  }
+
+  if (error.message.includes('ConvexError')) {
+    const match = error.message.match(/"message"\s*:\s*"([^"]+)"/);
+    if (match) {
+      return match[1];
+    }
+  }
+
+  return error.message;
+}
+
 export function getOrganizationActionErrorMessage(error: unknown, fallbackMessage: string) {
   const errorCode =
     error instanceof Error &&
@@ -30,9 +51,5 @@ export function getOrganizationActionErrorMessage(error: unknown, fallbackMessag
     return 'Verify your email address before responding to this invitation.';
   }
 
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return fallbackMessage;
+  return getServerFunctionErrorMessage(error, fallbackMessage);
 }

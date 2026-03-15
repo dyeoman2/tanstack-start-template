@@ -14,6 +14,7 @@ import {
 } from '~/components/data-table';
 import { Button } from '~/components/ui/button';
 import { useToast } from '~/components/ui/toast';
+import { getServerFunctionErrorMessage } from '~/features/organizations/lib/organization-session';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
@@ -183,7 +184,7 @@ export function OrganizationAuditPage({
       window.URL.revokeObjectURL(url);
       showToast('Audit log exported.', 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to export audit log', 'error');
+      showToast(getServerFunctionErrorMessage(error, 'Failed to export audit log'), 'error');
     } finally {
       setIsExporting(false);
     }

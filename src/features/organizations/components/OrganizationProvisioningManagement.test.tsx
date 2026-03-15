@@ -21,8 +21,11 @@ const {
   deleteScimProviderMock: vi.fn(),
 }));
 
+const navigateMock = vi.fn();
+
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useNavigate: () => navigateMock,
 }));
 
 vi.mock('@tanstack/react-query', () => ({
@@ -66,7 +69,7 @@ function buildSettings(overrides?: Record<string, unknown>) {
       canUpdateSettings: true,
     },
     policies: {
-      enterpriseProviderKey: null,
+      enterpriseProviderKey: 'google-workspace' as const,
       ...(overrides?.policies as Record<string, unknown> | undefined),
     },
     enterpriseAuth: {
@@ -101,7 +104,7 @@ describe('OrganizationProvisioningManagement', () => {
   it('renders provisioning as a later setup step', () => {
     render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText('User provisioning')).toBeInTheDocument();
+    expect(screen.getByText('Step 4: Provisioning')).toBeInTheDocument();
     expect(
       screen.getByText(
         'Optional: automatically create and update users from your identity provider using SCIM.',
@@ -135,6 +138,7 @@ describe('OrganizationProvisioningManagement', () => {
 
     expect(screen.getByRole('button', { name: /hide setup details/i })).toBeInTheDocument();
     expect(screen.getByText('Provisioning token')).toBeInTheDocument();
+    expect(navigateMock).toHaveBeenCalled();
   });
 
   it('keeps setup details hidden until requested for an existing provisioning connection', async () => {
@@ -147,18 +151,12 @@ describe('OrganizationProvisioningManagement', () => {
       }),
     );
 
-    render(<OrganizationProvisioningManagement slug="cottage-hospital" />);
+    render(<OrganizationProvisioningManagement slug="cottage-hospital" detailsOpen={false} />);
 
     expect(screen.queryByText('SCIM base URL')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /view setup details/i }));
 
-    expect(screen.getByText('SCIM base URL')).toBeInTheDocument();
-    expect(
-      screen.getByText((_, element) =>
-        element?.textContent ===
-        'Provisioned users are added to the organization as member, and deprovisioning removes only this organization membership without deleting the global user.',
-      ),
-    ).toBeInTheDocument();
+    expect(navigateMock).toHaveBeenCalled();
   });
 });

@@ -2,100 +2,63 @@ import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { Loader2 } from 'lucide-react';
+import { CheckCircle2, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
-import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
-import { Switch } from '~/components/ui/switch';
 import { useToast } from '~/components/ui/toast';
 import type {
-  OrganizationEnterpriseAuthMode,
-  OrganizationEnterpriseProviderOption,
   OrganizationEnterpriseProviderKey,
+  OrganizationEnterpriseProviderOption,
 } from '~/features/organizations/lib/organization-management';
-import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import {
+  getServerFunctionErrorMessage,
+  refreshOrganizationClientState,
+} from '~/features/organizations/lib/organization-session';
 import { updateOrganizationPoliciesServerFn } from '~/features/organizations/server/organization-management';
-
-function providerStatusBadgeVariant(status: 'active' | 'not_configured' | 'coming_soon') {
-  switch (status) {
-    case 'active':
-      return 'success' as const;
-    case 'not_configured':
-      return 'warning' as const;
-    case 'coming_soon':
-      return 'secondary' as const;
-  }
-}
-
-function providerStatusLabel(status: 'active' | 'not_configured' | 'coming_soon') {
-  switch (status) {
-    case 'active':
-      return 'Available';
-    case 'not_configured':
-      return 'Not configured';
-    case 'coming_soon':
-      return 'Planned';
-  }
-}
-
-function enforcementDescription(mode: OrganizationEnterpriseAuthMode) {
-  switch (mode) {
-    case 'off':
-      return 'Allow email and password sign-in for all users.';
-    case 'optional':
-      return 'Users on verified domains see SSO first, but password sign-in remains available.';
-    case 'required':
-      return 'Users on verified domains must sign in with SSO.';
-  }
-}
+import { cn } from '~/lib/utils';
 
 export function OrganizationEnterpriseAuthManagement({
   slug,
+  highlight = false,
+  embedded = false,
 }: {
   slug: string;
+  highlight?: boolean;
+  embedded?: boolean;
 }) {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { showToast } = useToast();
-  const settings = useQuery(api.organizationManagement.getOrganizationEnterpriseAuthSettings, { slug });
-  const [providerKey, setProviderKey] = useState<OrganizationEnterpriseProviderKey>('google-workspace');
-  const [enterpriseAuthMode, setEnterpriseAuthMode] =
-    useState<OrganizationEnterpriseAuthMode>('off');
-  const [allowBreakGlassPasswordLogin, setAllowBreakGlassPasswordLogin] = useState(true);
+  const settings = useQuery(api.organizationManagement.getOrganizationEnterpriseAuthSettings, {
+    slug,
+  });
+  const [providerKey, setProviderKey] = useState<OrganizationEnterpriseProviderKey | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [pendingProviderKey, setPendingProviderKey] =
+    useState<OrganizationEnterpriseProviderKey | null>(null);
 
   useEffect(() => {
     if (!settings) {
       return;
     }
 
-    setProviderKey(settings.policies.enterpriseProviderKey ?? 'google-workspace');
-    setEnterpriseAuthMode(settings.policies.enterpriseAuthMode);
-    setAllowBreakGlassPasswordLogin(settings.policies.allowBreakGlassPasswordLogin);
+    setProviderKey(settings.policies.enterpriseProviderKey ?? null);
   }, [settings]);
 
   const selectedProvider = useMemo(
     () =>
-      settings?.availableEnterpriseProviders.find(
-        (provider: OrganizationEnterpriseProviderOption) => provider.key === providerKey,
-      ) ??
-      settings?.availableEnterpriseProviders[0] ??
-      null,
+      providerKey
+        ? (settings?.availableEnterpriseProviders.find(
+            (provider: OrganizationEnterpriseProviderOption) => provider.key === providerKey,
+          ) ?? null)
+        : null,
     [providerKey, settings?.availableEnterpriseProviders],
   );
 
-  const managedDomains = settings?.enterpriseAuth?.managedDomains ?? [];
-  const hasVerifiedDomains = managedDomains.length > 0;
   const availableProviders = settings?.availableEnterpriseProviders ?? [];
+  const persistedProviderKey = settings?.policies.enterpriseProviderKey ?? null;
 
   const refreshState = async () => {
     await refreshOrganizationClientState(queryClient, {
@@ -109,9 +72,38 @@ export function OrganizationEnterpriseAuthManagement({
     return null;
   }
 
-  const handleSave = async () => {
-    setIsSaving(true);
+  const handleProviderChange = async (
+    nextProviderKey: OrganizationEnterpriseProviderKey | null,
+    actionProviderKey: OrganizationEnterpriseProviderKey | null = nextProviderKey,
+  ) => {
+    if (isSaving) {
+      setProviderKey(nextProviderKey);
+      setSaveError(null);
+      return;
+    }
+
+    const nextProvider = nextProviderKey
+      ? settings.availableEnterpriseProviders.find(
+          (provider: OrganizationEnterpriseProviderOption) => provider.key === nextProviderKey,
+        )
+      : null;
+
+    setProviderKey(nextProviderKey);
     setSaveError(null);
+
+    if (nextProviderKey === persistedProviderKey) {
+      if (nextProviderKey !== null) {
+        await handleProviderChange(null);
+      }
+      return;
+    }
+
+    if (nextProviderKey !== null && !nextProvider?.selectable) {
+      return;
+    }
+
+    setIsSaving(true);
+    setPendingProviderKey(actionProviderKey);
 
     try {
       await updateOrganizationPoliciesServerFn({
@@ -121,154 +113,120 @@ export function OrganizationEnterpriseAuthManagement({
           verifiedDomainsOnly: settings.policies.verifiedDomainsOnly,
           memberCap: settings.policies.memberCap,
           mfaRequired: settings.policies.mfaRequired,
-          enterpriseAuthMode,
-          enterpriseProviderKey: enterpriseAuthMode === 'off' ? null : providerKey,
-          enterpriseProtocol: enterpriseAuthMode === 'off' ? null : 'oidc',
-          allowBreakGlassPasswordLogin,
+          enterpriseAuthMode: settings.policies.enterpriseAuthMode,
+          enterpriseProviderKey: nextProviderKey,
+          enterpriseProtocol: nextProviderKey ? 'oidc' : null,
+          allowBreakGlassPasswordLogin: settings.policies.allowBreakGlassPasswordLogin,
         },
       });
       await refreshState();
-      showToast('SSO settings updated.', 'success');
+      showToast(
+        nextProviderKey ? 'Identity provider updated.' : 'Identity provider removed.',
+        'success',
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update SSO settings';
+      const message = getServerFunctionErrorMessage(error, 'Failed to update identity provider');
+      setProviderKey(persistedProviderKey);
       setSaveError(message);
       showToast(message, 'error');
     } finally {
       setIsSaving(false);
+      setPendingProviderKey(null);
     }
   };
 
-  return (
-    <Card>
-        <CardHeader>
-          <CardTitle>Single sign-on</CardTitle>
-          <CardDescription>
-            Choose an identity provider and set how SSO should apply to your organization.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="space-y-3">
-            <p className="text-sm font-medium">Identity provider</p>
-            <div className="space-y-3">
-              <Select
-                value={providerKey}
-                onValueChange={(value) =>
-                  setProviderKey(value as OrganizationEnterpriseProviderKey)
+  const content = (
+    <div className="space-y-6">
+      <div className="space-y-3">
+        <div
+          role="radiogroup"
+          aria-label="Identity provider"
+          className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+        >
+          {availableProviders.map((provider: OrganizationEnterpriseProviderOption) => {
+            const isSelected = provider.key === providerKey;
+            const isPersisted = provider.key === persistedProviderKey;
+            const isDisabled = isSaving || provider.status === 'coming_soon';
+            const isPending = isSaving && pendingProviderKey === provider.key;
+
+            return (
+              <button
+                key={provider.key}
+                type="button"
+                role="radio"
+                aria-checked={isSelected}
+                disabled={isDisabled}
+                onClick={() =>
+                  void handleProviderChange(isPersisted ? null : provider.key, provider.key)
                 }
+                className={cn(
+                  'flex w-full flex-col items-start gap-4 rounded-xl border px-4 py-4 text-left transition-colors',
+                  'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
+                  isSelected
+                    ? 'border-primary bg-primary/5 shadow-sm'
+                    : 'border-border bg-background hover:border-primary/40 hover:bg-accent/30',
+                  isDisabled &&
+                    'cursor-not-allowed opacity-60 hover:border-border hover:bg-background',
+                )}
               >
-                <SelectTrigger className="w-full" aria-label="Identity provider">
-                  <SelectValue placeholder="Select identity provider" />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableProviders.map((provider: OrganizationEnterpriseProviderOption) => (
-                    <SelectItem
-                      key={provider.key}
-                      value={provider.key}
-                      disabled={!provider.selectable}
-                    >
+                <span className="flex w-full items-start justify-between gap-3">
+                  <span>
+                    <span className="block text-sm font-semibold text-foreground">
                       {provider.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedProvider ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={providerStatusBadgeVariant(selectedProvider.status)}>
-                    {providerStatusLabel(selectedProvider.status)}
-                  </Badge>
-                </div>
-              ) : null}
-            </div>
-          </div>
+                    </span>
+                  </span>
+                  {isPending ? (
+                    <Loader2 className="mt-0.5 size-4 animate-spin text-muted-foreground" />
+                  ) : isPersisted ? (
+                    <CheckCircle2 className="mt-0.5 size-4 text-emerald-600" />
+                  ) : (
+                    <span
+                      aria-hidden="true"
+                      className="mt-0.5 size-4 rounded-full border border-muted-foreground/40"
+                    />
+                  )}
+                </span>
+                <span className="flex items-center gap-2">
+                  {provider.status === 'coming_soon' ? (
+                    <Badge variant="secondary" className="font-normal">
+                      Coming soon
+                    </Badge>
+                  ) : null}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium">Enforcement</p>
-              {selectedProvider ? (
-                <Badge variant={providerStatusBadgeVariant(selectedProvider.status)}>
-                  {selectedProvider.label}
-                </Badge>
-              ) : null}
-            </div>
+      {selectedProvider && !selectedProvider.selectable ? (
+        <div className="rounded-lg border border-amber-200/70 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          {selectedProvider.label} is not configured for this deployment yet. Set up the OAuth
+          integration before saving.
+        </div>
+      ) : null}
 
-            {!hasVerifiedDomains ? (
-              <div className="rounded-lg border border-orange-200/70 bg-orange-50 px-4 py-3 text-sm text-orange-800">
-                Verify at least one company domain before turning on required SSO.
-              </div>
-            ) : null}
+      {saveError ? (
+        <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {saveError}
+        </p>
+      ) : null}
+    </div>
+  );
 
-            <div className="space-y-3">
-              <Select
-                value={enterpriseAuthMode}
-                onValueChange={(value) =>
-                  setEnterpriseAuthMode(value as OrganizationEnterpriseAuthMode)
-                }
-              >
-                <SelectTrigger className="w-full" aria-label="Enforcement">
-                  <SelectValue placeholder="Select enforcement" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="off">Off</SelectItem>
-                  <SelectItem value="optional">SSO preferred</SelectItem>
-                  <SelectItem value="required">SSO required</SelectItem>
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-muted-foreground">
-                {enforcementDescription(enterpriseAuthMode)}
-              </p>
-            </div>
+  if (embedded) {
+    return content;
+  }
 
-            {enterpriseAuthMode === 'required' && !hasVerifiedDomains ? (
-              <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-                Add and verify a company domain before saving required SSO.
-              </p>
-            ) : null}
-
-            {enterpriseAuthMode === 'required' ? (
-              <div className="flex items-center gap-3 text-sm">
-                <Switch
-                  checked={allowBreakGlassPasswordLogin}
-                  onCheckedChange={(checked) => setAllowBreakGlassPasswordLogin(checked === true)}
-                  aria-label="Keep emergency admin sign-in enabled"
-                />
-                <div className="space-y-1">
-                  <p className="font-medium">Keep emergency admin sign-in enabled</p>
-                  <p className="text-muted-foreground">
-                    Allow organization owners to bypass required SSO if your identity provider is
-                    unavailable.
-                  </p>
-                </div>
-              </div>
-            ) : null}
-
-            {hasVerifiedDomains ? (
-              <div className="flex flex-wrap gap-2">
-                {managedDomains.map((domain: string) => (
-                  <Badge key={domain} variant="outline">
-                    {domain}
-                  </Badge>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          {saveError ? (
-            <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
-              {saveError}
-            </p>
-          ) : null}
-
-          <div className="flex justify-end">
-            <Button
-              type="button"
-              onClick={() => void handleSave()}
-              disabled={isSaving || !selectedProvider?.selectable}
-            >
-              {isSaving ? <Loader2 className="size-4 animate-spin" /> : null}
-              Save SSO settings
-            </Button>
-          </div>
-        </CardContent>
+  return (
+    <Card className={cn(highlight ? 'border-primary shadow-md shadow-primary/5' : undefined)}>
+      <CardHeader>
+        <CardTitle>Step 1: identity provider</CardTitle>
+        <CardDescription>
+          Choose the provider your organization will use for single sign-on.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-6">{content}</CardContent>
     </Card>
   );
 }

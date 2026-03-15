@@ -1,4 +1,5 @@
-import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationEnterpriseAuthManagement } from './OrganizationEnterpriseAuthManagement';
 
@@ -118,47 +119,11 @@ describe('OrganizationEnterpriseAuthManagement', () => {
   it('renders updated enterprise headings and separates planned providers', () => {
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText('Single sign-on')).toBeInTheDocument();
-    expect(screen.getByRole('combobox', { name: 'Identity provider' })).toBeInTheDocument();
-    expect(screen.getByText('Available')).toBeInTheDocument();
+    expect(screen.getByText('Step 1: identity provider')).toBeInTheDocument();
+    expect(screen.getByRole('radiogroup', { name: 'Identity provider' })).toBeInTheDocument();
   });
 
-  it('shows the required-SSO prerequisite warning when no verified domains exist', async () => {
-    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
-
-    expect(screen.getByRole('combobox', { name: 'Enforcement' })).toBeInTheDocument();
-    expect(screen.getByText('Allow email and password sign-in for all users.')).toBeInTheDocument();
-  });
-
-  it('renders the emergency admin sign-in copy', () => {
-    useQueryMock.mockReturnValue(
-      buildSettings({
-        policies: {
-          enterpriseAuthMode: 'required',
-        },
-      }),
-    );
-
-    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
-
-    expect(screen.getByText('Keep emergency admin sign-in enabled')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Keep emergency admin sign-in enabled' })).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        'Allow organization owners to bypass required SSO if your identity provider is unavailable.',
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it('hides the emergency admin sign-in switch unless SSO is required', () => {
-    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
-
-    expect(
-      screen.queryByRole('switch', { name: 'Keep emergency admin sign-in enabled' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('disables saving when no actionable identity provider is available', () => {
+  it('does not render a save button when no actionable identity provider is available', () => {
     useQueryMock.mockReturnValue(
       buildSettings({
         availableEnterpriseProviders: [
@@ -189,10 +154,10 @@ describe('OrganizationEnterpriseAuthManagement', () => {
 
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.getByRole('button', { name: /save sso settings/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /save identity provider/i })).not.toBeInTheDocument();
   });
 
-  it('keeps Google Workspace in the primary area even when it is not yet selectable', () => {
+  it('keeps Google Workspace selectable even when it is not yet configured', () => {
     useQueryMock.mockReturnValue(
       buildSettings({
         availableEnterpriseProviders: [
@@ -223,16 +188,167 @@ describe('OrganizationEnterpriseAuthManagement', () => {
 
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.getAllByText('Google Workspace').length).toBeGreaterThan(0);
-    expect(screen.getByText('Not configured')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /google workspace/i })).toBeInTheDocument();
   });
 
-  it('shows the selected provider in the select field', () => {
+  it('shows the saved provider as selected', () => {
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        policies: { enterpriseProviderKey: 'google-workspace' },
+      }),
+    );
+
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.getByRole('combobox', { name: 'Identity provider' })).toHaveTextContent(
-      'Google Workspace',
+    expect(screen.getByRole('radio', { name: /google workspace/i })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('saves immediately and shows a success toast when a selectable provider is chosen', async () => {
+    const user = userEvent.setup();
+
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        policies: { enterpriseProviderKey: 'google-workspace' },
+        availableEnterpriseProviders: [
+          {
+            key: 'google-workspace',
+            label: 'Google Workspace',
+            protocol: 'oidc',
+            status: 'active',
+            selectable: true,
+          },
+          {
+            key: 'okta',
+            label: 'Okta',
+            protocol: 'oidc',
+            status: 'active',
+            selectable: true,
+          },
+        ],
+      }),
     );
+
+    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('radio', { name: /okta/i }));
+
+    await waitFor(() => {
+      expect(updatePoliciesMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: 'org-1',
+          enterpriseProviderKey: 'okta',
+          enterpriseProtocol: 'oidc',
+        }),
+      });
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Identity provider updated.', 'success');
+    expect(screen.getByRole('radio', { name: /okta/i })).toHaveAttribute('aria-checked', 'true');
+  });
+
+  it('does not auto-save when the selected provider is not yet actionable', async () => {
+    const user = userEvent.setup();
+
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        policies: { enterpriseProviderKey: 'google-workspace' },
+        availableEnterpriseProviders: [
+          {
+            key: 'google-workspace',
+            label: 'Google Workspace',
+            protocol: 'oidc',
+            status: 'active',
+            selectable: true,
+          },
+          {
+            key: 'okta',
+            label: 'Okta',
+            protocol: 'oidc',
+            status: 'not_configured',
+            selectable: false,
+          },
+        ],
+      }),
+    );
+
+    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('radio', { name: /okta/i }));
+
+    expect(updatePoliciesMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalledWith('Identity provider updated.', 'success');
+    expect(screen.getByText(/Okta is not configured for this deployment yet/i)).toBeInTheDocument();
+  });
+
+  it('clears the selected provider when the saved card is clicked again', async () => {
+    const user = userEvent.setup();
+
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        policies: { enterpriseProviderKey: 'google-workspace' },
+        availableEnterpriseProviders: [
+          {
+            key: 'google-workspace',
+            label: 'Google Workspace',
+            protocol: 'oidc',
+            status: 'active',
+            selectable: true,
+          },
+        ],
+      }),
+    );
+
+    render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('radio', { name: /google workspace/i }));
+
+    await waitFor(() => {
+      expect(updatePoliciesMock).toHaveBeenCalledWith({
+        data: expect.objectContaining({
+          organizationId: 'org-1',
+          enterpriseProviderKey: null,
+          enterpriseProtocol: null,
+        }),
+      });
+    });
+    expect(showToastMock).toHaveBeenCalledWith('Identity provider removed.', 'success');
+  });
+
+  it('shows a spinner on the clicked card while deselecting the saved provider', async () => {
+    const user = userEvent.setup();
+    let resolveUpdate!: () => void;
+    updatePoliciesMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveUpdate = resolve;
+        }),
+    );
+
+    useQueryMock.mockReturnValue(
+      buildSettings({
+        policies: { enterpriseProviderKey: 'google-workspace' },
+        availableEnterpriseProviders: [
+          {
+            key: 'google-workspace',
+            label: 'Google Workspace',
+            protocol: 'oidc',
+            status: 'active',
+            selectable: true,
+          },
+        ],
+      }),
+    );
+
+    const { container } = render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('radio', { name: /google workspace/i }));
+
+    expect(container.querySelector('.animate-spin')).toBeInTheDocument();
+
+    resolveUpdate();
+
+    await waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith('Identity provider removed.', 'success');
+    });
   });
 
 });

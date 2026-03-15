@@ -10,7 +10,7 @@ import { OrganizationWorkspaceNav } from '~/features/organizations/components/Or
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationInvitePolicy } from '~/features/organizations/lib/organization-management';
-import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import { updateOrganizationPoliciesServerFn } from '~/features/organizations/server/organization-management';
 
 export function OrganizationPoliciesPage({
@@ -88,7 +88,7 @@ export function OrganizationPoliciesPage({
       });
       showToast('Organization policies updated.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update organization policies';
+      const message = getServerFunctionErrorMessage(error, 'Failed to update organization policies');
       setPolicyError(message);
       showToast(message, 'error');
     } finally {

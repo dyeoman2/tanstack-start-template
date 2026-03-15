@@ -22,7 +22,7 @@ import { OrganizationWorkspaceNav } from '~/features/organizations/components/Or
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
-import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
   deleteOrganizationServerFn,
   updateOrganizationSettingsServerFn,
@@ -117,7 +117,7 @@ export function OrganizationSettingsManagement({
       setIsEditDialogOpen(false);
       showToast('Organization settings updated.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update organization';
+      const message = getServerFunctionErrorMessage(error, 'Failed to update organization');
       setSaveError(message);
       showToast(message, 'error');
     } finally {
@@ -144,7 +144,7 @@ export function OrganizationSettingsManagement({
       showToast('Organization deleted.', 'success');
       void navigate({ to: '/app/organizations' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to delete organization';
+      const message = getServerFunctionErrorMessage(error, 'Failed to delete organization');
       setDeleteError(message);
       showToast(message, 'error');
     } finally {
@@ -171,7 +171,7 @@ export function OrganizationSettingsManagement({
       showToast('You left the organization.', 'success');
       await navigate({ to: '/app/organizations' });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to leave organization';
+      const message = getServerFunctionErrorMessage(error, 'Failed to leave organization');
       setLeaveError(message);
       showToast(message, 'error');
     } finally {

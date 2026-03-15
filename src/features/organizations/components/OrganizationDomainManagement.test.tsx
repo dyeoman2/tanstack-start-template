@@ -43,6 +43,15 @@ vi.mock('~/components/ui/toast', () => ({
   }),
 }));
 
+vi.mock('~/features/auth/hooks/useAuth', () => ({
+  useAuth: () => ({
+    user: { email: 'admin@example.com' },
+    isAuthenticated: true,
+    isPending: false,
+    error: null,
+  }),
+}));
+
 const domainResponse = {
   organization: {
     id: 'org-1',
@@ -95,14 +104,14 @@ describe('OrganizationDomainManagement', () => {
   it('renders verification details for existing domains', () => {
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText('Verified domains')).toBeInTheDocument();
+    expect(screen.getByText('Step 2: Verify Domains')).toBeInTheDocument();
     expect(screen.getByText('example.com')).toBeInTheDocument();
     expect(screen.getByText('_ba-verify.example.com')).toBeInTheDocument();
     expect(screen.getByText('better-auth-verify=token-1')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add domain/i })).toBeEnabled();
   });
 
-  it('renders the updated empty-state guidance', () => {
+  it('renders an inline domain input prefilled from the user email when no domains exist', () => {
     useQueryMock.mockReturnValue({
       ...domainResponse,
       domains: [],
@@ -110,10 +119,10 @@ describe('OrganizationDomainManagement', () => {
 
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText('No verified domains yet.')).toBeInTheDocument();
-    expect(
-      screen.getByText('Add and verify a company domain before turning on required SSO.'),
-    ).toBeInTheDocument();
+    const input = screen.getByLabelText(/^domain$/i);
+    expect(input).toBeInTheDocument();
+    expect(input).toHaveValue('example.com');
+    expect(screen.getByRole('button', { name: /add domain/i })).toBeEnabled();
   });
 
   it('opens the add-domain modal and enables creation after input', async () => {
@@ -124,11 +133,12 @@ describe('OrganizationDomainManagement', () => {
     await user.click(screen.getByRole('button', { name: /add domain/i }));
     const dialog = await screen.findByRole('dialog', { name: /add domain/i });
     const submitButton = within(dialog).getByRole('button', { name: /^add domain$/i });
+    const domainInput = within(dialog).getByLabelText(/^domain$/i);
 
+    await user.clear(domainInput);
     expect(submitButton).toBeDisabled();
 
-    await user.type(within(dialog).getByLabelText(/^domain$/i), 'example.org');
-
+    await user.type(domainInput, 'example.org');
     expect(submitButton).toBeEnabled();
   });
 
@@ -147,7 +157,7 @@ describe('OrganizationDomainManagement', () => {
 
     render(<OrganizationDomainManagement slug="cottage-hospital" />);
 
-    await user.click(screen.getByRole('button', { name: /^verify$/i }));
+    await user.click(screen.getByRole('button', { name: /^verify now$/i }));
 
     await waitFor(() => {
       expect(verifyDomainMock).toHaveBeenCalledWith({
@@ -156,5 +166,23 @@ describe('OrganizationDomainManagement', () => {
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Domain verified.', 'success');
+  });
+
+  it('shows a friendly message when domain verification leaks a Convex validator error', async () => {
+    const user = userEvent.setup();
+    verifyDomainMock.mockRejectedValueOnce(
+      new Error('ReturnsValidationError: Value does not match validator.'),
+    );
+
+    render(<OrganizationDomainManagement slug="cottage-hospital" />);
+
+    await user.click(screen.getByRole('button', { name: /^verify now$/i }));
+
+    await waitFor(() => {
+      expect(showToastMock).toHaveBeenCalledWith(
+        'Unable to verify the domain right now. Refresh the page and try again.',
+        'error',
+      );
+    });
   });
 });

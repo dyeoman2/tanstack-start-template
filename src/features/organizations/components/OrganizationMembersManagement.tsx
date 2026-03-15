@@ -38,7 +38,7 @@ import type {
   OrganizationDirectorySearchParams,
   OrganizationInvitePolicy,
 } from '~/features/organizations/lib/organization-management';
-import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
   bulkOrganizationDirectoryActionServerFn,
   cancelOrganizationInvitationServerFn,
@@ -234,7 +234,7 @@ export function OrganizationMembersManagement({
       window.URL.revokeObjectURL(url);
       showToast('Directory exported.', 'success');
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to export directory', 'error');
+      showToast(getServerFunctionErrorMessage(error, 'Failed to export directory'), 'error');
     } finally {
       setIsExporting(false);
     }
@@ -262,7 +262,7 @@ export function OrganizationMembersManagement({
       setInviteRole('member');
       showToast('Invitation sent.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to invite member';
+      const message = getServerFunctionErrorMessage(error, 'Failed to invite member');
       setInviteError(message);
       showToast(message, 'error');
     } finally {
@@ -290,7 +290,7 @@ export function OrganizationMembersManagement({
       setSelectedRoleMember(null);
       showToast('Member role updated.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update member role';
+      const message = getServerFunctionErrorMessage(error, 'Failed to update member role');
       setRoleError(message);
       showToast(message, 'error');
     } finally {
@@ -317,7 +317,7 @@ export function OrganizationMembersManagement({
       setSelectedRemovalMember(null);
       showToast('Member removed.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to remove member';
+      const message = getServerFunctionErrorMessage(error, 'Failed to remove member');
       setRemoveError(message);
       showToast(message, 'error');
     } finally {
@@ -358,7 +358,7 @@ export function OrganizationMembersManagement({
         'success',
       );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to update member status';
+      const message = getServerFunctionErrorMessage(error, 'Failed to update member status');
       setMemberStatusError(message);
       showToast(message, 'error');
     } finally {
@@ -385,7 +385,7 @@ export function OrganizationMembersManagement({
       setSelectedInvitation(null);
       showToast('Invitation revoked.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to revoke invitation';
+      const message = getServerFunctionErrorMessage(error, 'Failed to revoke invitation');
       setRevokeError(message);
       showToast(message, 'error');
     } finally {
@@ -415,7 +415,7 @@ export function OrganizationMembersManagement({
       await refreshOrganizationState();
       showToast('Invitation resent.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to resend invitation';
+      const message = getServerFunctionErrorMessage(error, 'Failed to resend invitation');
       setInviteError(message);
       showToast(message, 'error');
     } finally {
@@ -431,7 +431,7 @@ export function OrganizationMembersManagement({
       await navigator.clipboard.writeText(inviteLink);
       showToast('Invite link copied.', 'success');
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to copy invite link';
+      const message = getServerFunctionErrorMessage(error, 'Failed to copy invite link');
       showToast(message, 'error');
     }
   };
@@ -517,7 +517,7 @@ export function OrganizationMembersManagement({
       }
     } catch (error) {
       showToast(
-        error instanceof Error ? error.message : 'Failed to run bulk organization action',
+        getServerFunctionErrorMessage(error, 'Failed to run bulk organization action'),
         'error',
       );
     } finally {
