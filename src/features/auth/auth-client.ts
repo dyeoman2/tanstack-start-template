@@ -20,6 +20,27 @@ import {
   userRole,
 } from '~/lib/shared/better-auth-access';
 
+export function getTwoFactorRedirectHref(currentHref: string): string {
+  const currentUrl = new URL(currentHref);
+  const nextUrl = new URL('/two-factor', currentUrl.origin);
+  const redirectTo = currentUrl.searchParams.get('redirectTo');
+
+  if (redirectTo) {
+    nextUrl.searchParams.set('redirectTo', redirectTo);
+  }
+
+  return `${nextUrl.pathname}${nextUrl.search}`;
+}
+
+function navigateWithBrowser(href: string) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  window.history.pushState(window.history.state, '', href);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+}
+
 export const authClient = createAuthClient({
   plugins: [
     convexClient(),
@@ -41,7 +62,17 @@ export const authClient = createAuthClient({
       },
     }),
     passkeyClient(),
-    twoFactorClient(),
+    twoFactorClient({
+      onTwoFactorRedirect: async () => {
+        if (typeof window === 'undefined') {
+          return;
+        }
+
+        // Keep the Better Auth 2FA callback narrowly focused on navigation so
+        // auth client wiring does not become a second routing abstraction.
+        navigateWithBrowser(getTwoFactorRedirectHref(window.location.href));
+      },
+    }),
   ],
 });
 

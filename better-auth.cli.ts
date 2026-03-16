@@ -1,5 +1,5 @@
 import { betterAuth } from 'better-auth';
-import { getOptions } from './options';
+import { getOptions } from './convex/betterAuth/options';
 
 if (!process.env.BETTER_AUTH_URL) {
   process.env.BETTER_AUTH_URL = 'http://127.0.0.1:3000';
@@ -10,8 +10,8 @@ if (!process.env.BETTER_AUTH_SECRET) {
 }
 
 // The Better Auth CLI expects a concrete auth export. Keep that requirement in
-// this tooling-only module so the app runtime does not initialize Better Auth
-// at import time without its real deployment environment.
+// this tooling-only module so Convex deployment code never analyzes it as part
+// of the runtime function bundle.
 export const auth = betterAuth(getOptions({ cli: true }));
 
 export default auth;

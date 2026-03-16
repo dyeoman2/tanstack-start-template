@@ -4,6 +4,7 @@ import { useForm } from '@tanstack/react-form';
 import { AlertCircleIcon, CheckCircle2Icon, SaveIcon } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
+import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import {
   Card,
@@ -260,7 +261,12 @@ export function ProfileDetailsCard({ profile }: ProfileDetailsCardProps) {
               {(field) => (
                 <Field data-invalid={field.state.meta.errors.length > 0 ? true : undefined}>
                   <FieldContent>
-                    <FieldLabel htmlFor={emailId}>Email</FieldLabel>
+                    <FieldLabel htmlFor={emailId}>
+                      <span>Email</span>
+                      <Badge variant={profile.emailVerified ? 'success' : 'outline'}>
+                        {profile.emailVerified ? 'Verified' : 'Not verified'}
+                      </Badge>
+                    </FieldLabel>
                     <Input
                       id={emailId}
                       type="email"

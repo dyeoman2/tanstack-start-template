@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from '~/components/ui/dialog';
 import { Input } from '~/components/ui/input';
+import { Switch } from '~/components/ui/switch';
 import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
 
@@ -139,18 +140,29 @@ export function ProfileTwoFactorCard() {
             Two-Factor
           </CardTitle>
           <CardDescription className="text-sm text-muted-foreground">
-            Add an extra layer of security to your account.
+            Require an authenticator code when signing in with your password.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-6 py-6">
-          <Button
-            type="button"
-            className="h-9 px-4"
-            disabled={isPending}
-            onClick={() => setIsDialogOpen(true)}
-          >
-            {isTwoFactorEnabled ? 'Disable Two-Factor' : 'Enable Two-Factor'}
-          </Button>
+          <div className="flex items-start gap-4">
+            <Switch
+              checked={isTwoFactorEnabled}
+              disabled={isPending}
+              aria-label={isTwoFactorEnabled ? 'Disable two-factor' : 'Enable two-factor'}
+              onCheckedChange={() => setIsDialogOpen(true)}
+              className="mt-0.5"
+            />
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {isTwoFactorEnabled ? 'Two-factor is enabled' : 'Two-factor is disabled'}
+              </p>
+              {!isTwoFactorEnabled ? (
+                <p className="text-sm text-muted-foreground">
+                  Turn on authenticator-based verification for extra account security.
+                </p>
+              ) : null}
+            </div>
+          </div>
         </CardContent>
       </Card>
 

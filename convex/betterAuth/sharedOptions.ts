@@ -23,7 +23,6 @@ import {
   userRole,
 } from '../../src/lib/shared/better-auth-access';
 import authConfig from '../auth.config';
-import { createFreshSessionPlugin } from './freshSessionPlugin';
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
@@ -569,7 +568,6 @@ export function createSharedBetterAuthOptions(
         issuer: 'TanStack Start Template',
       }),
       passkey(getPasskeyOptions()),
-      createFreshSessionPlugin(),
       convex({
         authConfig,
         jwks: process.env.JWKS,

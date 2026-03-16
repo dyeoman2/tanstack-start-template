@@ -187,26 +187,13 @@ function LoginPage() {
     setIsSubmittingPassword(true);
 
     try {
-      const response = await authClient.signIn.email({
+      await authClient.signIn.email({
         email: normalizeEmail(validatedEmail.data),
         password,
         fetchOptions: { throw: true },
       });
 
-      if (response?.twoFactorRedirect) {
-        await router.navigate({
-          to: '/two-factor',
-          search: redirectTo ? { redirectTo } : {},
-        });
-        return;
-      }
-
-      if (response?.redirect && typeof response.url === 'string' && response.url.length > 0) {
-        const twoFactorUrl = new URL(response.url, window.location.origin);
-        await router.navigate({
-          to: twoFactorUrl.pathname,
-          search: Object.fromEntries(twoFactorUrl.searchParams.entries()),
-        });
+      if (typeof window !== 'undefined' && window.location.pathname.startsWith('/two-factor')) {
         return;
       }
 

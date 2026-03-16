@@ -218,11 +218,20 @@ const betterAuthScimTokenResultValidator = v.object({
   scimToken: v.string(),
 });
 
-const betterAuthFreshSessionResultValidator = v.object({
-  sessionId: v.string(),
-  validUntil: v.number(),
-  verifiedAt: v.number(),
-});
+const betterAuthCurrentSessionTimestampsValidator = v.union(
+  v.object({
+    createdAt: v.number(),
+    updatedAt: v.union(v.number(), v.null()),
+  }),
+  v.null(),
+);
+
+const betterAuthCurrentSessionValidator = v.union(
+  v.object({
+    session: betterAuthCurrentSessionTimestampsValidator,
+  }),
+  v.null(),
+);
 
 const scimLifecycleOperationValidator = v.union(
   v.literal('delete'),
@@ -298,17 +307,18 @@ type BetterAuthOrganizationSummary = {
   slug?: string;
 };
 
-// Keep handwritten Better Auth API typing confined to the internal freshness
-// endpoint until plugin endpoint inference flows through this stack cleanly.
-type BetterAuthFreshSessionApi = {
-  assertFreshSession(input: { headers: Headers }): Promise<{
-    sessionId: string;
-    validUntil: number;
-    verifiedAt: number;
-  }>;
-};
-
 type BetterAuthCoreApiSurface = {
+  getSession(input: {
+    headers: Headers;
+    query?: {
+      disableCookieCache?: boolean;
+    };
+  }): Promise<{
+    session: {
+      createdAt: Date | number | string;
+      updatedAt?: Date | number | string | null;
+    } | null;
+  } | null>;
   listUsers(input: { headers: Headers; query?: { limit?: number; offset?: number } }): Promise<{
     limit?: number;
     offset?: number;
@@ -458,7 +468,7 @@ type BetterAuthCoreApiSurface = {
   }>;
 };
 
-type BetterAuthApiSurface = BetterAuthCoreApiSurface & BetterAuthFreshSessionApi;
+type BetterAuthApiSurface = BetterAuthCoreApiSurface;
 
 type BetterAuthActionContext = {
   auth: {
@@ -2464,14 +2474,26 @@ export const enforcePdfParseRateLimit = action({
   },
 });
 
-export const assertFreshSessionServer = action({
+export const getCurrentSessionServer = action({
   args: {},
-  returns: betterAuthActionResultValidator(betterAuthFreshSessionResultValidator),
+  returns: betterAuthActionResultValidator(betterAuthCurrentSessionValidator),
   handler: async (ctx) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
-      return await auth.api.assertFreshSession({
+      const result = await auth.api.getSession({
         headers,
+        query: {
+          disableCookieCache: true,
+        },
       });
+
+      return result?.session
+        ? {
+            session: {
+              createdAt: toTimestamp(result.session.createdAt),
+              updatedAt: toTimestamp(result.session.updatedAt ?? null),
+            },
+          }
+        : null;
     });
   },
 });

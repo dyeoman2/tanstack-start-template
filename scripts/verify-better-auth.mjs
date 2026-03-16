@@ -44,7 +44,7 @@ async function runOfficialBetterAuthCliCheck() {
     'better-auth',
     'generate',
     '--config',
-    'convex/betterAuth/cli-auth.ts',
+    'better-auth.cli.ts',
     '--output',
     outputFile,
     '-y',

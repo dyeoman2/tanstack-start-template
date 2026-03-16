@@ -45,7 +45,17 @@ describe('auth-guards', () => {
       },
     );
     getRequestMock.mockReturnValue(new Request('http://127.0.0.1:3000/app'));
-    authHandlerMock.mockResolvedValue(new Response('{}', { status: 200 }));
+    authHandlerMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          session: {
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        }),
+        { status: 200 },
+      ),
+    );
   });
 
   it('redirects to login when the profile is missing required session fields', async () => {
@@ -102,7 +112,17 @@ describe('auth-guards', () => {
       role: USER_ROLES.USER,
       emailVerified: true,
     });
-    authHandlerMock.mockResolvedValue(new Response('{}', { status: 403 }));
+    authHandlerMock.mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          session: {
+            createdAt: Date.now() - 60 * 60 * 1000,
+            updatedAt: Date.now() - 60 * 60 * 1000,
+          },
+        }),
+        { status: 200 },
+      ),
+    );
 
     await expect(requireRecentStepUp()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({

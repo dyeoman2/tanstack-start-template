@@ -63,7 +63,7 @@ describe('createSharedBetterAuthOptions', () => {
 
     expect(pluginIds).toContain('passkey');
     expect(pluginIds).toContain('two-factor');
-    expect(pluginIds).toContain('fresh-session');
+    expect(pluginIds).not.toContain('fresh-session');
   });
 
   it('enables Better Auth cookie cache versioning for normal session reads', () => {

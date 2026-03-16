@@ -1,19 +1,16 @@
-import {
-  ChangePasswordCard,
-  PasskeysCard,
-  SessionsCard,
-} from '@daveyplate/better-auth-ui';
+import { PasskeysCard } from '@daveyplate/better-auth-ui';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Skeleton } from '~/components/ui/skeleton';
 import { signOut } from '~/features/auth/auth-client';
+import { ProfileChangePasswordCard } from '~/features/profile/components/ProfileChangePasswordCard';
 import { ProfileDetailsCard } from '~/features/profile/components/ProfileDetailsCard';
+import { ProfileSessionsCard } from '~/features/profile/components/ProfileSessionsCard';
 import { ProfileTwoFactorCard } from '~/features/profile/components/ProfileTwoFactorCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
-import { USER_ROLES } from '../../auth/types';
 
 export function ProfilePage() {
   const { data: profile, isLoading, error } = useProfile();
@@ -119,61 +116,12 @@ export function ProfilePage() {
             </p>
           </div>
           <div className="flex w-full flex-col gap-4">
-            <ChangePasswordCard classNames={profilePasswordCardClassNames} />
+            <ProfileChangePasswordCard />
             <ProfileTwoFactorCard />
             <PasskeysCard classNames={profileSettingsCardClassNames} />
-            <SessionsCard classNames={profileSettingsCardClassNames} />
+            <ProfileSessionsCard />
           </div>
         </section>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>App access</CardTitle>
-            <CardDescription>
-              Read-only account metadata used across this application.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <dl className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">Role</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {profile.role === USER_ROLES.ADMIN ? 'Administrator' : 'User'}
-                </dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">Created At</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {new Date(profile.createdAt).toLocaleDateString()}
-                </dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">Email</dt>
-                <dd className="text-sm text-muted-foreground">{profile.email}</dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">Email Verified</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {profile.emailVerified ? 'Verified' : 'Not verified'}
-                </dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">MFA</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {profile.mfaEnabled ? 'Enabled' : 'Setup required'}
-                </dd>
-              </div>
-              <div className="space-y-1">
-                <dt className="text-sm font-medium text-foreground">Recent step-up</dt>
-                <dd className="text-sm text-muted-foreground">
-                  {profile.recentStepUpValidUntil
-                    ? `Valid until ${new Date(profile.recentStepUpValidUntil).toLocaleString()}`
-                    : 'Expired'}
-                </dd>
-              </div>
-            </dl>
-          </CardContent>
-        </Card>
       </div>
     </div>
   );
@@ -208,16 +156,4 @@ const profileSettingsCardClassNames = {
   button: 'h-9',
   cell: 'rounded-lg border border-border bg-background px-4 py-3',
   skeleton: 'bg-muted/70',
-};
-
-const profilePasswordCardClassNames = {
-  ...profileSettingsCardClassNames,
-  header: 'border-b',
-  title: 'font-semibold leading-none text-base md:text-base',
-  description: 'text-sm text-muted-foreground',
-  content: 'py-6',
-  footer:
-    'flex-col items-stretch gap-4 border-t border-border bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between',
-  instructions: 'text-sm leading-6 text-muted-foreground text-left sm:flex-1',
-  button: 'h-9 sm:ms-0',
 };

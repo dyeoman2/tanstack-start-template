@@ -10,7 +10,6 @@
 
 import type * as adapter from "../adapter.js";
 import type * as adminOrganizationAuditPlugin from "../adminOrganizationAuditPlugin.js";
-import type * as freshSessionPlugin from "../freshSessionPlugin.js";
 import type * as options from "../options.js";
 import type * as sharedOptions from "../sharedOptions.js";
 
@@ -24,7 +23,6 @@ import { anyApi, componentsGeneric } from "convex/server";
 const fullApi: ApiFromModules<{
   adapter: typeof adapter;
   adminOrganizationAuditPlugin: typeof adminOrganizationAuditPlugin;
-  freshSessionPlugin: typeof freshSessionPlugin;
   options: typeof options;
   sharedOptions: typeof sharedOptions;
 }> = anyApi as any;

@@ -2,6 +2,7 @@ import { anyApi } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
   buildStepUpRedirectSearch,
+  evaluateFreshSession,
   evaluateAuthPolicy,
   type AuthAssuranceState,
   STEP_UP_REQUIREMENTS,
@@ -302,18 +303,34 @@ export async function requireStepUpFromActionOrThrow(
   requirement: StepUpRequirement,
 ): Promise<CurrentUser> {
   const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
-  const freshSessionResult = (await ctx.runAction(anyApi.auth.assertFreshSessionServer, {})) as
+  const sessionResult = (await ctx.runAction(anyApi.auth.getCurrentSessionServer, {})) as
+    | {
+        data: {
+          session: {
+            createdAt: number;
+            updatedAt: number | null;
+          } | null;
+        } | null;
+        ok: true;
+      }
     | {
         error?: {
           message?: string;
         };
         ok?: false;
-      }
-    | {
-        ok: true;
       };
 
-  if (!freshSessionResult || freshSessionResult.ok !== true) {
+  const freshSessionEvaluation =
+    sessionResult && sessionResult.ok === true && sessionResult.data?.session
+      ? evaluateFreshSession({
+          createdAt: sessionResult.data.session.createdAt,
+          updatedAt: sessionResult.data.session.updatedAt,
+          recentStepUpWindowMs: getRecentStepUpWindowMs(),
+          requirement,
+        })
+      : null;
+
+  if (!freshSessionEvaluation?.satisfied) {
     const redirectSearch = buildStepUpRedirectSearch(requirement);
     throwConvexError(
       'FORBIDDEN',

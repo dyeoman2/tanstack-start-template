@@ -30,10 +30,49 @@ export type AuthPolicyEvaluation = {
   stepUp: StepUpEvaluation;
 };
 
+type TimestampLike = Date | number | string | null | undefined;
+
 export function buildStepUpRedirectSearch(requirement: StepUpRequirement) {
   return {
     requirement,
     security: 'step-up-required' as const,
+  };
+}
+
+function toTimestamp(value: TimestampLike): number | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+
+  const parsed = new Date(value).getTime();
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export function evaluateFreshSession(input: {
+  createdAt: TimestampLike;
+  updatedAt?: TimestampLike;
+  now?: number;
+  recentStepUpWindowMs: number;
+  requirement?: StepUpRequirement | null;
+}): StepUpEvaluation {
+  const verifiedAt = toTimestamp(input.updatedAt) ?? toTimestamp(input.createdAt);
+  const validUntil = verifiedAt === null ? null : verifiedAt + input.recentStepUpWindowMs;
+  const now = input.now ?? Date.now();
+
+  return {
+    requirement: input.requirement ?? null,
+    required: input.requirement !== undefined && input.requirement !== null,
+    satisfied: validUntil !== null && validUntil > now,
+    verifiedAt,
+    validUntil,
   };
 }
 
