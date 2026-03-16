@@ -5,7 +5,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '~/components/ui/card';
@@ -144,9 +143,6 @@ export function ProfileTwoFactorCard() {
           </CardDescription>
         </CardHeader>
         <CardContent className="px-6 py-6">
-          <p className="text-sm leading-6 text-muted-foreground text-left">{instructions}</p>
-        </CardContent>
-        <CardFooter className="border-t border-border bg-muted/20 px-6 py-4">
           <Button
             type="button"
             className="h-9 px-4"
@@ -155,7 +151,7 @@ export function ProfileTwoFactorCard() {
           >
             {isTwoFactorEnabled ? 'Disable Two-Factor' : 'Enable Two-Factor'}
           </Button>
-        </CardFooter>
+        </CardContent>
       </Card>
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>

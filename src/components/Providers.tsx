@@ -236,7 +236,9 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
           navigate={(href) => navigateWithBrowser(href)}
           onSessionChange={async () => {
             if (typeof window !== 'undefined') {
-              window.location.reload();
+              if (window.location.pathname.startsWith('/app')) {
+                window.location.reload();
+              }
             }
           }}
           organization={{

@@ -193,6 +193,14 @@ function LoginPage() {
         fetchOptions: { throw: true },
       });
 
+      if (response?.twoFactorRedirect) {
+        await router.navigate({
+          to: '/two-factor',
+          search: redirectTo ? { redirectTo } : {},
+        });
+        return;
+      }
+
       if (response?.redirect && typeof response.url === 'string' && response.url.length > 0) {
         const twoFactorUrl = new URL(response.url, window.location.origin);
         await router.navigate({

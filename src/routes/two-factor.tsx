@@ -89,9 +89,12 @@ function TwoFactorPage() {
   const [code, setCode] = useState('');
   const [trustDevice, setTrustDevice] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
   const [didCopySetupKey, setDidCopySetupKey] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [qrCodeFailed, setQrCodeFailed] = useState(false);
   const [showManualSetupKey, setShowManualSetupKey] = useState(false);
+  const [inlineError, setInlineError] = useState<string | null>(null);
 
   const setupKey = useMemo(() => getManualEntryCode(totpURI), [totpURI]);
   const formattedSetupKey = useMemo(() => (setupKey ? formatSetupKey(setupKey) : null), [setupKey]);
@@ -107,6 +110,7 @@ function TwoFactorPage() {
     async function generateQrCode() {
       if (!totpURI) {
         setQrCodeDataUrl(null);
+        setQrCodeFailed(false);
         return;
       }
 
@@ -119,10 +123,12 @@ function TwoFactorPage() {
 
         if (!cancelled) {
           setQrCodeDataUrl(dataUrl);
+          setQrCodeFailed(false);
         }
       } catch {
         if (!cancelled) {
           setQrCodeDataUrl(null);
+          setQrCodeFailed(true);
         }
       }
     }
@@ -136,9 +142,10 @@ function TwoFactorPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setInlineError(null);
 
     if (code.trim().length < 6) {
-      showToast('Enter the 6-digit code from your authenticator app.', 'error');
+      setInlineError('Enter the 6-digit code from your authenticator app.');
       return;
     }
 
@@ -151,10 +158,16 @@ function TwoFactorPage() {
         fetchOptions: { throw: true },
       });
 
+      setIsSuccess(true);
+      showToast(totpURI ? 'Two-factor authentication enabled.' : 'Code verified.', 'success');
       await router.invalidate();
-      await router.navigate({ to: redirectTo || '/app', replace: true });
+      window.setTimeout(() => {
+        void router.navigate({ to: redirectTo || '/app', replace: true });
+      }, 900);
     } catch (error) {
-      showToast(getErrorMessage(error), 'error');
+      const message = getErrorMessage(error);
+      setInlineError(message);
+      showToast(message, 'error');
       setCode('');
     } finally {
       setIsSubmitting(false);
@@ -198,6 +211,11 @@ function TwoFactorPage() {
                     height={220}
                   />
                 </div>
+              ) : qrCodeFailed ? (
+                <div className="rounded-md border border-border/70 bg-background px-4 py-3 text-sm text-muted-foreground">
+                  We couldn&apos;t generate the QR code in this browser. Use the manual setup key
+                  below instead.
+                </div>
               ) : null}
               {totpMetadata?.issuer || accountEmail ? (
                 <p className="text-center text-sm text-muted-foreground">
@@ -239,6 +257,11 @@ function TwoFactorPage() {
                       )}
                     </button>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    {didCopySetupKey
+                      ? 'Copied setup key to clipboard.'
+                      : 'Save this setup key only if you need to enter it manually.'}
+                  </p>
                 </div>
               ) : null}
             </div>
@@ -267,9 +290,20 @@ function TwoFactorPage() {
                 autoComplete="one-time-code"
                 maxLength={6}
                 value={code}
-                onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                onChange={(event) => {
+                  setCode(event.target.value.replace(/\D/g, '').slice(0, 6));
+                  if (inlineError) {
+                    setInlineError(null);
+                  }
+                }}
                 placeholder="123456"
+                aria-invalid={inlineError ? 'true' : 'false'}
               />
+              {inlineError ? (
+                <p className="text-sm text-destructive" role="alert">
+                  {inlineError}
+                </p>
+              ) : null}
             </div>
 
             {!totpURI ? (
@@ -284,7 +318,7 @@ function TwoFactorPage() {
 
             <Button className="w-full" type="submit" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
-              {totpURI ? 'Verify and enable' : 'Verify code'}
+              {isSuccess ? 'Verified' : totpURI ? 'Verify and enable' : 'Verify code'}
             </Button>
           </form>
 
