@@ -18,6 +18,7 @@ export const Route = createFileRoute('/recover-account')({
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
     redirectTo: z.string().optional(),
+    totpURI: z.string().optional(),
   }),
 });
 
@@ -42,7 +43,7 @@ function getErrorMessage(error: unknown) {
 }
 
 function RecoverAccountPage() {
-  const { redirectTo } = Route.useSearch();
+  const { redirectTo, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();
   const [code, setCode] = useState('');
@@ -107,7 +108,10 @@ function RecoverAccountPage() {
           <div className="text-center text-sm">
             <Link
               to="/two-factor"
-              search={redirectTo ? { redirectTo } : {}}
+              search={{
+                ...(redirectTo ? { redirectTo } : {}),
+                ...(totpURI ? { totpURI } : {}),
+              }}
               className="font-medium underline underline-offset-4 hover:text-muted-foreground"
             >
               Back to two-factor

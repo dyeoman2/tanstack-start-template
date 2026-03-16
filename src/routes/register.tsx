@@ -22,11 +22,12 @@ export const Route = createFileRoute('/register')({
       .string()
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
       .optional(),
+    redirectTo: z.string().regex(/^\/.*/).optional(),
   }),
 });
 
 function RegisterPage() {
-  const { email: emailFromQuery } = Route.useSearch();
+  const { email: emailFromQuery, redirectTo } = Route.useSearch();
   const uid = useId();
   const nameId = `${uid}-name`;
   const emailId = `${uid}-email`;
@@ -117,7 +118,7 @@ function RegisterPage() {
             to: '/verify-email-pending',
             search: {
               email,
-              redirectTo: '/app',
+              redirectTo: redirectTo ?? '/app',
             },
           });
         }, 1200);
@@ -301,11 +302,12 @@ function RegisterPage() {
             <div className="text-center">
               <Link
                 to="/login"
-                search={
-                  currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)
+                search={{
+                  ...(currentEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(currentEmail)
                     ? { email: currentEmail }
-                    : {}
-                }
+                    : {}),
+                  ...(redirectTo ? { redirectTo } : {}),
+                }}
                 className="font-medium hover:text-muted-foreground"
               >
                 Already have an account? Sign in

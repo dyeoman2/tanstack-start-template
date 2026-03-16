@@ -21,11 +21,12 @@ export const Route = createFileRoute('/forgot-password')({
       .string()
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
       .optional(),
+    redirectTo: z.string().regex(/^\/.*/).optional(),
   }),
 });
 
 function ForgotPasswordPage() {
-  const { email } = Route.useSearch();
+  const { email, redirectTo } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuthState();
   const emailServiceStatus = useQuery(api.emails.checkEmailServiceConfigured, {});
   const isEmailConfigured = emailServiceStatus?.isConfigured ?? true;
@@ -45,7 +46,14 @@ function ForgotPasswordPage() {
           Password reset is unavailable until email delivery is configured.
         </div>
         <div className="text-center">
-          <Link to="/login" className="font-medium hover:text-muted-foreground">
+          <Link
+            to="/login"
+            search={{
+              ...(email ? { email } : {}),
+              ...(redirectTo ? { redirectTo } : {}),
+            }}
+            className="font-medium hover:text-muted-foreground"
+          >
             Back to sign in
           </Link>
         </div>

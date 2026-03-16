@@ -150,7 +150,9 @@ function VerifyEmailPendingPage() {
             )}
           </Button>
           <Button asChild variant="outline">
-            <Link to="/login">Back to sign in</Link>
+            <Link to="/login" search={redirectTo ? { redirectTo } : {}}>
+              Back to sign in
+            </Link>
           </Button>
         </div>
       </div>

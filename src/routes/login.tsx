@@ -322,7 +322,10 @@ function LoginPage() {
                 <FieldLabel htmlFor={passwordId}>Password</FieldLabel>
                 <Link
                   to="/forgot-password"
-                  search={parsedEmail.success ? { email: normalizedEmail } : {}}
+                  search={{
+                    ...(parsedEmail.success ? { email: normalizedEmail } : {}),
+                    ...(redirectTo ? { redirectTo } : {}),
+                  }}
                   className="text-sm font-medium hover:text-muted-foreground"
                 >
                   Forgot your password?
@@ -376,7 +379,10 @@ function LoginPage() {
           Don&apos;t have an account?{' '}
           <Link
             to="/register"
-            search={parsedEmail.success ? { email: normalizedEmail } : {}}
+            search={{
+              ...(parsedEmail.success ? { email: normalizedEmail } : {}),
+              ...(redirectTo ? { redirectTo } : {}),
+            }}
             className="ml-1 font-medium text-foreground underline underline-offset-4"
           >
             Sign up
