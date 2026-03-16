@@ -787,6 +787,18 @@ export const currentAppUserValidator = v.object({
   isSiteAdmin: v.boolean(),
 });
 
+export const currentUserSessionValidator = v.object({
+  id: v.string(),
+  isCurrent: v.boolean(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+  ipAddress: v.union(v.string(), v.null()),
+  userAgent: v.union(v.string(), v.null()),
+});
+
+export const currentUserSessionsValidator = v.array(currentUserSessionValidator);
+
 export const ensureUserContextResultValidator = v.object({
   userId: v.id('users'),
   organizationId: v.string(),

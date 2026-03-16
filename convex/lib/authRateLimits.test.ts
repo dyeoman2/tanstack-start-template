@@ -51,6 +51,27 @@ describe('authRateLimits', () => {
     });
   });
 
+  it('defines self-service session policies for current users', async () => {
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+
+    await enforceServerAuthRateLimit(
+      { runMutation },
+      'currentRevokeSession',
+      createActorScopedRateLimitKey({ actorUserId: 'user_1', scope: 'session_1' }),
+    );
+
+    expect(runMutation).toHaveBeenCalledWith('rateLimiter.lib.rateLimit', {
+      name: 'auth:current-revoke-session',
+      key: 'user_1:session_1',
+      config: {
+        kind: 'token bucket',
+        rate: 20,
+        period: 15 * 60 * 1000,
+        capacity: 20,
+      },
+    });
+  });
+
   it('throws a generic Too Many Requests error when the bucket is exhausted', async () => {
     const runMutation = vi.fn().mockResolvedValue({ ok: false, retryAfter: 60_000 });
 

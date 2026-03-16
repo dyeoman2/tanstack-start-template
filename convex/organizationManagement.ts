@@ -18,6 +18,7 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
+import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -241,21 +242,7 @@ type OrganizationAccessContextForWrite = {
 type OrganizationDomainDoc = Doc<'organizationDomains'>;
 type OrganizationPolicyDoc = Doc<'organizationPolicies'>;
 const DEFAULT_ORGANIZATION_POLICIES: OrganizationPolicies = {
-  invitePolicy: 'owners_admins',
-  verifiedDomainsOnly: false,
-  memberCap: null,
-  mfaRequired: true,
-  auditExportRequiresStepUp: true,
-  attachmentSharingAllowed: false,
-  dataRetentionDays: 30,
-  enterpriseAuthMode: 'off',
-  enterpriseProviderKey: null,
-  enterpriseProtocol: null,
-  enterpriseEnabledAt: null,
-  enterpriseEnforcedAt: null,
-  allowBreakGlassPasswordLogin: true,
-  temporaryLinkTtlMinutes: 15,
-  webSearchAllowed: false,
+  ...REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 };
 
 async function userHasPasskey(
@@ -1844,7 +1831,15 @@ export const updateOrganizationPolicies = mutation({
       eventType: 'organization_policy_updated',
       organizationId: args.organizationId,
       userId: context.user.authUserId,
+      actorUserId: context.user.authUserId,
       identifier: context.user.authUser.email?.toLowerCase(),
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'organization_policy',
+      resourceId: args.organizationId,
+      resourceLabel: args.organizationId,
+      sourceSurface: 'organization.policy_update',
+      sessionId: context.user.authSession?.id ?? undefined,
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         changedKeys,
@@ -1858,7 +1853,15 @@ export const updateOrganizationPolicies = mutation({
         eventType: 'enterprise_auth_mode_updated',
         organizationId: args.organizationId,
         userId: context.user.authUserId,
+        actorUserId: context.user.authUserId,
         identifier: context.user.authUser.email?.toLowerCase(),
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'organization_policy',
+        resourceId: args.organizationId,
+        resourceLabel: args.organizationId,
+        sourceSurface: 'organization.policy_update',
+        sessionId: context.user.authSession?.id ?? undefined,
         metadata: JSON.stringify({
           nextMode: nextPolicies.enterpriseAuthMode,
           previousMode: currentPolicies.enterpriseAuthMode,

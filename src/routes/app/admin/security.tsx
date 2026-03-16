@@ -30,7 +30,7 @@ function AdminSecurityRoute() {
     <div className="space-y-6">
       <PageHeader
         title="Security Posture"
-        description="Review regulated baseline controls, MFA coverage, scan health, retention jobs, and evidence exports."
+        description="Review regulated baseline controls, file-inspection outcomes, retention jobs, and evidence exports."
       />
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -44,17 +44,17 @@ function AdminSecurityRoute() {
           }
         />
         <SummaryCard
-          title="Scanner Activity"
-          description="Attachment scan volume and quarantine outcomes."
+          title="File Inspection"
+          description="Attachment and document inspection outcomes from the built-in inspection pipeline."
           value={
             summary
-              ? `${summary.scanner.totalScans} scans, ${summary.scanner.quarantinedCount} quarantined`
+              ? `${summary.scanner.totalScans} inspected, ${summary.scanner.quarantinedCount} quarantined, ${summary.scanner.rejectedCount} rejected`
               : 'Loading…'
           }
           footer={
             summary?.scanner.lastScanAt
-              ? `Last scan ${new Date(summary.scanner.lastScanAt).toLocaleString()}`
-              : 'No scans recorded yet'
+              ? `Last inspection ${new Date(summary.scanner.lastScanAt).toLocaleString()}`
+              : 'No inspection events recorded yet'
           }
         />
         <SummaryCard

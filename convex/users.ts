@@ -1,12 +1,12 @@
 import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { evaluateAuthPolicy } from '../src/lib/shared/auth-policy';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
 import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
 import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
+import { evaluateAuthPolicy } from '../src/lib/shared/auth-policy';
 import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertUserId } from '../src/lib/shared/user-id';
@@ -41,6 +41,7 @@ import {
   normalizeBetterAuthUserProfile,
   updateBetterAuthSessionRecord,
 } from './lib/betterAuth';
+import { buildPersistedOnboardingState as buildPersistedOnboardingStateBase } from './lib/onboardingState';
 import {
   bootstrapUserContextResultValidator,
   currentAppUserValidator,
@@ -48,12 +49,11 @@ import {
   ensureUserContextResultValidator,
   successTrueValidator,
   successValidator,
-  userRoleValidator,
   userContextRecordsValidator,
   userCountValidator,
   userProfilesDocValidator,
+  userRoleValidator,
 } from './lib/returnValidators';
-import { buildPersistedOnboardingState as buildPersistedOnboardingStateBase } from './lib/onboardingState';
 
 type EnsureUserContextArgs = {
   authUserId: string;

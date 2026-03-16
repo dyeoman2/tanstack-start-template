@@ -29,6 +29,35 @@ const AUDIT_FETCH_BATCH_SIZE = 128;
 const SECURITY_EXPORT_BATCH_SIZE = 100;
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
+const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
+  string,
+  Array<'actorUserId' | 'organizationId' | 'outcome' | 'resourceType' | 'severity' | 'sourceSurface'>
+>([
+  [
+    'organization_policy_updated',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+  [
+    'enterprise_auth_mode_updated',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+  [
+    'directory_exported',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+  [
+    'audit_log_exported',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+  [
+    'chat_attachment_quarantined',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+  [
+    'chat_attachment_scan_failed',
+    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+  ],
+]);
 
 function normalizeOptionalString(value: string | undefined) {
   const trimmed = value?.trim();
@@ -56,6 +85,32 @@ function parseMetadata(metadata: string | undefined) {
     return JSON.parse(metadata) as unknown;
   } catch {
     return metadata;
+  }
+}
+
+function validateRegulatedAuditFields(record: {
+  actorUserId?: string;
+  eventType: string;
+  organizationId?: string;
+  outcome?: string;
+  resourceType?: string;
+  severity?: string;
+  sourceSurface?: string;
+}) {
+  const requiredFields = REGULATED_BASELINE_REQUIRED_FIELDS.get(record.eventType);
+  if (!requiredFields) {
+    return;
+  }
+
+  const missingFields = requiredFields.filter((field) => {
+    const value = record[field];
+    return typeof value !== 'string' || value.trim().length === 0;
+  });
+
+  if (missingFields.length > 0) {
+    throw new Error(
+      `Audit event ${record.eventType} is missing required baseline fields: ${missingFields.join(', ')}`,
+    );
   }
 }
 
@@ -339,6 +394,8 @@ export const insertAuditLog = internalMutation({
         previousEventHash,
       }),
     );
+
+    validateRegulatedAuditFields(record);
 
     await ctx.db.insert('auditLogs', {
       ...record,

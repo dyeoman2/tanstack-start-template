@@ -41,6 +41,15 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.rateLimit?.enabled).toBe(true);
   });
 
+  it('enables secure Better Auth cookies for https deployments', () => {
+    process.env.BETTER_AUTH_URL = 'https://app.example.com';
+
+    const options = createOptions();
+
+    expect(options.advanced?.useSecureCookies).toBe(true);
+    expect(options.advanced?.defaultCookieAttributes?.secure).toBe(true);
+  });
+
   it('allows explicitly disabling auth rate limiting with an env flag', () => {
     process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = 'true';
 
@@ -242,5 +251,86 @@ describe('createSharedBetterAuthOptions', () => {
     } as never);
 
     expect(updateSession).not.toHaveBeenCalled();
+  });
+
+  it('enriches email sign-in sessions with the password auth method', async () => {
+    const options = createOptions();
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      path: '/sign-in/email',
+    } as never);
+
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      authMethod: 'password',
+      enterpriseOrganizationId: null,
+      enterpriseProtocol: null,
+      enterpriseProviderKey: null,
+    });
+  });
+
+  it('enriches callback sessions with enterprise metadata when resolved', async () => {
+    const resolveEnterpriseAuthSession = vi.fn(async () => ({
+      organizationId: 'org_1',
+      protocol: 'oidc' as const,
+      providerKey: 'okta' as const,
+    }));
+    const options = createSharedBetterAuthOptions({
+      resolveEnterpriseAuthSession,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      params: {
+        providerId: 'oidc-provider',
+      },
+      path: '/callback/oidc-provider',
+    } as never);
+
+    expect(resolveEnterpriseAuthSession).toHaveBeenCalledWith({
+      providerId: 'oidc-provider',
+      userEmail: 'user@example.com',
+      userId: 'user_1',
+    });
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      activeOrganizationId: 'org_1',
+      authMethod: 'enterprise',
+      enterpriseOrganizationId: 'org_1',
+      enterpriseProtocol: 'oidc',
+      enterpriseProviderKey: 'okta',
+    });
   });
 });

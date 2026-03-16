@@ -1,5 +1,5 @@
-import { scim } from '@better-auth/scim';
 import { passkey } from '@better-auth/passkey';
+import { scim } from '@better-auth/scim';
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
@@ -362,6 +362,7 @@ export function createSharedBetterAuthOptions(
         }
       : {}),
     advanced: {
+      useSecureCookies: secureCookies,
       ipAddress: {
         // Trust only the proxy headers we expect our app platform to normalize.
         ipAddressHeaders: ['x-forwarded-for'],
@@ -498,9 +499,9 @@ export function createSharedBetterAuthOptions(
         },
       },
       cookieCache: {
-        enabled: true,
-        maxAge: 5 * 60,
-        version: (session) => `${session.id}:${session.updatedAt}:${session.expiresAt}`,
+        // Security-sensitive session revocation should reflect server state immediately
+        // instead of allowing a cached cookie snapshot to survive briefly on the client.
+        enabled: false,
       },
     },
     user: {

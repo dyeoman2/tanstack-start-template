@@ -13,6 +13,7 @@ import {
   getVerifiedCurrentSiteAdminUserOrThrow,
 } from './auth/access';
 import { fetchAllBetterAuthUsers } from './lib/betterAuth';
+import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 
 const securityPostureSummaryValidator = v.object({
   audit: v.object({
@@ -35,6 +36,7 @@ const securityPostureSummaryValidator = v.object({
   scanner: v.object({
     lastScanAt: v.union(v.number(), v.null()),
     quarantinedCount: v.number(),
+    rejectedCount: v.number(),
     totalScans: v.number(),
   }),
 });
@@ -52,7 +54,12 @@ const documentScanEventArgs = {
   mimeType: v.string(),
   organizationId: v.string(),
   requestedByUserId: v.string(),
-  resultStatus: v.union(v.literal('clean'), v.literal('quarantined')),
+  resultStatus: v.union(
+    v.literal('accepted'),
+    v.literal('inspection_failed'),
+    v.literal('quarantined'),
+    v.literal('rejected'),
+  ),
   scannedAt: v.number(),
   scannerEngine: v.string(),
 };
@@ -140,7 +147,7 @@ export const getSecurityPostureSummary = query({
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
 
-    const [authUsers, latestScan, latestRetentionJob, latestBackupCheck, latestAuditEvent, integrityFailures, totalScans, quarantinedScans] =
+    const [authUsers, latestScan, latestRetentionJob, latestBackupCheck, latestAuditEvent, integrityFailures, totalScans, quarantinedScans, rejectedScans] =
       await Promise.all([
         fetchAllBetterAuthUsers(ctx),
         ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
@@ -155,6 +162,10 @@ export const getSecurityPostureSummary = query({
         ctx.db
           .query('documentScanEvents')
           .filter((q) => q.eq(q.field('resultStatus'), 'quarantined'))
+          .collect(),
+        ctx.db
+          .query('documentScanEvents')
+          .filter((q) => q.eq(q.field('resultStatus'), 'rejected'))
           .collect(),
       ]);
 
@@ -182,6 +193,7 @@ export const getSecurityPostureSummary = query({
       scanner: {
         lastScanAt: latestScan?.createdAt ?? null,
         quarantinedCount: quarantinedScans.length,
+        rejectedCount: rejectedScans.length,
         totalScans: totalScans.length,
       },
     };
@@ -194,11 +206,42 @@ export const generateEvidenceReport = action({
   handler: async (ctx) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
     const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
+    const recentAuditLogs: Array<{
+      createdAt: number;
+      eventType: string;
+      organizationId?: string;
+      outcome?: 'success' | 'failure';
+      resourceType?: string;
+      sourceSurface?: string;
+    }> = await ctx.runQuery(anyApi.audit.getRecentAuditLogsInternal, {
+      limit: 25,
+    });
+    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
+      limit: 250,
+    });
+    const currentOrganizationPolicies = currentUser.activeOrganizationId
+      ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPolicies, {
+          organizationId: currentUser.activeOrganizationId,
+        })
+      : null;
     const createdAt = Date.now();
     const report = JSON.stringify(
       {
         generatedAt: new Date(createdAt).toISOString(),
         generatedByUserId: currentUser.authUserId,
+        baselineDefaults: {
+          organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+        },
+        integrityCheck,
+        recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
+          createdAt: log.createdAt,
+          eventType: log.eventType,
+          outcome: log.outcome ?? null,
+          organizationId: log.organizationId ?? null,
+          resourceType: log.resourceType ?? null,
+          sourceSurface: log.sourceSurface ?? null,
+        })),
+        scopedOrganizationPolicies: currentOrganizationPolicies,
         summary,
       },
       null,

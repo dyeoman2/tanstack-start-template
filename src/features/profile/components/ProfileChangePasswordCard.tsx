@@ -70,7 +70,7 @@ export function ProfileChangePasswordCard() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
   const credentialsLinked = useMemo(
-    () => accounts?.some((account) => account.providerId === 'credential') ?? false,
+    () => accounts?.some((account) => account.provider === 'credential') ?? false,
     [accounts],
   );
 

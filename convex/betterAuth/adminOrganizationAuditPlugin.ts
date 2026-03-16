@@ -1,6 +1,7 @@
 import type { BetterAuthPlugin, GenericEndpointContext } from 'better-auth';
 import { createAuthMiddleware } from 'better-auth/api';
 import type { AuditRecord } from '../lib/authAudit';
+import { recordAuthorizationDeniedAuditEvent } from './authorizationDeniedAudit';
 
 type AuditRecorder = (event: AuditRecord) => Promise<void>;
 
@@ -73,76 +74,6 @@ function isHandledAuthorizationDeniedPath(path: string) {
   return path.startsWith('/admin/') || path.startsWith('/organization/');
 }
 
-function shouldSkipAuthorizationDenied(
-  path: string,
-  errorDetails: { errorCode?: string; status: number },
-) {
-  return (
-    (path === '/organization/accept-invitation' &&
-      errorDetails.status === 403 &&
-      errorDetails.errorCode === 'FORBIDDEN') ||
-    (path === '/organization/invite-member' &&
-      errorDetails.status === 403 &&
-      errorDetails.errorCode === 'FORBIDDEN')
-  );
-}
-
-function getAuthorizationDeniedResourceType(path: string) {
-  if (
-    path.startsWith('/admin/list-user-sessions') ||
-    path.startsWith('/admin/revoke-user-session')
-  ) {
-    return 'session';
-  }
-
-  if (path.startsWith('/organization/')) {
-    return 'organization_membership';
-  }
-
-  if (path.startsWith('/admin/')) {
-    return 'user';
-  }
-
-  return 'session';
-}
-
-function getAuthorizationDeniedResourceLabel(path: string) {
-  switch (path) {
-    case '/organization/accept-invitation':
-      return 'Invitation acceptance denied';
-    case '/organization/invite-member':
-      return 'Invitation create denied';
-    case '/organization/remove-member':
-      return 'Member removal denied';
-    case '/organization/update-member-role':
-      return 'Member role update denied';
-    case '/organization/delete':
-      return 'Organization deletion denied';
-    case '/organization/update':
-      return 'Organization update denied';
-    case '/admin/list-user-sessions':
-      return 'Admin session inspection denied';
-    case '/admin/revoke-user-session':
-      return 'Admin session revoke denied';
-    case '/admin/revoke-user-sessions':
-      return 'Admin revoke all sessions denied';
-    default:
-      return 'Authorization denied';
-  }
-}
-
-function getAuthorizationDeniedSourceSurface(path: string) {
-  if (path.startsWith('/organization/')) {
-    return 'auth.endpoint.organization';
-  }
-
-  if (path.startsWith('/admin/')) {
-    return 'auth.endpoint.admin_user';
-  }
-
-  return 'auth.endpoint.authorization';
-}
-
 async function safelyRecord(recordAuditEvent: AuditRecorder, event: AuditRecord) {
   try {
     await recordAuditEvent(event);
@@ -168,7 +99,7 @@ export function createAdminOrganizationAuditPlugin(
               return;
             }
             const errorDetails = await readAfterHookErrorDetails(typedCtx.context.returned);
-            if (!errorDetails || shouldSkipAuthorizationDenied(typedCtx.path, errorDetails)) {
+            if (!errorDetails) {
               return;
             }
 
@@ -176,38 +107,23 @@ export function createAdminOrganizationAuditPlugin(
               normalizeOptionalString(typedCtx.body?.email) ??
               normalizeOptionalString(typedCtx.body?.username);
 
-            await safelyRecord(recordAuditEvent, {
-              createdAt: Date.now(),
-              eventType: 'authorization_denied',
-              ...(typedCtx.context.session?.user?.id
-                ? { actorUserId: typedCtx.context.session.user.id }
-                : {}),
-              ...(normalizeOptionalString(typedCtx.body?.organizationId)
-                ? { organizationId: normalizeOptionalString(typedCtx.body?.organizationId) }
-                : {}),
-              ...(identifier ? { identifier } : {}),
-              outcome: 'failure',
-              severity: 'warning',
-              resourceType: getAuthorizationDeniedResourceType(typedCtx.path),
-              ...(normalizeOptionalString(typedCtx.body?.invitationId)
-                ? { resourceId: normalizeOptionalString(typedCtx.body?.invitationId) }
-                : {}),
-              resourceLabel: getAuthorizationDeniedResourceLabel(typedCtx.path),
-              sourceSurface: getAuthorizationDeniedSourceSurface(typedCtx.path),
-              metadata: JSON.stringify({
-                attemptedIdentifier: identifier,
+            try {
+              await recordAuthorizationDeniedAuditEvent(recordAuditEvent as never, {
+                actorUserId: typedCtx.context.session?.user?.id,
+                email: identifier,
+                errorCode: errorDetails.errorCode,
+                ipAddress: getIpAddress(typedCtx),
                 invitationId: normalizeOptionalString(typedCtx.body?.invitationId),
+                message: errorDetails.message ?? 'Authorization denied',
+                organizationId: normalizeOptionalString(typedCtx.body?.organizationId),
                 path: typedCtx.path,
-                ...(errorDetails.errorCode ? { responseErrorCode: errorDetails.errorCode } : {}),
-                responseErrorMessage: errorDetails.message ?? 'Authorization denied',
+                provider: normalizeOptionalString(typedCtx.body?.provider),
                 responseStatus: errorDetails.status,
-                ...(normalizeOptionalString(typedCtx.body?.provider)
-                  ? { provider: normalizeOptionalString(typedCtx.body?.provider) }
-                  : {}),
-              }),
-              ipAddress: getIpAddress(typedCtx),
-              userAgent: getUserAgent(typedCtx),
-            });
+                userAgent: getUserAgent(typedCtx),
+              });
+            } catch (error) {
+              console.error('Failed to write Better Auth admin/org audit log', error);
+            }
           }),
         },
       ],

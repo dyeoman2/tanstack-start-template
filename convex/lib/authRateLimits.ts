@@ -1,6 +1,6 @@
 import { APIError } from 'better-auth/api';
-import type { ActionCtx, MutationCtx } from '../_generated/server';
 import { components } from '../_generated/api';
+import type { ActionCtx, MutationCtx } from '../_generated/server';
 
 type RateLimitConfig = {
   capacity: number;
@@ -62,6 +62,18 @@ export const SERVER_AUTH_RATE_LIMIT_POLICIES = {
     bucket: 'auth:admin-update-user',
     config: { kind: 'token bucket', rate: 30, period: 15 * 60 * 1000, capacity: 30 },
   },
+  currentListSessions: {
+    bucket: 'auth:current-list-sessions',
+    config: { kind: 'token bucket', rate: 60, period: 15 * 60 * 1000, capacity: 60 },
+  },
+  currentRevokeOtherSessions: {
+    bucket: 'auth:current-revoke-other-sessions',
+    config: { kind: 'token bucket', rate: 10, period: 15 * 60 * 1000, capacity: 10 },
+  },
+  currentRevokeSession: {
+    bucket: 'auth:current-revoke-session',
+    config: { kind: 'token bucket', rate: 20, period: 15 * 60 * 1000, capacity: 20 },
+  },
   requestPasswordReset: {
     bucket: 'auth:request-password-reset',
     config: { kind: 'token bucket', rate: 3, period: 60 * 60 * 1000, capacity: 3 },
@@ -79,10 +91,7 @@ function normalizeKeySegment(value: string): string {
   return value.trim().toLowerCase();
 }
 
-export function createActorScopedRateLimitKey({
-  actorUserId,
-  scope,
-}: ActorScopedKeyInput): string {
+export function createActorScopedRateLimitKey({ actorUserId, scope }: ActorScopedKeyInput): string {
   const segments = [normalizeKeySegment(actorUserId)];
   if (scope && scope.trim().length > 0) {
     segments.push(normalizeKeySegment(scope));

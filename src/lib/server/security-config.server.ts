@@ -1,8 +1,4 @@
-const DEFAULT_ATTACHMENT_URL_TTL_MINUTES = 15;
-const DEFAULT_DATA_RETENTION_DAYS = 30;
-const DEFAULT_QUARANTINE_RETENTION_DAYS = 7;
-const DEFAULT_RECENT_STEP_UP_WINDOW_MINUTES = 15;
-const DEFAULT_BACKUP_REPORT_RETENTION_DAYS = 30;
+import { REGULATED_RETENTION_DEFAULTS } from '../shared/security-baseline';
 
 function parsePositiveInteger(value: string | undefined, fallback: number) {
   if (!value) {
@@ -29,23 +25,23 @@ export function getRetentionPolicyConfig(): RetentionPolicyConfig {
   return {
     attachmentUrlTtlMinutes: parsePositiveInteger(
       process.env.ATTACHMENT_URL_TTL_MINUTES,
-      DEFAULT_ATTACHMENT_URL_TTL_MINUTES,
+      REGULATED_RETENTION_DEFAULTS.attachmentUrlTtlMinutes,
     ),
     backupReportRetentionDays: parsePositiveInteger(
       process.env.BACKUP_REPORT_RETENTION_DAYS,
-      DEFAULT_BACKUP_REPORT_RETENTION_DAYS,
+      REGULATED_RETENTION_DEFAULTS.backupReportRetentionDays,
     ),
     dataRetentionDays: parsePositiveInteger(
       process.env.DATA_RETENTION_DAYS,
-      DEFAULT_DATA_RETENTION_DAYS,
+      REGULATED_RETENTION_DEFAULTS.dataRetentionDays,
     ),
     quarantineRetentionDays: parsePositiveInteger(
       process.env.QUARANTINE_RETENTION_DAYS,
-      DEFAULT_QUARANTINE_RETENTION_DAYS,
+      REGULATED_RETENTION_DEFAULTS.quarantineRetentionDays,
     ),
     recentStepUpWindowMinutes: parsePositiveInteger(
       process.env.RECENT_STEP_UP_WINDOW_MINUTES,
-      DEFAULT_RECENT_STEP_UP_WINDOW_MINUTES,
+      REGULATED_RETENTION_DEFAULTS.recentStepUpWindowMinutes,
     ),
   };
 }
@@ -53,4 +49,3 @@ export function getRetentionPolicyConfig(): RetentionPolicyConfig {
 export function getRecentStepUpWindowMs() {
   return getRetentionPolicyConfig().recentStepUpWindowMinutes * 60 * 1000;
 }
-

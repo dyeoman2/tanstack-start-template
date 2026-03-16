@@ -3,8 +3,8 @@ import { pathToFileURL } from 'node:url';
 import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { inspectFile } from '~/lib/server/file-inspection.server';
 import { logSecurityEvent } from '~/lib/server/observability.server';
-import { scanDocumentBlob } from '~/lib/server/document-security.server';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const WORKER_PATH = join(
@@ -65,18 +65,6 @@ export const Route = createFileRoute('/api/parse-pdf')({
             },
           });
 
-          if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-            return Response.json({ error: 'File must be a PDF' }, { status: 400 });
-          }
-
-          if (file.size > MAX_FILE_SIZE) {
-            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            return Response.json(
-              { error: `File size (${sizeMB}MB) exceeds the maximum allowed size of 10MB` },
-              { status: 413 },
-            );
-          }
-
           if (typeof globalThis.DOMMatrix === 'undefined') {
             const { DOMMatrix, DOMPoint, DOMRect } = await import(
               /* @vite-ignore */ CANVAS_MODULE_NAME
@@ -94,40 +82,55 @@ export const Route = createFileRoute('/api/parse-pdf')({
             isWorkerConfigured = true;
           }
 
-          const buffer = Buffer.from(await file.arrayBuffer());
-          const scanResult = await scanDocumentBlob({
-            blob: new Blob([buffer], { type: file.type || 'application/pdf' }),
+          const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'application/pdf' });
+          const inspection = await inspectFile({
+            allowedKinds: ['pdf'],
+            blob,
             fileName: file.name,
+            maxBytes: MAX_FILE_SIZE,
             mimeType: file.type || 'application/pdf',
           });
 
           await convexAuthReactStart.fetchAuthMutation(api.security.recordDocumentScanEvent, {
-            details: scanResult.details ?? null,
+            details: inspection.details ?? null,
             fileName: file.name,
             mimeType: file.type || 'application/pdf',
             organizationId: currentProfile.currentOrganization?.id ?? 'unknown',
             requestedByUserId: currentProfile.id,
-            resultStatus: scanResult.status,
-            scannedAt: scanResult.scannedAt,
-            scannerEngine: scanResult.engine,
+            resultStatus: inspection.status,
+            scannedAt: inspection.inspectedAt,
+            scannerEngine: inspection.engine,
           });
 
-          if (scanResult.status !== 'clean') {
+          if (inspection.status === 'rejected') {
+            return Response.json({ error: inspection.details ?? 'File rejected during inspection' }, { status: 400 });
+          }
+
+          if (inspection.status === 'inspection_failed') {
+            return Response.json(
+              { error: inspection.details ?? 'File inspection failed' },
+              { status: 500 },
+            );
+          }
+
+          if (inspection.status === 'quarantined') {
             logSecurityEvent({
               actorUserId: currentProfile.id,
               data: {
                 fileName: file.name,
-                reason: scanResult.details ?? 'signature_mismatch',
+                reason: inspection.details ?? 'file_signature_mismatch',
               },
               event: 'pdf.parse.quarantined',
               scope: 'scan',
               status: 'warning',
             });
             return Response.json(
-              { error: scanResult.details ?? 'File quarantined during security scan' },
+              { error: inspection.details ?? 'File quarantined during file inspection' },
               { status: 422 },
             );
           }
+
+          const buffer = Buffer.from(await blob.arrayBuffer());
 
           const parser = new PDFParse({ data: buffer });
           const textResult = await parser.getText();

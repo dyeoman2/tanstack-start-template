@@ -6,6 +6,7 @@ const authHandlerMock = vi.fn();
 const redirectMock = vi.fn((options: unknown) => {
   return new Response(JSON.stringify(options), { status: 302 });
 });
+const hasFreshBetterAuthSessionForCurrentRequestMock = vi.fn();
 
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: () => getRequestMock(),
@@ -28,6 +29,11 @@ vi.mock('./convex-better-auth-react-start', () => ({
     handler: (...args: unknown[]) => authHandlerMock(...args),
     fetchAuthQuery: (...args: unknown[]) => fetchAuthQueryMock(...args),
   },
+}));
+
+vi.mock('~/lib/server/better-auth/fresh-session.server', () => ({
+  hasFreshBetterAuthSessionForCurrentRequest: () =>
+    hasFreshBetterAuthSessionForCurrentRequestMock(),
 }));
 
 import { USER_ROLES } from '../types';
@@ -56,6 +62,7 @@ describe('auth-guards', () => {
         { status: 200 },
       ),
     );
+    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(false);
   });
 
   it('redirects to login when the profile is missing required session fields', async () => {
@@ -124,6 +131,7 @@ describe('auth-guards', () => {
       ),
     );
 
+    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(false);
     await expect(requireRecentStepUp()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({
       to: '/app/profile',
@@ -132,5 +140,18 @@ describe('auth-guards', () => {
         security: 'step-up-required',
       },
     });
+  });
+
+  it('succeeds when recent step-up is fresh', async () => {
+    fetchAuthQueryMock.mockResolvedValue({
+      id: 'user_123',
+      email: 'user@example.com',
+      role: USER_ROLES.USER,
+      emailVerified: true,
+    });
+    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(true);
+
+    await expect(requireRecentStepUp()).resolves.toHaveProperty('user');
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });

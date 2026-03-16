@@ -79,7 +79,7 @@ describe('createAdminOrganizationAuditPlugin', () => {
     );
   });
 
-  it('skips organization denials already owned by explicit Better Auth hooks', async () => {
+  it('records invitation acceptance denials through the shared auth denial audit path', async () => {
     const { afterHook, recordAuditEvent } = getAfterHook();
 
     await afterHook.handler({
@@ -98,6 +98,13 @@ describe('createAdminOrganizationAuditPlugin', () => {
       path: '/organization/accept-invitation',
     } as never);
 
-    expect(recordAuditEvent).not.toHaveBeenCalled();
+    expect(recordAuditEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'authorization_denied',
+        resourceLabel: 'Invitation acceptance denied',
+        resourceType: 'organization_membership',
+        sourceSurface: 'auth.endpoint.organization',
+      }),
+    );
   });
 });

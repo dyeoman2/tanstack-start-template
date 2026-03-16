@@ -413,7 +413,12 @@ export default defineSchema({
     mimeType: v.string(),
     organizationId: v.string(),
     requestedByUserId: v.string(),
-    resultStatus: v.union(v.literal('clean'), v.literal('quarantined')),
+    resultStatus: v.union(
+      v.literal('accepted'),
+      v.literal('inspection_failed'),
+      v.literal('quarantined'),
+      v.literal('rejected'),
+    ),
     details: v.union(v.string(), v.null()),
     scannerEngine: v.string(),
     scannedAt: v.number(),

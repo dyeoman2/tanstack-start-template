@@ -218,6 +218,50 @@ describe('organization management server functions', () => {
     );
   });
 
+  it('fails when organization write access is denied for invitations', async () => {
+    const failure = new Error('not allowed');
+    handleServerErrorMock.mockReturnValue(failure);
+    fetchAuthQueryMock.mockResolvedValueOnce({ allowed: false, reason: 'tenant mismatch' });
+
+    await expect(
+      createOrganizationInvitationServerFn({
+        data: {
+          organizationId: 'org_1',
+          email: 'other@org.com',
+          role: 'member',
+          resend: false,
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(handleServerErrorMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Create organization invitation',
+    );
+  });
+
+  it('fails when updating a member role without tenant access', async () => {
+    const failure = new Error('forbidden');
+    handleServerErrorMock.mockReturnValue(failure);
+    fetchAuthQueryMock.mockResolvedValueOnce({ allowed: false, reason: 'not your org' });
+
+    await expect(
+      updateOrganizationMemberRoleServerFn({
+        data: {
+          organizationId: 'org_1',
+          membershipId: 'member_1',
+          role: 'member',
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(handleServerErrorMock).toHaveBeenCalledWith(
+      expect.any(Error),
+      'Update organization member role',
+    );
+    expect(updateBetterAuthOrganizationMemberRoleMock).not.toHaveBeenCalled();
+  });
+
   it('updates organization policies through Convex auth mutations', async () => {
     await updateOrganizationPoliciesServerFn({
       data: {
