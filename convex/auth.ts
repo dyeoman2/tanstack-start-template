@@ -298,6 +298,8 @@ type BetterAuthOrganizationSummary = {
   slug?: string;
 };
 
+// Keep handwritten Better Auth API typing confined to the internal freshness
+// endpoint until plugin endpoint inference flows through this stack cleanly.
 type BetterAuthFreshSessionApi = {
   assertFreshSession(input: { headers: Headers }): Promise<{
     sessionId: string;

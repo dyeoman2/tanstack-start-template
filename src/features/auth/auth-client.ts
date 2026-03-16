@@ -45,6 +45,9 @@ export const authClient = createAuthClient({
   ],
 });
 
+// Better Auth's current client typings in this stack do not safely accept
+// createAuthClient<typeof auth>(). Use the documented client-side inference
+// path here until the upstream client generic can map the server auth instance.
 export type AuthSession = typeof authClient.$Infer.Session;
 export type AuthSessionData = AuthSession['session'];
 export type AuthSessionUser = AuthSession['user'];

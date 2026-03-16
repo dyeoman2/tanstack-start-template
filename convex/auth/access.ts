@@ -1,6 +1,7 @@
 import { anyApi } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
+  buildStepUpRedirectSearch,
   evaluateAuthPolicy,
   type AuthAssuranceState,
   STEP_UP_REQUIREMENTS,
@@ -298,7 +299,7 @@ export async function requireRecentStepUpFromActionOrThrow(ctx: ActionCtx): Prom
 
 export async function requireStepUpFromActionOrThrow(
   ctx: ActionCtx,
-  _requirement: StepUpRequirement,
+  requirement: StepUpRequirement,
 ): Promise<CurrentUser> {
   const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
   const freshSessionResult = (await ctx.runAction(anyApi.auth.assertFreshSessionServer, {})) as
@@ -313,7 +314,11 @@ export async function requireStepUpFromActionOrThrow(
       };
 
   if (!freshSessionResult || freshSessionResult.ok !== true) {
-    throwConvexError('FORBIDDEN', 'Recent step-up authentication is required');
+    const redirectSearch = buildStepUpRedirectSearch(requirement);
+    throwConvexError(
+      'FORBIDDEN',
+      `Recent step-up authentication is required (${redirectSearch.requirement})`,
+    );
   }
 
   return user;

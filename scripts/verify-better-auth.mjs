@@ -44,7 +44,7 @@ async function runOfficialBetterAuthCliCheck() {
     'better-auth',
     'generate',
     '--config',
-    'convex/betterAuth/options.ts',
+    'convex/betterAuth/cli-auth.ts',
     '--output',
     outputFile,
     '-y',
@@ -78,7 +78,7 @@ async function verifyAuthOk() {
   const baseUrl = (process.env.BETTER_AUTH_VERIFY_URL || process.env.BETTER_AUTH_URL || '').trim();
   if (!baseUrl) {
     throw new Error(
-      'BETTER_AUTH_VERIFY_URL or BETTER_AUTH_URL must be set to verify GET /api/auth/ok.',
+      'BETTER_AUTH_VERIFY_URL or BETTER_AUTH_URL must be set to verify GET /api/auth/ok against a running app server.',
     );
   }
 
@@ -86,10 +86,18 @@ async function verifyAuthOk() {
   const timeout = setTimeout(() => controller.abort(), 5000);
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/ok`, {
-      method: 'GET',
-      signal: controller.signal,
-    });
+    let response;
+    try {
+      response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/auth/ok`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      throw new Error(
+        `GET /api/auth/ok could not be reached at ${baseUrl}. Start the app server or set BETTER_AUTH_VERIFY_URL to a reachable origin. Original error: ${details}`,
+      );
+    }
 
     if (!response.ok) {
       throw new Error(`GET /api/auth/ok returned ${response.status}`);
@@ -122,4 +130,10 @@ async function main() {
   console.log('[better-auth] Verification complete');
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[better-auth] Verification failed: ${message}`);
+  process.exitCode = 1;
+}

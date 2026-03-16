@@ -57,7 +57,7 @@
     "setup:convex": "tsx scripts/setup-convex.ts",
     "setup:dev": "tsx scripts/setup-dev.ts",
     "setup:prod": "tsx scripts/setup-prod.ts",
-    "better-auth:generate-schema": "pnpm exec better-auth generate --config convex/betterAuth/options.ts --output /tmp/better-auth-generated-schema.ts -y",
+    "better-auth:generate-schema": "pnpm exec better-auth generate --config convex/betterAuth/cli-auth.ts --output /tmp/better-auth-generated-schema.ts -y",
     "verify:better-auth": "node scripts/verify-better-auth.mjs",
     "make-admin": "tsx scripts/make-admin.ts",
     "precommit": "biome check --write",

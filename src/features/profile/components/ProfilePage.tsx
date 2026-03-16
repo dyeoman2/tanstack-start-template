@@ -2,7 +2,6 @@ import {
   ChangePasswordCard,
   PasskeysCard,
   SessionsCard,
-  TwoFactorCard,
 } from '@daveyplate/better-auth-ui';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
@@ -12,6 +11,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/com
 import { Skeleton } from '~/components/ui/skeleton';
 import { signOut } from '~/features/auth/auth-client';
 import { ProfileDetailsCard } from '~/features/profile/components/ProfileDetailsCard';
+import { ProfileTwoFactorCard } from '~/features/profile/components/ProfileTwoFactorCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
 import { USER_ROLES } from '../../auth/types';
 
@@ -120,7 +120,7 @@ export function ProfilePage() {
           </div>
           <div className="flex w-full flex-col gap-4">
             <ChangePasswordCard classNames={profilePasswordCardClassNames} />
-            <TwoFactorCard classNames={profileSettingsCardClassNames} />
+            <ProfileTwoFactorCard />
             <PasskeysCard classNames={profileSettingsCardClassNames} />
             <SessionsCard classNames={profileSettingsCardClassNames} />
           </div>

@@ -64,7 +64,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
-  const sessionData = session?.session as AuthSessionData | undefined;
+  const sessionData: AuthSessionData | undefined = session?.session;
   const impersonatedByUserId =
     typeof sessionData?.impersonatedBy === 'string' && sessionData.impersonatedBy.length > 0
       ? sessionData.impersonatedBy

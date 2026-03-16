@@ -3,7 +3,11 @@ import { redirect } from '@tanstack/react-router';
 import { getRequest } from '@tanstack/react-start/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-role';
 import { hasFreshBetterAuthSessionForCurrentRequest } from '~/lib/server/better-auth/fresh-session.server';
-import { type StepUpRequirement, STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
+import {
+  buildStepUpRedirectSearch,
+  type StepUpRequirement,
+  STEP_UP_REQUIREMENTS,
+} from '~/lib/shared/auth-policy';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import type { UserRole } from '../types';
@@ -144,10 +148,7 @@ export async function requireRecentStepUp(
   if (!isFresh) {
     throw redirect({
       to: '/app/profile',
-      search: {
-        requirement,
-        security: 'step-up-required',
-      },
+      search: buildStepUpRedirectSearch(requirement),
     });
   }
 

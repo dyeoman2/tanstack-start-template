@@ -30,6 +30,13 @@ export type AuthPolicyEvaluation = {
   stepUp: StepUpEvaluation;
 };
 
+export function buildStepUpRedirectSearch(requirement: StepUpRequirement) {
+  return {
+    requirement,
+    security: 'step-up-required' as const,
+  };
+}
+
 export function evaluateStepUpRequirement(input: {
   assurance: AuthAssuranceState;
   now?: number;
