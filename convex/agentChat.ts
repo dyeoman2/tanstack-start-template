@@ -48,6 +48,7 @@ import {
   enforceChatPreflightOrThrow,
   getAdvisoryChatRateLimit,
 } from './lib/chatRateLimits';
+import { getOrganizationPolicies } from './organizationManagement';
 import {
   activeRunWithAccessValidator,
   advisoryChatRateLimitValidator,
@@ -764,6 +765,17 @@ export const assignAttachmentsToMessageInternal = internalMutation({
   },
 });
 
+export const deleteAttachmentStorageInternal = internalMutation({
+  args: {
+    attachmentId: v.id('chatAttachments'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.attachmentId);
+    return null;
+  },
+});
+
 export const createRunInternal = internalMutation({
   args: {
     threadId: v.id('chatThreads'),
@@ -1317,6 +1329,22 @@ async function resolveRequestedModel(
   });
 }
 
+async function assertOrganizationChatPolicies(
+  ctx: MutationCtx,
+  args: {
+    organizationId: string;
+    useWebSearch: boolean;
+  },
+) {
+  const policies = await getOrganizationPolicies(ctx, args.organizationId);
+
+  if (args.useWebSearch && !policies.webSearchAllowed) {
+    throw new ConvexError('Web search is disabled by organization policy.');
+  }
+
+  return policies;
+}
+
 async function createStreamingRun(
   ctx: MutationCtx,
   args: {
@@ -1465,10 +1493,18 @@ export const sendMessage = mutation({
       userId,
       organizationId,
     })) as ChatAttachmentDoc[];
+    await assertOrganizationChatPolicies(ctx, {
+      organizationId,
+      useWebSearch: args.useWebSearch ?? false,
+    });
     const selectedModel = await resolveRequestedModel(ctx, {
       requestedModelId: args.model,
       threadModelId: thread.model,
       isSiteAdmin,
+    });
+    await assertOrganizationChatPolicies(ctx, {
+      organizationId,
+      useWebSearch: args.useWebSearch ?? false,
     });
     assertChatModelSupportsWebSearch({
       useWebSearch: args.useWebSearch ?? false,
@@ -1722,6 +1758,10 @@ export const retryAssistantResponse = mutation({
       isSiteAdmin,
     });
     const useWebSearch = args.useWebSearch ?? run.useWebSearch;
+    await assertOrganizationChatPolicies(ctx, {
+      organizationId,
+      useWebSearch,
+    });
     assertChatModelSupportsWebSearch({
       useWebSearch,
       model: selectedModel,
@@ -1819,6 +1859,10 @@ export const continuePrompt = mutation({
     });
     const resolvedPersonaId = args.personaId ?? thread.personaId;
     const useWebSearch = args.useWebSearch ?? false;
+    await assertOrganizationChatPolicies(ctx, {
+      organizationId,
+      useWebSearch,
+    });
     assertChatModelSupportsWebSearch({
       useWebSearch,
       model: selectedModel,

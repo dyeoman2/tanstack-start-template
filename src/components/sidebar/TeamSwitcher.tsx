@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { useNavigate, useRouter } from '@tanstack/react-router';
 import type { Organization } from 'better-auth/plugins/organization';
 import { useQuery } from 'convex/react';
 import { Building2, Check, ChevronsUpDown, Plus } from 'lucide-react';
@@ -36,7 +36,6 @@ type OrganizationSwitcherItem = {
 export function OrganizationSwitcher() {
   const { isMobile } = useSidebar();
   const queryClient = useQueryClient();
-  const location = useLocation();
   const navigate = useNavigate();
   const router = useRouter();
   const { showToast } = useToast();
@@ -83,7 +82,7 @@ export function OrganizationSwitcher() {
         };
 
     setActiveOrganizationItem(matchedOrganizationItem);
-  }, [activeOrganization, location.pathname, organizationItems, organizations]);
+  }, [activeOrganization, organizationItems, organizations]);
 
   return (
     <SidebarMenu>

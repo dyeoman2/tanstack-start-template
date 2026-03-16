@@ -1,6 +1,12 @@
 import { anyApi } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
+  evaluateAuthPolicy,
+  type AuthAssuranceState,
+  STEP_UP_REQUIREMENTS,
+  type StepUpRequirement,
+} from '../../src/lib/shared/auth-policy';
+import {
   ADMIN_ORGANIZATION_ACCESS,
   getOrganizationAccess,
   NO_ORGANIZATION_ACCESS,
@@ -9,12 +15,14 @@ import {
   VIEW_ORGANIZATION_ACCESS,
 } from '../../src/features/organizations/lib/organization-permissions';
 import { getEmailVerificationEnforcedAt } from '../../src/lib/server/env.server';
+import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
 import { isEmailVerificationRequiredForUser } from '../../src/lib/shared/email-verification';
 import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
-import { authComponent } from '../auth';
+import { authComponent, type BetterAuthSessionData, type BetterAuthSessionUser } from '../auth';
+import type { Doc as BetterAuthDoc } from '../betterAuth/_generated/dataModel';
 import {
   type BetterAuthMember,
   fetchBetterAuthMembersByOrganizationId,
@@ -30,30 +38,8 @@ import {
 import { throwConvexError } from './errors';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
-
-type BetterAuthUserWithRole = {
-  _id?: string;
-  id?: string;
-  email?: string;
-  name?: string | null;
-  phoneNumber?: string | null;
-  emailVerified?: boolean;
-  role?: string | string[];
-  createdAt?: string | number | Date;
-  updatedAt?: string | number | Date;
-};
-
-type BetterAuthSession = {
-  _id?: string;
-  id?: string;
-  authMethod?: string | null;
-  userId?: string;
-  activeOrganizationId?: string | null;
-  enterpriseOrganizationId?: string | null;
-  enterpriseProviderKey?: string | null;
-  enterpriseProtocol?: string | null;
-  expiresAt?: string | number;
-};
+type BetterAuthUserRecord = BetterAuthDoc<'user'> & Partial<BetterAuthSessionUser>;
+type BetterAuthSessionRecord = BetterAuthDoc<'session'> & Partial<BetterAuthSessionData>;
 
 export type ACCESS = OrganizationAccess;
 
@@ -80,12 +66,12 @@ export const NO_ACCESS: ACCESS = {
 export type CurrentUser = Doc<'users'> & {
   activeOrganizationId: string | null;
   authUserId: string;
-  authSession: BetterAuthSession | null;
-  authUser: BetterAuthUserWithRole;
+  authSession: BetterAuthSessionRecord | null;
+  authUser: BetterAuthUserRecord;
   isSiteAdmin: boolean;
 };
 
-function requiresVerifiedEmail(authUser: BetterAuthUserWithRole): boolean {
+function requiresVerifiedEmail(authUser: BetterAuthUserRecord): boolean {
   return isEmailVerificationRequiredForUser({
     createdAt: authUser.createdAt,
     emailVerified: authUser.emailVerified,
@@ -93,9 +79,9 @@ function requiresVerifiedEmail(authUser: BetterAuthUserWithRole): boolean {
   });
 }
 
-function toMillis(value: string | number | Date | undefined): number {
+function toMillis(value: string | number | Date | undefined, fallback: number = 0): number {
   if (value === undefined) {
-    return 0;
+    return fallback;
   }
 
   if (typeof value === 'number') {
@@ -107,12 +93,29 @@ function toMillis(value: string | number | Date | undefined): number {
   }
 
   const parsed = new Date(value).getTime();
-  return Number.isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function buildAuthAssuranceState(input: {
+  authUser: BetterAuthUserRecord;
+  authSession: BetterAuthSessionRecord | null;
+  mfaEnabled: boolean;
+}): AuthAssuranceState {
+  const recentStepUpAt =
+    input.authSession === null
+      ? null
+      : toMillis(input.authSession.updatedAt ?? input.authSession.createdAt, 0) || null;
+
+  return {
+    emailVerified: input.authUser.emailVerified ?? false,
+    mfaEnabled: input.mfaEnabled,
+    recentStepUpAt,
+  };
 }
 
 async function getCurrentAuthSessionOrNull(
   ctx: QueryCtx | MutationCtx,
-): Promise<BetterAuthSession | null> {
+): Promise<BetterAuthSessionRecord | null> {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity?.sessionId) {
     return null;
@@ -132,11 +135,11 @@ async function getCurrentAuthSessionOrNull(
         value: Date.now(),
       },
     ],
-  })) as BetterAuthSession | null;
+  })) as BetterAuthSessionRecord | null;
 }
 
-export async function getCurrentAuthUserOrThrow(ctx: AuthzCtx): Promise<BetterAuthUserWithRole> {
-  const authUser = (await authComponent.getAuthUser(ctx)) as BetterAuthUserWithRole | null;
+export async function getCurrentAuthUserOrThrow(ctx: AuthzCtx): Promise<BetterAuthUserRecord> {
+  const authUser = (await authComponent.getAuthUser(ctx)) as BetterAuthUserRecord | null;
   if (!authUser) {
     throwConvexError('UNAUTHENTICATED', 'Not authenticated');
   }
@@ -146,12 +149,12 @@ export async function getCurrentAuthUserOrThrow(ctx: AuthzCtx): Promise<BetterAu
 
 export async function getCurrentAuthUserOrNull(
   ctx: QueryCtx | MutationCtx,
-): Promise<BetterAuthUserWithRole | null> {
-  return (await authComponent.safeGetAuthUser(ctx)) as BetterAuthUserWithRole | null;
+): Promise<BetterAuthUserRecord | null> {
+  return (await authComponent.safeGetAuthUser(ctx)) as BetterAuthUserRecord | null;
 }
 
-export function ensureAuthUserIsSiteAdminOrThrow<T extends BetterAuthUserWithRole>(authUser: T): T {
-  if (!deriveIsSiteAdmin(normalizeUserRole(authUser.role))) {
+export function ensureAuthUserIsSiteAdminOrThrow<T extends BetterAuthUserRecord>(authUser: T): T {
+  if (!deriveIsSiteAdmin(normalizeUserRole(authUser.role ?? undefined))) {
     throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
   }
 
@@ -164,7 +167,7 @@ export async function getCurrentSiteAdminAuthUserOrThrow(ctx: AuthzCtx) {
 
 export async function getVerifiedCurrentAuthUserOrNull(
   ctx: QueryCtx | MutationCtx,
-): Promise<BetterAuthUserWithRole | null> {
+): Promise<BetterAuthUserRecord | null> {
   const authUser = await getCurrentAuthUserOrNull(ctx);
   if (!authUser) {
     return null;
@@ -183,7 +186,7 @@ async function findAppUserByAuthUserId(ctx: QueryCtx | MutationCtx, authUserId: 
 async function resolveActiveOrganizationIdForUser(
   ctx: QueryCtx | MutationCtx,
   authUserId: string,
-  session?: BetterAuthSession | null,
+  session?: BetterAuthSessionRecord | null,
 ): Promise<string | null> {
   if (
     typeof session?.activeOrganizationId !== 'string' ||
@@ -236,7 +239,7 @@ export async function getCurrentUserOrNull(
     authUserId,
     authSession: session,
     authUser,
-    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role ?? undefined)),
   };
 }
 
@@ -259,7 +262,7 @@ export async function getCurrentUserOrThrow(ctx: QueryCtx | MutationCtx): Promis
     authUserId,
     authSession: session,
     authUser,
-    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role)),
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(authUser.role ?? undefined)),
   };
 }
 
@@ -284,6 +287,33 @@ export async function getVerifiedCurrentUserFromActionOrThrow(
 
   if (requiresVerifiedEmail(user.authUser)) {
     throwConvexError('FORBIDDEN', 'Email verification required');
+  }
+
+  return user;
+}
+
+export async function requireRecentStepUpFromActionOrThrow(ctx: ActionCtx): Promise<CurrentUser> {
+  return await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.organizationAdmin);
+}
+
+export async function requireStepUpFromActionOrThrow(
+  ctx: ActionCtx,
+  _requirement: StepUpRequirement,
+): Promise<CurrentUser> {
+  const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+  const freshSessionResult = (await ctx.runAction(anyApi.auth.assertFreshSessionServer, {})) as
+    | {
+        error?: {
+          message?: string;
+        };
+        ok?: false;
+      }
+    | {
+        ok: true;
+      };
+
+  if (!freshSessionResult || freshSessionResult.ok !== true) {
+    throwConvexError('FORBIDDEN', 'Recent step-up authentication is required');
   }
 
   return user;
@@ -366,6 +396,11 @@ export type CurrentUserProfile = {
   requiresEmailVerification: boolean;
   createdAt: number;
   updatedAt: number;
+  mfaEnabled: boolean;
+  mfaRequired: boolean;
+  requiresMfaSetup: boolean;
+  recentStepUpAt: number | null;
+  recentStepUpValidUntil: number | null;
   currentOrganization: {
     id: string;
     name: string;
@@ -377,6 +412,52 @@ export type CurrentUserProfile = {
     role: string;
   }>;
 };
+
+async function countPasskeysForUser(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  authUserId: string,
+) {
+  const rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'passkey',
+    where: [
+      {
+        field: 'userId',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+
+  if (
+    !rawResult ||
+    typeof rawResult !== 'object' ||
+    !('page' in rawResult) ||
+    !Array.isArray(rawResult.page)
+  ) {
+    return 0;
+  }
+
+  return rawResult.page.length;
+}
+
+async function resolveUserAuthAssuranceState(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  user: Pick<CurrentUser, 'authUser' | 'authSession' | 'authUserId'>,
+): Promise<AuthAssuranceState> {
+  const passkeyCount =
+    user.authUser.twoFactorEnabled === true ? 0 : await countPasskeysForUser(ctx, user.authUserId);
+
+  return buildAuthAssuranceState({
+    authUser: user.authUser,
+    authSession: user.authSession,
+    mfaEnabled: user.authUser.twoFactorEnabled === true || passkeyCount > 0,
+  });
+}
 
 async function resolveOrganizationsForUser(
   ctx: QueryCtx | MutationCtx,
@@ -424,13 +505,25 @@ export async function buildCurrentUserProfile(
   ctx: QueryCtx | MutationCtx,
   user: CurrentUser,
 ): Promise<CurrentUserProfile> {
-  const role = normalizeUserRole(user.authUser.role);
+  const role = normalizeUserRole(user.authUser.role ?? undefined);
   const createdAt = toMillis(user.authUser.createdAt);
   const emailVerified = user.authUser.emailVerified ?? false;
-  const organizations = await resolveOrganizationsForUser(ctx, user.authUserId);
+  const [organizations, passkeyCount] = await Promise.all([
+    resolveOrganizationsForUser(ctx, user.authUserId),
+    countPasskeysForUser(ctx, user.authUserId),
+  ]);
   const currentOrganization = user.activeOrganizationId
     ? (organizations.find((organization) => organization.id === user.activeOrganizationId) ?? null)
     : null;
+  const mfaEnabled = user.authUser.twoFactorEnabled === true || passkeyCount > 0;
+  const authPolicy = evaluateAuthPolicy({
+    assurance: buildAuthAssuranceState({
+      authUser: user.authUser,
+      authSession: user.authSession,
+      mfaEnabled,
+    }),
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  });
 
   return {
     id: user.authUserId,
@@ -447,6 +540,11 @@ export async function buildCurrentUserProfile(
     }),
     createdAt,
     updatedAt: toMillis(user.authUser.updatedAt),
+    mfaEnabled,
+    mfaRequired: true,
+    requiresMfaSetup: authPolicy.requiresMfaSetup,
+    recentStepUpAt: authPolicy.stepUp.verifiedAt,
+    recentStepUpValidUntil: authPolicy.stepUp.validUntil,
     currentOrganization,
     organizations,
   };

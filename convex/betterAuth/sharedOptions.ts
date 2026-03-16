@@ -1,4 +1,5 @@
 import { scim } from '@better-auth/scim';
+import { passkey } from '@better-auth/passkey';
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
@@ -22,6 +23,7 @@ import {
   userRole,
 } from '../../src/lib/shared/better-auth-access';
 import authConfig from '../auth.config';
+import { createFreshSessionPlugin } from './freshSessionPlugin';
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
@@ -106,6 +108,15 @@ export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 
+function getPasskeyOptions() {
+  const siteUrl = new URL(process.env.BETTER_AUTH_URL ?? 'http://127.0.0.1:3000');
+
+  return {
+    rpID: siteUrl.hostname,
+    rpName: process.env.APP_NAME?.trim() || 'TanStack Start Template',
+  };
+}
+
 function shouldDisableAuthRateLimit() {
   const envValue = process.env.BETTER_AUTH_DISABLE_RATE_LIMIT?.trim().toLowerCase();
   if (envValue === 'true') {
@@ -149,10 +160,10 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       window: 60,
       max: 300,
     },
-    '/convex/token': {
-      window: 60,
-      max: 300,
-    },
+    // This internal token refresh endpoint can be hit concurrently by the app shell,
+    // Convex auth refresh, and tab reloads. Database-backed rate limiting here causes
+    // avoidable optimistic concurrency conflicts in Convex and can disrupt auth flows.
+    '/convex/token': false,
     '/admin/impersonate-user': {
       window: 15 * 60,
       max: 10,
@@ -487,10 +498,10 @@ export function createSharedBetterAuthOptions(
           input: false,
         },
       },
-      // Prefer immediate session revalidation so admin revokes and impersonation changes
-      // take effect without a client-side cache window.
       cookieCache: {
-        enabled: false,
+        enabled: true,
+        maxAge: 5 * 60,
+        version: (session) => `${session.id}:${session.updatedAt}:${session.expiresAt}`,
       },
     },
     user: {
@@ -557,6 +568,8 @@ export function createSharedBetterAuthOptions(
       twoFactor({
         issuer: 'TanStack Start Template',
       }),
+      passkey(getPasskeyOptions()),
+      createFreshSessionPlugin(),
       convex({
         authConfig,
         jwks: process.env.JWKS,

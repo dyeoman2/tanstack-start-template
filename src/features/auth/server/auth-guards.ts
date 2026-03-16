@@ -2,6 +2,8 @@ import { api } from '@convex/_generated/api';
 import { redirect } from '@tanstack/react-router';
 import { getRequest } from '@tanstack/react-start/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-role';
+import { hasFreshBetterAuthSessionForCurrentRequest } from '~/lib/server/better-auth/fresh-session.server';
+import { type StepUpRequirement, STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import type { UserRole } from '../types';
@@ -14,6 +16,11 @@ export interface AuthenticatedUser {
   isSiteAdmin: boolean;
   emailVerified: boolean;
   requiresEmailVerification: boolean;
+  mfaEnabled: boolean;
+  mfaRequired: boolean;
+  requiresMfaSetup: boolean;
+  recentStepUpAt: number | null;
+  recentStepUpValidUntil: number | null;
   name?: string;
 }
 
@@ -78,6 +85,11 @@ function mapProfileToAuthenticatedUser(
     isSiteAdmin: deriveIsSiteAdmin(role),
     emailVerified: profile?.emailVerified ?? false,
     requiresEmailVerification: profile?.requiresEmailVerification ?? false,
+    mfaEnabled: profile?.mfaEnabled ?? false,
+    mfaRequired: profile?.mfaRequired ?? true,
+    requiresMfaSetup: profile?.requiresMfaSetup ?? true,
+    recentStepUpAt: profile?.recentStepUpAt ?? null,
+    recentStepUpValidUntil: profile?.recentStepUpValidUntil ?? null,
     name: typeof profile?.name === 'string' ? profile.name : undefined,
   };
 }
@@ -118,6 +130,25 @@ export async function requireAdmin(): Promise<AuthResult> {
   const result = await requireAuth();
   if (!result.user.isSiteAdmin) {
     throw redirect({ to: '/login' });
+  }
+
+  return result;
+}
+
+export async function requireRecentStepUp(
+  requirement: StepUpRequirement = STEP_UP_REQUIREMENTS.organizationAdmin,
+): Promise<AuthResult> {
+  const result = await requireAuth();
+  const isFresh = await hasFreshBetterAuthSessionForCurrentRequest().catch(() => false);
+
+  if (!isFresh) {
+    throw redirect({
+      to: '/app/profile',
+      search: {
+        requirement,
+        security: 'step-up-required',
+      },
+    });
   }
 
   return result;

@@ -205,7 +205,13 @@ describe('OrganizationSettingsManagement', () => {
     expect(screen.getByRole('button', { name: /leave organization/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /delete organization/i })).toBeInTheDocument();
 
-    await user.click(screen.getAllByRole('button', { name: /edit profile/i })[0]!);
+    const [editProfileButton] = screen.getAllByRole('button', { name: /edit profile/i });
+    expect(editProfileButton).toBeDefined();
+    if (!editProfileButton) {
+      throw new Error('Expected edit profile button');
+    }
+
+    await user.click(editProfileButton);
 
     const nameInput = await screen.findByLabelText('Name');
     await user.clear(nameInput);
@@ -229,8 +235,6 @@ describe('OrganizationSettingsManagement', () => {
   });
 
   it('does not show leave organization for a site admin who is not a member', async () => {
-    const user = userEvent.setup();
-
     const settingsResponse = {
       organization: {
         id: 'org-1',
@@ -273,8 +277,6 @@ describe('OrganizationSettingsManagement', () => {
   });
 
   it('hides delete for organization admins while keeping management actions', async () => {
-    const user = userEvent.setup();
-
     const settingsResponse = {
       organization: {
         id: 'org-1',

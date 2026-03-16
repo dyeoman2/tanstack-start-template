@@ -26,6 +26,8 @@ import {
 } from './lib/chatAttachments';
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
+import { scanDocumentBlob } from '../src/lib/server/document-security.server';
+import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -735,6 +737,56 @@ export const createChatAttachmentFromUpload = action({
     });
 
     try {
+      const scanResult = await scanDocumentBlob({
+        blob,
+        fileName: validatedAttachment.normalizedName,
+        mimeType: validatedAttachment.mimeType,
+      });
+
+      await ctx.runMutation(internal.security.recordDocumentScanEventInternal, {
+        attachmentId,
+        details: scanResult.details ?? null,
+        fileName: validatedAttachment.normalizedName,
+        mimeType: validatedAttachment.mimeType,
+        organizationId,
+        requestedByUserId: userId,
+        resultStatus: scanResult.status,
+        scannedAt: scanResult.scannedAt,
+        scannerEngine: scanResult.engine,
+      });
+
+      if (scanResult.status !== 'clean') {
+        const quarantineUntil =
+          now + getRetentionPolicyConfig().quarantineRetentionDays * 24 * 60 * 60 * 1000;
+        await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+          attachmentId,
+          patch: {
+            errorMessage: scanResult.details ?? 'Attachment quarantined during local scan.',
+            purgeEligibleAt: quarantineUntil,
+            status: 'quarantined',
+            updatedAt: Date.now(),
+          },
+        });
+        await ctx.runMutation(internal.audit.insertAuditLog, {
+          eventType: 'chat_attachment_quarantined',
+          userId,
+          actorUserId: userId,
+          organizationId,
+          sessionId,
+          outcome: 'failure',
+          severity: 'warning',
+          resourceType: 'chat_attachment',
+          resourceId: attachmentId,
+          resourceLabel: validatedAttachment.normalizedName,
+          sourceSurface: 'chat.attachment_scan',
+          metadata: JSON.stringify({
+            attachmentId,
+            reason: scanResult.details ?? 'signature_mismatch',
+          }),
+        });
+        throw new ConvexError(scanResult.details ?? 'Attachment quarantined during local scan.');
+      }
+
       await ctx.runMutation(internal.audit.insertAuditLog, {
         eventType: 'chat_attachment_scan_passed',
         userId,
@@ -811,7 +863,7 @@ export const createChatAttachmentFromUpload = action({
           sourceSurface: 'chat.attachment_preview',
           metadata: JSON.stringify({
             attachmentId,
-            expiresIn: 'provider_managed',
+            expiresInMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
             purpose: 'image_preview',
           }),
         });

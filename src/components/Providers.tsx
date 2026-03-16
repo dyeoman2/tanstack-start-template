@@ -3,7 +3,6 @@ import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { AuthQueryProvider } from '@daveyplate/better-auth-tanstack';
 import { AuthUIProviderTanstack } from '@daveyplate/better-auth-ui/tanstack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useRouter } from '@tanstack/react-router';
 import { useAction, useConvexAuth } from 'convex/react';
 import {
   createContext,
@@ -155,10 +154,13 @@ function AuthProvider({ children }: AuthProviderProps) {
 }
 
 function AuthUiProvider({ children }: { children: ReactNode }) {
-  const router = useRouter();
   const [queryClient] = useState(() => new QueryClient());
 
-  const navigateWithRouter = (href: string, replace = false) => {
+  const navigateWithBrowser = (href: string, replace = false) => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     if (/^https?:\/\//.test(href)) {
       if (replace) {
         window.location.replace(href);
@@ -169,10 +171,12 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
     }
 
     if (replace) {
-      router.history.replace(href);
+      window.history.replaceState(window.history.state, '', href);
     } else {
-      router.history.push(href);
+      window.history.pushState(window.history.state, '', href);
     }
+
+    window.dispatchEvent(new PopStateEvent('popstate'));
   };
 
   const AuthLink = ({
@@ -198,7 +202,7 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
       }
 
       event.preventDefault();
-      navigateWithRouter(href);
+      navigateWithBrowser(href);
     };
 
     return (
@@ -229,16 +233,20 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
           baseURL={typeof window === 'undefined' ? '' : window.location.origin}
           Link={AuthLink}
           credentials={{ forgotPassword: true }}
-          navigate={(href) => navigateWithRouter(href)}
+          navigate={(href) => navigateWithBrowser(href)}
           onSessionChange={async () => {
-            await router.invalidate();
+            if (typeof window !== 'undefined') {
+              window.location.reload();
+            }
           }}
           organization={{
             basePath: '/app/organizations',
             pathMode: 'slug',
             personalPath: '/app/profile',
           }}
-          replace={(href) => navigateWithRouter(href, true)}
+          passkey
+          replace={(href) => navigateWithBrowser(href, true)}
+          twoFactor={['totp']}
           viewPaths={authUiViewPaths}
         >
           {children}

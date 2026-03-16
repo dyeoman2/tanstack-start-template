@@ -55,6 +55,25 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
   });
 
+  it('configures native passkey support on the server plugin list', () => {
+    const options = createOptions();
+    const pluginIds = (options.plugins ?? [])
+      .map((plugin) => ('id' in plugin ? plugin.id : null))
+      .filter((pluginId): pluginId is string => typeof pluginId === 'string');
+
+    expect(pluginIds).toContain('passkey');
+    expect(pluginIds).toContain('two-factor');
+    expect(pluginIds).toContain('fresh-session');
+  });
+
+  it('enables Better Auth cookie cache versioning for normal session reads', () => {
+    const options = createOptions();
+
+    expect(options.session?.cookieCache?.enabled).toBe(true);
+    expect(options.session?.cookieCache?.maxAge).toBe(5 * 60);
+    expect(options.session?.cookieCache?.version).toBeTypeOf('function');
+  });
+
   it('calls the explicit password-auth-blocked callback before throwing', async () => {
     const onPasswordAuthBlocked = vi.fn(async () => {});
     const options = createSharedBetterAuthOptions({
@@ -201,5 +220,27 @@ describe('createSharedBetterAuthOptions', () => {
       sessionUserId: undefined,
       status: 401,
     });
+  });
+
+  it('does not add a custom session verification field for passkey authentication', async () => {
+    const options = createOptions();
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        returned: new Response('{}', { status: 200 }),
+        session: {
+          session: {
+            token: 'session_token',
+          },
+        },
+      },
+      path: '/passkey/verify-authentication',
+    } as never);
+
+    expect(updateSession).not.toHaveBeenCalled();
   });
 });

@@ -166,6 +166,9 @@ export default defineSchema({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    auditExportRequiresStepUp: v.boolean(),
+    attachmentSharingAllowed: v.boolean(),
+    dataRetentionDays: v.number(),
     enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
     enterpriseProviderKey: v.union(
       v.literal('google-workspace'),
@@ -177,6 +180,8 @@ export default defineSchema({
     enterpriseEnabledAt: v.union(v.number(), v.null()),
     enterpriseEnforcedAt: v.union(v.number(), v.null()),
     allowBreakGlassPasswordLogin: v.boolean(),
+    temporaryLinkTtlMinutes: v.number(),
+    webSearchAllowed: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -335,7 +340,8 @@ export default defineSchema({
       'createdAt',
     ])
     .index('by_userId_and_createdAt', ['userId', 'createdAt'])
-    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt']),
+    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
+    .index('by_purgeEligibleAt', ['purgeEligibleAt']),
 
   chatAttachmentUploadTokens: defineTable({
     token: v.string(),
@@ -391,4 +397,58 @@ export default defineSchema({
     .index('by_modelId', ['modelId'])
     .index('by_isActive', ['isActive'])
     .index('by_refreshedAt', ['refreshedAt']),
+
+  userSecurityPosture: defineTable({
+    authUserId: v.string(),
+    mfaEnabled: v.boolean(),
+    passkeyCount: v.number(),
+    recentStepUpAt: v.union(v.number(), v.null()),
+    recentStepUpValidUntil: v.union(v.number(), v.null()),
+    updatedAt: v.number(),
+  }).index('by_auth_user_id', ['authUserId']),
+
+  documentScanEvents: defineTable({
+    attachmentId: v.optional(v.id('chatAttachments')),
+    fileName: v.string(),
+    mimeType: v.string(),
+    organizationId: v.string(),
+    requestedByUserId: v.string(),
+    resultStatus: v.union(v.literal('clean'), v.literal('quarantined')),
+    details: v.union(v.string(), v.null()),
+    scannerEngine: v.string(),
+    scannedAt: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_attachment_id', ['attachmentId'])
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_created_at', ['createdAt']),
+
+  evidenceReports: defineTable({
+    organizationId: v.optional(v.string()),
+    generatedByUserId: v.string(),
+    reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+    contentJson: v.string(),
+    createdAt: v.number(),
+  }).index('by_organization_id_and_created_at', ['organizationId', 'createdAt']),
+
+  retentionJobs: defineTable({
+    jobKind: v.union(
+      v.literal('attachment_purge'),
+      v.literal('quarantine_cleanup'),
+      v.literal('audit_export_cleanup'),
+    ),
+    status: v.union(v.literal('success'), v.literal('failure')),
+    details: v.optional(v.string()),
+    processedCount: v.number(),
+    createdAt: v.number(),
+  })
+    .index('by_job_kind_and_created_at', ['jobKind', 'createdAt'])
+    .index('by_created_at', ['createdAt']),
+
+  backupVerificationReports: defineTable({
+    status: v.union(v.literal('success'), v.literal('failure')),
+    summary: v.string(),
+    checkedAt: v.number(),
+    createdAt: v.number(),
+  }).index('by_checked_at', ['checkedAt']),
 });

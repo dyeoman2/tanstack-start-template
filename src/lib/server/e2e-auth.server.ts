@@ -45,6 +45,16 @@ export type EstablishedE2EAuthSession = {
   userId: string;
 };
 
+type EnsurePrincipalRoleResult =
+  | {
+      found: false;
+    }
+  | {
+      found: true;
+      role: E2EPrincipalType;
+      userId: string;
+    };
+
 async function readAuthError(response: Response): Promise<AuthRouteResponse> {
   try {
     return (await response.json()) as AuthRouteResponse;
@@ -138,7 +148,7 @@ export async function establishE2EAuthSession(
     }
   }
 
-  let roleResult;
+  let roleResult: EnsurePrincipalRoleResult;
   try {
     roleResult = await adminClient.action(internal.e2e.ensurePrincipalRole, {
       email: principal.email,

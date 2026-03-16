@@ -60,10 +60,15 @@ const organizationPoliciesSchema = z.object({
   verifiedDomainsOnly: z.boolean(),
   memberCap: z.number().int().positive().nullable(),
   mfaRequired: z.boolean(),
+  auditExportRequiresStepUp: z.boolean().default(true),
+  attachmentSharingAllowed: z.boolean().default(false),
+  dataRetentionDays: z.number().int().positive().default(30),
   enterpriseAuthMode: z.enum(['off', 'optional', 'required']),
   enterpriseProviderKey: z.enum(['google-workspace', 'entra', 'okta']).nullable(),
   enterpriseProtocol: z.enum(['oidc']).nullable(),
   allowBreakGlassPasswordLogin: z.boolean(),
+  temporaryLinkTtlMinutes: z.number().int().positive().default(15),
+  webSearchAllowed: z.boolean().default(false),
 });
 
 const organizationEnterpriseProviderSchema = z.object({

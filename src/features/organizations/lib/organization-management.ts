@@ -136,12 +136,17 @@ export type OrganizationPolicies = {
   verifiedDomainsOnly: boolean;
   memberCap: number | null;
   mfaRequired: boolean;
+  auditExportRequiresStepUp: boolean;
+  attachmentSharingAllowed: boolean;
+  dataRetentionDays: number;
   enterpriseAuthMode: OrganizationEnterpriseAuthMode;
   enterpriseProviderKey: OrganizationEnterpriseProviderKey | null;
   enterpriseProtocol: OrganizationEnterpriseAuthProtocol | null;
   enterpriseEnabledAt: number | null;
   enterpriseEnforcedAt: number | null;
   allowBreakGlassPasswordLogin: boolean;
+  temporaryLinkTtlMinutes: number;
+  webSearchAllowed: boolean;
 };
 
 export const ORGANIZATION_ENTERPRISE_PROVIDER_KEYS = ['google-workspace', 'entra', 'okta'] as const;

@@ -18,7 +18,8 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
-import { internal } from './_generated/api';
+import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
+import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import {
@@ -31,9 +32,9 @@ import {
 } from './_generated/server';
 import {
   checkOrganizationAccess,
-  getVerifiedCurrentUserFromActionOrThrow,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
+  requireStepUpFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
@@ -123,12 +124,17 @@ type OrganizationPolicies = {
   verifiedDomainsOnly: boolean;
   memberCap: number | null;
   mfaRequired: boolean;
+  auditExportRequiresStepUp: boolean;
+  attachmentSharingAllowed: boolean;
+  dataRetentionDays: number;
   enterpriseAuthMode: 'off' | 'optional' | 'required';
   enterpriseProviderKey: 'google-workspace' | 'entra' | 'okta' | null;
   enterpriseProtocol: 'oidc' | null;
   enterpriseEnabledAt: number | null;
   enterpriseEnforcedAt: number | null;
   allowBreakGlassPasswordLogin: boolean;
+  temporaryLinkTtlMinutes: number;
+  webSearchAllowed: boolean;
 };
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
@@ -238,14 +244,51 @@ const DEFAULT_ORGANIZATION_POLICIES: OrganizationPolicies = {
   invitePolicy: 'owners_admins',
   verifiedDomainsOnly: false,
   memberCap: null,
-  mfaRequired: false,
+  mfaRequired: true,
+  auditExportRequiresStepUp: true,
+  attachmentSharingAllowed: false,
+  dataRetentionDays: 30,
   enterpriseAuthMode: 'off',
   enterpriseProviderKey: null,
   enterpriseProtocol: null,
   enterpriseEnabledAt: null,
   enterpriseEnforcedAt: null,
   allowBreakGlassPasswordLogin: true,
+  temporaryLinkTtlMinutes: 15,
+  webSearchAllowed: false,
 };
+
+async function userHasPasskey(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  authUserId: string,
+): Promise<boolean> {
+  const rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'passkey',
+    where: [
+      {
+        field: 'userId',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+
+  if (
+    !rawResult ||
+    typeof rawResult !== 'object' ||
+    !('page' in rawResult) ||
+    !Array.isArray(rawResult.page)
+  ) {
+    return false;
+  }
+
+  return rawResult.page.length > 0;
+}
 
 const GOOGLE_WORKSPACE_PROVIDER_KEY = 'google-workspace' as const;
 
@@ -316,6 +359,11 @@ function toOrganizationPolicies(
       policy?.verifiedDomainsOnly ?? DEFAULT_ORGANIZATION_POLICIES.verifiedDomainsOnly,
     memberCap: policy?.memberCap ?? DEFAULT_ORGANIZATION_POLICIES.memberCap,
     mfaRequired: policy?.mfaRequired ?? DEFAULT_ORGANIZATION_POLICIES.mfaRequired,
+    auditExportRequiresStepUp:
+      policy?.auditExportRequiresStepUp ?? DEFAULT_ORGANIZATION_POLICIES.auditExportRequiresStepUp,
+    attachmentSharingAllowed:
+      policy?.attachmentSharingAllowed ?? DEFAULT_ORGANIZATION_POLICIES.attachmentSharingAllowed,
+    dataRetentionDays: policy?.dataRetentionDays ?? DEFAULT_ORGANIZATION_POLICIES.dataRetentionDays,
     enterpriseAuthMode:
       policy?.enterpriseAuthMode ?? DEFAULT_ORGANIZATION_POLICIES.enterpriseAuthMode,
     enterpriseProviderKey:
@@ -329,10 +377,13 @@ function toOrganizationPolicies(
     allowBreakGlassPasswordLogin:
       policy?.allowBreakGlassPasswordLogin ??
       DEFAULT_ORGANIZATION_POLICIES.allowBreakGlassPasswordLogin,
+    temporaryLinkTtlMinutes:
+      policy?.temporaryLinkTtlMinutes ?? DEFAULT_ORGANIZATION_POLICIES.temporaryLinkTtlMinutes,
+    webSearchAllowed: policy?.webSearchAllowed ?? DEFAULT_ORGANIZATION_POLICIES.webSearchAllowed,
   };
 }
 
-async function getOrganizationPolicies(
+export async function getOrganizationPolicies(
   ctx: QueryCtx | MutationCtx,
   organizationId: string,
 ): Promise<OrganizationPolicies> {
@@ -1646,6 +1697,9 @@ export const updateOrganizationPolicies = mutation({
     verifiedDomainsOnly: v.boolean(),
     memberCap: v.union(v.number(), v.null()),
     mfaRequired: v.boolean(),
+    auditExportRequiresStepUp: v.boolean(),
+    attachmentSharingAllowed: v.boolean(),
+    dataRetentionDays: v.number(),
     enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
     enterpriseProviderKey: v.union(
       v.literal('google-workspace'),
@@ -1655,6 +1709,8 @@ export const updateOrganizationPolicies = mutation({
     ),
     enterpriseProtocol: v.union(v.literal('oidc'), v.null()),
     allowBreakGlassPasswordLogin: v.boolean(),
+    temporaryLinkTtlMinutes: v.number(),
+    webSearchAllowed: v.boolean(),
   },
   returns: v.object({
     success: v.literal(true),
@@ -1663,6 +1719,9 @@ export const updateOrganizationPolicies = mutation({
       verifiedDomainsOnly: v.boolean(),
       memberCap: v.union(v.number(), v.null()),
       mfaRequired: v.boolean(),
+      auditExportRequiresStepUp: v.boolean(),
+      attachmentSharingAllowed: v.boolean(),
+      dataRetentionDays: v.number(),
       enterpriseAuthMode: v.union(v.literal('off'), v.literal('optional'), v.literal('required')),
       enterpriseProviderKey: v.union(
         v.literal('google-workspace'),
@@ -1674,6 +1733,8 @@ export const updateOrganizationPolicies = mutation({
       enterpriseEnabledAt: v.union(v.number(), v.null()),
       enterpriseEnforcedAt: v.union(v.number(), v.null()),
       allowBreakGlassPasswordLogin: v.boolean(),
+      temporaryLinkTtlMinutes: v.number(),
+      webSearchAllowed: v.boolean(),
     }),
   }),
   handler: async (ctx, args) => {
@@ -1688,6 +1749,14 @@ export const updateOrganizationPolicies = mutation({
 
     if (args.memberCap !== null && args.memberCap < 1) {
       throwConvexError('VALIDATION', 'Member cap must be at least 1');
+    }
+
+    if (args.dataRetentionDays < 1) {
+      throwConvexError('VALIDATION', 'Data retention must be at least 1 day');
+    }
+
+    if (args.temporaryLinkTtlMinutes < 1) {
+      throwConvexError('VALIDATION', 'Temporary link TTL must be at least 1 minute');
     }
 
     if (
@@ -1734,6 +1803,9 @@ export const updateOrganizationPolicies = mutation({
       verifiedDomainsOnly: args.verifiedDomainsOnly,
       memberCap: args.memberCap,
       mfaRequired: args.mfaRequired,
+      auditExportRequiresStepUp: args.auditExportRequiresStepUp,
+      attachmentSharingAllowed: args.attachmentSharingAllowed,
+      dataRetentionDays: args.dataRetentionDays,
       enterpriseAuthMode: args.enterpriseAuthMode,
       enterpriseProviderKey: args.enterpriseProviderKey,
       enterpriseProtocol: args.enterpriseProtocol,
@@ -1744,6 +1816,8 @@ export const updateOrganizationPolicies = mutation({
           ? (currentPolicies.enterpriseEnforcedAt ?? now)
           : null,
       allowBreakGlassPasswordLogin: args.allowBreakGlassPasswordLogin,
+      temporaryLinkTtlMinutes: args.temporaryLinkTtlMinutes,
+      webSearchAllowed: args.webSearchAllowed,
     } satisfies OrganizationPolicies;
     const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
       (key) => currentPolicies[key] !== nextPolicies[key],
@@ -1980,11 +2054,13 @@ export const getOrganizationMemberJoinAccess = query({
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     const policies = await getOrganizationPolicies(ctx, args.organizationId);
     const authUser = (await fetchBetterAuthUsersByIds(ctx, [user.authUserId]))[0];
+    const hasPasskey =
+      authUser?.twoFactorEnabled === true ? false : await userHasPasskey(ctx, user.authUserId);
 
-    if (policies.mfaRequired && authUser?.twoFactorEnabled !== true) {
+    if (policies.mfaRequired && authUser?.twoFactorEnabled !== true && !hasPasskey) {
       return {
         allowed: false as const,
-        reason: 'Two-factor authentication is required to join this organization',
+        reason: 'Multi-factor authentication is required to join this organization',
       };
     }
 
@@ -3012,7 +3088,7 @@ export const exportOrganizationAuditCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const currentUser = await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.auditExport);
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
@@ -3144,7 +3220,7 @@ export const exportOrganizationDirectoryCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const currentUser = await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.auditExport);
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';

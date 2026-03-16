@@ -11,6 +11,8 @@ const toProfileData = (profile: ProfileRecord) => ({
   emailVerified: profile.emailVerified as boolean | null,
 });
 
+export type ProfileData = ReturnType<typeof toProfileData>;
+
 // Hook to get user profile using Convex real-time query
 export function useProfile() {
   const profile = useQuery(api.users.getCurrentUserProfile);

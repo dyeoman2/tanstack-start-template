@@ -20,6 +20,8 @@ export type RouterAuthContext =
         name?: string;
         role: UserRole;
         isSiteAdmin: boolean;
+        mfaEnabled?: boolean;
+        requiresMfaSetup?: boolean;
       } | null;
     };
 

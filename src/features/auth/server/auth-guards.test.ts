@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getRequestMock = vi.fn();
 const fetchAuthQueryMock = vi.fn();
+const authHandlerMock = vi.fn();
 const redirectMock = vi.fn((options: unknown) => {
   return new Response(JSON.stringify(options), { status: 302 });
 });
@@ -24,12 +25,13 @@ vi.mock('@convex/_generated/api', () => ({
 
 vi.mock('./convex-better-auth-react-start', () => ({
   convexAuthReactStart: {
+    handler: (...args: unknown[]) => authHandlerMock(...args),
     fetchAuthQuery: (...args: unknown[]) => fetchAuthQueryMock(...args),
   },
 }));
 
 import { USER_ROLES } from '../types';
-import { requireAdmin, requireAuth } from './auth-guards';
+import { requireAdmin, requireAuth, requireRecentStepUp } from './auth-guards';
 
 describe('auth-guards', () => {
   beforeEach(() => {
@@ -43,6 +45,7 @@ describe('auth-guards', () => {
       },
     );
     getRequestMock.mockReturnValue(new Request('http://127.0.0.1:3000/app'));
+    authHandlerMock.mockResolvedValue(new Response('{}', { status: 200 }));
   });
 
   it('redirects to login when the profile is missing required session fields', async () => {
@@ -88,6 +91,25 @@ describe('auth-guards', () => {
       search: {
         email: 'user@example.com',
         redirectTo: '/app',
+      },
+    });
+  });
+
+  it('redirects when the Better Auth session is not fresh enough for a privileged action', async () => {
+    fetchAuthQueryMock.mockResolvedValue({
+      id: 'user_123',
+      email: 'user@example.com',
+      role: USER_ROLES.USER,
+      emailVerified: true,
+    });
+    authHandlerMock.mockResolvedValue(new Response('{}', { status: 403 }));
+
+    await expect(requireRecentStepUp()).rejects.toMatchObject({ status: 302 });
+    expect(redirectMock).toHaveBeenCalledWith({
+      to: '/app/profile',
+      search: {
+        requirement: 'organization_admin',
+        security: 'step-up-required',
       },
     });
   });

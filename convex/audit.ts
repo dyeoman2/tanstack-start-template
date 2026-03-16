@@ -422,7 +422,7 @@ export const getAuditLogs = query({
     }
 
     const currentUserId = assertUserId(authUser, 'Better Auth user missing id');
-    const isSiteAdmin = deriveIsSiteAdmin(normalizeUserRole(authUser.role));
+    const isSiteAdmin = deriveIsSiteAdmin(normalizeUserRole(authUser.role ?? undefined));
     const requestedUserId = normalizeOptionalString(args.userId);
     const requestedIdentifier = normalizeAuditIdentifier(args.identifier);
     const currentIdentifier = normalizeAuditIdentifier(

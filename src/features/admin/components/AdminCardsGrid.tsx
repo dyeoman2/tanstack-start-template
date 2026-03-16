@@ -54,6 +54,12 @@ export function AdminCardsGrid({ onTruncateClick, modelCatalogStatus }: AdminCar
       />
 
       <AdminCard
+        title="Security Posture"
+        description="Review MFA coverage, scanner health, retention jobs, and generate evidence exports"
+        href="/app/admin/security"
+      />
+
+      <AdminCard
         title="Truncate Data"
         description="Truncate data for testing"
         onClick={onTruncateClick}

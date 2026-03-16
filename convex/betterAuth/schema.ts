@@ -51,7 +51,8 @@ export const tables = {
     .index('expiresAt', ['expiresAt'])
     .index('expiresAt_userId', ['expiresAt', 'userId'])
     .index('token', ['token'])
-    .index('userId', ['userId']),
+    .index('userId', ['userId'])
+    .index('userId_expiresAt', ['userId', 'expiresAt']),
   account: defineTable({
     accountId: v.string(),
     providerId: v.string(),

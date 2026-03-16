@@ -165,17 +165,10 @@ export function OrganizationEnterpriseAuthManagement({
             const isPending = isSaving && pendingProviderKey === provider.key;
 
             return (
-              <button
+              <label
                 key={provider.key}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                disabled={isDisabled}
-                onClick={() =>
-                  void handleProviderChange(isPersisted ? null : provider.key, provider.key)
-                }
                 className={cn(
-                  'flex w-full flex-col items-start gap-4 rounded-xl border px-4 py-4 text-left transition-colors',
+                  'flex w-full cursor-pointer flex-col items-start gap-4 rounded-xl border px-4 py-4 text-left transition-colors',
                   'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
                   isSelected
                     ? 'border-primary bg-primary/5 shadow-sm'
@@ -184,6 +177,17 @@ export function OrganizationEnterpriseAuthManagement({
                     'cursor-not-allowed opacity-60 hover:border-border hover:bg-background',
                 )}
               >
+                <input
+                  type="radio"
+                  name="organization-identity-provider"
+                  className="sr-only"
+                  checked={isSelected}
+                  disabled={isDisabled}
+                  onClick={() =>
+                    void handleProviderChange(isPersisted ? null : provider.key, provider.key)
+                  }
+                  onChange={() => {}}
+                />
                 <span className="flex w-full items-start justify-between gap-3">
                   <span className="flex items-center gap-3">
                     <span className="flex size-9 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
@@ -211,7 +215,7 @@ export function OrganizationEnterpriseAuthManagement({
                     </Badge>
                   ) : null}
                 </span>
-              </button>
+              </label>
             );
           })}
         </div>

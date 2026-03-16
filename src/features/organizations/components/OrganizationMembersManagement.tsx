@@ -36,7 +36,6 @@ import type {
   OrganizationDirectoryRole,
   OrganizationDirectoryRow,
   OrganizationDirectorySearchParams,
-  OrganizationInvitePolicy,
 } from '~/features/organizations/lib/organization-management';
 import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
@@ -168,7 +167,6 @@ export function OrganizationMembersManagement({
   const capabilities: OrganizationCapabilities | undefined = directory?.capabilities;
   const canInvite = capabilities?.canInvite ?? false;
   const organizationName = directory?.organization.name ?? fallbackOrganizationName ?? 'Organization';
-  const policies = directory?.policies;
   const setInviteDialogOpen = (open: boolean) => {
     onInviteDialogOpenChange?.(open);
 

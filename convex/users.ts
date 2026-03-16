@@ -1,16 +1,18 @@
 import { ConvexError, v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { evaluateAuthPolicy } from '../src/lib/shared/auth-policy';
 import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
 import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
+import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
 import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import type { ActionCtx, MutationCtx } from './_generated/server';
+import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
 import {
   action,
   internalAction,
@@ -145,6 +147,38 @@ function toTimestampOrFallback(
 
   const parsed = new Date(value).getTime();
   return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+async function countPasskeysForAuthUser(
+  ctx: QueryCtx | MutationCtx,
+  authUserId: string,
+): Promise<number> {
+  const rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
+    model: 'passkey',
+    where: [
+      {
+        field: 'userId',
+        operator: 'eq',
+        value: authUserId,
+      },
+    ],
+    paginationOpts: {
+      cursor: null,
+      numItems: 1,
+      id: 0,
+    },
+  });
+
+  if (
+    !rawResult ||
+    typeof rawResult !== 'object' ||
+    !('page' in rawResult) ||
+    !Array.isArray(rawResult.page)
+  ) {
+    return 0;
+  }
+
+  return rawResult.page.length;
 }
 
 function buildPersistedOnboardingState(
@@ -1035,6 +1069,16 @@ export const getCurrentUserProfile = query({
       );
       const createdAt = toTimestampOrFallback(authUser.createdAt, 0);
       const emailVerified = authUser.emailVerified ?? false;
+      const passkeyCount = await countPasskeysForAuthUser(ctx, authUserId);
+      const mfaEnabled = authUser.twoFactorEnabled === true || passkeyCount > 0;
+      const authPolicy = evaluateAuthPolicy({
+        assurance: {
+          emailVerified,
+          mfaEnabled,
+          recentStepUpAt: null,
+        },
+        recentStepUpWindowMs: getRecentStepUpWindowMs(),
+      });
 
       return {
         id: authUserId,
@@ -1051,6 +1095,11 @@ export const getCurrentUserProfile = query({
         }),
         createdAt,
         updatedAt: toTimestampOrFallback(authUser.updatedAt, 0),
+        mfaEnabled,
+        mfaRequired: true,
+        requiresMfaSetup: authPolicy.requiresMfaSetup,
+        recentStepUpAt: authPolicy.stepUp.verifiedAt,
+        recentStepUpValidUntil: authPolicy.stepUp.validUntil,
         currentOrganization: null,
         organizations: [],
       };

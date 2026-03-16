@@ -3,6 +3,8 @@ import { pathToFileURL } from 'node:url';
 import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { logSecurityEvent } from '~/lib/server/observability.server';
+import { scanDocumentBlob } from '~/lib/server/document-security.server';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const WORKER_PATH = join(
@@ -93,6 +95,40 @@ export const Route = createFileRoute('/api/parse-pdf')({
           }
 
           const buffer = Buffer.from(await file.arrayBuffer());
+          const scanResult = await scanDocumentBlob({
+            blob: new Blob([buffer], { type: file.type || 'application/pdf' }),
+            fileName: file.name,
+            mimeType: file.type || 'application/pdf',
+          });
+
+          await convexAuthReactStart.fetchAuthMutation(api.security.recordDocumentScanEvent, {
+            details: scanResult.details ?? null,
+            fileName: file.name,
+            mimeType: file.type || 'application/pdf',
+            organizationId: currentProfile.currentOrganization?.id ?? 'unknown',
+            requestedByUserId: currentProfile.id,
+            resultStatus: scanResult.status,
+            scannedAt: scanResult.scannedAt,
+            scannerEngine: scanResult.engine,
+          });
+
+          if (scanResult.status !== 'clean') {
+            logSecurityEvent({
+              actorUserId: currentProfile.id,
+              data: {
+                fileName: file.name,
+                reason: scanResult.details ?? 'signature_mismatch',
+              },
+              event: 'pdf.parse.quarantined',
+              scope: 'scan',
+              status: 'warning',
+            });
+            return Response.json(
+              { error: scanResult.details ?? 'File quarantined during security scan' },
+              { status: 422 },
+            );
+          }
+
           const parser = new PDFParse({ data: buffer });
           const textResult = await parser.getText();
           const imageResult = await parser.getImage({ imageThreshold: 50 });

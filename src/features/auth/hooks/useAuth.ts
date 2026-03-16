@@ -1,6 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { useConvexAuth, useQuery } from 'convex/react';
 import { useMemo } from 'react';
+import type { AuthSessionData } from '~/features/auth/auth-client';
 import { useSession } from '~/features/auth/auth-client';
 import { deriveIsSiteAdmin } from '../lib/user-role';
 import type { UserRole } from '../types';
@@ -27,10 +28,17 @@ export interface AuthResult {
       name: string;
       role: string;
     } | null;
+    mfaEnabled?: boolean;
+    mfaRequired?: boolean;
+    requiresMfaSetup?: boolean;
+    recentStepUpAt?: number | null;
+    recentStepUpValidUntil?: number | null;
   } | null;
   isAuthenticated: boolean;
   isSiteAdmin: boolean;
   requiresEmailVerification: boolean;
+  requiresMfaSetup: boolean;
+  hasRecentStepUp: boolean;
   isImpersonating: boolean;
   impersonatedByUserId?: string;
   isPending: boolean;
@@ -56,10 +64,10 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
 
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
+  const sessionData = session?.session as AuthSessionData | undefined;
   const impersonatedByUserId =
-    typeof session?.session?.impersonatedBy === 'string' &&
-    session.session.impersonatedBy.length > 0
-      ? session.session.impersonatedBy
+    typeof sessionData?.impersonatedBy === 'string' && sessionData.impersonatedBy.length > 0
+      ? sessionData.impersonatedBy
       : undefined;
   const isImpersonating = impersonatedByUserId !== undefined;
 
@@ -78,6 +86,13 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   const isSiteAdmin = deriveIsSiteAdmin(role);
   const requiresEmailVerification =
     !!session?.user && (shouldFetchProfile ? (profile?.requiresEmailVerification ?? false) : false);
+  const requiresMfaSetup = !!session?.user && (shouldFetchProfile ? (profile?.requiresMfaSetup ?? false) : false);
+  const hasRecentStepUp =
+    !!session?.user &&
+    (shouldFetchProfile
+      ? typeof profile?.recentStepUpValidUntil === 'number' &&
+        profile.recentStepUpValidUntil > Date.now()
+      : false);
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -91,11 +106,20 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
             requiresEmailVerification,
             phoneNumber: shouldFetchProfile ? profile?.phoneNumber || null : null,
             currentOrganization: shouldFetchProfile ? (profile?.currentOrganization ?? null) : null,
+            mfaEnabled: shouldFetchProfile ? (profile?.mfaEnabled ?? false) : false,
+            mfaRequired: shouldFetchProfile ? (profile?.mfaRequired ?? true) : true,
+            requiresMfaSetup,
+            recentStepUpAt: shouldFetchProfile ? (profile?.recentStepUpAt ?? null) : null,
+            recentStepUpValidUntil: shouldFetchProfile
+              ? (profile?.recentStepUpValidUntil ?? null)
+              : null,
           }
         : null,
       isAuthenticated: canUseConvex,
       isSiteAdmin,
       requiresEmailVerification,
+      requiresMfaSetup,
+      hasRecentStepUp,
       isImpersonating,
       impersonatedByUserId,
       isPending,
@@ -106,7 +130,13 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       role,
       isSiteAdmin,
       requiresEmailVerification,
+      requiresMfaSetup,
+      hasRecentStepUp,
       profile?.currentOrganization,
+      profile?.mfaEnabled,
+      profile?.mfaRequired,
+      profile?.recentStepUpAt,
+      profile?.recentStepUpValidUntil,
       profile?.phoneNumber,
       canUseConvex,
       isImpersonating,

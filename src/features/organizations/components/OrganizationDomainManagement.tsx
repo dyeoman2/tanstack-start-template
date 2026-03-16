@@ -49,7 +49,6 @@ import {
   FieldLabel,
 } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
-import { Separator } from '~/components/ui/separator';
 import { useToast } from '~/components/ui/toast';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { getServerFunctionErrorMessage } from '~/features/organizations/lib/organization-session';

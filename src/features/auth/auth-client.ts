@@ -1,8 +1,15 @@
 import { convexClient } from '@convex-dev/better-auth/client/plugins';
+import { passkeyClient } from '@better-auth/passkey/client';
 import { createAuthHooks } from '@daveyplate/better-auth-tanstack';
-import { adminClient, organizationClient } from 'better-auth/client/plugins';
+import {
+  adminClient,
+  inferAdditionalFields,
+  organizationClient,
+  twoFactorClient,
+} from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 import { useSyncExternalStore } from 'react';
+import type { getOptions } from '../../../convex/betterAuth/options';
 import {
   adminAccessControl,
   adminRole,
@@ -16,6 +23,7 @@ import {
 export const authClient = createAuthClient({
   plugins: [
     convexClient(),
+    inferAdditionalFields<ReturnType<typeof getOptions>>(),
     adminClient({
       ac: adminAccessControl,
       roles: {
@@ -32,8 +40,14 @@ export const authClient = createAuthClient({
         owner: organizationOwnerRole,
       },
     }),
+    passkeyClient(),
+    twoFactorClient(),
   ],
 });
+
+export type AuthSession = typeof authClient.$Infer.Session;
+export type AuthSessionData = AuthSession['session'];
+export type AuthSessionUser = AuthSession['user'];
 
 export const authHooks = createAuthHooks(authClient);
 

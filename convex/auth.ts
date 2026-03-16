@@ -218,6 +218,12 @@ const betterAuthScimTokenResultValidator = v.object({
   scimToken: v.string(),
 });
 
+const betterAuthFreshSessionResultValidator = v.object({
+  sessionId: v.string(),
+  validUntil: v.number(),
+  verifiedAt: v.number(),
+});
+
 const scimLifecycleOperationValidator = v.union(
   v.literal('delete'),
   v.literal('patch'),
@@ -292,7 +298,15 @@ type BetterAuthOrganizationSummary = {
   slug?: string;
 };
 
-type BetterAuthApiSurface = {
+type BetterAuthFreshSessionApi = {
+  assertFreshSession(input: { headers: Headers }): Promise<{
+    sessionId: string;
+    validUntil: number;
+    verifiedAt: number;
+  }>;
+};
+
+type BetterAuthCoreApiSurface = {
   listUsers(input: { headers: Headers; query?: { limit?: number; offset?: number } }): Promise<{
     limit?: number;
     offset?: number;
@@ -441,6 +455,8 @@ type BetterAuthApiSurface = {
     providerId: string;
   }>;
 };
+
+type BetterAuthApiSurface = BetterAuthCoreApiSurface & BetterAuthFreshSessionApi;
 
 type BetterAuthActionContext = {
   auth: {
@@ -2342,6 +2358,11 @@ export const createAuth = (
   });
 };
 
+export type BetterAuthInstance = ReturnType<typeof createAuth>;
+export type BetterAuthSessionInfer = NonNullable<BetterAuthInstance['$Infer']['Session']>;
+export type BetterAuthSessionUser = BetterAuthSessionInfer['user'];
+export type BetterAuthSessionData = BetterAuthSessionInfer['session'];
+
 type RotatedJwk = {
   alg?: string;
   createdAt?: Date | number | string;
@@ -2438,6 +2459,18 @@ export const enforcePdfParseRateLimit = action({
     }
 
     return result;
+  },
+});
+
+export const assertFreshSessionServer = action({
+  args: {},
+  returns: betterAuthActionResultValidator(betterAuthFreshSessionResultValidator),
+  handler: async (ctx) => {
+    return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      return await auth.api.assertFreshSession({
+        headers,
+      });
+    });
   },
 });
 

@@ -1,7 +1,7 @@
 import { Loader2 } from 'lucide-react';
-import { Checkbox } from '~/components/ui/checkbox';
 import { Button } from '~/components/ui/button';
 import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Checkbox } from '~/components/ui/checkbox';
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import {
@@ -45,7 +45,8 @@ export function OrganizationPoliciesCard({
       <CardHeader>
         <CardTitle>Access policies</CardTitle>
         <CardDescription>
-          Control who can invite, whether invites must use verified domains, member caps, and MFA requirements for new joins.
+          Control who can invite, whether invites must use verified domains, member caps, and MFA
+          requirements for new joins.
         </CardDescription>
       </CardHeader>
       <div className="space-y-4 px-6 pb-6">
@@ -108,7 +109,8 @@ export function OrganizationPoliciesCard({
           <div className="space-y-1">
             <FieldLabel>Require MFA for new joins</FieldLabel>
             <p className="text-sm text-muted-foreground">
-              Users without Better Auth two-factor enabled will be blocked from accepting invitations.
+              Users without an authenticator app or passkey will be blocked from accepting
+              invitations.
             </p>
           </div>
         </Field>
@@ -116,11 +118,7 @@ export function OrganizationPoliciesCard({
         {policyError ? <FieldError>{policyError}</FieldError> : null}
 
         <div className="flex justify-end">
-          <Button
-            type="button"
-            onClick={onSave}
-            disabled={isSavingPolicies || !canManagePolicies}
-          >
+          <Button type="button" onClick={onSave} disabled={isSavingPolicies || !canManagePolicies}>
             {isSavingPolicies ? (
               <>
                 <Loader2 className="size-4 animate-spin" />

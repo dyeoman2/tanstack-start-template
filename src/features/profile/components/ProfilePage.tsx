@@ -1,4 +1,9 @@
-import { AccountSettingsCards, SecuritySettingsCards } from '@daveyplate/better-auth-ui';
+import {
+  ChangePasswordCard,
+  PasskeysCard,
+  SessionsCard,
+  TwoFactorCard,
+} from '@daveyplate/better-auth-ui';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
@@ -6,6 +11,7 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Skeleton } from '~/components/ui/skeleton';
 import { signOut } from '~/features/auth/auth-client';
+import { ProfileDetailsCard } from '~/features/profile/components/ProfileDetailsCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
 import { USER_ROLES } from '../../auth/types';
 
@@ -89,28 +95,35 @@ export function ProfilePage() {
       />
 
       <div className="space-y-6">
-        <section className="space-y-4">
-          <AccountSettingsCards
-            classNames={{
-              cards: 'gap-4',
-              card: profileSettingsCardClassNames,
-            }}
-          />
+        {profile.requiresMfaSetup ? (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardHeader>
+              <CardTitle>Finish multi-factor setup</CardTitle>
+              <CardDescription>
+                This starter now enforces regulated access controls. Enable an authenticator app or
+                passkey before using the rest of the application.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : null}
+
+        <section>
+          <ProfileDetailsCard profile={profile} />
         </section>
 
         <section className="space-y-4">
           <div className="space-y-1">
             <h2 className="text-base font-semibold text-foreground">Security</h2>
             <p className="text-sm text-muted-foreground">
-              Review active sessions and manage credential-based security settings.
+              Manage your password, authenticator app, passkeys, and active sessions.
             </p>
           </div>
-          <SecuritySettingsCards
-            classNames={{
-              cards: 'gap-4',
-              card: profileSettingsCardClassNames,
-            }}
-          />
+          <div className="flex w-full flex-col gap-4">
+            <ChangePasswordCard classNames={profilePasswordCardClassNames} />
+            <TwoFactorCard classNames={profileSettingsCardClassNames} />
+            <PasskeysCard classNames={profileSettingsCardClassNames} />
+            <SessionsCard classNames={profileSettingsCardClassNames} />
+          </div>
         </section>
 
         <Card>
@@ -144,6 +157,20 @@ export function ProfilePage() {
                   {profile.emailVerified ? 'Verified' : 'Not verified'}
                 </dd>
               </div>
+              <div className="space-y-1">
+                <dt className="text-sm font-medium text-foreground">MFA</dt>
+                <dd className="text-sm text-muted-foreground">
+                  {profile.mfaEnabled ? 'Enabled' : 'Setup required'}
+                </dd>
+              </div>
+              <div className="space-y-1">
+                <dt className="text-sm font-medium text-foreground">Recent step-up</dt>
+                <dd className="text-sm text-muted-foreground">
+                  {profile.recentStepUpValidUntil
+                    ? `Valid until ${new Date(profile.recentStepUpValidUntil).toLocaleString()}`
+                    : 'Expired'}
+                </dd>
+              </div>
             </dl>
           </CardContent>
         </Card>
@@ -165,19 +192,32 @@ function ProfileCardSkeleton() {
 }
 
 const profileSettingsCardClassNames = {
-  base: 'overflow-hidden rounded-xl border border-border shadow-sm',
-  header: 'px-6 pt-6 pb-4',
-  title: 'text-base font-semibold',
-  description: 'mt-2 text-sm leading-6 text-muted-foreground',
-  content: 'px-6 pb-6',
-  footer: 'border-t border-border bg-muted/20 px-6 pt-6',
-  instructions: 'text-sm leading-6 text-muted-foreground',
+  base: 'w-full gap-0 overflow-hidden rounded-xl border border-border shadow-sm',
+  header: 'border-b',
+  title: 'font-semibold leading-none text-base md:text-base',
+  description: 'text-sm text-muted-foreground',
+  content: 'px-6 py-6',
+  footer: 'border-t border-border bg-muted/20 px-6 py-4',
+  instructions: 'text-sm leading-6 text-muted-foreground text-left',
   input: 'h-10 rounded-md border-border bg-background shadow-none',
-  label: 'text-sm font-medium',
+  label: 'text-sm font-medium text-foreground',
   primaryButton: 'h-9 px-4',
   secondaryButton: 'h-9 px-4',
   outlineButton: 'h-9 px-4',
   destructiveButton: 'h-9 px-4',
   button: 'h-9',
-  cell: 'rounded-md border border-border bg-background px-4 py-3',
+  cell: 'rounded-lg border border-border bg-background px-4 py-3',
+  skeleton: 'bg-muted/70',
+};
+
+const profilePasswordCardClassNames = {
+  ...profileSettingsCardClassNames,
+  header: 'border-b',
+  title: 'font-semibold leading-none text-base md:text-base',
+  description: 'text-sm text-muted-foreground',
+  content: 'py-6',
+  footer:
+    'flex-col items-stretch gap-4 border-t border-border bg-background px-6 py-4 sm:flex-row sm:items-center sm:justify-between',
+  instructions: 'text-sm leading-6 text-muted-foreground text-left sm:flex-1',
+  button: 'h-9 sm:ms-0',
 };

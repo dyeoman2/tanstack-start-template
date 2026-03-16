@@ -45,6 +45,7 @@ import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
+import type * as security from "../security.js";
 import type * as users from "../users.js";
 
 import type {
@@ -91,6 +92,7 @@ declare const fullApi: ApiFromModules<{
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
+  security: typeof security;
   users: typeof users;
 }>;
 

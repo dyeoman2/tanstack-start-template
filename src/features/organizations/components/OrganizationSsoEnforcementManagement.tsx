@@ -200,15 +200,10 @@ export function OrganizationSsoEnforcementManagement({
             const isPending = pendingMode === option.value;
 
             return (
-              <button
+              <label
                 key={option.value}
-                type="button"
-                role="radio"
-                aria-checked={isSelected}
-                disabled={isDisabled}
-                onClick={() => void handleModeChange(option.value)}
                 className={cn(
-                  'flex w-full flex-col items-start gap-4 rounded-xl border px-4 py-4 text-left transition-colors',
+                  'flex w-full cursor-pointer flex-col items-start gap-4 rounded-xl border px-4 py-4 text-left transition-colors',
                   'focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none',
                   isSelected
                     ? 'border-primary bg-primary/5 shadow-sm'
@@ -217,6 +212,14 @@ export function OrganizationSsoEnforcementManagement({
                     'cursor-not-allowed opacity-60 hover:border-border hover:bg-background',
                 )}
               >
+                <input
+                  type="radio"
+                  name="organization-sso-enforcement"
+                  className="sr-only"
+                  checked={isSelected}
+                  disabled={isDisabled}
+                  onChange={() => void handleModeChange(option.value)}
+                />
                 <span className="flex w-full items-start justify-between gap-3">
                   <span className="block text-sm font-semibold text-foreground">
                     {option.label}
@@ -233,7 +236,7 @@ export function OrganizationSsoEnforcementManagement({
                   )}
                 </span>
                 <span className="text-sm text-muted-foreground">{option.description}</span>
-              </button>
+              </label>
             );
           })}
         </div>

@@ -75,6 +75,8 @@ const getCurrentUserServerFn = createServerFn({ method: 'GET' }).handler(
           name: user.name,
           role: user.role,
           isSiteAdmin: user.isSiteAdmin,
+          mfaEnabled: user.mfaEnabled,
+          requiresMfaSetup: user.requiresMfaSetup,
         },
       };
     } catch (error) {

@@ -1,15 +1,15 @@
-import { AuthView } from '@daveyplate/better-auth-ui';
 import { api } from '@convex/_generated/api';
-import { createFileRoute, Navigate, useRouter } from '@tanstack/react-router';
+import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { Loader2 } from 'lucide-react';
-import { type FormEvent, useEffect, useEffectEvent, useMemo, useState } from 'react';
+import { Fingerprint, Loader2 } from 'lucide-react';
+import { type FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Button } from '~/components/ui/button';
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
-import { AuthEmailPrefill } from '~/features/auth/components/AuthEmailPrefill';
+import { Separator } from '~/components/ui/separator';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
@@ -43,6 +43,12 @@ const REDIRECT_TARGETS = [
 
 type RedirectTarget = (typeof REDIRECT_TARGETS)[number];
 
+const emailSchema = z
+  .string()
+  .trim()
+  .min(1, 'Email is required')
+  .email('Please enter a valid email address');
+
 function resolveRedirectTarget(value?: string | null): RedirectTarget {
   if (!value) {
     return '/app';
@@ -54,6 +60,64 @@ function resolveRedirectTarget(value?: string | null): RedirectTarget {
   return (match ?? '/app') as RedirectTarget;
 }
 
+function normalizeEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function getErrorMessage(error: unknown) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'error' in error &&
+    typeof error.error === 'object' &&
+    error.error !== null &&
+    'message' in error.error &&
+    typeof error.error.message === 'string'
+  ) {
+    return error.error.message;
+  }
+
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return 'Unable to sign in. Please try again.';
+}
+
+function getPasswordSignInError(message: string) {
+  const normalizedMessage = message.toLowerCase();
+
+  if (
+    normalizedMessage.includes('requires enterprise sign-in') ||
+    normalizedMessage.includes('password sign-in is disabled')
+  ) {
+    return 'Your organization requires Google Workspace sign-in. Use Continue with Google.';
+  }
+
+  return message;
+}
+
+function getGoogleSignInError(
+  resolution:
+    | {
+        enterpriseAuthMode: 'off' | 'optional' | 'required';
+        organizationName: string;
+        providerStatus: string;
+      }
+    | null
+    | undefined,
+) {
+  if (!resolution) {
+    return 'No Google Workspace sign-in is configured for this account.';
+  }
+
+  if (resolution.providerStatus !== 'active') {
+    return 'Google Workspace sign-in is not available yet. Ask your organization owner to finish setup.';
+  }
+
+  return null;
+}
+
 function LoginPage() {
   const { email, redirectTo, reset, verified } = Route.useSearch();
   const { isAuthenticated, isPending } = useAuth({ fetchRole: false });
@@ -62,27 +126,20 @@ function LoginPage() {
   const [showResetSuccess] = useState(reset === 'success');
   const [showVerifySuccess] = useState(verified === 'success');
   const [emailInput, setEmailInput] = useState(email ?? '');
-  const [lookupEmail, setLookupEmail] = useState(email?.trim().toLowerCase() ?? '');
-  const [isStartingEnterpriseAuth, setIsStartingEnterpriseAuth] = useState(false);
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
+  const [isSubmittingGoogle, setIsSubmittingGoogle] = useState(false);
+  const [isSubmittingPasskey, setIsSubmittingPasskey] = useState(false);
+  const emailId = useId();
+  const passwordId = useId();
+  const normalizedEmail = normalizeEmail(emailInput);
+  const parsedEmail = emailSchema.safeParse(normalizedEmail);
+  const emailForLookup = parsedEmail.success ? normalizedEmail : '';
   const enterpriseResolution = useQuery(
     api.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
-    lookupEmail ? { email: lookupEmail } : 'skip',
+    emailForLookup ? { email: emailForLookup } : 'skip',
   );
-  const isLookupPending = lookupEmail.length > 0 && enterpriseResolution === undefined;
-  const enterpriseRequired =
-    enterpriseResolution !== null &&
-    enterpriseResolution !== undefined &&
-    enterpriseResolution.enterpriseAuthMode === 'required' &&
-    enterpriseResolution.providerStatus === 'active';
-  const enterpriseOptional =
-    enterpriseResolution !== null &&
-    enterpriseResolution !== undefined &&
-    enterpriseResolution.enterpriseAuthMode === 'optional' &&
-    enterpriseResolution.providerStatus === 'active';
-  const enterpriseUnavailable =
-    enterpriseResolution !== null &&
-    enterpriseResolution !== undefined &&
-    enterpriseResolution.providerStatus !== 'active';
   const callbackURL = useMemo(
     () =>
       typeof window === 'undefined'
@@ -104,35 +161,6 @@ function LoginPage() {
     router.history.replace(nextHref);
   }, [reset, router, verified]);
 
-  const startEnterpriseAuth = useEffectEvent(async () => {
-    if (!enterpriseResolution || enterpriseResolution.providerStatus !== 'active') {
-      return;
-    }
-
-    setIsStartingEnterpriseAuth(true);
-    try {
-      await authClient.signIn.social({
-        callbackURL,
-        errorCallbackURL:
-          typeof window === 'undefined'
-            ? '/login'
-            : new URL('/login', window.location.origin).toString(),
-        loginHint: lookupEmail || emailInput.trim().toLowerCase(),
-        provider: 'google',
-      });
-    } finally {
-      setIsStartingEnterpriseAuth(false);
-    }
-  });
-
-  useEffect(() => {
-    if (!enterpriseRequired || isStartingEnterpriseAuth) {
-      return;
-    }
-
-    void startEnterpriseAuth();
-  }, [enterpriseRequired, isStartingEnterpriseAuth, startEnterpriseAuth]);
-
   if (isPending) {
     return <AuthSkeleton />;
   }
@@ -141,14 +169,106 @@ function LoginPage() {
     return <Navigate to={redirectTarget} replace />;
   }
 
-  const handleDiscoverySubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handlePasswordSignIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalizedEmail = emailInput.trim().toLowerCase();
-    if (!normalizedEmail) {
+    setError('');
+
+    const validatedEmail = emailSchema.safeParse(emailInput);
+    if (!validatedEmail.success) {
+      setError(validatedEmail.error.issues[0]?.message ?? 'Email is required');
       return;
     }
 
-    setLookupEmail(normalizedEmail);
+    if (!password) {
+      setError('Password is required');
+      return;
+    }
+
+    setIsSubmittingPassword(true);
+
+    try {
+      const response = await authClient.signIn.email({
+        email: normalizeEmail(validatedEmail.data),
+        password,
+        fetchOptions: { throw: true },
+      });
+
+      if (response?.twoFactorRedirect) {
+        await router.navigate({
+          to: '/two-factor',
+          search: redirectTo ? { redirectTo } : {},
+        });
+        return;
+      }
+
+      await router.invalidate();
+      await router.navigate({ to: redirectTarget, replace: true });
+    } catch (signInError) {
+      const message = getErrorMessage(signInError);
+
+      if (message.toLowerCase().includes('email not verified')) {
+        await router.navigate({
+          to: '/verify-email-pending',
+          search: {
+            email: normalizeEmail(validatedEmail.data),
+            redirectTo: redirectTarget,
+          },
+          replace: true,
+        });
+        return;
+      }
+
+      setError(getPasswordSignInError(message));
+    } finally {
+      setIsSubmittingPassword(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setIsSubmittingGoogle(true);
+
+    try {
+      if (parsedEmail.success && enterpriseResolution !== undefined) {
+        const googleError = getGoogleSignInError(enterpriseResolution);
+        if (googleError) {
+          setError(googleError);
+          return;
+        }
+      }
+
+      await authClient.signIn.social({
+        callbackURL,
+        errorCallbackURL:
+          typeof window === 'undefined'
+            ? '/login'
+            : new URL('/login', window.location.origin).toString(),
+        ...(parsedEmail.success ? { loginHint: normalizedEmail } : {}),
+        provider: 'google',
+      });
+    } catch (googleError) {
+      setError(getErrorMessage(googleError));
+    } finally {
+      setIsSubmittingGoogle(false);
+    }
+  };
+
+  const handlePasskeySignIn = async () => {
+    setError('');
+    setIsSubmittingPasskey(true);
+
+    try {
+      await authClient.signIn.passkey({
+        fetchOptions: { throw: true },
+      });
+
+      await router.invalidate();
+      await router.navigate({ to: redirectTarget, replace: true });
+    } catch (passkeyError) {
+      setError(getErrorMessage(passkeyError));
+    } finally {
+      setIsSubmittingPasskey(false);
+    }
   };
 
   return (
@@ -165,60 +285,103 @@ function LoginPage() {
         ) : undefined
       }
     >
-      <form className="space-y-3" onSubmit={handleDiscoverySubmit}>
-        <Field>
-          <FieldLabel htmlFor="login-email-discovery">Work email</FieldLabel>
-          <Input
-            id="login-email-discovery"
-            type="email"
-            value={emailInput}
-            onChange={(event) => setEmailInput(event.target.value)}
-            placeholder="you@company.com"
-          />
-        </Field>
-        <Button className="w-full" type="submit">
-          {isLookupPending ? <Loader2 className="size-4 animate-spin" /> : null}
-          Continue
-        </Button>
-      </form>
+      <Card className="w-full">
+        <CardHeader>
+          <CardTitle className="text-3xl">Sign in</CardTitle>
+          <CardDescription>
+            Use your email and password, or continue with Google if your organization uses
+            Google Workspace sign-in.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {error ? (
+            <div className="rounded border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          ) : null}
 
-      {enterpriseResolution && enterpriseOptional ? (
-        <div className="rounded border border-border bg-muted/40 px-4 py-3 text-sm">
-          <p className="font-medium">
-            Google Workspace sign-in is available for {enterpriseResolution.organizationName}.
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            Continue with your organization Google Workspace account or use your password below.
-          </p>
-          <Button className="mt-3 w-full" onClick={() => void startEnterpriseAuth()} type="button">
-            {isStartingEnterpriseAuth ? <Loader2 className="size-4 animate-spin" /> : null}
-            Continue with Google Workspace
+          <form className="space-y-4" onSubmit={handlePasswordSignIn}>
+            <Field>
+              <FieldLabel htmlFor={emailId}>Email</FieldLabel>
+              <Input
+                id={emailId}
+                type="email"
+                autoComplete="email"
+                value={emailInput}
+                onChange={(event) => {
+                  setEmailInput(event.target.value);
+                  setError('');
+                }}
+                placeholder="you@company.com"
+              />
+            </Field>
+
+            <Field>
+              <div className="mb-2 flex items-center justify-between">
+                <FieldLabel htmlFor={passwordId}>Password</FieldLabel>
+                <Link
+                  to="/forgot-password"
+                  search={parsedEmail.success ? { email: normalizedEmail } : {}}
+                  className="text-sm font-medium hover:text-muted-foreground"
+                >
+                  Forgot your password?
+                </Link>
+              </div>
+              <Input
+                id={passwordId}
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => {
+                  setPassword(event.target.value);
+                  setError('');
+                }}
+                placeholder="Password"
+              />
+            </Field>
+
+            <Button className="w-full" type="submit">
+              {isSubmittingPassword ? <Loader2 className="size-4 animate-spin" /> : null}
+              Sign in
+            </Button>
+          </form>
+
+          <div className="flex items-center gap-4">
+            <Separator className="flex-1" />
+            <span className="text-sm text-muted-foreground">Or continue with</span>
+            <Separator className="flex-1" />
+          </div>
+
+          <Button className="w-full" type="button" variant="outline" onClick={handleGoogleSignIn}>
+            {isSubmittingGoogle ? <Loader2 className="size-4 animate-spin" /> : null}
+            Continue with Google
           </Button>
-        </div>
-      ) : null}
 
-      {enterpriseResolution && enterpriseRequired ? (
-        <div className="rounded border border-border bg-muted/40 px-4 py-3 text-sm">
-          <p className="font-medium">This organization requires enterprise sign-in.</p>
-          <p className="mt-1 text-muted-foreground">
-            Redirecting you to Google Workspace.
-          </p>
-        </div>
-      ) : null}
-
-      {enterpriseResolution && enterpriseUnavailable ? (
-        <div className="rounded border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-          Ask an organization owner to finish enterprise sign-in setup before using Google
-          Workspace.
-        </div>
-      ) : null}
-
-      {!enterpriseRequired ? (
-        <>
-          <AuthEmailPrefill email={lookupEmail || email} />
-          <AuthView redirectTo={redirectTarget} view="SIGN_IN" />
-        </>
-      ) : null}
+          <Button
+            className="w-full justify-center text-sm"
+            type="button"
+            variant="ghost"
+            onClick={handlePasskeySignIn}
+          >
+            {isSubmittingPasskey ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Fingerprint className="size-4" />
+            )}
+            Sign in with Passkey
+          </Button>
+        </CardContent>
+        <CardFooter className="justify-center text-sm text-muted-foreground">
+          Don&apos;t have an account?{' '}
+          <Link
+            to="/register"
+            search={parsedEmail.success ? { email: normalizedEmail } : {}}
+            className="ml-1 font-medium text-foreground underline underline-offset-4"
+          >
+            Sign up
+          </Link>
+        </CardFooter>
+      </Card>
     </AuthRouteShell>
   );
 }

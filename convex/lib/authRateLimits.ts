@@ -9,11 +9,6 @@ type RateLimitConfig = {
   rate: number;
 };
 
-type RateLimitResult = {
-  ok: boolean;
-  retryAfter?: number;
-};
-
 type RateLimitContext = Pick<ActionCtx, 'runMutation'> | Pick<MutationCtx, 'runMutation'>;
 
 export const SERVER_AUTH_RATE_LIMIT_MESSAGE = 'Too many auth requests. Please try again later.';
