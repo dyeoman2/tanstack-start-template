@@ -18,7 +18,7 @@ import { OrganizationProvisioningManagement } from '~/features/organizations/com
 import { OrganizationSsoEnforcementManagement } from '~/features/organizations/components/OrganizationSsoEnforcementManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
-import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import { cn } from '~/lib/utils';
 
 type StepKey = 'step-1' | 'step-2' | 'step-3' | 'step-4';
@@ -40,9 +40,11 @@ export function OrganizationIdentityPage({
   // Without these, each panel fetches on mount and shows a loading spinner.
   useQuery(api.organizationManagement.getOrganizationEnterpriseAuthSettings, { slug });
   useQuery(api.organizationManagement.listOrganizationDomains, { slug });
-  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
-  const organizationName =
-    settings?.organization.name ?? optimisticOrganizationName ?? 'Loading organization';
+  const organizationName = useStableOrganizationName({
+    names: [settings?.organization.name],
+    slug,
+    state: location.state,
+  });
   const availableEnterpriseProviders = settings?.availableEnterpriseProviders ?? [];
 
   const hasProviderSelected = settings?.policies.enterpriseProviderKey != null;

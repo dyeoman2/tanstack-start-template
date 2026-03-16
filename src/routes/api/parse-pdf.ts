@@ -23,6 +23,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        const requestId = crypto.randomUUID();
         try {
           const currentProfile = await convexAuthReactStart.fetchAuthQuery(
             api.users.getCurrentUserProfile,
@@ -47,6 +48,20 @@ export const Route = createFileRoute('/api/parse-pdf')({
           }
 
           const file = fileValue;
+          await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+            eventType: 'pdf_parse_requested',
+            organizationId: currentProfile.currentOrganization?.id ?? undefined,
+            outcome: 'success',
+            severity: 'info',
+            resourceType: 'pdf_file',
+            resourceLabel: file.name,
+            sourceSurface: 'api.parse_pdf',
+            requestId,
+            metadata: {
+              mimeType: file.type,
+              sizeBytes: file.size,
+            },
+          });
 
           if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
             return Response.json({ error: 'File must be a PDF' }, { status: 400 });
@@ -103,6 +118,21 @@ export const Route = createFileRoute('/api/parse-pdf')({
               })),
           );
 
+          await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+            eventType: 'pdf_parse_succeeded',
+            organizationId: currentProfile.currentOrganization?.id ?? undefined,
+            outcome: 'success',
+            severity: 'info',
+            resourceType: 'pdf_file',
+            resourceLabel: file.name,
+            sourceSurface: 'api.parse_pdf',
+            requestId,
+            metadata: {
+              pageCount: textResult.total,
+              imageCount: images.length,
+            },
+          });
+
           return Response.json({
             success: true,
             name: file.name,
@@ -111,6 +141,19 @@ export const Route = createFileRoute('/api/parse-pdf')({
             images,
           });
         } catch (error) {
+          await convexAuthReactStart
+            .fetchAuthAction(api.audit.recordClientAuditEvent, {
+              eventType: 'pdf_parse_failed',
+              outcome: 'failure',
+              severity: 'warning',
+              resourceType: 'pdf_file',
+              sourceSurface: 'api.parse_pdf',
+              requestId,
+              metadata: {
+                error: error instanceof Error ? error.message : 'Failed to parse PDF',
+              },
+            })
+            .catch(() => undefined);
           return Response.json(
             {
               success: false,

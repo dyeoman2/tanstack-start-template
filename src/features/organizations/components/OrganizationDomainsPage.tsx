@@ -5,7 +5,7 @@ import { Card, CardDescription, CardHeader, CardTitle } from '~/components/ui/ca
 import { OrganizationDomainManagement } from '~/features/organizations/components/OrganizationDomainManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
-import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 
 export function OrganizationDomainsPage({
   slug,
@@ -14,9 +14,11 @@ export function OrganizationDomainsPage({
 }) {
   const location = useLocation();
   const response = useQuery(api.organizationManagement.listOrganizationDomains, { slug });
-  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
-  const organizationName =
-    response?.organization.name ?? optimisticOrganizationName ?? 'Loading organization';
+  const organizationName = useStableOrganizationName({
+    names: [response?.organization.name],
+    slug,
+    state: location.state,
+  });
 
   if (response === null) {
     return (

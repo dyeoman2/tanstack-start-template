@@ -1,6 +1,5 @@
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import type { ChatModelAccess, ChatModelCatalogEntry } from '../src/lib/shared/chat-models';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertUserId } from '../src/lib/shared/user-id';
@@ -33,9 +32,7 @@ import {
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
 const OPENROUTER_SOURCE = 'openrouter';
-const AUDIT_LOG_TRUNCATION_BATCH_SIZE = 256;
 const ADMIN_USER_PAGE_BATCH_SIZE = 256;
-const USER_CLEANUP_BATCH_SIZE = 256;
 
 type TruncateDataResult = {
   success: boolean;
@@ -400,12 +397,13 @@ export const listUsers = siteAdminQuery({
                 .withIndex('by_role', (q) => q.eq('role', roleFilter))
                 .collect()
             ).length
-          : (
+          : ((
               await ctx.db
                 .query('userProfileSyncState')
                 .withIndex('by_key', (q) => q.eq('key', 'global'))
                 .first()
-            )?.totalUsers ?? (await ctx.db.query('userProfiles').withIndex('by_created_at').collect()).length
+            )?.totalUsers ??
+            (await ctx.db.query('userProfiles').withIndex('by_created_at').collect()).length)
         : matchedProfiles.length;
 
     const sortedPageUsers =
@@ -859,41 +857,6 @@ export const setChatModelActiveState = siteAdminMutation({
   },
 });
 
-export const truncateAuditLogsBatch = internalMutation({
-  args: {},
-  returns: v.object({
-    deletedCount: v.number(),
-    failedCount: v.number(),
-    hasMore: v.boolean(),
-  }),
-  handler: async (ctx) => {
-    const auditLogs = await ctx.db
-      .query('auditLogs')
-      .withIndex('by_createdAt')
-      .order('asc')
-      .take(AUDIT_LOG_TRUNCATION_BATCH_SIZE);
-
-    let deletedCount = 0;
-    let failedCount = 0;
-
-    for (const log of auditLogs) {
-      try {
-        await ctx.db.delete(log._id);
-        deletedCount += 1;
-      } catch (error) {
-        failedCount += 1;
-        console.error(`Failed to delete audit log ${log._id}:`, error);
-      }
-    }
-
-    return {
-      deletedCount,
-      failedCount,
-      hasMore: auditLogs.length === AUDIT_LOG_TRUNCATION_BATCH_SIZE,
-    };
-  },
-});
-
 export const truncateData = siteAdminAction({
   args: {},
   returns: v.object({
@@ -905,83 +868,16 @@ export const truncateData = siteAdminAction({
     failedTableNames: v.array(v.string()),
     invalidateAllCaches: v.boolean(),
   }),
-  handler: async (ctx): Promise<TruncateDataResult> => {
-    let deletedCount = 0;
-    let failedCount = 0;
-
-    while (true) {
-      const batch = await ctx.runMutation(internal.admin.truncateAuditLogsBatch, {});
-      deletedCount += batch.deletedCount;
-      failedCount += batch.failedCount;
-
-      if (!batch.hasMore) {
-        break;
-      }
-    }
-
+  handler: async (_ctx): Promise<TruncateDataResult> => {
     return {
-      success: failedCount === 0,
+      success: true,
       message:
-        failedCount === 0
-          ? 'All audit logs have been truncated successfully. User accounts and authentication data preserved.'
-          : `Partial truncation completed. ${deletedCount} audit logs deleted, ${failedCount} failed. User accounts and authentication data preserved.`,
-      truncatedTables: deletedCount > 0 ? 1 : 0,
-      failedTables: failedCount > 0 ? 1 : 0,
-      totalTables: 1,
-      failedTableNames: failedCount > 0 ? ['auditLogs'] : [],
-      invalidateAllCaches: true,
-    };
-  },
-});
-
-export const deleteAuditLogsByUserIdBatch = internalMutation({
-  args: {
-    userId: v.string(),
-  },
-  returns: v.object({
-    deletedCount: v.number(),
-    hasMore: v.boolean(),
-  }),
-  handler: async (ctx, args) => {
-    const auditLogs = await ctx.db
-      .query('auditLogs')
-      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', args.userId))
-      .order('asc')
-      .take(USER_CLEANUP_BATCH_SIZE);
-
-    for (const log of auditLogs) {
-      await ctx.db.delete(log._id);
-    }
-
-    return {
-      deletedCount: auditLogs.length,
-      hasMore: auditLogs.length === USER_CLEANUP_BATCH_SIZE,
-    };
-  },
-});
-
-export const deleteAuditLogsByIdentifierBatch = internalMutation({
-  args: {
-    identifier: v.string(),
-  },
-  returns: v.object({
-    deletedCount: v.number(),
-    hasMore: v.boolean(),
-  }),
-  handler: async (ctx, args) => {
-    const auditLogs = await ctx.db
-      .query('auditLogs')
-      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', args.identifier))
-      .order('asc')
-      .take(USER_CLEANUP_BATCH_SIZE);
-
-    for (const log of auditLogs) {
-      await ctx.db.delete(log._id);
-    }
-
-    return {
-      deletedCount: auditLogs.length,
-      hasMore: auditLogs.length === USER_CLEANUP_BATCH_SIZE,
+        'Audit logs are append-only in production. Truncation is disabled to preserve investigation evidence.',
+      truncatedTables: 0,
+      failedTables: 0,
+      totalTables: 0,
+      failedTableNames: [],
+      invalidateAllCaches: false,
     };
   },
 });
@@ -1004,36 +900,9 @@ export const cleanupDeletedUserData = siteAdminAction({
     await ctx.runMutation(internal.users.deleteUserContextRecords, userContextRecords);
     const deletedAppUser = userContextRecords.appUserId || userContextRecords.userProfileId ? 1 : 0;
 
-    let deletedAuditLogs = 0;
-
-    while (true) {
-      const batch = await ctx.runMutation(internal.admin.deleteAuditLogsByUserIdBatch, {
-        userId: args.userId,
-      });
-      deletedAuditLogs += batch.deletedCount;
-
-      if (!batch.hasMore) {
-        break;
-      }
-    }
-
-    const normalizedEmail = normalizeAuditIdentifier(args.email);
-    if (normalizedEmail) {
-      while (true) {
-        const batch = await ctx.runMutation(internal.admin.deleteAuditLogsByIdentifierBatch, {
-          identifier: normalizedEmail,
-        });
-        deletedAuditLogs += batch.deletedCount;
-
-        if (!batch.hasMore) {
-          break;
-        }
-      }
-    }
-
     return {
       success: true,
-      deletedAuditLogs,
+      deletedAuditLogs: 0,
       deletedAppUser,
       email: args.email,
     };

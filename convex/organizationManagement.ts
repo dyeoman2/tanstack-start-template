@@ -31,6 +31,7 @@ import {
 } from './_generated/server';
 import {
   checkOrganizationAccess,
+  getVerifiedCurrentUserFromActionOrThrow,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
 } from './auth/access';
@@ -160,10 +161,66 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
+  'authorization_denied',
+  'admin_user_sessions_viewed',
+  'directory_exported',
+  'audit_log_exported',
+  'chat_thread_created',
+  'chat_thread_deleted',
+  'chat_attachment_uploaded',
+  'chat_attachment_scan_passed',
+  'chat_attachment_scan_failed',
+  'chat_attachment_quarantined',
+  'chat_attachment_deleted',
+  'attachment_access_url_issued',
+  'pdf_parse_requested',
+  'pdf_parse_succeeded',
+  'pdf_parse_failed',
+  'chat_run_completed',
+  'chat_run_failed',
+  'chat_web_search_used',
+  'audit_integrity_check_failed',
 ]);
 const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'domain_verification_failed',
   'scim_member_deprovision_failed',
+]);
+const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
+  'authorization_denied',
+  'admin_user_sessions_viewed',
+  'directory_exported',
+  'audit_log_exported',
+  'organization_policy_updated',
+  'enterprise_auth_mode_updated',
+  'enterprise_login_succeeded',
+  'enterprise_scim_token_generated',
+  'enterprise_scim_token_deleted',
+  'scim_member_deprovisioned',
+  'scim_member_reactivated',
+  'scim_member_deprovision_failed',
+  'member_removed',
+  'member_suspended',
+  'member_deactivated',
+  'member_reactivated',
+  'bulk_invite_revoked',
+  'bulk_member_removed',
+  'domain_removed',
+  'domain_verification_failed',
+  'chat_thread_created',
+  'chat_thread_deleted',
+  'chat_attachment_uploaded',
+  'chat_attachment_scan_passed',
+  'chat_attachment_scan_failed',
+  'chat_attachment_quarantined',
+  'chat_attachment_deleted',
+  'attachment_access_url_issued',
+  'pdf_parse_requested',
+  'pdf_parse_succeeded',
+  'pdf_parse_failed',
+  'chat_run_completed',
+  'chat_run_failed',
+  'chat_web_search_used',
+  'audit_integrity_check_failed',
 ]);
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
 
@@ -681,6 +738,44 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Bulk invitation resent';
     case 'bulk_member_removed':
       return 'Bulk member removed';
+    case 'authorization_denied':
+      return 'Authorization denied';
+    case 'admin_user_sessions_viewed':
+      return 'Admin user sessions viewed';
+    case 'directory_exported':
+      return 'Directory exported';
+    case 'audit_log_exported':
+      return 'Audit log exported';
+    case 'chat_thread_created':
+      return 'Chat thread created';
+    case 'chat_thread_deleted':
+      return 'Chat thread deleted';
+    case 'chat_attachment_uploaded':
+      return 'Chat attachment uploaded';
+    case 'chat_attachment_scan_passed':
+      return 'Chat attachment scan passed';
+    case 'chat_attachment_scan_failed':
+      return 'Chat attachment scan failed';
+    case 'chat_attachment_quarantined':
+      return 'Chat attachment quarantined';
+    case 'chat_attachment_deleted':
+      return 'Chat attachment deleted';
+    case 'attachment_access_url_issued':
+      return 'Attachment access URL issued';
+    case 'pdf_parse_requested':
+      return 'PDF parse requested';
+    case 'pdf_parse_succeeded':
+      return 'PDF parse succeeded';
+    case 'pdf_parse_failed':
+      return 'PDF parse failed';
+    case 'chat_run_completed':
+      return 'Chat run completed';
+    case 'chat_run_failed':
+      return 'Chat run failed';
+    case 'chat_web_search_used':
+      return 'Web search used';
+    case 'audit_integrity_check_failed':
+      return 'Audit integrity check failed';
     default:
       return eventType;
   }
@@ -851,8 +946,20 @@ function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
     ...(targetLabel ? { targetLabel } : {}),
     ...(summary ? { summary } : {}),
     ...(event.userId ? { userId: event.userId } : {}),
+    ...(event.actorUserId ? { actorUserId: event.actorUserId } : {}),
+    ...(event.targetUserId ? { targetUserId: event.targetUserId } : {}),
     ...(event.organizationId ? { organizationId: event.organizationId } : {}),
     ...(event.identifier ? { identifier: event.identifier } : {}),
+    ...(event.sessionId ? { sessionId: event.sessionId } : {}),
+    ...(event.requestId ? { requestId: event.requestId } : {}),
+    ...(event.outcome ? { outcome: event.outcome } : {}),
+    ...(event.severity ? { severity: event.severity } : {}),
+    ...(event.resourceType ? { resourceType: event.resourceType } : {}),
+    ...(event.resourceId ? { resourceId: event.resourceId } : {}),
+    ...(event.resourceLabel ? { resourceLabel: event.resourceLabel } : {}),
+    ...(event.sourceSurface ? { sourceSurface: event.sourceSurface } : {}),
+    ...(event.eventHash ? { eventHash: event.eventHash } : {}),
+    ...(event.previousEventHash ? { previousEventHash: event.previousEventHash } : {}),
     createdAt: event.createdAt,
     ...(event.ipAddress ? { ipAddress: event.ipAddress } : {}),
     ...(event.userAgent ? { userAgent: event.userAgent } : {}),
@@ -2602,6 +2709,7 @@ export const listOrganizationAuditEvents = query({
       ),
     ),
     sortOrder: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+    preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
     eventType: v.union(
@@ -2634,6 +2742,25 @@ export const listOrganizationAuditEvents = query({
       v.literal('bulk_invite_revoked'),
       v.literal('bulk_invite_resent'),
       v.literal('bulk_member_removed'),
+      v.literal('authorization_denied'),
+      v.literal('admin_user_sessions_viewed'),
+      v.literal('directory_exported'),
+      v.literal('audit_log_exported'),
+      v.literal('chat_thread_created'),
+      v.literal('chat_thread_deleted'),
+      v.literal('chat_attachment_uploaded'),
+      v.literal('chat_attachment_scan_passed'),
+      v.literal('chat_attachment_scan_failed'),
+      v.literal('chat_attachment_quarantined'),
+      v.literal('chat_attachment_deleted'),
+      v.literal('attachment_access_url_issued'),
+      v.literal('pdf_parse_requested'),
+      v.literal('pdf_parse_succeeded'),
+      v.literal('pdf_parse_failed'),
+      v.literal('chat_run_completed'),
+      v.literal('chat_run_failed'),
+      v.literal('chat_web_search_used'),
+      v.literal('audit_integrity_check_failed'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),
@@ -2676,6 +2803,7 @@ export const listOrganizationAuditEvents = query({
     }
 
     const requestedEventType = args.eventType === 'all' ? null : args.eventType;
+    const preset = args.preset ?? 'all';
     const searchValue = args.search.trim().toLowerCase();
     const searchStrategy = getAuditSearchStrategy(searchValue);
     const parsedStartDate = parseAuditDateBoundary(args.startDate, 'start');
@@ -2724,6 +2852,13 @@ export const listOrganizationAuditEvents = query({
         }
 
         if (requestedEventType && event.eventType !== requestedEventType) {
+          continue;
+        }
+
+        if (
+          preset === 'security' &&
+          !ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES.has(event.eventType)
+        ) {
           continue;
         }
 
@@ -2816,6 +2951,7 @@ export const exportOrganizationAuditCsv = action({
       v.literal('createdAt'),
     ),
     sortOrder: v.union(v.literal('asc'), v.literal('desc')),
+    preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
     eventType: v.union(
       v.literal('all'),
       v.literal('organization_created'),
@@ -2846,6 +2982,25 @@ export const exportOrganizationAuditCsv = action({
       v.literal('bulk_invite_revoked'),
       v.literal('bulk_invite_resent'),
       v.literal('bulk_member_removed'),
+      v.literal('authorization_denied'),
+      v.literal('admin_user_sessions_viewed'),
+      v.literal('directory_exported'),
+      v.literal('audit_log_exported'),
+      v.literal('chat_thread_created'),
+      v.literal('chat_thread_deleted'),
+      v.literal('chat_attachment_uploaded'),
+      v.literal('chat_attachment_scan_passed'),
+      v.literal('chat_attachment_scan_failed'),
+      v.literal('chat_attachment_quarantined'),
+      v.literal('chat_attachment_deleted'),
+      v.literal('attachment_access_url_issued'),
+      v.literal('pdf_parse_requested'),
+      v.literal('pdf_parse_succeeded'),
+      v.literal('pdf_parse_failed'),
+      v.literal('chat_run_completed'),
+      v.literal('chat_run_failed'),
+      v.literal('chat_web_search_used'),
+      v.literal('audit_integrity_check_failed'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),
@@ -2857,9 +3012,11 @@ export const exportOrganizationAuditCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
+    let exportedOrganizationId: string | undefined;
 
     while (true) {
       const auditPage = await ctx.runQuery(
@@ -2870,6 +3027,7 @@ export const exportOrganizationAuditCsv = action({
           pageSize: 100,
           sortBy: args.sortBy,
           sortOrder: args.sortOrder,
+          preset: args.preset,
           eventType: args.eventType,
           search: args.search,
           startDate: args.startDate,
@@ -2883,6 +3041,7 @@ export const exportOrganizationAuditCsv = action({
       }
 
       organizationName = auditPage.organization.slug;
+      exportedOrganizationId = auditPage.organization.id;
       for (const event of auditPage.events) {
         rows.push({
           timestamp: new Date(event.createdAt).toISOString(),
@@ -2923,6 +3082,31 @@ export const exportOrganizationAuditCsv = action({
       ),
     ].join('\n');
 
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'audit_log_exported',
+      userId: currentUser.authUserId,
+      actorUserId: currentUser.authUserId,
+      organizationId: exportedOrganizationId,
+      identifier:
+        typeof currentUser.authUser.email === 'string' ? currentUser.authUser.email : undefined,
+      sessionId: currentUser.authSession?.id ?? undefined,
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'audit_export',
+      resourceId: organizationName,
+      resourceLabel: `${organizationName}-audit`,
+      sourceSurface: 'organization.audit_export',
+      metadata: JSON.stringify({
+        eventType: args.eventType,
+        preset: args.preset ?? 'all',
+        search: args.search,
+        startDate: args.startDate ?? null,
+        endDate: args.endDate ?? null,
+        failuresOnly: args.failuresOnly ?? false,
+        rowCount: rows.length,
+      }),
+    });
+
     return {
       filename: `${organizationName}-audit-log.csv`,
       csv,
@@ -2960,9 +3144,11 @@ export const exportOrganizationDirectoryCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
+    let exportedOrganizationId: string | undefined;
 
     while (true) {
       const directoryPage = await ctx.runQuery(
@@ -2986,6 +3172,7 @@ export const exportOrganizationDirectoryCsv = action({
       }
 
       organizationName = directoryPage.organization.slug;
+      exportedOrganizationId = directoryPage.organization.id;
       for (const row of directoryPage.rows) {
         rows.push({
           name: row.name ?? '',
@@ -3014,6 +3201,27 @@ export const exportOrganizationDirectoryCsv = action({
         header.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','),
       ),
     ].join('\n');
+
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'directory_exported',
+      userId: currentUser.authUserId,
+      actorUserId: currentUser.authUserId,
+      organizationId: exportedOrganizationId,
+      identifier:
+        typeof currentUser.authUser.email === 'string' ? currentUser.authUser.email : undefined,
+      sessionId: currentUser.authSession?.id ?? undefined,
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'directory_export',
+      resourceId: organizationName,
+      resourceLabel: `${organizationName}-directory`,
+      sourceSurface: 'organization.directory_export',
+      metadata: JSON.stringify({
+        kind: args.kind,
+        search: args.search,
+        rowCount: rows.length,
+      }),
+    });
 
     return {
       filename: `${organizationName}-directory.csv`,

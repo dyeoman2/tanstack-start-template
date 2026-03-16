@@ -43,11 +43,31 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
+  'authorization_denied',
+  'admin_user_sessions_viewed',
+  'directory_exported',
+  'audit_log_exported',
+  'chat_thread_created',
+  'chat_thread_deleted',
+  'chat_attachment_uploaded',
+  'chat_attachment_scan_passed',
+  'chat_attachment_scan_failed',
+  'chat_attachment_quarantined',
+  'chat_attachment_deleted',
+  'attachment_access_url_issued',
+  'pdf_parse_requested',
+  'pdf_parse_succeeded',
+  'pdf_parse_failed',
+  'chat_run_completed',
+  'chat_run_failed',
+  'chat_web_search_used',
+  'audit_integrity_check_failed',
 ] as const;
 export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
   'all',
   ...ORGANIZATION_AUDIT_EVENT_TYPES,
 ] as const;
+export const ORGANIZATION_AUDIT_PRESET_VALUES = ['all', 'security'] as const;
 export const ORGANIZATION_AUDIT_SORT_FIELDS = [
   'label',
   'identifier',
@@ -81,6 +101,7 @@ export const organizationAuditSearchSchema = z.object({
   sortBy: z.enum(ORGANIZATION_AUDIT_SORT_FIELDS).default('createdAt'),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: z.string().default(''),
+  preset: z.enum(ORGANIZATION_AUDIT_PRESET_VALUES).default('all'),
   eventType: z.enum(ORGANIZATION_AUDIT_EVENT_FILTER_VALUES).default('all'),
   startDate: z.string().default(''),
   endDate: z.string().default(''),
@@ -245,8 +266,20 @@ export type OrganizationAuditEventViewModel = {
   targetLabel?: string;
   summary?: string;
   userId?: string;
+  actorUserId?: string;
+  targetUserId?: string;
   organizationId?: string;
   identifier?: string;
+  sessionId?: string;
+  requestId?: string;
+  outcome?: 'success' | 'failure';
+  severity?: 'info' | 'warning' | 'critical';
+  resourceType?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  sourceSurface?: string;
+  eventHash?: string;
+  previousEventHash?: string;
   createdAt: number;
   ipAddress?: string;
   userAgent?: string;

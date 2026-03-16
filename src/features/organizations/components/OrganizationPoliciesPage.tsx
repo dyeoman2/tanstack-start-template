@@ -8,7 +8,7 @@ import { useToast } from '~/components/ui/toast';
 import { OrganizationPoliciesCard } from '~/features/organizations/components/OrganizationPoliciesCard';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
-import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationInvitePolicy } from '~/features/organizations/lib/organization-management';
 import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import { updateOrganizationPoliciesServerFn } from '~/features/organizations/server/organization-management';
@@ -42,9 +42,11 @@ export function OrganizationPoliciesPage({
     setMfaRequired(settings.policies.mfaRequired);
   }, [settings]);
 
-  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
-  const organizationName =
-    settings?.organization.name ?? optimisticOrganizationName ?? 'Loading organization';
+  const organizationName = useStableOrganizationName({
+    names: [settings?.organization.name],
+    slug,
+    state: location.state,
+  });
 
   if (settings === null) {
     return (

@@ -9,7 +9,13 @@ export type ParsedPdfImage = {
 };
 
 export type ChatAttachmentKind = 'image' | 'document';
-export type ChatAttachmentStatus = 'pending' | 'ready' | 'error';
+export type ChatAttachmentStatus =
+  | 'pending'
+  | 'pending_scan'
+  | 'quarantined'
+  | 'ready'
+  | 'error'
+  | 'rejected';
 
 export type ChatTextPart = {
   type: 'text';
@@ -93,6 +99,9 @@ export type ChatThread = {
   personaId?: Id<'aiPersonas'>;
   model?: string;
   titleManuallyEdited: boolean;
+  deletedAt?: number;
+  deletedByUserId?: string;
+  purgeEligibleAt?: number;
   createdAt: number;
   updatedAt: number;
   lastMessageAt: number;
@@ -147,6 +156,9 @@ export type ChatAttachment = {
   status: ChatAttachmentStatus;
   previewUrl?: string | null;
   errorMessage?: string;
+  deletedAt?: number;
+  deletedByUserId?: string;
+  purgeEligibleAt?: number;
   createdAt: number;
   updatedAt: number;
 };

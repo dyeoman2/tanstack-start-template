@@ -27,7 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
-import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type {
   OrganizationAuditEventType,
   OrganizationAuditSearchParams,
@@ -65,6 +65,19 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Bulk invite revoked', value: 'bulk_invite_revoked' },
   { label: 'Bulk invite resent', value: 'bulk_invite_resent' },
   { label: 'Bulk member removed', value: 'bulk_member_removed' },
+  { label: 'Directory exported', value: 'directory_exported' },
+  { label: 'Audit log exported', value: 'audit_log_exported' },
+  { label: 'Chat thread created', value: 'chat_thread_created' },
+  { label: 'Chat thread deleted', value: 'chat_thread_deleted' },
+  { label: 'Chat attachment uploaded', value: 'chat_attachment_uploaded' },
+  { label: 'Chat attachment scan passed', value: 'chat_attachment_scan_passed' },
+  { label: 'Chat attachment scan failed', value: 'chat_attachment_scan_failed' },
+  { label: 'PDF parse requested', value: 'pdf_parse_requested' },
+  { label: 'PDF parse succeeded', value: 'pdf_parse_succeeded' },
+  { label: 'PDF parse failed', value: 'pdf_parse_failed' },
+  { label: 'Chat run completed', value: 'chat_run_completed' },
+  { label: 'Chat run failed', value: 'chat_run_failed' },
+  { label: 'Web search used', value: 'chat_web_search_used' },
 ];
 
 const DOMAIN_SUMMARY_EVENT_TYPES = new Set<OrganizationAuditEventType>([
@@ -86,8 +99,20 @@ type QueryAuditRow = {
   targetLabel?: string;
   summary?: string;
   userId?: string;
+  actorUserId?: string;
+  targetUserId?: string;
   organizationId?: string;
   identifier?: string;
+  sessionId?: string;
+  requestId?: string;
+  outcome?: 'success' | 'failure';
+  severity?: 'info' | 'warning' | 'critical';
+  resourceType?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  sourceSurface?: string;
+  eventHash?: string;
+  previousEventHash?: string;
   createdAt: number;
   ipAddress?: string;
   userAgent?: string;
@@ -509,6 +534,12 @@ function getAuditRowStatusBadge(
     case 'enterprise_scim_token_deleted':
       return { label: 'Inactive', variant: 'warning' };
     default:
+      if (row.outcome === 'success') {
+        return { label: 'Success', variant: 'success' };
+      }
+      if (row.outcome === 'failure') {
+        return { label: 'Failed', variant: 'warning' };
+      }
       return null;
   }
 }
@@ -523,18 +554,28 @@ function getRawAuditDetails(row: RawOrganizationAuditRow) {
         getStringValue(metadataRecord?.actorEmail) ??
         getStringValue(metadataRecord?.inviterEmail) ??
         null,
-      userId: row.userId ?? null,
+      userId: row.actorUserId ?? row.userId ?? null,
       identifier: row.identifier ?? null,
     },
     target: {
-      display: row.targetLabel ?? null,
+      display: row.resourceLabel ?? row.targetLabel ?? null,
       exactEmail:
         getStringValue(metadataRecord?.targetEmail) ??
         getStringValue(metadataRecord?.email) ??
         null,
       domain: getStringValue(metadataRecord?.domain) ?? null,
+      userId: row.targetUserId ?? null,
+      resourceType: row.resourceType ?? null,
+      resourceId: row.resourceId ?? null,
     },
     eventKey: row.eventType,
+    sessionId: row.sessionId ?? null,
+    requestId: row.requestId ?? null,
+    outcome: row.outcome ?? null,
+    severity: row.severity ?? null,
+    sourceSurface: row.sourceSurface ?? null,
+    eventHash: row.eventHash ?? null,
+    previousEventHash: row.previousEventHash ?? null,
     ...(row.identifier ? { identifier: row.identifier } : {}),
     ...(row.userId ? { userId: row.userId } : {}),
     ...(row.ipAddress ? { ipAddress: row.ipAddress } : {}),
@@ -625,10 +666,44 @@ function AuditDetailsDataSheet({ row }: { row: RawOrganizationAuditRow }) {
             {details.target.domain ? (
               <div className="text-xs text-muted-foreground">Domain: {details.target.domain}</div>
             ) : null}
+            {details.target.userId ? (
+              <div className="text-xs text-muted-foreground">User ID: {details.target.userId}</div>
+            ) : null}
+            {details.target.resourceType ? (
+              <div className="text-xs text-muted-foreground">
+                Resource type: {details.target.resourceType}
+              </div>
+            ) : null}
+            {details.target.resourceId ? (
+              <div className="text-xs text-muted-foreground">
+                Resource ID: {details.target.resourceId}
+              </div>
+            ) : null}
           </div>
         }
       />
       <AuditDetailsSection label="Event key" value={details.eventKey} />
+      <AuditDetailsSection
+        label="Security context"
+        value={
+          <div className="space-y-1">
+            <div>Outcome: {details.outcome ?? '—'}</div>
+            <div>Severity: {details.severity ?? '—'}</div>
+            <div>Session ID: {details.sessionId ?? '—'}</div>
+            <div>Request ID: {details.requestId ?? '—'}</div>
+            <div>Source surface: {details.sourceSurface ?? '—'}</div>
+          </div>
+        }
+      />
+      <AuditDetailsSection
+        label="Integrity"
+        value={
+          <div className="space-y-1">
+            <div>Event hash: {details.eventHash ?? '—'}</div>
+            <div>Previous hash: {details.previousEventHash ?? '—'}</div>
+          </div>
+        }
+      />
       <AuditDetailsSection
         label="Raw payload"
         value={
@@ -679,6 +754,7 @@ export function OrganizationAuditPage({
     sortBy: searchParams.sortBy,
     sortOrder: searchParams.sortOrder,
     search: searchParams.search,
+    preset: searchParams.preset,
     eventType: searchParams.eventType as never,
     startDate: searchParams.startDate,
     endDate: searchParams.endDate,
@@ -692,6 +768,7 @@ export function OrganizationAuditPage({
     sortBy: searchParams.sortBy,
     sortOrder: searchParams.sortOrder,
     search: searchParams.search,
+    preset: searchParams.preset,
     eventType: searchParams.eventType as never,
     startDate: searchParams.startDate,
     endDate: searchParams.endDate,
@@ -703,12 +780,11 @@ export function OrganizationAuditPage({
 
   const activeResponse = viewMode === 'summary' ? summarySourceResponse : rawResponse;
   const isLoading = activeResponse === undefined;
-  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
-  const organizationName =
-    rawResponse?.organization.name ??
-    summarySourceResponse?.organization.name ??
-    optimisticOrganizationName ??
-    'Loading organization';
+  const organizationName = useStableOrganizationName({
+    names: [rawResponse?.organization.name, summarySourceResponse?.organization.name],
+    slug,
+    state: location.state,
+  });
 
   const rawAuditRows = useMemo(
     () => (rawResponse?.events ?? []).map(toRawAuditRow),
@@ -785,6 +861,21 @@ export function OrganizationAuditPage({
           ...searchParams,
           page: 1,
           eventType,
+        },
+      });
+    },
+    [navigate, searchParams, slug],
+  );
+
+  const handlePresetChange = useCallback(
+    (preset: OrganizationAuditSearchParams['preset']) => {
+      void navigate({
+        to: '/app/organizations/$slug/audit',
+        params: { slug },
+        search: {
+          ...searchParams,
+          page: 1,
+          preset,
         },
       });
     },
@@ -903,6 +994,7 @@ export function OrganizationAuditPage({
         slug,
         sortBy: searchParams.sortBy,
         sortOrder: searchParams.sortOrder,
+        preset: searchParams.preset,
         eventType: searchParams.eventType as never,
         search: searchParams.search,
         startDate: searchParams.startDate,
@@ -929,6 +1021,7 @@ export function OrganizationAuditPage({
     searchParams.eventType,
     searchParams.failuresOnly,
     searchParams.endDate,
+    searchParams.preset,
     searchParams.search,
     searchParams.startDate,
     searchParams.sortBy,
@@ -1175,6 +1268,17 @@ export function OrganizationAuditPage({
                 <TabsTrigger value="raw">Raw events</TabsTrigger>
               </TabsList>
             </Tabs>
+            <Tabs
+              value={searchParams.preset}
+              onValueChange={(value) =>
+                handlePresetChange(value as OrganizationAuditSearchParams['preset'])
+              }
+            >
+              <TabsList>
+                <TabsTrigger value="all">All activity</TabsTrigger>
+                <TabsTrigger value="security">Security events</TabsTrigger>
+              </TabsList>
+            </Tabs>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-end sm:flex-1">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
@@ -1272,6 +1376,7 @@ export function OrganizationAuditPage({
     handleFailuresOnlyChange,
     handlePageChange,
     handlePageSizeChange,
+    handlePresetChange,
     handleSearchChange,
     handleStartDateChange,
   ]);

@@ -4,8 +4,11 @@ import { v } from 'convex/values';
 const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
 const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
+  v.literal('pending_scan'),
+  v.literal('quarantined'),
   v.literal('ready'),
   v.literal('error'),
+  v.literal('rejected'),
 );
 const chatRunStatusValidator = v.union(
   v.literal('idle'),
@@ -112,8 +115,20 @@ export default defineSchema({
     id: v.string(),
     eventType: v.string(),
     userId: v.optional(v.string()), // References Better Auth user.id when the event resolves to one
+    actorUserId: v.optional(v.string()),
+    targetUserId: v.optional(v.string()),
     organizationId: v.optional(v.string()),
     identifier: v.optional(v.string()),
+    sessionId: v.optional(v.string()),
+    requestId: v.optional(v.string()),
+    outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
+    severity: v.optional(v.union(v.literal('info'), v.literal('warning'), v.literal('critical'))),
+    resourceType: v.optional(v.string()),
+    resourceId: v.optional(v.string()),
+    resourceLabel: v.optional(v.string()),
+    sourceSurface: v.optional(v.string()),
+    eventHash: v.optional(v.string()),
+    previousEventHash: v.optional(v.string()),
     metadata: v.optional(v.string()),
     createdAt: v.number(),
     ipAddress: v.optional(v.string()),
@@ -214,6 +229,9 @@ export default defineSchema({
     summary: v.optional(v.string()),
     summaryUpdatedAt: v.optional(v.number()),
     summaryThroughOrder: v.optional(v.number()),
+    deletedAt: v.optional(v.number()),
+    deletedByUserId: v.optional(v.string()),
+    purgeEligibleAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
     lastMessageAt: v.number(),
@@ -304,6 +322,9 @@ export default defineSchema({
     promptSummary: v.string(),
     status: chatAttachmentStatusValidator,
     errorMessage: v.optional(v.string()),
+    deletedAt: v.optional(v.number()),
+    deletedByUserId: v.optional(v.string()),
+    purgeEligibleAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

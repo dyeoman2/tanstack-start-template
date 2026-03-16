@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createSharedBetterAuthOptions } from './sharedOptions';
 
 const ORIGINAL_ENV = { ...process.env };
@@ -44,5 +44,123 @@ describe('createSharedBetterAuthOptions', () => {
     const options = createOptions();
 
     expect(options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
+  });
+
+  it('calls the explicit password-auth-blocked callback before throwing', async () => {
+    const onPasswordAuthBlocked = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      onPasswordAuthBlocked,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+      shouldBlockPasswordAuth: async () => 'Password sign-in is disabled for this account',
+    });
+
+    const beforeHook = options.hooks?.before;
+    if (!beforeHook) {
+      throw new Error('Expected Better Auth before hook to be configured');
+    }
+
+    await expect(
+      beforeHook({
+        body: { email: 'blocked@example.com' },
+        context: {
+          session: {
+            user: {
+              id: 'user_1',
+            },
+          },
+        },
+        method: 'POST',
+        path: '/sign-in/email',
+      } as never),
+    ).rejects.toMatchObject({
+      body: {
+        message: 'Password sign-in is disabled for this account',
+      },
+    });
+
+    expect(onPasswordAuthBlocked).toHaveBeenCalledWith({
+      email: 'blocked@example.com',
+      message: 'Password sign-in is disabled for this account',
+      path: '/sign-in/email',
+      sessionUserId: 'user_1',
+    });
+  });
+
+  it('calls the password reset denied callback from the Better Auth after hook', async () => {
+    const onPasswordResetDenied = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      onPasswordResetDenied,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+
+    const afterHook = options.hooks?.after;
+    if (!afterHook) {
+      throw new Error('Expected Better Auth after hook to be configured');
+    }
+
+    await afterHook({
+      body: { email: 'reset@example.com' },
+      context: {
+        returned: new Response(JSON.stringify({ message: 'Reset token expired' }), {
+          status: 400,
+          headers: { 'content-type': 'application/json' },
+        }),
+        session: {
+          user: {
+            id: 'user_1',
+          },
+        },
+      },
+      path: '/reset-password',
+    } as never);
+
+    expect(onPasswordResetDenied).toHaveBeenCalledWith({
+      email: 'reset@example.com',
+      message: 'Reset token expired',
+      path: '/reset-password',
+      sessionUserId: 'user_1',
+      status: 400,
+    });
+  });
+
+  it('calls the email verification denied callback from the Better Auth after hook', async () => {
+    const onEmailVerificationDenied = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      onEmailVerificationDenied,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+
+    const afterHook = options.hooks?.after;
+    if (!afterHook) {
+      throw new Error('Expected Better Auth after hook to be configured');
+    }
+
+    await afterHook({
+      context: {
+        returned: new Response(JSON.stringify({ message: 'Verification token invalid' }), {
+          status: 403,
+          headers: { 'content-type': 'application/json' },
+        }),
+        session: {
+          user: {
+            id: 'user_1',
+          },
+        },
+      },
+      path: '/verify-email',
+    } as never);
+
+    expect(onEmailVerificationDenied).toHaveBeenCalledWith({
+      message: 'Verification token invalid',
+      path: '/verify-email',
+      sessionUserId: 'user_1',
+      status: 403,
+    });
   });
 });

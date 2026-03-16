@@ -222,9 +222,8 @@ async function listAllAdminUsers(): Promise<AdminUser[]> {
 
 async function getAdminUserById(userId: string): Promise<AdminUser | null> {
   try {
-    const response = await getBetterAuthUser(
-      userId,
-      ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+    const response = await getBetterAuthUser(userId, ({ code, message, status }) =>
+      normalizeAuthErrorMessage(code ?? undefined, message, status),
     );
 
     return normalizeAdminUser(response);
@@ -352,7 +351,8 @@ export const createAdminUserServerFn = createServerFn({ method: 'POST' })
           role: data.role,
           password,
         },
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+        ({ code, message, status }) =>
+          normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
 
       const createdUserId = created.user.id;
@@ -523,9 +523,8 @@ export const banAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await banBetterAuthUser(
-        data,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const response = await banBetterAuthUser(data, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -542,9 +541,8 @@ export const unbanAdminUserServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await unbanBetterAuthUser(
-        data.userId,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const response = await unbanBetterAuthUser(data.userId, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
       await convexAuthReactStart.fetchAuthMutation(api.admin.syncUserIndexEntry, {
         userId: data.userId,
@@ -561,10 +559,21 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      const response = await listBetterAuthUserSessions(
-        data.userId,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const response = await listBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
+      await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+        eventType: 'admin_user_sessions_viewed',
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'user_session',
+        resourceId: data.userId,
+        sourceSurface: 'admin.user_sessions',
+        metadata: {
+          targetUserId: data.userId,
+          sessionCount: response.sessions.length,
+        },
+      });
 
       return response.sessions.map(normalizeAdminSession);
     } catch (error) {
@@ -577,9 +586,8 @@ export const revokeAdminUserSessionServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await revokeBetterAuthUserSession(
-        data.sessionId,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      return await revokeBetterAuthUserSession(data.sessionId, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user session');
@@ -591,9 +599,8 @@ export const revokeAdminUserSessionsServerFn = createServerFn({ method: 'POST' }
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await revokeBetterAuthUserSessions(
-        data.userId,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      return await revokeBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Revoke admin user sessions');
@@ -605,9 +612,8 @@ export const setAdminUserPasswordServerFn = createServerFn({ method: 'POST' })
   .handler(async ({ data }) => {
     try {
       await requireAdmin();
-      return await setBetterAuthUserPassword(
-        data,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      return await setBetterAuthUserPassword(data, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Set admin user password');
@@ -622,9 +628,8 @@ export const deleteAdminUserServerFn = createServerFn({ method: 'POST' })
       const users = await listAllAdminUsers();
       const target = assertCanDeleteUser(users, currentUser.id, data.userId);
 
-      const result = await removeBetterAuthUser(
-        data.userId,
-        ({ code, message, status }) => normalizeAuthErrorMessage(code ?? undefined, message, status),
+      const result = await removeBetterAuthUser(data.userId, ({ code, message, status }) =>
+        normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
 
       try {

@@ -47,6 +47,25 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
+  'authorization_denied',
+  'admin_user_sessions_viewed',
+  'directory_exported',
+  'audit_log_exported',
+  'chat_thread_created',
+  'chat_thread_deleted',
+  'chat_attachment_uploaded',
+  'chat_attachment_scan_passed',
+  'chat_attachment_scan_failed',
+  'chat_attachment_quarantined',
+  'chat_attachment_deleted',
+  'attachment_access_url_issued',
+  'pdf_parse_requested',
+  'pdf_parse_succeeded',
+  'pdf_parse_failed',
+  'chat_run_completed',
+  'chat_run_failed',
+  'chat_web_search_used',
+  'audit_integrity_check_failed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -63,8 +82,20 @@ export type AuthAuditEvent = {
   id: string;
   eventType: AuthAuditEventType;
   userId?: string;
+  actorUserId?: string;
+  targetUserId?: string;
   organizationId?: string;
   identifier?: string;
+  sessionId?: string;
+  requestId?: string;
+  outcome?: 'success' | 'failure';
+  severity?: 'info' | 'warning' | 'critical';
+  resourceType?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  sourceSurface?: string;
+  eventHash?: string;
+  previousEventHash?: string;
   createdAt: number;
   ipAddress?: string;
   userAgent?: string;
@@ -123,6 +154,25 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   bulk_invite_revoked: ['organization'],
   bulk_invite_resent: ['organization'],
   bulk_member_removed: ['organization'],
+  authorization_denied: ['organization'],
+  admin_user_sessions_viewed: ['session'],
+  directory_exported: ['organization'],
+  audit_log_exported: ['organization'],
+  chat_thread_created: ['organization'],
+  chat_thread_deleted: ['organization'],
+  chat_attachment_uploaded: ['organization'],
+  chat_attachment_scan_passed: ['organization'],
+  chat_attachment_scan_failed: ['organization'],
+  chat_attachment_quarantined: ['organization'],
+  chat_attachment_deleted: ['organization'],
+  attachment_access_url_issued: ['organization'],
+  pdf_parse_requested: ['organization'],
+  pdf_parse_succeeded: ['organization'],
+  pdf_parse_failed: ['organization'],
+  chat_run_completed: ['organization'],
+  chat_run_failed: ['organization'],
+  chat_web_search_used: ['organization'],
+  audit_integrity_check_failed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

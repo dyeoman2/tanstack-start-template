@@ -309,6 +309,7 @@ export async function resolveThread(
 
     return {
       thread: existingThread,
+      created: false as const,
     };
   }
 
@@ -354,6 +355,7 @@ export async function resolveThread(
 
   return {
     thread,
+    created: true as const,
   };
 }
 
@@ -453,7 +455,7 @@ export function isTextOnlyUserMessage(message: AgentMessageDoc | null) {
 export function isValidContinuationPromptMessage(
   message: AgentMessageDoc | null,
   expectedThreadId: string,
-) : message is AgentMessageDoc {
+): message is AgentMessageDoc {
   return message?.threadId === expectedThreadId && message.message?.role === 'user';
 }
 
@@ -707,12 +709,50 @@ export const createChatAttachmentFromUpload = action({
       extractedTextStorageId: undefined,
       agentFileId: undefined,
       promptSummary: initialSummary,
-      status: 'pending',
+      status: 'pending_scan',
       errorMessage: undefined,
       createdAt: now,
     })) as Id<'chatAttachments'>;
 
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'chat_attachment_uploaded',
+      userId,
+      actorUserId: userId,
+      organizationId,
+      sessionId,
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'chat_attachment',
+      resourceId: attachmentId,
+      resourceLabel: validatedAttachment.normalizedName,
+      sourceSurface: 'chat.attachment_upload',
+      metadata: JSON.stringify({
+        attachmentId,
+        kind,
+        mimeType: validatedAttachment.mimeType,
+        sizeBytes: validatedAttachment.sizeBytes,
+      }),
+    });
+
     try {
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'chat_attachment_scan_passed',
+        userId,
+        actorUserId: userId,
+        organizationId,
+        sessionId,
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'chat_attachment',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        sourceSurface: 'chat.attachment_scan',
+        metadata: JSON.stringify({
+          attachmentId,
+          mimeType: validatedAttachment.mimeType,
+        }),
+      });
+
       const stored = await storeFile(ctx, components.agent, blob, {
         filename: validatedAttachment.normalizedName,
       });
@@ -756,6 +796,27 @@ export const createChatAttachmentFromUpload = action({
         throw new Error('Attachment was not found after processing.');
       }
 
+      if (kind === 'image') {
+        await ctx.runMutation(internal.audit.insertAuditLog, {
+          eventType: 'attachment_access_url_issued',
+          userId,
+          actorUserId: userId,
+          organizationId,
+          sessionId,
+          outcome: 'success',
+          severity: 'info',
+          resourceType: 'chat_attachment',
+          resourceId: attachmentId,
+          resourceLabel: validatedAttachment.normalizedName,
+          sourceSurface: 'chat.attachment_preview',
+          metadata: JSON.stringify({
+            attachmentId,
+            expiresIn: 'provider_managed',
+            purpose: 'image_preview',
+          }),
+        });
+      }
+
       return {
         ...attachment,
         previewUrl: kind === 'image' ? stored.file.url : null,
@@ -764,10 +825,27 @@ export const createChatAttachmentFromUpload = action({
       await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
         attachmentId,
         patch: {
-          status: 'error',
+          status: 'rejected',
           errorMessage: error instanceof Error ? error.message : 'Failed to process attachment.',
           updatedAt: Date.now(),
         },
+      });
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'chat_attachment_scan_failed',
+        userId,
+        actorUserId: userId,
+        organizationId,
+        sessionId,
+        outcome: 'failure',
+        severity: 'warning',
+        resourceType: 'chat_attachment',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        sourceSurface: 'chat.attachment_scan',
+        metadata: JSON.stringify({
+          attachmentId,
+          error: error instanceof Error ? error.message : 'Failed to process attachment.',
+        }),
       });
 
       throw error;
@@ -915,6 +993,44 @@ export const runChatGenerationInternal = internalAction({
           ...(assistantMessage?._id ? { activeAssistantMessageId: assistantMessage._id } : {}),
         },
       });
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'chat_run_completed',
+        userId: run.initiatedByUserId,
+        actorUserId: run.initiatedByUserId,
+        organizationId: run.organizationId,
+        sessionId: run.ownerSessionId,
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'chat_run',
+        resourceId: args.runId,
+        resourceLabel: run.model ?? 'chat run',
+        sourceSurface: 'chat.run_generation',
+        metadata: JSON.stringify({
+          runId: args.runId,
+          model: run.model ?? null,
+          provider: run.provider ?? null,
+          useWebSearch: run.useWebSearch,
+        }),
+      });
+      if (run.useWebSearch) {
+        await ctx.runMutation(internal.audit.insertAuditLog, {
+          eventType: 'chat_web_search_used',
+          userId: run.initiatedByUserId,
+          actorUserId: run.initiatedByUserId,
+          organizationId: run.organizationId,
+          sessionId: run.ownerSessionId,
+          outcome: 'success',
+          severity: 'info',
+          resourceType: 'chat_run',
+          resourceId: args.runId,
+          resourceLabel: run.model ?? 'chat run',
+          sourceSurface: 'chat.web_search',
+          metadata: JSON.stringify({
+            runId: args.runId,
+            model: run.model ?? null,
+          }),
+        });
+      }
       await ctx.runMutation(internal.agentChat.patchThreadInternal, {
         threadId: run.threadId,
         patch: {
@@ -939,6 +1055,25 @@ export const runChatGenerationInternal = internalAction({
         reason: error instanceof Error ? error.message : 'Streaming failed.',
         status: 'error',
         failureKind: classifyChatRunFailure(error),
+      });
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'chat_run_failed',
+        userId: latestRun.initiatedByUserId,
+        actorUserId: latestRun.initiatedByUserId,
+        organizationId: latestRun.organizationId,
+        sessionId: latestRun.ownerSessionId,
+        outcome: 'failure',
+        severity: 'warning',
+        resourceType: 'chat_run',
+        resourceId: args.runId,
+        resourceLabel: latestRun.model ?? 'chat run',
+        sourceSurface: 'chat.run_generation',
+        metadata: JSON.stringify({
+          runId: args.runId,
+          reason: error instanceof Error ? error.message : 'Streaming failed.',
+          failureKind: classifyChatRunFailure(error),
+          model: latestRun.model ?? null,
+        }),
       });
     }
 

@@ -20,7 +20,7 @@ import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
-import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
+import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
 import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
 import {
@@ -66,13 +66,17 @@ export function OrganizationSettingsManagement({
     setLogo(settings.organization.logo ?? '');
   }, [settings]);
 
-  const optimisticOrganizationName = getOrganizationBreadcrumbName(location.state, slug);
+  const organizationName = useStableOrganizationName({
+    names: [settings?.organization.name],
+    slug,
+    state: location.state,
+  });
 
   if (settings === undefined) {
     return (
       <div className="space-y-6">
         <OrganizationWorkspaceNav
-          title={optimisticOrganizationName ?? 'Loading organization'}
+          title={organizationName}
           description="Preparing the organization settings."
         />
       </div>
@@ -182,7 +186,7 @@ export function OrganizationSettingsManagement({
   return (
     <div className="space-y-6">
       <OrganizationWorkspaceNav
-        title={settings.organization.name}
+        title={organizationName}
         description="Manage the organization profile and sensitive lifecycle controls."
         actions={
           canUpdateSettings ? (
@@ -193,7 +197,7 @@ export function OrganizationSettingsManagement({
           ) : undefined
         }
       />
-      <OrganizationWorkspaceTabs slug={slug} organizationName={settings.organization.name} />
+      <OrganizationWorkspaceTabs slug={slug} organizationName={organizationName} />
 
       {canShowAccessWarning ? (
         <Card>

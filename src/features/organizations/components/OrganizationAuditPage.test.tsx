@@ -82,6 +82,7 @@ const DEFAULT_SEARCH_PARAMS = {
   pageSize: 10,
   sortBy: 'createdAt' as const,
   sortOrder: 'desc' as const,
+  preset: 'all' as const,
   eventType: 'all' as const,
   search: '',
   startDate: '',
@@ -298,6 +299,7 @@ describe('OrganizationAuditPage', () => {
         slug: 'cottage-hospital',
         sortBy: 'createdAt',
         sortOrder: 'desc',
+        preset: 'all',
         eventType: 'member_invited',
         search: 'invitee',
         startDate: '',
@@ -341,6 +343,50 @@ describe('OrganizationAuditPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
     expect(screen.getByText('Loading audit history...')).toBeInTheDocument();
+  });
+
+  it('keeps the last resolved organization name during transient audit refetches', () => {
+    let renderCount = 0;
+    let slugOnlyQueryCount = 0;
+
+    useQueryMock.mockImplementation((_, args) => {
+      if (args && typeof args === 'object' && 'eventType' in (args as Record<string, unknown>)) {
+        renderCount += 1;
+        return renderCount <= 2
+          ? buildAuditResponse([
+              {
+                id: 'event-1',
+                eventType: 'member_invited',
+                label: 'Invitation sent',
+                identifier: 'invitee@example.com',
+                createdAt: Date.now(),
+              },
+            ])
+          : undefined;
+      }
+
+      if (
+        args &&
+        typeof args === 'object' &&
+        Object.keys(args as Record<string, unknown>).length === 1
+      ) {
+        slugOnlyQueryCount += 1;
+        return slugOnlyQueryCount % 2 === 1 ? buildSettingsResponse() : buildDomainsResponse();
+      }
+
+      return undefined;
+    });
+
+    const { rerender } = render(
+      <OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />,
+    );
+
+    expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
+
+    rerender(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+
+    expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Loading organization' })).not.toBeInTheDocument();
   });
 
   it('renders the current organization posture summary in summary view', () => {

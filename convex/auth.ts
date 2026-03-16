@@ -1,31 +1,31 @@
-"use node";
+'use node';
 
 import {
-  createClient,
   type CreateAuth as ConvexBetterAuthCreateAuth,
+  createClient,
   type GenericCtx,
 } from '@convex-dev/better-auth';
 import { betterAuth } from 'better-auth';
 import { APIError } from 'better-auth/api';
 import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
-import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { shouldCreateEnterpriseJitMembership } from '../src/features/auth/lib/enterprise-jit';
+import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import { normalizeOrganizationRole } from '../src/features/organizations/lib/organization-permissions';
 import {
   getBetterAuthSecret,
   getGoogleOAuthCredentials,
-  isE2EPrincipalEmail,
   getRequiredBetterAuthUrl,
-  isTrustedBetterAuthOrigin,
+  isE2EPrincipalEmail,
   isGoogleWorkspaceOAuthConfigured,
+  isTrustedBetterAuthOrigin,
 } from '../src/lib/server/env.server';
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx } from './_generated/server';
-import { action, internalAction, mutation, query } from './_generated/server';
+import { action, internalAction } from './_generated/server';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentUserFromActionOrThrow,
@@ -33,42 +33,42 @@ import {
 import betterAuthSchema from './betterAuth/schema';
 import {
   createSharedBetterAuthOptions,
+  ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS,
+  type OrganizationPluginOptions,
   type SharedSendInvitationEmail,
 } from './betterAuth/sharedOptions';
-import {
-  createBetterAuthMember,
-  deleteBetterAuthMemberRecord,
-  findBetterAuthInvitationById,
-  findBetterAuthMember,
-  findBetterAuthOrganizationById,
-  findBetterAuthAccountByAccountIdAndProviderId,
-  findBetterAuthUserByEmail,
-  fetchBetterAuthInvitationsByOrganizationAndEmail,
-  findBetterAuthAccountByUserIdAndProviderId,
-  fetchBetterAuthMembersByOrganizationId,
-  fetchBetterAuthMembersByUserId,
-  fetchBetterAuthOrganizationsByIds,
-  findBetterAuthScimProviderById,
-  findBetterAuthScimProviderByOrganizationId,
-  fetchBetterAuthSessionsByUserId,
-  fetchBetterAuthUsersByIds,
-  updateBetterAuthAccountRecord,
-  updateBetterAuthSessionRecord,
-  updateBetterAuthUserRecord,
-} from './lib/betterAuth';
-import { getOrganizationMembershipStatuses } from './lib/organizationMembershipState';
-import { getOrganizationMembershipStateByOrganizationUser } from './lib/organizationMembershipState';
+import { createAuthAuditPlugin } from './lib/authAudit';
 import {
   createActorScopedRateLimitKey,
   createEmailScopedRateLimitKey,
   enforceServerAuthRateLimit,
 } from './lib/authRateLimits';
-import { createAuthAuditPlugin } from './lib/authAudit';
 import {
-  authUserValidator,
-  organizationRoleValidator,
-  rateLimitResultValidator,
-} from './lib/returnValidators';
+  createBetterAuthMember,
+  deleteBetterAuthMemberRecord,
+  fetchBetterAuthInvitationsByOrganizationAndEmail,
+  fetchBetterAuthMembersByOrganizationId,
+  fetchBetterAuthMembersByUserId,
+  fetchBetterAuthOrganizationsByIds,
+  fetchBetterAuthSessionsByUserId,
+  fetchBetterAuthUsersByIds,
+  findBetterAuthAccountByAccountIdAndProviderId,
+  findBetterAuthAccountByUserIdAndProviderId,
+  findBetterAuthInvitationById,
+  findBetterAuthMember,
+  findBetterAuthOrganizationById,
+  findBetterAuthScimProviderById,
+  findBetterAuthScimProviderByOrganizationId,
+  findBetterAuthUserByEmail,
+  updateBetterAuthAccountRecord,
+  updateBetterAuthSessionRecord,
+  updateBetterAuthUserRecord,
+} from './lib/betterAuth';
+import {
+  getOrganizationMembershipStateByOrganizationUser,
+  getOrganizationMembershipStatuses,
+} from './lib/organizationMembershipState';
+import { organizationRoleValidator, rateLimitResultValidator } from './lib/returnValidators';
 
 const secret = getBetterAuthSecret();
 const GOOGLE_JWKS = createRemoteJWKSet(new URL('https://www.googleapis.com/oauth2/v3/certs'));
@@ -77,7 +77,10 @@ export function shouldSkipE2EAuthEmailForTesting(targetEmail: string): boolean {
   return isE2EPrincipalEmail(targetEmail);
 }
 
-function logSkippedE2EAuthEmail(kind: 'invitation' | 'password reset' | 'verification', email: string) {
+function logSkippedE2EAuthEmail(
+  kind: 'invitation' | 'password reset' | 'verification',
+  email: string,
+) {
   if (process.env.NODE_ENV === 'production') {
     return;
   }
@@ -129,7 +132,18 @@ const betterAuthActionErrorValidator = v.object({
 });
 
 const adminUserRoleValidator = v.union(v.string(), v.array(v.string()), v.null());
-const betterAuthActionSuccessValidator = <TValidator extends ReturnType<typeof v.object> | ReturnType<typeof v.union> | ReturnType<typeof v.array> | ReturnType<typeof v.literal> | ReturnType<typeof v.string> | ReturnType<typeof v.boolean> | ReturnType<typeof v.number>>(dataValidator: TValidator) =>
+const betterAuthActionSuccessValidator = <
+  TValidator extends
+    | ReturnType<typeof v.object>
+    | ReturnType<typeof v.union>
+    | ReturnType<typeof v.array>
+    | ReturnType<typeof v.literal>
+    | ReturnType<typeof v.string>
+    | ReturnType<typeof v.boolean>
+    | ReturnType<typeof v.number>,
+>(
+  dataValidator: TValidator,
+) =>
   v.object({
     data: dataValidator,
     ok: v.literal(true),
@@ -217,8 +231,18 @@ const scimLifecycleResponseValidator = v.object({
   status: v.number(),
 });
 
-const betterAuthActionResultValidator = <TValidator extends ReturnType<typeof v.object> | ReturnType<typeof v.union> | ReturnType<typeof v.array> | ReturnType<typeof v.literal> | ReturnType<typeof v.string> | ReturnType<typeof v.boolean> | ReturnType<typeof v.number>>(dataValidator: TValidator) =>
-  v.union(betterAuthActionSuccessValidator(dataValidator), betterAuthActionFailureValidator);
+const betterAuthActionResultValidator = <
+  TValidator extends
+    | ReturnType<typeof v.object>
+    | ReturnType<typeof v.union>
+    | ReturnType<typeof v.array>
+    | ReturnType<typeof v.literal>
+    | ReturnType<typeof v.string>
+    | ReturnType<typeof v.boolean>
+    | ReturnType<typeof v.number>,
+>(
+  dataValidator: TValidator,
+) => v.union(betterAuthActionSuccessValidator(dataValidator), betterAuthActionFailureValidator);
 
 type BetterAuthActionError = {
   code: string | null;
@@ -268,18 +292,16 @@ type BetterAuthOrganizationSummary = {
 };
 
 type BetterAuthApiSurface = {
-  listUsers(input: {
-    headers: Headers;
-    query?: { limit?: number; offset?: number };
-  }): Promise<{
+  listUsers(input: { headers: Headers; query?: { limit?: number; offset?: number } }): Promise<{
     limit?: number;
     offset?: number;
     total: number;
     users: Array<Parameters<typeof normalizeAdminUserRecord>[0]>;
   }>;
-  getUser(input: { headers: Headers; query: { id: string } }): Promise<
-    Parameters<typeof normalizeAdminUserRecord>[0]
-  >;
+  getUser(input: {
+    headers: Headers;
+    query: { id: string };
+  }): Promise<Parameters<typeof normalizeAdminUserRecord>[0]>;
   createUser(input: {
     body: {
       email: string;
@@ -312,10 +334,7 @@ type BetterAuthApiSurface = {
     body: { userId: string };
     headers: Headers;
   }): Promise<{ user: Parameters<typeof normalizeAdminUserRecord>[0] }>;
-  listUserSessions(input: {
-    body: { userId: string };
-    headers: Headers;
-  }): Promise<{
+  listUserSessions(input: { body: { userId: string }; headers: Headers }): Promise<{
     sessions: Array<Parameters<typeof normalizeAdminSessionRecord>[0]>;
   }>;
   revokeUserSession(input: {
@@ -326,10 +345,7 @@ type BetterAuthApiSurface = {
     body: { userId: string };
     headers: Headers;
   }): Promise<{ success: boolean }>;
-  removeUser(input: {
-    body: { userId: string };
-    headers: Headers;
-  }): Promise<{ success: boolean }>;
+  removeUser(input: { body: { userId: string }; headers: Headers }): Promise<{ success: boolean }>;
   setUserPassword(input: {
     body: { newPassword: string; userId: string };
     headers: Headers;
@@ -407,9 +423,7 @@ type BetterAuthApiSurface = {
   }): Promise<{
     scimToken: string;
   }>;
-  listSCIMProviderConnections(input: {
-    headers: Headers;
-  }): Promise<{
+  listSCIMProviderConnections(input: { headers: Headers }): Promise<{
     providers: Array<{
       id: string;
       organizationId: string | null;
@@ -420,10 +434,7 @@ type BetterAuthApiSurface = {
     body: { providerId: string };
     headers: Headers;
   }): Promise<{ success: boolean }>;
-  getSCIMProviderConnection(input: {
-    query: { providerId: string };
-    headers: Headers;
-  }): Promise<{
+  getSCIMProviderConnection(input: { query: { providerId: string }; headers: Headers }): Promise<{
     id: string;
     organizationId: string | null;
     providerId: string;
@@ -520,19 +531,6 @@ async function runBetterAuthAction<TData>(
   }
 }
 
-function slugifyOrganizationName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-}
-
-function createDefaultOrganizationSlug(authUserId: string, now: number): string {
-  return `${slugifyOrganizationName(`org-${authUserId.slice(0, 8)}`)}-${now.toString(36)}`;
-}
-
 async function getCurrentBetterAuthUserOrThrow(ctx: ActionCtx): Promise<{
   email: string | null;
   id: string;
@@ -617,62 +615,184 @@ async function assertOrganizationSettingsWriteAccess(ctx: ActionCtx, organizatio
   }
 }
 
-async function createSystemOrganizationForUser(
-  ctx: ActionCtx,
-  input: {
-    authUserId: string;
-    name?: string;
-    now: number;
+type LocalOrganizationPluginOptions = Pick<
+  OrganizationPluginOptions,
+  'invitationExpiresIn' | 'organizationHooks' | 'sendInvitationEmail'
+>;
+
+async function safelyRecordAuthEvent(
+  recordAuditEvent: (event: {
+    eventType: string;
+    userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
+    organizationId?: string;
+    identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt?: number;
+  }) => Promise<void>,
+  event: {
+    eventType: string;
+    userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
+    organizationId?: string;
+    identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt?: number;
   },
-): Promise<{ id: string }> {
-  const auth = createAuth(ctx);
-  const response = await ((auth.api as unknown) as BetterAuthApiSurface).createOrganization({
-    body: {
-      keepCurrentActiveOrganization: false,
-      name: input.name ?? 'New Organization',
-      slug: createDefaultOrganizationSlug(input.authUserId, input.now),
-      userId: input.authUserId,
-    },
-    headers: new Headers(),
-  });
-
-  const normalized = normalizeOrganizationSummaryRecord(response);
-  if (!normalized.id) {
-    throw new Error('Created organization is missing an id');
+) {
+  try {
+    await recordAuditEvent(event);
+  } catch (error) {
+    console.error('Failed to write Better Auth audit log', error);
   }
-
-  return { id: normalized.id };
 }
 
-async function createDefaultOrganizationForCurrentUser(
-  ctx: ActionCtx,
-  authUserId: string,
-): Promise<{ id: string }> {
-  return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
-    const response = await auth.api.createOrganization({
-      body: {
-        keepCurrentActiveOrganization: false,
-        name: 'New Organization',
-        slug: createDefaultOrganizationSlug(authUserId, Date.now()),
-      },
-      headers,
-    });
-
-    const normalized = normalizeOrganizationSummaryRecord(response);
-    if (!normalized.id) {
-      throw new Error('Created organization is missing an id');
+function createSendInvitationEmailHandler(ctx: GenericCtx<DataModel>): SharedSendInvitationEmail {
+  return async (data, request) => {
+    if (shouldSkipE2EAuthEmailForTesting(data.email)) {
+      logSkippedE2EAuthEmail('invitation', data.email);
+      return;
     }
 
-    return { id: normalized.id };
-  }).then((result) => {
-    if (!result.ok) {
-      throw new APIError(result.error.status >= 500 ? 'INTERNAL_SERVER_ERROR' : 'BAD_REQUEST', {
-        message: result.error.message,
+    const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
+      scheduler?: {
+        runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
+      };
+    };
+
+    if (!ctxWithScheduler.scheduler) {
+      throw new Error('Cannot send organization invitation email: scheduler not available');
+    }
+
+    const inviteUrl = resolveAuthEmailUrl(`/invite/${data.id}`, request);
+    await ctxWithScheduler.scheduler.runAfter(
+      0,
+      internal.emails.sendOrganizationInviteEmailMutation,
+      {
+        email: data.email,
+        inviteUrl,
+        inviterName: data.inviter.user.name ?? data.inviter.user.email,
+        organizationName: data.organization.name,
+        role: data.role,
+      },
+    );
+  };
+}
+
+function createInvitationPolicyHook(
+  ctx: GenericCtx<DataModel>,
+  recordAuditEvent: (event: {
+    eventType: string;
+    userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
+    organizationId?: string;
+    identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt?: number;
+  }) => Promise<void>,
+): NonNullable<
+  NonNullable<LocalOrganizationPluginOptions['organizationHooks']>['beforeCreateInvitation']
+> {
+  return async ({ invitation, organization }) => {
+    const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
+      action: 'invite',
+      organizationId: organization.id,
+      nextRole: normalizeOrganizationRole(invitation.role),
+      email: invitation.email,
+      resend: false,
+    });
+
+    if (!access.allowed) {
+      await safelyRecordAuthEvent(recordAuditEvent, {
+        createdAt: Date.now(),
+        eventType: 'authorization_denied',
+        actorUserId: undefined,
+        organizationId: organization.id,
+        identifier: invitation.email,
+        outcome: 'failure',
+        severity: 'warning',
+        resourceType: 'organization_membership',
+        resourceLabel: 'Invitation create denied',
+        sourceSurface: 'auth.endpoint.organization',
+        metadata: JSON.stringify({
+          nextRole: normalizeOrganizationRole(invitation.role),
+          path: '/organization/invite-member',
+          responseErrorCode: 'FORBIDDEN',
+          responseErrorMessage: access.reason ?? 'Organization invitation not allowed',
+        }),
+      });
+      throw new APIError('FORBIDDEN', {
+        message: access.reason ?? 'Organization invitation not allowed',
       });
     }
 
-    return result.data;
-  });
+    return undefined;
+  };
+}
+
+function createOrganizationPluginOptions(
+  ctx: GenericCtx<DataModel>,
+  recordAuditEvent: (event: {
+    eventType: string;
+    userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
+    organizationId?: string;
+    identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    createdAt?: number;
+  }) => Promise<void>,
+): LocalOrganizationPluginOptions {
+  return {
+    invitationExpiresIn: ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS,
+    organizationHooks: {
+      beforeCreateInvitation: createInvitationPolicyHook(ctx, recordAuditEvent),
+    },
+    sendInvitationEmail: createSendInvitationEmailHandler(ctx),
+  };
 }
 
 async function createSiteAdminInvitation(
@@ -693,23 +813,24 @@ async function createSiteAdminInvitation(
     throw new APIError('BAD_REQUEST', { message: 'Organization not found' });
   }
 
-  const auth = createAuth(ctx, { optionsOnly: true }) as any;
-  const orgOptions = ((auth.options?.plugins ?? []).find((plugin: any) => plugin.id === 'organization')
-    ?.options ?? {}) as {
-    invitationExpiresIn?: number;
-    organizationHooks?: {
-      afterCreateInvitation?: (input: any) => Promise<void>;
-      beforeCreateInvitation?: (input: any) => Promise<{ data?: Record<string, unknown> } | void>;
-    };
-    sendInvitationEmail?: SharedSendInvitationEmail;
-  };
+  const orgOptions = createOrganizationPluginOptions(ctx, async (event) => {
+    if (!('runMutation' in ctx) || typeof ctx.runMutation !== 'function') {
+      return;
+    }
+
+    await ctx.runMutation(anyApi.audit.insertAuditLog, event);
+  });
 
   const email = args.email.toLowerCase();
   const invitedUser = await findBetterAuthUserByEmail(ctx, email);
   if (invitedUser) {
     const invitedUserId = invitedUser._id ?? invitedUser.id;
     if (invitedUserId) {
-      const existingMembership = await findBetterAuthMember(ctx, args.organizationId, invitedUserId);
+      const existingMembership = await findBetterAuthMember(
+        ctx,
+        args.organizationId,
+        invitedUserId,
+      );
       if (existingMembership) {
         throw new APIError('BAD_REQUEST', {
           message: 'User is already a member of this organization',
@@ -721,7 +842,9 @@ async function createSiteAdminInvitation(
   const pendingInvitations = (
     await fetchBetterAuthInvitationsByOrganizationAndEmail(ctx, args.organizationId, email)
   )
-    .filter((invitation) => invitation.email.toLowerCase() === email && invitation.status === 'pending')
+    .filter(
+      (invitation) => invitation.email.toLowerCase() === email && invitation.status === 'pending',
+    )
     .sort((left, right) => toTimestamp(right.createdAt) - toTimestamp(left.createdAt));
 
   if (pendingInvitations.length > 0 && !args.resend) {
@@ -729,7 +852,7 @@ async function createSiteAdminInvitation(
   }
 
   const existingInvitation = pendingInvitations[0] ?? null;
-  const expiresAt = Date.now() + ((orgOptions?.invitationExpiresIn ?? 7 * 24 * 60 * 60) * 1000);
+  const expiresAt = Date.now() + (orgOptions?.invitationExpiresIn ?? 7 * 24 * 60 * 60) * 1000;
   const invitationSeed = {
     email,
     organizationId: args.organizationId,
@@ -905,19 +1028,18 @@ async function removeSiteAdminMember(
     organizationId: string;
   },
 ) {
-  const targetMember =
-    args.memberIdOrEmail.includes('@')
-      ? await ctx.runQuery(components.betterAuth.adapter.findOne, {
-          model: 'member',
-          where: [
-            { field: 'organizationId', operator: 'eq', value: args.organizationId },
-            { field: 'email', operator: 'eq', value: args.memberIdOrEmail, connector: 'AND' },
-          ],
-        })
-      : await ctx.runQuery(components.betterAuth.adapter.findOne, {
-          model: 'member',
-          where: [{ field: '_id', operator: 'eq', value: args.memberIdOrEmail }],
-        });
+  const targetMember = args.memberIdOrEmail.includes('@')
+    ? await ctx.runQuery(components.betterAuth.adapter.findOne, {
+        model: 'member',
+        where: [
+          { field: 'organizationId', operator: 'eq', value: args.organizationId },
+          { field: 'email', operator: 'eq', value: args.memberIdOrEmail, connector: 'AND' },
+        ],
+      })
+    : await ctx.runQuery(components.betterAuth.adapter.findOne, {
+        model: 'member',
+        where: [{ field: '_id', operator: 'eq', value: args.memberIdOrEmail }],
+      });
 
   const memberId =
     typeof targetMember === 'object' &&
@@ -943,15 +1065,22 @@ async function removeSiteAdminMember(
     membershipId: memberId,
   });
 
-  await ctx.runMutation((components.betterAuth.adapter.deleteOne as never), {
-    model: 'member',
-    id: memberId,
-  } as never);
+  await ctx.runMutation(
+    components.betterAuth.adapter.deleteOne as never,
+    {
+      model: 'member',
+      id: memberId,
+    } as never,
+  );
 
   if (typeof targetMember.userId === 'string') {
-    await syncActiveOrganizationForUserSessions((ctx as unknown) as CtxWithRunMutation, targetMember.userId, {
-      removedOrganizationId: args.organizationId,
-    });
+    await syncActiveOrganizationForUserSessions(
+      ctx as unknown as CtxWithRunMutation,
+      targetMember.userId,
+      {
+        removedOrganizationId: args.organizationId,
+      },
+    );
   }
 
   return {
@@ -961,10 +1090,7 @@ async function removeSiteAdminMember(
   };
 }
 
-async function cancelSiteAdminInvitation(
-  ctx: ActionCtx,
-  invitationId: string,
-) {
+async function cancelSiteAdminInvitation(ctx: ActionCtx, invitationId: string) {
   const invitation = await findBetterAuthInvitationById(ctx, invitationId);
   if (!invitation) {
     throw new APIError('BAD_REQUEST', { message: 'Invitation not found' });
@@ -1027,10 +1153,7 @@ async function updateSiteAdminOrganization(
   return normalizeOrganizationSummaryRecord(updatedOrganization);
 }
 
-async function deleteSiteAdminOrganization(
-  ctx: ActionCtx,
-  organizationId: string,
-) {
+async function deleteSiteAdminOrganization(ctx: ActionCtx, organizationId: string) {
   await assertSiteAdminWriteAccess(ctx, {
     action: 'delete-organization',
     organizationId,
@@ -1042,30 +1165,43 @@ async function deleteSiteAdminOrganization(
   }
 
   const members = await fetchBetterAuthMembersByOrganizationId(ctx, organizationId);
-  await ctx.runMutation((components.betterAuth.adapter.deleteMany as never), {
-    input: {
-      model: 'invitation',
-      where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
-    },
-    paginationOpts: { cursor: null, numItems: 1000, id: 0 },
-  } as never);
-  await ctx.runMutation((components.betterAuth.adapter.deleteMany as never), {
-    input: {
-      model: 'member',
-      where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
-    },
-    paginationOpts: { cursor: null, numItems: 1000, id: 0 },
-  } as never);
-  await ctx.runMutation((components.betterAuth.adapter.deleteOne as never), {
-    model: 'organization',
-    id: organizationId,
-  } as never);
+  await ctx.runMutation(
+    components.betterAuth.adapter.deleteMany as never,
+    {
+      input: {
+        model: 'invitation',
+        where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+      },
+      paginationOpts: { cursor: null, numItems: 1000, id: 0 },
+    } as never,
+  );
+  await ctx.runMutation(
+    components.betterAuth.adapter.deleteMany as never,
+    {
+      input: {
+        model: 'member',
+        where: [{ field: 'organizationId', operator: 'eq', value: organizationId }],
+      },
+      paginationOpts: { cursor: null, numItems: 1000, id: 0 },
+    } as never,
+  );
+  await ctx.runMutation(
+    components.betterAuth.adapter.deleteOne as never,
+    {
+      model: 'organization',
+      id: organizationId,
+    } as never,
+  );
 
   await Promise.all(
     members.map(async (member) => {
-      await syncActiveOrganizationForUserSessions((ctx as unknown) as CtxWithRunMutation, member.userId, {
-        removedOrganizationId: organizationId,
-      });
+      await syncActiveOrganizationForUserSessions(
+        ctx as unknown as CtxWithRunMutation,
+        member.userId,
+        {
+          removedOrganizationId: organizationId,
+        },
+      );
     }),
   );
 
@@ -1143,10 +1279,6 @@ function normalizeOrganizationSummaryRecord(record: {
   };
 }
 
-function toOptionalString(value: unknown) {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
 const GOOGLE_WORKSPACE_PROVIDER_KEY = 'google-workspace' as const;
 
 function getEnterpriseProviderLabel(providerKey: 'google-workspace' | 'entra' | 'okta'): string {
@@ -1167,10 +1299,7 @@ function getOrganizationScimProviderId(
   return `${providerKey}--${organizationId}`;
 }
 
-async function isSiteAdminUser(
-  ctx: GenericCtx<DataModel>,
-  authUserId: string,
-): Promise<boolean> {
+async function isSiteAdminUser(ctx: GenericCtx<DataModel>, authUserId: string): Promise<boolean> {
   const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
     model: 'user',
     where: [{ field: '_id', operator: 'eq', value: authUserId }],
@@ -1219,7 +1348,8 @@ async function ensureEnterpriseOrganizationMembership(
     return false;
   }
 
-  await ctx.runMutation!(components.betterAuth.adapter.create, {
+  const runMutation = ctx.runMutation;
+  await runMutation(components.betterAuth.adapter.create, {
     input: {
       model: 'member',
       data: {
@@ -1250,7 +1380,11 @@ async function resolveEnterpriseAuthSessionForUser(
     return null;
   }
 
-  const googleAccount = await findBetterAuthAccountByUserIdAndProviderId(ctx, input.userId, 'google');
+  const googleAccount = await findBetterAuthAccountByUserIdAndProviderId(
+    ctx,
+    input.userId,
+    'google',
+  );
   if (!googleAccount?.idToken) {
     return null;
   }
@@ -1383,11 +1517,7 @@ type ParsedScimUserPayload = {
   name: string;
 };
 
-function createScimErrorBody(
-  status: number,
-  detail: string,
-  scimType?: string,
-) {
+function createScimErrorBody(status: number, detail: string, scimType?: string) {
   return JSON.stringify({
     schemas: ['urn:ietf:params:scim:api:messages:2.0:Error'],
     status: status.toString(),
@@ -1431,10 +1561,7 @@ function createScimUserResource(
   };
 }
 
-function normalizeScimPrimaryEmail(
-  userName: string,
-  emails: unknown,
-) {
+function normalizeScimPrimaryEmail(userName: string, emails: unknown) {
   if (Array.isArray(emails)) {
     const normalizedEmails = emails.filter(
       (entry): entry is { primary?: boolean; value?: string } =>
@@ -1456,10 +1583,7 @@ function normalizeScimPrimaryEmail(
   return userName.trim().toLowerCase();
 }
 
-function normalizeScimFullName(
-  email: string,
-  name: unknown,
-) {
+function normalizeScimFullName(email: string, name: unknown) {
   if (!name || typeof name !== 'object') {
     return email;
   }
@@ -1474,7 +1598,10 @@ function normalizeScimFullName(
     'givenName' in name && typeof name.givenName === 'string' ? name.givenName.trim() : '';
   const familyName =
     'familyName' in name && typeof name.familyName === 'string' ? name.familyName.trim() : '';
-  const fullName = [givenName, familyName].filter((segment) => segment.length > 0).join(' ').trim();
+  const fullName = [givenName, familyName]
+    .filter((segment) => segment.length > 0)
+    .join(' ')
+    .trim();
   return fullName.length > 0 ? fullName : email;
 }
 
@@ -1539,9 +1666,7 @@ function parseScimPatchOperations(bodyJson: string | undefined) {
         path === 'active'
       ) {
         const nestedActive =
-          typeof value === 'object' && value !== null && 'active' in value
-            ? value.active
-            : value;
+          typeof value === 'object' && value !== null && 'active' in value ? value.active : value;
         if (typeof nestedActive === 'boolean') {
           active = nestedActive;
           continue;
@@ -1560,7 +1685,9 @@ function parseScimPatchOperations(bodyJson: string | undefined) {
   }
 }
 
-function decodeScimAuthorizationHeader(authorizationHeader: string): ParsedScimAuthorization | null {
+function decodeScimAuthorizationHeader(
+  authorizationHeader: string,
+): ParsedScimAuthorization | null {
   const bearerToken = authorizationHeader.replace(/^Bearer\s+/i, '').trim();
   if (bearerToken.length === 0) {
     return null;
@@ -1665,7 +1792,8 @@ async function resolvePreferredActiveOrganizationId(
         (membershipStatuses.get(membership._id) ?? 'active') === 'active',
     )
     .sort((left, right) => {
-      const leftCreatedAt = typeof left.createdAt === 'number' ? left.createdAt : left._creationTime;
+      const leftCreatedAt =
+        typeof left.createdAt === 'number' ? left.createdAt : left._creationTime;
       const rightCreatedAt =
         typeof right.createdAt === 'number' ? right.createdAt : right._creationTime;
 
@@ -1727,7 +1855,9 @@ async function syncActiveOrganizationForUserSessions(
       .filter((membership) => (membershipStatuses.get(membership._id) ?? 'active') === 'active')
       .map((membership) => membership.organizationId)
       .filter((organizationId) =>
-        organizations.some((organization) => (organization._id ?? organization.id) === organizationId),
+        organizations.some(
+          (organization) => (organization._id ?? organization.id) === organizationId,
+        ),
       ),
   );
 
@@ -1827,8 +1957,18 @@ export const createAuth = (
   const recordAuditEvent = async (event: {
     eventType: string;
     userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
     organizationId?: string;
     identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
     metadata?: string;
     ipAddress?: string;
     userAgent?: string;
@@ -1865,6 +2005,25 @@ export const createAuth = (
         userId,
       });
     },
+    onPasswordAuthBlocked: async ({ email, message, path, sessionUserId }) => {
+      await safelyRecordAuthEvent(recordAuditEvent, {
+        createdAt: Date.now(),
+        eventType: 'authorization_denied',
+        ...(sessionUserId ? { actorUserId: sessionUserId } : {}),
+        identifier: email,
+        outcome: 'failure',
+        severity: 'warning',
+        resourceType: path === '/sign-up/email' ? 'user' : 'session',
+        resourceLabel: path === '/sign-up/email' ? 'Sign-up denied' : 'Sign-in denied',
+        sourceSurface:
+          path === '/sign-up/email' ? 'auth.endpoint.sign_up' : 'auth.endpoint.sign_in',
+        metadata: JSON.stringify({
+          path,
+          responseErrorCode: 'FORBIDDEN',
+          responseErrorMessage: message,
+        }),
+      });
+    },
     assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {
       await assertEnterpriseSCIMManagementAccess(ctx, {
         organizationId,
@@ -1877,7 +2036,9 @@ export const createAuth = (
         create: {
           before: async (session) => {
             const activeOrganizationId = normalizeOptionalId(
-              typeof session.activeOrganizationId === 'string' ? session.activeOrganizationId : null,
+              typeof session.activeOrganizationId === 'string'
+                ? session.activeOrganizationId
+                : null,
             );
             if (activeOrganizationId) {
               return;
@@ -1902,27 +2063,31 @@ export const createAuth = (
       },
     },
     organizationHooks: {
-      beforeCreateInvitation: async ({ invitation, inviter, organization }) => {
-        const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
-          action: 'invite',
-          organizationId: organization.id,
-          nextRole: normalizeOrganizationRole(invitation.role),
-          email: invitation.email,
-          resend: false,
-        });
-
-        if (!access.allowed) {
-          throw new APIError('FORBIDDEN', {
-            message: access.reason ?? 'Organization invitation not allowed',
-          });
-        }
-      },
+      beforeCreateInvitation: createInvitationPolicyHook(ctx, recordAuditEvent),
       beforeAcceptInvitation: async ({ organization }) => {
-        const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationMemberJoinAccess, {
-          organizationId: organization.id,
-        });
+        const access = await ctx.runQuery(
+          anyApi.organizationManagement.getOrganizationMemberJoinAccess,
+          {
+            organizationId: organization.id,
+          },
+        );
 
         if (!access.allowed) {
+          await safelyRecordAuthEvent(recordAuditEvent, {
+            createdAt: Date.now(),
+            eventType: 'authorization_denied',
+            organizationId: organization.id,
+            outcome: 'failure',
+            severity: 'warning',
+            resourceType: 'organization_membership',
+            resourceLabel: 'Invitation acceptance denied',
+            sourceSurface: 'auth.endpoint.organization',
+            metadata: JSON.stringify({
+              path: '/organization/accept-invitation',
+              responseErrorCode: 'FORBIDDEN',
+              responseErrorMessage: access.reason ?? 'Organization join not allowed',
+            }),
+          });
           throw new APIError('FORBIDDEN', {
             message: access.reason ?? 'Organization join not allowed',
           });
@@ -2089,38 +2254,7 @@ export const createAuth = (
         authUserId: user.id,
       });
     },
-    sendInvitationEmail: async (
-      data: Parameters<SharedSendInvitationEmail>[0],
-      request?: Request,
-    ) => {
-      if (shouldSkipE2EAuthEmailForTesting(data.email)) {
-        logSkippedE2EAuthEmail('invitation', data.email);
-        return;
-      }
-
-      const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
-        scheduler?: {
-          runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
-        };
-      };
-
-      if (!ctxWithScheduler.scheduler) {
-        throw new Error('Cannot send organization invitation email: scheduler not available');
-      }
-
-      const inviteUrl = resolveAuthEmailUrl(`/invite/${data.id}`, request);
-      await ctxWithScheduler.scheduler.runAfter(
-        0,
-        internal.emails.sendOrganizationInviteEmailMutation,
-        {
-          email: data.email,
-          inviteUrl,
-          inviterName: data.inviter.user.name ?? data.inviter.user.email,
-          organizationName: data.organization.name,
-          role: data.role,
-        },
-      );
-    },
+    sendInvitationEmail: createSendInvitationEmailHandler(ctx),
     shouldBlockPasswordAuth: async ({ email }) => {
       return await getBlockedPasswordAuthMessage(ctx, email);
     },
@@ -2669,11 +2803,7 @@ export const createOrganizationInvitationServer = action({
   ),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(
-      ctx,
-      args.organizationId,
-      currentUser.id,
-    );
+    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -2709,11 +2839,7 @@ export const updateOrganizationMemberRoleServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationMemberResultValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(
-      ctx,
-      args.organizationId,
-      currentUser.id,
-    );
+    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -2752,11 +2878,7 @@ export const removeOrganizationMemberServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationMemberResultValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(
-      ctx,
-      args.organizationId,
-      currentUser.id,
-    );
+    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -2858,11 +2980,7 @@ export const updateOrganizationServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationSummaryValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(
-      ctx,
-      args.organizationId,
-      currentUser.id,
-    );
+    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -2896,11 +3014,7 @@ export const deleteOrganizationServer = action({
   returns: betterAuthActionResultValidator(betterAuthOrganizationSummaryValidator),
   handler: async (ctx, args) => {
     const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-    const viewerMembership = await findBetterAuthMember(
-      ctx,
-      args.organizationId,
-      currentUser.id,
-    );
+    const viewerMembership = await findBetterAuthMember(ctx, args.organizationId, currentUser.id);
 
     if (!currentUser.isSiteAdmin || viewerMembership) {
       return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
@@ -3044,7 +3158,10 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
   },
   returns: scimLifecycleResponseValidator,
   handler: async (ctx, args) => {
-    const scimContext = await resolveScimProviderFromAuthorizationHeader(ctx, args.authorizationHeader);
+    const scimContext = await resolveScimProviderFromAuthorizationHeader(
+      ctx,
+      args.authorizationHeader,
+    );
     if (!scimContext) {
       return {
         handled: true,
@@ -3102,19 +3219,18 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
 
       try {
         await deleteBetterAuthMemberRecord(ctx as CtxWithRequiredRunMutation, membership._id);
-        await ctx.runMutation(internal.scimLifecycle.markOrganizationMembershipDeactivatedForUserInternal, {
-          membershipId: membership._id,
-          organizationId,
-          reason: 'SCIM deprovisioned membership',
-          userId,
-        });
-        await syncActiveOrganizationForUserSessions(
-          ctx as unknown as CtxWithRunMutation,
-          userId,
+        await ctx.runMutation(
+          internal.scimLifecycle.markOrganizationMembershipDeactivatedForUserInternal,
           {
-          removedOrganizationId: organizationId,
+            membershipId: membership._id,
+            organizationId,
+            reason: 'SCIM deprovisioned membership',
+            userId,
           },
         );
+        await syncActiveOrganizationForUserSessions(ctx as unknown as CtxWithRunMutation, userId, {
+          removedOrganizationId: organizationId,
+        });
         await clearEnterpriseOrganizationForUserSessions(
           ctx as unknown as CtxWithRunMutation,
           userId,
@@ -3152,16 +3268,19 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
       payload?: ParsedScimUserPayload | null;
       userId?: string;
     }) => {
-      const existingAccount =
-        input.payload?.accountId
-          ? await findBetterAuthAccountByAccountIdAndProviderId(
+      const existingAccount = input.payload?.accountId
+        ? await findBetterAuthAccountByAccountIdAndProviderId(
+            ctx,
+            input.payload.accountId,
+            scimContext.providerId,
+          )
+        : input.userId
+          ? await findBetterAuthAccountByUserIdAndProviderId(
               ctx,
-              input.payload.accountId,
+              input.userId,
               scimContext.providerId,
             )
-          : input.userId
-            ? await findBetterAuthAccountByUserIdAndProviderId(ctx, input.userId, scimContext.providerId)
-            : null;
+          : null;
 
       if (!existingAccount) {
         return null;
@@ -3190,10 +3309,13 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
           role: 'member',
           createdAt: Date.now(),
         });
-        await ctx.runMutation(internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal, {
-          organizationId,
-          userId: existingAccount.userId,
-        });
+        await ctx.runMutation(
+          internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal,
+          {
+            organizationId,
+            userId: existingAccount.userId,
+          },
+        );
         await recordScimAuditEvent({
           eventType: 'scim_member_reactivated',
           identifier: user.email?.toLowerCase(),
@@ -3213,8 +3335,8 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
             ctx as CtxWithRequiredRunMutation,
             user._id ?? existingAccount.userId,
             {
-            email: input.payload.email,
-            name: input.payload.name,
+              email: input.payload.email,
+              name: input.payload.name,
             },
           ),
           updateBetterAuthAccountRecord(ctx as CtxWithRequiredRunMutation, existingAccount._id, {

@@ -9,8 +9,18 @@ import {
 export type AuditRecord = {
   eventType: AuthAuditEventType;
   userId?: string;
+  actorUserId?: string;
+  targetUserId?: string;
   organizationId?: string;
   identifier?: string;
+  sessionId?: string;
+  requestId?: string;
+  outcome?: 'success' | 'failure';
+  severity?: 'info' | 'warning' | 'critical';
+  resourceType?: string;
+  resourceId?: string;
+  resourceLabel?: string;
+  sourceSurface?: string;
   metadata?: string;
   ipAddress?: string;
   userAgent?: string;
@@ -25,6 +35,7 @@ type SessionUser = {
 };
 
 type SessionState = {
+  id?: string | null;
   activeOrganizationId?: string | null;
   impersonatedBy?: string | null;
 };
@@ -62,7 +73,11 @@ type ResolvedAuthAuditState = {
   organizationId?: string;
   path: string;
   response: Record<string, unknown> | null;
+  responseErrorCode?: string;
+  responseErrorMessage?: string;
+  responseStatus?: number;
   responseSummary: string;
+  sessionId?: string;
   sessionSnapshot: AuthSession | null;
   success: boolean;
   targetUserId?: string;
@@ -141,10 +156,6 @@ async function readEndpointResponse(
   }
 
   if (returned instanceof Response) {
-    if (returned.status < 200 || returned.status >= 300) {
-      return null;
-    }
-
     try {
       const json = (await returned.clone().json()) as unknown;
       return typeof json === 'object' && json !== null ? (json as Record<string, unknown>) : null;
@@ -205,45 +216,159 @@ function maybeStringifyMetadata(value: Record<string, unknown> | undefined) {
   return JSON.stringify(Object.fromEntries(entries));
 }
 
-function buildEventMetadata(
-  state: { method?: string; path: string },
-  userId: string | undefined,
-  actorUserId: string | undefined,
-  extra?: Record<string, unknown>,
-) {
+function buildEventMetadata(state: ResolvedAuthAuditState, extra?: Record<string, unknown>) {
   const metadata: Record<string, unknown> = {
     path: state.path,
     ...(state.method ? { method: state.method } : {}),
+    ...(state.responseStatus !== undefined ? { responseStatus: state.responseStatus } : {}),
+    ...(state.responseErrorCode ? { responseErrorCode: state.responseErrorCode } : {}),
+    ...(state.responseErrorMessage ? { responseErrorMessage: state.responseErrorMessage } : {}),
     ...(extra ?? {}),
   };
-
-  if (actorUserId && actorUserId !== userId) {
-    metadata.actorUserId = actorUserId;
-  }
 
   return maybeStringifyMetadata(metadata);
 }
 
+function inferSourceSurface(eventType: AuthAuditEventType) {
+  switch (eventType) {
+    case 'user_signed_up':
+      return 'auth.endpoint.sign_up';
+    case 'user_signed_in':
+      return 'auth.endpoint.sign_in';
+    case 'user_signed_out':
+      return 'auth.endpoint.sign_out';
+    case 'session_created':
+      return 'auth.session.create';
+    case 'session_revoked':
+    case 'sessions_revoked_all':
+      return 'auth.session.revoke';
+    case 'user_impersonated':
+    case 'user_impersonation_stopped':
+      return 'auth.session.impersonation';
+    case 'password_reset_requested':
+    case 'password_reset_completed':
+      return 'auth.endpoint.password_reset';
+    case 'email_verification_sent':
+    case 'user_email_verified':
+      return 'auth.endpoint.email_verification';
+    case 'password_changed':
+      return 'auth.endpoint.password_change';
+    case 'account_linked':
+    case 'account_unlinked':
+      return 'auth.endpoint.account';
+    case 'user_profile_updated':
+    case 'user_profile_image_updated':
+      return 'auth.endpoint.user';
+    case 'user_deleted':
+    case 'user_banned':
+    case 'user_unbanned':
+      return 'auth.endpoint.admin_user';
+    case 'organization_created':
+    case 'organization_updated':
+    case 'member_added':
+    case 'member_removed':
+    case 'member_role_updated':
+    case 'member_invited':
+    case 'invite_accepted':
+    case 'invite_rejected':
+    case 'invite_cancelled':
+      return 'auth.endpoint.organization';
+    case 'authorization_denied':
+      return 'auth.endpoint.authorization';
+    default:
+      return undefined;
+  }
+}
+
+function inferResourceType(eventType: AuthAuditEventType) {
+  switch (eventType) {
+    case 'user_signed_up':
+    case 'user_profile_updated':
+    case 'user_profile_image_updated':
+    case 'user_email_verified':
+    case 'user_banned':
+    case 'user_unbanned':
+    case 'user_deleted':
+      return 'user';
+    case 'user_signed_in':
+    case 'user_signed_out':
+    case 'session_created':
+    case 'session_revoked':
+    case 'sessions_revoked_all':
+    case 'user_impersonated':
+    case 'user_impersonation_stopped':
+      return 'session';
+    case 'account_linked':
+    case 'account_unlinked':
+    case 'password_changed':
+      return 'account';
+    case 'password_reset_requested':
+    case 'password_reset_completed':
+    case 'email_verification_sent':
+    case 'authorization_denied':
+      return 'verification_token';
+    case 'organization_created':
+    case 'organization_updated':
+      return 'organization';
+    case 'member_added':
+    case 'member_removed':
+    case 'member_role_updated':
+    case 'member_invited':
+    case 'invite_accepted':
+    case 'invite_rejected':
+    case 'invite_cancelled':
+      return 'organization_membership';
+    default:
+      return undefined;
+  }
+}
+
 function createAuditRecord(
   ctx: { headers?: Headers; request?: Request },
-  state: { method?: string; path: string },
+  state: ResolvedAuthAuditState,
   input: {
     eventType: AuthAuditEventType;
     userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
     organizationId?: string;
     identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
     metadata?: Record<string, unknown>;
   },
-  actorUserId?: string,
 ): AuditRecord {
+  const actorUserId = input.actorUserId ?? state.actorUserId;
   return {
     eventType: input.eventType,
     ...(input.userId ? { userId: input.userId } : {}),
+    ...(actorUserId ? { actorUserId } : {}),
+    ...(input.targetUserId ? { targetUserId: input.targetUserId } : {}),
     ...(input.organizationId ? { organizationId: input.organizationId } : {}),
     ...(normalizeAuditIdentifier(input.identifier)
       ? { identifier: normalizeAuditIdentifier(input.identifier) }
       : {}),
-    metadata: buildEventMetadata(state, input.userId, actorUserId, input.metadata),
+    ...((input.sessionId ?? state.sessionId)
+      ? { sessionId: input.sessionId ?? state.sessionId }
+      : {}),
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+    outcome: input.outcome ?? (state.success ? 'success' : 'failure'),
+    severity: input.severity ?? (state.success ? 'info' : 'warning'),
+    ...((input.resourceType ?? inferResourceType(input.eventType))
+      ? { resourceType: input.resourceType ?? inferResourceType(input.eventType) }
+      : {}),
+    ...(input.resourceId ? { resourceId: input.resourceId } : {}),
+    ...(input.resourceLabel ? { resourceLabel: input.resourceLabel } : {}),
+    ...((input.sourceSurface ?? inferSourceSurface(input.eventType))
+      ? { sourceSurface: input.sourceSurface ?? inferSourceSurface(input.eventType) }
+      : {}),
+    metadata: buildEventMetadata(state, input.metadata),
     ipAddress: getIpAddress(ctx),
     userAgent: getUserAgent(ctx),
   };
@@ -285,7 +410,19 @@ function resolveAuthAuditState(
       normalizeOptionalString(sessionSnapshot?.session?.activeOrganizationId),
     path: ctx.path,
     response,
+    responseErrorCode:
+      normalizeOptionalString(asRecord(response?.error)?.code) ??
+      normalizeOptionalString(response?.code),
+    responseErrorMessage:
+      normalizeOptionalString(asRecord(response?.error)?.message) ??
+      normalizeOptionalString(response?.message),
+    responseStatus:
+      ctx.context.returned instanceof Response ? ctx.context.returned.status : undefined,
     responseSummary: summarizeResponseShape(response ?? ctx.context.returned),
+    sessionId:
+      normalizeOptionalString(asRecord(response?.session)?.id) ??
+      normalizeOptionalString(ctx.body?.sessionId) ??
+      normalizeOptionalString(sessionSnapshot?.session?.id),
     sessionSnapshot,
     success: isSuccessfulAuthResponse(ctx),
     targetUserId,
@@ -307,16 +444,12 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/sign-out'],
     events: ['user_signed_out'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'user_signed_out',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-        },
-        state.actorUserId,
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'user_signed_out',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+      }),
     ],
   },
   {
@@ -327,15 +460,10 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/request-password-reset', '/forget-password/email-otp'],
     events: ['password_reset_requested'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'password_reset_requested',
-          identifier: normalizeOptionalString(state.body.email),
-        },
-        state.actorUserId,
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'password_reset_requested',
+        identifier: normalizeOptionalString(state.body.email),
+      }),
     ],
   },
   {
@@ -346,19 +474,17 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/reset-password'],
     events: ['password_reset_completed'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'password_reset_completed',
-          userId: state.targetUserId,
-          organizationId: state.organizationId,
-          identifier:
-            normalizeOptionalString(asRecord(state.response?.user)?.email) ??
-            normalizeOptionalString(state.body.email),
-        },
-        state.actorUserId,
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'password_reset_completed',
+        userId: state.targetUserId,
+        actorUserId: state.actorUserId,
+        targetUserId: state.targetUserId,
+        organizationId: state.organizationId,
+        identifier:
+          normalizeOptionalString(asRecord(state.response?.user)?.email) ??
+          normalizeOptionalString(state.body.email),
+        resourceLabel: 'Password reset',
+      }),
     ],
   },
   {
@@ -369,17 +495,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/send-verification-email'],
     events: ['email_verification_sent'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'email_verification_sent',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          identifier: state.identifierFromSession ?? normalizeOptionalString(state.body.email),
-        },
-        state.actorUserId,
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'email_verification_sent',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        identifier: state.identifierFromSession ?? normalizeOptionalString(state.body.email),
+      }),
     ],
   },
   {
@@ -390,19 +512,16 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/verify-email'],
     events: ['user_email_verified'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'user_email_verified',
-          userId: state.targetUserId,
-          organizationId: state.organizationId,
-          identifier:
-            normalizeOptionalString(asRecord(state.response?.user)?.email) ??
-            state.identifierFromSession,
-        },
-        state.actorUserId,
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'user_email_verified',
+        userId: state.targetUserId,
+        actorUserId: state.actorUserId,
+        targetUserId: state.targetUserId,
+        organizationId: state.organizationId,
+        identifier:
+          normalizeOptionalString(asRecord(state.response?.user)?.email) ??
+          state.identifierFromSession,
+      }),
     ],
   },
   {
@@ -419,36 +538,28 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
 
       if (normalizeOptionalString(state.body.name) || normalizeOptionalString(state.body.email)) {
         events.push(
-          createAuditRecord(
-            ctx,
-            state,
-            {
-              eventType: 'user_profile_updated',
-              userId,
-              organizationId: state.organizationId,
-              metadata: {
-                email: normalizeOptionalString(state.body.email),
-                name: normalizeOptionalString(state.body.name),
-              },
+          createAuditRecord(ctx, state, {
+            eventType: 'user_profile_updated',
+            userId,
+            actorUserId: state.actorUserId,
+            organizationId: state.organizationId,
+            metadata: {
+              email: normalizeOptionalString(state.body.email),
+              name: normalizeOptionalString(state.body.name),
             },
-            state.actorUserId,
-          ),
+          }),
         );
       }
 
       if (image) {
         events.push(
-          createAuditRecord(
-            ctx,
-            state,
-            {
-              eventType: 'user_profile_image_updated',
-              userId,
-              organizationId: state.organizationId,
-              metadata: { image },
-            },
-            state.actorUserId,
-          ),
+          createAuditRecord(ctx, state, {
+            eventType: 'user_profile_image_updated',
+            userId,
+            actorUserId: state.actorUserId,
+            organizationId: state.organizationId,
+            metadata: { image },
+          }),
         );
       }
 
@@ -465,16 +576,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId) ?? state.actorUserId;
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'password_changed',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'password_changed',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+        }),
       ];
     },
   },
@@ -488,16 +596,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId) ?? state.actorUserId;
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'user_deleted',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'user_deleted',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+        }),
       ];
     },
   },
@@ -511,20 +616,16 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId) ?? state.actorUserId;
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'session_revoked',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-            metadata: {
-              sessionId: normalizeOptionalString(state.body.sessionId),
-              sessionToken: normalizeOptionalString(state.body.sessionToken),
-            },
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'session_revoked',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+          sessionId: normalizeOptionalString(state.body.sessionId) ?? state.sessionId,
+          resourceId: normalizeOptionalString(state.body.sessionId),
+          resourceLabel: 'Session revoked',
+        }),
       ];
     },
   },
@@ -538,16 +639,14 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId) ?? state.actorUserId;
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'sessions_revoked_all',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'sessions_revoked_all',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+          resourceLabel: 'All user sessions',
+        }),
       ];
     },
   },
@@ -559,19 +658,17 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/link-social'],
     events: ['account_linked'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'account_linked',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          metadata: {
-            provider: normalizeOptionalString(state.body.provider),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'account_linked',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        resourceId: normalizeOptionalString(state.body.accountId),
+        resourceLabel: normalizeOptionalString(state.body.provider),
+        metadata: {
+          provider: normalizeOptionalString(state.body.provider),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -582,20 +679,18 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/unlink-account'],
     events: ['account_unlinked'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'account_unlinked',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          metadata: {
-            accountId: normalizeOptionalString(state.body.accountId),
-            providerId: normalizeOptionalString(state.body.providerId),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'account_unlinked',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        resourceId: normalizeOptionalString(state.body.accountId),
+        resourceLabel: normalizeOptionalString(state.body.providerId),
+        metadata: {
+          accountId: normalizeOptionalString(state.body.accountId),
+          providerId: normalizeOptionalString(state.body.providerId),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -608,18 +703,16 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId);
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'user_banned',
-            userId: targetUserId,
-            metadata: {
-              banReason: normalizeOptionalString(state.body.banReason),
-            },
+        createAuditRecord(ctx, state, {
+          eventType: 'user_banned',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          resourceLabel: 'User banned',
+          metadata: {
+            banReason: normalizeOptionalString(state.body.banReason),
           },
-          state.actorUserId,
-        ),
+        }),
       ];
     },
   },
@@ -633,15 +726,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId);
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'user_unbanned',
-            userId: targetUserId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'user_unbanned',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          resourceLabel: 'User unbanned',
+        }),
       ];
     },
   },
@@ -655,15 +746,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     handle: (state, ctx) => {
       const targetUserId = normalizeOptionalString(state.body.userId);
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'user_impersonated',
-            userId: targetUserId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'user_impersonated',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          resourceLabel: 'User impersonation',
+        }),
       ];
     },
   },
@@ -675,15 +764,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/admin/stop-impersonating'],
     events: ['user_impersonation_stopped'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'user_impersonation_stopped',
-          userId: state.actorUserId,
-        },
-        normalizeOptionalString(state.sessionSnapshot?.session?.impersonatedBy),
-      ),
+      createAuditRecord(ctx, state, {
+        eventType: 'user_impersonation_stopped',
+        userId: state.actorUserId,
+        actorUserId: normalizeOptionalString(state.sessionSnapshot?.session?.impersonatedBy),
+        targetUserId: state.actorUserId,
+        resourceLabel: 'User impersonation stopped',
+      }),
     ],
   },
   {
@@ -694,26 +781,24 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/organization/create'],
     events: ['organization_created'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'organization_created',
-          userId: state.actorUserId,
-          organizationId:
-            normalizeOptionalString(state.response?.id) ??
-            normalizeOptionalString(asRecord(state.response?.organization)?.id),
-          metadata: {
-            name:
-              normalizeOptionalString(state.response?.name) ??
-              normalizeOptionalString(state.body.name),
-            slug:
-              normalizeOptionalString(state.response?.slug) ??
-              normalizeOptionalString(state.body.slug),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'organization_created',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId:
+          normalizeOptionalString(state.response?.id) ??
+          normalizeOptionalString(asRecord(state.response?.organization)?.id),
+        resourceLabel:
+          normalizeOptionalString(state.response?.name) ?? normalizeOptionalString(state.body.name),
+        metadata: {
+          name:
+            normalizeOptionalString(state.response?.name) ??
+            normalizeOptionalString(state.body.name),
+          slug:
+            normalizeOptionalString(state.response?.slug) ??
+            normalizeOptionalString(state.body.slug),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -724,20 +809,17 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/organization/update'],
     events: ['organization_updated'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'organization_updated',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          metadata: {
-            name: normalizeOptionalString(state.body.name),
-            slug: normalizeOptionalString(state.body.slug),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'organization_updated',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        resourceLabel: normalizeOptionalString(state.body.name),
+        metadata: {
+          name: normalizeOptionalString(state.body.name),
+          slug: normalizeOptionalString(state.body.slug),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -748,24 +830,25 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/organization/invite-member'],
     events: ['member_invited'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'member_invited',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          identifier: normalizeOptionalString(state.body.email),
-          metadata: {
-            invitationId:
-              normalizeOptionalString(state.response?.id) ??
-              normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
-              normalizeOptionalString(state.body.invitationId),
-            role: normalizeOptionalString(state.body.role),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'member_invited',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        identifier: normalizeOptionalString(state.body.email),
+        resourceId:
+          normalizeOptionalString(state.response?.id) ??
+          normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
+          normalizeOptionalString(state.body.invitationId),
+        resourceLabel: normalizeOptionalString(state.body.email),
+        metadata: {
+          invitationId:
+            normalizeOptionalString(state.response?.id) ??
+            normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
+            normalizeOptionalString(state.body.invitationId),
+          role: normalizeOptionalString(state.body.role),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -785,34 +868,32 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
         normalizeOptionalString(state.body.invitationId);
 
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'invite_accepted',
-            userId: state.targetUserId,
-            organizationId: state.organizationId,
-            identifier: inviteIdentifier,
-            metadata: {
-              invitationId,
-            },
+        createAuditRecord(ctx, state, {
+          eventType: 'invite_accepted',
+          userId: state.targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId: state.targetUserId,
+          organizationId: state.organizationId,
+          identifier: inviteIdentifier,
+          resourceId: invitationId,
+          resourceLabel: inviteIdentifier,
+          metadata: {
+            invitationId,
           },
-          state.actorUserId,
-        ),
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'member_added',
-            userId: state.targetUserId,
-            organizationId: state.organizationId,
-            identifier: inviteIdentifier,
-            metadata: {
-              invitationId,
-            },
+        }),
+        createAuditRecord(ctx, state, {
+          eventType: 'member_added',
+          userId: state.targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId: state.targetUserId,
+          organizationId: state.organizationId,
+          identifier: inviteIdentifier,
+          resourceId: invitationId,
+          resourceLabel: inviteIdentifier,
+          metadata: {
+            invitationId,
           },
-          state.actorUserId,
-        ),
+        }),
       ];
     },
   },
@@ -824,22 +905,23 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/organization/reject-invitation'],
     events: ['invite_rejected'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'invite_rejected',
-          userId: state.targetUserId,
-          organizationId: state.organizationId,
-          metadata: {
-            invitationId:
-              normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
-              normalizeOptionalString(state.response?.id) ??
-              normalizeOptionalString(state.body.invitationId),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'invite_rejected',
+        userId: state.targetUserId,
+        actorUserId: state.actorUserId,
+        targetUserId: state.targetUserId,
+        organizationId: state.organizationId,
+        resourceId:
+          normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
+          normalizeOptionalString(state.response?.id) ??
+          normalizeOptionalString(state.body.invitationId),
+        metadata: {
+          invitationId:
+            normalizeOptionalString(asRecord(state.response?.invitation)?.id) ??
+            normalizeOptionalString(state.response?.id) ??
+            normalizeOptionalString(state.body.invitationId),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -850,20 +932,18 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
     paths: ['/organization/cancel-invitation'],
     events: ['invite_cancelled'],
     handle: (state, ctx) => [
-      createAuditRecord(
-        ctx,
-        state,
-        {
-          eventType: 'invite_cancelled',
-          userId: state.actorUserId,
-          organizationId: state.organizationId,
-          identifier: normalizeOptionalString(state.body.email),
-          metadata: {
-            invitationId: normalizeOptionalString(state.body.invitationId),
-          },
+      createAuditRecord(ctx, state, {
+        eventType: 'invite_cancelled',
+        userId: state.actorUserId,
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        identifier: normalizeOptionalString(state.body.email),
+        resourceId: normalizeOptionalString(state.body.invitationId),
+        resourceLabel: normalizeOptionalString(state.body.email),
+        metadata: {
+          invitationId: normalizeOptionalString(state.body.invitationId),
         },
-        state.actorUserId,
-      ),
+      }),
     ],
   },
   {
@@ -879,16 +959,13 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
         normalizeOptionalString(state.body.userId) ??
         state.actorUserId;
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'member_removed',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-          },
-          state.actorUserId,
-        ),
+        createAuditRecord(ctx, state, {
+          eventType: 'member_removed',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+        }),
       ];
     },
   },
@@ -903,19 +980,17 @@ const endpointAuditHandlers: readonly AuthAuditHandler[] = [
       const targetUserId =
         normalizeOptionalString(state.body.memberId) ?? normalizeOptionalString(state.body.userId);
       return [
-        createAuditRecord(
-          ctx,
-          state,
-          {
-            eventType: 'member_role_updated',
-            userId: targetUserId,
-            organizationId: state.organizationId,
-            metadata: {
-              role: normalizeOptionalString(state.body.role),
-            },
+        createAuditRecord(ctx, state, {
+          eventType: 'member_role_updated',
+          userId: targetUserId,
+          actorUserId: state.actorUserId,
+          targetUserId,
+          organizationId: state.organizationId,
+          resourceLabel: normalizeOptionalString(state.body.role),
+          metadata: {
+            role: normalizeOptionalString(state.body.role),
           },
-          state.actorUserId,
-        ),
+        }),
       ];
     },
   },
@@ -972,6 +1047,100 @@ async function safelyRecord(recordAuditEvent: AuditRecorder, event: AuditRecord)
   }
 }
 
+function buildFailedEndpointAuditRecords(
+  state: ResolvedAuthAuditState,
+  ctx: AuthAuditEndpointContext,
+) {
+  const denialMetadata = {
+    attemptedPath: state.path,
+    attemptedIdentifier:
+      normalizeOptionalString(state.body.email) ?? normalizeOptionalString(state.body.username),
+    invitationId: normalizeOptionalString(state.body.invitationId),
+    responseSummary: state.responseSummary,
+  };
+
+  if (isSigninPath(state.path)) {
+    if (state.responseStatus === 403 && state.responseErrorCode === 'FORBIDDEN') {
+      return [] satisfies AuditRecord[];
+    }
+
+    return [
+      createAuditRecord(ctx, state, {
+        eventType: 'authorization_denied',
+        actorUserId: state.actorUserId,
+        organizationId: state.organizationId,
+        identifier:
+          normalizeOptionalString(state.body.email) ?? normalizeOptionalString(state.body.username),
+        resourceType: 'session',
+        resourceLabel: 'Sign-in denied',
+        sourceSurface: 'auth.endpoint.sign_in',
+        metadata: {
+          ...denialMetadata,
+          provider: normalizeOptionalString(state.body.provider),
+        },
+      }),
+    ] satisfies AuditRecord[];
+  }
+
+  if (state.path === '/reset-password') {
+    return [] satisfies AuditRecord[];
+  }
+
+  if (state.path === '/verify-email') {
+    return [] satisfies AuditRecord[];
+  }
+
+  if (state.path === '/organization/accept-invitation') {
+    if (state.responseStatus === 403 && state.responseErrorCode === 'FORBIDDEN') {
+      return [] satisfies AuditRecord[];
+    }
+
+    return [
+      createAuditRecord(ctx, state, {
+        eventType: 'authorization_denied',
+        actorUserId: state.actorUserId,
+        targetUserId: state.targetUserId,
+        organizationId: state.organizationId,
+        identifier: state.identifierFromSession,
+        resourceType: 'organization_membership',
+        resourceId: normalizeOptionalString(state.body.invitationId),
+        resourceLabel: 'Invitation acceptance denied',
+        sourceSurface: 'auth.endpoint.organization',
+        metadata: denialMetadata,
+      }),
+    ] satisfies AuditRecord[];
+  }
+
+  if (
+    !(
+      state.responseStatus === 403 &&
+      state.responseErrorCode === 'FORBIDDEN' &&
+      state.path === '/organization/invite-member'
+    ) &&
+    (state.responseStatus === 401 ||
+      state.responseStatus === 403 ||
+      state.path.startsWith('/admin/') ||
+      state.path.startsWith('/organization/'))
+  ) {
+    return [
+      createAuditRecord(ctx, state, {
+        eventType: 'authorization_denied',
+        actorUserId: state.actorUserId,
+        targetUserId: state.targetUserId,
+        organizationId: state.organizationId,
+        identifier:
+          normalizeOptionalString(state.body.email) ??
+          state.identifierFromSession ??
+          normalizeOptionalString(state.body.username),
+        resourceLabel: 'Authorization denied',
+        metadata: denialMetadata,
+      }),
+    ] satisfies AuditRecord[];
+  }
+
+  return [] satisfies AuditRecord[];
+}
+
 export async function buildUserCreateAuditRecordsForTesting(
   user: { email?: string; id?: string },
   ctx: DatabaseHookContext | undefined,
@@ -984,14 +1153,32 @@ export async function buildUserCreateAuditRecordsForTesting(
   return [
     createAuditRecord(
       ctx,
-      { method: getRequestMethod(ctx), path: ctx.path },
+      {
+        actorUserId: userId,
+        body: ctx.body ?? {},
+        identifierFromSession: normalizeAuditIdentifier(normalizeOptionalString(user.email)),
+        method: getRequestMethod(ctx),
+        organizationId: getHookOrganizationId(ctx),
+        path: ctx.path,
+        response: null,
+        responseSummary: 'database_hook:user.create.after',
+        sessionSnapshot: (ctx.context?.newSession ??
+          ctx.context?.session ??
+          null) as AuthSession | null,
+        sessionId: undefined,
+        success: true,
+        targetUserId: userId,
+      },
       {
         eventType: 'user_signed_up',
         userId,
+        actorUserId: userId,
+        targetUserId: userId,
         organizationId: getHookOrganizationId(ctx),
         identifier: normalizeOptionalString(user.email),
+        sourceSurface: 'auth.endpoint.sign_up',
+        resourceLabel: normalizeOptionalString(user.email),
       },
-      userId,
     ),
   ];
 }
@@ -1020,8 +1207,20 @@ export async function buildSessionCreateAuditRecordsForTesting(
   const userId = normalizeOptionalString(session.userId);
   const authUser = userId ? await ctx.context.internalAdapter.findUserById(userId) : null;
   const baseState = {
+    actorUserId: userId,
     method: getRequestMethod(ctx),
+    body: ctx.body ?? {},
+    identifierFromSession: normalizeAuditIdentifier(normalizeOptionalString(authUser?.email)),
+    organizationId: getHookOrganizationId(ctx),
     path: ctx.path,
+    response: null,
+    responseSummary: 'database_hook:session.create.after',
+    sessionSnapshot: (ctx.context?.newSession ??
+      ctx.context?.session ??
+      null) as AuthSession | null,
+    sessionId: normalizeOptionalString(session.id),
+    success: true,
+    targetUserId: userId,
   };
   const events = [
     createAuditRecord(
@@ -1033,13 +1232,15 @@ export async function buildSessionCreateAuditRecordsForTesting(
       {
         eventType: 'session_created',
         userId,
+        actorUserId: userId,
+        targetUserId: userId,
         organizationId: getHookOrganizationId(ctx),
         identifier: normalizeOptionalString(authUser?.email),
-        metadata: {
-          sessionId: normalizeOptionalString(session.id),
-        },
+        sessionId: normalizeOptionalString(session.id),
+        resourceId: normalizeOptionalString(session.id),
+        resourceLabel: 'Session created',
+        sourceSurface: 'auth.session.create',
       },
-      userId,
     ),
   ];
 
@@ -1054,13 +1255,15 @@ export async function buildSessionCreateAuditRecordsForTesting(
         {
           eventType: 'user_signed_in',
           userId,
+          actorUserId: userId,
+          targetUserId: userId,
           organizationId: getHookOrganizationId(ctx),
           identifier: normalizeOptionalString(authUser?.email),
-          metadata: {
-            sessionId: normalizeOptionalString(session.id),
-          },
+          sessionId: normalizeOptionalString(session.id),
+          resourceId: normalizeOptionalString(session.id),
+          resourceLabel: 'User sign-in',
+          sourceSurface: 'auth.endpoint.sign_in',
         },
-        userId,
       ),
     );
   }
@@ -1080,12 +1283,17 @@ export async function processAuthAuditAfterHookForTesting(
   const matchedHandlers = endpointAuditHandlers.filter((handler) =>
     handler.paths.includes(state.path),
   );
-  const handlerResults = await Promise.all(
-    matchedHandlers.map((handler) => handler.handle(state, ctx)),
-  );
   const events: AuditRecord[] = [];
-  for (const handlerEvents of handlerResults) {
-    events.push(...handlerEvents);
+
+  if (state.success) {
+    const handlerResults = await Promise.all(
+      matchedHandlers.map((handler) => handler.handle(state, ctx)),
+    );
+    for (const handlerEvents of handlerResults) {
+      events.push(...handlerEvents);
+    }
+  } else {
+    events.push(...buildFailedEndpointAuditRecords(state, ctx));
   }
 
   return {

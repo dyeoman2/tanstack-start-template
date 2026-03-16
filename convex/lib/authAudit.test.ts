@@ -16,7 +16,11 @@ function createTestContext(options: {
   path: string;
   returned?: unknown;
   session?: {
-    session?: { activeOrganizationId?: string | null; impersonatedBy?: string | null };
+    session?: {
+      id?: string | null;
+      activeOrganizationId?: string | null;
+      impersonatedBy?: string | null;
+    };
     user?: { email?: string; id?: string };
   } | null;
 }) {
@@ -61,6 +65,39 @@ describe('auth audit coverage', () => {
       'domain_verification_failed',
       'domain_verification_token_regenerated',
       'domain_removed',
+      'organization_policy_updated',
+      'enterprise_auth_mode_updated',
+      'enterprise_login_succeeded',
+      'enterprise_scim_token_generated',
+      'enterprise_scim_token_deleted',
+      'scim_member_deprovisioned',
+      'scim_member_reactivated',
+      'scim_member_deprovision_failed',
+      'bulk_invite_revoked',
+      'bulk_invite_resent',
+      'bulk_member_removed',
+      'member_suspended',
+      'member_deactivated',
+      'member_reactivated',
+      'authorization_denied',
+      'admin_user_sessions_viewed',
+      'directory_exported',
+      'audit_log_exported',
+      'chat_thread_created',
+      'chat_thread_deleted',
+      'chat_attachment_uploaded',
+      'chat_attachment_scan_passed',
+      'chat_attachment_scan_failed',
+      'chat_attachment_quarantined',
+      'chat_attachment_deleted',
+      'attachment_access_url_issued',
+      'pdf_parse_requested',
+      'pdf_parse_succeeded',
+      'pdf_parse_failed',
+      'chat_run_completed',
+      'chat_run_failed',
+      'chat_web_search_used',
+      'audit_integrity_check_failed',
     ] as const;
     for (const handler of AUTH_AUDIT_ALL_HANDLER_REGISTRY) {
       for (const eventType of handler.events) {
@@ -94,8 +131,13 @@ describe('auth audit handlers', () => {
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
       eventType: 'user_signed_up',
+      actorUserId: 'user_1',
+      targetUserId: 'user_1',
       identifier: 'user@example.com',
       organizationId: 'org_1',
+      outcome: 'success',
+      resourceType: 'user',
+      sourceSurface: 'auth.endpoint.sign_up',
       userId: 'user_1',
     });
     expect(parseMetadata(events[0].metadata)).toMatchObject({
@@ -126,10 +168,27 @@ describe('auth audit handlers', () => {
     );
 
     expect(events.map((event) => event.eventType)).toEqual(['session_created', 'user_signed_in']);
+    expect(events[0]).toMatchObject({
+      actorUserId: 'user_1',
+      targetUserId: 'user_1',
+      sessionId: 'sess_1',
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'session',
+      sourceSurface: 'auth.session.create',
+    });
+    expect(events[1]).toMatchObject({
+      actorUserId: 'user_1',
+      targetUserId: 'user_1',
+      sessionId: 'sess_1',
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'session',
+      sourceSurface: 'auth.endpoint.sign_in',
+    });
     expect(parseMetadata(events[0].metadata)).toMatchObject({
       method: 'POST',
       path: '/sign-in/email',
-      sessionId: 'sess_1',
     });
   });
 
@@ -146,6 +205,10 @@ describe('auth audit handlers', () => {
     expect(result.events[0]).toMatchObject({
       eventType: 'password_reset_requested',
       identifier: 'reset@example.com',
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'verification_token',
+      sourceSurface: 'auth.endpoint.password_reset',
     });
     expect(parseMetadata(result.events[0].metadata)).toMatchObject({
       method: 'POST',
@@ -153,7 +216,7 @@ describe('auth audit handlers', () => {
     });
   });
 
-  it('emits account events with actor details in metadata only', async () => {
+  it('emits account events with structured actor provenance', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { accountId: 'acct_1', providerId: 'github' },
@@ -168,9 +231,14 @@ describe('auth audit handlers', () => {
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
       eventType: 'account_unlinked',
+      actorUserId: 'user_owner',
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'account',
+      resourceId: 'acct_1',
+      sourceSurface: 'auth.endpoint.account',
       userId: 'user_owner',
     });
-    expect((result.events[0] as { actorUserId?: string }).actorUserId).toBeUndefined();
     expect(parseMetadata(result.events[0].metadata)).toMatchObject({
       accountId: 'acct_1',
       method: 'POST',
@@ -199,12 +267,149 @@ describe('auth audit handlers', () => {
       'invite_accepted',
       'member_added',
     ]);
-    expect(parseMetadata(result.events[1].metadata)).toMatchObject({
+    expect(result.events[1]).toMatchObject({
       actorUserId: 'user_admin',
+      targetUserId: 'user_invitee',
+      outcome: 'success',
+      severity: 'info',
+      resourceType: 'organization_membership',
+      sourceSurface: 'auth.endpoint.organization',
+    });
+    expect(parseMetadata(result.events[1].metadata)).toMatchObject({
       invitationId: 'invite_1',
       method: 'POST',
       path: '/organization/accept-invitation',
     });
+  });
+
+  it('emits denied sign-in events for failed authentication', async () => {
+    const result = await processAuthAuditAfterHookForTesting(
+      createTestContext({
+        body: { email: 'user@example.com', password: 'secret' },
+        path: '/sign-in/email',
+        returned: new Response(
+          JSON.stringify({
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid email or password',
+          }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      eventType: 'authorization_denied',
+      identifier: 'user@example.com',
+      outcome: 'failure',
+      severity: 'warning',
+      resourceType: 'session',
+      sourceSurface: 'auth.endpoint.sign_in',
+      resourceLabel: 'Sign-in denied',
+    });
+    expect(parseMetadata(result.events[0].metadata)).toMatchObject({
+      attemptedIdentifier: 'user@example.com',
+      method: 'POST',
+      path: '/sign-in/email',
+      responseErrorCode: 'INVALID_CREDENTIALS',
+      responseErrorMessage: 'Invalid email or password',
+      responseStatus: 401,
+    });
+    expect(parseMetadata(result.events[0].metadata)).not.toHaveProperty('password');
+  });
+
+  it('defers password reset denials to Better Auth-specific hooks', async () => {
+    const result = await processAuthAuditAfterHookForTesting(
+      createTestContext({
+        body: { email: 'reset@example.com' },
+        path: '/reset-password',
+        returned: new Response(
+          JSON.stringify({
+            code: 'BAD_REQUEST',
+            message: 'Reset token expired',
+          }),
+          {
+            status: 400,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.events).toHaveLength(0);
+  });
+
+  it('defers email verification denials to Better Auth-specific hooks', async () => {
+    const result = await processAuthAuditAfterHookForTesting(
+      createTestContext({
+        path: '/verify-email',
+        returned: new Response(
+          JSON.stringify({
+            code: 'FORBIDDEN',
+            message: 'Verification token invalid',
+          }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.events).toHaveLength(0);
+  });
+
+  it('emits denied invitation acceptance events for failed organization joins', async () => {
+    const result = await processAuthAuditAfterHookForTesting(
+      createTestContext({
+        body: { invitationId: 'invite_1' },
+        path: '/organization/accept-invitation',
+        returned: new Response(
+          JSON.stringify({
+            code: 'FORBIDDEN',
+            message: 'Organization join not allowed',
+          }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+        session: {
+          user: { email: 'invitee@example.com', id: 'user_invitee' },
+        },
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.events).toHaveLength(0);
+  });
+
+  it('skips duplicate denied sign-in events for explicit Better Auth before-hook blocks', async () => {
+    const result = await processAuthAuditAfterHookForTesting(
+      createTestContext({
+        body: { email: 'blocked@example.com' },
+        path: '/sign-in/email',
+        returned: new Response(
+          JSON.stringify({
+            code: 'FORBIDDEN',
+            message: 'Password sign-in is disabled for this account',
+          }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+      }),
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.events).toHaveLength(0);
   });
 });
 

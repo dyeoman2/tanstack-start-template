@@ -1,10 +1,16 @@
+import { scim } from '@better-auth/scim';
 import { convexAdapter } from '@convex-dev/better-auth';
 import { convex } from '@convex-dev/better-auth/plugins';
-import { scim } from '@better-auth/scim';
 import type { BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin } from 'better-auth/plugins/admin';
 import { organization } from 'better-auth/plugins/organization';
+import {
+  getBetterAuthBaseUrlConfig,
+  getBetterAuthTrustedOrigins,
+  getGoogleOAuthCredentials,
+  shouldUseSecureAuthCookies,
+} from '../../src/lib/server/env.server';
 import {
   adminAccessControl,
   adminRole,
@@ -14,21 +20,17 @@ import {
   organizationOwnerRole,
   userRole,
 } from '../../src/lib/shared/better-auth-access';
-import {
-  getBetterAuthBaseUrlConfig,
-  getBetterAuthTrustedOrigins,
-  getGoogleOAuthCredentials,
-  shouldUseSecureAuthCookies,
-} from '../../src/lib/server/env.server';
 import authConfig from '../auth.config';
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
 type BetterAuthDatabaseHooks = NonNullable<BetterAuthOptions['databaseHooks']>;
-type OrganizationPluginOptions = NonNullable<Parameters<typeof organization>[0]>;
+export type OrganizationPluginOptions = NonNullable<Parameters<typeof organization>[0]>;
 
 type SharedBetterAuthCallbacks = {
-  allowUserToCreateOrganization?: NonNullable<OrganizationPluginOptions['allowUserToCreateOrganization']>;
+  allowUserToCreateOrganization?: NonNullable<
+    OrganizationPluginOptions['allowUserToCreateOrganization']
+  >;
   afterEmailVerification?: BetterAuthEmailVerificationOptions['afterEmailVerification'];
   afterSCIMTokenGenerated?: (input: {
     organizationId: string | null;
@@ -44,6 +46,25 @@ type SharedBetterAuthCallbacks = {
   }) => Promise<void>;
   databaseHooks?: BetterAuthDatabaseHooks;
   organizationHooks?: OrganizationPluginOptions['organizationHooks'];
+  onPasswordAuthBlocked?: (input: {
+    email: string;
+    message: string;
+    path: '/sign-in/email' | '/sign-up/email';
+    sessionUserId?: string;
+  }) => Promise<void>;
+  onPasswordResetDenied?: (input: {
+    email?: string;
+    message: string;
+    path: '/reset-password';
+    sessionUserId?: string;
+    status?: number;
+  }) => Promise<void>;
+  onEmailVerificationDenied?: (input: {
+    message: string;
+    path: '/verify-email';
+    sessionUserId?: string;
+    status?: number;
+  }) => Promise<void>;
   resolveEnterpriseAuthSession?: (input: {
     providerId: string;
     userEmail: string;
@@ -68,6 +89,7 @@ export const ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS = 30 * 60;
 export const AUTH_SESSION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 export const AUTH_SESSION_UPDATE_AGE_SECONDS = 24 * 60 * 60;
 export const AUTH_SESSION_FRESH_AGE_SECONDS = 24 * 60 * 60;
+export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
@@ -204,6 +226,12 @@ export function createSharedBetterAuthOptions(
               path: ctx.path as '/sign-in/email' | '/sign-up/email',
             });
             if (message) {
+              await callbacks.onPasswordAuthBlocked?.({
+                email,
+                message,
+                path: ctx.path as '/sign-in/email' | '/sign-up/email',
+                sessionUserId: ctx.context.session?.user.id,
+              });
               throw new APIError('FORBIDDEN', {
                 message,
               });
@@ -238,11 +266,74 @@ export function createSharedBetterAuthOptions(
 
         if (ctx.path.startsWith('/scim/v2/Users/') && ctx.method === 'DELETE') {
           throw new APIError('FORBIDDEN', {
-            message: 'Direct Better Auth SCIM deletion is disabled; use the org-scoped lifecycle handler.',
+            message:
+              'Direct Better Auth SCIM deletion is disabled; use the org-scoped lifecycle handler.',
           });
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
+        if (
+          callbacks.onPasswordResetDenied &&
+          ctx.path === '/reset-password' &&
+          ctx.context.returned instanceof Response &&
+          ctx.context.returned.status >= 400
+        ) {
+          let message = 'Password reset failed';
+
+          try {
+            const json = (await ctx.context.returned.clone().json()) as unknown;
+            if (
+              typeof json === 'object' &&
+              json !== null &&
+              'message' in json &&
+              typeof json.message === 'string'
+            ) {
+              message = json.message;
+            }
+          } catch {
+            // Ignore parse failures and keep the default message.
+          }
+
+          await callbacks.onPasswordResetDenied({
+            email:
+              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+            message,
+            path: '/reset-password',
+            sessionUserId: ctx.context.session?.user.id,
+            status: ctx.context.returned.status,
+          });
+        }
+
+        if (
+          callbacks.onEmailVerificationDenied &&
+          ctx.path === '/verify-email' &&
+          ctx.context.returned instanceof Response &&
+          ctx.context.returned.status >= 400
+        ) {
+          let message = 'Email verification failed';
+
+          try {
+            const json = (await ctx.context.returned.clone().json()) as unknown;
+            if (
+              typeof json === 'object' &&
+              json !== null &&
+              'message' in json &&
+              typeof json.message === 'string'
+            ) {
+              message = json.message;
+            }
+          } catch {
+            // Ignore parse failures and keep the default message.
+          }
+
+          await callbacks.onEmailVerificationDenied({
+            message,
+            path: '/verify-email',
+            sessionUserId: ctx.context.session?.user.id,
+            status: ctx.context.returned.status,
+          });
+        }
+
         if (
           ctx.path !== '/sign-in/email' &&
           ctx.path !== '/sign-up/email' &&
@@ -366,7 +457,7 @@ export function createSharedBetterAuthOptions(
         ac: organizationAccessControl,
         allowUserToCreateOrganization: callbacks.allowUserToCreateOrganization ?? true,
         creatorRole: 'owner',
-        invitationExpiresIn: 7 * 24 * 60 * 60,
+        invitationExpiresIn: ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS,
         cancelPendingInvitationsOnReInvite: true,
         requireEmailVerificationOnInvitation: true,
         roles: {

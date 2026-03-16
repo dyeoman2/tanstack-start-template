@@ -10,8 +10,8 @@ import { ConvexError, v } from 'convex/values';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
-  action,
   type ActionCtx,
+  action,
   internalMutation,
   internalQuery,
   type MutationCtx,
@@ -24,8 +24,8 @@ import {
   abortRunWithReason,
   buildUserMessage,
   deleteMessagesAfterPrompt,
-  isValidContinuationPromptMessage,
   isTextOnlyUserMessage,
+  isValidContinuationPromptMessage,
   resolveThread,
 } from './agentChatActions';
 import { getVerifiedCurrentUserOrThrow } from './auth/access';
@@ -135,6 +135,10 @@ function canViewThread(
   thread: ChatThreadDoc,
   viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
 ) {
+  if (thread.deletedAt) {
+    return false;
+  }
+
   if (thread.organizationId !== viewer.organizationId) {
     return false;
   }
@@ -244,21 +248,21 @@ async function listAccessibleThreads(
   ctx: QueryCtx | MutationCtx,
   viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
 ) {
-  if (viewer.isSiteAdmin) {
-    return await ctx.db
-      .query('chatThreads')
-      .withIndex('by_organizationId_and_lastMessageAt', (q) =>
-        q.eq('organizationId', viewer.organizationId),
-      )
-      .order('desc')
-      .take(THREAD_LIST_LIMIT);
-  }
+  const threads = viewer.isSiteAdmin
+    ? await ctx.db
+        .query('chatThreads')
+        .withIndex('by_organizationId_and_lastMessageAt', (q) =>
+          q.eq('organizationId', viewer.organizationId),
+        )
+        .order('desc')
+        .take(THREAD_LIST_LIMIT)
+    : await ctx.db
+        .query('chatThreads')
+        .withIndex('by_ownerUserId_and_lastMessageAt', (q) => q.eq('ownerUserId', viewer.userId))
+        .order('desc')
+        .take(THREAD_LIST_LIMIT);
 
-  return await ctx.db
-    .query('chatThreads')
-    .withIndex('by_ownerUserId_and_lastMessageAt', (q) => q.eq('ownerUserId', viewer.userId))
-    .order('desc')
-    .take(THREAD_LIST_LIMIT);
+  return threads.filter((thread) => !thread.deletedAt);
 }
 
 async function getPersonaForOrganization(
@@ -387,7 +391,7 @@ export const getThreadForOrganizationInternal = internalQuery({
   returns: v.union(chatThreadsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const thread = await ctx.db.get(args.threadId);
-    if (!thread || thread.organizationId !== args.organizationId) {
+    if (!thread || thread.organizationId !== args.organizationId || thread.deletedAt) {
       return null;
     }
 
@@ -425,7 +429,7 @@ export const getThreadByAgentThreadIdInternal = internalQuery({
       .withIndex('by_agentThreadId', (q) => q.eq('agentThreadId', args.agentThreadId))
       .first();
 
-    if (!thread || thread.organizationId !== args.organizationId) {
+    if (!thread || thread.organizationId !== args.organizationId || thread.deletedAt) {
       return null;
     }
 
@@ -458,7 +462,8 @@ export const getAttachmentsForSendInternal = internalQuery({
         if (
           !attachment ||
           attachment.userId !== args.userId ||
-          attachment.organizationId !== args.organizationId
+          attachment.organizationId !== args.organizationId ||
+          attachment.deletedAt
         ) {
           throw new ConvexError('Attachment not found.');
         }
@@ -483,7 +488,7 @@ export const getAttachmentByIdInternal = internalQuery({
   returns: v.union(chatAttachmentsDocValidator, v.null()),
   handler: async (ctx, args) => {
     const attachment = await ctx.db.get(args.attachmentId);
-    if (!attachment || attachment.organizationId !== args.organizationId) {
+    if (!attachment || attachment.organizationId !== args.organizationId || attachment.deletedAt) {
       return null;
     }
 
@@ -508,6 +513,9 @@ export const createThreadShellInternal = internalMutation({
       ...args,
       visibility: 'private',
       pinned: false,
+      deletedAt: undefined,
+      deletedByUserId: undefined,
+      purgeEligibleAt: undefined,
       updatedAt: args.createdAt,
       lastMessageAt: args.createdAt,
     });
@@ -527,6 +535,9 @@ export const patchThreadInternal = internalMutation({
       summary: v.optional(v.union(v.string(), v.null())),
       summaryUpdatedAt: v.optional(v.union(v.number(), v.null())),
       summaryThroughOrder: v.optional(v.union(v.number(), v.null())),
+      deletedAt: v.optional(v.union(v.number(), v.null())),
+      deletedByUserId: v.optional(v.union(v.string(), v.null())),
+      purgeEligibleAt: v.optional(v.union(v.number(), v.null())),
       updatedAt: v.optional(v.number()),
       lastMessageAt: v.optional(v.number()),
     }),
@@ -555,6 +566,15 @@ export const patchThreadInternal = internalMutation({
     if (args.patch.summaryThroughOrder !== undefined) {
       patch.summaryThroughOrder = args.patch.summaryThroughOrder ?? undefined;
     }
+    if (args.patch.deletedAt !== undefined) {
+      patch.deletedAt = args.patch.deletedAt ?? undefined;
+    }
+    if (args.patch.deletedByUserId !== undefined) {
+      patch.deletedByUserId = args.patch.deletedByUserId ?? undefined;
+    }
+    if (args.patch.purgeEligibleAt !== undefined) {
+      patch.purgeEligibleAt = args.patch.purgeEligibleAt ?? undefined;
+    }
     if (args.patch.updatedAt !== undefined) patch.updatedAt = args.patch.updatedAt;
     if (args.patch.lastMessageAt !== undefined) patch.lastMessageAt = args.patch.lastMessageAt;
     await ctx.db.patch(args.threadId, patch);
@@ -576,7 +596,14 @@ export const createAttachmentInternal = internalMutation({
     extractedTextStorageId: v.optional(v.id('_storage')),
     agentFileId: v.optional(v.string()),
     promptSummary: v.string(),
-    status: v.union(v.literal('pending'), v.literal('ready'), v.literal('error')),
+    status: v.union(
+      v.literal('pending'),
+      v.literal('pending_scan'),
+      v.literal('quarantined'),
+      v.literal('ready'),
+      v.literal('error'),
+      v.literal('rejected'),
+    ),
     errorMessage: v.optional(v.string()),
     createdAt: v.number(),
   },
@@ -584,6 +611,9 @@ export const createAttachmentInternal = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert('chatAttachments', {
       ...args,
+      deletedAt: undefined,
+      deletedByUserId: undefined,
+      purgeEligibleAt: undefined,
       updatedAt: args.createdAt,
     });
   },
@@ -664,8 +694,20 @@ export const updateAttachmentInternal = internalMutation({
       extractedTextStorageId: v.optional(v.union(v.id('_storage'), v.null())),
       agentFileId: v.optional(v.union(v.string(), v.null())),
       promptSummary: v.optional(v.string()),
-      status: v.optional(v.union(v.literal('pending'), v.literal('ready'), v.literal('error'))),
+      status: v.optional(
+        v.union(
+          v.literal('pending'),
+          v.literal('pending_scan'),
+          v.literal('quarantined'),
+          v.literal('ready'),
+          v.literal('error'),
+          v.literal('rejected'),
+        ),
+      ),
       errorMessage: v.optional(v.union(v.string(), v.null())),
+      deletedAt: v.optional(v.union(v.number(), v.null())),
+      deletedByUserId: v.optional(v.union(v.string(), v.null())),
+      purgeEligibleAt: v.optional(v.union(v.number(), v.null())),
       updatedAt: v.number(),
     }),
   },
@@ -686,6 +728,13 @@ export const updateAttachmentInternal = internalMutation({
     if (args.patch.status !== undefined) patch.status = args.patch.status;
     if (args.patch.errorMessage !== undefined) {
       patch.errorMessage = args.patch.errorMessage ?? undefined;
+    }
+    if (args.patch.deletedAt !== undefined) patch.deletedAt = args.patch.deletedAt ?? undefined;
+    if (args.patch.deletedByUserId !== undefined) {
+      patch.deletedByUserId = args.patch.deletedByUserId ?? undefined;
+    }
+    if (args.patch.purgeEligibleAt !== undefined) {
+      patch.purgeEligibleAt = args.patch.purgeEligibleAt ?? undefined;
     }
     patch.updatedAt = args.patch.updatedAt;
     await ctx.db.patch(args.attachmentId, patch);
@@ -1015,7 +1064,7 @@ export const getLatestThreadId = query({
           .order('desc')
           .take(1);
 
-    return threads[0]?._id ?? null;
+    return threads.find((thread) => !thread.deletedAt)?._id ?? null;
   },
 });
 
@@ -1311,7 +1360,7 @@ export const precreateThread = mutation({
     threadId: v.id('chatThreads'),
   }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'> }> => {
-    const { userId, organizationId } = await getCurrentChatContext(ctx);
+    const { userId, organizationId, sessionId } = await getCurrentChatContext(ctx);
 
     if (!args.text.trim() && args.attachmentIds.length === 0) {
       throw new ConvexError('Message content is required.');
@@ -1322,7 +1371,7 @@ export const precreateThread = mutation({
       userId,
       organizationId,
     })) as ChatAttachmentDoc[];
-    const { thread } = await resolveThread(ctx, {
+    const { thread, created } = await resolveThread(ctx, {
       threadId: undefined,
       organizationId,
       userId,
@@ -1331,6 +1380,28 @@ export const precreateThread = mutation({
       personaId: args.personaId,
       model: args.model,
     });
+
+    if (created) {
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'chat_thread_created',
+        userId,
+        actorUserId: userId,
+        organizationId,
+        sessionId,
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'chat_thread',
+        resourceId: thread._id,
+        resourceLabel: thread.title,
+        sourceSurface: 'chat.precreate_thread',
+        metadata: JSON.stringify({
+          threadId: thread._id,
+          title: thread.title,
+          personaId: args.personaId ?? null,
+          model: args.model ?? null,
+        }),
+      });
+    }
 
     return {
       threadId: thread._id,
@@ -1715,9 +1786,12 @@ export const continuePrompt = mutation({
       }
     }
 
-    const [candidatePromptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
-      messageIds: [args.promptMessageId],
-    })) as Array<AgentMessageDoc | null>;
+    const [candidatePromptMessage] = (await ctx.runQuery(
+      components.agent.messages.getMessagesByIds,
+      {
+        messageIds: [args.promptMessageId],
+      },
+    )) as Array<AgentMessageDoc | null>;
 
     if (!isValidContinuationPromptMessage(candidatePromptMessage, thread.agentThreadId)) {
       throw new ConvexError('Prompt message not found.');
@@ -1939,7 +2013,31 @@ export const deleteThread = mutation({
       throw new ConvexError('You do not have permission to delete this thread.');
     }
 
-    await deleteThreadForCleanup(ctx, args.threadId);
+    await ctx.runMutation(internal.agentChat.patchThreadInternal, {
+      threadId: args.threadId,
+      patch: {
+        deletedAt: Date.now(),
+        deletedByUserId: viewer.userId,
+        updatedAt: Date.now(),
+      },
+    });
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'chat_thread_deleted',
+      userId: viewer.userId,
+      actorUserId: viewer.userId,
+      organizationId: viewer.organizationId,
+      sessionId: viewer.sessionId,
+      outcome: 'success',
+      severity: 'warning',
+      resourceType: 'chat_thread',
+      resourceId: args.threadId,
+      resourceLabel: thread.title,
+      sourceSurface: 'chat.thread_delete',
+      metadata: JSON.stringify({
+        threadId: args.threadId,
+        title: thread.title,
+      }),
+    });
     return null;
   },
 });
