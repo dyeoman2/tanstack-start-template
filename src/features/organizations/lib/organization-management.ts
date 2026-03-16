@@ -1,5 +1,5 @@
-import type { Id } from '../../../../convex/_generated/dataModel';
 import { z } from 'zod';
+import type { Id } from '../../../../convex/_generated/dataModel';
 
 export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
   'name',
@@ -12,11 +12,7 @@ export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
 
 export const ORGANIZATION_DIRECTORY_KIND_VALUES = ['all', 'member', 'invite'] as const;
 export const ORGANIZATION_DIRECTORY_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
-export const ORGANIZATION_MEMBER_STATUS_VALUES = [
-  'active',
-  'suspended',
-  'deactivated',
-] as const;
+export const ORGANIZATION_MEMBER_STATUS_VALUES = ['active', 'suspended', 'deactivated'] as const;
 export const ORGANIZATION_INVITE_POLICY_VALUES = ['owners_admins', 'owners_only'] as const;
 export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'organization_created',
@@ -86,6 +82,9 @@ export const organizationAuditSearchSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: z.string().default(''),
   eventType: z.enum(ORGANIZATION_AUDIT_EVENT_FILTER_VALUES).default('all'),
+  startDate: z.string().default(''),
+  endDate: z.string().default(''),
+  failuresOnly: z.boolean().default(false),
 });
 
 export type OrganizationAuditSearchParams = z.infer<typeof organizationAuditSearchSchema>;
@@ -124,11 +123,7 @@ export type OrganizationPolicies = {
   allowBreakGlassPasswordLogin: boolean;
 };
 
-export const ORGANIZATION_ENTERPRISE_PROVIDER_KEYS = [
-  'google-workspace',
-  'entra',
-  'okta',
-] as const;
+export const ORGANIZATION_ENTERPRISE_PROVIDER_KEYS = ['google-workspace', 'entra', 'okta'] as const;
 export const ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES = [
   'active',
   'not_configured',

@@ -1,15 +1,14 @@
-import { anyApi } from 'convex/server';
 import type { PaginationResult } from 'convex/server';
+import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
-import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
 import {
   canChangeMemberRole,
   canDeleteOrganization,
   canManageDomains,
   canManageMemberState,
-  canManageOrganizationPolicies,
   canManageOrganization,
+  canManageOrganizationPolicies,
   canRemoveMember,
   canViewOrganizationAudit,
   deriveViewerRole,
@@ -18,10 +17,18 @@ import {
   type OrganizationRole,
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
+import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
-import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  query,
+} from './_generated/server';
 import {
   checkOrganizationAccess,
   getVerifiedCurrentUserOrThrow,
@@ -29,9 +36,9 @@ import {
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
+  type BetterAuthMember,
   fetchAllBetterAuthOrganizations,
   fetchBetterAuthInvitationsByOrganizationId,
-  type BetterAuthMember,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthUsersByIds,
@@ -40,22 +47,6 @@ import {
   findBetterAuthOrganizationBySlug,
   findBetterAuthScimProviderByOrganizationId,
 } from './lib/betterAuth';
-import {
-  allowedResultValidator,
-  chatThreadsDocValidator,
-  directoryOrganizationValidator,
-  organizationCreationEligibilityValidator,
-  organizationMemberStatusValidator,
-  organizationInvitePolicyValidator,
-  organizationDomainDocValidator,
-  organizationDomainValidator,
-  organizationDirectoryResponseValidator,
-  organizationDomainsResponseValidator,
-  organizationEnterpriseAccessResultValidator,
-  organizationEnterpriseAuthResolutionResultValidator,
-  organizationAuditResponseValidator,
-  organizationSettingsValidator,
-} from './lib/returnValidators';
 import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
 import {
   getOrganizationMembershipStateRecord,
@@ -63,6 +54,22 @@ import {
   getOrganizationMembershipStatuses,
   type OrganizationMembershipStatus,
 } from './lib/organizationMembershipState';
+import {
+  allowedResultValidator,
+  chatThreadsDocValidator,
+  directoryOrganizationValidator,
+  organizationAuditResponseValidator,
+  organizationCreationEligibilityValidator,
+  organizationDirectoryResponseValidator,
+  organizationDomainDocValidator,
+  organizationDomainsResponseValidator,
+  organizationDomainValidator,
+  organizationEnterpriseAccessResultValidator,
+  organizationEnterpriseAuthResolutionResultValidator,
+  organizationInvitePolicyValidator,
+  organizationMemberStatusValidator,
+  organizationSettingsValidator,
+} from './lib/returnValidators';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -154,6 +161,10 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'bulk_invite_resent',
   'bulk_member_removed',
 ]);
+const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
+  'domain_verification_failed',
+  'scim_member_deprovision_failed',
+]);
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
 
 type OrganizationAccessContextForWrite = {
@@ -205,7 +216,9 @@ function getAvailableEnterpriseProviders() {
       key: GOOGLE_WORKSPACE_PROVIDER_KEY,
       label: getEnterpriseProviderLabel(GOOGLE_WORKSPACE_PROVIDER_KEY),
       protocol: 'oidc' as const,
-      status: isGoogleWorkspaceOAuthConfigured() ? 'active' as const : 'not_configured' as const,
+      status: isGoogleWorkspaceOAuthConfigured()
+        ? ('active' as const)
+        : ('not_configured' as const),
       selectable: isGoogleWorkspaceOAuthConfigured(),
     },
     {
@@ -237,7 +250,9 @@ function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): Organizati
   return [];
 }
 
-function toOrganizationPolicies(policy: OrganizationPolicyDoc | null | undefined): OrganizationPolicies {
+function toOrganizationPolicies(
+  policy: OrganizationPolicyDoc | null | undefined,
+): OrganizationPolicies {
   return {
     invitePolicy: policy?.invitePolicy ?? DEFAULT_ORGANIZATION_POLICIES.invitePolicy,
     verifiedDomainsOnly:
@@ -272,10 +287,7 @@ async function getOrganizationPolicies(
   return toOrganizationPolicies(policy);
 }
 
-async function countActiveOwners(
-  ctx: QueryCtx | MutationCtx,
-  memberships: BetterAuthMember[],
-) {
+async function countActiveOwners(ctx: QueryCtx | MutationCtx, memberships: BetterAuthMember[]) {
   const membershipStatuses = await getOrganizationMembershipStatuses(
     ctx,
     memberships.map((membership) => membership._id),
@@ -283,7 +295,8 @@ async function countActiveOwners(
 
   return memberships.filter(
     (membership) =>
-      membership.role === 'owner' && (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+      membership.role === 'owner' &&
+      (membershipStatuses.get(membership._id) ?? 'active') === 'active',
   ).length;
 }
 
@@ -406,7 +419,10 @@ function normalizeOrganizationEmailDomain(email: string) {
 }
 
 function normalizeOrganizationDomain(value: string) {
-  const normalized = value.trim().toLowerCase().replace(/^\.+|\.+$/g, '');
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+|\.+$/g, '');
 
   if (
     normalized.length < 3 ||
@@ -492,10 +508,7 @@ async function getOrganizationEnterpriseAuthSummary(
   } as const;
 }
 
-async function getOrganizationVerifiedDomains(
-  ctx: QueryCtx | MutationCtx,
-  organizationId: string,
-) {
+async function getOrganizationVerifiedDomains(ctx: QueryCtx | MutationCtx, organizationId: string) {
   return (
     await ctx.db
       .query('organizationDomains')
@@ -577,17 +590,26 @@ async function getOrganizationEnterpriseAccessForUser(
   } as const;
 }
 
-function auditEventMatchesSearch(event: {
-  eventType: string;
-  identifier?: string;
-  userId?: string;
-  metadata?: unknown;
-}, searchValue: string) {
+function auditEventMatchesSearch(
+  event: {
+    label?: string;
+    actorLabel?: string;
+    targetLabel?: string;
+    eventType: string;
+    identifier?: string;
+    userId?: string;
+    metadata?: unknown;
+  },
+  searchValue: string,
+) {
   if (searchValue.length === 0) {
     return true;
   }
 
   const haystacks = [
+    event.label,
+    event.actorLabel,
+    event.targetLabel,
     event.eventType,
     event.identifier,
     event.userId,
@@ -635,6 +657,10 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Domain removed';
     case 'organization_policy_updated':
       return 'Organization policies updated';
+    case 'enterprise_auth_mode_updated':
+      return 'Enterprise auth mode updated';
+    case 'enterprise_login_succeeded':
+      return 'Enterprise login succeeded';
     case 'enterprise_scim_user_provisioned':
       return 'SCIM user provisioned';
     case 'enterprise_scim_user_updated':
@@ -682,25 +708,88 @@ function toAuditMetadataDisplayValue(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
 }
 
+function getAuditProviderLabel(value: unknown) {
+  const providerValue = toAuditMetadataDisplayValue(value);
+  if (!providerValue) {
+    return undefined;
+  }
+
+  if (providerValue === 'google-workspace' || providerValue.startsWith('google-workspace--')) {
+    return getEnterpriseProviderLabel('google-workspace');
+  }
+
+  if (providerValue === 'entra' || providerValue.startsWith('entra--')) {
+    return getEnterpriseProviderLabel('entra');
+  }
+
+  if (providerValue === 'okta' || providerValue.startsWith('okta--')) {
+    return getEnterpriseProviderLabel('okta');
+  }
+
+  return providerValue;
+}
+
+function getGenericAuditActorLabel(eventType: string) {
+  switch (eventType) {
+    case 'domain_added':
+    case 'domain_verification_succeeded':
+    case 'domain_verification_failed':
+    case 'domain_verification_token_regenerated':
+    case 'domain_removed':
+    case 'organization_policy_updated':
+    case 'enterprise_auth_mode_updated':
+      return 'Organization admin';
+    default:
+      return undefined;
+  }
+}
+
 function getAuditActorLabel(event: Doc<'auditLogs'>, metadata: unknown) {
   const metadataRecord = getAuditMetadataRecord(metadata);
+
+  if (
+    event.eventType === 'enterprise_scim_token_generated' ||
+    event.eventType === 'enterprise_scim_token_deleted'
+  ) {
+    return (
+      getAuditProviderLabel(metadataRecord?.providerLabel) ??
+      getAuditProviderLabel(metadataRecord?.providerKey) ??
+      getAuditProviderLabel(metadataRecord?.providerId)
+    );
+  }
 
   return (
     toAuditMetadataDisplayValue(metadataRecord?.actorEmail) ??
     toAuditMetadataDisplayValue(metadataRecord?.inviterEmail) ??
-    event.identifier ??
-    event.userId
+    getGenericAuditActorLabel(event.eventType)
   );
 }
 
 function getAuditTargetLabel(event: Doc<'auditLogs'>, metadata: unknown) {
   const metadataRecord = getAuditMetadataRecord(metadata);
 
+  if (event.eventType === 'organization_policy_updated') {
+    return 'Organization policies';
+  }
+
+  if (event.eventType === 'enterprise_auth_mode_updated') {
+    return 'Enterprise auth settings';
+  }
+
+  if (
+    event.eventType === 'enterprise_scim_token_generated' ||
+    event.eventType === 'enterprise_scim_token_deleted'
+  ) {
+    return 'SCIM token';
+  }
+
   return (
     toAuditMetadataDisplayValue(metadataRecord?.targetEmail) ??
     toAuditMetadataDisplayValue(metadataRecord?.email) ??
     toAuditMetadataDisplayValue(metadataRecord?.domain) ??
-    event.identifier
+    getAuditProviderLabel(metadataRecord?.providerLabel) ??
+    getAuditProviderLabel(metadataRecord?.providerKey) ??
+    getAuditProviderLabel(metadataRecord?.providerId)
   );
 }
 
@@ -828,7 +917,8 @@ function getAuditSearchStrategy(searchValue: string) {
 
   const matchingEventType = Array.from(ORGANIZATION_AUDIT_EVENT_TYPES).find(
     (eventType) =>
-      eventType === normalizedValue || getOrganizationAuditEventLabel(eventType).toLowerCase() === normalizedValue,
+      eventType === normalizedValue ||
+      getOrganizationAuditEventLabel(eventType).toLowerCase() === normalizedValue,
   );
   if (matchingEventType) {
     return { kind: 'eventType' as const, eventType: matchingEventType };
@@ -843,6 +933,19 @@ function getAuditSearchStrategy(searchValue: string) {
   }
 
   return { kind: 'organization' as const };
+}
+
+function parseAuditDateBoundary(value: string | undefined, boundary: 'start' | 'end') {
+  const trimmedValue = value?.trim();
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const normalizedValue =
+    boundary === 'start' ? `${trimmedValue}T00:00:00.000Z` : `${trimmedValue}T23:59:59.999Z`;
+  const parsedValue = Date.parse(normalizedValue);
+
+  return Number.isNaN(parsedValue) ? null : parsedValue;
 }
 
 async function collectOrganizationAuditPage(
@@ -865,7 +968,9 @@ async function collectOrganizationAuditPage(
   if (searchStrategy.kind === 'identifier') {
     return await ctx.db
       .query('auditLogs')
-      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', searchStrategy.identifier))
+      .withIndex('by_identifier_and_createdAt', (q) =>
+        q.eq('identifier', searchStrategy.identifier),
+      )
       .order(sortOrder)
       .paginate({ cursor, numItems });
   }
@@ -1037,10 +1142,7 @@ async function getOrganizationAccessContextById(
   } satisfies OrganizationAccessContextForWrite;
 }
 
-async function getVerifiedOrganizationDomains(
-  ctx: QueryCtx | MutationCtx,
-  organizationId: string,
-) {
+async function getVerifiedOrganizationDomains(ctx: QueryCtx | MutationCtx, organizationId: string) {
   const domains = await ctx.db
     .query('organizationDomains')
     .withIndex('by_organization_id', (q) => q.eq('organizationId', organizationId))
@@ -1049,10 +1151,7 @@ async function getVerifiedOrganizationDomains(
   return domains.filter((domain) => domain.status === 'verified');
 }
 
-async function getOrganizationSeatUsage(
-  ctx: QueryCtx | MutationCtx,
-  organizationId: string,
-) {
+async function getOrganizationSeatUsage(ctx: QueryCtx | MutationCtx, organizationId: string) {
   const [memberships, invitations] = await Promise.all([
     listOrganizationMembers(ctx, organizationId),
     fetchBetterAuthInvitationsByOrganizationId(ctx, organizationId),
@@ -1114,7 +1213,10 @@ async function evaluateOrganizationInvitePolicy(
   }
 
   if (policies.memberCap !== null) {
-    const { activeMembers, pendingInvites } = await getOrganizationSeatUsage(ctx, input.organizationId);
+    const { activeMembers, pendingInvites } = await getOrganizationSeatUsage(
+      ctx,
+      input.organizationId,
+    );
     const totalSeats = activeMembers + pendingInvites;
 
     if (!input.resend && totalSeats >= policies.memberCap) {
@@ -1320,7 +1422,11 @@ export const getOrganizationSettings = query({
         ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
         : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
-    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(ctx, organizationId, policies);
+    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
+      ctx,
+      organizationId,
+      policies,
+    );
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
@@ -1487,7 +1593,10 @@ export const updateOrganizationPolicies = mutation({
       );
     }
 
-    if (args.enterpriseProviderKey && args.enterpriseProviderKey !== GOOGLE_WORKSPACE_PROVIDER_KEY) {
+    if (
+      args.enterpriseProviderKey &&
+      args.enterpriseProviderKey !== GOOGLE_WORKSPACE_PROVIDER_KEY
+    ) {
       throwConvexError('VALIDATION', 'Only Google Workspace enterprise auth is available today');
     }
 
@@ -1522,12 +1631,10 @@ export const updateOrganizationPolicies = mutation({
       enterpriseProviderKey: args.enterpriseProviderKey,
       enterpriseProtocol: args.enterpriseProtocol,
       enterpriseEnabledAt:
-        args.enterpriseAuthMode === 'off'
-          ? null
-          : currentPolicies.enterpriseEnabledAt ?? now,
+        args.enterpriseAuthMode === 'off' ? null : (currentPolicies.enterpriseEnabledAt ?? now),
       enterpriseEnforcedAt:
         args.enterpriseAuthMode === 'required'
-          ? currentPolicies.enterpriseEnforcedAt ?? now
+          ? (currentPolicies.enterpriseEnforcedAt ?? now)
           : null,
       allowBreakGlassPasswordLogin: args.allowBreakGlassPasswordLogin,
     } satisfies OrganizationPolicies;
@@ -1705,7 +1812,7 @@ export const getOrganizationWriteAccess = query({
         : {
             allowed: false as const,
             reason: 'Not authorized to remove this member',
-        };
+          };
     }
 
     if (
@@ -2108,7 +2215,11 @@ export const listOrganizationDomains = query({
       viewerMembership: context.viewerMembership,
       viewerRole: context.viewerRole,
     });
-    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(ctx, organizationId, policies);
+    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
+      ctx,
+      organizationId,
+      policies,
+    );
     const domains = await ctx.db
       .query('organizationDomains')
       .withIndex('by_organization_id_and_created_at', (q) => q.eq('organizationId', organizationId))
@@ -2291,7 +2402,9 @@ export const recordOrganizationBulkAuditEvents = mutation({
       v.object({
         targetId: v.string(),
         targetEmail: v.string(),
-        targetRole: v.optional(v.union(v.literal('owner'), v.literal('admin'), v.literal('member'))),
+        targetRole: v.optional(
+          v.union(v.literal('owner'), v.literal('admin'), v.literal('member')),
+        ),
       }),
     ),
   },
@@ -2479,6 +2592,7 @@ export const listOrganizationAuditEvents = query({
     slug: v.string(),
     page: v.optional(v.number()),
     pageSize: v.optional(v.number()),
+    includeAllMatching: v.optional(v.boolean()),
     sortBy: v.optional(
       v.union(
         v.literal('label'),
@@ -2510,11 +2624,21 @@ export const listOrganizationAuditEvents = query({
       v.literal('domain_verification_token_regenerated'),
       v.literal('domain_removed'),
       v.literal('organization_policy_updated'),
+      v.literal('enterprise_auth_mode_updated'),
+      v.literal('enterprise_login_succeeded'),
+      v.literal('enterprise_scim_token_generated'),
+      v.literal('enterprise_scim_token_deleted'),
+      v.literal('scim_member_deprovisioned'),
+      v.literal('scim_member_reactivated'),
+      v.literal('scim_member_deprovision_failed'),
       v.literal('bulk_invite_revoked'),
       v.literal('bulk_invite_resent'),
       v.literal('bulk_member_removed'),
     ),
     search: v.string(),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    failuresOnly: v.optional(v.boolean()),
   },
   returns: v.union(organizationAuditResponseValidator, v.null()),
   handler: async (ctx, args) => {
@@ -2554,26 +2678,41 @@ export const listOrganizationAuditEvents = query({
     const requestedEventType = args.eventType === 'all' ? null : args.eventType;
     const searchValue = args.search.trim().toLowerCase();
     const searchStrategy = getAuditSearchStrategy(searchValue);
+    const parsedStartDate = parseAuditDateBoundary(args.startDate, 'start');
+    const parsedEndDate = parseAuditDateBoundary(args.endDate, 'end');
+    const startCreatedAt =
+      parsedStartDate !== null && parsedEndDate !== null
+        ? Math.min(parsedStartDate, parsedEndDate)
+        : parsedStartDate;
+    const endCreatedAt =
+      parsedStartDate !== null && parsedEndDate !== null
+        ? Math.max(parsedStartDate, parsedEndDate)
+        : parsedEndDate;
+    const failuresOnly = args.failuresOnly ?? false;
     const sortBy = args.sortBy ?? 'createdAt';
     const sortOrder = args.sortOrder ?? 'desc';
     const pageSize = Math.max(1, Math.min(args.pageSize ?? args.limit ?? 10, 100));
     const page = Math.max(1, args.page ?? 1);
     const targetStart = (page - 1) * pageSize;
     const targetEnd = targetStart + pageSize;
+    const includeAllMatching = args.includeAllMatching ?? false;
     const matchedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
     let total = 0;
     let cursor: string | null = null;
     let isDone = false;
 
     while (!isDone) {
-      const auditPage: PaginationResult<Doc<'auditLogs'>> = await collectOrganizationAuditPage(ctx, {
-        organizationId,
-        requestedEventType,
-        searchStrategy,
-        sortOrder,
-        cursor,
-        numItems: 100,
-      });
+      const auditPage: PaginationResult<Doc<'auditLogs'>> = await collectOrganizationAuditPage(
+        ctx,
+        {
+          organizationId,
+          requestedEventType,
+          searchStrategy,
+          sortOrder,
+          cursor,
+          numItems: 100,
+        },
+      );
 
       for (const event of auditPage.page) {
         if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
@@ -2588,10 +2727,27 @@ export const listOrganizationAuditEvents = query({
           continue;
         }
 
+        if (startCreatedAt !== null && event.createdAt < startCreatedAt) {
+          continue;
+        }
+
+        if (endCreatedAt !== null && event.createdAt > endCreatedAt) {
+          continue;
+        }
+
+        if (failuresOnly && !ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES.has(event.eventType)) {
+          continue;
+        }
+
+        const eventViewModel = toOrganizationAuditEventViewModel(event);
+
         if (
           searchValue.length > 0 &&
           !auditEventMatchesSearch(
             {
+              label: eventViewModel.label,
+              actorLabel: eventViewModel.actorLabel,
+              targetLabel: eventViewModel.targetLabel,
               eventType: event.eventType,
               identifier: event.identifier,
               userId: event.userId,
@@ -2603,7 +2759,7 @@ export const listOrganizationAuditEvents = query({
           continue;
         }
 
-        matchedEvents.push(toOrganizationAuditEventViewModel(event));
+        matchedEvents.push(eventViewModel);
 
         total += 1;
       }
@@ -2618,7 +2774,16 @@ export const listOrganizationAuditEvents = query({
         : [...matchedEvents].sort((left, right) =>
             compareOrganizationAuditEvents(left, right, sortBy, sortOrder),
           );
-    const pagedEvents = sortedEvents.slice(targetStart, targetEnd);
+    const pagedEvents = includeAllMatching
+      ? sortedEvents
+      : sortedEvents.slice(targetStart, targetEnd);
+    const returnedPageSize = includeAllMatching ? Math.max(sortedEvents.length, 1) : pageSize;
+    const returnedPage = includeAllMatching ? 1 : page;
+    const returnedTotalPages = includeAllMatching
+      ? sortedEvents.length > 0
+        ? 1
+        : 0
+      : Math.ceil(total / pageSize);
 
     return {
       organization: {
@@ -2632,10 +2797,10 @@ export const listOrganizationAuditEvents = query({
       },
       events: pagedEvents,
       pagination: {
-        page,
-        pageSize,
+        page: returnedPage,
+        pageSize: returnedPageSize,
         total,
-        totalPages: Math.ceil(total / pageSize),
+        totalPages: returnedTotalPages,
       },
     };
   },
@@ -2671,11 +2836,21 @@ export const exportOrganizationAuditCsv = action({
       v.literal('domain_verification_token_regenerated'),
       v.literal('domain_removed'),
       v.literal('organization_policy_updated'),
+      v.literal('enterprise_auth_mode_updated'),
+      v.literal('enterprise_login_succeeded'),
+      v.literal('enterprise_scim_token_generated'),
+      v.literal('enterprise_scim_token_deleted'),
+      v.literal('scim_member_deprovisioned'),
+      v.literal('scim_member_reactivated'),
+      v.literal('scim_member_deprovision_failed'),
       v.literal('bulk_invite_revoked'),
       v.literal('bulk_invite_resent'),
       v.literal('bulk_member_removed'),
     ),
     search: v.string(),
+    startDate: v.optional(v.string()),
+    endDate: v.optional(v.string()),
+    failuresOnly: v.optional(v.boolean()),
   },
   returns: v.object({
     filename: v.string(),
@@ -2687,15 +2862,21 @@ export const exportOrganizationAuditCsv = action({
     let organizationName = 'organization';
 
     while (true) {
-      const auditPage = await ctx.runQuery(anyApi.organizationManagement.listOrganizationAuditEvents, {
-        slug: args.slug,
-        page: pageNumber,
-        pageSize: 100,
-        sortBy: args.sortBy,
-        sortOrder: args.sortOrder,
-        eventType: args.eventType,
-        search: args.search,
-      });
+      const auditPage = await ctx.runQuery(
+        anyApi.organizationManagement.listOrganizationAuditEvents,
+        {
+          slug: args.slug,
+          page: pageNumber,
+          pageSize: 100,
+          sortBy: args.sortBy,
+          sortOrder: args.sortOrder,
+          eventType: args.eventType,
+          search: args.search,
+          startDate: args.startDate,
+          endDate: args.endDate,
+          failuresOnly: args.failuresOnly,
+        },
+      );
 
       if (!auditPage) {
         throw new Error('Organization audit log is unavailable');
@@ -2738,9 +2919,7 @@ export const exportOrganizationAuditCsv = action({
     const csv = [
       header.join(','),
       ...rows.map((row) =>
-        header
-          .map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`)
-          .join(','),
+        header.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','),
       ),
     ].join('\n');
 
@@ -2786,18 +2965,21 @@ export const exportOrganizationDirectoryCsv = action({
     let organizationName = 'organization';
 
     while (true) {
-      const directoryPage = await ctx.runQuery(anyApi.organizationManagement.listOrganizationDirectory, {
-        slug: args.slug,
-        asOf: args.asOf,
-        page: pageNumber,
-        pageSize: 100,
-        sortBy: args.sortBy,
-        sortOrder: args.sortOrder,
-        secondarySortBy: args.secondarySortBy,
-        secondarySortOrder: args.secondarySortOrder,
-        search: args.search,
-        kind: args.kind,
-      });
+      const directoryPage = await ctx.runQuery(
+        anyApi.organizationManagement.listOrganizationDirectory,
+        {
+          slug: args.slug,
+          asOf: args.asOf,
+          page: pageNumber,
+          pageSize: 100,
+          sortBy: args.sortBy,
+          sortOrder: args.sortOrder,
+          secondarySortBy: args.secondarySortBy,
+          secondarySortOrder: args.secondarySortOrder,
+          search: args.search,
+          kind: args.kind,
+        },
+      );
 
       if (!directoryPage) {
         throw new Error('Organization directory export is unavailable');
@@ -2829,9 +3011,7 @@ export const exportOrganizationDirectoryCsv = action({
     const csv = [
       header.join(','),
       ...rows.map((row) =>
-        header
-          .map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`)
-          .join(','),
+        header.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','),
       ),
     ].join('\n');
 
