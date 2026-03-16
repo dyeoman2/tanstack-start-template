@@ -5,6 +5,10 @@ import {
   type AuthAuditHandlerOwner,
   normalizeAuditIdentifier,
 } from '../../src/lib/shared/auth-audit';
+import {
+  buildAuthorizationDeniedAuditEvent,
+  isHandledAuthorizationDeniedPath,
+} from '../betterAuth/authorizationDeniedAudit';
 
 export type AuditRecord = {
   eventType: AuthAuditEventType;
@@ -1198,6 +1202,25 @@ export async function processAuthAuditAfterHookForTesting(
     for (const handlerEvents of handlerResults) {
       events.push(...handlerEvents);
     }
+  } else if (isHandledAuthorizationDeniedPath(state.path)) {
+    events.push(
+      buildAuthorizationDeniedAuditEvent({
+        actorUserId: state.actorUserId,
+        email:
+          normalizeOptionalString(state.body.email) ??
+          normalizeOptionalString(state.body.username) ??
+          state.identifierFromSession,
+        errorCode: state.responseErrorCode,
+        ipAddress: getIpAddress(ctx),
+        invitationId: normalizeOptionalString(state.body.invitationId),
+        message: state.responseErrorMessage ?? 'Authorization denied',
+        organizationId: state.organizationId,
+        path: state.path,
+        provider: normalizeOptionalString(state.body.provider),
+        responseStatus: state.responseStatus,
+        userAgent: getUserAgent(ctx),
+      }),
+    );
   }
 
   return {

@@ -1,4 +1,3 @@
-import { PasskeysCard } from '@daveyplate/better-auth-ui';
 import { useRouter } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
@@ -8,6 +7,7 @@ import { Skeleton } from '~/components/ui/skeleton';
 import { signOut } from '~/features/auth/auth-client';
 import { ProfileChangePasswordCard } from '~/features/profile/components/ProfileChangePasswordCard';
 import { ProfileDetailsCard } from '~/features/profile/components/ProfileDetailsCard';
+import { ProfilePasskeysCard } from '~/features/profile/components/ProfilePasskeysCard';
 import { ProfileSessionsCard } from '~/features/profile/components/ProfileSessionsCard';
 import { ProfileTwoFactorCard } from '~/features/profile/components/ProfileTwoFactorCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
@@ -118,7 +118,7 @@ export function ProfilePage() {
           <div className="flex w-full flex-col gap-4">
             <ProfileChangePasswordCard />
             <ProfileTwoFactorCard />
-            <PasskeysCard classNames={profileSettingsCardClassNames} />
+            <ProfilePasskeysCard />
             <ProfileSessionsCard />
           </div>
         </section>
@@ -138,22 +138,3 @@ function ProfileCardSkeleton() {
     </div>
   );
 }
-
-const profileSettingsCardClassNames = {
-  base: 'w-full gap-0 overflow-hidden rounded-xl border border-border shadow-sm',
-  header: 'border-b',
-  title: 'font-semibold leading-none text-base md:text-base',
-  description: 'text-sm text-muted-foreground',
-  content: 'px-6 py-6',
-  footer: 'border-t border-border bg-muted/20 px-6 py-4',
-  instructions: 'text-sm leading-6 text-muted-foreground text-left',
-  input: 'h-10 rounded-md border-border bg-background shadow-none',
-  label: 'text-sm font-medium text-foreground',
-  primaryButton: 'h-9 px-4',
-  secondaryButton: 'h-9 px-4',
-  outlineButton: 'h-9 px-4',
-  destructiveButton: 'h-9 px-4',
-  button: 'h-9',
-  cell: 'rounded-lg border border-border bg-background px-4 py-3',
-  skeleton: 'bg-muted/70',
-};

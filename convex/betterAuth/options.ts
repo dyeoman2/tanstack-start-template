@@ -14,13 +14,17 @@ export function getOptions(ctx?: unknown): BetterAuthOptions {
   const includeRuntimeEnvConfig = shouldIncludeRuntimeEnvConfig(ctx);
 
   return {
-    ...createSharedBetterAuthOptions({
-      sendResetPassword: async () => {},
-      sendVerificationEmail: async () => {},
-      sendInvitationEmail: async () => {},
-    }, {
-      includeRuntimeEnvConfig,
-    }),
+    ...createSharedBetterAuthOptions(
+      {
+        sendChangeEmailConfirmation: async () => {},
+        sendResetPassword: async () => {},
+        sendVerificationEmail: async () => {},
+        sendInvitationEmail: async () => {},
+      },
+      {
+        includeRuntimeEnvConfig,
+      },
+    ),
     ...(includeRuntimeEnvConfig ? { secret: getBetterAuthSecret() } : {}),
   } satisfies BetterAuthOptions;
 }

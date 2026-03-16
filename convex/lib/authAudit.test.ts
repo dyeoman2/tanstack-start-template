@@ -282,7 +282,7 @@ describe('auth audit handlers', () => {
     });
   });
 
-  it('defers sign-in denials to Better Auth-specific hooks', async () => {
+  it('records sign-in denials through the shared Better Auth audit path', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { email: 'user@example.com', password: 'secret' },
@@ -301,10 +301,26 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      eventType: 'authorization_denied',
+      identifier: 'user@example.com',
+      outcome: 'failure',
+      resourceLabel: 'Sign-in denied',
+      resourceType: 'session',
+      severity: 'warning',
+      sourceSurface: 'auth.endpoint.sign_in',
+    });
+    expect(parseMetadata(result.events[0].metadata)).toMatchObject({
+      attemptedIdentifier: 'user@example.com',
+      path: '/sign-in/email',
+      responseErrorCode: 'INVALID_CREDENTIALS',
+      responseErrorMessage: 'Invalid email or password',
+      responseStatus: 401,
+    });
   });
 
-  it('defers password reset denials to Better Auth-specific hooks', async () => {
+  it('records password reset denials through the shared Better Auth audit path', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { email: 'reset@example.com' },
@@ -323,10 +339,17 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      eventType: 'authorization_denied',
+      identifier: 'reset@example.com',
+      resourceLabel: 'Password reset denied',
+      resourceType: 'verification_token',
+      sourceSurface: 'auth.endpoint.password_reset',
+    });
   });
 
-  it('defers email verification denials to Better Auth-specific hooks', async () => {
+  it('records email verification denials through the shared Better Auth audit path', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         path: '/verify-email',
@@ -344,10 +367,16 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      eventType: 'authorization_denied',
+      resourceLabel: 'Email verification denied',
+      resourceType: 'verification_token',
+      sourceSurface: 'auth.endpoint.email_verification',
+    });
   });
 
-  it('defers failed organization invitation acceptance to Better Auth-specific hooks', async () => {
+  it('records failed organization invitation acceptance through the shared Better Auth audit path', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { invitationId: 'invite_1' },
@@ -369,10 +398,18 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      actorUserId: 'user_invitee',
+      eventType: 'authorization_denied',
+      resourceId: 'invite_1',
+      resourceLabel: 'Invitation acceptance denied',
+      resourceType: 'organization_membership',
+      sourceSurface: 'auth.endpoint.organization',
+    });
   });
 
-  it('does not emit duplicate denial events for explicit Better Auth before-hook blocks', async () => {
+  it('emits a single denial event for explicit Better Auth before-hook blocks', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { email: 'blocked@example.com' },
@@ -391,7 +428,18 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(0);
+    expect(result.events).toHaveLength(1);
+    expect(result.events[0]).toMatchObject({
+      eventType: 'authorization_denied',
+      identifier: 'blocked@example.com',
+      resourceLabel: 'Sign-in denied',
+      sourceSurface: 'auth.endpoint.sign_in',
+    });
+    expect(parseMetadata(result.events[0].metadata)).toMatchObject({
+      responseErrorCode: 'FORBIDDEN',
+      responseErrorMessage: 'Password sign-in is disabled for this account',
+      responseStatus: 403,
+    });
   });
 });
 

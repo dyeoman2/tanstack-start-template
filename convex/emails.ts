@@ -4,6 +4,7 @@ import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {
+  buildChangeEmailTemplate,
   buildInvitationTemplate,
   buildResetPasswordTemplate,
   buildVerifyEmailTemplate,
@@ -300,6 +301,65 @@ export const sendVerificationEmailMutation = internalAction({
       appName,
       verificationLink: args.url,
       userName: args.user.name,
+    });
+
+    await resend.sendEmailManually(
+      ctx,
+      {
+        from: `${appName} <${emailSender}>`,
+        to: args.user.email,
+        subject: content.subject,
+        replyTo: [supportEmail],
+        headers,
+      },
+      async () => {
+        return await sendEmailViaResendApi({
+          apiKey: resendApiKey,
+          from: `${appName} <${emailSender}>`,
+          to: args.user.email,
+          subject: content.subject,
+          html: content.html,
+          text: content.text,
+          replyTo: [supportEmail],
+          headers,
+          tags,
+        });
+      },
+    );
+
+    return { success: true };
+  },
+});
+
+export const sendChangeEmailConfirmationMutation = internalAction({
+  args: {
+    user: v.object({
+      id: v.string(),
+      email: v.string(),
+      name: v.union(v.string(), v.null()),
+    }),
+    newEmail: v.string(),
+    url: v.string(),
+    token: v.string(),
+  },
+  returns: successTrueValidator,
+  handler: async (ctx, args) => {
+    void args.token;
+    const resendApiKey = process.env.RESEND_API_KEY;
+    if (!resendApiKey) {
+      throw new Error('RESEND_API_KEY environment variable is required');
+    }
+
+    const appName = process.env.APP_NAME || 'Hackathon';
+    const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
+    const supportEmail = getSupportEmail();
+    const headers = buildEmailHeaders('verify-email', appName);
+    const tags = buildEmailTags('verify-email', appName);
+    const content = await buildChangeEmailTemplate({
+      appName,
+      newEmail: args.newEmail,
+      userName: args.user.name,
+      verificationLink: args.url,
     });
 
     await resend.sendEmailManually(

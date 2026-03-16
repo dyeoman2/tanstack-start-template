@@ -1,5 +1,3 @@
-import { api } from '@convex/_generated/api';
-import { useAction } from 'convex/react';
 import { formatDistanceToNow } from 'date-fns';
 import {
   ChevronDown,
@@ -11,7 +9,7 @@ import {
   Smartphone,
   Tablet,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Alert, AlertDescription } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -19,16 +17,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/com
 import { Skeleton } from '~/components/ui/skeleton';
 import { useToast } from '~/components/ui/toast';
 import { signOut } from '~/features/auth/auth-client';
-
-type SessionRecord = {
-  id: string;
-  isCurrent: boolean;
-  createdAt: number;
-  updatedAt: number;
-  expiresAt: number;
-  ipAddress: string | null;
-  userAgent: string | null;
-};
+import {
+  type ProfileSession,
+  useProfileSessions,
+} from '~/features/profile/hooks/useProfileSessions';
 
 type SessionView = {
   id: string;
@@ -50,65 +42,12 @@ const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
 
 export function ProfileSessionsCard() {
   const { showToast } = useToast();
-  const listSessions = useAction(api.auth.listCurrentSessions);
-  const revokeSession = useAction(api.auth.revokeCurrentSessionById);
-  const revokeOtherSessions = useAction(api.auth.revokeCurrentOtherSessions);
-  const [sessions, setSessions] = useState<SessionRecord[] | null>(null);
-  const [isPending, setIsPending] = useState(true);
+  const { sessions, isPending, error, revokeSession, revokeOtherSessions } = useProfileSessions();
   const [pendingSessionId, setPendingSessionId] = useState<string | null>(null);
   const [showOtherSessions, setShowOtherSessions] = useState(false);
   const [isRevokingOthers, setIsRevokingOthers] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
-
-  useEffect(() => {
-    let cancelled = false;
-    const requestKey = refreshKey;
-
-    const loadSessions = async () => {
-      setIsPending(true);
-      setError(null);
-
-      try {
-        const result = await listSessions({});
-        if (cancelled) {
-          return;
-        }
-
-        void requestKey;
-
-        if (!result.ok) {
-          throw new Error(result.error.message);
-        }
-
-        setSessions(result.data);
-        setError(null);
-      } catch (error) {
-        if (cancelled) {
-          return;
-        }
-
-        const message = error instanceof Error ? error.message : 'Failed to load sessions';
-        setError(message);
-        setSessions([]);
-      } finally {
-        if (!cancelled) {
-          setIsPending(false);
-        }
-      }
-    };
-
-    void loadSessions();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [listSessions, refreshKey]);
-
-  const normalizedSessions = sessions ?? [];
-
   const sessionViews = useMemo(() => {
-    return normalizedSessions
+    return sessions
       .map((session) => buildSessionView(session))
       .sort((left, right) => {
         if (left.isCurrent !== right.isCurrent) {
@@ -117,19 +56,16 @@ export function ProfileSessionsCard() {
 
         return right.updatedAt - left.updatedAt;
       });
-  }, [normalizedSessions]);
+  }, [sessions]);
 
   const current = sessionViews.find((session) => session.isCurrent) ?? null;
   const otherSessions = sessionViews.filter((session) => !session.isCurrent);
 
   const handleSignOutCurrent = async () => {
-    setError(null);
-
     try {
       await signOut();
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to sign out';
-      setError(message);
       showToast(message, 'error');
     }
   };
@@ -141,22 +77,14 @@ export function ProfileSessionsCard() {
     }
 
     setPendingSessionId(session.id);
-    setError(null);
 
     try {
-      const result = await revokeSession({ sessionId: session.id });
-      if (!result.ok) {
-        throw new Error(result.error.message);
-      }
-      if (!result.data.success) {
+      const success = await revokeSession(session.id);
+      if (!success) {
         throw new Error('Failed to revoke session');
       }
-      setRefreshKey((value) => value + 1);
-      showToast('Session revoked', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to revoke session';
-      setError(message);
-      showToast(message, 'error');
+    } catch (_error) {
+      // Toasts and error state are handled by the hook.
     } finally {
       setPendingSessionId(null);
     }
@@ -164,22 +92,14 @@ export function ProfileSessionsCard() {
 
   const handleRevokeOtherSessions = async () => {
     setIsRevokingOthers(true);
-    setError(null);
 
     try {
-      const result = await revokeOtherSessions({});
-      if (!result.ok) {
-        throw new Error(result.error.message);
-      }
-      if (!result.data.success) {
+      const success = await revokeOtherSessions();
+      if (!success) {
         throw new Error('Failed to revoke other sessions');
       }
-      setRefreshKey((value) => value + 1);
-      showToast('Revoked other sessions', 'success');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to revoke other sessions';
-      setError(message);
-      showToast(message, 'error');
+    } catch (_error) {
+      // Toasts and error state are handled by the hook.
     } finally {
       setIsRevokingOthers(false);
     }
@@ -433,7 +353,7 @@ function SessionsLoadingState() {
   );
 }
 
-function buildSessionView(session: SessionRecord): SessionView {
+function buildSessionView(session: ProfileSession): SessionView {
   const parsedAgent = parseUserAgent(session.userAgent);
   const icon = getSessionIcon(parsedAgent.deviceType);
 

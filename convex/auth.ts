@@ -13,10 +13,7 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import { normalizeOrganizationRole } from '../src/features/organizations/lib/organization-permissions';
 import {
   getBetterAuthSecret,
-  getRequiredBetterAuthUrl,
-  isE2EPrincipalEmail,
   isGoogleWorkspaceOAuthConfigured,
-  isTrustedBetterAuthOrigin,
 } from '../src/lib/server/env.server';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
@@ -27,8 +24,6 @@ import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentUserFromActionOrThrow,
 } from './auth/access';
-import { createAdminOrganizationAuditPlugin } from './betterAuth/adminOrganizationAuditPlugin';
-import { recordAuthorizationDeniedAuditEvent } from './betterAuth/authorizationDeniedAudit';
 import {
   assertScimManagementAccess,
   canUserSelfServeCreateOrganization,
@@ -36,12 +31,17 @@ import {
   resolveEnterpriseSessionContext,
   resolveInitialActiveOrganizationId,
 } from './betterAuth/policyServices';
+import {
+  createSendChangeEmailConfirmationHandler,
+  createSendInvitationEmailHandler,
+  createSendResetPasswordHandler,
+  createSendVerificationEmailHandler,
+} from './lib/betterAuthEmailServices';
 import betterAuthSchema from './betterAuth/schema';
 import {
   createSharedBetterAuthOptions,
   ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS,
   type OrganizationPluginOptions,
-  type SharedSendInvitationEmail,
 } from './betterAuth/sharedOptions';
 import { createAuthAuditPlugin } from './lib/authAudit';
 import {
@@ -81,49 +81,6 @@ import {
 } from './lib/returnValidators';
 
 const secret = getBetterAuthSecret();
-
-export function shouldSkipE2EAuthEmailForTesting(targetEmail: string): boolean {
-  return isE2EPrincipalEmail(targetEmail);
-}
-
-function logSkippedE2EAuthEmail(
-  kind: 'invitation' | 'password reset' | 'verification',
-  email: string,
-) {
-  if (process.env.NODE_ENV === 'production') {
-    return;
-  }
-
-  console.info(`[auth] Skipping ${kind} email for E2E principal ${email}`);
-}
-
-export function resolveAuthEmailUrl(url: string, request?: Request): string {
-  let canonicalUrl: URL;
-
-  try {
-    canonicalUrl = new URL(url, getRequiredBetterAuthUrl());
-  } catch {
-    return url;
-  }
-
-  if (!request) {
-    return canonicalUrl.toString();
-  }
-
-  try {
-    const requestOrigin = new URL(request.url).origin;
-    if (!isTrustedBetterAuthOrigin(requestOrigin)) {
-      return canonicalUrl.toString();
-    }
-
-    const nextOrigin = new URL(requestOrigin);
-    canonicalUrl.protocol = nextOrigin.protocol;
-    canonicalUrl.host = nextOrigin.host;
-    return canonicalUrl.toString();
-  } catch {
-    return canonicalUrl.toString();
-  }
-}
 
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
   components.betterAuth,
@@ -699,38 +656,6 @@ type LocalOrganizationPluginOptions = Pick<
   OrganizationPluginOptions,
   'invitationExpiresIn' | 'organizationHooks' | 'sendInvitationEmail'
 >;
-
-function createSendInvitationEmailHandler(ctx: GenericCtx<DataModel>): SharedSendInvitationEmail {
-  return async (data, request) => {
-    if (shouldSkipE2EAuthEmailForTesting(data.email)) {
-      logSkippedE2EAuthEmail('invitation', data.email);
-      return;
-    }
-
-    const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
-      scheduler?: {
-        runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
-      };
-    };
-
-    if (!ctxWithScheduler.scheduler) {
-      throw new Error('Cannot send organization invitation email: scheduler not available');
-    }
-
-    const inviteUrl = resolveAuthEmailUrl(`/invite/${data.id}`, request);
-    await ctxWithScheduler.scheduler.runAfter(
-      0,
-      internal.emails.sendOrganizationInviteEmailMutation,
-      {
-        email: data.email,
-        inviteUrl,
-        inviterName: data.inviter.user.name ?? data.inviter.user.email,
-        organizationName: data.organization.name,
-        role: data.role,
-      },
-    );
-  };
-}
 
 function createInvitationPolicyHook(
   ctx: GenericCtx<DataModel>,
@@ -1758,53 +1683,6 @@ export const createAuth = (
         userId,
       });
     },
-    onPasswordAuthBlocked: async ({ email, message, path, sessionUserId }) => {
-      await recordAuthorizationDeniedAuditEvent(recordAuditEvent, {
-        actorUserId: sessionUserId,
-        email,
-        errorCode: 'FORBIDDEN',
-        message,
-        path,
-      });
-    },
-    onSignInDenied: async ({
-      email,
-      errorCode,
-      message,
-      path,
-      provider,
-      sessionUserId,
-      status,
-    }) => {
-      await recordAuthorizationDeniedAuditEvent(recordAuditEvent, {
-        actorUserId: sessionUserId,
-        email,
-        errorCode,
-        message,
-        path,
-        provider,
-        responseStatus: status,
-      });
-    },
-    onPasswordResetDenied: async ({ email, errorCode, message, path, sessionUserId, status }) => {
-      await recordAuthorizationDeniedAuditEvent(recordAuditEvent, {
-        actorUserId: sessionUserId,
-        email,
-        errorCode,
-        message,
-        path,
-        responseStatus: status,
-      });
-    },
-    onEmailVerificationDenied: async ({ errorCode, message, path, sessionUserId, status }) => {
-      await recordAuthorizationDeniedAuditEvent(recordAuditEvent, {
-        actorUserId: sessionUserId,
-        errorCode,
-        message,
-        path,
-        responseStatus: status,
-      });
-    },
     assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {
       await assertScimManagementAccess(ctx, {
         organizationId,
@@ -1914,103 +1792,9 @@ export const createAuth = (
 
       return enterpriseSession;
     },
-    sendResetPassword: async ({ user, url, token }, request) => {
-      if (shouldSkipE2EAuthEmailForTesting(user.email)) {
-        logSkippedE2EAuthEmail('password reset', user.email);
-        return;
-      }
-
-      // Apply a second per-account limiter without surfacing a distinct failure to the caller.
-      // This callback only runs for existing accounts, so throwing here would leak account
-      // existence once the bucket is exhausted.
-      const ctxWithRunMutation = ctx as GenericCtx<DataModel> & {
-        runMutation?: (fn: unknown, args: unknown) => Promise<{ ok: boolean; retryAfter?: number }>;
-      };
-
-      if (!ctxWithRunMutation.runMutation) {
-        throw new Error('Rate limiter mutation unavailable in current context');
-      }
-
-      const rateLimitResult = await ctxWithRunMutation.runMutation(
-        components.rateLimiter.lib.rateLimit,
-        {
-          name: 'passwordReset',
-          key: `passwordReset:${user.email}`,
-          config: {
-            kind: 'token bucket',
-            rate: 3, // 3 requests
-            period: 60 * 60 * 1000, // per hour
-            capacity: 3,
-          },
-        },
-      );
-
-      if (!rateLimitResult.ok) {
-        console.warn('[auth] Suppressed password reset email after per-account rate limit', {
-          email: user.email,
-          retryAfterMs: rateLimitResult.retryAfter ?? null,
-        });
-        return;
-      }
-
-      // Call the email action which schedules the mutation using the Resend component
-      // This ensures queueing, batching, durable execution, and rate limiting
-      // We need to call it via the HTTP API since Better Auth callbacks don't have direct access to ctx.runAction
-      // For now, schedule the internal mutation directly if ctx has scheduler
-      // Better Auth callbacks run in Convex context, so ctx should have scheduler
-      // Use type assertion since GenericCtx might not expose scheduler in types
-      // Using unknown instead of any for better type safety
-      const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
-        scheduler?: {
-          runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
-        };
-      };
-      if (ctxWithScheduler.scheduler) {
-        await ctxWithScheduler.scheduler.runAfter(
-          0,
-          internal.emails.sendPasswordResetEmailMutation,
-          {
-            user: {
-              id: user.id,
-              email: user.email,
-              name: user.name || null,
-            },
-            url: resolveAuthEmailUrl(url, request),
-            token,
-          },
-        );
-      } else {
-        // Fallback: if no scheduler, we could call the action via HTTP
-        // But this is an edge case - Better Auth should provide scheduler
-        throw new Error('Cannot send email: scheduler not available');
-      }
-    },
-    sendVerificationEmail: async ({ user, url, token }, request) => {
-      if (shouldSkipE2EAuthEmailForTesting(user.email)) {
-        logSkippedE2EAuthEmail('verification', user.email);
-        return;
-      }
-
-      const ctxWithScheduler = ctx as GenericCtx<DataModel> & {
-        scheduler?: {
-          runAfter: (delay: number, fn: unknown, args: unknown) => Promise<void>;
-        };
-      };
-
-      if (!ctxWithScheduler.scheduler) {
-        throw new Error('Cannot send verification email: scheduler not available');
-      }
-
-      await ctxWithScheduler.scheduler.runAfter(0, internal.emails.sendVerificationEmailMutation, {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name || null,
-        },
-        url: resolveAuthEmailUrl(url, request),
-        token,
-      });
-    },
+    sendResetPassword: createSendResetPasswordHandler(ctx),
+    sendChangeEmailConfirmation: createSendChangeEmailConfirmationHandler(ctx),
+    sendVerificationEmail: createSendVerificationEmailHandler(ctx),
     afterEmailVerification: async (user) => {
       if (!ctxWithRunMutation.runMutation) {
         return;
@@ -2033,11 +1817,7 @@ export const createAuth = (
     },
     secret,
     database: authComponent.adapter(ctx),
-    plugins: [
-      ...(sharedOptions.plugins ?? []),
-      createAdminOrganizationAuditPlugin(recordAuditEvent),
-      createAuthAuditPlugin(recordAuditEvent),
-    ],
+    plugins: [...(sharedOptions.plugins ?? []), createAuthAuditPlugin(recordAuditEvent)],
   });
 };
 
@@ -2173,6 +1953,8 @@ export const listCurrentSessions = action({
   args: {},
   returns: betterAuthActionResultValidator(currentUserSessionsValidator),
   handler: async (ctx) => {
+    // Keep this wrapper intentionally thin: rate-limit, read the native Better Auth
+    // session state, and minimally normalize timestamps plus current-session identity.
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
       await enforceCurrentUserScopedServerAuthRateLimit(ctx, 'currentListSessions');
       const [currentSession, sessions] = await Promise.all([
@@ -2203,6 +1985,8 @@ export const revokeCurrentSessionById = action({
     }),
   ),
   handler: async (ctx, args) => {
+    // Resolve the public Better Auth session id back to the native token through
+    // Better Auth's own listSessions() response instead of adapter table lookups.
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
       await enforceCurrentUserScopedServerAuthRateLimit(
         ctx,
@@ -2241,6 +2025,8 @@ export const revokeCurrentOtherSessions = action({
     }),
   ),
   handler: async (ctx) => {
+    // Delegate directly to Better Auth so self-service revoke semantics stay aligned
+    // with the auth layer rather than reimplementing delete logic in Convex.
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
       await enforceCurrentUserScopedServerAuthRateLimit(ctx, 'currentRevokeOtherSessions');
       const response = await auth.api.revokeOtherSessions({

@@ -1,5 +1,4 @@
 import { api } from '@convex/_generated/api';
-import { AuthView } from '@daveyplate/better-auth-ui';
 import { createFileRoute, Link, Navigate } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Mail } from 'lucide-react';
@@ -9,6 +8,7 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { AuthEmailPrefill } from '~/features/auth/components/AuthEmailPrefill';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
+import { ForgotPasswordRequestCard } from '~/features/auth/components/ForgotPasswordRequestCard';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 
 export const Route = createFileRoute('/forgot-password')({
@@ -64,7 +64,7 @@ function ForgotPasswordPage() {
   return (
     <AuthRouteShell>
       <AuthEmailPrefill email={email} />
-      <AuthView view="FORGOT_PASSWORD" />
+      <ForgotPasswordRequestCard email={email} redirectTo={redirectTo} />
     </AuthRouteShell>
   );
 }

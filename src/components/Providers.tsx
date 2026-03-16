@@ -17,8 +17,7 @@ import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { Toaster } from '~/components/ui/sonner';
 import { ToastProvider } from '~/components/ui/toast';
-import { authClient } from '~/features/auth/auth-client';
-import { authUiViewPaths } from '~/features/auth/auth-ui';
+import { authProviderClient } from '~/features/auth/auth-client';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
@@ -216,23 +215,8 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <AuthQueryProvider>
         <AuthUIProviderTanstack
-          account={{
-            basePath: '/app/profile',
-            fields: ['name', 'phoneNumber'],
-          }}
-          additionalFields={{
-            phoneNumber: {
-              description: 'Add a phone number to your account profile.',
-              label: 'Phone Number',
-              placeholder: '(805) 123-4567',
-              type: 'string',
-            },
-          }}
-          authClient={authClient}
-          basePath=""
-          baseURL={typeof window === 'undefined' ? '' : window.location.origin}
+          authClient={authProviderClient}
           Link={AuthLink}
-          credentials={{ forgotPassword: true }}
           navigate={(href) => navigateWithBrowser(href)}
           onSessionChange={async () => {
             if (typeof window !== 'undefined') {
@@ -241,15 +225,9 @@ function AuthUiProvider({ children }: { children: ReactNode }) {
               }
             }
           }}
-          organization={{
-            basePath: '/app/organizations',
-            pathMode: 'slug',
-            personalPath: '/app/profile',
-          }}
           passkey
           replace={(href) => navigateWithBrowser(href, true)}
           twoFactor={['totp']}
-          viewPaths={authUiViewPaths}
         >
           {children}
         </AuthUIProviderTanstack>
@@ -265,7 +243,7 @@ export function Providers({ children }: { children: ReactNode }) {
       description="An unexpected error occurred in the application. Please refresh the page to try again."
       showDetails={false}
     >
-      <ConvexBetterAuthProvider client={convexClient} authClient={authClient}>
+      <ConvexBetterAuthProvider client={convexClient} authClient={authProviderClient}>
         <AuthUiProvider>
           <AuthProvider>
             <ThemeProvider

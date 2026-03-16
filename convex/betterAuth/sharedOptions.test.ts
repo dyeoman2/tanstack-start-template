@@ -1,10 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createSharedBetterAuthOptions } from './sharedOptions';
+import {
+  AUTH_SESSION_EXPIRES_IN_SECONDS,
+  AUTH_SESSION_FRESH_AGE_SECONDS,
+  AUTH_SESSION_UPDATE_AGE_SECONDS,
+  createSharedBetterAuthOptions,
+} from './sharedOptions';
 
 const ORIGINAL_ENV = { ...process.env };
 
 function createOptions() {
   return createSharedBetterAuthOptions({
+    sendChangeEmailConfirmation: async () => {},
     sendInvitationEmail: async () => {},
     sendResetPassword: async () => {},
     sendVerificationEmail: async () => {},
@@ -64,29 +70,46 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.emailAndPassword?.revokeSessionsOnPasswordReset).toBe(true);
   });
 
+  it('explicitly enables email change support on the user config', () => {
+    const options = createOptions();
+
+    expect(options.user?.changeEmail?.enabled).toBe(true);
+    expect(options.user?.changeEmail?.sendChangeEmailConfirmation).toBeTypeOf('function');
+  });
+
   it('configures native passkey support on the server plugin list', () => {
     const options = createOptions();
     const pluginIds = (options.plugins ?? [])
       .map((plugin) => ('id' in plugin ? plugin.id : null))
       .filter((pluginId): pluginId is string => typeof pluginId === 'string');
 
+    expect(pluginIds).toContain('admin');
+    expect(pluginIds).toContain('organization');
+    expect(pluginIds).toContain('scim');
+    expect(pluginIds).toContain('convex');
     expect(pluginIds).toContain('passkey');
     expect(pluginIds).toContain('two-factor');
     expect(pluginIds).not.toContain('fresh-session');
   });
 
-  it('enables Better Auth cookie cache versioning for normal session reads', () => {
+  it('keeps session storage and refresh windows explicit', () => {
     const options = createOptions();
 
-    expect(options.session?.cookieCache?.enabled).toBe(true);
-    expect(options.session?.cookieCache?.maxAge).toBe(5 * 60);
-    expect(options.session?.cookieCache?.version).toBeTypeOf('function');
+    expect(options.session?.storeSessionInDatabase).toBe(true);
+    expect(options.session?.expiresIn).toBe(AUTH_SESSION_EXPIRES_IN_SECONDS);
+    expect(options.session?.updateAge).toBe(AUTH_SESSION_UPDATE_AGE_SECONDS);
+    expect(options.session?.freshAge).toBe(AUTH_SESSION_FRESH_AGE_SECONDS);
+    expect(options.session?.cookieCache?.enabled).toBe(false);
   });
 
-  it('calls the explicit password-auth-blocked callback before throwing', async () => {
-    const onPasswordAuthBlocked = vi.fn(async () => {});
+  it('configures trusted origins through the Better Auth runtime callback', () => {
+    const options = createOptions();
+
+    expect(options.trustedOrigins).toBeTypeOf('function');
+  });
+
+  it('blocks password auth through the before hook when org policy requires enterprise auth', async () => {
     const options = createSharedBetterAuthOptions({
-      onPasswordAuthBlocked,
       sendInvitationEmail: async () => {},
       sendResetPassword: async () => {},
       sendVerificationEmail: async () => {},
@@ -115,119 +138,6 @@ describe('createSharedBetterAuthOptions', () => {
       body: {
         message: 'Password sign-in is disabled for this account',
       },
-    });
-
-    expect(onPasswordAuthBlocked).toHaveBeenCalledWith({
-      email: 'blocked@example.com',
-      message: 'Password sign-in is disabled for this account',
-      path: '/sign-in/email',
-      sessionUserId: 'user_1',
-    });
-  });
-
-  it('calls the password reset denied callback from the Better Auth after hook', async () => {
-    const onPasswordResetDenied = vi.fn(async () => {});
-    const options = createSharedBetterAuthOptions({
-      onPasswordResetDenied,
-      sendInvitationEmail: async () => {},
-      sendResetPassword: async () => {},
-      sendVerificationEmail: async () => {},
-    });
-
-    await getAfterHook(options)({
-      body: { email: 'reset@example.com' },
-      context: {
-        returned: new Response(JSON.stringify({ message: 'Reset token expired' }), {
-          status: 400,
-          headers: { 'content-type': 'application/json' },
-        }),
-        session: {
-          user: {
-            id: 'user_1',
-          },
-        },
-      },
-      path: '/reset-password',
-    } as never);
-
-    expect(onPasswordResetDenied).toHaveBeenCalledWith({
-      email: 'reset@example.com',
-      errorCode: undefined,
-      message: 'Reset token expired',
-      path: '/reset-password',
-      sessionUserId: 'user_1',
-      status: 400,
-    });
-  });
-
-  it('calls the email verification denied callback from the Better Auth after hook', async () => {
-    const onEmailVerificationDenied = vi.fn(async () => {});
-    const options = createSharedBetterAuthOptions({
-      onEmailVerificationDenied,
-      sendInvitationEmail: async () => {},
-      sendResetPassword: async () => {},
-      sendVerificationEmail: async () => {},
-    });
-
-    await getAfterHook(options)({
-      context: {
-        returned: new Response(JSON.stringify({ message: 'Verification token invalid' }), {
-          status: 403,
-          headers: { 'content-type': 'application/json' },
-        }),
-        session: {
-          user: {
-            id: 'user_1',
-          },
-        },
-      },
-      path: '/verify-email',
-    } as never);
-
-    expect(onEmailVerificationDenied).toHaveBeenCalledWith({
-      errorCode: undefined,
-      message: 'Verification token invalid',
-      path: '/verify-email',
-      sessionUserId: 'user_1',
-      status: 403,
-    });
-  });
-
-  it('calls the sign-in denied callback from the Better Auth after hook', async () => {
-    const onSignInDenied = vi.fn(async () => {});
-    const options = createSharedBetterAuthOptions({
-      onSignInDenied,
-      sendInvitationEmail: async () => {},
-      sendResetPassword: async () => {},
-      sendVerificationEmail: async () => {},
-    });
-
-    await getAfterHook(options)({
-      body: { email: 'user@example.com', provider: 'password' },
-      context: {
-        returned: new Response(
-          JSON.stringify({
-            code: 'INVALID_CREDENTIALS',
-            message: 'Invalid email or password',
-          }),
-          {
-            status: 401,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-        session: null,
-      },
-      path: '/sign-in/email',
-    } as never);
-
-    expect(onSignInDenied).toHaveBeenCalledWith({
-      email: 'user@example.com',
-      errorCode: 'INVALID_CREDENTIALS',
-      message: 'Invalid email or password',
-      path: '/sign-in/email',
-      provider: 'password',
-      sessionUserId: undefined,
-      status: 401,
     });
   });
 

@@ -15,6 +15,21 @@ type AuditRecorder = (event: {
   userAgent?: string;
 }) => Promise<void>;
 
+export type AuthorizationDeniedAuditInput = {
+  actorUserId?: string;
+  email?: string;
+  errorCode?: string;
+  ipAddress?: string;
+  invitationId?: string;
+  message: string;
+  organizationId?: string;
+  path: string;
+  provider?: string;
+  resourceId?: string;
+  responseStatus?: number;
+  userAgent?: string;
+};
+
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -95,39 +110,36 @@ function getSourceSurface(path: string) {
   return path === '/sign-up/email' ? 'auth.endpoint.sign_up' : 'auth.endpoint.sign_in';
 }
 
-export async function recordAuthorizationDeniedAuditEvent(
-  recordAuditEvent: AuditRecorder,
-  input: {
-    actorUserId?: string;
-    email?: string;
-    errorCode?: string;
-    ipAddress?: string;
-    invitationId?: string;
-    message: string;
-    organizationId?: string;
-    path: string;
-    provider?: string;
-    resourceId?: string;
-    responseStatus?: number;
-    userAgent?: string;
-  },
-) {
-  await recordAuditEvent({
+export function isHandledAuthorizationDeniedPath(path: string) {
+  return (
+    path.startsWith('/admin/') ||
+    path.startsWith('/organization/') ||
+    path === '/reset-password' ||
+    path === '/verify-email' ||
+    path === '/sign-up/email' ||
+    path.startsWith('/sign-in/') ||
+    path.startsWith('/callback/') ||
+    path.startsWith('/oauth2/callback/')
+  );
+}
+
+export function buildAuthorizationDeniedAuditEvent(input: AuthorizationDeniedAuditInput) {
+  return {
     createdAt: Date.now(),
-    eventType: 'authorization_denied',
+    eventType: 'authorization_denied' as const,
     ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
     ...(normalizeOptionalString(input.organizationId)
       ? { organizationId: normalizeOptionalString(input.organizationId) }
       : {}),
     ...(normalizeOptionalString(input.email) ? { identifier: normalizeOptionalString(input.email) } : {}),
     ...(normalizeOptionalString(input.ipAddress) ? { ipAddress: normalizeOptionalString(input.ipAddress) } : {}),
-    outcome: 'failure',
+    outcome: 'failure' as const,
     ...(normalizeOptionalString(input.resourceId ?? input.invitationId)
       ? { resourceId: normalizeOptionalString(input.resourceId ?? input.invitationId) }
       : {}),
     resourceLabel: getResourceLabel(input.path),
     resourceType: getResourceType(input.path),
-    severity: 'warning',
+    severity: 'warning' as const,
     sourceSurface: getSourceSurface(input.path),
     ...(normalizeOptionalString(input.userAgent)
       ? { userAgent: normalizeOptionalString(input.userAgent) }
@@ -145,5 +157,12 @@ export async function recordAuthorizationDeniedAuditEvent(
       responseErrorMessage: input.message,
       ...(input.responseStatus !== undefined ? { responseStatus: input.responseStatus } : {}),
     }),
-  });
+  };
+}
+
+export async function recordAuthorizationDeniedAuditEvent(
+  recordAuditEvent: AuditRecorder,
+  input: AuthorizationDeniedAuditInput,
+) {
+  await recordAuditEvent(buildAuthorizationDeniedAuditEvent(input));
 }

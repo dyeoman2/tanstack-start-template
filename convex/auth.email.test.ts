@@ -18,14 +18,14 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
   });
 
   it('skips auth email callbacks for configured E2E principals', async () => {
-    const { shouldSkipE2EAuthEmailForTesting } = await import('./auth');
+    const { shouldSkipE2EAuthEmailForTesting } = await import('./lib/betterAuthEmailServices');
 
     expect(shouldSkipE2EAuthEmailForTesting('e2e-user@local.test')).toBe(true);
     expect(shouldSkipE2EAuthEmailForTesting('E2E-ADMIN@LOCAL.TEST')).toBe(true);
   });
 
   it('does not skip auth email callbacks for normal users', async () => {
-    const { shouldSkipE2EAuthEmailForTesting } = await import('./auth');
+    const { shouldSkipE2EAuthEmailForTesting } = await import('./lib/betterAuthEmailServices');
 
     expect(shouldSkipE2EAuthEmailForTesting('person@example.com')).toBe(false);
   });
@@ -33,7 +33,7 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
   it('rewrites auth email urls only for trusted request origins', async () => {
     process.env.BETTER_AUTH_URL = 'https://app.example.com';
     process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com';
-    const { resolveAuthEmailUrl } = await import('./auth');
+    const { resolveAuthEmailUrl } = await import('./lib/betterAuthEmailServices');
 
     expect(
       resolveAuthEmailUrl(

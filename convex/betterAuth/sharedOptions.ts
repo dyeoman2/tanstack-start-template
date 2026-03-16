@@ -27,6 +27,7 @@ import authConfig from '../auth.config';
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
 type BetterAuthDatabaseHooks = NonNullable<BetterAuthOptions['databaseHooks']>;
+type BetterAuthUserOptions = NonNullable<BetterAuthOptions['user']>;
 export type OrganizationPluginOptions = NonNullable<Parameters<typeof organization>[0]>;
 
 type SharedBetterAuthCallbacks = {
@@ -47,37 +48,10 @@ type SharedBetterAuthCallbacks = {
     userId: string;
   }) => Promise<void>;
   databaseHooks?: BetterAuthDatabaseHooks;
+  sendChangeEmailConfirmation?: NonNullable<
+    NonNullable<BetterAuthUserOptions['changeEmail']>['sendChangeEmailConfirmation']
+  >;
   organizationHooks?: OrganizationPluginOptions['organizationHooks'];
-  onPasswordAuthBlocked?: (input: {
-    email: string;
-    message: string;
-    path: '/sign-in/email' | '/sign-up/email';
-    sessionUserId?: string;
-  }) => Promise<void>;
-  onSignInDenied?: (input: {
-    email?: string;
-    errorCode?: string;
-    message: string;
-    path: string;
-    provider?: string;
-    sessionUserId?: string;
-    status: number;
-  }) => Promise<void>;
-  onPasswordResetDenied?: (input: {
-    email?: string;
-    errorCode?: string;
-    message: string;
-    path: '/reset-password';
-    sessionUserId?: string;
-    status?: number;
-  }) => Promise<void>;
-  onEmailVerificationDenied?: (input: {
-    errorCode?: string;
-    message: string;
-    path: '/verify-email';
-    sessionUserId?: string;
-    status?: number;
-  }) => Promise<void>;
   resolveEnterpriseAuthSession?: (input: {
     providerId: string;
     userEmail: string;
@@ -180,105 +154,6 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       max: 10,
     },
   };
-}
-
-async function readAfterHookErrorDetails(returned: unknown) {
-  if (!(returned instanceof Response) || returned.status < 400) {
-    return null;
-  }
-
-  let errorCode: string | undefined;
-  let message: string | undefined;
-
-  try {
-    const json = (await returned.clone().json()) as unknown;
-    if (typeof json === 'object' && json !== null) {
-      if ('code' in json && typeof json.code === 'string') {
-        errorCode = json.code;
-      }
-      if ('message' in json && typeof json.message === 'string') {
-        message = json.message;
-      }
-    }
-  } catch {
-    // Ignore parse failures and fall back to defaults below.
-  }
-
-  return {
-    errorCode,
-    message,
-    status: returned.status,
-  };
-}
-
-function isSignInFailurePath(path: string) {
-  return (
-    path.startsWith('/sign-in/') ||
-    path.startsWith('/callback/') ||
-    path.startsWith('/oauth2/callback/')
-  );
-}
-
-async function handleSignInDeniedAfterHook(
-  callbacks: SharedBetterAuthCallbacks,
-  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
-) {
-  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
-  if (
-    !callbacks.onSignInDenied ||
-    !errorDetails ||
-    !isSignInFailurePath(ctx.path) ||
-    (errorDetails.status === 403 && errorDetails.errorCode === 'FORBIDDEN')
-  ) {
-    return;
-  }
-
-  await callbacks.onSignInDenied({
-    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-    errorCode: errorDetails.errorCode,
-    message: errorDetails.message ?? 'Sign-in failed',
-    path: ctx.path,
-    provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
-    sessionUserId: ctx.context.session?.user.id,
-    status: errorDetails.status,
-  });
-}
-
-async function handlePasswordResetDeniedAfterHook(
-  callbacks: SharedBetterAuthCallbacks,
-  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
-) {
-  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
-  if (!callbacks.onPasswordResetDenied || !errorDetails || ctx.path !== '/reset-password') {
-    return;
-  }
-
-  await callbacks.onPasswordResetDenied({
-    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-    errorCode: errorDetails.errorCode,
-    message: errorDetails.message ?? 'Password reset failed',
-    path: '/reset-password',
-    sessionUserId: ctx.context.session?.user.id,
-    status: errorDetails.status,
-  });
-}
-
-async function handleEmailVerificationDeniedAfterHook(
-  callbacks: SharedBetterAuthCallbacks,
-  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
-) {
-  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
-  if (!callbacks.onEmailVerificationDenied || !errorDetails || ctx.path !== '/verify-email') {
-    return;
-  }
-
-  await callbacks.onEmailVerificationDenied({
-    errorCode: errorDetails.errorCode,
-    message: errorDetails.message ?? 'Email verification failed',
-    path: '/verify-email',
-    sessionUserId: ctx.context.session?.user.id,
-    status: errorDetails.status,
-  });
 }
 
 async function handleSessionEnrichmentAfterHook(
@@ -402,12 +277,6 @@ export function createSharedBetterAuthOptions(
               path: ctx.path as '/sign-in/email' | '/sign-up/email',
             });
             if (message) {
-              await callbacks.onPasswordAuthBlocked?.({
-                email,
-                message,
-                path: ctx.path as '/sign-in/email' | '/sign-up/email',
-                sessionUserId: ctx.context.session?.user.id,
-              });
               throw new APIError('FORBIDDEN', {
                 message,
               });
@@ -448,9 +317,6 @@ export function createSharedBetterAuthOptions(
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
-        await handleSignInDeniedAfterHook(callbacks, ctx);
-        await handlePasswordResetDeniedAfterHook(callbacks, ctx);
-        await handleEmailVerificationDeniedAfterHook(callbacks, ctx);
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
       }),
     },
@@ -505,6 +371,14 @@ export function createSharedBetterAuthOptions(
       },
     },
     user: {
+      changeEmail: {
+        enabled: true,
+        ...(callbacks.sendChangeEmailConfirmation
+          ? {
+              sendChangeEmailConfirmation: callbacks.sendChangeEmailConfirmation,
+            }
+          : {}),
+      },
       additionalFields: {
         phoneNumber: {
           type: 'string',

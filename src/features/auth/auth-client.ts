@@ -1,5 +1,5 @@
-import { convexClient } from '@convex-dev/better-auth/client/plugins';
 import { passkeyClient } from '@better-auth/passkey/client';
+import { convexClient } from '@convex-dev/better-auth/client/plugins';
 import { createAuthHooks } from '@daveyplate/better-auth-tanstack';
 import {
   adminClient,
@@ -9,7 +9,6 @@ import {
 } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 import { useSyncExternalStore } from 'react';
-import type { getOptions } from '../../../convex/betterAuth/options';
 import {
   adminAccessControl,
   adminRole,
@@ -19,6 +18,7 @@ import {
   organizationOwnerRole,
   userRole,
 } from '~/lib/shared/better-auth-access';
+import type { getOptions } from '../../../convex/betterAuth/options';
 
 export function getTwoFactorRedirectHref(currentHref: string): string {
   const currentUrl = new URL(currentHref);
@@ -41,7 +41,7 @@ function navigateWithBrowser(href: string) {
   window.dispatchEvent(new PopStateEvent('popstate'));
 }
 
-export const authClient = createAuthClient({
+const rawAuthClient = createAuthClient({
   plugins: [
     convexClient(),
     inferAdditionalFields<ReturnType<typeof getOptions>>(),
@@ -76,14 +76,55 @@ export const authClient = createAuthClient({
   ],
 });
 
+type AppAuthClient = {
+  $Infer: typeof rawAuthClient.$Infer;
+  $store: typeof rawAuthClient.$store;
+  changeEmail: typeof rawAuthClient.changeEmail;
+  changePassword: typeof rawAuthClient.changePassword;
+  getSession: typeof rawAuthClient.getSession;
+  requestPasswordReset: typeof rawAuthClient.requestPasswordReset;
+  resetPassword: typeof rawAuthClient.resetPassword;
+  sendVerificationEmail: typeof rawAuthClient.sendVerificationEmail;
+  signIn: typeof rawAuthClient.signIn;
+  signOut: typeof rawAuthClient.signOut;
+  signUp: typeof rawAuthClient.signUp;
+  updateUser: typeof rawAuthClient.updateUser;
+  useSession: typeof rawAuthClient.useSession;
+  admin: Pick<typeof rawAuthClient.admin, 'impersonateUser' | 'stopImpersonating'>;
+  organization: Pick<
+    typeof rawAuthClient.organization,
+    'acceptInvitation' | 'listUserInvitations' | 'rejectInvitation' | 'setActive'
+  >;
+  passkey: Pick<typeof rawAuthClient.passkey, 'addPasskey' | 'deletePasskey'>;
+  twoFactor: Pick<
+    typeof rawAuthClient.twoFactor,
+    'disable' | 'enable' | 'verifyBackupCode' | 'verifyTotp'
+  >;
+};
+
+const typedAuthClient: AppAuthClient = rawAuthClient;
+
 // Better Auth's current client typings in this stack do not safely accept
 // createAuthClient<typeof auth>(). Use the documented client-side inference
 // path here until the upstream client generic can map the server auth instance.
-export type AuthSession = typeof authClient.$Infer.Session;
+export type AuthSession = typeof typedAuthClient.$Infer.Session;
 export type AuthSessionData = AuthSession['session'];
 export type AuthSessionUser = AuthSession['user'];
 
-export const authHooks = createAuthHooks(authClient);
+const rawAuthHooks = createAuthHooks(rawAuthClient);
+
+type AppAuthHooks = Pick<
+  typeof rawAuthHooks,
+  | 'useActiveOrganization'
+  | 'useAuthQuery'
+  | 'useInvitation'
+  | 'useListAccounts'
+  | 'useListOrganizations'
+  | 'useListPasskeys'
+>;
+
+export const authHooks: AppAuthHooks = rawAuthHooks;
+export const authProviderClient = rawAuthClient;
 
 const authTransitionListeners = new Set<() => void>();
 let isSigningOut = false;
@@ -119,6 +160,8 @@ export function useIsSigningOut() {
 export function clearSigningOutState() {
   setSigningOut(false);
 }
+
+export const authClient = typedAuthClient;
 
 export const { signIn, useSession } = authClient;
 
