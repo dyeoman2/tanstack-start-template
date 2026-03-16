@@ -1047,100 +1047,6 @@ async function safelyRecord(recordAuditEvent: AuditRecorder, event: AuditRecord)
   }
 }
 
-function buildFailedEndpointAuditRecords(
-  state: ResolvedAuthAuditState,
-  ctx: AuthAuditEndpointContext,
-) {
-  const denialMetadata = {
-    attemptedPath: state.path,
-    attemptedIdentifier:
-      normalizeOptionalString(state.body.email) ?? normalizeOptionalString(state.body.username),
-    invitationId: normalizeOptionalString(state.body.invitationId),
-    responseSummary: state.responseSummary,
-  };
-
-  if (isSigninPath(state.path)) {
-    if (state.responseStatus === 403 && state.responseErrorCode === 'FORBIDDEN') {
-      return [] satisfies AuditRecord[];
-    }
-
-    return [
-      createAuditRecord(ctx, state, {
-        eventType: 'authorization_denied',
-        actorUserId: state.actorUserId,
-        organizationId: state.organizationId,
-        identifier:
-          normalizeOptionalString(state.body.email) ?? normalizeOptionalString(state.body.username),
-        resourceType: 'session',
-        resourceLabel: 'Sign-in denied',
-        sourceSurface: 'auth.endpoint.sign_in',
-        metadata: {
-          ...denialMetadata,
-          provider: normalizeOptionalString(state.body.provider),
-        },
-      }),
-    ] satisfies AuditRecord[];
-  }
-
-  if (state.path === '/reset-password') {
-    return [] satisfies AuditRecord[];
-  }
-
-  if (state.path === '/verify-email') {
-    return [] satisfies AuditRecord[];
-  }
-
-  if (state.path === '/organization/accept-invitation') {
-    if (state.responseStatus === 403 && state.responseErrorCode === 'FORBIDDEN') {
-      return [] satisfies AuditRecord[];
-    }
-
-    return [
-      createAuditRecord(ctx, state, {
-        eventType: 'authorization_denied',
-        actorUserId: state.actorUserId,
-        targetUserId: state.targetUserId,
-        organizationId: state.organizationId,
-        identifier: state.identifierFromSession,
-        resourceType: 'organization_membership',
-        resourceId: normalizeOptionalString(state.body.invitationId),
-        resourceLabel: 'Invitation acceptance denied',
-        sourceSurface: 'auth.endpoint.organization',
-        metadata: denialMetadata,
-      }),
-    ] satisfies AuditRecord[];
-  }
-
-  if (
-    !(
-      state.responseStatus === 403 &&
-      state.responseErrorCode === 'FORBIDDEN' &&
-      state.path === '/organization/invite-member'
-    ) &&
-    (state.responseStatus === 401 ||
-      state.responseStatus === 403 ||
-      state.path.startsWith('/admin/') ||
-      state.path.startsWith('/organization/'))
-  ) {
-    return [
-      createAuditRecord(ctx, state, {
-        eventType: 'authorization_denied',
-        actorUserId: state.actorUserId,
-        targetUserId: state.targetUserId,
-        organizationId: state.organizationId,
-        identifier:
-          normalizeOptionalString(state.body.email) ??
-          state.identifierFromSession ??
-          normalizeOptionalString(state.body.username),
-        resourceLabel: 'Authorization denied',
-        metadata: denialMetadata,
-      }),
-    ] satisfies AuditRecord[];
-  }
-
-  return [] satisfies AuditRecord[];
-}
-
 export async function buildUserCreateAuditRecordsForTesting(
   user: { email?: string; id?: string },
   ctx: DatabaseHookContext | undefined,
@@ -1292,8 +1198,6 @@ export async function processAuthAuditAfterHookForTesting(
     for (const handlerEvents of handlerResults) {
       events.push(...handlerEvents);
     }
-  } else {
-    events.push(...buildFailedEndpointAuditRecords(state, ctx));
   }
 
   return {

@@ -52,18 +52,40 @@ type SharedBetterAuthCallbacks = {
     path: '/sign-in/email' | '/sign-up/email';
     sessionUserId?: string;
   }) => Promise<void>;
+  onSignInDenied?: (input: {
+    email?: string;
+    errorCode?: string;
+    message: string;
+    path: string;
+    provider?: string;
+    sessionUserId?: string;
+    status: number;
+  }) => Promise<void>;
   onPasswordResetDenied?: (input: {
     email?: string;
+    errorCode?: string;
     message: string;
     path: '/reset-password';
     sessionUserId?: string;
     status?: number;
   }) => Promise<void>;
   onEmailVerificationDenied?: (input: {
+    errorCode?: string;
     message: string;
     path: '/verify-email';
     sessionUserId?: string;
     status?: number;
+  }) => Promise<void>;
+  onAuthorizationDenied?: (input: {
+    email?: string;
+    errorCode?: string;
+    invitationId?: string;
+    message: string;
+    path: string;
+    provider?: string;
+    sessionUserId?: string;
+    status: number;
+    username?: string;
   }) => Promise<void>;
   resolveEnterpriseAuthSession?: (input: {
     providerId: string;
@@ -158,6 +180,51 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       max: 10,
     },
   };
+}
+
+function normalizeOptionalString(value: unknown) {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+async function readAfterHookErrorDetails(returned: unknown) {
+  if (!(returned instanceof Response) || returned.status < 400) {
+    return null;
+  }
+
+  let errorCode: string | undefined;
+  let message: string | undefined;
+
+  try {
+    const json = (await returned.clone().json()) as unknown;
+    if (typeof json === 'object' && json !== null) {
+      if ('code' in json && typeof json.code === 'string') {
+        errorCode = json.code;
+      }
+      if ('message' in json && typeof json.message === 'string') {
+        message = json.message;
+      }
+    }
+  } catch {
+    // Ignore parse failures and fall back to defaults below.
+  }
+
+  return {
+    errorCode,
+    message,
+    status: returned.status,
+  };
+}
+
+function isSignInFailurePath(path: string) {
+  return (
+    path.startsWith('/sign-in/') ||
+    path.startsWith('/callback/') ||
+    path.startsWith('/oauth2/callback/')
+  );
+}
+
+function isAuthorizationDeniedPath(path: string) {
+  return path.startsWith('/admin/') || path.startsWith('/organization/');
 }
 
 export function createSharedBetterAuthOptions(
@@ -272,65 +339,77 @@ export function createSharedBetterAuthOptions(
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
+        const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
+
         if (
-          callbacks.onPasswordResetDenied &&
-          ctx.path === '/reset-password' &&
-          ctx.context.returned instanceof Response &&
-          ctx.context.returned.status >= 400
+          callbacks.onSignInDenied &&
+          errorDetails &&
+          isSignInFailurePath(ctx.path) &&
+          !(errorDetails.status === 403 && errorDetails.errorCode === 'FORBIDDEN')
         ) {
-          let message = 'Password reset failed';
+          await callbacks.onSignInDenied({
+            email:
+              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+            errorCode: errorDetails.errorCode,
+            message: errorDetails.message ?? 'Sign-in failed',
+            path: ctx.path,
+            provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
+            sessionUserId: ctx.context.session?.user.id,
+            status: errorDetails.status,
+          });
+        }
 
-          try {
-            const json = (await ctx.context.returned.clone().json()) as unknown;
-            if (
-              typeof json === 'object' &&
-              json !== null &&
-              'message' in json &&
-              typeof json.message === 'string'
-            ) {
-              message = json.message;
-            }
-          } catch {
-            // Ignore parse failures and keep the default message.
-          }
-
+        if (callbacks.onPasswordResetDenied && ctx.path === '/reset-password' && errorDetails) {
           await callbacks.onPasswordResetDenied({
             email:
               typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-            message,
+            errorCode: errorDetails.errorCode,
+            message: errorDetails.message ?? 'Password reset failed',
             path: '/reset-password',
             sessionUserId: ctx.context.session?.user.id,
-            status: ctx.context.returned.status,
+            status: errorDetails.status,
+          });
+        }
+
+        if (callbacks.onEmailVerificationDenied && ctx.path === '/verify-email' && errorDetails) {
+          await callbacks.onEmailVerificationDenied({
+            errorCode: errorDetails.errorCode,
+            message: errorDetails.message ?? 'Email verification failed',
+            path: '/verify-email',
+            sessionUserId: ctx.context.session?.user.id,
+            status: errorDetails.status,
           });
         }
 
         if (
-          callbacks.onEmailVerificationDenied &&
-          ctx.path === '/verify-email' &&
-          ctx.context.returned instanceof Response &&
-          ctx.context.returned.status >= 400
+          callbacks.onAuthorizationDenied &&
+          errorDetails &&
+          isAuthorizationDeniedPath(ctx.path) &&
+          !(
+            ctx.path === '/organization/accept-invitation' &&
+            errorDetails.status === 403 &&
+            errorDetails.errorCode === 'FORBIDDEN'
+          ) &&
+          !(
+            ctx.path === '/organization/invite-member' &&
+            errorDetails.status === 403 &&
+            errorDetails.errorCode === 'FORBIDDEN'
+          )
         ) {
-          let message = 'Email verification failed';
-
-          try {
-            const json = (await ctx.context.returned.clone().json()) as unknown;
-            if (
-              typeof json === 'object' &&
-              json !== null &&
-              'message' in json &&
-              typeof json.message === 'string'
-            ) {
-              message = json.message;
-            }
-          } catch {
-            // Ignore parse failures and keep the default message.
-          }
-
-          await callbacks.onEmailVerificationDenied({
-            message,
-            path: '/verify-email',
+          await callbacks.onAuthorizationDenied({
+            email:
+              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+            errorCode: errorDetails.errorCode,
+            invitationId: normalizeOptionalString(ctx.body?.invitationId),
+            message: errorDetails.message ?? 'Authorization denied',
+            path: ctx.path,
+            provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
             sessionUserId: ctx.context.session?.user.id,
-            status: ctx.context.returned.status,
+            status: errorDetails.status,
+            username:
+              typeof ctx.body?.username === 'string'
+                ? ctx.body.username.trim().toLowerCase()
+                : undefined,
           });
         }
 

@@ -120,6 +120,7 @@ describe('createSharedBetterAuthOptions', () => {
 
     expect(onPasswordResetDenied).toHaveBeenCalledWith({
       email: 'reset@example.com',
+      errorCode: undefined,
       message: 'Reset token expired',
       path: '/reset-password',
       sessionUserId: 'user_1',
@@ -157,10 +158,103 @@ describe('createSharedBetterAuthOptions', () => {
     } as never);
 
     expect(onEmailVerificationDenied).toHaveBeenCalledWith({
+      errorCode: undefined,
       message: 'Verification token invalid',
       path: '/verify-email',
       sessionUserId: 'user_1',
       status: 403,
+    });
+  });
+
+  it('calls the sign-in denied callback from the Better Auth after hook', async () => {
+    const onSignInDenied = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      onSignInDenied,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+
+    const afterHook = options.hooks?.after;
+    if (!afterHook) {
+      throw new Error('Expected Better Auth after hook to be configured');
+    }
+
+    await afterHook({
+      body: { email: 'user@example.com', provider: 'password' },
+      context: {
+        returned: new Response(
+          JSON.stringify({
+            code: 'INVALID_CREDENTIALS',
+            message: 'Invalid email or password',
+          }),
+          {
+            status: 401,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+        session: null,
+      },
+      path: '/sign-in/email',
+    } as never);
+
+    expect(onSignInDenied).toHaveBeenCalledWith({
+      email: 'user@example.com',
+      errorCode: 'INVALID_CREDENTIALS',
+      message: 'Invalid email or password',
+      path: '/sign-in/email',
+      provider: 'password',
+      sessionUserId: undefined,
+      status: 401,
+    });
+  });
+
+  it('calls the generic authorization denied callback for admin and organization paths', async () => {
+    const onAuthorizationDenied = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      onAuthorizationDenied,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+
+    const afterHook = options.hooks?.after;
+    if (!afterHook) {
+      throw new Error('Expected Better Auth after hook to be configured');
+    }
+
+    await afterHook({
+      body: { invitationId: 'invite_1' },
+      context: {
+        returned: new Response(
+          JSON.stringify({
+            code: 'FORBIDDEN',
+            message: 'Invitation rejection not allowed',
+          }),
+          {
+            status: 403,
+            headers: { 'content-type': 'application/json' },
+          },
+        ),
+        session: {
+          user: {
+            id: 'user_1',
+          },
+        },
+      },
+      path: '/organization/reject-invitation',
+    } as never);
+
+    expect(onAuthorizationDenied).toHaveBeenCalledWith({
+      email: undefined,
+      errorCode: 'FORBIDDEN',
+      invitationId: 'invite_1',
+      message: 'Invitation rejection not allowed',
+      path: '/organization/reject-invitation',
+      provider: undefined,
+      sessionUserId: 'user_1',
+      status: 403,
+      username: undefined,
     });
   });
 });

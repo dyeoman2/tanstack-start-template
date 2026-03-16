@@ -282,7 +282,7 @@ describe('auth audit handlers', () => {
     });
   });
 
-  it('emits denied sign-in events for failed authentication', async () => {
+  it('defers sign-in denials to Better Auth-specific hooks', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { email: 'user@example.com', password: 'secret' },
@@ -301,25 +301,7 @@ describe('auth audit handlers', () => {
     );
 
     expect(result.success).toBe(false);
-    expect(result.events).toHaveLength(1);
-    expect(result.events[0]).toMatchObject({
-      eventType: 'authorization_denied',
-      identifier: 'user@example.com',
-      outcome: 'failure',
-      severity: 'warning',
-      resourceType: 'session',
-      sourceSurface: 'auth.endpoint.sign_in',
-      resourceLabel: 'Sign-in denied',
-    });
-    expect(parseMetadata(result.events[0].metadata)).toMatchObject({
-      attemptedIdentifier: 'user@example.com',
-      method: 'POST',
-      path: '/sign-in/email',
-      responseErrorCode: 'INVALID_CREDENTIALS',
-      responseErrorMessage: 'Invalid email or password',
-      responseStatus: 401,
-    });
-    expect(parseMetadata(result.events[0].metadata)).not.toHaveProperty('password');
+    expect(result.events).toHaveLength(0);
   });
 
   it('defers password reset denials to Better Auth-specific hooks', async () => {
@@ -365,7 +347,7 @@ describe('auth audit handlers', () => {
     expect(result.events).toHaveLength(0);
   });
 
-  it('emits denied invitation acceptance events for failed organization joins', async () => {
+  it('defers failed organization invitation acceptance to Better Auth-specific hooks', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { invitationId: 'invite_1' },
@@ -390,7 +372,7 @@ describe('auth audit handlers', () => {
     expect(result.events).toHaveLength(0);
   });
 
-  it('skips duplicate denied sign-in events for explicit Better Auth before-hook blocks', async () => {
+  it('does not emit duplicate denial events for explicit Better Auth before-hook blocks', async () => {
     const result = await processAuthAuditAfterHookForTesting(
       createTestContext({
         body: { email: 'blocked@example.com' },
