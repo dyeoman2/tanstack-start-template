@@ -30,6 +30,7 @@ import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentUserFromActionOrThrow,
 } from './auth/access';
+import { createAdminOrganizationAuditPlugin } from './betterAuth/adminOrganizationAuditPlugin';
 import betterAuthSchema from './betterAuth/schema';
 import {
   createSharedBetterAuthOptions,
@@ -1505,62 +1506,6 @@ function normalizeOptionalId(value: string | null | undefined) {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
-function getAuthorizationDeniedResourceType(path: string) {
-  if (
-    path.startsWith('/admin/list-user-sessions') ||
-    path.startsWith('/admin/revoke-user-session')
-  ) {
-    return 'session';
-  }
-
-  if (path.startsWith('/organization/')) {
-    return 'organization_membership';
-  }
-
-  if (path.startsWith('/admin/')) {
-    return 'user';
-  }
-
-  return 'session';
-}
-
-function getAuthorizationDeniedResourceLabel(path: string) {
-  switch (path) {
-    case '/organization/accept-invitation':
-      return 'Invitation acceptance denied';
-    case '/organization/invite-member':
-      return 'Invitation create denied';
-    case '/organization/remove-member':
-      return 'Member removal denied';
-    case '/organization/update-member-role':
-      return 'Member role update denied';
-    case '/organization/delete':
-      return 'Organization deletion denied';
-    case '/organization/update':
-      return 'Organization update denied';
-    case '/admin/list-user-sessions':
-      return 'Admin session inspection denied';
-    case '/admin/revoke-user-session':
-      return 'Admin session revoke denied';
-    case '/admin/revoke-user-sessions':
-      return 'Admin revoke all sessions denied';
-    default:
-      return 'Authorization denied';
-  }
-}
-
-function getAuthorizationDeniedSourceSurface(path: string) {
-  if (path.startsWith('/organization/')) {
-    return 'auth.endpoint.organization';
-  }
-
-  if (path.startsWith('/admin/')) {
-    return 'auth.endpoint.admin_user';
-  }
-
-  return 'auth.endpoint.authorization';
-}
-
 type ParsedScimAuthorization = {
   organizationId: string | null;
   providerId: string;
@@ -2146,37 +2091,6 @@ export const createAuth = (
         }),
       });
     },
-    onAuthorizationDenied: async ({
-      email,
-      errorCode,
-      invitationId,
-      message,
-      path,
-      provider,
-      sessionUserId,
-      status,
-      username,
-    }) => {
-      await safelyRecordAuthEvent(recordAuditEvent, {
-        createdAt: Date.now(),
-        eventType: 'authorization_denied',
-        ...(sessionUserId ? { actorUserId: sessionUserId } : {}),
-        ...((email ?? username) ? { identifier: email ?? username } : {}),
-        outcome: 'failure',
-        severity: 'warning',
-        resourceType: getAuthorizationDeniedResourceType(path),
-        ...(invitationId ? { resourceId: invitationId } : {}),
-        resourceLabel: getAuthorizationDeniedResourceLabel(path),
-        sourceSurface: getAuthorizationDeniedSourceSurface(path),
-        metadata: JSON.stringify({
-          ...(provider ? { provider } : {}),
-          path,
-          ...(errorCode ? { responseErrorCode: errorCode } : {}),
-          responseErrorMessage: message,
-          responseStatus: status,
-        }),
-      });
-    },
     assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {
       await assertEnterpriseSCIMManagementAccess(ctx, {
         organizationId,
@@ -2420,7 +2334,11 @@ export const createAuth = (
     },
     secret,
     database: authComponent.adapter(ctx),
-    plugins: [...(sharedOptions.plugins ?? []), createAuthAuditPlugin(recordAuditEvent)],
+    plugins: [
+      ...(sharedOptions.plugins ?? []),
+      createAdminOrganizationAuditPlugin(recordAuditEvent),
+      createAuthAuditPlugin(recordAuditEvent),
+    ],
   });
 };
 

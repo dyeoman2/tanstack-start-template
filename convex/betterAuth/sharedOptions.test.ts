@@ -202,48 +202,4 @@ describe('createSharedBetterAuthOptions', () => {
       status: 401,
     });
   });
-
-  it('calls the generic authorization denied callback for admin and organization paths', async () => {
-    const onAuthorizationDenied = vi.fn(async () => {});
-    const options = createSharedBetterAuthOptions({
-      onAuthorizationDenied,
-      sendInvitationEmail: async () => {},
-      sendResetPassword: async () => {},
-      sendVerificationEmail: async () => {},
-    });
-
-    await getAfterHook(options)({
-      body: { invitationId: 'invite_1' },
-      context: {
-        returned: new Response(
-          JSON.stringify({
-            code: 'FORBIDDEN',
-            message: 'Invitation rejection not allowed',
-          }),
-          {
-            status: 403,
-            headers: { 'content-type': 'application/json' },
-          },
-        ),
-        session: {
-          user: {
-            id: 'user_1',
-          },
-        },
-      },
-      path: '/organization/reject-invitation',
-    } as never);
-
-    expect(onAuthorizationDenied).toHaveBeenCalledWith({
-      email: undefined,
-      errorCode: 'FORBIDDEN',
-      invitationId: 'invite_1',
-      message: 'Invitation rejection not allowed',
-      path: '/organization/reject-invitation',
-      provider: undefined,
-      sessionUserId: 'user_1',
-      status: 403,
-      username: undefined,
-    });
-  });
 });

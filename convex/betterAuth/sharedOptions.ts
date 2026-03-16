@@ -5,6 +5,7 @@ import type { BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin } from 'better-auth/plugins/admin';
 import { organization } from 'better-auth/plugins/organization';
+import { twoFactor } from 'better-auth/plugins/two-factor';
 import {
   getBetterAuthBaseUrlConfig,
   getBetterAuthTrustedOrigins,
@@ -76,17 +77,6 @@ type SharedBetterAuthCallbacks = {
     sessionUserId?: string;
     status?: number;
   }) => Promise<void>;
-  onAuthorizationDenied?: (input: {
-    email?: string;
-    errorCode?: string;
-    invitationId?: string;
-    message: string;
-    path: string;
-    provider?: string;
-    sessionUserId?: string;
-    status: number;
-    username?: string;
-  }) => Promise<void>;
   resolveEnterpriseAuthSession?: (input: {
     providerId: string;
     userEmail: string;
@@ -108,9 +98,9 @@ type SharedBetterAuthCallbacks = {
 export type SharedSendInvitationEmail = SharedBetterAuthCallbacks['sendInvitationEmail'];
 
 export const ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS = 30 * 60;
-export const AUTH_SESSION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
-export const AUTH_SESSION_UPDATE_AGE_SECONDS = 24 * 60 * 60;
-export const AUTH_SESSION_FRESH_AGE_SECONDS = 24 * 60 * 60;
+export const AUTH_SESSION_EXPIRES_IN_SECONDS = 24 * 60 * 60;
+export const AUTH_SESSION_UPDATE_AGE_SECONDS = 4 * 60 * 60;
+export const AUTH_SESSION_FRESH_AGE_SECONDS = 15 * 60;
 export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
@@ -182,10 +172,6 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
   };
 }
 
-function normalizeOptionalString(value: unknown) {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
-}
-
 async function readAfterHookErrorDetails(returned: unknown) {
   if (!(returned instanceof Response) || returned.status < 400) {
     return null;
@@ -221,10 +207,6 @@ function isSignInFailurePath(path: string) {
     path.startsWith('/callback/') ||
     path.startsWith('/oauth2/callback/')
   );
-}
-
-function isAuthorizationDeniedPath(path: string) {
-  return path.startsWith('/admin/') || path.startsWith('/organization/');
 }
 
 async function handleSignInDeniedAfterHook(
@@ -286,39 +268,6 @@ async function handleEmailVerificationDeniedAfterHook(
     path: '/verify-email',
     sessionUserId: ctx.context.session?.user.id,
     status: errorDetails.status,
-  });
-}
-
-async function handleAuthorizationDeniedAfterHook(
-  callbacks: SharedBetterAuthCallbacks,
-  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
-) {
-  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
-  if (
-    !callbacks.onAuthorizationDenied ||
-    !errorDetails ||
-    !isAuthorizationDeniedPath(ctx.path) ||
-    (ctx.path === '/organization/accept-invitation' &&
-      errorDetails.status === 403 &&
-      errorDetails.errorCode === 'FORBIDDEN') ||
-    (ctx.path === '/organization/invite-member' &&
-      errorDetails.status === 403 &&
-      errorDetails.errorCode === 'FORBIDDEN')
-  ) {
-    return;
-  }
-
-  await callbacks.onAuthorizationDenied({
-    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-    errorCode: errorDetails.errorCode,
-    invitationId: normalizeOptionalString(ctx.body?.invitationId),
-    message: errorDetails.message ?? 'Authorization denied',
-    path: ctx.path,
-    provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
-    sessionUserId: ctx.context.session?.user.id,
-    status: errorDetails.status,
-    username:
-      typeof ctx.body?.username === 'string' ? ctx.body.username.trim().toLowerCase() : undefined,
   });
 }
 
@@ -491,7 +440,6 @@ export function createSharedBetterAuthOptions(
         await handleSignInDeniedAfterHook(callbacks, ctx);
         await handlePasswordResetDeniedAfterHook(callbacks, ctx);
         await handleEmailVerificationDeniedAfterHook(callbacks, ctx);
-        await handleAuthorizationDeniedAfterHook(callbacks, ctx);
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
       }),
     },
@@ -514,6 +462,7 @@ export function createSharedBetterAuthOptions(
       expiresIn: AUTH_SESSION_EXPIRES_IN_SECONDS,
       updateAge: AUTH_SESSION_UPDATE_AGE_SECONDS,
       freshAge: AUTH_SESSION_FRESH_AGE_SECONDS,
+      storeSessionInDatabase: true,
       disableSessionRefresh: false,
       deferSessionRefresh: false,
       additionalFields: {
@@ -604,6 +553,9 @@ export function createSharedBetterAuthOptions(
           enabled: true,
         },
         storeSCIMToken: 'hashed',
+      }),
+      twoFactor({
+        issuer: 'TanStack Start Template',
       }),
       convex({
         authConfig,
