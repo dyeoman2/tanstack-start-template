@@ -227,6 +227,155 @@ function isAuthorizationDeniedPath(path: string) {
   return path.startsWith('/admin/') || path.startsWith('/organization/');
 }
 
+async function handleSignInDeniedAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
+  if (
+    !callbacks.onSignInDenied ||
+    !errorDetails ||
+    !isSignInFailurePath(ctx.path) ||
+    (errorDetails.status === 403 && errorDetails.errorCode === 'FORBIDDEN')
+  ) {
+    return;
+  }
+
+  await callbacks.onSignInDenied({
+    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+    errorCode: errorDetails.errorCode,
+    message: errorDetails.message ?? 'Sign-in failed',
+    path: ctx.path,
+    provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
+    sessionUserId: ctx.context.session?.user.id,
+    status: errorDetails.status,
+  });
+}
+
+async function handlePasswordResetDeniedAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
+  if (!callbacks.onPasswordResetDenied || !errorDetails || ctx.path !== '/reset-password') {
+    return;
+  }
+
+  await callbacks.onPasswordResetDenied({
+    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+    errorCode: errorDetails.errorCode,
+    message: errorDetails.message ?? 'Password reset failed',
+    path: '/reset-password',
+    sessionUserId: ctx.context.session?.user.id,
+    status: errorDetails.status,
+  });
+}
+
+async function handleEmailVerificationDeniedAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
+  if (!callbacks.onEmailVerificationDenied || !errorDetails || ctx.path !== '/verify-email') {
+    return;
+  }
+
+  await callbacks.onEmailVerificationDenied({
+    errorCode: errorDetails.errorCode,
+    message: errorDetails.message ?? 'Email verification failed',
+    path: '/verify-email',
+    sessionUserId: ctx.context.session?.user.id,
+    status: errorDetails.status,
+  });
+}
+
+async function handleAuthorizationDeniedAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
+  if (
+    !callbacks.onAuthorizationDenied ||
+    !errorDetails ||
+    !isAuthorizationDeniedPath(ctx.path) ||
+    (ctx.path === '/organization/accept-invitation' &&
+      errorDetails.status === 403 &&
+      errorDetails.errorCode === 'FORBIDDEN') ||
+    (ctx.path === '/organization/invite-member' &&
+      errorDetails.status === 403 &&
+      errorDetails.errorCode === 'FORBIDDEN')
+  ) {
+    return;
+  }
+
+  await callbacks.onAuthorizationDenied({
+    email: typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
+    errorCode: errorDetails.errorCode,
+    invitationId: normalizeOptionalString(ctx.body?.invitationId),
+    message: errorDetails.message ?? 'Authorization denied',
+    path: ctx.path,
+    provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
+    sessionUserId: ctx.context.session?.user.id,
+    status: errorDetails.status,
+    username:
+      typeof ctx.body?.username === 'string' ? ctx.body.username.trim().toLowerCase() : undefined,
+  });
+}
+
+async function handleSessionEnrichmentAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  if (
+    ctx.path !== '/sign-in/email' &&
+    ctx.path !== '/sign-up/email' &&
+    !ctx.path.startsWith('/callback/') &&
+    !ctx.path.startsWith('/oauth2/callback/')
+  ) {
+    return;
+  }
+
+  const newSession = ctx.context.newSession;
+  if (!newSession?.session.token || !newSession.user) {
+    return;
+  }
+
+  const updatePayload: Record<string, string | null> = {
+    authMethod: null,
+    enterpriseOrganizationId: null,
+    enterpriseProviderKey: null,
+    enterpriseProtocol: null,
+  };
+
+  if (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email') {
+    updatePayload.authMethod = 'password';
+  } else {
+    updatePayload.authMethod = 'social';
+    const providerId =
+      typeof ctx.params?.providerId === 'string' && ctx.params.providerId.length > 0
+        ? ctx.params.providerId
+        : typeof ctx.params?.id === 'string' && ctx.params.id.length > 0
+          ? ctx.params.id
+          : null;
+    if (providerId && callbacks.resolveEnterpriseAuthSession) {
+      const enterpriseSession = await callbacks.resolveEnterpriseAuthSession({
+        providerId,
+        userEmail: newSession.user.email,
+        userId: newSession.user.id,
+      });
+      if (enterpriseSession) {
+        updatePayload.authMethod = 'enterprise';
+        updatePayload.enterpriseOrganizationId = enterpriseSession.organizationId;
+        updatePayload.enterpriseProviderKey = enterpriseSession.providerKey;
+        updatePayload.enterpriseProtocol = enterpriseSession.protocol;
+        updatePayload.activeOrganizationId = enterpriseSession.organizationId;
+      }
+    }
+  }
+
+  await ctx.context.internalAdapter.updateSession(newSession.session.token, updatePayload);
+}
+
 export function createSharedBetterAuthOptions(
   callbacks: SharedBetterAuthCallbacks,
   options?: {
@@ -339,128 +488,11 @@ export function createSharedBetterAuthOptions(
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
-        const errorDetails = await readAfterHookErrorDetails(ctx.context.returned);
-
-        if (
-          callbacks.onSignInDenied &&
-          errorDetails &&
-          isSignInFailurePath(ctx.path) &&
-          !(errorDetails.status === 403 && errorDetails.errorCode === 'FORBIDDEN')
-        ) {
-          await callbacks.onSignInDenied({
-            email:
-              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-            errorCode: errorDetails.errorCode,
-            message: errorDetails.message ?? 'Sign-in failed',
-            path: ctx.path,
-            provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
-            sessionUserId: ctx.context.session?.user.id,
-            status: errorDetails.status,
-          });
-        }
-
-        if (callbacks.onPasswordResetDenied && ctx.path === '/reset-password' && errorDetails) {
-          await callbacks.onPasswordResetDenied({
-            email:
-              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-            errorCode: errorDetails.errorCode,
-            message: errorDetails.message ?? 'Password reset failed',
-            path: '/reset-password',
-            sessionUserId: ctx.context.session?.user.id,
-            status: errorDetails.status,
-          });
-        }
-
-        if (callbacks.onEmailVerificationDenied && ctx.path === '/verify-email' && errorDetails) {
-          await callbacks.onEmailVerificationDenied({
-            errorCode: errorDetails.errorCode,
-            message: errorDetails.message ?? 'Email verification failed',
-            path: '/verify-email',
-            sessionUserId: ctx.context.session?.user.id,
-            status: errorDetails.status,
-          });
-        }
-
-        if (
-          callbacks.onAuthorizationDenied &&
-          errorDetails &&
-          isAuthorizationDeniedPath(ctx.path) &&
-          !(
-            ctx.path === '/organization/accept-invitation' &&
-            errorDetails.status === 403 &&
-            errorDetails.errorCode === 'FORBIDDEN'
-          ) &&
-          !(
-            ctx.path === '/organization/invite-member' &&
-            errorDetails.status === 403 &&
-            errorDetails.errorCode === 'FORBIDDEN'
-          )
-        ) {
-          await callbacks.onAuthorizationDenied({
-            email:
-              typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : undefined,
-            errorCode: errorDetails.errorCode,
-            invitationId: normalizeOptionalString(ctx.body?.invitationId),
-            message: errorDetails.message ?? 'Authorization denied',
-            path: ctx.path,
-            provider: typeof ctx.body?.provider === 'string' ? ctx.body.provider : undefined,
-            sessionUserId: ctx.context.session?.user.id,
-            status: errorDetails.status,
-            username:
-              typeof ctx.body?.username === 'string'
-                ? ctx.body.username.trim().toLowerCase()
-                : undefined,
-          });
-        }
-
-        if (
-          ctx.path !== '/sign-in/email' &&
-          ctx.path !== '/sign-up/email' &&
-          !ctx.path.startsWith('/callback/') &&
-          !ctx.path.startsWith('/oauth2/callback/')
-        ) {
-          return;
-        }
-
-        const newSession = ctx.context.newSession;
-        if (!newSession?.session.token || !newSession.user) {
-          return;
-        }
-
-        const updatePayload: Record<string, string | null> = {
-          authMethod: null,
-          enterpriseOrganizationId: null,
-          enterpriseProviderKey: null,
-          enterpriseProtocol: null,
-        };
-
-        if (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email') {
-          updatePayload.authMethod = 'password';
-        } else {
-          updatePayload.authMethod = 'social';
-          const providerId =
-            typeof ctx.params?.providerId === 'string' && ctx.params.providerId.length > 0
-              ? ctx.params.providerId
-              : typeof ctx.params?.id === 'string' && ctx.params.id.length > 0
-                ? ctx.params.id
-                : null;
-          if (providerId && callbacks.resolveEnterpriseAuthSession) {
-            const enterpriseSession = await callbacks.resolveEnterpriseAuthSession({
-              providerId,
-              userEmail: newSession.user.email,
-              userId: newSession.user.id,
-            });
-            if (enterpriseSession) {
-              updatePayload.authMethod = 'enterprise';
-              updatePayload.enterpriseOrganizationId = enterpriseSession.organizationId;
-              updatePayload.enterpriseProviderKey = enterpriseSession.providerKey;
-              updatePayload.enterpriseProtocol = enterpriseSession.protocol;
-              updatePayload.activeOrganizationId = enterpriseSession.organizationId;
-            }
-          }
-        }
-
-        await ctx.context.internalAdapter.updateSession(newSession.session.token, updatePayload);
+        await handleSignInDeniedAfterHook(callbacks, ctx);
+        await handlePasswordResetDeniedAfterHook(callbacks, ctx);
+        await handleEmailVerificationDeniedAfterHook(callbacks, ctx);
+        await handleAuthorizationDeniedAfterHook(callbacks, ctx);
+        await handleSessionEnrichmentAfterHook(callbacks, ctx);
       }),
     },
     emailAndPassword: {

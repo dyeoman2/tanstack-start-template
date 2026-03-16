@@ -11,6 +11,15 @@ function createOptions() {
   });
 }
 
+function getAfterHook(options: ReturnType<typeof createSharedBetterAuthOptions>) {
+  const afterHooks = options.hooks?.after;
+  if (!afterHooks) {
+    throw new Error('Expected Better Auth after hook to be configured');
+  }
+
+  return afterHooks;
+}
+
 describe('createSharedBetterAuthOptions', () => {
   beforeEach(() => {
     process.env = {
@@ -97,12 +106,7 @@ describe('createSharedBetterAuthOptions', () => {
       sendVerificationEmail: async () => {},
     });
 
-    const afterHook = options.hooks?.after;
-    if (!afterHook) {
-      throw new Error('Expected Better Auth after hook to be configured');
-    }
-
-    await afterHook({
+    await getAfterHook(options)({
       body: { email: 'reset@example.com' },
       context: {
         returned: new Response(JSON.stringify({ message: 'Reset token expired' }), {
@@ -137,12 +141,7 @@ describe('createSharedBetterAuthOptions', () => {
       sendVerificationEmail: async () => {},
     });
 
-    const afterHook = options.hooks?.after;
-    if (!afterHook) {
-      throw new Error('Expected Better Auth after hook to be configured');
-    }
-
-    await afterHook({
+    await getAfterHook(options)({
       context: {
         returned: new Response(JSON.stringify({ message: 'Verification token invalid' }), {
           status: 403,
@@ -175,12 +174,7 @@ describe('createSharedBetterAuthOptions', () => {
       sendVerificationEmail: async () => {},
     });
 
-    const afterHook = options.hooks?.after;
-    if (!afterHook) {
-      throw new Error('Expected Better Auth after hook to be configured');
-    }
-
-    await afterHook({
+    await getAfterHook(options)({
       body: { email: 'user@example.com', provider: 'password' },
       context: {
         returned: new Response(
@@ -218,12 +212,7 @@ describe('createSharedBetterAuthOptions', () => {
       sendVerificationEmail: async () => {},
     });
 
-    const afterHook = options.hooks?.after;
-    if (!afterHook) {
-      throw new Error('Expected Better Auth after hook to be configured');
-    }
-
-    await afterHook({
+    await getAfterHook(options)({
       body: { invitationId: 'invite_1' },
       context: {
         returned: new Response(
