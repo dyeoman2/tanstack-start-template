@@ -55,6 +55,9 @@ const securityPostureSummaryValidator = v.object({
   vendors: v.array(
     v.object({
       allowedDataClasses: v.array(v.string()),
+      allowedEnvironments: v.array(
+        v.union(v.literal('development'), v.literal('production'), v.literal('test')),
+      ),
       approvalEnvVar: v.union(v.string(), v.null()),
       approved: v.boolean(),
       approvedByDefault: v.boolean(),

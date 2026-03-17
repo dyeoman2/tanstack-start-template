@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-03-17T07:17:58.471Z",
-  "sourcePath": "compliance/sources/nist/800-53/nist.gov/SP800-53/rev5/json/NIST_SP-800-53_rev5_MODERATE-baseline-resolved-profile_catalog.json",
+  "generatedAt": "2026-03-17T17:30:13.451Z",
+  "sourcePath": "compliance/sources/nist/800-53/NIST_SP-800-53_rev5_MODERATE-baseline-resolved-profile_catalog.json",
   "sourceMetadata": {
     "title": "Electronic (OSCAL) Version of NIST Special Publication 800-53 Revision 5.2.0 MODERATE IMPACT BASELINE",
     "last-modified": "2025-08-27T00:40:01.392293Z",

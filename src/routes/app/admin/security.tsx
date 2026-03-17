@@ -1,18 +1,90 @@
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import type { ColumnDef } from '@tanstack/react-table';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { z } from 'zod';
+import {
+  createSortableHeader,
+  DataTable,
+  TableFilter,
+  TableSearch,
+  type TableFilterOption,
+} from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
+import {
+  ACTIVE_CONTROL_REGISTER,
+  type ActiveControlRecord,
+  type ControlStatus,
+  type EvidenceStatus,
+  getActiveControlRegisterSummary,
+} from '~/lib/shared/compliance/control-register';
+
+const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors'] as const;
+const CONTROL_TABLE_SORT_FIELDS = ['control', 'status', 'family', 'evidence', 'review'] as const;
+const CONTROL_STATUS_FILTER_VALUES = [
+  'all',
+  'platform-enforced',
+  'shared-responsibility',
+  'partial',
+  'operator-owned',
+  'not-applicable',
+] as const;
+const CONTROL_EVIDENCE_FILTER_VALUES = [
+  'all',
+  'pass',
+  'warning',
+  'missing',
+  'fail',
+  'not-tested',
+] as const;
+const CONTROL_REVIEW_FILTER_VALUES = ['all', 'reviewed', 'review-overdue'] as const;
+const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+const securitySearchSchema = z.object({
+  tab: z.enum(SECURITY_TABS).default('overview'),
+  page: z.number().default(1),
+  pageSize: z.union([z.literal(10), z.literal(20), z.literal(50)]).default(10),
+  sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).default('control'),
+  sortOrder: z.enum(['asc', 'desc']).default('asc'),
+  search: z.string().default(''),
+  status: z.enum(CONTROL_STATUS_FILTER_VALUES).default('all'),
+  family: z.string().default('all'),
+  evidence: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
+  review: z.enum(CONTROL_REVIEW_FILTER_VALUES).default('all'),
+});
 
 export const Route = createFileRoute('/app/admin/security')({
+  validateSearch: securitySearchSchema,
   component: AdminSecurityRoute,
 });
 
+function isSecurityTab(value: string): value is (typeof SECURITY_TABS)[number] {
+  return SECURITY_TABS.includes(value as (typeof SECURITY_TABS)[number]);
+}
+
 function AdminSecurityRoute() {
+  const navigate = useNavigate();
+  const search = Route.useSearch();
+  const {
+    tab: activeTab,
+    page,
+    pageSize,
+    sortBy,
+    sortOrder,
+    search: controlSearchTerm,
+    status: statusFilter,
+    family: familyFilter,
+    evidence: evidenceFilter,
+    review: reviewFilter,
+  } = search;
   const summary = useQuery(api.security.getSecurityPostureSummary, {});
   const evidenceReports = useQuery(api.security.listEvidenceReports, { limit: 10 });
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
@@ -23,6 +95,269 @@ function AdminSecurityRoute() {
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+
+  const controlSummary = getActiveControlRegisterSummary();
+  const familyOptions = useMemo<TableFilterOption<string>[]>(
+    () => [
+      { label: 'All families', value: 'all' },
+      ...Array.from(
+        new Map(
+          ACTIVE_CONTROL_REGISTER.controls.map((control) => [control.familyId, control.familyTitle]),
+        ).entries(),
+      )
+        .sort(([leftId, leftTitle], [rightId, rightTitle]) => {
+          return leftId.localeCompare(rightId) || leftTitle.localeCompare(rightTitle);
+        })
+        .map(([familyId, familyTitle]) => ({
+          label: `${familyId} · ${familyTitle}`,
+          value: familyId,
+        })),
+    ],
+    [],
+  );
+  const statusOptions = useMemo<TableFilterOption<'all' | ControlStatus>[]>(
+    () => [
+      { label: 'All statuses', value: 'all' },
+      { label: 'Platform-enforced', value: 'platform-enforced' },
+      { label: 'Shared-responsibility', value: 'shared-responsibility' },
+      { label: 'Partial', value: 'partial' },
+      { label: 'Operator-owned', value: 'operator-owned' },
+      { label: 'Not applicable', value: 'not-applicable' },
+    ],
+    [],
+  );
+  const evidenceOptions = useMemo<TableFilterOption<'all' | EvidenceStatus>[]>(
+    () => [
+      { label: 'All evidence states', value: 'all' },
+      { label: 'Pass', value: 'pass' },
+      { label: 'Warning', value: 'warning' },
+      { label: 'Missing', value: 'missing' },
+      { label: 'Fail', value: 'fail' },
+      { label: 'Not tested', value: 'not-tested' },
+    ],
+    [],
+  );
+  const reviewOptions = useMemo<TableFilterOption<'all' | 'reviewed' | 'review-overdue'>[]>(
+    () => [
+      { label: 'All review states', value: 'all' },
+      { label: 'Needs review', value: 'review-overdue' },
+      { label: 'Reviewed', value: 'reviewed' },
+    ],
+    [],
+  );
+  const normalizedControlSearchTerm = controlSearchTerm.trim().toLowerCase();
+  const filteredControls = useMemo(
+    () =>
+      ACTIVE_CONTROL_REGISTER.controls.filter((control) => {
+        if (statusFilter !== 'all' && control.status !== statusFilter) {
+          return false;
+        }
+
+        if (familyFilter !== 'all' && control.familyId !== familyFilter) {
+          return false;
+        }
+
+        if (evidenceFilter !== 'all' && control.evidence.latestEvidenceStatus !== evidenceFilter) {
+          return false;
+        }
+
+        if (reviewFilter === 'reviewed' && control.reviewStatus !== 'reviewed') {
+          return false;
+        }
+
+        if (reviewFilter === 'review-overdue' && control.reviewStatus === 'reviewed') {
+          return false;
+        }
+
+        if (normalizedControlSearchTerm.length === 0) {
+          return true;
+        }
+
+        const searchableText = [
+          control.nist80053Id,
+          control.title,
+          control.controlStatement,
+          control.familyId,
+          control.familyTitle,
+          control.internalControlId,
+          control.owner,
+          control.status,
+          control.reviewStatus,
+          control.evidence.latestEvidenceStatus,
+        ]
+          .join(' ')
+          .toLowerCase();
+
+        return searchableText.includes(normalizedControlSearchTerm);
+      }),
+    [evidenceFilter, familyFilter, normalizedControlSearchTerm, reviewFilter, statusFilter],
+  );
+  const sortedControls = useMemo(() => {
+    const sorted = [...filteredControls];
+    sorted.sort((left, right) => {
+      const direction = sortOrder === 'asc' ? 1 : -1;
+      let comparison = 0;
+
+      switch (sortBy) {
+        case 'status':
+          comparison = left.status.localeCompare(right.status);
+          break;
+        case 'family':
+          comparison =
+            left.familyId.localeCompare(right.familyId) ||
+            left.familyTitle.localeCompare(right.familyTitle);
+          break;
+        case 'evidence':
+          comparison =
+            left.evidence.latestEvidenceStatus.localeCompare(right.evidence.latestEvidenceStatus) ||
+            left.evidence.evidenceCount - right.evidence.evidenceCount;
+          break;
+        case 'review':
+          comparison =
+            left.reviewStatus.localeCompare(right.reviewStatus) ||
+            (left.lastReviewedAt ?? '').localeCompare(right.lastReviewedAt ?? '');
+          break;
+        default:
+          comparison =
+            left.nist80053Id.localeCompare(right.nist80053Id) ||
+            left.title.localeCompare(right.title);
+          break;
+      }
+
+      if (comparison !== 0) {
+        return comparison * direction;
+      }
+
+      return (
+        left.internalControlId.localeCompare(right.internalControlId) *
+        (sortOrder === 'asc' ? 1 : -1)
+      );
+    });
+
+    return sorted;
+  }, [filteredControls, sortBy, sortOrder]);
+  const totalControlPages = Math.max(1, Math.ceil(sortedControls.length / pageSize));
+  const currentControlPage = Math.min(page, totalControlPages);
+  const paginatedControls = useMemo(() => {
+    const startIndex = (currentControlPage - 1) * pageSize;
+    return sortedControls.slice(startIndex, startIndex + pageSize);
+  }, [currentControlPage, pageSize, sortedControls]);
+  const controlPagination = useMemo(
+    () => ({
+      page: currentControlPage,
+      pageSize,
+      total: sortedControls.length,
+      totalPages: totalControlPages,
+    }),
+    [currentControlPage, pageSize, sortedControls.length, totalControlPages],
+  );
+  const controlSearchParams = useMemo(
+    () => ({
+      page: currentControlPage,
+      pageSize,
+      sortBy,
+      sortOrder,
+    }),
+    [currentControlPage, pageSize, sortBy, sortOrder],
+  );
+  const updateControlSearch = useCallback(
+    (
+      updates: Partial<{
+        page: number;
+        pageSize: (typeof CONTROL_PAGE_SIZE_OPTIONS)[number];
+        sortBy: (typeof CONTROL_TABLE_SORT_FIELDS)[number];
+        sortOrder: 'asc' | 'desc';
+        search: string;
+        status: 'all' | ControlStatus;
+        family: string;
+        evidence: 'all' | EvidenceStatus;
+        review: 'all' | 'reviewed' | 'review-overdue';
+      }>,
+    ) => {
+      void navigate({
+        to: '/app/admin/security',
+        search: {
+          ...search,
+          ...updates,
+        },
+      });
+    },
+    [navigate, search],
+  );
+  const handleControlSorting = useCallback(
+    (columnId: (typeof CONTROL_TABLE_SORT_FIELDS)[number]) => {
+      updateControlSearch({
+        sortBy: columnId,
+        sortOrder: sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc',
+        page: 1,
+      });
+    },
+    [sortBy, sortOrder, updateControlSearch],
+  );
+  const handleControlPageChange = useCallback(
+    (nextPage: number) => {
+      updateControlSearch({ page: nextPage });
+    },
+    [updateControlSearch],
+  );
+  const handleControlPageSizeChange = useCallback(
+    (nextPageSize: number) => {
+      updateControlSearch({
+        page: 1,
+        pageSize: CONTROL_PAGE_SIZE_OPTIONS.includes(
+          nextPageSize as (typeof CONTROL_PAGE_SIZE_OPTIONS)[number],
+        )
+          ? (nextPageSize as (typeof CONTROL_PAGE_SIZE_OPTIONS)[number])
+          : 10,
+      });
+    },
+    [updateControlSearch],
+  );
+  const controlColumns = useMemo<ColumnDef<ActiveControlRecord, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'control',
+        header: createSortableHeader(
+          'Control',
+          'control',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <ControlCell control={row.original} />,
+      },
+      {
+        accessorKey: 'status',
+        header: createSortableHeader('Status', 'status', controlSearchParams, handleControlSorting),
+        cell: ({ row }) => <ControlStatusCell control={row.original} />,
+      },
+      {
+        accessorKey: 'family',
+        header: createSortableHeader(
+          'Frameworks',
+          'family',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <FrameworkSummaryCell control={row.original} />,
+      },
+      {
+        accessorKey: 'evidence',
+        header: createSortableHeader(
+          'Evidence',
+          'evidence',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <EvidenceCell control={row.original} />,
+      },
+      {
+        accessorKey: 'review',
+        header: createSortableHeader('Review', 'review', controlSearchParams, handleControlSorting),
+        cell: ({ row }) => <ReviewCell control={row.original} />,
+      },
+    ],
+    [controlSearchParams, handleControlSorting],
+  );
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
@@ -66,225 +401,647 @@ function AdminSecurityRoute() {
     <div className="space-y-6">
       <PageHeader
         title="Security Posture"
-        description="Review the always-on regulated baseline, outbound vendor posture, and evidence readiness workflow."
+        description="Review control implementation, evidence posture, vendor boundaries, and security oversight workflows."
       />
 
-      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        <SummaryCard
-          title="MFA Coverage"
-          description="Phishing-resistant MFA coverage across Better Auth users, including passkeys."
-          value={
-            summary
-              ? `${summary.auth.mfaCoveragePercent}% (${summary.auth.mfaEnabledUsers}/${summary.auth.totalUsers})`
-              : 'Loading…'
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => {
+          if (!isSecurityTab(value) || value === activeTab) {
+            return;
           }
-          footer={
-            summary
-              ? `${summary.auth.passkeyEnabledUsers} users have passkeys; verified email is always required`
-              : undefined
-          }
-        />
-        <SummaryCard
-          title="File Inspection"
-          description="Attachment and document inspection outcomes from the built-in inspection pipeline."
-          value={
-            summary
-              ? `${summary.scanner.totalScans} inspected, ${summary.scanner.quarantinedCount} quarantined, ${summary.scanner.rejectedCount} rejected`
-              : 'Loading…'
-          }
-          footer={
-            summary?.scanner.lastScanAt
-              ? `Last inspection ${new Date(summary.scanner.lastScanAt).toLocaleString()}`
-              : 'No inspection events recorded yet'
-          }
-        />
-        <SummaryCard
-          title="Audit Integrity"
-          description="Hash-chain failure signal from the audit subsystem."
-          value={summary ? `${summary.audit.integrityFailures} integrity failures` : 'Loading…'}
-          footer={
-            summary?.audit.lastEventAt
-              ? `Last audit event ${new Date(summary.audit.lastEventAt).toLocaleString()}`
-              : 'No audit activity yet'
-          }
-        />
-        <SummaryCard
-          title="Retention Jobs"
-          description="Latest retention or cleanup execution status."
-          value={
-            summary?.retention.lastJobStatus
-              ? summary.retention.lastJobStatus
-              : 'No retention job recorded'
-          }
-          footer={
-            summary?.retention.lastJobAt
-              ? `Last run ${new Date(summary.retention.lastJobAt).toLocaleString()}`
-              : undefined
-          }
-        />
-        <SummaryCard
-          title="Telemetry"
-          description="External telemetry posture for the regulated baseline."
-          value={
-            summary
-              ? summary.telemetry.sentryApproved
-                ? 'Sentry approved'
-                : 'Sentry blocked by default'
-              : 'Loading…'
-          }
-          footer={
-            summary
-              ? summary.telemetry.sentryEnabled
-                ? 'Telemetry sink configured with explicit approval'
-                : 'No approved telemetry sink active'
-              : undefined
-          }
-        />
-        <SummaryCard
-          title="Session Policy"
-          description="Short-lived verification posture applied across the app."
-          value={
-            summary
-              ? `${summary.sessions.freshWindowMinutes} minute step-up window`
-              : 'Loading…'
-          }
-          footer={
-            summary
-              ? `${summary.sessions.sessionExpiryHours}h sessions, ${summary.sessions.temporaryLinkTtlMinutes} minute temporary links`
-              : undefined
-          }
-        />
-      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Vendor Boundary</CardTitle>
-          <CardDescription>
-            Approved outbound integrations and the data classes each one is allowed to receive.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {summary?.vendors.map((vendor) => (
-            <div key={vendor.vendor} className="rounded-md border px-4 py-3">
-              <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="font-medium">{vendor.displayName}</p>
-                  <p className="text-sm text-muted-foreground">
-                    {vendor.allowedDataClasses.join(', ')}
-                  </p>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {vendor.approved
-                    ? vendor.approvedByDefault
-                      ? 'Approved by default'
-                      : `Approved via ${vendor.approvalEnvVar}`
-                    : `Blocked until ${vendor.approvalEnvVar ?? 'approved'}`}
-                </p>
-              </div>
-            </div>
-          )) ?? <p className="text-sm text-muted-foreground">Loading vendor posture…</p>}
-        </CardContent>
-      </Card>
+          void navigate({
+            to: '/app/admin/security',
+            search: {
+              ...search,
+              tab: value,
+            },
+          });
+        }}
+      >
+        <TabsList className="w-full justify-start overflow-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="controls">Controls</TabsTrigger>
+          <TabsTrigger value="evidence">Evidence</TabsTrigger>
+          <TabsTrigger value="vendors">Vendors</TabsTrigger>
+        </TabsList>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Evidence Report</CardTitle>
-          <CardDescription>
-            Generate a JSON evidence snapshot suitable for internal review and export.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button onClick={handleGenerateReport} disabled={isGenerating}>
-            {isGenerating ? 'Generating…' : 'Generate evidence report'}
-          </Button>
-          {report ? (
-            <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-              {report}
-            </pre>
-          ) : null}
-        </CardContent>
-      </Card>
+        <TabsContent value="overview" className="space-y-6">
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            <SummaryCard
+              title="MFA Coverage"
+              description="Phishing-resistant MFA coverage across Better Auth users, including passkeys."
+              value={
+                summary
+                  ? `${summary.auth.mfaCoveragePercent}% (${summary.auth.mfaEnabledUsers}/${summary.auth.totalUsers})`
+                  : 'Loading…'
+              }
+              footer={
+                summary
+                  ? `${summary.auth.passkeyEnabledUsers} users have passkeys; verified email is always required`
+                  : undefined
+              }
+            />
+            <SummaryCard
+              title="File Inspection"
+              description="Attachment and document inspection outcomes from the built-in inspection pipeline."
+              value={
+                summary
+                  ? `${summary.scanner.totalScans} inspected, ${summary.scanner.quarantinedCount} quarantined, ${summary.scanner.rejectedCount} rejected`
+                  : 'Loading…'
+              }
+              footer={
+                summary?.scanner.lastScanAt
+                  ? `Last inspection ${new Date(summary.scanner.lastScanAt).toLocaleString()}`
+                  : 'No inspection events recorded yet'
+              }
+            />
+            <SummaryCard
+              title="Audit Integrity"
+              description="Hash-chain failure signal from the audit subsystem."
+              value={summary ? `${summary.audit.integrityFailures} integrity failures` : 'Loading…'}
+              footer={
+                summary?.audit.lastEventAt
+                  ? `Last audit event ${new Date(summary.audit.lastEventAt).toLocaleString()}`
+                  : 'No audit activity yet'
+              }
+            />
+            <SummaryCard
+              title="Retention Jobs"
+              description="Latest retention or cleanup execution status."
+              value={
+                summary?.retention.lastJobStatus
+                  ? summary.retention.lastJobStatus
+                  : 'No retention job recorded'
+              }
+              footer={
+                summary?.retention.lastJobAt
+                  ? `Last run ${new Date(summary.retention.lastJobAt).toLocaleString()}`
+                  : undefined
+              }
+            />
+            <SummaryCard
+              title="Telemetry"
+              description="External telemetry posture for the regulated baseline."
+              value={
+                summary
+                  ? summary.telemetry.sentryApproved
+                    ? 'Sentry approved'
+                    : 'Sentry blocked by default'
+                  : 'Loading…'
+              }
+              footer={
+                summary
+                  ? summary.telemetry.sentryEnabled
+                    ? 'Telemetry sink configured with explicit approval'
+                    : 'No approved telemetry sink active'
+                  : undefined
+              }
+            />
+            <SummaryCard
+              title="Session Policy"
+              description="Short-lived verification posture applied across the app."
+              value={
+                summary
+                  ? `${summary.sessions.freshWindowMinutes} minute step-up window`
+                  : 'Loading…'
+              }
+              footer={
+                summary
+                  ? `${summary.sessions.sessionExpiryHours}h sessions, ${summary.sessions.temporaryLinkTtlMinutes} minute temporary links`
+                  : undefined
+              }
+            />
+          </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Evidence Review Queue</CardTitle>
-          <CardDescription>
-            Review generated evidence, capture notes, and export integrity-linked bundles.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          {evidenceReports?.length ? (
-            evidenceReports.map((item) => (
-              <div
-                key={item.id}
-                className="space-y-3 rounded-lg border p-4"
-                data-selected={selectedReportId === item.id}
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="font-medium">
-                      {item.reportKind} · {new Date(item.createdAt).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Review: {item.reviewStatus} · Content hash: {item.contentHash}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      {item.exportHash ? `Last export hash: ${item.exportHash}` : 'Not exported yet'}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={busyReportAction !== null}
-                      onClick={() => {
-                        void handleReviewReport(item.id, 'reviewed');
-                      }}
-                    >
-                      {busyReportAction === `${item.id}:reviewed` ? 'Saving…' : 'Mark reviewed'}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      disabled={busyReportAction !== null}
-                      onClick={() => {
-                        void handleReviewReport(item.id, 'needs_follow_up');
-                      }}
-                    >
-                      {busyReportAction === `${item.id}:needs_follow_up`
-                        ? 'Saving…'
-                        : 'Needs follow-up'}
-                    </Button>
-                    <Button
-                      type="button"
-                      disabled={busyReportAction !== null}
-                      onClick={() => {
-                        void handleExportReport(item.id);
-                      }}
-                    >
-                      {busyReportAction === `${item.id}:export` ? 'Exporting…' : 'Export bundle'}
-                    </Button>
-                  </div>
-                </div>
-                <Textarea
-                  value={reviewNotes[item.id] ?? item.reviewNotes ?? ''}
-                  onChange={(event) => {
-                    setReviewNotes((current) => ({
-                      ...current,
-                      [item.id]: event.target.value,
-                    }));
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Active Controls"
+              description="Controls currently tracked in the active register."
+              value={`${controlSummary.totalControls}`}
+              footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
+            />
+            <SummaryCard
+              title="Implemented"
+              description="Controls currently implemented directly by the platform."
+              value={`${controlSummary.byStatus['platform-enforced']}`}
+              footer={`${controlSummary.byStatus['shared-responsibility']} shared-responsibility controls`}
+            />
+            <SummaryCard
+              title="Evidence Health"
+              description="Most recent evidence status across the active set."
+              value={`${controlSummary.byEvidence.pass} pass / ${controlSummary.byEvidence.warning} warning`}
+              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
+            />
+            <SummaryCard
+              title="Review Queue"
+              description="Controls that still need explicit review or follow-up."
+              value={`${controlSummary.overdueReviewCount}`}
+              footer={`${ACTIVE_CONTROL_REGISTER.controls.length - controlSummary.overdueReviewCount} reviewed`}
+            />
+          </div>
+        </TabsContent>
+
+        <TabsContent value="controls" className="space-y-6">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold">Control Register</h2>
+            <p className="text-sm text-muted-foreground">
+              Active control register with framework mappings, evidence posture, ownership, and
+              shared-responsibility boundaries.
+            </p>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Active Controls"
+              description="Controls currently tracked in the active register."
+              value={`${controlSummary.totalControls}`}
+              footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
+            />
+            <SummaryCard
+              title="Implemented"
+              description="Controls currently implemented directly by the platform."
+              value={`${controlSummary.byStatus['platform-enforced']}`}
+              footer={`${controlSummary.byStatus['shared-responsibility']} shared-responsibility controls`}
+            />
+            <SummaryCard
+              title="Evidence Health"
+              description="Most recent evidence status across the active set."
+              value={`${controlSummary.byEvidence.pass} pass / ${controlSummary.byEvidence.warning} warning`}
+              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
+            />
+            <SummaryCard
+              title="Review Queue"
+              description="Controls that still need explicit review or follow-up."
+              value={`${controlSummary.overdueReviewCount}`}
+              footer={`${ACTIVE_CONTROL_REGISTER.controls.length - controlSummary.overdueReviewCount} reviewed`}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+            <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">
+              <p className="text-sm text-muted-foreground whitespace-nowrap">
+                {controlPagination.total} matches
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <TableFilter<'all' | ControlStatus>
+                  value={statusFilter}
+                  options={statusOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ status: value, page: 1 });
                   }}
-                  placeholder="Reviewer notes"
+                  className="shrink-0"
+                  ariaLabel="Filter controls by status"
+                />
+                <TableFilter<string>
+                  value={familyFilter}
+                  options={familyOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ family: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by family"
+                />
+                <TableFilter<'all' | EvidenceStatus>
+                  value={evidenceFilter}
+                  options={evidenceOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ evidence: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by evidence status"
+                />
+                <TableFilter<'all' | 'reviewed' | 'review-overdue'>
+                  value={reviewFilter}
+                  options={reviewOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ review: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by review status"
                 />
               </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
-          )}
-        </CardContent>
-      </Card>
+            </div>
+            <TableSearch
+              initialValue={controlSearchTerm}
+              onSearch={(value) => {
+                updateControlSearch({ search: value, page: 1 });
+              }}
+              placeholder="Search by control, family, owner, or statement"
+              isSearching={false}
+              className="min-w-[260px] xl:max-w-lg"
+              ariaLabel="Search controls"
+            />
+          </div>
+
+          <DataTable<ActiveControlRecord, (typeof controlColumns)[number]>
+            data={paginatedControls}
+            columns={controlColumns}
+            pagination={controlPagination}
+            searchParams={controlSearchParams}
+            isLoading={false}
+            onPageChange={handleControlPageChange}
+            onPageSizeChange={handleControlPageSizeChange}
+            emptyMessage="No controls matched the current filters."
+          />
+        </TabsContent>
+
+        <TabsContent value="evidence" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Evidence Report</CardTitle>
+              <CardDescription>
+                Generate a JSON evidence snapshot suitable for internal review and export.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Button onClick={handleGenerateReport} disabled={isGenerating}>
+                {isGenerating ? 'Generating…' : 'Generate evidence report'}
+              </Button>
+              {report ? (
+                <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
+                  {report}
+                </pre>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Evidence Review Queue</CardTitle>
+              <CardDescription>
+                Review generated evidence, capture notes, and export integrity-linked bundles.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {evidenceReports?.length ? (
+                evidenceReports.map((item) => (
+                  <div
+                    key={item.id}
+                    className="space-y-3 rounded-lg border p-4"
+                    data-selected={selectedReportId === item.id}
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="font-medium">
+                          {item.reportKind} · {new Date(item.createdAt).toLocaleString()}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Review: {item.reviewStatus} · Content hash: {item.contentHash}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {item.exportHash
+                            ? `Last export hash: ${item.exportHash}`
+                            : 'Not exported yet'}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={busyReportAction !== null}
+                          onClick={() => {
+                            void handleReviewReport(item.id, 'reviewed');
+                          }}
+                        >
+                          {busyReportAction === `${item.id}:reviewed` ? 'Saving…' : 'Mark reviewed'}
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={busyReportAction !== null}
+                          onClick={() => {
+                            void handleReviewReport(item.id, 'needs_follow_up');
+                          }}
+                        >
+                          {busyReportAction === `${item.id}:needs_follow_up`
+                            ? 'Saving…'
+                            : 'Needs follow-up'}
+                        </Button>
+                        <Button
+                          type="button"
+                          disabled={busyReportAction !== null}
+                          onClick={() => {
+                            void handleExportReport(item.id);
+                          }}
+                        >
+                          {busyReportAction === `${item.id}:export`
+                            ? 'Exporting…'
+                            : 'Export bundle'}
+                        </Button>
+                      </div>
+                    </div>
+                    <Textarea
+                      value={reviewNotes[item.id] ?? item.reviewNotes ?? ''}
+                      onChange={(event) => {
+                        setReviewNotes((current) => ({
+                          ...current,
+                          [item.id]: event.target.value,
+                        }));
+                      }}
+                      placeholder="Reviewer notes"
+                    />
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="vendors">
+          <Card>
+            <CardHeader>
+              <CardTitle>Vendor Boundary</CardTitle>
+              <CardDescription>
+                Approved outbound integrations, allowed data classes, and environment boundaries.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {summary?.vendors.map((vendor) => (
+                <div key={vendor.vendor} className="rounded-md border px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="space-y-1">
+                      <p className="font-medium">{vendor.displayName}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Data classes: {vendor.allowedDataClasses.join(', ')}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Environments: {vendor.allowedEnvironments.join(', ')}
+                      </p>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      {vendor.approved
+                        ? vendor.approvedByDefault
+                          ? 'Approved by default'
+                          : `Approved via ${vendor.approvalEnvVar}`
+                        : `Blocked until ${vendor.approvalEnvVar ?? 'approved'}`}
+                    </p>
+                  </div>
+                </div>
+              )) ?? <p className="text-sm text-muted-foreground">Loading vendor posture…</p>}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
+}
+
+function ControlCell({ control }: { control: ActiveControlRecord }) {
+  return (
+    <div className="min-w-0 py-1">
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" className="text-left">
+              <p className="font-medium text-foreground">
+                {control.nist80053Id} {control.title}
+              </p>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="max-w-md">
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                  Ownership
+                </p>
+                <p className="text-sm font-medium">{control.owner}</p>
+                <p className="text-xs text-primary-foreground/80">{control.internalControlId}</p>
+                <p className="text-[11px] uppercase tracking-wide text-primary-foreground/80">
+                  {control.priority}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                  Control summary
+                </p>
+                <p className="text-xs leading-relaxed">{control.controlStatement}</p>
+              </div>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function ControlStatusCell({ control }: { control: ActiveControlRecord }) {
+  const badge = (
+    <Badge variant={getControlStatusBadgeVariant(control.status)}>
+      {formatControlStatus(control.status)}
+    </Badge>
+  );
+
+  return (
+    <div className="space-y-2 py-1">
+      {control.sharedResponsibilityNotes ? (
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>{badge}</TooltipTrigger>
+            <TooltipContent side="top" align="start" className="max-w-sm">
+              <div className="space-y-2">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                  Responsibility notes
+                </p>
+                <p className="text-xs leading-relaxed">{control.sharedResponsibilityNotes}</p>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        badge
+      )}
+    </div>
+  );
+}
+
+function FrameworkSummaryCell({ control }: { control: ActiveControlRecord }) {
+  const frameworkSummaries = [
+    {
+      label: 'HIPAA',
+      count: control.mappings.hipaa.length,
+      values: control.mappings.hipaa.map(
+        (mapping) => `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}`,
+      ),
+    },
+    {
+      label: 'CSF',
+      count: control.mappings.csf20.length,
+      values: control.mappings.csf20.map(
+        (mapping) => `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+      ),
+    },
+    {
+      label: '800-66',
+      count: control.mappings.nist80066.length,
+      values: control.mappings.nist80066.map((mapping) => mapping.referenceId),
+    },
+    {
+      label: 'SOC 2',
+      count: control.mappings.soc2.length,
+      values: control.mappings.soc2.map(
+        (mapping) => `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+      ),
+    },
+  ].filter((item) => item.count > 0);
+
+  return (
+    <div className="py-1 text-sm text-muted-foreground">
+      <div className="flex flex-wrap gap-2">
+        {frameworkSummaries.map((item) => (
+          <TooltipProvider key={item.label} delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="rounded-full border px-2 py-1 text-xs font-medium text-foreground"
+                >
+                  {item.label} ({item.count})
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" align="start" className="max-w-md">
+                <div className="space-y-2">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                    {item.label} mappings
+                  </p>
+                  <ul className="list-disc space-y-1 pl-4 text-left text-xs leading-relaxed">
+                    {item.values.map((value) => (
+                      <li key={value}>{value}</li>
+                    ))}
+                  </ul>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceCell({ control }: { control: ActiveControlRecord }) {
+  return (
+    <div className="space-y-2 py-1">
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}
+            >
+              {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} ({control.evidence.evidenceCount})
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="max-w-sm">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                Evidence sources
+              </p>
+              <ul className="list-disc space-y-1 pl-4 text-left text-xs leading-relaxed">
+                {control.evidence.evidenceSources.map((source) => (
+                  <li key={source}>{source}</li>
+                ))}
+              </ul>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function ReviewCell({ control }: { control: ActiveControlRecord }) {
+  return (
+    <div className="py-1">
+      <TooltipProvider delayDuration={150}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}
+            >
+              {control.reviewStatus === 'reviewed' ? 'Reviewed' : 'Needs review'}
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent side="top" align="start" className="max-w-sm">
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+                Review status
+              </p>
+              <p className="text-xs leading-relaxed">
+                {control.lastReviewedAt
+                  ? `Reviewed ${new Date(control.lastReviewedAt).toLocaleDateString()}`
+                  : 'No completed review recorded'}
+              </p>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    </div>
+  );
+}
+
+function formatEvidenceStatus(status: EvidenceStatus) {
+  switch (status) {
+    case 'pass':
+      return 'Pass';
+    case 'warning':
+      return 'Warning';
+    case 'missing':
+      return 'Missing';
+    case 'fail':
+      return 'Fail';
+    case 'not-tested':
+      return 'Not tested';
+  }
+}
+
+function formatControlStatus(status: ControlStatus) {
+  switch (status) {
+    case 'platform-enforced':
+      return 'Platform-enforced';
+    case 'shared-responsibility':
+      return 'Shared-responsibility';
+    case 'partial':
+      return 'Partial';
+    case 'operator-owned':
+      return 'Operator-owned';
+    case 'not-applicable':
+      return 'Not applicable';
+  }
+}
+
+function getEvidenceBadgeVariant(
+  status: EvidenceStatus,
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'pass':
+      return 'default';
+    case 'warning':
+      return 'secondary';
+    case 'missing':
+    case 'not-tested':
+      return 'outline';
+    case 'fail':
+      return 'destructive';
+  }
+}
+
+function getControlStatusBadgeVariant(
+  status: ControlStatus,
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'platform-enforced':
+      return 'default';
+    case 'shared-responsibility':
+      return 'secondary';
+    case 'partial':
+      return 'outline';
+    case 'operator-owned':
+      return 'destructive';
+    case 'not-applicable':
+      return 'outline';
+  }
 }
 
 function SummaryCard(props: {
