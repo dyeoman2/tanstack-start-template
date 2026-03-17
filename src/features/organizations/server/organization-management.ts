@@ -60,7 +60,7 @@ const organizationPoliciesSchema = z.object({
   invitePolicy: z.enum(['owners_admins', 'owners_only']),
   verifiedDomainsOnly: z.boolean(),
   memberCap: z.number().int().positive().nullable(),
-  mfaRequired: z.boolean(),
+  mfaRequired: z.boolean().default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.mfaRequired),
   auditExportRequiresStepUp: z
     .boolean()
     .default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.auditExportRequiresStepUp),
@@ -75,7 +75,9 @@ const organizationPoliciesSchema = z.object({
   enterpriseAuthMode: z.enum(['off', 'optional', 'required']),
   enterpriseProviderKey: z.enum(['google-workspace', 'entra', 'okta']).nullable(),
   enterpriseProtocol: z.enum(['oidc']).nullable(),
-  allowBreakGlassPasswordLogin: z.boolean(),
+  allowBreakGlassPasswordLogin: z
+    .boolean()
+    .default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.allowBreakGlassPasswordLogin),
   temporaryLinkTtlMinutes: z
     .number()
     .int()

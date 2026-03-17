@@ -433,8 +433,20 @@ export default defineSchema({
     generatedByUserId: v.string(),
     reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
     contentJson: v.string(),
+    contentHash: v.string(),
+    exportBundleJson: v.optional(v.string()),
+    exportHash: v.optional(v.string()),
+    exportIntegritySummary: v.optional(v.string()),
+    exportedAt: v.union(v.number(), v.null()),
+    exportedByUserId: v.union(v.string(), v.null()),
+    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+    reviewedAt: v.union(v.number(), v.null()),
+    reviewedByUserId: v.union(v.string(), v.null()),
+    reviewNotes: v.union(v.string(), v.null()),
     createdAt: v.number(),
-  }).index('by_organization_id_and_created_at', ['organizationId', 'createdAt']),
+  })
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_created_at', ['createdAt']),
 
   retentionJobs: defineTable({
     jobKind: v.union(

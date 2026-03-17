@@ -117,8 +117,10 @@ export const Route = createFileRoute('/api/parse-pdf')({
             logSecurityEvent({
               actorUserId: currentProfile.id,
               data: {
-                fileName: file.name,
+                engine: inspection.engine,
+                fileExtension: file.name.split('.').pop()?.toLowerCase() ?? 'unknown',
                 reason: inspection.details ?? 'file_signature_mismatch',
+                resultStatus: inspection.status,
               },
               event: 'pdf.parse.quarantined',
               scope: 'scan',

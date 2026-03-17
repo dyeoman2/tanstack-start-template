@@ -1,3 +1,5 @@
+import { assertVendorBoundary } from './vendor-boundary.server';
+
 export type OpenRouterConfig = {
   apiKey: string;
   headers?: Record<string, string>;
@@ -20,6 +22,11 @@ function getOpenRouterPrivacyMode() {
 }
 
 export function getOpenRouterConfig(): OpenRouterConfig {
+  assertVendorBoundary({
+    vendor: 'openrouter',
+    dataClasses: ['chat_metadata', 'chat_prompt'],
+  });
+
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
 
   if (!apiKey) {

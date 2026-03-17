@@ -18,7 +18,10 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
-import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
+import {
+  applyAlwaysOnRegulatedBaseline,
+  REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+} from '../src/lib/shared/security-baseline';
 import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -187,6 +190,15 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'chat_run_failed',
   'chat_web_search_used',
   'audit_integrity_check_failed',
+  'evidence_report_generated',
+  'evidence_report_exported',
+  'evidence_report_reviewed',
+  'outbound_vendor_access_denied',
+  'outbound_vendor_access_used',
+  'mfa_enrollment_enforced',
+  'email_verification_enforced',
+  'step_up_challenge_required',
+  'step_up_challenge_completed',
 ]);
 const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'domain_verification_failed',
@@ -228,6 +240,15 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'chat_run_failed',
   'chat_web_search_used',
   'audit_integrity_check_failed',
+  'evidence_report_generated',
+  'evidence_report_exported',
+  'evidence_report_reviewed',
+  'outbound_vendor_access_denied',
+  'outbound_vendor_access_used',
+  'mfa_enrollment_enforced',
+  'email_verification_enforced',
+  'step_up_challenge_required',
+  'step_up_challenge_completed',
 ]);
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
 
@@ -340,7 +361,7 @@ function getAvailableInviteRoles(viewerRole: OrganizationViewerRole): Organizati
 function toOrganizationPolicies(
   policy: OrganizationPolicyDoc | null | undefined,
 ): OrganizationPolicies {
-  return {
+  return applyAlwaysOnRegulatedBaseline({
     invitePolicy: policy?.invitePolicy ?? DEFAULT_ORGANIZATION_POLICIES.invitePolicy,
     verifiedDomainsOnly:
       policy?.verifiedDomainsOnly ?? DEFAULT_ORGANIZATION_POLICIES.verifiedDomainsOnly,
@@ -367,7 +388,7 @@ function toOrganizationPolicies(
     temporaryLinkTtlMinutes:
       policy?.temporaryLinkTtlMinutes ?? DEFAULT_ORGANIZATION_POLICIES.temporaryLinkTtlMinutes,
     webSearchAllowed: policy?.webSearchAllowed ?? DEFAULT_ORGANIZATION_POLICIES.webSearchAllowed,
-  };
+  });
 }
 
 export async function getOrganizationPolicies(
@@ -1785,7 +1806,7 @@ export const updateOrganizationPolicies = mutation({
 
     const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
     const now = Date.now();
-    const nextPolicies = {
+    const nextPolicies = applyAlwaysOnRegulatedBaseline({
       invitePolicy: args.invitePolicy,
       verifiedDomainsOnly: args.verifiedDomainsOnly,
       memberCap: args.memberCap,
@@ -1805,7 +1826,7 @@ export const updateOrganizationPolicies = mutation({
       allowBreakGlassPasswordLogin: args.allowBreakGlassPasswordLogin,
       temporaryLinkTtlMinutes: args.temporaryLinkTtlMinutes,
       webSearchAllowed: args.webSearchAllowed,
-    } satisfies OrganizationPolicies;
+    }) satisfies OrganizationPolicies;
     const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
       (key) => currentPolicies[key] !== nextPolicies[key],
     );

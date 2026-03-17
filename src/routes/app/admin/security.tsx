@@ -1,10 +1,12 @@
 import { api } from '@convex/_generated/api';
+import type { Id } from '@convex/_generated/dataModel';
 import { createFileRoute } from '@tanstack/react-router';
-import { useAction, useQuery } from 'convex/react';
+import { useAction, useMutation, useQuery } from 'convex/react';
 import { useState } from 'react';
 import { PageHeader } from '~/components/PageHeader';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Textarea } from '~/components/ui/textarea';
 
 export const Route = createFileRoute('/app/admin/security')({
   component: AdminSecurityRoute,
@@ -12,17 +14,51 @@ export const Route = createFileRoute('/app/admin/security')({
 
 function AdminSecurityRoute() {
   const summary = useQuery(api.security.getSecurityPostureSummary, {});
+  const evidenceReports = useQuery(api.security.listEvidenceReports, { limit: 10 });
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
+  const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
+  const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
   const [report, setReport] = useState<string | null>(null);
+  const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
+  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
+  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
     try {
       const generated = await generateEvidenceReport({});
       setReport(generated.report);
+      setSelectedReportId(generated.id);
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleReviewReport = async (
+    id: Id<'evidenceReports'>,
+    reviewStatus: 'needs_follow_up' | 'reviewed',
+  ) => {
+    setBusyReportAction(`${id}:${reviewStatus}`);
+    try {
+      await reviewEvidenceReport({
+        id,
+        reviewNotes: reviewNotes[id]?.trim() || undefined,
+        reviewStatus,
+      });
+    } finally {
+      setBusyReportAction(null);
+    }
+  };
+
+  const handleExportReport = async (id: Id<'evidenceReports'>) => {
+    setBusyReportAction(`${id}:export`);
+    try {
+      const exported = await exportEvidenceReport({ id });
+      setReport(exported.report);
+      setSelectedReportId(id);
+    } finally {
+      setBusyReportAction(null);
     }
   };
 
@@ -30,7 +66,7 @@ function AdminSecurityRoute() {
     <div className="space-y-6">
       <PageHeader
         title="Security Posture"
-        description="Review regulated baseline controls, file-inspection outcomes, retention jobs, and evidence exports."
+        description="Review the always-on regulated baseline, outbound vendor posture, and evidence readiness workflow."
       />
 
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -41,6 +77,11 @@ function AdminSecurityRoute() {
             summary
               ? `${summary.auth.mfaCoveragePercent}% (${summary.auth.mfaEnabledUsers}/${summary.auth.totalUsers})`
               : 'Loading…'
+          }
+          footer={
+            summary
+              ? `${summary.auth.passkeyEnabledUsers} users have passkeys; verified email is always required`
+              : undefined
           }
         />
         <SummaryCard
@@ -82,16 +123,34 @@ function AdminSecurityRoute() {
           }
         />
         <SummaryCard
-          title="Backup Verification"
-          description="Latest operator-reported backup verification outcome."
+          title="Telemetry"
+          description="External telemetry posture for the regulated baseline."
           value={
-            summary?.backups.lastStatus
-              ? summary.backups.lastStatus
-              : 'No backup verification recorded'
+            summary
+              ? summary.telemetry.sentryApproved
+                ? 'Sentry approved'
+                : 'Sentry blocked by default'
+              : 'Loading…'
           }
           footer={
-            summary?.backups.lastCheckedAt
-              ? `Checked ${new Date(summary.backups.lastCheckedAt).toLocaleString()}`
+            summary
+              ? summary.telemetry.sentryEnabled
+                ? 'Telemetry sink configured with explicit approval'
+                : 'No approved telemetry sink active'
+              : undefined
+          }
+        />
+        <SummaryCard
+          title="Session Policy"
+          description="Short-lived verification posture applied across the app."
+          value={
+            summary
+              ? `${summary.sessions.freshWindowMinutes} minute step-up window`
+              : 'Loading…'
+          }
+          footer={
+            summary
+              ? `${summary.sessions.sessionExpiryHours}h sessions, ${summary.sessions.temporaryLinkTtlMinutes} minute temporary links`
               : undefined
           }
         />
@@ -99,9 +158,39 @@ function AdminSecurityRoute() {
 
       <Card>
         <CardHeader>
+          <CardTitle>Vendor Boundary</CardTitle>
+          <CardDescription>
+            Approved outbound integrations and the data classes each one is allowed to receive.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {summary?.vendors.map((vendor) => (
+            <div key={vendor.vendor} className="rounded-md border px-4 py-3">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="font-medium">{vendor.displayName}</p>
+                  <p className="text-sm text-muted-foreground">
+                    {vendor.allowedDataClasses.join(', ')}
+                  </p>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {vendor.approved
+                    ? vendor.approvedByDefault
+                      ? 'Approved by default'
+                      : `Approved via ${vendor.approvalEnvVar}`
+                    : `Blocked until ${vendor.approvalEnvVar ?? 'approved'}`}
+                </p>
+              </div>
+            </div>
+          )) ?? <p className="text-sm text-muted-foreground">Loading vendor posture…</p>}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Evidence Report</CardTitle>
           <CardDescription>
-            Generate a JSON evidence snapshot suitable for internal review and control walkthroughs.
+            Generate a JSON evidence snapshot suitable for internal review and export.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -113,6 +202,85 @@ function AdminSecurityRoute() {
               {report}
             </pre>
           ) : null}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Evidence Review Queue</CardTitle>
+          <CardDescription>
+            Review generated evidence, capture notes, and export integrity-linked bundles.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {evidenceReports?.length ? (
+            evidenceReports.map((item) => (
+              <div
+                key={item.id}
+                className="space-y-3 rounded-lg border p-4"
+                data-selected={selectedReportId === item.id}
+              >
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="font-medium">
+                      {item.reportKind} · {new Date(item.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Review: {item.reviewStatus} · Content hash: {item.contentHash}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {item.exportHash ? `Last export hash: ${item.exportHash}` : 'Not exported yet'}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busyReportAction !== null}
+                      onClick={() => {
+                        void handleReviewReport(item.id, 'reviewed');
+                      }}
+                    >
+                      {busyReportAction === `${item.id}:reviewed` ? 'Saving…' : 'Mark reviewed'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={busyReportAction !== null}
+                      onClick={() => {
+                        void handleReviewReport(item.id, 'needs_follow_up');
+                      }}
+                    >
+                      {busyReportAction === `${item.id}:needs_follow_up`
+                        ? 'Saving…'
+                        : 'Needs follow-up'}
+                    </Button>
+                    <Button
+                      type="button"
+                      disabled={busyReportAction !== null}
+                      onClick={() => {
+                        void handleExportReport(item.id);
+                      }}
+                    >
+                      {busyReportAction === `${item.id}:export` ? 'Exporting…' : 'Export bundle'}
+                    </Button>
+                  </div>
+                </div>
+                <Textarea
+                  value={reviewNotes[item.id] ?? item.reviewNotes ?? ''}
+                  onChange={(event) => {
+                    setReviewNotes((current) => ({
+                      ...current,
+                      [item.id]: event.target.value,
+                    }));
+                  }}
+                  placeholder="Reviewer notes"
+                />
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
+          )}
         </CardContent>
       </Card>
     </div>

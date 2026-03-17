@@ -110,7 +110,7 @@ describe('OrganizationSsoEnforcementManagement', () => {
     expect(screen.getByText('Allow email and password sign-in for all users.')).toBeInTheDocument();
   });
 
-  it('renders the emergency admin sign-in copy when SSO is required', () => {
+  it('renders the enforced no-break-glass copy when SSO is required', () => {
     useQueryMock.mockReturnValue(
       buildSettings({
         policies: {
@@ -121,8 +121,10 @@ describe('OrganizationSsoEnforcementManagement', () => {
 
     render(<OrganizationSsoEnforcementManagement slug="cottage-hospital" />);
 
-    expect(screen.getByText('Keep Emergency Admin Sign-In Enabled')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: 'Keep Emergency Admin Sign-In Enabled' })).toBeInTheDocument();
+    expect(screen.getByText('Emergency password fallback disabled')).toBeInTheDocument();
+    expect(
+      screen.queryByRole('switch', { name: 'Keep Emergency Admin Sign-In Enabled' }),
+    ).not.toBeInTheDocument();
   });
 
   it('hides the emergency admin sign-in switch unless SSO is required', () => {

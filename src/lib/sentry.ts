@@ -1,6 +1,8 @@
 import * as Sentry from '@sentry/tanstackstart-react';
 import type { AnyRouter } from '@tanstack/react-router';
 import type { RouterAuthContext } from '~/router';
+import { sanitizeTelemetryEvent } from './shared/telemetry-scrubbing';
+import { isVendorApproved, resolveVendorEnvironment } from './shared/vendor-boundary';
 
 let sentryInitialized = false;
 
@@ -43,10 +45,20 @@ export function initializeSentry(router: AnyRouter) {
   if (!router.isServer) {
     const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
     const isProduction = import.meta.env.PROD;
+    const sentryApproved = isVendorApproved({
+      vendor: 'sentry',
+      environment: resolveVendorEnvironment(import.meta.env.MODE),
+      envValue: import.meta.env.VITE_ENABLE_SENTRY_EGRESS,
+    });
     const testRoutePathname = '/test-sentry';
 
     const maybeInitialize = (pathname: string) => {
-      if (!sentryInitialized && sentryDsn && (isProduction || pathname === testRoutePathname)) {
+      if (
+        !sentryInitialized &&
+        sentryApproved &&
+        sentryDsn &&
+        (isProduction || pathname === testRoutePathname)
+      ) {
         Sentry.init({
           dsn: sentryDsn,
           environment: isProduction ? 'production' : 'development',
@@ -58,7 +70,10 @@ export function initializeSentry(router: AnyRouter) {
             }),
           ],
           enableLogs: false,
-          tracesSampleRate: isProduction ? 0.1 : 1.0,
+          tracesSampleRate: isProduction ? 0.05 : 0.01,
+          beforeSend(event) {
+            return sanitizeTelemetryEvent(event);
+          },
         });
         sentryInitialized = true;
       }

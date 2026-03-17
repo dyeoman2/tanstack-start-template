@@ -1,6 +1,7 @@
 import { Resend as ConvexResend, type EmailEvent, vEmailEvent, vEmailId } from '@convex-dev/resend';
 import { v } from 'convex/values';
 import type { OnboardingStatus } from '../src/lib/shared/onboarding';
+import { assertVendorBoundary } from '../src/lib/server/vendor-boundary.server';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {
@@ -159,6 +160,11 @@ async function sendEmailViaResendApi(args: {
   headers?: EmailHeader[];
   tags?: EmailTag[];
 }) {
+  assertVendorBoundary({
+    vendor: 'resend',
+    dataClasses: ['account_metadata', 'email_address', 'email_content'],
+  });
+
   const response = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {

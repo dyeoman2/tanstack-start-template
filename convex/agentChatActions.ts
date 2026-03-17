@@ -1125,6 +1125,24 @@ export const runChatGenerationInternal = internalAction({
           }),
         });
       }
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: 'outbound_vendor_access_used',
+        userId: run.initiatedByUserId,
+        actorUserId: run.initiatedByUserId,
+        organizationId: run.organizationId,
+        sessionId: run.ownerSessionId,
+        outcome: 'success',
+        severity: 'info',
+        resourceType: 'vendor',
+        resourceId: 'openrouter',
+        resourceLabel: 'OpenRouter',
+        sourceSurface: 'chat.run_generation',
+        metadata: JSON.stringify({
+          runId: args.runId,
+          useWebSearch: run.useWebSearch,
+          vendor: 'openrouter',
+        }),
+      });
       await ctx.runMutation(internal.agentChat.patchThreadInternal, {
         threadId: run.threadId,
         patch: {
@@ -1169,6 +1187,26 @@ export const runChatGenerationInternal = internalAction({
           model: latestRun.model ?? null,
         }),
       });
+      if (error instanceof Error && error.name === 'VendorBoundaryError') {
+        await ctx.runMutation(internal.audit.insertAuditLog, {
+          eventType: 'outbound_vendor_access_denied',
+          userId: latestRun.initiatedByUserId,
+          actorUserId: latestRun.initiatedByUserId,
+          organizationId: latestRun.organizationId,
+          sessionId: latestRun.ownerSessionId,
+          outcome: 'failure',
+          severity: 'warning',
+          resourceType: 'vendor',
+          resourceId: 'openrouter',
+          resourceLabel: 'OpenRouter',
+          sourceSurface: 'chat.run_generation',
+          metadata: JSON.stringify({
+            reason: error.message,
+            runId: args.runId,
+            vendor: 'openrouter',
+          }),
+        });
+      }
     }
 
     return null;

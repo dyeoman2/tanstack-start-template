@@ -62,6 +62,15 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'chat_run_failed',
   'chat_web_search_used',
   'audit_integrity_check_failed',
+  'evidence_report_generated',
+  'evidence_report_exported',
+  'evidence_report_reviewed',
+  'outbound_vendor_access_denied',
+  'outbound_vendor_access_used',
+  'mfa_enrollment_enforced',
+  'email_verification_enforced',
+  'step_up_challenge_required',
+  'step_up_challenge_completed',
 ] as const;
 export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
   'all',

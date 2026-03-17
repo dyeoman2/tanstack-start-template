@@ -6,12 +6,20 @@ export const REGULATED_RETENTION_DEFAULTS = {
   recentStepUpWindowMinutes: 15,
 } as const;
 
+export const ALWAYS_ON_REGULATED_BASELINE = {
+  auditExportRequiresStepUp: true,
+  requireVerifiedEmail: true,
+  requireMfaOrPasskey: true,
+  allowBreakGlassPasswordLogin: false,
+  webSearchAllowed: true,
+} as const;
+
 export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
   invitePolicy: 'owners_admins',
   verifiedDomainsOnly: false,
   memberCap: null,
-  mfaRequired: true,
-  auditExportRequiresStepUp: true,
+  mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
+  auditExportRequiresStepUp: ALWAYS_ON_REGULATED_BASELINE.auditExportRequiresStepUp,
   attachmentSharingAllowed: false,
   dataRetentionDays: REGULATED_RETENTION_DEFAULTS.dataRetentionDays,
   enterpriseAuthMode: 'off',
@@ -19,7 +27,37 @@ export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
   enterpriseProtocol: null,
   enterpriseEnabledAt: null,
   enterpriseEnforcedAt: null,
-  allowBreakGlassPasswordLogin: false,
+  allowBreakGlassPasswordLogin: ALWAYS_ON_REGULATED_BASELINE.allowBreakGlassPasswordLogin,
   temporaryLinkTtlMinutes: REGULATED_RETENTION_DEFAULTS.attachmentUrlTtlMinutes,
-  webSearchAllowed: false,
+  webSearchAllowed: ALWAYS_ON_REGULATED_BASELINE.webSearchAllowed,
 } as const;
+
+export type RegulatedOrganizationPolicies = {
+  allowBreakGlassPasswordLogin: boolean;
+  attachmentSharingAllowed: boolean;
+  auditExportRequiresStepUp: boolean;
+  dataRetentionDays: number;
+  enterpriseAuthMode: 'off' | 'optional' | 'required';
+  enterpriseEnabledAt: number | null;
+  enterpriseEnforcedAt: number | null;
+  enterpriseProtocol: 'oidc' | null;
+  enterpriseProviderKey: 'google-workspace' | 'entra' | 'okta' | null;
+  invitePolicy: 'owners_admins' | 'owners_only';
+  memberCap: number | null;
+  mfaRequired: boolean;
+  temporaryLinkTtlMinutes: number;
+  verifiedDomainsOnly: boolean;
+  webSearchAllowed: boolean;
+};
+
+export function applyAlwaysOnRegulatedBaseline<T extends RegulatedOrganizationPolicies>(
+  policies: T,
+): T {
+  return {
+    ...policies,
+    mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
+    auditExportRequiresStepUp: ALWAYS_ON_REGULATED_BASELINE.auditExportRequiresStepUp,
+    allowBreakGlassPasswordLogin: ALWAYS_ON_REGULATED_BASELINE.allowBreakGlassPasswordLogin,
+    webSearchAllowed: ALWAYS_ON_REGULATED_BASELINE.webSearchAllowed,
+  };
+}

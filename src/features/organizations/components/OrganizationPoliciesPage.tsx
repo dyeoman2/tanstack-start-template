@@ -27,7 +27,6 @@ export function OrganizationPoliciesPage({
   const [invitePolicy, setInvitePolicy] = useState<OrganizationInvitePolicy>('owners_admins');
   const [verifiedDomainsOnly, setVerifiedDomainsOnly] = useState(false);
   const [memberCap, setMemberCap] = useState('');
-  const [mfaRequired, setMfaRequired] = useState(false);
   const [policyError, setPolicyError] = useState<string | null>(null);
   const [isSavingPolicies, setIsSavingPolicies] = useState(false);
 
@@ -39,7 +38,6 @@ export function OrganizationPoliciesPage({
     setInvitePolicy(settings.policies.invitePolicy);
     setVerifiedDomainsOnly(settings.policies.verifiedDomainsOnly);
     setMemberCap(settings.policies.memberCap?.toString() ?? '');
-    setMfaRequired(settings.policies.mfaRequired);
   }, [settings]);
 
   const organizationName = useStableOrganizationName({
@@ -76,7 +74,7 @@ export function OrganizationPoliciesPage({
           invitePolicy,
           verifiedDomainsOnly,
           memberCap: memberCap.trim().length > 0 ? Number.parseInt(memberCap, 10) : null,
-          mfaRequired,
+          mfaRequired: settings.policies.mfaRequired,
           enterpriseAuthMode: settings.policies.enterpriseAuthMode,
           enterpriseProviderKey: settings.policies.enterpriseProviderKey,
           enterpriseProtocol: settings.policies.enterpriseProtocol,
@@ -112,13 +110,11 @@ export function OrganizationPoliciesPage({
           invitePolicy={invitePolicy}
           verifiedDomainsOnly={verifiedDomainsOnly}
           memberCap={memberCap}
-          mfaRequired={mfaRequired}
           policyError={policyError}
           isSavingPolicies={isSavingPolicies}
           onInvitePolicyChange={setInvitePolicy}
           onVerifiedDomainsOnlyChange={setVerifiedDomainsOnly}
           onMemberCapChange={setMemberCap}
-          onMfaRequiredChange={setMfaRequired}
           onSave={handleSavePolicies}
         />
       )}

@@ -18,26 +18,22 @@ export function OrganizationPoliciesCard({
   invitePolicy,
   verifiedDomainsOnly,
   memberCap,
-  mfaRequired,
   policyError,
   isSavingPolicies,
   onInvitePolicyChange,
   onVerifiedDomainsOnlyChange,
   onMemberCapChange,
-  onMfaRequiredChange,
   onSave,
 }: {
   canManagePolicies: boolean;
   invitePolicy: OrganizationInvitePolicy;
   verifiedDomainsOnly: boolean;
   memberCap: string;
-  mfaRequired: boolean;
   policyError: string | null;
   isSavingPolicies: boolean;
   onInvitePolicyChange: (value: OrganizationInvitePolicy) => void;
   onVerifiedDomainsOnlyChange: (value: boolean) => void;
   onMemberCapChange: (value: string) => void;
-  onMfaRequiredChange: (value: boolean) => void;
   onSave: () => void;
 }) {
   return (
@@ -45,8 +41,8 @@ export function OrganizationPoliciesCard({
       <CardHeader>
         <CardTitle>Access policies</CardTitle>
         <CardDescription>
-          Control who can invite, whether invites must use verified domains, member caps, and MFA
-          requirements for new joins.
+          Control who can invite, whether invites must use verified domains, and member caps.
+          Regulated security controls are enforced globally.
         </CardDescription>
       </CardHeader>
       <div className="space-y-4 px-6 pb-6">
@@ -99,21 +95,13 @@ export function OrganizationPoliciesCard({
           </p>
         </Field>
 
-        <Field orientation="horizontal">
-          <Checkbox
-            checked={mfaRequired}
-            onCheckedChange={(checked) => onMfaRequiredChange(checked === true)}
-            disabled={isSavingPolicies || !canManagePolicies}
-            aria-label="Require MFA to join the organization"
-          />
-          <div className="space-y-1">
-            <FieldLabel>Require MFA for new joins</FieldLabel>
-            <p className="text-sm text-muted-foreground">
-              Users without an authenticator app or passkey will be blocked from accepting
-              invitations.
-            </p>
-          </div>
-        </Field>
+        <div className="rounded-lg border bg-muted/30 px-4 py-3">
+          <p className="text-sm font-medium text-foreground">Always enforced</p>
+          <p className="text-sm text-muted-foreground">
+            Verified email, MFA or passkey enrollment, step-up for sensitive exports, and core chat
+            egress controls are always on and cannot be disabled per organization.
+          </p>
+        </div>
 
         {policyError ? <FieldError>{policyError}</FieldError> : null}
 

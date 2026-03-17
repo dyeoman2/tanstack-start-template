@@ -114,7 +114,6 @@ describe('OrganizationPoliciesPage', () => {
     await user.click(screen.getByRole('checkbox', { name: /require verified domains/i }));
     await user.clear(screen.getByLabelText(/member cap/i));
     await user.type(screen.getByLabelText(/member cap/i), '25');
-    await user.click(screen.getByRole('checkbox', { name: /require mfa/i }));
     await user.click(screen.getByRole('button', { name: /save access policies/i }));
 
     await waitFor(() => {
@@ -124,7 +123,7 @@ describe('OrganizationPoliciesPage', () => {
           invitePolicy: 'owners_admins',
           verifiedDomainsOnly: true,
           memberCap: 25,
-          mfaRequired: true,
+          mfaRequired: false,
           enterpriseAuthMode: 'off',
           enterpriseProviderKey: null,
           enterpriseProtocol: null,
@@ -132,6 +131,7 @@ describe('OrganizationPoliciesPage', () => {
         },
       });
     });
+    expect(screen.getByText(/always enforced/i)).toBeInTheDocument();
     expect(showToastMock).toHaveBeenCalledWith('Organization policies updated.', 'success');
     expect(notifyMock).toHaveBeenCalledWith('$activeOrgSignal');
     expect(notifyMock).toHaveBeenCalledWith('$sessionSignal');

@@ -1,5 +1,8 @@
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
+import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
+import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
+import { ALWAYS_ON_REGULATED_BASELINE, REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 import {
   action,
   internalAction,
@@ -13,7 +16,6 @@ import {
   getVerifiedCurrentSiteAdminUserOrThrow,
 } from './auth/access';
 import { fetchAllBetterAuthPasskeys, fetchAllBetterAuthUsers } from './lib/betterAuth';
-import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 
 const securityPostureSummaryValidator = v.object({
   audit: v.object({
@@ -21,8 +23,10 @@ const securityPostureSummaryValidator = v.object({
     lastEventAt: v.union(v.number(), v.null()),
   }),
   auth: v.object({
+    emailVerificationRequired: v.boolean(),
     mfaCoveragePercent: v.number(),
     mfaEnabledUsers: v.number(),
+    passkeyEnabledUsers: v.number(),
     totalUsers: v.number(),
   }),
   backups: v.object({
@@ -39,13 +43,80 @@ const securityPostureSummaryValidator = v.object({
     rejectedCount: v.number(),
     totalScans: v.number(),
   }),
+  sessions: v.object({
+    freshWindowMinutes: v.number(),
+    sessionExpiryHours: v.number(),
+    temporaryLinkTtlMinutes: v.number(),
+  }),
+  telemetry: v.object({
+    sentryApproved: v.boolean(),
+    sentryEnabled: v.boolean(),
+  }),
+  vendors: v.array(
+    v.object({
+      allowedDataClasses: v.array(v.string()),
+      approvalEnvVar: v.union(v.string(), v.null()),
+      approved: v.boolean(),
+      approvedByDefault: v.boolean(),
+      displayName: v.string(),
+      vendor: v.string(),
+    }),
+  ),
 });
 
 const evidenceReportValidator = v.object({
   createdAt: v.number(),
+  exportHash: v.union(v.string(), v.null()),
   id: v.id('evidenceReports'),
   report: v.string(),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
 });
+
+const evidenceReportRecordValidator = v.object({
+  _id: v.id('evidenceReports'),
+  _creationTime: v.number(),
+  organizationId: v.optional(v.string()),
+  generatedByUserId: v.string(),
+  reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+  contentJson: v.string(),
+  contentHash: v.string(),
+  exportBundleJson: v.optional(v.string()),
+  exportHash: v.optional(v.string()),
+  exportIntegritySummary: v.optional(v.string()),
+  exportedAt: v.union(v.number(), v.null()),
+  exportedByUserId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByUserId: v.union(v.string(), v.null()),
+  reviewNotes: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+});
+
+const evidenceReportListItemValidator = v.object({
+  id: v.id('evidenceReports'),
+  createdAt: v.number(),
+  generatedByUserId: v.string(),
+  reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+  contentHash: v.string(),
+  exportHash: v.union(v.string(), v.null()),
+  exportedAt: v.union(v.number(), v.null()),
+  exportedByUserId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByUserId: v.union(v.string(), v.null()),
+  reviewNotes: v.union(v.string(), v.null()),
+});
+
+const evidenceReportListValidator = v.array(evidenceReportListItemValidator);
+
+function stringifyStable(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+async function hashContent(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (part) => part.toString(16).padStart(2, '0')).join('');
+}
 
 const documentScanEventArgs = {
   attachmentId: v.optional(v.id('chatAttachments')),
@@ -128,6 +199,7 @@ export const recordBackupVerification = internalMutation({
 export const createEvidenceReport = internalMutation({
   args: {
     contentJson: v.string(),
+    contentHash: v.string(),
     generatedByUserId: v.string(),
     organizationId: v.optional(v.string()),
     reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
@@ -136,6 +208,15 @@ export const createEvidenceReport = internalMutation({
   handler: async (ctx, args) => {
     return await ctx.db.insert('evidenceReports', {
       ...args,
+      exportBundleJson: undefined,
+      exportHash: undefined,
+      exportIntegritySummary: undefined,
+      exportedAt: null,
+      exportedByUserId: null,
+      reviewStatus: 'pending',
+      reviewedAt: null,
+      reviewedByUserId: null,
+      reviewNotes: null,
       createdAt: Date.now(),
     });
   },
@@ -190,6 +271,10 @@ export const getSecurityPostureSummary = query({
     const mfaEnabledUsers = authUsers.filter(
       (user) => user.twoFactorEnabled === true || usersWithPasskeys.has(user._id),
     ).length;
+    const passkeyEnabledUsers = authUsers.filter((user) => usersWithPasskeys.has(user._id)).length;
+    const retentionPolicy = getRetentionPolicyConfig();
+    const vendorPosture = getVendorBoundarySnapshot();
+    const sentryPosture = vendorPosture.find((vendor) => vendor.vendor === 'sentry');
 
     return {
       audit: {
@@ -197,8 +282,10 @@ export const getSecurityPostureSummary = query({
         lastEventAt: latestAuditEvent?.createdAt ?? null,
       },
       auth: {
+        emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
         mfaCoveragePercent: totalUsers === 0 ? 0 : Math.round((mfaEnabledUsers / totalUsers) * 100),
         mfaEnabledUsers,
+        passkeyEnabledUsers,
         totalUsers,
       },
       backups: {
@@ -215,7 +302,193 @@ export const getSecurityPostureSummary = query({
         rejectedCount: rejectedScans.length,
         totalScans: totalScans.length,
       },
+      sessions: {
+        freshWindowMinutes: retentionPolicy.recentStepUpWindowMinutes,
+        sessionExpiryHours: 24,
+        temporaryLinkTtlMinutes: retentionPolicy.attachmentUrlTtlMinutes,
+      },
+      telemetry: {
+        sentryApproved: sentryPosture?.approved ?? false,
+        sentryEnabled: Boolean(process.env.VITE_SENTRY_DSN) && (sentryPosture?.approved ?? false),
+      },
+      vendors: vendorPosture,
     };
+  },
+});
+
+export const listEvidenceReports = query({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: evidenceReportListValidator,
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const limit = Math.max(1, Math.min(args.limit ?? 20, 100));
+    const reports = await ctx.db.query('evidenceReports').withIndex('by_created_at').order('desc').take(limit);
+    return reports.map((report) => ({
+      id: report._id,
+      createdAt: report.createdAt,
+      generatedByUserId: report.generatedByUserId,
+      reportKind: report.reportKind,
+      contentHash: report.contentHash,
+      exportHash: report.exportHash ?? null,
+      exportedAt: report.exportedAt ?? null,
+      exportedByUserId: report.exportedByUserId ?? null,
+      reviewStatus: report.reviewStatus,
+      reviewedAt: report.reviewedAt ?? null,
+      reviewedByUserId: report.reviewedByUserId ?? null,
+      reviewNotes: report.reviewNotes ?? null,
+    }));
+  },
+});
+
+export const reviewEvidenceReport = mutation({
+  args: {
+    id: v.id('evidenceReports'),
+    reviewNotes: v.optional(v.string()),
+    reviewStatus: v.union(v.literal('reviewed'), v.literal('needs_follow_up')),
+  },
+  returns: evidenceReportRecordValidator,
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const report = await ctx.db.get(args.id);
+    if (!report) {
+      throw new Error('Evidence report not found');
+    }
+
+    const reviewedAt = Date.now();
+    await ctx.db.patch(args.id, {
+      reviewNotes: args.reviewNotes?.trim() || null,
+      reviewStatus: args.reviewStatus,
+      reviewedAt,
+      reviewedByUserId: currentUser.authUserId,
+    });
+
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'evidence_report_reviewed',
+      identifier: currentUser.authUser.email ?? undefined,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      outcome: 'success',
+      resourceId: report._id,
+      resourceLabel: report.reportKind,
+      resourceType: 'evidence_report',
+      severity: args.reviewStatus === 'reviewed' ? 'info' : 'warning',
+      sourceSurface: 'admin.security',
+      userId: currentUser.authUserId,
+      metadata: stringifyStable({
+        reviewNotes: args.reviewNotes?.trim() || null,
+        reviewStatus: args.reviewStatus,
+      }),
+    });
+
+    const updated = await ctx.db.get(args.id);
+    if (!updated) {
+      throw new Error('Evidence report not found after update');
+    }
+
+    return updated;
+  },
+});
+
+export const exportEvidenceReport = action({
+  args: {
+    id: v.id('evidenceReports'),
+  },
+  returns: evidenceReportValidator,
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    const report = await ctx.runQuery(anyApi.security.getEvidenceReportInternal, {
+      id: args.id,
+    });
+    if (!report) {
+      throw new Error('Evidence report not found');
+    }
+
+    const exportBundle = stringifyStable({
+      contentHash: report.contentHash,
+      exportedAt: new Date().toISOString(),
+      integritySummary: {
+        contentHash: report.contentHash,
+        reviewedAt: report.reviewedAt ?? null,
+        reviewStatus: report.reviewStatus,
+      },
+      report: JSON.parse(report.contentJson),
+      reportId: report._id,
+    });
+    const exportHash = await hashContent(exportBundle);
+    const exportedAt = Date.now();
+    const exportIntegritySummary = stringifyStable({
+      contentHash: report.contentHash,
+      exportHash,
+      reviewStatus: report.reviewStatus,
+    });
+
+    await ctx.runMutation(anyApi.security.storeEvidenceReportExport, {
+      id: args.id,
+      exportBundleJson: exportBundle,
+      exportHash,
+      exportIntegritySummary,
+      exportedAt,
+      exportedByUserId: currentUser.authUserId,
+    });
+
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'evidence_report_exported',
+      identifier: currentUser.authUser.email ?? undefined,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      outcome: 'success',
+      resourceId: report._id,
+      resourceLabel: report.reportKind,
+      resourceType: 'evidence_report',
+      severity: 'info',
+      sourceSurface: 'admin.security',
+      userId: currentUser.authUserId,
+      metadata: stringifyStable({
+        exportHash,
+      }),
+    });
+
+    return {
+      createdAt: report.createdAt,
+      exportHash,
+      id: report._id,
+      report: exportBundle,
+      reviewStatus: report.reviewStatus,
+    };
+  },
+});
+
+export const getEvidenceReportInternal = internalQuery({
+  args: {
+    id: v.id('evidenceReports'),
+  },
+  returns: v.union(evidenceReportRecordValidator, v.null()),
+  handler: async (ctx, args) => {
+    return (await ctx.db.get(args.id)) ?? null;
+  },
+});
+
+export const storeEvidenceReportExport = internalMutation({
+  args: {
+    id: v.id('evidenceReports'),
+    exportBundleJson: v.string(),
+    exportHash: v.string(),
+    exportIntegritySummary: v.string(),
+    exportedAt: v.number(),
+    exportedByUserId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.id, {
+      exportBundleJson: args.exportBundleJson,
+      exportHash: args.exportHash,
+      exportIntegritySummary: args.exportIntegritySummary,
+      exportedAt: args.exportedAt,
+      exportedByUserId: args.exportedByUserId,
+    });
+    return null;
   },
 });
 
@@ -243,13 +516,32 @@ export const generateEvidenceReport = action({
           organizationId: currentUser.activeOrganizationId,
         })
       : null;
+    const vendorPosture = getVendorBoundarySnapshot();
     const createdAt = Date.now();
-    const report = JSON.stringify(
-      {
+    const reportPayload = {
         generatedAt: new Date(createdAt).toISOString(),
         generatedByUserId: currentUser.authUserId,
         baselineDefaults: {
           organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+        },
+        sessionPolicy: {
+          sessionExpiryHours: 24,
+          sessionRefreshHours: 4,
+          recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
+          temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
+        },
+        telemetryPosture: {
+          sentryApproved: vendorPosture.some(
+            (vendor) => vendor.vendor === 'sentry' && vendor.approved,
+          ),
+          sentryEnabled:
+            vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
+            Boolean(process.env.VITE_SENTRY_DSN),
+        },
+        vendorBoundary: vendorPosture,
+        verificationPosture: {
+          emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
+          mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
         },
         integrityCheck,
         recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
@@ -262,22 +554,41 @@ export const generateEvidenceReport = action({
         })),
         scopedOrganizationPolicies: currentOrganizationPolicies,
         summary,
-      },
-      null,
-      2,
-    );
+      };
+    const report = stringifyStable(reportPayload);
+    const contentHash = await hashContent(report);
 
     const id = await ctx.runMutation(anyApi.security.createEvidenceReport, {
       contentJson: report,
+      contentHash,
       generatedByUserId: currentUser.authUserId,
       organizationId: currentUser.activeOrganizationId ?? undefined,
       reportKind: 'security_posture',
     });
 
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'evidence_report_generated',
+      identifier: currentUser.authUser.email ?? undefined,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      outcome: 'success',
+      resourceId: id,
+      resourceLabel: 'security_posture',
+      resourceType: 'evidence_report',
+      severity: 'info',
+      sourceSurface: 'admin.security',
+      userId: currentUser.authUserId,
+      metadata: stringifyStable({
+        contentHash,
+      }),
+    });
+
     return {
       createdAt,
+      exportHash: null,
       id,
       report,
+      reviewStatus: 'pending' as const,
     };
   },
 });

@@ -1,40 +1,21 @@
-const SENSITIVE_KEYS = [
-  'accessToken',
-  'authorization',
-  'backupCodes',
-  'cookie',
-  'cookies',
-  'email',
-  'error',
-  'idToken',
-  'message',
-  'name',
-  'password',
-  'phoneNumber',
-  'refreshToken',
-  'secret',
-  'token',
-  'userAgent',
-];
+const SECURITY_LOG_ALLOWLIST: Record<
+  SecurityLogPayload['scope'],
+  readonly string[]
+> = {
+  audit: ['eventType', 'integrityCheckFailures', 'organizationId', 'reportId', 'reviewStatus'],
+  health: ['component', 'status', 'timestamp'],
+  retention: ['jobKind', 'processedCount', 'status'],
+  scan: ['engine', 'fileExtension', 'reason', 'resultStatus'],
+  telemetry: ['eventName', 'status', 'vendor'],
+};
 
-function redactValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => redactValue(entry));
-  }
-
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
-  const entries = Object.entries(value as Record<string, unknown>).map(([key, entry]) => {
-    const shouldRedact = SENSITIVE_KEYS.some((candidate) =>
-      key.toLowerCase().includes(candidate.toLowerCase()),
-    );
-
-    return [key, shouldRedact ? '[REDACTED]' : redactValue(entry)];
-  });
-
-  return Object.fromEntries(entries);
+function sanitizeSecurityLogData(
+  scope: SecurityLogPayload['scope'],
+  value: Record<string, unknown>,
+): Record<string, unknown> | undefined {
+  const allowedKeys = SECURITY_LOG_ALLOWLIST[scope];
+  const entries = Object.entries(value).filter(([key]) => allowedKeys.includes(key));
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
 }
 
 export type SecurityLogPayload = {
@@ -48,7 +29,7 @@ export type SecurityLogPayload = {
 export function logSecurityEvent(payload: SecurityLogPayload) {
   const body = {
     actorUserId: payload.actorUserId,
-    data: payload.data ? redactValue(payload.data) : undefined,
+    data: payload.data ? sanitizeSecurityLogData(payload.scope, payload.data) : undefined,
     event: payload.event,
     scope: payload.scope,
     status: payload.status,
@@ -68,4 +49,3 @@ export function logSecurityEvent(payload: SecurityLogPayload) {
 
   console.info(serialized);
 }
-

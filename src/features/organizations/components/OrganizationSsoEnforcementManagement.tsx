@@ -5,7 +5,6 @@ import { useQuery } from 'convex/react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Switch } from '~/components/ui/switch';
 import { useToast } from '~/components/ui/toast';
 import type {
   OrganizationEnterpriseAuthMode,
@@ -59,11 +58,9 @@ export function OrganizationSsoEnforcementManagement({
   });
   const [enterpriseAuthMode, setEnterpriseAuthMode] =
     useState<OrganizationEnterpriseAuthMode>('off');
-  const [allowBreakGlassPasswordLogin, setAllowBreakGlassPasswordLogin] = useState(true);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingMode, setPendingMode] = useState<OrganizationEnterpriseAuthMode | null>(null);
-  const [isSavingBreakGlass, setIsSavingBreakGlass] = useState(false);
 
   useEffect(() => {
     if (!settings) {
@@ -71,7 +68,6 @@ export function OrganizationSsoEnforcementManagement({
     }
 
     setEnterpriseAuthMode(settings.policies.enterpriseAuthMode);
-    setAllowBreakGlassPasswordLogin(settings.policies.allowBreakGlassPasswordLogin);
   }, [settings]);
 
   const selectedProvider = useMemo(
@@ -100,10 +96,8 @@ export function OrganizationSsoEnforcementManagement({
 
   const persistEnforcement = async ({
     nextMode,
-    nextBreakGlass,
   }: {
     nextMode: OrganizationEnterpriseAuthMode;
-    nextBreakGlass: boolean;
   }) => {
     setIsSaving(true);
     setSaveError(null);
@@ -120,7 +114,7 @@ export function OrganizationSsoEnforcementManagement({
           enterpriseProviderKey: nextMode === 'off' ? null : settings.policies.enterpriseProviderKey,
           enterpriseProtocol:
             nextMode === 'off' ? null : (settings.policies.enterpriseProtocol ?? 'oidc'),
-          allowBreakGlassPasswordLogin: nextBreakGlass,
+          allowBreakGlassPasswordLogin: false,
         },
       });
       await refreshState();
@@ -131,13 +125,11 @@ export function OrganizationSsoEnforcementManagement({
         'Failed to update SSO enforcement. Check your provider settings and try again.',
       );
       setEnterpriseAuthMode(settings.policies.enterpriseAuthMode);
-      setAllowBreakGlassPasswordLogin(settings.policies.allowBreakGlassPasswordLogin);
       setSaveError(message);
       showToast(message, 'error');
     } finally {
       setIsSaving(false);
       setPendingMode(null);
-      setIsSavingBreakGlass(false);
     }
   };
 
@@ -154,29 +146,10 @@ export function OrganizationSsoEnforcementManagement({
       return;
     }
 
-    const nextBreakGlass =
-      nextMode === 'required'
-        ? allowBreakGlassPasswordLogin
-        : settings.policies.allowBreakGlassPasswordLogin;
-
     setEnterpriseAuthMode(nextMode);
     setPendingMode(nextMode);
     await persistEnforcement({
       nextMode,
-      nextBreakGlass,
-    });
-  };
-
-  const handleBreakGlassChange = async (checked: boolean) => {
-    if (isSaving || enterpriseAuthMode !== 'required') {
-      return;
-    }
-
-    setAllowBreakGlassPasswordLogin(checked);
-    setIsSavingBreakGlass(true);
-    await persistEnforcement({
-      nextMode: enterpriseAuthMode,
-      nextBreakGlass: checked,
     });
   };
 
@@ -249,22 +222,12 @@ export function OrganizationSsoEnforcementManagement({
       ) : null}
 
       {enterpriseAuthMode === 'required' ? (
-        <div className="flex items-center gap-3 text-sm">
-          <Switch
-            checked={allowBreakGlassPasswordLogin}
-            onCheckedChange={(checked) => {
-              void handleBreakGlassChange(checked === true);
-            }}
-            aria-label="Keep Emergency Admin Sign-In Enabled"
-            disabled={isSavingBreakGlass}
-          />
-          <div className="space-y-1">
-            <p className="font-medium">Keep Emergency Admin Sign-In Enabled</p>
-            <p className="text-muted-foreground">
-              Allow organization owners to bypass required SSO if your identity provider is
-              unavailable.
-            </p>
-          </div>
+        <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm">
+          <p className="font-medium text-foreground">Emergency password fallback disabled</p>
+          <p className="text-muted-foreground">
+            Break-glass password login is disabled by the regulated baseline and cannot be enabled
+            per organization.
+          </p>
         </div>
       ) : null}
 

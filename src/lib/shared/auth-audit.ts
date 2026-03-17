@@ -66,6 +66,15 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'chat_run_failed',
   'chat_web_search_used',
   'audit_integrity_check_failed',
+  'evidence_report_generated',
+  'evidence_report_exported',
+  'evidence_report_reviewed',
+  'outbound_vendor_access_denied',
+  'outbound_vendor_access_used',
+  'mfa_enrollment_enforced',
+  'email_verification_enforced',
+  'step_up_challenge_required',
+  'step_up_challenge_completed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -173,6 +182,15 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   chat_run_failed: ['organization'],
   chat_web_search_used: ['organization'],
   audit_integrity_check_failed: ['organization'],
+  evidence_report_generated: ['organization'],
+  evidence_report_exported: ['organization'],
+  evidence_report_reviewed: ['organization'],
+  outbound_vendor_access_denied: ['organization'],
+  outbound_vendor_access_used: ['organization'],
+  mfa_enrollment_enforced: ['organization'],
+  email_verification_enforced: ['organization'],
+  step_up_challenge_required: ['organization'],
+  step_up_challenge_completed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {
