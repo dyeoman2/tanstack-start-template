@@ -84,6 +84,20 @@ export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
+const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
+const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey']);
+const CALLBACK_AUTH_PATH_PREFIXES = ['/callback/', '/oauth2/callback/'] as const;
+
+type SessionAuthMethodResolution =
+  | {
+      authMethod: 'passkey' | 'password';
+      providerId: null;
+    }
+  | {
+      authMethod: 'social';
+      providerId: string | null;
+    }
+  | null;
 
 function getPasskeyOptions(siteUrlValue: string) {
   const siteUrl = new URL(siteUrlValue);
@@ -195,16 +209,44 @@ function assertFreshSessionForChangeEmail(
   });
 }
 
+function resolveSessionAuthMethod(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+): SessionAuthMethodResolution {
+  if (PASSWORD_AUTH_PATHS.has(ctx.path)) {
+    return {
+      authMethod: 'password',
+      providerId: null,
+    };
+  }
+
+  if (PASSKEY_AUTH_PATHS.has(ctx.path)) {
+    return {
+      authMethod: 'passkey',
+      providerId: null,
+    };
+  }
+
+  if (!CALLBACK_AUTH_PATH_PREFIXES.some((prefix) => ctx.path.startsWith(prefix))) {
+    return null;
+  }
+
+  return {
+    authMethod: 'social',
+    providerId:
+      typeof ctx.params?.providerId === 'string' && ctx.params.providerId.length > 0
+        ? ctx.params.providerId
+        : typeof ctx.params?.id === 'string' && ctx.params.id.length > 0
+          ? ctx.params.id
+          : null,
+  };
+}
+
 async function handleSessionEnrichmentAfterHook(
   callbacks: SharedBetterAuthCallbacks,
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ) {
-  if (
-    ctx.path !== '/sign-in/email' &&
-    ctx.path !== '/sign-up/email' &&
-    !ctx.path.startsWith('/callback/') &&
-    !ctx.path.startsWith('/oauth2/callback/')
-  ) {
+  const resolution = resolveSessionAuthMethod(ctx);
+  if (!resolution) {
     return;
   }
 
@@ -214,25 +256,15 @@ async function handleSessionEnrichmentAfterHook(
   }
 
   const updatePayload: Record<string, string | null> = {
-    authMethod: null,
+    authMethod: resolution.authMethod,
     enterpriseOrganizationId: null,
     enterpriseProviderKey: null,
     enterpriseProtocol: null,
   };
 
-  if (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email') {
-    updatePayload.authMethod = 'password';
-  } else {
-    updatePayload.authMethod = 'social';
-    const providerId =
-      typeof ctx.params?.providerId === 'string' && ctx.params.providerId.length > 0
-        ? ctx.params.providerId
-        : typeof ctx.params?.id === 'string' && ctx.params.id.length > 0
-          ? ctx.params.id
-          : null;
-    if (providerId && callbacks.resolveEnterpriseAuthSession) {
+  if (resolution.authMethod === 'social' && resolution.providerId && callbacks.resolveEnterpriseAuthSession) {
       const enterpriseSession = await callbacks.resolveEnterpriseAuthSession({
-        providerId,
+        providerId: resolution.providerId,
         userEmail: newSession.user.email,
         userId: newSession.user.id,
       });
@@ -243,7 +275,6 @@ async function handleSessionEnrichmentAfterHook(
         updatePayload.enterpriseProtocol = enterpriseSession.protocol;
         updatePayload.activeOrganizationId = enterpriseSession.organizationId;
       }
-    }
   }
 
   await ctx.context.internalAdapter.updateSession(newSession.session.token, updatePayload);
@@ -494,7 +525,7 @@ export function createSharedBetterAuthOptions(
         storeSCIMToken: 'hashed',
       }),
       twoFactor({
-        issuer: 'TanStack Start Template',
+        issuer: process.env.APP_NAME?.trim() || 'TanStack Start Template',
       }),
       passkey(getPasskeyOptions(betterAuthUrl)),
       convex({

@@ -31,5 +31,6 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Auth cookies are same-origin and `HttpOnly`, while `Secure` cookies turn on automatically for HTTPS base URLs.
 - Session expiry, refresh cadence, and freshness windows are set via the shared Better Auth configuration to enforce short-lived credentials in regulated deployments.
 - Session policy is explicit: 24-hour expiry, 4-hour refresh cadence, and 15-minute freshness windows for step-up protected actions.
+- Better Auth session metadata is normalized after sign-in so downstream policy code can distinguish password, passkey, social, and enterprise authentication paths consistently.
 - Break-glass password fallback is disabled by default for organization policies.
 - Infrastructure-level controls (e.g., network isolation, secret rotation, hardware security modules for cookies) remain deployer responsibilities.

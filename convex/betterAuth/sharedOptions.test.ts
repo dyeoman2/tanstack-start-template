@@ -239,7 +239,7 @@ describe('createSharedBetterAuthOptions', () => {
     ).resolves.toBeUndefined();
   });
 
-  it('does not add a custom session verification field for passkey authentication', async () => {
+  it('enriches passkey sign-in sessions with the passkey auth method', async () => {
     const options = createOptions();
     const updateSession = vi.fn(async () => {});
 
@@ -248,17 +248,26 @@ describe('createSharedBetterAuthOptions', () => {
         internalAdapter: {
           updateSession,
         },
-        returned: new Response('{}', { status: 200 }),
-        session: {
+        newSession: {
           session: {
             token: 'session_token',
           },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
         },
+        returned: new Response('{}', { status: 200 }),
       },
-      path: '/passkey/verify-authentication',
+      path: '/sign-in/passkey',
     } as never);
 
-    expect(updateSession).not.toHaveBeenCalled();
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      authMethod: 'passkey',
+      enterpriseOrganizationId: null,
+      enterpriseProtocol: null,
+      enterpriseProviderKey: null,
+    });
   });
 
   it('enriches email sign-in sessions with the password auth method', async () => {
@@ -282,6 +291,37 @@ describe('createSharedBetterAuthOptions', () => {
         returned: new Response('{}', { status: 200 }),
       },
       path: '/sign-in/email',
+    } as never);
+
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      authMethod: 'password',
+      enterpriseOrganizationId: null,
+      enterpriseProtocol: null,
+      enterpriseProviderKey: null,
+    });
+  });
+
+  it('enriches email sign-up sessions with the password auth method', async () => {
+    const options = createOptions();
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      path: '/sign-up/email',
     } as never);
 
     expect(updateSession).toHaveBeenCalledWith('session_token', {
@@ -340,5 +380,16 @@ describe('createSharedBetterAuthOptions', () => {
       enterpriseProtocol: 'oidc',
       enterpriseProviderKey: 'okta',
     });
+  });
+
+  it('uses the configured app name as the two-factor issuer', () => {
+    process.env.APP_NAME = 'Hospital Starter';
+
+    const options = createOptions();
+    const twoFactorPlugin = (options.plugins ?? []).find(
+      (plugin) => 'id' in plugin && plugin.id === 'two-factor',
+    ) as { options?: { issuer?: string } } | undefined;
+
+    expect(twoFactorPlugin?.options?.issuer).toBe('Hospital Starter');
   });
 });
