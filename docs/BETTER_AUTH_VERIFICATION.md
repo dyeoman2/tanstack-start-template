@@ -15,7 +15,7 @@ The script requires either `BETTER_AUTH_VERIFY_URL` or `BETTER_AUTH_URL` to poin
 
 `pnpm verify:better-auth` runs the full sequence above. For the Convex adapter, the safe CLI workflow is `generate` to a temporary file rather than `migrate`, because this repo owns a customized local Better Auth schema file. The CLI step is still kept so auth plugin/config changes go through the canonical Better Auth tooling before the adapter-specific codegen check. Install `@better-auth/cli` locally and run it through `pnpm exec` so the repo uses a pinned CLI version instead of `npx @latest`.
 
-The CLI uses [better-auth.cli.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/better-auth.cli.ts), which exists only to satisfy Better Auth's requirement for a concrete exported auth instance during tooling runs. The app runtime should continue to use `getOptions()` and runtime-created auth instances instead of importing a concrete auth instance directly.
+The CLI uses [better-auth.cli.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/better-auth.cli.ts), which exists only to satisfy Better Auth's requirement for a concrete exported auth instance during tooling runs. The app runtime should continue to use `getOptions('runtime')` and runtime-created auth instances instead of importing a concrete auth instance directly.
 
 ## Current integration notes
 

@@ -12,6 +12,6 @@ if (!process.env.BETTER_AUTH_SECRET) {
 // The Better Auth CLI expects a concrete auth export. Keep that requirement in
 // this tooling-only module so Convex deployment code never analyzes it as part
 // of the runtime function bundle.
-export const auth = betterAuth(getOptions({ cli: true }));
+export const auth = betterAuth(getOptions('tooling'));
 
 export default auth;

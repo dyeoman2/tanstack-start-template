@@ -1,4 +1,5 @@
 export const STEP_UP_REQUIREMENTS = {
+  accountEmailChange: 'account_email_change',
   auditExport: 'audit_export',
   attachmentAccess: 'attachment_access',
   documentExport: 'document_export',

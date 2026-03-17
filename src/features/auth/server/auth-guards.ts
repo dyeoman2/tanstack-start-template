@@ -136,6 +136,13 @@ export async function requireAdmin(): Promise<AuthResult> {
     throw redirect({ to: '/login' });
   }
 
+  if (result.user.requiresMfaSetup) {
+    throw redirect({
+      to: '/app/profile',
+      search: { security: 'mfa-required' },
+    });
+  }
+
   return result;
 }
 

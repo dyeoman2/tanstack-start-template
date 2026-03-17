@@ -33,7 +33,6 @@ describe('createSharedBetterAuthOptions', () => {
       NODE_ENV: 'development',
       BETTER_AUTH_URL: 'http://127.0.0.1:3000',
     };
-    delete process.env.BETTER_AUTH_DISABLE_RATE_LIMIT;
     delete process.env.VITEST;
   });
 
@@ -45,6 +44,26 @@ describe('createSharedBetterAuthOptions', () => {
     const options = createOptions();
 
     expect(options.rateLimit?.enabled).toBe(true);
+    expect(options.rateLimit?.modelName).toBe('rateLimit');
+  });
+
+  it('sets a root Better Auth app name for provider and auth UX consistency', () => {
+    const options = createOptions();
+
+    expect(options.appName).toBe('TanStack Start Template');
+  });
+
+  it('sets explicit passkey relying-party metadata from the validated auth url', () => {
+    process.env.BETTER_AUTH_URL = 'https://app.example.com';
+
+    const options = createOptions();
+    const passkeyPlugin = (options.plugins ?? []).find(
+      (plugin) => 'id' in plugin && plugin.id === 'passkey',
+    ) as { options?: { origin?: string; rpID?: string; rpName?: string } } | undefined;
+
+    expect(passkeyPlugin?.options?.origin).toBe('https://app.example.com');
+    expect(passkeyPlugin?.options?.rpID).toBe('app.example.com');
+    expect(passkeyPlugin?.options?.rpName).toBe('TanStack Start Template');
   });
 
   it('enables secure Better Auth cookies for https deployments', () => {
@@ -56,12 +75,12 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.advanced?.defaultCookieAttributes?.secure).toBe(true);
   });
 
-  it('allows explicitly disabling auth rate limiting with an env flag', () => {
+  it('ignores the disable-rate-limit env flag outside tests', () => {
     process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = 'true';
 
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(false);
+    expect(options.rateLimit?.enabled).toBe(true);
   });
 
   it('revokes existing sessions on password reset', () => {
@@ -108,6 +127,29 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.trustedOrigins).toBeTypeOf('function');
   });
 
+  it('rejects auth requests from untrusted origins before processing credentials', async () => {
+    process.env.BETTER_AUTH_URL = 'https://app.example.com';
+    const options = createOptions();
+    const beforeHook = options.hooks?.before;
+    if (!beforeHook) {
+      throw new Error('Expected Better Auth before hook to be configured');
+    }
+
+    await expect(
+      beforeHook({
+        headers: new Headers({
+          origin: 'https://evil.example.com',
+        }),
+        method: 'POST',
+        path: '/sign-in/email',
+      } as never),
+    ).rejects.toMatchObject({
+      body: {
+        message: 'Origin is not allowed for this authentication request.',
+      },
+    });
+  });
+
   it('blocks password auth through the before hook when org policy requires enterprise auth', async () => {
     const options = createSharedBetterAuthOptions({
       sendInvitationEmail: async () => {},
@@ -139,6 +181,62 @@ describe('createSharedBetterAuthOptions', () => {
         message: 'Password sign-in is disabled for this account',
       },
     });
+  });
+
+  it('blocks change-email through the before hook when the session is no longer fresh', async () => {
+    const options = createOptions();
+    const beforeHook = options.hooks?.before;
+    if (!beforeHook) {
+      throw new Error('Expected Better Auth before hook to be configured');
+    }
+
+    await expect(
+      beforeHook({
+        context: {
+          session: {
+            session: {
+              createdAt: Date.now() - 30 * 60 * 1000,
+              updatedAt: Date.now() - 30 * 60 * 1000,
+            },
+            user: {
+              id: 'user_1',
+            },
+          },
+        },
+        method: 'POST',
+        path: '/change-email',
+      } as never),
+    ).rejects.toMatchObject({
+      body: {
+        message: 'Verify your account again before changing your sign-in email address.',
+      },
+    });
+  });
+
+  it('allows change-email through the before hook when the session is still fresh', async () => {
+    const options = createOptions();
+    const beforeHook = options.hooks?.before;
+    if (!beforeHook) {
+      throw new Error('Expected Better Auth before hook to be configured');
+    }
+
+    await expect(
+      beforeHook({
+        context: {
+          session: {
+            session: {
+              createdAt: Date.now() - 60 * 1000,
+              updatedAt: Date.now() - 60 * 1000,
+            },
+            user: {
+              id: 'user_1',
+            },
+          },
+        },
+        method: 'POST',
+        path: '/change-email',
+      } as never),
+    ).resolves.toBeUndefined();
   });
 
   it('does not add a custom session verification field for passkey authentication', async () => {

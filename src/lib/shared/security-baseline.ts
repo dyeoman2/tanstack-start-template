@@ -19,7 +19,7 @@ export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
   enterpriseProtocol: null,
   enterpriseEnabledAt: null,
   enterpriseEnforcedAt: null,
-  allowBreakGlassPasswordLogin: true,
+  allowBreakGlassPasswordLogin: false,
   temporaryLinkTtlMinutes: REGULATED_RETENTION_DEFAULTS.attachmentUrlTtlMinutes,
   webSearchAllowed: false,
 } as const;

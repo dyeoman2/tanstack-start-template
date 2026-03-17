@@ -1,23 +1,13 @@
 import { api } from '@convex/_generated/api';
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
-import { AuthQueryProvider } from '@daveyplate/better-auth-tanstack';
-import { AuthUIProviderTanstack } from '@daveyplate/better-auth-ui/tanstack';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAction, useConvexAuth } from 'convex/react';
-import {
-  createContext,
-  type MouseEvent,
-  type ReactNode,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from 'react';
+import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
 import { Toaster } from '~/components/ui/sonner';
 import { ToastProvider } from '~/components/ui/toast';
-import { authProviderClient } from '~/features/auth/auth-client';
+import { rawAuthClient } from '~/features/auth/auth-client-internal';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
@@ -152,88 +142,10 @@ function AuthProvider({ children }: AuthProviderProps) {
   );
 }
 
-function AuthUiProvider({ children }: { children: ReactNode }) {
+function QueryProvider({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
 
-  const navigateWithBrowser = (href: string, replace = false) => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    if (/^https?:\/\//.test(href)) {
-      if (replace) {
-        window.location.replace(href);
-      } else {
-        window.location.assign(href);
-      }
-      return;
-    }
-
-    if (replace) {
-      window.history.replaceState(window.history.state, '', href);
-    } else {
-      window.history.pushState(window.history.state, '', href);
-    }
-
-    window.dispatchEvent(new PopStateEvent('popstate'));
-  };
-
-  const AuthLink = ({
-    href,
-    className,
-    children: linkChildren,
-  }: {
-    href: string;
-    className?: string;
-    children: ReactNode;
-  }) => {
-    const handleClick = (event: MouseEvent<HTMLAnchorElement>) => {
-      if (
-        event.defaultPrevented ||
-        event.button !== 0 ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.shiftKey ||
-        event.altKey ||
-        /^https?:\/\//.test(href)
-      ) {
-        return;
-      }
-
-      event.preventDefault();
-      navigateWithBrowser(href);
-    };
-
-    return (
-      <a href={href} className={className} onClick={handleClick}>
-        {linkChildren}
-      </a>
-    );
-  };
-
-  return (
-    <QueryClientProvider client={queryClient}>
-      <AuthQueryProvider>
-        <AuthUIProviderTanstack
-          authClient={authProviderClient}
-          Link={AuthLink}
-          navigate={(href) => navigateWithBrowser(href)}
-          onSessionChange={async () => {
-            if (typeof window !== 'undefined') {
-              if (window.location.pathname.startsWith('/app')) {
-                window.location.reload();
-              }
-            }
-          }}
-          passkey
-          replace={(href) => navigateWithBrowser(href, true)}
-          twoFactor={['totp']}
-        >
-          {children}
-        </AuthUIProviderTanstack>
-      </AuthQueryProvider>
-    </QueryClientProvider>
-  );
+  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
 export function Providers({ children }: { children: ReactNode }) {
@@ -243,8 +155,8 @@ export function Providers({ children }: { children: ReactNode }) {
       description="An unexpected error occurred in the application. Please refresh the page to try again."
       showDetails={false}
     >
-      <ConvexBetterAuthProvider client={convexClient} authClient={authProviderClient}>
-        <AuthUiProvider>
+      <ConvexBetterAuthProvider client={convexClient} authClient={rawAuthClient}>
+        <QueryProvider>
           <AuthProvider>
             <ThemeProvider
               attribute="class"
@@ -258,7 +170,7 @@ export function Providers({ children }: { children: ReactNode }) {
               </ToastProvider>
             </ThemeProvider>
           </AuthProvider>
-        </AuthUiProvider>
+        </QueryProvider>
       </ConvexBetterAuthProvider>
     </ErrorBoundaryWrapper>
   );

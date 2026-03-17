@@ -5,13 +5,13 @@ This template documents the implemented safeguards that ship out of the box and 
 ### Administrative safeguards (app scope)
 
 - Workforce access and role boundaries: Better Auth roles, Convex auth guards, organization access checks documented above; deployers must still define HR/operations policies outside the codebase.
-- Security awareness and stronger authentication: enforced MFA posture and recent-step-up checks for high-risk exports with evidence captured in the posture dashboard.
+- Security awareness and stronger authentication: enforced MFA posture, MFA-gated site-admin access, and recent-step-up checks for high-risk exports with evidence captured in the posture dashboard.
 - Evaluation and audit review: audit log exports and hash-chain integrity checks are available, but incident response reporting and third-party reviews remain deployer tasks.
 
 ### Physical and technical safeguards (app scope)
 
-- Unique user identification and session controls: Better Auth session management with secure cookies and database-backed sessions; infrastructure hardening (WAF, TLS certs, key rotation) is required from the deployment environment.
-- Transmission and access protection: trusted-origin checks, short-lived session freshness, policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
+- Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, and MFA-gated admin access; infrastructure hardening (WAF, TLS certs, key rotation) is required from the deployment environment.
+- Transmission and access protection: strict trusted-origin checks, canonical Better Auth base URL validation, short-lived session freshness, and policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
 - Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need log aggregation, retention, and review processes.
 - Integrity: file-type/signature verification plus quarantining hooks support the document flow, but any production malware/DLP scanning is the deployer’s responsibility.
 

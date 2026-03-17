@@ -1,0 +1,83 @@
+name: Better Auth Verification
+
+on:
+  pull_request:
+    paths:
+      - 'better-auth.cli.ts'
+      - 'convex/auth.ts'
+      - 'convex/betterAuth/**'
+      - 'scripts/verify-better-auth.mjs'
+      - 'src/features/auth/**'
+      - 'src/lib/server/better-auth/**'
+      - 'src/lib/server/env.server.ts'
+      - 'src/lib/shared/better-auth-access.ts'
+      - 'src/lib/shared/auth-policy.ts'
+      - 'docs/BETTER_AUTH_VERIFICATION.md'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+jobs:
+  verify-better-auth:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build app
+        env:
+          BETTER_AUTH_URL: http://127.0.0.1:3000
+          BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
+        run: pnpm build
+
+      - name: Start app server
+        env:
+          BETTER_AUTH_URL: http://127.0.0.1:3000
+          BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
+        run: |
+          pnpm start > /tmp/better-auth-app.log 2>&1 &
+          echo $! > /tmp/better-auth-app.pid
+
+      - name: Wait for app server
+        run: |
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3000/api/auth/ok >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/better-auth-app.log
+          exit 1
+
+      - name: Run Better Auth verification
+        env:
+          BETTER_AUTH_URL: http://127.0.0.1:3000
+          BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
+          BETTER_AUTH_VERIFY_URL: http://127.0.0.1:3000
+        run: pnpm verify:better-auth
+
+      - name: Print app log on failure
+        if: failure()
+        run: cat /tmp/better-auth-app.log
+
+      - name: Stop app server
+        if: always()
+        run: |
+          if [ -f /tmp/better-auth-app.pid ]; then
+            kill "$(cat /tmp/better-auth-app.pid)" || true
+          fi

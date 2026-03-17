@@ -1,6 +1,7 @@
 'use client';
 
 import { useForm } from '@tanstack/react-form';
+import { useNavigate } from '@tanstack/react-router';
 import { AlertCircleIcon, CheckCircle2Icon, SaveIcon } from 'lucide-react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
@@ -19,6 +20,7 @@ import { Input } from '~/components/ui/input';
 import { Spinner } from '~/components/ui/spinner';
 import { authClient } from '~/features/auth/auth-client';
 import type { ProfileData } from '~/features/profile/hooks/useProfile';
+import { buildStepUpRedirectSearch, STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
 const nameMaxLength = 32;
 
@@ -100,6 +102,7 @@ function validatePhoneNumber(value: string) {
 }
 
 export function ProfileDetailsCard({ profile }: ProfileDetailsCardProps) {
+  const navigate = useNavigate();
   const nameId = useId();
   const emailId = useId();
   const phoneId = useId();
@@ -150,6 +153,15 @@ export function ProfileDetailsCard({ profile }: ProfileDetailsCardProps) {
       }
 
       setSubmitState(null);
+
+      if (emailChanged && (profile.recentStepUpValidUntil ?? 0) <= Date.now()) {
+        await navigate({
+          to: '/app/profile',
+          search: buildStepUpRedirectSearch(STEP_UP_REQUIREMENTS.accountEmailChange),
+          replace: true,
+        });
+        return;
+      }
 
       const operations = await Promise.allSettled([
         ...(Object.keys(changedProfileFields).length > 0

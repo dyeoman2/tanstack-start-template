@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const createAuthClientMock = vi.fn();
-const createAuthHooksMock = vi.fn((_client: unknown) => ({}));
 
 vi.mock('@convex-dev/better-auth/client/plugins', () => ({
   convexClient: vi.fn(() => ({ id: 'convex' })),
@@ -20,10 +19,6 @@ vi.mock('better-auth/client/plugins', () => ({
 
 vi.mock('better-auth/react', () => ({
   createAuthClient: (options: unknown) => createAuthClientMock(options),
-}));
-
-vi.mock('@daveyplate/better-auth-tanstack', () => ({
-  createAuthHooks: (client: unknown) => createAuthHooksMock(client),
 }));
 
 describe('auth client plugin parity', () => {
@@ -56,6 +51,9 @@ describe('auth client plugin parity', () => {
       'passkey',
       'twoFactor',
     ]);
-    expect(createAuthHooksMock).toHaveBeenCalledTimes(1);
+
+    const module = await import('./auth-client');
+    expect(module.authHooks.useAuthQuery).toBeTypeOf('function');
+    expect(module.authHooks.useListPasskeys).toBeTypeOf('function');
   });
 });

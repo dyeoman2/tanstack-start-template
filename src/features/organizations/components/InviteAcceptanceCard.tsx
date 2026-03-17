@@ -42,7 +42,7 @@ export function InviteAcceptanceCard({ token }: { token: string }) {
     isPending,
     error,
   } = authHooks.useInvitation({
-    invitationId: token,
+    id: token,
   });
   const [pendingAction, setPendingAction] = useState<'accept' | 'reject' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);

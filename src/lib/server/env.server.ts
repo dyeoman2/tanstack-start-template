@@ -8,6 +8,21 @@ import {
   parseTimestampLike,
 } from '../shared/email-verification';
 
+const TEST_BETTER_AUTH_SECRET = 'test-better-auth-secret-abcdefghijklmnopqrstuvwxyz';
+const TEST_BETTER_AUTH_URL = 'http://127.0.0.1:3000';
+
+type BetterAuthRuntimeConfig = {
+  allowedHosts: string[];
+  configuredOrigins: string[];
+  isLoopback: boolean;
+  protocol: 'http' | 'https';
+  siteUrl: string;
+};
+
+function isTestRuntime() {
+  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+}
+
 /**
  * Automatically infer the site URL based on deployment environment.
  * Prefers explicit overrides and falls back to hosting platform defaults.
@@ -36,19 +51,16 @@ export function getSiteUrl(): string {
 }
 
 export function getRequiredBetterAuthUrl(): string {
-  const value = process.env.BETTER_AUTH_URL;
-  if (!value || value.trim().length === 0) {
-    throw new Error(
-      'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
-    );
+  return getBetterAuthRuntimeConfig().siteUrl;
+}
+
+export function getBetterAuthUrlForTooling(): string {
+  const configuredUrl = process.env.BETTER_AUTH_URL?.trim();
+  if (configuredUrl) {
+    return parseBetterAuthUrl(configuredUrl, 'BETTER_AUTH_URL').origin;
   }
 
-  const normalized = resolveSiteUrlCandidate(value, 'BETTER_AUTH_URL');
-  if (!normalized) {
-    throw new Error('BETTER_AUTH_URL must be a valid absolute URL.');
-  }
-
-  return normalized;
+  return parseBetterAuthUrl(getSiteUrl(), 'site URL fallback').origin;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -97,7 +109,7 @@ function parseCsvEnv(name: string): string[] {
 }
 
 function normalizeConfiguredOrigin(value: string, label: string): string | null {
-  return resolveSiteUrlCandidate(value, label);
+  return resolveAbsoluteOrigin(value, label);
 }
 
 function normalizeAllowedHost(value: string): string | null {
@@ -108,39 +120,26 @@ function normalizeAllowedHost(value: string): string | null {
 
   if (trimmed.includes('://')) {
     try {
-      return new URL(trimmed).host.toLowerCase();
+      const url = new URL(trimmed);
+      return `${url.hostname}${url.port ? `:${url.port}` : ''}`.toLowerCase();
     } catch {
       return null;
     }
+  }
+
+  if (trimmed.includes('/')) {
+    return null;
   }
 
   return trimmed.toLowerCase();
 }
 
 export function getBetterAuthAllowedHosts(siteUrl = getRequiredBetterAuthUrl()): string[] {
-  const allowedHosts = new Set<string>();
-
-  try {
-    const origin = new URL(siteUrl);
-    allowedHosts.add(origin.host.toLowerCase());
-
-    if (isLoopbackHostname(origin.hostname)) {
-      for (const loopbackHostPattern of getLoopbackHostPatterns()) {
-        allowedHosts.add(loopbackHostPattern);
-      }
-    }
-  } catch {
-    // Ignore malformed site url here; caller already has fallback behavior.
-  }
-
-  for (const pattern of parseCsvEnv('BETTER_AUTH_PREVIEW_HOSTS')) {
-    const normalized = normalizeAllowedHost(pattern);
-    if (normalized) {
-      allowedHosts.add(normalized);
-    }
-  }
-
-  return [...allowedHosts];
+  const runtimeConfig =
+    siteUrl === getRequiredBetterAuthUrl()
+      ? getBetterAuthRuntimeConfig()
+      : buildBetterAuthRuntimeConfig(siteUrl);
+  return runtimeConfig.allowedHosts;
 }
 
 export function isTrustedBetterAuthOrigin(
@@ -151,6 +150,13 @@ export function isTrustedBetterAuthOrigin(
   try {
     origin = new URL(candidate);
   } catch {
+    return false;
+  }
+
+  if (
+    origin.protocol !== 'https:' &&
+    !(origin.protocol === 'http:' && isLoopbackHostname(origin.hostname))
+  ) {
     return false;
   }
 
@@ -172,28 +178,11 @@ export function isTrustedBetterAuthOrigin(
 }
 
 export function getConfiguredBetterAuthOrigins(siteUrl = getRequiredBetterAuthUrl()): string[] {
-  const trustedOrigins = new Set<string>([siteUrl]);
-
-  try {
-    const origin = new URL(siteUrl);
-
-    if (isLoopbackHostname(origin.hostname)) {
-      for (const loopbackOriginPattern of getLoopbackOriginPatterns()) {
-        trustedOrigins.add(loopbackOriginPattern);
-      }
-    }
-  } catch {
-    // getSiteUrl already normalizes inputs, so this is only a defensive fallback.
-  }
-
-  for (const configuredOrigin of parseCsvEnv('BETTER_AUTH_TRUSTED_ORIGINS')) {
-    const normalized = normalizeConfiguredOrigin(configuredOrigin, 'BETTER_AUTH_TRUSTED_ORIGINS');
-    if (normalized) {
-      trustedOrigins.add(normalized);
-    }
-  }
-
-  return [...trustedOrigins];
+  const runtimeConfig =
+    siteUrl === getRequiredBetterAuthUrl()
+      ? getBetterAuthRuntimeConfig()
+      : buildBetterAuthRuntimeConfig(siteUrl);
+  return runtimeConfig.configuredOrigins;
 }
 
 export function getBetterAuthTrustedOrigins(
@@ -218,40 +207,108 @@ export function getBetterAuthTrustedOrigins(
   return [...trustedOrigins];
 }
 
-export function getBetterAuthBaseUrlConfig():
-  | string
-  | {
-      allowedHosts: string[];
-      fallback?: string;
-      protocol?: 'auto' | 'http' | 'https';
-    } {
-  const siteUrl = getRequiredBetterAuthUrl();
-  const allowedHosts = getBetterAuthAllowedHosts(siteUrl);
-
-  if (allowedHosts.length === 0) {
-    return siteUrl;
-  }
-
-  const isLoopbackSiteUrl = (() => {
-    try {
-      return isLoopbackHostname(new URL(siteUrl).hostname);
-    } catch {
-      return false;
-    }
-  })();
-  const protocol = siteUrl.startsWith('http://') ? 'http' : 'auto';
-  return {
-    allowedHosts,
-    protocol,
-    ...(isLoopbackSiteUrl ? { fallback: siteUrl } : {}),
-  };
-}
-
 export function shouldUseSecureAuthCookies(siteUrl = getRequiredBetterAuthUrl()): boolean {
   try {
     return new URL(siteUrl).protocol === 'https:';
   } catch {
     return false;
+  }
+}
+
+function getBetterAuthRuntimeConfig(): BetterAuthRuntimeConfig {
+  return buildBetterAuthRuntimeConfig(readBetterAuthUrlFromEnv());
+}
+
+function buildBetterAuthRuntimeConfig(siteUrl: string): BetterAuthRuntimeConfig {
+  const parsedSiteUrl = parseBetterAuthUrl(siteUrl, 'BETTER_AUTH_URL');
+  const allowedHosts = new Set<string>([parsedSiteUrl.host.toLowerCase()]);
+  const configuredOrigins = new Set<string>([parsedSiteUrl.origin]);
+  const isLoopback = isLoopbackHostname(parsedSiteUrl.hostname);
+
+  if (isLoopback) {
+    for (const loopbackHostPattern of getLoopbackHostPatterns()) {
+      allowedHosts.add(loopbackHostPattern);
+    }
+    for (const loopbackOriginPattern of getLoopbackOriginPatterns()) {
+      configuredOrigins.add(loopbackOriginPattern);
+    }
+  }
+
+  for (const pattern of parseCsvEnv('BETTER_AUTH_PREVIEW_HOSTS')) {
+    const normalized = normalizeAllowedHost(pattern);
+    if (!normalized) {
+      throw new Error(`BETTER_AUTH_PREVIEW_HOSTS contains an invalid host pattern: ${pattern}`);
+    }
+
+    allowedHosts.add(normalized);
+  }
+
+  for (const configuredOrigin of parseCsvEnv('BETTER_AUTH_TRUSTED_ORIGINS')) {
+    const normalized = normalizeConfiguredOrigin(configuredOrigin, 'BETTER_AUTH_TRUSTED_ORIGINS');
+    if (!normalized) {
+      throw new Error(
+        `BETTER_AUTH_TRUSTED_ORIGINS contains an invalid absolute origin: ${configuredOrigin}`,
+      );
+    }
+
+    configuredOrigins.add(normalized);
+  }
+
+  return {
+    allowedHosts: [...allowedHosts],
+    configuredOrigins: [...configuredOrigins],
+    isLoopback,
+    protocol: parsedSiteUrl.protocol === 'http:' ? 'http' : 'https',
+    siteUrl: parsedSiteUrl.origin,
+  };
+}
+
+function readBetterAuthUrlFromEnv(): string {
+  const value = process.env.BETTER_AUTH_URL?.trim();
+  if (value) {
+    return value;
+  }
+
+  if (isTestRuntime()) {
+    return TEST_BETTER_AUTH_URL;
+  }
+
+  throw new Error(
+    'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
+  );
+}
+
+function parseBetterAuthUrl(value: string, label: string): URL {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`${label} must be a valid absolute URL.`);
+  }
+
+  if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
+    throw new Error(`${label} must be a canonical origin without a path, query, or hash.`);
+  }
+
+  if (
+    parsed.protocol !== 'https:' &&
+    !(parsed.protocol === 'http:' && isLoopbackHostname(parsed.hostname))
+  ) {
+    throw new Error(`${label} must use https unless it points to a loopback host.`);
+  }
+
+  return parsed;
+}
+
+function resolveAbsoluteOrigin(value: string | undefined, label: string): string | null {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    return parseBetterAuthUrl(value.trim(), label).origin;
+  } catch {
+    return null;
   }
 }
 
@@ -281,6 +338,10 @@ function resolveSiteUrlCandidate(value: string | undefined, label: string): stri
 export function getBetterAuthSecret(): string {
   const secret = process.env.BETTER_AUTH_SECRET;
   if (!secret) {
+    if (isTestRuntime()) {
+      return TEST_BETTER_AUTH_SECRET;
+    }
+
     throw new Error(
       'BETTER_AUTH_SECRET environment variable is required. ' +
         'Generate one with: openssl rand -base64 32',

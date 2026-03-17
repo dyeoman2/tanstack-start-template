@@ -36,7 +36,7 @@ function AdminSecurityRoute() {
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         <SummaryCard
           title="MFA Coverage"
-          description="Two-factor coverage across Better Auth users."
+          description="Phishing-resistant MFA coverage across Better Auth users, including passkeys."
           value={
             summary
               ? `${summary.auth.mfaCoveragePercent}% (${summary.auth.mfaEnabledUsers}/${summary.auth.totalUsers})`

@@ -80,8 +80,6 @@ import {
   rateLimitResultValidator,
 } from './lib/returnValidators';
 
-const secret = getBetterAuthSecret();
-
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
   components.betterAuth,
   {
@@ -1633,6 +1631,7 @@ export const createAuth = (
   ctx: GenericCtx<DataModel>,
   { optionsOnly } = { optionsOnly: false },
 ) => {
+  getBetterAuthSecret();
   const ctxWithRunMutation = ctx as CtxWithRunMutation;
   const deletedOrganizationMembers = new Map<string, string[]>();
 
@@ -1815,7 +1814,6 @@ export const createAuth = (
     logger: {
       disabled: optionsOnly,
     },
-    secret,
     database: authComponent.adapter(ctx),
     plugins: [...(sharedOptions.plugins ?? []), createAuthAuditPlugin(recordAuditEvent)],
   });

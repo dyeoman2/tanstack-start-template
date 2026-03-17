@@ -11,8 +11,14 @@ import { ProfilePasskeysCard } from '~/features/profile/components/ProfilePasske
 import { ProfileSessionsCard } from '~/features/profile/components/ProfileSessionsCard';
 import { ProfileTwoFactorCard } from '~/features/profile/components/ProfileTwoFactorCard';
 import { useProfile } from '~/features/profile/hooks/useProfile';
+import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
-export function ProfilePage() {
+type ProfilePageSearchParams = {
+  requirement?: (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
+  security?: 'step-up-required';
+};
+
+export function ProfilePage({ searchParams }: { searchParams?: ProfilePageSearchParams }) {
   const { data: profile, isLoading, error } = useProfile();
   const router = useRouter();
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -99,6 +105,19 @@ export function ProfilePage() {
               <CardDescription>
                 This starter now enforces regulated access controls. Enable an authenticator app or
                 passkey before using the rest of the application.
+              </CardDescription>
+            </CardHeader>
+          </Card>
+        ) : null}
+
+        {searchParams?.security === 'step-up-required' &&
+        searchParams.requirement === STEP_UP_REQUIREMENTS.accountEmailChange &&
+        (profile.recentStepUpValidUntil ?? 0) <= Date.now() ? (
+          <Card className="border-amber-500/40 bg-amber-500/5">
+            <CardHeader>
+              <CardTitle>Recent verification required</CardTitle>
+              <CardDescription>
+                Verify your account again before changing your sign-in email address.
               </CardDescription>
             </CardHeader>
           </Card>

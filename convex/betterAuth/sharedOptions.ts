@@ -8,11 +8,15 @@ import { admin } from 'better-auth/plugins/admin';
 import { organization } from 'better-auth/plugins/organization';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import {
-  getBetterAuthBaseUrlConfig,
+  getBetterAuthUrlForTooling,
+  getRequiredBetterAuthUrl,
   getBetterAuthTrustedOrigins,
   getGoogleOAuthCredentials,
+  isTrustedBetterAuthOrigin,
   shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
+import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
+import { evaluateFreshSession } from '../../src/lib/shared/auth-policy';
 import {
   adminAccessControl,
   adminRole,
@@ -81,25 +85,17 @@ export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 
-function getPasskeyOptions() {
-  const siteUrl = new URL(process.env.BETTER_AUTH_URL ?? 'http://127.0.0.1:3000');
+function getPasskeyOptions(siteUrlValue: string) {
+  const siteUrl = new URL(siteUrlValue);
 
   return {
+    origin: siteUrl.origin,
     rpID: siteUrl.hostname,
     rpName: process.env.APP_NAME?.trim() || 'TanStack Start Template',
   };
 }
 
 function shouldDisableAuthRateLimit() {
-  const envValue = process.env.BETTER_AUTH_DISABLE_RATE_LIMIT?.trim().toLowerCase();
-  if (envValue === 'true') {
-    return true;
-  }
-
-  if (envValue === 'false') {
-    return false;
-  }
-
   return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 }
 
@@ -108,6 +104,10 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
     '/sign-in/email': {
       window: 15 * 60,
       max: 10,
+    },
+    '/sign-in/passkey': {
+      window: 15 * 60,
+      max: 20,
     },
     '/sign-up/email': {
       window: 60 * 60,
@@ -129,6 +129,18 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       window: 60 * 60,
       max: 3,
     },
+    '/verify-email': {
+      window: 60 * 60,
+      max: 10,
+    },
+    '/change-email': {
+      window: 60 * 60,
+      max: 5,
+    },
+    '/change-password': {
+      window: 60 * 60,
+      max: 5,
+    },
     '/get-session': {
       window: 60,
       max: 300,
@@ -138,6 +150,10 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
     // avoidable optimistic concurrency conflicts in Convex and can disrupt auth flows.
     '/convex/token': false,
     '/admin/impersonate-user': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/stop-impersonating': {
       window: 15 * 60,
       max: 10,
     },
@@ -154,6 +170,29 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       max: 10,
     },
   };
+}
+
+function assertFreshSessionForChangeEmail(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  if (ctx.path !== '/change-email') {
+    return;
+  }
+
+  const currentSession = ctx.context.session?.session;
+  const freshness = evaluateFreshSession({
+    createdAt: currentSession?.createdAt,
+    updatedAt: currentSession?.updatedAt,
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  });
+
+  if (freshness.satisfied) {
+    return;
+  }
+
+  throw new APIError('FORBIDDEN', {
+    message: 'Verify your account again before changing your sign-in email address.',
+  });
 }
 
 async function handleSessionEnrichmentAfterHook(
@@ -217,12 +256,17 @@ export function createSharedBetterAuthOptions(
   },
 ): BetterAuthOptions {
   const includeRuntimeEnvConfig = options?.includeRuntimeEnvConfig ?? true;
+  const betterAuthUrl = includeRuntimeEnvConfig
+    ? getBetterAuthUrlForTooling()
+    : getRequiredBetterAuthUrl();
   const disableRateLimit = shouldDisableAuthRateLimit();
-  const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies() : false;
+  const secureCookies = includeRuntimeEnvConfig
+    ? shouldUseSecureAuthCookies(betterAuthUrl)
+    : false;
   const googleOAuthCredentials = includeRuntimeEnvConfig ? getGoogleOAuthCredentials() : null;
 
   return {
-    ...(includeRuntimeEnvConfig ? { baseURL: getBetterAuthBaseUrlConfig() } : {}),
+    appName: process.env.APP_NAME?.trim() || 'TanStack Start Template',
     database: convexAdapter({} as never, {} as never),
     ...(includeRuntimeEnvConfig
       ? {
@@ -232,6 +276,7 @@ export function createSharedBetterAuthOptions(
             window: DEFAULT_RATE_LIMIT_WINDOW_SECONDS,
             max: DEFAULT_RATE_LIMIT_MAX_REQUESTS,
             storage: 'database',
+            modelName: 'rateLimit',
             customRules: createCustomRateLimitRules(),
           },
         }
@@ -265,6 +310,13 @@ export function createSharedBetterAuthOptions(
       : undefined,
     hooks: {
       before: createAuthMiddleware(async (ctx) => {
+        const requestOrigin = ctx.headers?.get('origin') ?? undefined;
+        if (requestOrigin && !isTrustedBetterAuthOrigin(requestOrigin)) {
+          throw new APIError('FORBIDDEN', {
+            message: 'Origin is not allowed for this authentication request.',
+          });
+        }
+
         if (
           callbacks.shouldBlockPasswordAuth &&
           (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email')
@@ -283,6 +335,8 @@ export function createSharedBetterAuthOptions(
             }
           }
         }
+
+        assertFreshSessionForChangeEmail(ctx);
 
         if (
           callbacks.assertSCIMManagementAccess &&
@@ -442,7 +496,7 @@ export function createSharedBetterAuthOptions(
       twoFactor({
         issuer: 'TanStack Start Template',
       }),
-      passkey(getPasskeyOptions()),
+      passkey(getPasskeyOptions(betterAuthUrl)),
       convex({
         authConfig,
         jwks: process.env.JWKS,

@@ -1,4 +1,4 @@
-export const DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT = Date.parse('2026-03-14T00:00:00.000Z');
+export const DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT = 0;
 
 export function parseTimestampLike(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {

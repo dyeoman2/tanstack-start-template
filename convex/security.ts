@@ -12,7 +12,7 @@ import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
 } from './auth/access';
-import { fetchAllBetterAuthUsers } from './lib/betterAuth';
+import { fetchAllBetterAuthPasskeys, fetchAllBetterAuthUsers } from './lib/betterAuth';
 import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 
 const securityPostureSummaryValidator = v.object({
@@ -147,9 +147,21 @@ export const getSecurityPostureSummary = query({
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
 
-    const [authUsers, latestScan, latestRetentionJob, latestBackupCheck, latestAuditEvent, integrityFailures, totalScans, quarantinedScans, rejectedScans] =
+    const [
+      authUsers,
+      passkeys,
+      latestScan,
+      latestRetentionJob,
+      latestBackupCheck,
+      latestAuditEvent,
+      integrityFailures,
+      totalScans,
+      quarantinedScans,
+      rejectedScans,
+    ] =
       await Promise.all([
         fetchAllBetterAuthUsers(ctx),
+        fetchAllBetterAuthPasskeys(ctx),
         ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
         ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
         ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
@@ -170,7 +182,14 @@ export const getSecurityPostureSummary = query({
       ]);
 
     const totalUsers = authUsers.length;
-    const mfaEnabledUsers = authUsers.filter((user) => user.twoFactorEnabled === true).length;
+    const usersWithPasskeys = new Set(
+      passkeys
+        .map((passkey) => passkey.userId)
+        .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0),
+    );
+    const mfaEnabledUsers = authUsers.filter(
+      (user) => user.twoFactorEnabled === true || usersWithPasskeys.has(user._id),
+    ).length;
 
     return {
       audit: {

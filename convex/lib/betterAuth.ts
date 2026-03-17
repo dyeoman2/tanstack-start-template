@@ -19,6 +19,7 @@ type BetterAuthModel =
   | 'organization'
   | 'member'
   | 'invitation'
+  | 'passkey'
   | 'session'
   | 'scimProvider';
 
@@ -86,6 +87,19 @@ export type BetterAuthScimProviderRecord = BetterAuthRecord & {
   providerId: string;
   scimToken: string;
   userId?: string | null;
+};
+
+export type BetterAuthPasskeyRecord = BetterAuthRecord & {
+  userId: string;
+  credentialID: string;
+  publicKey: string;
+  counter: number;
+  deviceType: string;
+  backedUp: boolean;
+  name?: string | null;
+  transports?: string | null;
+  createdAt?: Date | string | number | null;
+  aaguid?: string | null;
 };
 
 function toTimestamp(value: string | number | Date | undefined | null): number {
@@ -180,6 +194,12 @@ export async function fetchAllBetterAuthUsers(
   ctx: GenericCtx<DataModel>,
 ): Promise<BetterAuthUser[]> {
   return await fetchAllRecords<BetterAuthUser>(ctx, 'user');
+}
+
+export async function fetchAllBetterAuthPasskeys(
+  ctx: GenericCtx<DataModel>,
+): Promise<BetterAuthPasskeyRecord[]> {
+  return await fetchAllRecords<BetterAuthPasskeyRecord>(ctx, 'passkey');
 }
 
 export async function fetchBetterAuthUsersByIds(

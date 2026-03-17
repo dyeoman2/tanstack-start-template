@@ -93,6 +93,24 @@ describe('auth-guards', () => {
     expect(redirectMock).toHaveBeenCalledWith({ to: '/login' });
   });
 
+  it('redirects site admins without MFA to the profile security screen', async () => {
+    fetchAuthQueryMock.mockResolvedValue({
+      id: 'user_123',
+      email: 'admin@example.com',
+      role: USER_ROLES.ADMIN,
+      emailVerified: true,
+      requiresMfaSetup: true,
+    });
+
+    await expect(requireAdmin()).rejects.toMatchObject({ status: 302 });
+    expect(redirectMock).toHaveBeenCalledWith({
+      to: '/app/profile',
+      search: {
+        security: 'mfa-required',
+      },
+    });
+  });
+
   it('redirects newly unverified users to the verification pending route', async () => {
     fetchAuthQueryMock.mockResolvedValue({
       id: 'user_123',

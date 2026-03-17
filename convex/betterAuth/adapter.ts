@@ -3,4 +3,4 @@ import { getOptions } from './options';
 import schema from './schema';
 
 export const { create, findOne, findMany, updateOne, updateMany, deleteOne, deleteMany } =
-  createApi(schema, getOptions);
+  createApi(schema, () => getOptions('tooling'));

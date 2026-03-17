@@ -349,12 +349,30 @@ export function ensureCurrentUserIsSiteAdminOrThrow<T extends CurrentUser>(user:
   return user;
 }
 
+async function ensureCurrentUserHasMfaForSiteAdminOrThrow(
+  ctx: QueryCtx | MutationCtx | ActionCtx,
+  user: CurrentUser,
+) {
+  const authPolicy = evaluateAuthPolicy({
+    assurance: await resolveUserAuthAssuranceState(ctx, user),
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  });
+
+  if (authPolicy.requiresMfaSetup) {
+    throwConvexError('FORBIDDEN', 'Multi-factor authentication is required for site admin access');
+  }
+
+  return user;
+}
+
 export async function getVerifiedCurrentSiteAdminUserOrThrow(ctx: QueryCtx | MutationCtx) {
-  return ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserOrThrow(ctx));
+  const user = ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserOrThrow(ctx));
+  return await ensureCurrentUserHasMfaForSiteAdminOrThrow(ctx, user);
 }
 
 export async function getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx: ActionCtx) {
-  return ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserFromActionOrThrow(ctx));
+  const user = ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserFromActionOrThrow(ctx));
+  return await ensureCurrentUserHasMfaForSiteAdminOrThrow(ctx, user);
 }
 
 export async function getCurrentOrganizationOrNull(

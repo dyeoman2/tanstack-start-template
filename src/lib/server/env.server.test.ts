@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   getBetterAuthAllowedHosts,
-  getBetterAuthBaseUrlConfig,
+  getBetterAuthUrlForTooling,
   getBetterAuthSecret,
   getBetterAuthTrustedOrigins,
   getRequiredBetterAuthUrl,
@@ -83,14 +83,11 @@ describe('Better Auth env helpers', () => {
       'http://127.0.0.1:*',
       'http://localhost:4173',
     ]);
-    expect(getBetterAuthBaseUrlConfig()).toEqual({
-      allowedHosts: ['127.0.0.1:3000', 'localhost:*', '127.0.0.1:*'],
-      fallback: 'http://127.0.0.1:3000',
-      protocol: 'http',
-    });
   });
 
   it('requires BETTER_AUTH_URL for Better Auth configuration', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.VITEST;
     delete process.env.BETTER_AUTH_URL;
     process.env.SITE_URL = 'https://site.example.com';
 
@@ -100,17 +97,60 @@ describe('Better Auth env helpers', () => {
     expect(() => getBetterAuthAllowedHosts()).toThrow(
       'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
     );
-    expect(() => getBetterAuthBaseUrlConfig()).toThrow(
-      'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
+  });
+
+  it('falls back to the inferred site url for Better Auth tooling', () => {
+    process.env.NODE_ENV = 'development';
+    delete process.env.VITEST;
+    delete process.env.BETTER_AUTH_URL;
+    delete process.env.SITE_URL;
+
+    expect(getBetterAuthUrlForTooling()).toBe('http://localhost:3000');
+  });
+
+  it('requires BETTER_AUTH_URL to be https outside loopback runtimes', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.VITEST;
+    process.env.BETTER_AUTH_URL = 'http://app.example.com';
+
+    expect(() => getRequiredBetterAuthUrl()).toThrow(
+      'BETTER_AUTH_URL must use https unless it points to a loopback host.',
+    );
+  });
+
+  it('rejects malformed Better Auth host and origin allowlists', () => {
+    process.env.BETTER_AUTH_URL = 'https://app.example.com';
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com/path';
+
+    expect(() => getBetterAuthAllowedHosts()).toThrow(
+      'BETTER_AUTH_PREVIEW_HOSTS contains an invalid host pattern: preview.example.com/path',
+    );
+
+    process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com';
+    process.env.BETTER_AUTH_TRUSTED_ORIGINS = 'admin.example.com';
+
+    expect(() => getBetterAuthTrustedOrigins()).toThrow(
+      'BETTER_AUTH_TRUSTED_ORIGINS contains an invalid absolute origin: admin.example.com',
     );
   });
 
   it('requires a strong BETTER_AUTH_SECRET', () => {
+    process.env.NODE_ENV = 'production';
+    delete process.env.VITEST;
     process.env.BETTER_AUTH_SECRET = 'short-secret';
 
     expect(() => getBetterAuthSecret()).toThrow(
       'BETTER_AUTH_SECRET must be at least 32 characters. Generate one with: openssl rand -base64 32',
     );
+  });
+
+  it('uses deterministic Better Auth test fallbacks when env is unset in tests', () => {
+    process.env.NODE_ENV = 'test';
+    delete process.env.BETTER_AUTH_SECRET;
+    delete process.env.BETTER_AUTH_URL;
+
+    expect(getBetterAuthSecret()).toContain('test-better-auth-secret');
+    expect(getRequiredBetterAuthUrl()).toBe('http://127.0.0.1:3000');
   });
 
   it('uses secure cookies only for https site urls', () => {
@@ -122,9 +162,7 @@ describe('Better Auth env helpers', () => {
   it('allows e2e auth only in tests or loopback runtimes', () => {
     process.env.NODE_ENV = 'development';
 
-    expect(isSafeE2EAuthRuntime(new Request('http://127.0.0.1:3000/api/test/e2e-auth'))).toBe(
-      true,
-    );
+    expect(isSafeE2EAuthRuntime(new Request('http://127.0.0.1:3000/api/test/e2e-auth'))).toBe(true);
     expect(isSafeE2EAuthRuntime(new Request('https://app.example.com/api/test/e2e-auth'))).toBe(
       false,
     );

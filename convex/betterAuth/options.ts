@@ -1,17 +1,10 @@
 import type { BetterAuthOptions } from 'better-auth';
-import { getBetterAuthSecret } from '../../src/lib/server/env.server';
 import { createSharedBetterAuthOptions } from './sharedOptions';
 
-function shouldIncludeRuntimeEnvConfig(ctx: unknown): boolean {
-  if (!ctx || typeof ctx !== 'object') {
-    return false;
-  }
+export type BetterAuthOptionsMode = 'runtime' | 'tooling';
 
-  return Object.keys(ctx).length > 0;
-}
-
-export function getOptions(ctx?: unknown): BetterAuthOptions {
-  const includeRuntimeEnvConfig = shouldIncludeRuntimeEnvConfig(ctx);
+export function getOptions(mode: BetterAuthOptionsMode = 'runtime'): BetterAuthOptions {
+  const includeRuntimeEnvConfig = mode === 'tooling';
 
   return {
     ...createSharedBetterAuthOptions(
@@ -25,6 +18,5 @@ export function getOptions(ctx?: unknown): BetterAuthOptions {
         includeRuntimeEnvConfig,
       },
     ),
-    ...(includeRuntimeEnvConfig ? { secret: getBetterAuthSecret() } : {}),
   } satisfies BetterAuthOptions;
 }

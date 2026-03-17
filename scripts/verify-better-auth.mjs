@@ -2,7 +2,7 @@ import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = new URL('../', import.meta.url);
 const rootPath = fileURLToPath(root);
@@ -35,7 +35,7 @@ function run(command, args) {
   });
 }
 
-async function runOfficialBetterAuthCliCheck() {
+export async function runOfficialBetterAuthCliCheck() {
   const outputFile = join(tmpdir(), 'better-auth-generated-schema.ts');
 
   console.log('[better-auth] Running official Better Auth CLI generate step');
@@ -59,7 +59,7 @@ function assertIncludes(source, pattern, description) {
   }
 }
 
-async function verifyPluginParity() {
+export async function verifyPluginParity() {
   const [serverOptions, clientOptions, schema] = await Promise.all([
     readText('convex/betterAuth/sharedOptions.ts'),
     readText('src/features/auth/auth-client.ts'),
@@ -74,7 +74,7 @@ async function verifyPluginParity() {
   assertIncludes(schema, 'passkey:', 'Better Auth local schema');
 }
 
-async function verifyAuthOk() {
+export async function verifyAuthOk() {
   const baseUrl = (process.env.BETTER_AUTH_VERIFY_URL || process.env.BETTER_AUTH_URL || '').trim();
   if (!baseUrl) {
     throw new Error(
@@ -112,7 +112,7 @@ async function verifyAuthOk() {
   }
 }
 
-async function main() {
+export async function main() {
   await runOfficialBetterAuthCliCheck();
 
   console.log('[better-auth] Verifying plugin parity');
@@ -130,10 +130,14 @@ async function main() {
   console.log('[better-auth] Verification complete');
 }
 
-try {
-  await main();
-} catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(`[better-auth] Verification failed: ${message}`);
-  process.exitCode = 1;
+const entrypoint = process.argv[1] ? pathToFileURL(process.argv[1]).href : null;
+
+if (entrypoint === import.meta.url) {
+  try {
+    await main();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[better-auth] Verification failed: ${message}`);
+    process.exitCode = 1;
+  }
 }
