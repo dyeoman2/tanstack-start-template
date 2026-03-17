@@ -15,6 +15,12 @@ import {
   type TableFilterOption,
 } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from '~/components/ui/accordion';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -32,34 +38,29 @@ import { useToast } from '~/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
 import {
   ACTIVE_CONTROL_REGISTER,
-  CONTROL_STATUS_DISPLAY_LABELS,
   type ActiveControlRecord,
-  type ControlStatus,
-  type EvidenceStatus,
-  getControlStatusDisplayLabel,
+  type ControlCoverage,
+  type ControlResponsibility,
+  getControlCoverageDisplayLabel,
+  getControlResponsibilityDisplayLabel,
   getActiveControlRegisterSummary,
 } from '~/lib/shared/compliance/control-register';
 
 const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors'] as const;
-const CONTROL_TABLE_SORT_FIELDS = ['control', 'status', 'family', 'evidence', 'review'] as const;
-const CONTROL_STATUS_FILTER_VALUES = [
+const CONTROL_TABLE_SORT_FIELDS = ['control', 'coverage', 'responsibility', 'family'] as const;
+const CONTROL_COVERAGE_FILTER_VALUES = [
   'all',
-  'platform-enforced',
-  'shared-responsibility',
+  'covered',
   'partial',
-  'operator-owned',
+  'not-covered',
   'not-applicable',
 ] as const;
-
-const CONTROL_EVIDENCE_FILTER_VALUES = [
+const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
   'all',
-  'pass',
-  'warning',
-  'missing',
-  'fail',
-  'not-tested',
+  'platform',
+  'shared-responsibility',
+  'operator-owned',
 ] as const;
-const CONTROL_REVIEW_FILTER_VALUES = ['all', 'reviewed', 'review-overdue'] as const;
 const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 const securitySearchSchema = z.object({
@@ -69,10 +70,9 @@ const securitySearchSchema = z.object({
   sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).default('control'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
-  status: z.enum(CONTROL_STATUS_FILTER_VALUES).default('all'),
+  coverage: z.enum(CONTROL_COVERAGE_FILTER_VALUES).default('all'),
+  responsibility: z.enum(CONTROL_RESPONSIBILITY_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
-  evidence: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
-  review: z.enum(CONTROL_REVIEW_FILTER_VALUES).default('all'),
   selectedControl: z.string().optional(),
 });
 
@@ -95,10 +95,9 @@ function AdminSecurityRoute() {
     sortBy,
     sortOrder,
     search: controlSearchTerm,
-    status: statusFilter,
+    coverage: coverageFilter,
+    responsibility: responsibilityFilter,
     family: familyFilter,
-    evidence: evidenceFilter,
-    review: reviewFilter,
     selectedControl: selectedControlId,
   } = search;
   const { showToast } = useToast();
@@ -136,36 +135,24 @@ function AdminSecurityRoute() {
     ],
     [],
   );
-  const statusOptions = useMemo<TableFilterOption<'all' | ControlStatus>[]>(
+  const coverageOptions = useMemo<TableFilterOption<'all' | ControlCoverage>[]>(
     () => [
-      { label: 'All statuses', value: 'all' },
-      { label: CONTROL_STATUS_DISPLAY_LABELS['platform-enforced'], value: 'platform-enforced' },
-      {
-        label: CONTROL_STATUS_DISPLAY_LABELS['shared-responsibility'],
-        value: 'shared-responsibility',
-      },
-      { label: CONTROL_STATUS_DISPLAY_LABELS.partial, value: 'partial' },
-      { label: CONTROL_STATUS_DISPLAY_LABELS['operator-owned'], value: 'operator-owned' },
-      { label: CONTROL_STATUS_DISPLAY_LABELS['not-applicable'], value: 'not-applicable' },
+      { label: 'All coverage', value: 'all' },
+      { label: 'Covered', value: 'covered' },
+      { label: 'Partial', value: 'partial' },
+      { label: 'Not covered', value: 'not-covered' },
+      { label: 'Not applicable', value: 'not-applicable' },
     ],
     [],
   );
-  const evidenceOptions = useMemo<TableFilterOption<'all' | EvidenceStatus>[]>(
+  const responsibilityOptions = useMemo<
+    TableFilterOption<'all' | NonNullable<ActiveControlRecord['responsibility']>>[]
+  >(
     () => [
-      { label: 'All evidence states', value: 'all' },
-      { label: 'Pass', value: 'pass' },
-      { label: 'Warning', value: 'warning' },
-      { label: 'Missing', value: 'missing' },
-      { label: 'Fail', value: 'fail' },
-      { label: 'Not tested', value: 'not-tested' },
-    ],
-    [],
-  );
-  const reviewOptions = useMemo<TableFilterOption<'all' | 'reviewed' | 'review-overdue'>[]>(
-    () => [
-      { label: 'All review states', value: 'all' },
-      { label: 'Needs review', value: 'review-overdue' },
-      { label: 'Reviewed', value: 'reviewed' },
+      { label: 'All responsibilities', value: 'all' },
+      { label: 'Platform', value: 'platform' },
+      { label: 'Shared responsibility', value: 'shared-responsibility' },
+      { label: 'Operator-owned', value: 'operator-owned' },
     ],
     [],
   );
@@ -173,23 +160,18 @@ function AdminSecurityRoute() {
   const filteredControls = useMemo(
     () =>
       ACTIVE_CONTROL_REGISTER.controls.filter((control) => {
-        if (statusFilter !== 'all' && control.status !== statusFilter) {
+        if (coverageFilter !== 'all' && control.coverage !== coverageFilter) {
+          return false;
+        }
+
+        if (
+          responsibilityFilter !== 'all' &&
+          control.responsibility !== responsibilityFilter
+        ) {
           return false;
         }
 
         if (familyFilter !== 'all' && control.familyId !== familyFilter) {
-          return false;
-        }
-
-        if (evidenceFilter !== 'all' && control.evidence.latestEvidenceStatus !== evidenceFilter) {
-          return false;
-        }
-
-        if (reviewFilter === 'reviewed' && control.reviewStatus !== 'reviewed') {
-          return false;
-        }
-
-        if (reviewFilter === 'review-overdue' && control.reviewStatus === 'reviewed') {
           return false;
         }
 
@@ -201,21 +183,25 @@ function AdminSecurityRoute() {
           control.nist80053Id,
           control.title,
           control.implementationSummary,
-          control.controlStatement,
           control.familyId,
           control.familyTitle,
-          control.internalControlId,
           control.owner,
-          control.status,
+          control.coverage,
+          control.responsibility ?? '',
           control.reviewStatus,
           control.evidence.latestEvidenceStatus,
+          control.sharedResponsibilityNotes ?? '',
+          control.mappings.hipaa.map((mapping) => mapping.citation).join(' '),
+          control.mappings.csf20.map((mapping) => mapping.subcategoryId).join(' '),
+          control.mappings.nist80066.map((mapping) => mapping.referenceId).join(' '),
+          control.mappings.soc2.map((mapping) => mapping.criterionId).join(' '),
         ]
           .join(' ')
           .toLowerCase();
 
         return searchableText.includes(normalizedControlSearchTerm);
       }),
-    [evidenceFilter, familyFilter, normalizedControlSearchTerm, reviewFilter, statusFilter],
+    [coverageFilter, familyFilter, normalizedControlSearchTerm, responsibilityFilter],
   );
   const sortedControls = useMemo(() => {
     const sorted = [...filteredControls];
@@ -224,23 +210,16 @@ function AdminSecurityRoute() {
       let comparison = 0;
 
       switch (sortBy) {
-        case 'status':
-          comparison = left.status.localeCompare(right.status);
+        case 'coverage':
+          comparison = left.coverage.localeCompare(right.coverage);
+          break;
+        case 'responsibility':
+          comparison = (left.responsibility ?? '').localeCompare(right.responsibility ?? '');
           break;
         case 'family':
           comparison =
             left.familyId.localeCompare(right.familyId) ||
             left.familyTitle.localeCompare(right.familyTitle);
-          break;
-        case 'evidence':
-          comparison =
-            left.evidence.latestEvidenceStatus.localeCompare(right.evidence.latestEvidenceStatus) ||
-            left.evidence.evidenceCount - right.evidence.evidenceCount;
-          break;
-        case 'review':
-          comparison =
-            left.reviewStatus.localeCompare(right.reviewStatus) ||
-            (left.lastReviewedAt ?? '').localeCompare(right.lastReviewedAt ?? '');
           break;
         default:
           comparison =
@@ -302,10 +281,9 @@ function AdminSecurityRoute() {
         sortBy: (typeof CONTROL_TABLE_SORT_FIELDS)[number];
         sortOrder: 'asc' | 'desc';
         search: string;
-        status: 'all' | ControlStatus;
+        coverage: 'all' | ControlCoverage;
+        responsibility: 'all' | NonNullable<ActiveControlRecord['responsibility']>;
         family: string;
-        evidence: 'all' | EvidenceStatus;
-        review: 'all' | 'reviewed' | 'review-overdue';
         selectedControl: string | undefined;
       }>,
     ) => {
@@ -361,9 +339,24 @@ function AdminSecurityRoute() {
         cell: ({ row }) => <ControlCell control={row.original} />,
       },
       {
-        accessorKey: 'status',
-        header: createSortableHeader('Status', 'status', controlSearchParams, handleControlSorting),
-        cell: ({ row }) => <ControlStatusCell control={row.original} />,
+        accessorKey: 'coverage',
+        header: createSortableHeader(
+          'Coverage',
+          'coverage',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <CoverageCell control={row.original} />,
+      },
+      {
+        accessorKey: 'responsibility',
+        header: createSortableHeader(
+          'Responsibility',
+          'responsibility',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <ResponsibilityCell control={row.original} />,
       },
       {
         accessorKey: 'family',
@@ -374,21 +367,6 @@ function AdminSecurityRoute() {
           handleControlSorting,
         ),
         cell: ({ row }) => <FrameworkSummaryCell control={row.original} />,
-      },
-      {
-        accessorKey: 'evidence',
-        header: createSortableHeader(
-          'Evidence',
-          'evidence',
-          controlSearchParams,
-          handleControlSorting,
-        ),
-        cell: ({ row }) => <EvidenceCell control={row.original} />,
-      },
-      {
-        accessorKey: 'review',
-        header: createSortableHeader('Review', 'review', controlSearchParams, handleControlSorting),
-        cell: ({ row }) => <ReviewCell control={row.original} />,
       },
     ],
     [controlSearchParams, handleControlSorting],
@@ -401,20 +379,20 @@ function AdminSecurityRoute() {
         sortedControls.map((control) => ({
           controlId: control.nist80053Id,
           title: control.title,
+          coverage: control.coverage,
+          responsibility: control.responsibility ?? '',
           implementationSummary: control.implementationSummary,
           controlStatement: control.controlStatement,
           familyId: control.familyId,
           familyTitle: control.familyTitle,
           owner: control.owner,
           priority: control.priority,
-          status: control.status,
-          implementationScope: control.implementationScope,
           evidenceStatus: control.evidence.latestEvidenceStatus,
+          evidenceAssessment: control.evidence.assessmentNote,
           evidenceCount: control.evidence.evidenceCount,
           evidenceSources: control.evidence.evidenceSources.join('; '),
           reviewStatus: control.reviewStatus,
           lastReviewedAt: control.lastReviewedAt ?? '',
-          internalControlId: control.internalControlId,
           sharedResponsibilityNotes: control.sharedResponsibilityNotes ?? '',
           hipaaMappings: control.mappings.hipaa
             .map(
@@ -633,22 +611,22 @@ function AdminSecurityRoute() {
               footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
             />
             <SummaryCard
-              title="Implemented"
-              description="Controls currently implemented directly by the platform."
-              value={`${controlSummary.byStatus['platform-enforced']}`}
-              footer={`${controlSummary.byStatus['shared-responsibility']} shared responsibility controls`}
+              title="Covered"
+              description="Controls where the platform has completed its intended portion."
+              value={`${controlSummary.byCoverage.covered}`}
+              footer={`${controlSummary.byCoverage.partial} partial controls`}
             />
             <SummaryCard
-              title="Evidence Health"
-              description="Most recent evidence status across the active set."
-              value={`${controlSummary.byEvidence.pass} pass / ${controlSummary.byEvidence.warning} warning`}
-              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
+              title="Shared responsibility"
+              description="Controls that still require action or governance by your organization."
+              value={`${controlSummary.byResponsibility['shared-responsibility']}`}
+              footer={`${controlSummary.byResponsibility.platform} platform controls`}
             />
             <SummaryCard
-              title="Review Queue"
-              description="Controls that still need explicit review or follow-up."
-              value={`${controlSummary.overdueReviewCount}`}
-              footer={`${ACTIVE_CONTROL_REGISTER.controls.length - controlSummary.overdueReviewCount} reviewed`}
+              title="Operator-owned"
+              description="Controls that must be handled externally by your organization."
+              value={`${controlSummary.byResponsibility['operator-owned']}`}
+              footer={`${controlSummary.byCoverage['not-covered']} not covered controls`}
             />
           </div>
         </TabsContent>
@@ -657,8 +635,7 @@ function AdminSecurityRoute() {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Control Register</h2>
             <p className="text-sm text-muted-foreground">
-              Active control register with framework mappings, evidence posture, ownership, and
-              shared responsibility boundaries.
+              Active control register with coverage, responsibility, and framework mapping detail.
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -669,22 +646,22 @@ function AdminSecurityRoute() {
               footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
             />
             <SummaryCard
-              title="Implemented"
-              description="Controls currently implemented directly by the platform."
-              value={`${controlSummary.byStatus['platform-enforced']}`}
-              footer={`${controlSummary.byStatus['shared-responsibility']} shared responsibility controls`}
+              title="Covered"
+              description="Controls where the platform has completed its intended portion."
+              value={`${controlSummary.byCoverage.covered}`}
+              footer={`${controlSummary.byCoverage.partial} partial controls`}
             />
             <SummaryCard
-              title="Evidence Health"
-              description="Most recent evidence status across the active set."
-              value={`${controlSummary.byEvidence.pass} pass / ${controlSummary.byEvidence.warning} warning`}
-              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
+              title="Shared responsibility"
+              description="Controls that still require action or governance by your organization."
+              value={`${controlSummary.byResponsibility['shared-responsibility']}`}
+              footer={`${controlSummary.byResponsibility.platform} platform controls`}
             />
             <SummaryCard
-              title="Review Queue"
-              description="Controls that still need explicit review or follow-up."
-              value={`${controlSummary.overdueReviewCount}`}
-              footer={`${ACTIVE_CONTROL_REGISTER.controls.length - controlSummary.overdueReviewCount} reviewed`}
+              title="Operator-owned"
+              description="Controls that must be handled externally by your organization."
+              value={`${controlSummary.byResponsibility['operator-owned']}`}
+              footer={`${controlSummary.byCoverage['not-covered']} not covered controls`}
             />
           </div>
 
@@ -694,14 +671,23 @@ function AdminSecurityRoute() {
                 {controlPagination.total} matches
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <TableFilter<'all' | ControlStatus>
-                  value={statusFilter}
-                  options={statusOptions}
+                <TableFilter<'all' | ControlCoverage>
+                  value={coverageFilter}
+                  options={coverageOptions}
                   onValueChange={(value) => {
-                    updateControlSearch({ status: value, page: 1 });
+                    updateControlSearch({ coverage: value, page: 1 });
                   }}
                   className="shrink-0"
-                  ariaLabel="Filter controls by status"
+                  ariaLabel="Filter controls by coverage"
+                />
+                <TableFilter<'all' | NonNullable<ActiveControlRecord['responsibility']>>
+                  value={responsibilityFilter}
+                  options={responsibilityOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ responsibility: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by responsibility"
                 />
                 <TableFilter<string>
                   value={familyFilter}
@@ -712,24 +698,6 @@ function AdminSecurityRoute() {
                   className="shrink-0"
                   ariaLabel="Filter controls by family"
                 />
-                <TableFilter<'all' | EvidenceStatus>
-                  value={evidenceFilter}
-                  options={evidenceOptions}
-                  onValueChange={(value) => {
-                    updateControlSearch({ evidence: value, page: 1 });
-                  }}
-                  className="shrink-0"
-                  ariaLabel="Filter controls by evidence status"
-                />
-                <TableFilter<'all' | 'reviewed' | 'review-overdue'>
-                  value={reviewFilter}
-                  options={reviewOptions}
-                  onValueChange={(value) => {
-                    updateControlSearch({ review: value, page: 1 });
-                  }}
-                  className="shrink-0"
-                  ariaLabel="Filter controls by review status"
-                />
               </div>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
@@ -738,7 +706,7 @@ function AdminSecurityRoute() {
                 onSearch={(value) => {
                   updateControlSearch({ search: value, page: 1 });
                 }}
-                placeholder="Search by control, family, owner, or statement"
+                placeholder="Search by control, family, owner, responsibility, or framework"
                 isSearching={false}
                 className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
                 ariaLabel="Search controls"
@@ -959,10 +927,24 @@ function ControlCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
-function ControlStatusCell({ control }: { control: ActiveControlRecord }) {
+function CoverageCell({ control }: { control: ActiveControlRecord }) {
   const badge = (
-    <Badge variant={getControlStatusBadgeVariant(control.status)}>
-      {formatControlStatus(control.status)}
+    <Badge variant={getCoverageBadgeVariant(control.coverage)}>
+      {formatControlCoverage(control.coverage)}
+    </Badge>
+  );
+
+  return <div className="space-y-2 py-1">{badge}</div>;
+}
+
+function ResponsibilityCell({ control }: { control: ActiveControlRecord }) {
+  if (!control.responsibility) {
+    return <div className="py-1 text-sm text-muted-foreground">—</div>;
+  }
+
+  const badge = (
+    <Badge variant={getResponsibilityBadgeVariant(control.responsibility)}>
+      {formatControlResponsibility(control.responsibility)}
     </Badge>
   );
 
@@ -1053,63 +1035,6 @@ function FrameworkSummaryCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
-function EvidenceCell({ control }: { control: ActiveControlRecord }) {
-  return (
-    <div className="space-y-2 py-1">
-      <TooltipProvider delayDuration={150}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}>
-              {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} (
-              {control.evidence.evidenceCount})
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="center" className="max-w-xs">
-            <div className="space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-primary-foreground/75">
-                Evidence sources
-              </p>
-              <ul className="list-disc space-y-1 pl-4 text-left text-[11px] leading-relaxed">
-                {control.evidence.evidenceSources.map((source) => (
-                  <li key={source}>{source}</li>
-                ))}
-              </ul>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
-  );
-}
-
-function ReviewCell({ control }: { control: ActiveControlRecord }) {
-  return (
-    <div className="py-1">
-      <TooltipProvider delayDuration={150}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}>
-              {control.reviewStatus === 'reviewed' ? 'Reviewed' : 'Needs review'}
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent side="top" align="start" className="max-w-sm">
-            <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
-                Review status
-              </p>
-              <p className="text-xs leading-relaxed">
-                {control.lastReviewedAt
-                  ? `Reviewed ${new Date(control.lastReviewedAt).toLocaleDateString()}`
-                  : 'No completed review recorded'}
-              </p>
-            </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-    </div>
-  );
-}
-
 function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
   return (
     <>
@@ -1122,21 +1047,19 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
 
       <div className="space-y-6 p-4">
         <div className="flex flex-wrap gap-2">
-          <Badge variant={getControlStatusBadgeVariant(control.status)}>
-            {formatControlStatus(control.status)}
+          <Badge variant={getCoverageBadgeVariant(control.coverage)}>
+            {formatControlCoverage(control.coverage)}
           </Badge>
-          <Badge variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}>
-            {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} (
-            {control.evidence.evidenceCount})
-          </Badge>
-          <Badge variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}>
-            {control.reviewStatus === 'reviewed' ? 'Reviewed' : 'Needs review'}
-          </Badge>
+          {control.responsibility ? (
+            <Badge variant={getResponsibilityBadgeVariant(control.responsibility)}>
+              {formatControlResponsibility(control.responsibility)}
+            </Badge>
+          ) : null}
         </div>
 
         <DetailSection title="Ownership">
           <dl className="grid gap-4 sm:grid-cols-2">
-            <DetailItem label="Owner" value={control.owner} />
+            <DetailItem label="Control owner" value={control.owner} />
             <DetailItem
               label="Last reviewed"
               value={
@@ -1160,6 +1083,12 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
           </p>
         </DetailSection>
 
+        <DetailSection title="Evidence assessment">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {control.evidence.assessmentNote}
+          </p>
+        </DetailSection>
+
         <DetailSection title="Evidence sources">
           <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
             {control.evidence.evidenceSources.map((source) => (
@@ -1169,33 +1098,37 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
         </DetailSection>
 
         <DetailSection title="Framework mappings">
-          <div className="space-y-4">
-            <DetailList
+          <Accordion type="multiple" className="rounded-md border">
+            <FrameworkAccordionItem
               title="HIPAA"
+              value="hipaa"
               values={control.mappings.hipaa.map(
                 (mapping) => `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}`,
               )}
             />
-            <DetailList
+            <FrameworkAccordionItem
               title="CSF 2.0"
+              value="csf"
               values={control.mappings.csf20.map(
                 (mapping) =>
                   `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
               )}
             />
-            <DetailList
+            <FrameworkAccordionItem
               title="NIST 800-66r2"
+              value="nist-800-66r2"
               values={control.mappings.nist80066.map(
                 (mapping) => `${mapping.referenceId}${mapping.label ? ` · ${mapping.label}` : ''}`,
               )}
             />
-            <DetailList
+            <FrameworkAccordionItem
               title="SOC 2"
+              value="soc2"
               values={control.mappings.soc2.map(
                 (mapping) => `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}`,
               )}
             />
-          </div>
+          </Accordion>
         </DetailSection>
       </div>
     </>
@@ -1222,73 +1155,59 @@ function DetailItem(props: { label: string; value: string }) {
   );
 }
 
-function DetailList(props: { title: string; values: string[] }) {
+function FrameworkAccordionItem(props: { title: string; value: string; values: string[] }) {
   return (
-    <div className="space-y-2">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        {props.title}
-      </p>
-      {props.values.length > 0 ? (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-          {props.values.map((value) => (
-            <li key={value}>{value}</li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-sm text-muted-foreground">No mappings available.</p>
-      )}
-    </div>
+    <AccordionItem value={props.value} className="border-b last:border-b-0">
+      <AccordionTrigger className="px-4 py-3 text-sm">{props.title}</AccordionTrigger>
+      <AccordionContent className="px-4">
+        {props.values.length > 0 ? (
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {props.values.map((value) => (
+              <li key={value}>{value}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground">No mappings available.</p>
+        )}
+      </AccordionContent>
+    </AccordionItem>
   );
 }
 
-function formatEvidenceStatus(status: EvidenceStatus) {
-  switch (status) {
-    case 'pass':
-      return 'Pass';
-    case 'warning':
-      return 'Warning';
-    case 'missing':
-      return 'Missing';
-    case 'fail':
-      return 'Fail';
-    case 'not-tested':
-      return 'Not tested';
-  }
+function formatControlCoverage(coverage: ControlCoverage) {
+  return getControlCoverageDisplayLabel(coverage);
 }
 
-function formatControlStatus(status: ControlStatus) {
-  return getControlStatusDisplayLabel(status);
+function formatControlResponsibility(responsibility: ControlResponsibility | null) {
+  return getControlResponsibilityDisplayLabel(responsibility);
 }
 
-function getEvidenceBadgeVariant(
-  status: EvidenceStatus,
+function getCoverageBadgeVariant(
+  coverage: ControlCoverage,
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (status) {
-    case 'pass':
+  switch (coverage) {
+    case 'covered':
       return 'default';
-    case 'warning':
-      return 'secondary';
-    case 'missing':
-    case 'not-tested':
+    case 'partial':
       return 'outline';
-    case 'fail':
+    case 'not-covered':
       return 'destructive';
+    case 'not-applicable':
+      return 'secondary';
   }
 }
 
-function getControlStatusBadgeVariant(
-  status: ControlStatus,
+function getResponsibilityBadgeVariant(
+  responsibility: ControlResponsibility | null,
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (status) {
-    case 'platform-enforced':
+  switch (responsibility) {
+    case 'platform':
       return 'default';
     case 'shared-responsibility':
       return 'secondary';
-    case 'partial':
-      return 'outline';
     case 'operator-owned':
       return 'destructive';
-    case 'not-applicable':
+    case null:
       return 'outline';
   }
 }

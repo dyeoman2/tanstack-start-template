@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-17T20:50:57.207Z",
+  "generatedAt": "2026-03-17T21:47:08.888Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -10,175 +10,20 @@
   },
   "controls": [
     {
-      "internalControlId": "CTRL-AC-003",
-      "nist80053Id": "AC-3",
-      "title": "Access Enforcement",
-      "familyId": "AC",
-      "familyTitle": "Access Control",
-      "implementationSummary": "The platform enforces route- and server-side authorization checks for protected application actions and data access.",
-      "controlStatement": "Access Enforcement is tracked as an active control in the starter register.",
-      "status": "platform-enforced",
-      "implementationScope": "product",
-      "priority": "p0",
-      "owner": "Application Authorization",
-      "reviewStatus": "pending",
-      "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "Platform guards and server-side authorization are built in. Each deployment still needs correct role assignment and least-privilege policy choices.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(4)",
-            "title": "Information access management",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.312(a)(1)",
-            "title": "Access control",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(4)",
-            "label": "HIPAA Standard: Implement policies and procedures for authorizing access to electronic protected health information that are consistent with the applicable requirements of subpart E of this part.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "PR.AA-05",
-            "label": "PR / PR.AA: Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties"
-          },
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          },
-          {
-            "subcategoryId": "PR.IR-01",
-            "label": "PR / PR.IR: Networks and environments are protected from unauthorized logical access and usage"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC6.1",
-            "group": "common-criteria",
-            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC6.3",
-            "group": "common-criteria",
-            "label": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles, responsibilities, or the system design and changes, giving consideration to the concepts of least privilege and segregation of duties, to meet the entity’s objectives.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "P5.1",
-            "group": "privacy",
-            "label": "The entity grants identified and authenticated data subjects the ability to access their stored personal information for review and, upon request, provides physical or electronic copies of that information to data subjects to meet the entity’s objectives related to privacy. If access is denied, data subjects are informed of the denial and reason for such denial, as required, to meet the entity’s objectives related to privacy.",
-            "trustServiceCategory": "privacy"
-          }
-        ]
-      },
-      "evidence": {
-        "latestEvidenceStatus": "pass",
-        "evidenceCount": 3,
-        "evidenceSources": [
-          "Route Guards",
-          "Convex requireAuth/requireAdmin checks",
-          "Authorization Tests"
-        ]
-      }
-    },
-    {
-      "internalControlId": "CTRL-AU-002",
-      "nist80053Id": "AU-2",
-      "title": "Event Logging",
-      "familyId": "AU",
-      "familyTitle": "Audit and Accountability",
-      "implementationSummary": "The platform records security-relevant audit events and exposes them for review and export.",
-      "controlStatement": "Identify the types of events that the system is capable of logging in support of the audit function: {{ insert: param, au-02_odp.01 }}; Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged; Specify the following event types for logging within the system: {{ insert: param, au-2_prm_2 }}; Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and Review and update the event types selected for logging {{ insert: param, au-02_odp.04 }}.",
-      "status": "platform-enforced",
-      "implementationScope": "product",
-      "priority": "p0",
-      "owner": "Audit and Logging",
-      "reviewStatus": "pending",
-      "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The starter records security-relevant events, but each deployment must decide retention, alerting, and external log shipping.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
-            "title": "Information system activity review",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.312(b)",
-            "title": "Audit controls",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
-            "mappingType": "relationship"
-          },
-          {
-            "referenceId": "164.312(b)",
-            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "PR.PS-04",
-            "label": "PR / PR.PS: Log records are generated and made available for continuous monitoring"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          }
-        ]
-      },
-      "evidence": {
-        "latestEvidenceStatus": "pass",
-        "evidenceCount": 3,
-        "evidenceSources": [
-          "Audit Logs",
-          "Auth Audit Plugin",
-          "Evidence Reports"
-        ]
-      }
-    },
-    {
       "internalControlId": "CTRL-AC-002",
       "nist80053Id": "AC-2",
       "title": "Account Management",
       "familyId": "AC",
       "familyTitle": "Access Control",
+      "coverage": "covered",
       "implementationSummary": "The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain operator responsibilities.",
       "controlStatement": "Define and document the types of accounts allowed and specifically prohibited for use within the system; Assign account managers; Require {{ insert: param, ac-02_odp.01 }} for group and role membership; Specify: Authorized users of the system; Group and role membership; and Access authorizations (i.e., privileges) and {{ insert: param, ac-02_odp.02 }} for each account; Require approvals by {{ insert: param, ac-02_odp.03 }} for requests to create accounts; Create, enable, modify, disable, and remove accounts in accordance with {{ insert: param, ac-02_odp.04 }}; Monitor the use of accounts; Notify account managers and {{ insert: param, ac-02_odp.05 }} within: {{ insert: param, ac-02_odp.06 }} when accounts are no longer required; {{ insert: param, ac-02_odp.07 }} when users are terminated or transferred; and {{ insert: param, ac-02_odp.08 }} when system usage or need-to-know changes for an individual; Authorize access to the system based on: A valid access authorization; Intended system usage; and {{ insert: param, ac-02_odp.09 }}; Review accounts for compliance with account management requirements {{ insert: param, ac-02_odp.10 }}; Establish and implement a process for changing shared or group account authenticators (if deployed) when individuals are removed from the group; and Align account management processes with personnel termination and transfer processes.",
-      "status": "shared-responsibility",
-      "implementationScope": "shared",
       "priority": "p0",
       "owner": "Identity and Access Management",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The template enforces account boundaries and admin workflows, but deployers still own workforce onboarding, termination, and periodic access review.",
+      "sharedResponsibilityNotes": "The template enforces account boundaries and admin workflows, but your organization still owns workforce onboarding, termination, and periodic access review.",
       "mappings": {
         "hipaa": [
           {
@@ -262,6 +107,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Supporting evidence exists for platform account boundaries and audit visibility, but workforce onboarding, offboarding, and periodic access review remain external responsibilities and have not been verified here.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -272,17 +118,174 @@
       }
     },
     {
+      "internalControlId": "CTRL-AC-003",
+      "nist80053Id": "AC-3",
+      "title": "Access Enforcement",
+      "familyId": "AC",
+      "familyTitle": "Access Control",
+      "coverage": "covered",
+      "implementationSummary": "The platform enforces route- and server-side authorization checks for protected application actions and data access.",
+      "controlStatement": "Access Enforcement is tracked as an active control in the starter register.",
+      "priority": "p0",
+      "owner": "Application Authorization",
+      "responsibility": "platform",
+      "reviewStatus": "pending",
+      "lastReviewedAt": null,
+      "sharedResponsibilityNotes": "Platform guards and server-side authorization are built in. Each deployment still needs correct role assignment and least-privilege policy choices.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(4)",
+            "title": "Information access management",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.312(a)(1)",
+            "title": "Access control",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(4)",
+            "label": "HIPAA Standard: Implement policies and procedures for authorizing access to electronic protected health information that are consistent with the applicable requirements of subpart E of this part.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.AA-05",
+            "label": "PR / PR.AA: Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties"
+          },
+          {
+            "subcategoryId": "PR.DS-10",
+            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
+          },
+          {
+            "subcategoryId": "PR.IR-01",
+            "label": "PR / PR.IR: Networks and environments are protected from unauthorized logical access and usage"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.1",
+            "group": "common-criteria",
+            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "CC6.3",
+            "group": "common-criteria",
+            "label": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles, responsibilities, or the system design and changes, giving consideration to the concepts of least privilege and segregation of duties, to meet the entity’s objectives.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "CC7.2",
+            "group": "common-criteria",
+            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "P5.1",
+            "group": "privacy",
+            "label": "The entity grants identified and authenticated data subjects the ability to access their stored personal information for review and, upon request, provides physical or electronic copies of that information to data subjects to meet the entity’s objectives related to privacy. If access is denied, data subjects are informed of the denial and reason for such denial, as required, to meet the entity’s objectives related to privacy.",
+            "trustServiceCategory": "privacy"
+          }
+        ]
+      },
+      "evidence": {
+        "assessmentNote": "Built-in route guards, server authorization checks, and test coverage provide direct support for this control in the template.",
+        "latestEvidenceStatus": "pass",
+        "evidenceCount": 3,
+        "evidenceSources": [
+          "Route Guards",
+          "Convex requireAuth/requireAdmin checks",
+          "Authorization Tests"
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AU-002",
+      "nist80053Id": "AU-2",
+      "title": "Event Logging",
+      "familyId": "AU",
+      "familyTitle": "Audit and Accountability",
+      "coverage": "covered",
+      "implementationSummary": "The platform records security-relevant audit events and exposes them for review and export.",
+      "controlStatement": "Identify the types of events that the system is capable of logging in support of the audit function: {{ insert: param, au-02_odp.01 }}; Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged; Specify the following event types for logging within the system: {{ insert: param, au-2_prm_2 }}; Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and Review and update the event types selected for logging {{ insert: param, au-02_odp.04 }}.",
+      "priority": "p0",
+      "owner": "Audit and Logging",
+      "responsibility": "platform",
+      "reviewStatus": "pending",
+      "lastReviewedAt": null,
+      "sharedResponsibilityNotes": "The starter records security-relevant events, but each deployment must decide retention, alerting, and external log shipping.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
+            "title": "Information system activity review",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(D)",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.PS-04",
+            "label": "PR / PR.PS: Log records are generated and made available for continuous monitoring"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC7.2",
+            "group": "common-criteria",
+            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      },
+      "evidence": {
+        "assessmentNote": "The template records and exposes security-relevant audit events, and the listed evidence sources directly support that behavior.",
+        "latestEvidenceStatus": "pass",
+        "evidenceCount": 3,
+        "evidenceSources": [
+          "Audit Logs",
+          "Auth Audit Plugin",
+          "Evidence Reports"
+        ]
+      }
+    },
+    {
       "internalControlId": "CTRL-SC-028",
       "nist80053Id": "SC-28",
       "title": "Protection of Information at Rest",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
+      "coverage": "covered",
       "implementationSummary": "The platform includes data handling and retention controls, while encryption-at-rest and key management depend on infrastructure configuration.",
       "controlStatement": "Protection of Information at Rest is tracked as an active control in the starter register.",
-      "status": "shared-responsibility",
-      "implementationScope": "shared",
       "priority": "p0",
       "owner": "Data Protection",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
       "sharedResponsibilityNotes": "The template includes retention and file-handling controls, but encryption at rest and key-management settings are infrastructure choices.",
@@ -324,6 +327,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "The template covers data handling and retention behaviors, but encryption-at-rest and key-management proof depend on infrastructure evidence outside the app.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -339,15 +343,15 @@
       "title": "Transmission Confidentiality and Integrity",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration are deployment concerns.",
+      "coverage": "covered",
+      "implementationSummary": "The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration remain your organization’s concerns.",
       "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the starter register.",
-      "status": "shared-responsibility",
-      "implementationScope": "shared",
       "priority": "p0",
       "owner": "Infrastructure and Platform Security",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The app assumes secure transport, but TLS termination, certificate management, and network edge configuration are deployment concerns.",
+      "sharedResponsibilityNotes": "The app assumes secure transport, but TLS termination, certificate management, and network edge configuration remain your organization’s responsibilities.",
       "mappings": {
         "hipaa": [
           {
@@ -391,6 +395,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Transport-related settings are identified, but TLS termination, certificate management, and edge enforcement remain external responsibilities for your organization.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -406,15 +411,15 @@
       "title": "Identification and Authentication (Organizational Users)",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
+      "coverage": "partial",
       "implementationSummary": "The platform includes authenticated access flows, verified-email checks, and MFA/passkey support for user accounts.",
       "controlStatement": "Identification and Authentication (Organizational Users) is tracked as an active control in the starter register.",
-      "status": "partial",
-      "implementationScope": "shared",
       "priority": "p0",
       "owner": "Authentication",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "Authentication scaffolding is built in, but production identity proofing, MFA policy, and account lifecycle decisions remain operator-owned.",
+      "sharedResponsibilityNotes": "Authentication scaffolding is built in, but production identity proofing, MFA policy, and account lifecycle decisions remain with your organization.",
       "mappings": {
         "hipaa": [
           {
@@ -462,6 +467,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Authentication and MFA-related evidence exists, but production identity proofing, MFA enforcement policy, and account lifecycle decisions remain partly with your organization.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -477,15 +483,15 @@
       "title": "System Backup",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
+      "coverage": "not-covered",
       "implementationSummary": "The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external to the app.",
       "controlStatement": "Conduct backups of user-level information contained in {{ insert: param, cp-09_odp.01 }} {{ insert: param, cp-09_odp.02 }}; Conduct backups of system-level information contained in the system {{ insert: param, cp-09_odp.03 }}; Conduct backups of system documentation, including security- and privacy-related documentation {{ insert: param, cp-09_odp.04 }} ; and Protect the confidentiality, integrity, and availability of backup information.",
-      "status": "operator-owned",
-      "implementationScope": "ops",
       "priority": "p0",
       "owner": "Infrastructure Operations",
+      "responsibility": "operator-owned",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The app can record backup verification outcomes, but the actual backup strategy and restore testing are deployment responsibilities.",
+      "sharedResponsibilityNotes": "The app can record backup verification outcomes, but the actual backup strategy and restore testing remain your organization’s responsibilities.",
       "mappings": {
         "hipaa": [
           {
@@ -553,6 +559,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Backup verification is expected to come from deployment infrastructure, and no completed backup or restore evidence is attached in this register.",
         "latestEvidenceStatus": "missing",
         "evidenceCount": 1,
         "evidenceSources": [
@@ -566,15 +573,15 @@
       "title": "Incident Handling",
       "familyId": "IR",
       "familyTitle": "Incident Response",
+      "coverage": "not-covered",
       "implementationSummary": "The platform provides audit trails and evidence outputs that can support incident response, but response execution remains an operational responsibility.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
-      "status": "operator-owned",
-      "implementationScope": "ops",
       "priority": "p0",
       "owner": "Security Incident Response",
+      "responsibility": "operator-owned",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The product emits evidence and audit trails, but incident response procedures, contacts, and post-incident handling remain operator-owned.",
+      "sharedResponsibilityNotes": "The product emits evidence and audit trails, but incident response procedures, contacts, and post-incident handling remain with your organization.",
       "mappings": {
         "hipaa": [
           {
@@ -711,6 +718,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "The control points to supporting incident materials, but no completed incident response evidence or exercised runbook review is recorded here.",
         "latestEvidenceStatus": "missing",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -726,15 +734,15 @@
       "title": "Vulnerability Monitoring and Scanning",
       "familyId": "RA",
       "familyTitle": "Risk Assessment",
+      "coverage": "not-covered",
       "implementationSummary": "The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are not automated by the template.",
       "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
-      "status": "operator-owned",
-      "implementationScope": "ops",
       "priority": "p0",
       "owner": "Security Engineering",
+      "responsibility": "operator-owned",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The starter does not perform vulnerability management for you. Deployers need scanning, triage, remediation, and documented risk treatment.",
+      "sharedResponsibilityNotes": "The starter does not perform vulnerability management for you. Your organization needs scanning, triage, remediation, and documented risk treatment.",
       "mappings": {
         "hipaa": [
           {
@@ -804,6 +812,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "The expected vulnerability scanning and remediation evidence has not been attached, so this control remains unsupported in the current register.",
         "latestEvidenceStatus": "missing",
         "evidenceCount": 0,
         "evidenceSources": [
@@ -819,15 +828,15 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
+      "coverage": "covered",
       "implementationSummary": "The platform supports stronger authenticators, reset auditing, and verification controls around account recovery flows.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
-      "status": "shared-responsibility",
-      "implementationScope": "shared",
       "priority": "p1",
       "owner": "Authentication",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The template supports stronger authenticators and reset auditing, but deployers must choose allowed credential types and recovery workflows.",
+      "sharedResponsibilityNotes": "The template supports stronger authenticators and reset auditing, but your organization must choose allowed credential types and recovery workflows.",
       "mappings": {
         "hipaa": [
           {
@@ -899,6 +908,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "The template supports stronger authenticators and recovery auditing, but credential policy choices and account recovery procedures are not fully evidenced here.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -914,12 +924,12 @@
       "title": "Audit Record Review, Analysis, and Reporting",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
+      "coverage": "partial",
       "implementationSummary": "The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures must be operated by the organization.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
-      "status": "partial",
-      "implementationScope": "shared",
       "priority": "p1",
       "owner": "Security Operations",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
       "sharedResponsibilityNotes": "The app exposes evidence and review queues, but an operator must establish review cadence, escalation, and documented follow-up.",
@@ -986,6 +996,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Evidence queues and integrity checks exist, but the actual review cadence, escalation, and documented follow-up process are not yet demonstrated.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -1001,12 +1012,12 @@
       "title": "System Monitoring",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
+      "coverage": "partial",
       "implementationSummary": "The platform emits monitoring-relevant signals such as scan events, audit integrity checks, and telemetry posture summaries.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
-      "status": "partial",
-      "implementationScope": "shared",
       "priority": "p1",
       "owner": "Security Monitoring",
+      "responsibility": "shared-responsibility",
       "reviewStatus": "pending",
       "lastReviewedAt": null,
       "sharedResponsibilityNotes": "Built-in monitoring covers app-level signals, but production alerting, correlation, and 24x7 monitoring posture are external to the template.",
@@ -1098,6 +1109,7 @@
         ]
       },
       "evidence": {
+        "assessmentNote": "Monitoring-related signals exist, but alert routing, correlation, and operational review of those signals are not yet fully evidenced.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [

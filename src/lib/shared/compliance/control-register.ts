@@ -1,21 +1,22 @@
 import activeControlRegisterJson from '../../../../compliance/generated/active-control-register.seed.json';
 
-export type ControlStatus =
-  | 'not-applicable'
-  | 'operator-owned'
-  | 'partial'
-  | 'platform-enforced'
-  | 'shared-responsibility';
+export type ControlCoverage = 'covered' | 'not-applicable' | 'not-covered' | 'partial';
+export type ControlResponsibility = 'operator-owned' | 'platform' | 'shared-responsibility';
 
 export type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
 export type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
 
-export const CONTROL_STATUS_DISPLAY_LABELS: Record<ControlStatus, string> = {
-  'not-applicable': 'Not applicable',
-  'operator-owned': 'Operator-owned',
+export const CONTROL_COVERAGE_DISPLAY_LABELS: Record<ControlCoverage, string> = {
+  covered: 'Covered',
   partial: 'Partial',
-  'platform-enforced': 'Implemented',
+  'not-covered': 'Not covered',
+  'not-applicable': 'Not applicable',
+};
+
+export const CONTROL_RESPONSIBILITY_DISPLAY_LABELS: Record<ControlResponsibility, string> = {
+  platform: 'Platform',
   'shared-responsibility': 'Shared responsibility',
+  'operator-owned': 'Operator-owned',
 };
 
 export type ActiveControlRegister = {
@@ -33,15 +34,16 @@ export type ActiveControlRegister = {
 
 export type ActiveControlRecord = {
   controlStatement: string;
+  coverage: ControlCoverage;
   implementationSummary: string;
   evidence: {
+    assessmentNote: string;
     evidenceCount: number;
     evidenceSources: string[];
     latestEvidenceStatus: EvidenceStatus;
   };
   familyId: string;
   familyTitle: string;
-  implementationScope: 'ops' | 'product' | 'shared';
   internalControlId: string;
   lastReviewedAt: string | null;
   mappings: {
@@ -80,24 +82,25 @@ export type ActiveControlRecord = {
   nist80053Id: string;
   owner: string;
   priority: 'p0' | 'p1' | 'p2';
+  responsibility: ControlResponsibility | null;
   reviewStatus: ReviewStatus;
   sharedResponsibilityNotes: string | null;
-  status: ControlStatus;
   title: string;
 };
 
 type ActiveControlRegisterInput = {
   controls: Array<{
     controlStatement: string;
+    coverage: string;
     implementationSummary: string;
     evidence: {
+      assessmentNote: string;
       evidenceCount: number;
       evidenceSources: string[];
       latestEvidenceStatus: string;
     };
     familyId: string;
     familyTitle: string;
-    implementationScope: string;
     internalControlId: string;
     lastReviewedAt: string | null;
     mappings: {
@@ -126,9 +129,9 @@ type ActiveControlRegisterInput = {
     nist80053Id: string;
     owner: string;
     priority: string;
+    responsibility: string | null;
     reviewStatus: string;
     sharedResponsibilityNotes: string | null;
-    status: string;
     title: string;
   }>;
   generatedAt: string;
@@ -142,16 +145,27 @@ type ActiveControlRegisterInput = {
   schemaVersion: string;
 };
 
-function normalizeControlStatus(value: string): ControlStatus {
+function normalizeControlCoverage(value: string): ControlCoverage {
   switch (value) {
-    case 'platform-enforced':
+    case 'covered':
     case 'partial':
-    case 'operator-owned':
-    case 'shared-responsibility':
+    case 'not-covered':
     case 'not-applicable':
       return value;
     default:
-      throw new Error(`Unsupported control status: ${value}`);
+      throw new Error(`Unsupported control coverage: ${value}`);
+  }
+}
+
+function normalizeControlResponsibility(value: string | null): ControlResponsibility | null {
+  switch (value) {
+    case 'platform':
+    case 'shared-responsibility':
+    case 'operator-owned':
+    case null:
+      return value;
+    default:
+      throw new Error(`Unsupported control responsibility: ${value}`);
   }
 }
 
@@ -210,21 +224,14 @@ function normalizeActiveControlRegister(
     },
     controls: value.controls.map((control) => ({
       ...control,
-      status: normalizeControlStatus(control.status),
-      implementationScope:
-        control.implementationScope === 'ops' ||
-        control.implementationScope === 'product' ||
-        control.implementationScope === 'shared'
-          ? control.implementationScope
-          : (() => {
-              throw new Error(`Unsupported implementation scope: ${control.implementationScope}`);
-            })(),
+      coverage: normalizeControlCoverage(control.coverage),
       priority:
         control.priority === 'p0' || control.priority === 'p1' || control.priority === 'p2'
           ? control.priority
           : (() => {
               throw new Error(`Unsupported control priority: ${control.priority}`);
             })(),
+      responsibility: normalizeControlResponsibility(control.responsibility),
       reviewStatus: normalizeReviewStatus(control.reviewStatus),
       mappings: {
         hipaa: control.mappings.hipaa.map((mapping) => ({
@@ -280,24 +287,43 @@ const activeControlRegisterInput: ActiveControlRegisterInput = activeControlRegi
 
 export const ACTIVE_CONTROL_REGISTER = normalizeActiveControlRegister(activeControlRegisterInput);
 
-export function getControlStatusDisplayLabel(status: ControlStatus) {
-  return CONTROL_STATUS_DISPLAY_LABELS[status];
+export function getControlCoverageDisplayLabel(coverage: ControlCoverage) {
+  return CONTROL_COVERAGE_DISPLAY_LABELS[coverage];
+}
+
+export function getControlResponsibilityDisplayLabel(
+  responsibility: ControlResponsibility | null,
+) {
+  return responsibility ? CONTROL_RESPONSIBILITY_DISPLAY_LABELS[responsibility] : '—';
 }
 
 export function getActiveControlRegisterSummary() {
   const controls = ACTIVE_CONTROL_REGISTER.controls;
 
-  const byStatus = controls.reduce<Record<ControlStatus, number>>(
+  const byCoverage = controls.reduce<Record<ControlCoverage, number>>(
     (accumulator, control) => {
-      accumulator[control.status] += 1;
+      accumulator[control.coverage] += 1;
       return accumulator;
     },
     {
-      'platform-enforced': 0,
+      covered: 0,
       partial: 0,
-      'operator-owned': 0,
-      'shared-responsibility': 0,
+      'not-covered': 0,
       'not-applicable': 0,
+    },
+  );
+
+  const byResponsibility = controls.reduce<Record<ControlResponsibility, number>>(
+    (accumulator, control) => {
+      if (control.responsibility) {
+        accumulator[control.responsibility] += 1;
+      }
+      return accumulator;
+    },
+    {
+      platform: 0,
+      'shared-responsibility': 0,
+      'operator-owned': 0,
     },
   );
 
@@ -321,7 +347,8 @@ export function getActiveControlRegisterSummary() {
 
   return {
     totalControls: controls.length,
-    byStatus,
+    byCoverage,
+    byResponsibility,
     byEvidence,
     overdueReviewCount,
   };

@@ -114,12 +114,8 @@ type Soc2Payload = {
   sourceFiles: string[];
 };
 
-type Status =
-  | 'not-applicable'
-  | 'operator-owned'
-  | 'partial'
-  | 'platform-enforced'
-  | 'shared-responsibility';
+type Coverage = 'covered' | 'not-applicable' | 'not-covered' | 'partial';
+type Responsibility = 'operator-owned' | 'platform' | 'shared-responsibility' | null;
 
 type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
 type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
@@ -154,31 +150,35 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'AC-2',
     internalControlId: 'CTRL-AC-002',
     implementationSummary:
-      'The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain operator responsibilities.',
-    status: 'shared-responsibility' as const,
-    implementationScope: 'shared' as const,
+      'The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain external operating responsibilities.',
+    coverage: 'covered' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Identity and Access Management',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'Supporting evidence exists for platform account boundaries and audit visibility, but workforce onboarding, offboarding, and periodic access review remain external operating responsibilities and are not evidenced in this register.',
     evidenceSources: ['Auth Users', 'Organization Membership Changes', 'Admin Audit Events'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(3)', '45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The template enforces account boundaries and admin workflows, but deployers still own workforce onboarding, termination, and periodic access review.',
+      'The platform enforces account boundaries and admin workflows, but workforce onboarding, termination, and periodic access review remain external operating responsibilities.',
   },
   {
     nist80053Id: 'AC-3',
     internalControlId: 'CTRL-AC-003',
     implementationSummary:
       'The platform enforces route- and server-side authorization checks for protected application actions and data access.',
-    status: 'platform-enforced' as const,
-    implementationScope: 'product' as const,
+    coverage: 'covered' as const,
+    responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Application Authorization',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'pass' as const,
+    evidenceAssessmentNote:
+      'Built-in route guards, server authorization checks, and test coverage provide direct support for this platform control.',
     evidenceSources: [
       'Route Guards',
       'Convex requireAuth/requireAdmin checks',
@@ -188,73 +188,81 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     hipaaCitations: ['45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'Platform guards and server-side authorization are built in. Each deployment still needs correct role assignment and least-privilege policy choices.',
+      'Platform guards and server-side authorization are built in. Role assignment and least-privilege policy decisions still need to be maintained by the operating organization.',
   },
   {
     nist80053Id: 'AU-2',
     internalControlId: 'CTRL-AU-002',
     implementationSummary:
       'The platform records security-relevant audit events and exposes them for review and export.',
-    status: 'platform-enforced' as const,
-    implementationScope: 'product' as const,
+    coverage: 'covered' as const,
+    responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Audit and Logging',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'pass' as const,
+    evidenceAssessmentNote:
+      'The platform records and exposes security-relevant audit events, and the listed evidence sources directly support that behavior.',
     evidenceSources: ['Audit Logs', 'Auth Audit Plugin', 'Evidence Reports'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The starter records security-relevant events, but each deployment must decide retention, alerting, and external log shipping.',
+      'The platform records security-relevant events, but retention, alerting, and external log shipping remain deployment-specific operating decisions.',
   },
   {
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
     implementationSummary:
-      'The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures must be operated by the organization.',
-    status: 'partial' as const,
-    implementationScope: 'shared' as const,
+      'The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures remain external operating responsibilities.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Operations',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'Evidence queues and integrity checks exist, but the actual review cadence, escalation, and documented follow-up process are not yet demonstrated.',
     evidenceSources: ['Evidence Reports', 'Audit Integrity Checks', 'Admin Security Dashboard'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The app exposes evidence and review queues, but an operator must establish review cadence, escalation, and documented follow-up.',
+      'The platform exposes evidence and review queues, but review cadence, escalation, and documented follow-up remain external operating responsibilities.',
   },
   {
     nist80053Id: 'IA-2',
     internalControlId: 'CTRL-IA-002',
     implementationSummary:
       'The platform includes authenticated access flows, verified-email checks, and MFA/passkey support for user accounts.',
-    status: 'partial' as const,
-    implementationScope: 'shared' as const,
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Authentication',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'Authentication and MFA-related evidence exists, but production identity proofing, MFA enforcement policy, and account lifecycle decisions remain external operating responsibilities.',
     evidenceSources: ['Better Auth Users', 'MFA Coverage Summary', 'Passkey Enrollment'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'Authentication scaffolding is built in, but production identity proofing, MFA policy, and account lifecycle decisions remain operator-owned.',
+      'Authentication scaffolding is built in, but production identity proofing, MFA policy, and account lifecycle decisions remain external operating responsibilities.',
   },
   {
     nist80053Id: 'IA-5',
     internalControlId: 'CTRL-IA-005',
     implementationSummary:
       'The platform supports stronger authenticators, reset auditing, and verification controls around account recovery flows.',
-    status: 'shared-responsibility' as const,
-    implementationScope: 'shared' as const,
+    coverage: 'covered' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Authentication',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'The platform supports stronger authenticators and recovery auditing, but credential policy choices and account recovery procedures are not fully evidenced here.',
     evidenceSources: [
       'Passkey Enrollment Records',
       'Password Reset Audit Events',
@@ -264,73 +272,81 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The template supports stronger authenticators and reset auditing, but deployers must choose allowed credential types and recovery workflows.',
+      'The platform supports stronger authenticators and reset auditing, but allowed credential types and recovery workflows remain external operating decisions.',
   },
   {
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
     implementationSummary:
-      'The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external to the app.',
-    status: 'operator-owned' as const,
-    implementationScope: 'ops' as const,
+      'The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external infrastructure and operating responsibilities.',
+    coverage: 'not-covered' as const,
+    responsibility: 'operator-owned' as const,
     priority: 'p0' as const,
     owner: 'Infrastructure Operations',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
+    evidenceAssessmentNote:
+      'Backup verification is expected to come from deployment infrastructure, and no completed backup or restore evidence is attached in this register.',
     evidenceSources: ['Backup Verification Reports'],
     evidenceCount: 1,
     hipaaCitations: ['45 CFR 164.308(a)(7)(ii)(A)', '45 CFR 164.308(a)(7)(ii)(B)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The app can record backup verification outcomes, but the actual backup strategy and restore testing are deployment responsibilities.',
+      'The platform can record backup verification outcomes, but backup strategy and restore testing remain external infrastructure and operating responsibilities.',
   },
   {
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
       'The platform provides audit trails and evidence outputs that can support incident response, but response execution remains an operational responsibility.',
-    status: 'operator-owned' as const,
-    implementationScope: 'ops' as const,
+    coverage: 'not-covered' as const,
+    responsibility: 'operator-owned' as const,
     priority: 'p0' as const,
     owner: 'Security Incident Response',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
+    evidenceAssessmentNote:
+      'The control points to supporting incident materials, but no completed incident response evidence or exercised runbook review is recorded here.',
     evidenceSources: ['Incident Runbooks', 'Audit Event Export', 'Evidence Reports'],
     evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The product emits evidence and audit trails, but incident response procedures, contacts, and post-incident handling remain operator-owned.',
+      'The product emits evidence and audit trails, but incident response procedures, contacts, and post-incident handling remain external operating responsibilities.',
   },
   {
     nist80053Id: 'RA-5',
     internalControlId: 'CTRL-RA-005',
     implementationSummary:
-      'The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are not automated by the template.',
-    status: 'operator-owned' as const,
-    implementationScope: 'ops' as const,
+      'The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are external security operations responsibilities.',
+    coverage: 'not-covered' as const,
+    responsibility: 'operator-owned' as const,
     priority: 'p0' as const,
     owner: 'Security Engineering',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
+    evidenceAssessmentNote:
+      'The expected vulnerability scanning and remediation evidence has not been attached, so this control remains unsupported in the current register.',
     evidenceSources: ['Scanner Integrations', 'Dependency Audit Results', 'Risk Review Notes'],
     evidenceCount: 0,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(A)', '45 CFR 164.308(a)(1)(ii)(B)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The starter does not perform vulnerability management for you. Deployers need scanning, triage, remediation, and documented risk treatment.',
+      'Vulnerability management is outside the platform boundary. Scanning, triage, remediation, and documented risk treatment remain external security operations responsibilities.',
   },
   {
     nist80053Id: 'SC-8',
     internalControlId: 'CTRL-SC-008',
     implementationSummary:
-      'The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration are deployment concerns.',
-    status: 'shared-responsibility' as const,
-    implementationScope: 'shared' as const,
+      'The platform relies on secure transport configuration and exposes transport-sensitive settings, while TLS termination and edge network configuration remain external infrastructure responsibilities.',
+    coverage: 'covered' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Infrastructure and Platform Security',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'Transport-related settings are identified, but TLS termination, certificate management, and edge enforcement remain external infrastructure responsibilities.',
     evidenceSources: [
       'HTTPS deployment policy',
       'Secure Link TTL Settings',
@@ -340,49 +356,54 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     hipaaCitations: ['45 CFR 164.312(e)(1)', '45 CFR 164.312(e)(2)(i)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The app assumes secure transport, but TLS termination, certificate management, and network edge configuration are deployment concerns.',
+      'The platform relies on secure transport, but TLS termination, certificate management, and network edge configuration remain external infrastructure responsibilities.',
   },
   {
     nist80053Id: 'SC-28',
     internalControlId: 'CTRL-SC-028',
     implementationSummary:
       'The platform includes data handling and retention controls, while encryption-at-rest and key management depend on infrastructure configuration.',
-    status: 'shared-responsibility' as const,
-    implementationScope: 'shared' as const,
+    coverage: 'covered' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Data Protection',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'The platform covers data handling and retention behaviors, but encryption-at-rest and key-management proof depend on infrastructure evidence outside the platform boundary.',
     evidenceSources: ['Storage Configuration', 'Retention Jobs', 'Vendor Boundary Policy'],
     evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.312(a)(2)(iv)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'The template includes retention and file-handling controls, but encryption at rest and key-management settings are infrastructure choices.',
+      'The platform includes retention and file-handling controls, but encryption at rest and key-management settings remain external infrastructure choices.',
   },
   {
     nist80053Id: 'SI-4',
     internalControlId: 'CTRL-SI-004',
     implementationSummary:
       'The platform emits monitoring-relevant signals such as scan events, audit integrity checks, and telemetry posture summaries.',
-    status: 'partial' as const,
-    implementationScope: 'shared' as const,
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Monitoring',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
+    evidenceAssessmentNote:
+      'Monitoring-related signals exist, but alert routing, correlation, and operational review of those signals are not yet fully evidenced.',
     evidenceSources: ['Document Scan Events', 'Audit Integrity Checks', 'Telemetry Posture Summary'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
     sharedResponsibilityNotes:
-      'Built-in monitoring covers app-level signals, but production alerting, correlation, and 24x7 monitoring posture are external to the template.',
+      'Built-in monitoring covers platform-level signals, but alert routing, correlation, and 24x7 monitoring posture remain external operating responsibilities.',
   },
 ] satisfies ReadonlyArray<{
   evidenceCount: number;
+  evidenceAssessmentNote: string;
   evidenceSources: string[];
   hipaaCitations: string[];
-  implementationScope: 'ops' | 'product' | 'shared';
+  coverage: Coverage;
   implementationSummary: string;
   internalControlId: string;
   latestEvidenceStatus: EvidenceStatus;
@@ -394,9 +415,9 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   }>;
   owner: string;
   priority: 'p0' | 'p1' | 'p2';
+  responsibility: Responsibility;
   reviewStatus: ReviewStatus;
   sharedResponsibilityNotes: string;
-  status: Status;
 }>;
 
 function flattenStatement(statement: string[]): string | null {
@@ -478,18 +499,16 @@ function mapByCitation(citations: HipaaCitation[]) {
   return new Map(citations.map((citation) => [citation.citation, citation]));
 }
 
-function statusSortValue(status: Status): number {
-  switch (status) {
-    case 'platform-enforced':
+function coverageSortValue(coverage: Coverage): number {
+  switch (coverage) {
+    case 'covered':
       return 0;
-    case 'shared-responsibility':
-      return 1;
     case 'partial':
+      return 1;
+    case 'not-covered':
       return 2;
-    case 'operator-owned':
-      return 3;
     case 'not-applicable':
-      return 4;
+      return 3;
   }
 }
 
@@ -526,14 +545,14 @@ async function main() {
       title: sourceControl.title,
       familyId: sourceControl.familyId,
       familyTitle: sourceControl.familyTitle,
+      coverage: blueprint.coverage,
       implementationSummary: blueprint.implementationSummary,
       controlStatement:
         flattenStatement(sourceControl.statement) ??
         `${sourceControl.title} is tracked as an active control in the starter register.`,
-      status: blueprint.status,
-      implementationScope: blueprint.implementationScope,
       priority: blueprint.priority,
       owner: blueprint.owner,
+      responsibility: blueprint.responsibility,
       reviewStatus: blueprint.reviewStatus,
       lastReviewedAt: null,
       sharedResponsibilityNotes: blueprint.sharedResponsibilityNotes,
@@ -587,6 +606,7 @@ async function main() {
         })),
       },
       evidence: {
+        assessmentNote: blueprint.evidenceAssessmentNote,
         latestEvidenceStatus: blueprint.latestEvidenceStatus,
         evidenceCount: blueprint.evidenceCount,
         evidenceSources: blueprint.evidenceSources,
@@ -598,9 +618,9 @@ async function main() {
       return priorityCompare;
     }
 
-    const statusCompare = statusSortValue(left.status) - statusSortValue(right.status);
-    if (statusCompare !== 0) {
-      return statusCompare;
+    const coverageCompare = coverageSortValue(left.coverage) - coverageSortValue(right.coverage);
+    if (coverageCompare !== 0) {
+      return coverageCompare;
     }
 
     return left.nist80053Id.localeCompare(right.nist80053Id);

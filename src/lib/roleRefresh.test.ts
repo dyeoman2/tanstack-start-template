@@ -58,21 +58,36 @@ describe('setupClaimRefresh', () => {
     cleanup();
   });
 
-  it('swallows refresh failures and unregisters the focus listener on cleanup', async () => {
+  it('silences expected network refresh failures and unregisters the focus listener on cleanup', async () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
-    getSessionMock.mockRejectedValue(new Error('network'));
+    getSessionMock.mockRejectedValue(new TypeError('Failed to fetch'));
 
     const { setupClaimRefresh } = await import('~/lib/roleRefresh');
     const cleanup = setupClaimRefresh();
 
     window.dispatchEvent(new Event('focus'));
     await vi.runAllTimersAsync();
-    expect(warnSpy).toHaveBeenCalled();
+    expect(warnSpy).not.toHaveBeenCalled();
 
     cleanup();
     window.dispatchEvent(new Event('focus'));
     await vi.runAllTimersAsync();
 
     expect(getSessionMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('still warns on unexpected refresh failures', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    getSessionMock.mockRejectedValue(new Error('boom'));
+
+    const { setupClaimRefresh } = await import('~/lib/roleRefresh');
+    const cleanup = setupClaimRefresh();
+
+    window.dispatchEvent(new Event('focus'));
+    await vi.runAllTimersAsync();
+
+    expect(warnSpy).toHaveBeenCalledOnce();
+
+    cleanup();
   });
 });

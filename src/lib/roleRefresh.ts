@@ -1,5 +1,17 @@
 import { authClient } from '~/features/auth/auth-client';
 
+function shouldSilenceClaimRefreshError(error: unknown) {
+  if (error instanceof TypeError) {
+    return /failed to fetch|load failed|networkerror/i.test(error.message);
+  }
+
+  if (error instanceof DOMException) {
+    return error.name === 'AbortError' || /networkerror/i.test(error.message);
+  }
+
+  return false;
+}
+
 /**
  * Claim refresh helper - refreshes Better Auth claims when the window regains focus
  * so role changes on the server propagate quickly without forcing a full reload.
@@ -28,6 +40,10 @@ export function setupClaimRefresh(maxAgeMs = 20 * 60_000) {
         await authClient.getSession();
       }
     } catch (error) {
+      if (shouldSilenceClaimRefreshError(error)) {
+        return;
+      }
+
       console.warn('[claim-refresh] Failed to refresh claims', error);
     }
   };
