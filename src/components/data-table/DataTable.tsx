@@ -42,6 +42,7 @@ interface DataTableProps<
   onPageSizeChange: (pageSize: number) => void;
   emptyMessage?: string;
   loadingSkeleton?: React.ReactNode;
+  onRowClick?: (row: TData) => void;
 }
 
 export function DataTable<
@@ -58,6 +59,7 @@ export function DataTable<
   onPageSizeChange,
   emptyMessage = 'No data found.',
   loadingSkeleton,
+  onRowClick,
 }: DataTableProps<TData, TColumnDef>) {
   const sortingState: SortingState = [
     { id: searchParams.sortBy, desc: searchParams.sortOrder === 'desc' },
@@ -112,7 +114,12 @@ export function DataTable<
           <TableBody>
             {table.getRowModel().rows?.length ? (
               table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && 'selected'}>
+                <TableRow
+                  key={row.id}
+                  data-state={row.getIsSelected() && 'selected'}
+                  className={onRowClick ? 'cursor-pointer hover:bg-muted/30' : undefined}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                >
                   {row.getVisibleCells().map((cell) => (
                     <TableCell key={cell.id}>
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}

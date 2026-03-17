@@ -10,6 +10,14 @@ export type ControlStatus =
 export type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
 export type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
 
+export const CONTROL_STATUS_DISPLAY_LABELS: Record<ControlStatus, string> = {
+  'not-applicable': 'Not applicable',
+  'operator-owned': 'Operator-owned',
+  partial: 'Partial',
+  'platform-enforced': 'Implemented',
+  'shared-responsibility': 'Shared responsibility',
+};
+
 export type ActiveControlRegister = {
   controls: ActiveControlRecord[];
   generatedAt: string;
@@ -25,6 +33,7 @@ export type ActiveControlRegister = {
 
 export type ActiveControlRecord = {
   controlStatement: string;
+  implementationSummary: string;
   evidence: {
     evidenceCount: number;
     evidenceSources: string[];
@@ -80,6 +89,7 @@ export type ActiveControlRecord = {
 type ActiveControlRegisterInput = {
   controls: Array<{
     controlStatement: string;
+    implementationSummary: string;
     evidence: {
       evidenceCount: number;
       evidenceSources: string[];
@@ -269,6 +279,10 @@ function normalizeActiveControlRegister(
 const activeControlRegisterInput: ActiveControlRegisterInput = activeControlRegisterJson;
 
 export const ACTIVE_CONTROL_REGISTER = normalizeActiveControlRegister(activeControlRegisterInput);
+
+export function getControlStatusDisplayLabel(status: ControlStatus) {
+  return CONTROL_STATUS_DISPLAY_LABELS[status];
+}
 
 export function getActiveControlRegisterSummary() {
   const controls = ACTIVE_CONTROL_REGISTER.controls;

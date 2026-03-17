@@ -153,13 +153,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'AC-2',
     internalControlId: 'CTRL-AC-002',
+    implementationSummary:
+      'The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain operator responsibilities.',
     status: 'shared-responsibility' as const,
     implementationScope: 'shared' as const,
     priority: 'p0' as const,
     owner: 'Identity and Access Management',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
-    evidenceSources: ['auth users', 'organization membership changes', 'admin audit events'],
+    evidenceSources: ['Auth Users', 'Organization Membership Changes', 'Admin Audit Events'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(3)', '45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
     nist80066: [],
@@ -169,6 +171,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'AC-3',
     internalControlId: 'CTRL-AC-003',
+    implementationSummary:
+      'The platform enforces route- and server-side authorization checks for protected application actions and data access.',
     status: 'platform-enforced' as const,
     implementationScope: 'product' as const,
     priority: 'p0' as const,
@@ -176,9 +180,9 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'pass' as const,
     evidenceSources: [
-      'route guards',
+      'Route Guards',
       'Convex requireAuth/requireAdmin checks',
-      'authorization tests',
+      'Authorization Tests',
     ],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
@@ -189,13 +193,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'AU-2',
     internalControlId: 'CTRL-AU-002',
+    implementationSummary:
+      'The platform records security-relevant audit events and exposes them for review and export.',
     status: 'platform-enforced' as const,
     implementationScope: 'product' as const,
     priority: 'p0' as const,
     owner: 'Audit and Logging',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'pass' as const,
-    evidenceSources: ['auditLogs', 'auth audit plugin', 'evidenceReports'],
+    evidenceSources: ['Audit Logs', 'Auth Audit Plugin', 'Evidence Reports'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)'],
     nist80066: [],
@@ -205,13 +211,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
+    implementationSummary:
+      'The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures must be operated by the organization.',
     status: 'partial' as const,
     implementationScope: 'shared' as const,
     priority: 'p1' as const,
     owner: 'Security Operations',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
-    evidenceSources: ['evidenceReports', 'audit integrity checks', 'admin security dashboard'],
+    evidenceSources: ['Evidence Reports', 'Audit Integrity Checks', 'Admin Security Dashboard'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
@@ -221,13 +229,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'IA-2',
     internalControlId: 'CTRL-IA-002',
+    implementationSummary:
+      'The platform includes authenticated access flows, verified-email checks, and MFA/passkey support for user accounts.',
     status: 'partial' as const,
     implementationScope: 'shared' as const,
     priority: 'p0' as const,
     owner: 'Authentication',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
-    evidenceSources: ['Better Auth users', 'MFA coverage summary', 'passkey enrollment'],
+    evidenceSources: ['Better Auth Users', 'MFA Coverage Summary', 'Passkey Enrollment'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
     nist80066: [],
@@ -237,6 +247,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'IA-5',
     internalControlId: 'CTRL-IA-005',
+    implementationSummary:
+      'The platform supports stronger authenticators, reset auditing, and verification controls around account recovery flows.',
     status: 'shared-responsibility' as const,
     implementationScope: 'shared' as const,
     priority: 'p1' as const,
@@ -244,9 +256,9 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
     evidenceSources: [
-      'passkey enrollment records',
-      'password reset audit events',
-      'email verification policy',
+      'Passkey Enrollment Records',
+      'Password Reset Audit Events',
+      'Email Verification Policy',
     ],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
@@ -257,13 +269,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
+    implementationSummary:
+      'The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external to the app.',
     status: 'operator-owned' as const,
     implementationScope: 'ops' as const,
     priority: 'p0' as const,
     owner: 'Infrastructure Operations',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
-    evidenceSources: ['backupVerificationReports'],
+    evidenceSources: ['Backup Verification Reports'],
     evidenceCount: 1,
     hipaaCitations: ['45 CFR 164.308(a)(7)(ii)(A)', '45 CFR 164.308(a)(7)(ii)(B)'],
     nist80066: [],
@@ -273,13 +287,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
+    implementationSummary:
+      'The platform provides audit trails and evidence outputs that can support incident response, but response execution remains an operational responsibility.',
     status: 'operator-owned' as const,
     implementationScope: 'ops' as const,
     priority: 'p0' as const,
     owner: 'Security Incident Response',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
-    evidenceSources: ['incident runbooks', 'audit event export', 'evidenceReports'],
+    evidenceSources: ['Incident Runbooks', 'Audit Event Export', 'Evidence Reports'],
     evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
@@ -289,13 +305,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'RA-5',
     internalControlId: 'CTRL-RA-005',
+    implementationSummary:
+      'The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are not automated by the template.',
     status: 'operator-owned' as const,
     implementationScope: 'ops' as const,
     priority: 'p0' as const,
     owner: 'Security Engineering',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'missing' as const,
-    evidenceSources: ['scanner integrations', 'dependency audit results', 'risk review notes'],
+    evidenceSources: ['Scanner Integrations', 'Dependency Audit Results', 'Risk Review Notes'],
     evidenceCount: 0,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(A)', '45 CFR 164.308(a)(1)(ii)(B)'],
     nist80066: [],
@@ -305,6 +323,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'SC-8',
     internalControlId: 'CTRL-SC-008',
+    implementationSummary:
+      'The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration are deployment concerns.',
     status: 'shared-responsibility' as const,
     implementationScope: 'shared' as const,
     priority: 'p0' as const,
@@ -313,8 +333,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     latestEvidenceStatus: 'warning' as const,
     evidenceSources: [
       'HTTPS deployment policy',
-      'secure link TTL settings',
-      'session transport configuration',
+      'Secure Link TTL Settings',
+      'Session Transport Configuration',
     ],
     evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.312(e)(1)', '45 CFR 164.312(e)(2)(i)'],
@@ -325,13 +345,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'SC-28',
     internalControlId: 'CTRL-SC-028',
+    implementationSummary:
+      'The platform includes data handling and retention controls, while encryption-at-rest and key management depend on infrastructure configuration.',
     status: 'shared-responsibility' as const,
     implementationScope: 'shared' as const,
     priority: 'p0' as const,
     owner: 'Data Protection',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
-    evidenceSources: ['storage configuration', 'retentionJobs', 'vendor boundary policy'],
+    evidenceSources: ['Storage Configuration', 'Retention Jobs', 'Vendor Boundary Policy'],
     evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.312(a)(2)(iv)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
@@ -341,13 +363,15 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   {
     nist80053Id: 'SI-4',
     internalControlId: 'CTRL-SI-004',
+    implementationSummary:
+      'The platform emits monitoring-relevant signals such as scan events, audit integrity checks, and telemetry posture summaries.',
     status: 'partial' as const,
     implementationScope: 'shared' as const,
     priority: 'p1' as const,
     owner: 'Security Monitoring',
     reviewStatus: 'pending' as const,
     latestEvidenceStatus: 'warning' as const,
-    evidenceSources: ['documentScanEvents', 'audit integrity checks', 'telemetry posture summary'],
+    evidenceSources: ['Document Scan Events', 'Audit Integrity Checks', 'Telemetry Posture Summary'],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
@@ -359,6 +383,7 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
   evidenceSources: string[];
   hipaaCitations: string[];
   implementationScope: 'ops' | 'product' | 'shared';
+  implementationSummary: string;
   internalControlId: string;
   latestEvidenceStatus: EvidenceStatus;
   nist80053Id: string;
@@ -501,6 +526,7 @@ async function main() {
       title: sourceControl.title,
       familyId: sourceControl.familyId,
       familyTitle: sourceControl.familyTitle,
+      implementationSummary: blueprint.implementationSummary,
       controlStatement:
         flattenStatement(sourceControl.statement) ??
         `${sourceControl.title} is tracked as an active control in the starter register.`,
@@ -536,19 +562,9 @@ async function main() {
               return [
                 {
                   referenceId: reference.referenceId,
-                  label: reference.title,
+                  label: reference.text,
                   mappingType: 'relationship' as const,
                 },
-                ...reference.keyActivities.slice(0, 2).map((activity) => ({
-                  referenceId: activity.referenceId,
-                  label: activity.title,
-                  mappingType: 'key-activity' as const,
-                })),
-                ...reference.sampleQuestions.slice(0, 1).map((question) => ({
-                  referenceId: question.referenceId,
-                  label: question.text,
-                  mappingType: 'sample-question' as const,
-                })),
               ];
             })
             .filter(

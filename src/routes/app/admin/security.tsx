@@ -3,6 +3,8 @@ import type { Id } from '@convex/_generated/dataModel';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useAction, useMutation, useQuery } from 'convex/react';
+import Papa from 'papaparse';
+import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import {
@@ -16,14 +18,25 @@ import { PageHeader } from '~/components/PageHeader';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { ExportButton } from '~/components/ui/export-button';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '~/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
+import { useToast } from '~/components/ui/toast';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
 import {
   ACTIVE_CONTROL_REGISTER,
+  CONTROL_STATUS_DISPLAY_LABELS,
   type ActiveControlRecord,
   type ControlStatus,
   type EvidenceStatus,
+  getControlStatusDisplayLabel,
   getActiveControlRegisterSummary,
 } from '~/lib/shared/compliance/control-register';
 
@@ -37,6 +50,7 @@ const CONTROL_STATUS_FILTER_VALUES = [
   'operator-owned',
   'not-applicable',
 ] as const;
+
 const CONTROL_EVIDENCE_FILTER_VALUES = [
   'all',
   'pass',
@@ -59,6 +73,7 @@ const securitySearchSchema = z.object({
   family: z.string().default('all'),
   evidence: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
   review: z.enum(CONTROL_REVIEW_FILTER_VALUES).default('all'),
+  selectedControl: z.string().optional(),
 });
 
 export const Route = createFileRoute('/app/admin/security')({
@@ -84,7 +99,9 @@ function AdminSecurityRoute() {
     family: familyFilter,
     evidence: evidenceFilter,
     review: reviewFilter,
+    selectedControl: selectedControlId,
   } = search;
+  const { showToast } = useToast();
   const summary = useQuery(api.security.getSecurityPostureSummary, {});
   const evidenceReports = useQuery(api.security.listEvidenceReports, { limit: 10 });
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
@@ -95,6 +112,7 @@ function AdminSecurityRoute() {
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+  const [isExportingControls, setIsExportingControls] = useState(false);
 
   const controlSummary = getActiveControlRegisterSummary();
   const familyOptions = useMemo<TableFilterOption<string>[]>(
@@ -102,7 +120,10 @@ function AdminSecurityRoute() {
       { label: 'All families', value: 'all' },
       ...Array.from(
         new Map(
-          ACTIVE_CONTROL_REGISTER.controls.map((control) => [control.familyId, control.familyTitle]),
+          ACTIVE_CONTROL_REGISTER.controls.map((control) => [
+            control.familyId,
+            control.familyTitle,
+          ]),
         ).entries(),
       )
         .sort(([leftId, leftTitle], [rightId, rightTitle]) => {
@@ -118,11 +139,14 @@ function AdminSecurityRoute() {
   const statusOptions = useMemo<TableFilterOption<'all' | ControlStatus>[]>(
     () => [
       { label: 'All statuses', value: 'all' },
-      { label: 'Platform-enforced', value: 'platform-enforced' },
-      { label: 'Shared-responsibility', value: 'shared-responsibility' },
-      { label: 'Partial', value: 'partial' },
-      { label: 'Operator-owned', value: 'operator-owned' },
-      { label: 'Not applicable', value: 'not-applicable' },
+      { label: CONTROL_STATUS_DISPLAY_LABELS['platform-enforced'], value: 'platform-enforced' },
+      {
+        label: CONTROL_STATUS_DISPLAY_LABELS['shared-responsibility'],
+        value: 'shared-responsibility',
+      },
+      { label: CONTROL_STATUS_DISPLAY_LABELS.partial, value: 'partial' },
+      { label: CONTROL_STATUS_DISPLAY_LABELS['operator-owned'], value: 'operator-owned' },
+      { label: CONTROL_STATUS_DISPLAY_LABELS['not-applicable'], value: 'not-applicable' },
     ],
     [],
   );
@@ -176,6 +200,7 @@ function AdminSecurityRoute() {
         const searchableText = [
           control.nist80053Id,
           control.title,
+          control.implementationSummary,
           control.controlStatement,
           control.familyId,
           control.familyTitle,
@@ -242,6 +267,15 @@ function AdminSecurityRoute() {
     const startIndex = (currentControlPage - 1) * pageSize;
     return sortedControls.slice(startIndex, startIndex + pageSize);
   }, [currentControlPage, pageSize, sortedControls]);
+  const selectedControl = useMemo(
+    () =>
+      selectedControlId
+        ? (ACTIVE_CONTROL_REGISTER.controls.find(
+            (control) => control.internalControlId === selectedControlId,
+          ) ?? null)
+        : null,
+    [selectedControlId],
+  );
   const controlPagination = useMemo(
     () => ({
       page: currentControlPage,
@@ -272,6 +306,7 @@ function AdminSecurityRoute() {
         family: string;
         evidence: 'all' | EvidenceStatus;
         review: 'all' | 'reviewed' | 'review-overdue';
+        selectedControl: string | undefined;
       }>,
     ) => {
       void navigate({
@@ -358,6 +393,80 @@ function AdminSecurityRoute() {
     ],
     [controlSearchParams, handleControlSorting],
   );
+  const handleExportControls = useCallback(async () => {
+    setIsExportingControls(true);
+
+    try {
+      const csv = Papa.unparse(
+        sortedControls.map((control) => ({
+          controlId: control.nist80053Id,
+          title: control.title,
+          implementationSummary: control.implementationSummary,
+          controlStatement: control.controlStatement,
+          familyId: control.familyId,
+          familyTitle: control.familyTitle,
+          owner: control.owner,
+          priority: control.priority,
+          status: control.status,
+          implementationScope: control.implementationScope,
+          evidenceStatus: control.evidence.latestEvidenceStatus,
+          evidenceCount: control.evidence.evidenceCount,
+          evidenceSources: control.evidence.evidenceSources.join('; '),
+          reviewStatus: control.reviewStatus,
+          lastReviewedAt: control.lastReviewedAt ?? '',
+          internalControlId: control.internalControlId,
+          sharedResponsibilityNotes: control.sharedResponsibilityNotes ?? '',
+          hipaaMappings: control.mappings.hipaa
+            .map(
+              (mapping) =>
+                `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}${mapping.type ? ` · ${mapping.type}` : ''}${mapping.implementationSpecification ? ` · ${mapping.implementationSpecification}` : ''}`,
+            )
+            .join('; '),
+          hipaaMappingsJson: JSON.stringify(control.mappings.hipaa),
+          csfMappings: control.mappings.csf20
+            .map(
+              (mapping) => `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+            )
+            .join('; '),
+          csfMappingsJson: JSON.stringify(control.mappings.csf20),
+          nist80066Mappings: control.mappings.nist80066
+            .map(
+              (mapping) =>
+                `${mapping.referenceId}${mapping.label ? ` · ${mapping.label}` : ''}${mapping.mappingType ? ` · ${mapping.mappingType}` : ''}`,
+            )
+            .join('; '),
+          nist80066MappingsJson: JSON.stringify(control.mappings.nist80066),
+          soc2Mappings: control.mappings.soc2
+            .map(
+              (mapping) =>
+                `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}${mapping.group ? ` · ${mapping.group}` : ''}${mapping.trustServiceCategory ? ` · ${mapping.trustServiceCategory}` : ''}`,
+            )
+            .join('; '),
+          soc2MappingsJson: JSON.stringify(control.mappings.soc2),
+          evidenceJson: JSON.stringify(control.evidence),
+          fullControlJson: JSON.stringify(control),
+        })),
+      );
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+
+      anchor.href = url;
+      anchor.download = `security-control-register-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.append(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+      showToast('Control register exported.', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to export control register',
+        'error',
+      );
+    } finally {
+      setIsExportingControls(false);
+    }
+  }, [showToast, sortedControls]);
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
@@ -416,6 +525,7 @@ function AdminSecurityRoute() {
             search: {
               ...search,
               tab: value,
+              selectedControl: value === 'controls' ? search.selectedControl : undefined,
             },
           });
         }}
@@ -526,7 +636,7 @@ function AdminSecurityRoute() {
               title="Implemented"
               description="Controls currently implemented directly by the platform."
               value={`${controlSummary.byStatus['platform-enforced']}`}
-              footer={`${controlSummary.byStatus['shared-responsibility']} shared-responsibility controls`}
+              footer={`${controlSummary.byStatus['shared-responsibility']} shared responsibility controls`}
             />
             <SummaryCard
               title="Evidence Health"
@@ -548,7 +658,7 @@ function AdminSecurityRoute() {
             <h2 className="text-lg font-semibold">Control Register</h2>
             <p className="text-sm text-muted-foreground">
               Active control register with framework mappings, evidence posture, ownership, and
-              shared-responsibility boundaries.
+              shared responsibility boundaries.
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -562,7 +672,7 @@ function AdminSecurityRoute() {
               title="Implemented"
               description="Controls currently implemented directly by the platform."
               value={`${controlSummary.byStatus['platform-enforced']}`}
-              footer={`${controlSummary.byStatus['shared-responsibility']} shared-responsibility controls`}
+              footer={`${controlSummary.byStatus['shared-responsibility']} shared responsibility controls`}
             />
             <SummaryCard
               title="Evidence Health"
@@ -622,16 +732,24 @@ function AdminSecurityRoute() {
                 />
               </div>
             </div>
-            <TableSearch
-              initialValue={controlSearchTerm}
-              onSearch={(value) => {
-                updateControlSearch({ search: value, page: 1 });
-              }}
-              placeholder="Search by control, family, owner, or statement"
-              isSearching={false}
-              className="min-w-[260px] xl:max-w-lg"
-              ariaLabel="Search controls"
-            />
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
+              <TableSearch
+                initialValue={controlSearchTerm}
+                onSearch={(value) => {
+                  updateControlSearch({ search: value, page: 1 });
+                }}
+                placeholder="Search by control, family, owner, or statement"
+                isSearching={false}
+                className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
+                ariaLabel="Search controls"
+              />
+              <ExportButton
+                onExport={handleExportControls}
+                isLoading={isExportingControls}
+                disabled={sortedControls.length === 0}
+                label="Export controls to Excel"
+              />
+            </div>
           </div>
 
           <DataTable<ActiveControlRecord, (typeof controlColumns)[number]>
@@ -642,6 +760,9 @@ function AdminSecurityRoute() {
             isLoading={false}
             onPageChange={handleControlPageChange}
             onPageSizeChange={handleControlPageSizeChange}
+            onRowClick={(control) => {
+              updateControlSearch({ selectedControl: control.internalControlId });
+            }}
             emptyMessage="No controls matched the current filters."
           />
         </TabsContent>
@@ -785,6 +906,21 @@ function AdminSecurityRoute() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Sheet
+        open={selectedControl !== null}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          updateControlSearch({ selectedControl: undefined });
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {selectedControl ? <ControlDetailSheet control={selectedControl} /> : null}
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
@@ -808,16 +944,12 @@ function ControlCell({ control }: { control: ActiveControlRecord }) {
                   Ownership
                 </p>
                 <p className="text-sm font-medium">{control.owner}</p>
-                <p className="text-xs text-primary-foreground/80">{control.internalControlId}</p>
-                <p className="text-[11px] uppercase tracking-wide text-primary-foreground/80">
-                  {control.priority}
-                </p>
               </div>
               <div className="space-y-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
-                  Control summary
+                  Implementation summary
                 </p>
-                <p className="text-xs leading-relaxed">{control.controlStatement}</p>
+                <p className="text-xs leading-relaxed">{control.implementationSummary}</p>
               </div>
             </div>
           </TooltipContent>
@@ -874,7 +1006,7 @@ function FrameworkSummaryCell({ control }: { control: ActiveControlRecord }) {
       ),
     },
     {
-      label: '800-66',
+      label: 'NIST 800-66r2',
       count: control.mappings.nist80066.length,
       values: control.mappings.nist80066.map((mapping) => mapping.referenceId),
     },
@@ -927,18 +1059,17 @@ function EvidenceCell({ control }: { control: ActiveControlRecord }) {
       <TooltipProvider delayDuration={150}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge
-              variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}
-            >
-              {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} ({control.evidence.evidenceCount})
+            <Badge variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}>
+              {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} (
+              {control.evidence.evidenceCount})
             </Badge>
           </TooltipTrigger>
-          <TooltipContent side="top" align="start" className="max-w-sm">
+          <TooltipContent side="top" align="center" className="max-w-xs">
             <div className="space-y-2">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-primary-foreground/75">
                 Evidence sources
               </p>
-              <ul className="list-disc space-y-1 pl-4 text-left text-xs leading-relaxed">
+              <ul className="list-disc space-y-1 pl-4 text-left text-[11px] leading-relaxed">
                 {control.evidence.evidenceSources.map((source) => (
                   <li key={source}>{source}</li>
                 ))}
@@ -957,9 +1088,7 @@ function ReviewCell({ control }: { control: ActiveControlRecord }) {
       <TooltipProvider delayDuration={150}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge
-              variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}
-            >
+            <Badge variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}>
               {control.reviewStatus === 'reviewed' ? 'Reviewed' : 'Needs review'}
             </Badge>
           </TooltipTrigger>
@@ -981,6 +1110,137 @@ function ReviewCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
+function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
+  return (
+    <>
+      <SheetHeader className="border-b">
+        <SheetTitle>
+          {control.nist80053Id} {control.title}
+        </SheetTitle>
+        <SheetDescription>{control.familyTitle}</SheetDescription>
+      </SheetHeader>
+
+      <div className="space-y-6 p-4">
+        <div className="flex flex-wrap gap-2">
+          <Badge variant={getControlStatusBadgeVariant(control.status)}>
+            {formatControlStatus(control.status)}
+          </Badge>
+          <Badge variant={getEvidenceBadgeVariant(control.evidence.latestEvidenceStatus)}>
+            {formatEvidenceStatus(control.evidence.latestEvidenceStatus)} (
+            {control.evidence.evidenceCount})
+          </Badge>
+          <Badge variant={control.reviewStatus === 'reviewed' ? 'default' : 'outline'}>
+            {control.reviewStatus === 'reviewed' ? 'Reviewed' : 'Needs review'}
+          </Badge>
+        </div>
+
+        <DetailSection title="Ownership">
+          <dl className="grid gap-4 sm:grid-cols-2">
+            <DetailItem label="Owner" value={control.owner} />
+            <DetailItem
+              label="Last reviewed"
+              value={
+                control.lastReviewedAt
+                  ? new Date(control.lastReviewedAt).toLocaleDateString()
+                  : 'No completed review recorded'
+              }
+            />
+          </dl>
+        </DetailSection>
+
+        <DetailSection title="Implementation summary">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {control.implementationSummary}
+          </p>
+        </DetailSection>
+
+        <DetailSection title="Responsibility notes">
+          <p className="text-sm leading-relaxed text-muted-foreground">
+            {control.sharedResponsibilityNotes ?? 'No additional notes recorded.'}
+          </p>
+        </DetailSection>
+
+        <DetailSection title="Evidence sources">
+          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {control.evidence.evidenceSources.map((source) => (
+              <li key={source}>{source}</li>
+            ))}
+          </ul>
+        </DetailSection>
+
+        <DetailSection title="Framework mappings">
+          <div className="space-y-4">
+            <DetailList
+              title="HIPAA"
+              values={control.mappings.hipaa.map(
+                (mapping) => `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}`,
+              )}
+            />
+            <DetailList
+              title="CSF 2.0"
+              values={control.mappings.csf20.map(
+                (mapping) =>
+                  `${mapping.subcategoryId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+              )}
+            />
+            <DetailList
+              title="NIST 800-66r2"
+              values={control.mappings.nist80066.map(
+                (mapping) => `${mapping.referenceId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+              )}
+            />
+            <DetailList
+              title="SOC 2"
+              values={control.mappings.soc2.map(
+                (mapping) => `${mapping.criterionId}${mapping.label ? ` · ${mapping.label}` : ''}`,
+              )}
+            />
+          </div>
+        </DetailSection>
+      </div>
+    </>
+  );
+}
+
+function DetailSection(props: { children: ReactNode; title: string }) {
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold">{props.title}</h3>
+      {props.children}
+    </section>
+  );
+}
+
+function DetailItem(props: { label: string; value: string }) {
+  return (
+    <div className="space-y-1">
+      <dt className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {props.label}
+      </dt>
+      <dd className="text-sm text-foreground">{props.value}</dd>
+    </div>
+  );
+}
+
+function DetailList(props: { title: string; values: string[] }) {
+  return (
+    <div className="space-y-2">
+      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        {props.title}
+      </p>
+      {props.values.length > 0 ? (
+        <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+          {props.values.map((value) => (
+            <li key={value}>{value}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-sm text-muted-foreground">No mappings available.</p>
+      )}
+    </div>
+  );
+}
+
 function formatEvidenceStatus(status: EvidenceStatus) {
   switch (status) {
     case 'pass':
@@ -997,18 +1257,7 @@ function formatEvidenceStatus(status: EvidenceStatus) {
 }
 
 function formatControlStatus(status: ControlStatus) {
-  switch (status) {
-    case 'platform-enforced':
-      return 'Platform-enforced';
-    case 'shared-responsibility':
-      return 'Shared-responsibility';
-    case 'partial':
-      return 'Partial';
-    case 'operator-owned':
-      return 'Operator-owned';
-    case 'not-applicable':
-      return 'Not applicable';
-  }
+  return getControlStatusDisplayLabel(status);
 }
 
 function getEvidenceBadgeVariant(

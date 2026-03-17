@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-17T17:30:14.984Z",
+  "generatedAt": "2026-03-17T20:50:57.207Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -15,6 +15,7 @@
       "title": "Access Enforcement",
       "familyId": "AC",
       "familyTitle": "Access Control",
+      "implementationSummary": "The platform enforces route- and server-side authorization checks for protected application actions and data access.",
       "controlStatement": "Access Enforcement is tracked as an active control in the starter register.",
       "status": "platform-enforced",
       "implementationScope": "product",
@@ -41,13 +42,8 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(4)",
-            "label": "Information Access Management",
+            "label": "HIPAA Standard: Implement policies and procedures for authorizing access to electronic protected health information that are consistent with the applicable requirements of subpart E of this part.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.308(a)(4).4.01",
-            "label": "Are there policies and procedures related to the security of access controls? If so, are they updated regularly?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -95,9 +91,9 @@
         "latestEvidenceStatus": "pass",
         "evidenceCount": 3,
         "evidenceSources": [
-          "route guards",
+          "Route Guards",
           "Convex requireAuth/requireAdmin checks",
-          "authorization tests"
+          "Authorization Tests"
         ]
       }
     },
@@ -107,6 +103,7 @@
       "title": "Event Logging",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
+      "implementationSummary": "The platform records security-relevant audit events and exposes them for review and export.",
       "controlStatement": "Identify the types of events that the system is capable of logging in support of the audit function: {{ insert: param, au-02_odp.01 }}; Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged; Specify the following event types for logging within the system: {{ insert: param, au-2_prm_2 }}; Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and Review and update the event types selected for logging {{ insert: param, au-02_odp.04 }}.",
       "status": "platform-enforced",
       "implementationScope": "product",
@@ -133,23 +130,13 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Information System Activity Review",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.308(a)(1).7",
-            "label": "Develop and Deploy the Information System Activity Review Process",
-            "mappingType": "key-activity"
           },
           {
             "referenceId": "164.312(b)",
-            "label": "Audit Controls",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.312(b).2.01",
-            "label": "What tools are in place?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -171,9 +158,9 @@
         "latestEvidenceStatus": "pass",
         "evidenceCount": 3,
         "evidenceSources": [
-          "auditLogs",
-          "auth audit plugin",
-          "evidenceReports"
+          "Audit Logs",
+          "Auth Audit Plugin",
+          "Evidence Reports"
         ]
       }
     },
@@ -183,6 +170,7 @@
       "title": "Account Management",
       "familyId": "AC",
       "familyTitle": "Access Control",
+      "implementationSummary": "The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain operator responsibilities.",
       "controlStatement": "Define and document the types of accounts allowed and specifically prohibited for use within the system; Assign account managers; Require {{ insert: param, ac-02_odp.01 }} for group and role membership; Specify: Authorized users of the system; Group and role membership; and Access authorizations (i.e., privileges) and {{ insert: param, ac-02_odp.02 }} for each account; Require approvals by {{ insert: param, ac-02_odp.03 }} for requests to create accounts; Create, enable, modify, disable, and remove accounts in accordance with {{ insert: param, ac-02_odp.04 }}; Monitor the use of accounts; Notify account managers and {{ insert: param, ac-02_odp.05 }} within: {{ insert: param, ac-02_odp.06 }} when accounts are no longer required; {{ insert: param, ac-02_odp.07 }} when users are terminated or transferred; and {{ insert: param, ac-02_odp.08 }} when system usage or need-to-know changes for an individual; Authorize access to the system based on: A valid access authorization; Intended system usage; and {{ insert: param, ac-02_odp.09 }}; Review accounts for compliance with account management requirements {{ insert: param, ac-02_odp.10 }}; Establish and implement a process for changing shared or group account authenticators (if deployed) when individuals are removed from the group; and Align account management processes with personnel termination and transfer processes.",
       "status": "shared-responsibility",
       "implementationScope": "shared",
@@ -215,23 +203,13 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(3)",
-            "label": "Workforce Security",
+            "label": "HIPAA Standard: Implement policies and procedures to ensure that all members of its workforce have appropriate access to electronic protected health information, as provided under paragraph (a)(4) of this section, and to prevent those workforce members who do not have access under paragraph (a)(4) of this section from obtaining access to electronic protected health information.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.308(a)(3).3.01",
-            "label": "Have the qualifications of candidates for specific positions been checked against the job description?",
-            "mappingType": "sample-question"
           },
           {
             "referenceId": "164.308(a)(4)",
-            "label": "Information Access Management",
+            "label": "HIPAA Standard: Implement policies and procedures for authorizing access to electronic protected health information that are consistent with the applicable requirements of subpart E of this part.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.308(a)(4).4.01",
-            "label": "Are there policies and procedures related to the security of access controls? If so, are they updated regularly?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -287,9 +265,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
-          "auth users",
-          "organization membership changes",
-          "admin audit events"
+          "Auth Users",
+          "Organization Membership Changes",
+          "Admin Audit Events"
         ]
       }
     },
@@ -299,6 +277,7 @@
       "title": "Protection of Information at Rest",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
+      "implementationSummary": "The platform includes data handling and retention controls, while encryption-at-rest and key management depend on infrastructure configuration.",
       "controlStatement": "Protection of Information at Rest is tracked as an active control in the starter register.",
       "status": "shared-responsibility",
       "implementationScope": "shared",
@@ -325,13 +304,8 @@
         "nist80066": [
           {
             "referenceId": "164.312(a)(2)(iv)",
-            "label": "Encryption and Decryption",
+            "label": "Consider whether the addressable implementation specifications of this standard are reasonable and appropriate:",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.312(a).8",
-            "label": "Automatic Logoff and Encryption and Decryption",
-            "mappingType": "key-activity"
           }
         ],
         "csf20": [
@@ -353,9 +327,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 2,
         "evidenceSources": [
-          "storage configuration",
-          "retentionJobs",
-          "vendor boundary policy"
+          "Storage Configuration",
+          "Retention Jobs",
+          "Vendor Boundary Policy"
         ]
       }
     },
@@ -365,6 +339,7 @@
       "title": "Transmission Confidentiality and Integrity",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
+      "implementationSummary": "The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration are deployment concerns.",
       "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the starter register.",
       "status": "shared-responsibility",
       "implementationScope": "shared",
@@ -391,23 +366,13 @@
         "nist80066": [
           {
             "referenceId": "164.312(e)(1)",
-            "label": "Transmission Security",
+            "label": "HIPAA Standard: Implement technical security measures to guard against unauthorized access to electronic protected health information that is being transmitted over an electronic communications network.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.312(e)(1).4.01",
-            "label": "Is encryption reasonable and appropriate to protect ePHI in transmission?",
-            "mappingType": "sample-question"
           },
           {
             "referenceId": "164.312(e)(2)(i)",
-            "label": "Integrity Controls",
+            "label": "Implement security measures to ensure that electronically transmitted ePHI is not improperly modified without detection until disposed of.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.312(e)(1).3",
-            "label": "Implement Integrity Controls",
-            "mappingType": "key-activity"
           }
         ],
         "csf20": [
@@ -430,8 +395,8 @@
         "evidenceCount": 2,
         "evidenceSources": [
           "HTTPS deployment policy",
-          "secure link TTL settings",
-          "session transport configuration"
+          "Secure Link TTL Settings",
+          "Session Transport Configuration"
         ]
       }
     },
@@ -441,6 +406,7 @@
       "title": "Identification and Authentication (Organizational Users)",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
+      "implementationSummary": "The platform includes authenticated access flows, verified-email checks, and MFA/passkey support for user accounts.",
       "controlStatement": "Identification and Authentication (Organizational Users) is tracked as an active control in the starter register.",
       "status": "partial",
       "implementationScope": "shared",
@@ -467,23 +433,13 @@
         "nist80066": [
           {
             "referenceId": "164.312(a)(2)(i)",
-            "label": "Unique User Identification",
+            "label": "Assign a unique name and/or number for identifying and tracking user identity.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.312(a).3",
-            "label": "Ensure that All System Users Have Been Assigned a Unique Identifier",
-            "mappingType": "key-activity"
           },
           {
             "referenceId": "164.312(d)",
-            "label": "Person or Entity Authentication",
+            "label": "HIPAA Standard: Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.312(d).3.01",
-            "label": "Has the organization’s selection of authentication methods been made based on the results of the risk assessment?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -509,9 +465,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
-          "Better Auth users",
-          "MFA coverage summary",
-          "passkey enrollment"
+          "Better Auth Users",
+          "MFA Coverage Summary",
+          "Passkey Enrollment"
         ]
       }
     },
@@ -521,6 +477,7 @@
       "title": "System Backup",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
+      "implementationSummary": "The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external to the app.",
       "controlStatement": "Conduct backups of user-level information contained in {{ insert: param, cp-09_odp.01 }} {{ insert: param, cp-09_odp.02 }}; Conduct backups of system-level information contained in the system {{ insert: param, cp-09_odp.03 }}; Conduct backups of system documentation, including security- and privacy-related documentation {{ insert: param, cp-09_odp.04 }} ; and Protect the confidentiality, integrity, and availability of backup information.",
       "status": "operator-owned",
       "implementationScope": "ops",
@@ -547,17 +504,12 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(7)(ii)(A)",
-            "label": "Data Backup Plan",
+            "label": "Establish and implement procedures to create and maintain retrievable exact copies of ePHI.",
             "mappingType": "relationship"
           },
           {
-            "referenceId": "KA_164.308(a)(7).5",
-            "label": "Data Backup Plan and Disaster Recovery Plan",
-            "mappingType": "key-activity"
-          },
-          {
             "referenceId": "164.308(a)(7)(ii)(B)",
-            "label": "Disaster Recovery Plan",
+            "label": "Establish (and implement as needed) procedures to restore any loss of data.",
             "mappingType": "relationship"
           }
         ],
@@ -604,7 +556,7 @@
         "latestEvidenceStatus": "missing",
         "evidenceCount": 1,
         "evidenceSources": [
-          "backupVerificationReports"
+          "Backup Verification Reports"
         ]
       }
     },
@@ -614,6 +566,7 @@
       "title": "Incident Handling",
       "familyId": "IR",
       "familyTitle": "Incident Response",
+      "implementationSummary": "The platform provides audit trails and evidence outputs that can support incident response, but response execution remains an operational responsibility.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
       "status": "operator-owned",
       "implementationScope": "ops",
@@ -640,13 +593,8 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(6)",
-            "label": "Security Incident Procedures",
+            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.308(a)(6).2.01",
-            "label": "Do members of the team have adequate knowledge of the organization’s hardware and software?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -766,9 +714,9 @@
         "latestEvidenceStatus": "missing",
         "evidenceCount": 2,
         "evidenceSources": [
-          "incident runbooks",
-          "audit event export",
-          "evidenceReports"
+          "Incident Runbooks",
+          "Audit Event Export",
+          "Evidence Reports"
         ]
       }
     },
@@ -778,6 +726,7 @@
       "title": "Vulnerability Monitoring and Scanning",
       "familyId": "RA",
       "familyTitle": "Risk Assessment",
+      "implementationSummary": "The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are not automated by the template.",
       "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
       "status": "operator-owned",
       "implementationScope": "ops",
@@ -804,23 +753,13 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(1)(ii)(A)",
-            "label": "Risk Analysis",
+            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.308(a)(1).2",
-            "label": "Conduct Risk Assessment",
-            "mappingType": "key-activity"
           },
           {
             "referenceId": "164.308(a)(1)(ii)(B)",
-            "label": "Risk Management",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.308(a)(1).3",
-            "label": "Implement a Risk Management Program",
-            "mappingType": "key-activity"
           }
         ],
         "csf20": [
@@ -868,9 +807,9 @@
         "latestEvidenceStatus": "missing",
         "evidenceCount": 0,
         "evidenceSources": [
-          "scanner integrations",
-          "dependency audit results",
-          "risk review notes"
+          "Scanner Integrations",
+          "Dependency Audit Results",
+          "Risk Review Notes"
         ]
       }
     },
@@ -880,6 +819,7 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
+      "implementationSummary": "The platform supports stronger authenticators, reset auditing, and verification controls around account recovery flows.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "status": "shared-responsibility",
       "implementationScope": "shared",
@@ -906,23 +846,13 @@
         "nist80066": [
           {
             "referenceId": "164.312(a)(2)(i)",
-            "label": "Unique User Identification",
+            "label": "Assign a unique name and/or number for identifying and tracking user identity.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.312(a).3",
-            "label": "Ensure that All System Users Have Been Assigned a Unique Identifier",
-            "mappingType": "key-activity"
           },
           {
             "referenceId": "164.312(d)",
-            "label": "Person or Entity Authentication",
+            "label": "HIPAA Standard: Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.312(d).3.01",
-            "label": "Has the organization’s selection of authentication methods been made based on the results of the risk assessment?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -972,9 +902,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
-          "passkey enrollment records",
-          "password reset audit events",
-          "email verification policy"
+          "Passkey Enrollment Records",
+          "Password Reset Audit Events",
+          "Email Verification Policy"
         ]
       }
     },
@@ -984,6 +914,7 @@
       "title": "Audit Record Review, Analysis, and Reporting",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
+      "implementationSummary": "The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures must be operated by the organization.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
       "status": "partial",
       "implementationScope": "shared",
@@ -1016,23 +947,13 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Information System Activity Review",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.308(a)(1).7",
-            "label": "Develop and Deploy the Information System Activity Review Process",
-            "mappingType": "key-activity"
           },
           {
             "referenceId": "164.312(b)",
-            "label": "Audit Controls",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "SQ_164.312(b).2.01",
-            "label": "What tools are in place?",
-            "mappingType": "sample-question"
           }
         ],
         "csf20": [
@@ -1068,9 +989,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
-          "evidenceReports",
-          "audit integrity checks",
-          "admin security dashboard"
+          "Evidence Reports",
+          "Audit Integrity Checks",
+          "Admin Security Dashboard"
         ]
       }
     },
@@ -1080,6 +1001,7 @@
       "title": "System Monitoring",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
+      "implementationSummary": "The platform emits monitoring-relevant signals such as scan events, audit integrity checks, and telemetry posture summaries.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
       "status": "partial",
       "implementationScope": "shared",
@@ -1106,13 +1028,8 @@
         "nist80066": [
           {
             "referenceId": "164.308(a)(1)(ii)(D)",
-            "label": "Information System Activity Review",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
             "mappingType": "relationship"
-          },
-          {
-            "referenceId": "KA_164.308(a)(1).7",
-            "label": "Develop and Deploy the Information System Activity Review Process",
-            "mappingType": "key-activity"
           }
         ],
         "csf20": [
@@ -1184,9 +1101,9 @@
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
-          "documentScanEvents",
-          "audit integrity checks",
-          "telemetry posture summary"
+          "Document Scan Events",
+          "Audit Integrity Checks",
+          "Telemetry Posture Summary"
         ]
       }
     }
