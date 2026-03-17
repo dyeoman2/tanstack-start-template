@@ -62,6 +62,8 @@ import {
   personaWithAccessValidator,
   threadWithAccessValidator,
 } from './lib/returnValidators';
+import { uploadTargetResultValidator } from './storageTypes';
+import { createUploadTargetWithMode } from './storagePlatform';
 
 type PersonaDoc = Doc<'aiPersonas'>;
 type ChatViewerContext = Awaited<ReturnType<typeof getCurrentChatContext>>;
@@ -589,6 +591,7 @@ export const createAttachmentInternal = internalMutation({
     agentMessageId: v.optional(v.string()),
     userId: v.string(),
     organizationId: v.string(),
+    storageId: v.string(),
     kind: v.union(v.literal('image'), v.literal('document')),
     name: v.string(),
     mimeType: v.string(),
@@ -623,6 +626,7 @@ export const createAttachmentInternal = internalMutation({
 export const issueAttachmentUploadTokenInternal = internalMutation({
   args: {
     token: v.string(),
+    storageId: v.string(),
     userId: v.string(),
     organizationId: v.string(),
     sessionId: v.string(),
@@ -653,6 +657,7 @@ export const consumeAttachmentUploadTokenInternal = internalMutation({
       expectedMimeType: v.string(),
       expectedSizeBytes: v.number(),
       expectedSha256: v.string(),
+      storageId: v.string(),
     }),
     v.null(),
   ),
@@ -682,6 +687,7 @@ export const consumeAttachmentUploadTokenInternal = internalMutation({
       expectedMimeType: tokenRecord.expectedMimeType,
       expectedSizeBytes: tokenRecord.expectedSizeBytes,
       expectedSha256: tokenRecord.expectedSha256,
+      storageId: tokenRecord.storageId,
     };
   },
 });
@@ -772,6 +778,65 @@ export const deleteAttachmentStorageInternal = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.delete(args.attachmentId);
+    return null;
+  },
+});
+
+export const listExpiredAttachmentUploadTokensInternal = internalQuery({
+  args: {
+    cutoff: v.number(),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id('chatAttachmentUploadTokens'),
+      storageId: v.string(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const tokens = await ctx.db
+      .query('chatAttachmentUploadTokens')
+      .withIndex('by_expiresAt', (q) => q.lt('expiresAt', args.cutoff))
+      .collect();
+
+    return tokens.map((token) => ({
+      _id: token._id,
+      storageId: token.storageId,
+    }));
+  },
+});
+
+export const deleteAttachmentUploadTokenInternal = internalMutation({
+  args: {
+    tokenId: v.id('chatAttachmentUploadTokens'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.tokenId);
+    return null;
+  },
+});
+
+export const quarantineAttachmentByStorageIdInternal = internalMutation({
+  args: {
+    reason: v.string(),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const attachment = await ctx.db
+      .query('chatAttachments')
+      .withIndex('by_storageId', (q) => q.eq('storageId', args.storageId))
+      .unique();
+
+    if (!attachment) {
+      return null;
+    }
+
+    await ctx.db.patch(attachment._id, {
+      errorMessage: args.reason,
+      status: 'quarantined',
+      updatedAt: Date.now(),
+    });
     return null;
   },
 });
@@ -1897,26 +1962,36 @@ export const continuePrompt = mutation({
   },
 });
 
-export const generateChatAttachmentUploadUrl = mutation({
+export const generateChatAttachmentUploadTarget = action({
   args: {
     fileName: v.string(),
     mimeType: v.string(),
     sizeBytes: v.number(),
     sha256: v.string(),
   },
-  returns: v.string(),
+  returns: v.object({
+    uploadTarget: uploadTargetResultValidator,
+    uploadToken: v.string(),
+  }),
   handler: async (ctx, args) => {
-    const viewer = await getCurrentChatContext(ctx);
+    const viewer = await ctx.runQuery(internal.agentChat.getCurrentChatContextInternal, {});
     await enforceChatAttachmentUploadsRateLimitOrThrow(ctx, {
       organizationId: viewer.organizationId,
       userId: viewer.userId,
     });
-    const uploadUrl = await ctx.storage.generateUploadUrl();
     const token = createChatAttachmentUploadToken();
     const now = Date.now();
+    const uploadTarget = await createUploadTargetWithMode(ctx, {
+      contentType: args.mimeType,
+      fileName: args.fileName.trim(),
+      fileSize: args.sizeBytes,
+      sourceId: `pending:${token}`,
+      sourceType: 'chat_attachment',
+    });
 
     await ctx.runMutation(internal.agentChat.issueAttachmentUploadTokenInternal, {
       token,
+      storageId: uploadTarget.storageId,
       userId: viewer.userId,
       organizationId: viewer.organizationId,
       sessionId: viewer.sessionId,
@@ -1928,7 +2003,10 @@ export const generateChatAttachmentUploadUrl = mutation({
       createdAt: now,
     });
 
-    return `${uploadUrl}#chat-upload-token=${encodeURIComponent(token)}`;
+    return {
+      uploadTarget,
+      uploadToken: token,
+    };
   },
 });
 

@@ -67,7 +67,25 @@ async function main() {
   }
 
   // Step 4: Optionally configure authenticated E2E helpers
-  console.log('🧪 Step 4: Optional Playwright E2E setup');
+  console.log('🗂️  Step 4: Optional storage backend setup');
+  const shouldSetupStorage = await askYesNo(
+    'Configure storage backend env now? Use this for s3-primary or s3-mirror. (y/N): ',
+  );
+
+  if (shouldSetupStorage) {
+    try {
+      execSync('pnpm run setup:storage', { stdio: 'inherit', cwd });
+      console.log('✅ Storage setup complete!\n');
+    } catch {
+      console.log('❌ Storage setup failed. Please check the output and try again.');
+      process.exit(1);
+    }
+  } else {
+    console.log('ℹ️  Skipping storage setup. Run `pnpm run setup:storage` any time.\n');
+  }
+
+  // Step 5: Optionally configure authenticated E2E helpers
+  console.log('🧪 Step 5: Optional Playwright E2E setup');
   const shouldSetupE2E = await askYesNo(
     'Configure authenticated Playwright E2E env and sync the Convex gate now? (y/N): ',
   );
@@ -84,8 +102,8 @@ async function main() {
     console.log('ℹ️  Skipping Playwright E2E setup. Run `pnpm run setup:e2e` any time.\n');
   }
 
-  // Step 5: Start development servers in current IDE terminal
-  console.log('🎯 Step 5: Starting your development servers');
+  // Step 6: Start development servers in current IDE terminal
+  console.log('🎯 Step 6: Starting your development servers');
   console.log('');
   console.log('📋 Starting both servers in your current terminal...');
   console.log('');

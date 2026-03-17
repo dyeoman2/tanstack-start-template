@@ -84,17 +84,14 @@ APP_NAME="TanStack Start Template"
 RESEND_EMAIL_SENDER=onboarding@resend.dev
 
 # ==========================================
-# STORAGE (S3-Compatible: MinIO for dev, AWS S3 for prod)
+# STORAGE
 # ==========================================
 
-# Defaults target the local MinIO instance (pnpm dev:storage)
-S3_ENDPOINT=http://localhost:9000
-S3_REGION=us-west-1
-S3_ACCESS_KEY_ID=minioadmin
-S3_SECRET_ACCESS_KEY=minioadmin
-S3_BUCKET_NAME=application-documents
-S3_FORCE_PATH_STYLE=true
-S3_PUBLIC_URL=http://localhost:9000
+# Storage defaults to FILE_STORAGE_BACKEND=convex.
+# Run pnpm run setup:storage if you want guided setup for:
+#   - convex
+#   - s3-primary
+#   - s3-mirror
 
 # ==========================================
 # SENTRY ERROR MONITORING (Optional)

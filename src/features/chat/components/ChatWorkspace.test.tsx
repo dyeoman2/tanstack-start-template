@@ -18,6 +18,7 @@ const messageListPropsMock = vi.fn();
 const useActionMock = vi.fn();
 const useMutationMock = vi.fn();
 const uploadAttachmentMock = vi.fn();
+const generateUploadTargetMock = vi.fn();
 const stopRunMock = vi.fn();
 const createThreadMock = vi.fn();
 const sendMessageMock = vi.fn();
@@ -81,6 +82,16 @@ describe('ChatWorkspace', () => {
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     uploadAttachmentMock.mockResolvedValue(null);
+    generateUploadTargetMock.mockResolvedValue({
+      uploadTarget: {
+        backend: 'convex',
+        expiresAt: Date.now() + 60_000,
+        storageId: '',
+        uploadMethod: 'POST',
+        uploadUrl: 'https://example.com/upload',
+      },
+      uploadToken: 'token-123',
+    });
     createThreadMock.mockResolvedValue({ threadId: 'thread-123' });
     sendMessageMock.mockResolvedValue({ threadId: 'thread-123', runId: 'run-123' });
     editUserMessageMock.mockResolvedValue({ threadId: 'thread-123', runId: 'run-456' });
@@ -97,27 +108,36 @@ describe('ChatWorkspace', () => {
     stopRunMock.mockResolvedValue(true);
     let actionCallIndex = 0;
     useActionMock.mockImplementation(() => {
-      const slot = actionCallIndex % 2;
+      const slot = actionCallIndex % 4;
       actionCallIndex += 1;
-      return slot === 0 ? uploadAttachmentMock : stopRunMock;
+      switch (slot) {
+        case 0:
+          return uploadAttachmentMock;
+        case 1:
+          return stopRunMock;
+        case 2:
+          return generateUploadTargetMock;
+        default:
+          return defaultMutationMock;
+      }
     });
     useMutationMock.mockReset();
     let mutationCallIndex = 0;
     useMutationMock.mockImplementation(() => {
-      const normalizedSlot = mutationCallIndex % 9;
+      const normalizedSlot = mutationCallIndex % 7;
       mutationCallIndex += 1;
 
       switch (normalizedSlot) {
         case 0:
-          return uploadAttachmentMock;
-        case 1:
           return createThreadMock;
-        case 2:
+        case 1:
           return createMutationMock(sendMessageMock);
-        case 3:
+        case 2:
           return editUserMessageMock;
-        case 4:
+        case 3:
           return retryAssistantResponseMock;
+        case 4:
+          return defaultMutationMock;
         default:
           return defaultMutationMock;
       }

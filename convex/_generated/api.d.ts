@@ -26,6 +26,7 @@ import type * as dashboardStats from "../dashboardStats.js";
 import type * as e2e from "../e2e.js";
 import type * as emailTemplates from "../emailTemplates.js";
 import type * as emails from "../emails.js";
+import type * as fileServing from "../fileServing.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_agentChat from "../lib/agentChat.js";
@@ -40,6 +41,7 @@ import type * as lib_onboardingState from "../lib/onboardingState.js";
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
 import type * as lib_organizationMembershipState from "../lib/organizationMembershipState.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
+import type * as lib_storageS3 from "../lib/storageS3.js";
 import type * as migrations from "../migrations.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
@@ -47,6 +49,13 @@ import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
 import type * as security from "../security.js";
+import type * as storageCleanup from "../storageCleanup.js";
+import type * as storageLifecycle from "../storageLifecycle.js";
+import type * as storagePlatform from "../storagePlatform.js";
+import type * as storageS3Mirror from "../storageS3Mirror.js";
+import type * as storageS3Primary from "../storageS3Primary.js";
+import type * as storageTypes from "../storageTypes.js";
+import type * as storageWebhook from "../storageWebhook.js";
 import type * as users from "../users.js";
 
 import type {
@@ -74,6 +83,7 @@ declare const fullApi: ApiFromModules<{
   e2e: typeof e2e;
   emailTemplates: typeof emailTemplates;
   emails: typeof emails;
+  fileServing: typeof fileServing;
   health: typeof health;
   http: typeof http;
   "lib/agentChat": typeof lib_agentChat;
@@ -88,6 +98,7 @@ declare const fullApi: ApiFromModules<{
   "lib/organizationCleanup": typeof lib_organizationCleanup;
   "lib/organizationMembershipState": typeof lib_organizationMembershipState;
   "lib/returnValidators": typeof lib_returnValidators;
+  "lib/storageS3": typeof lib_storageS3;
   migrations: typeof migrations;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
@@ -95,6 +106,13 @@ declare const fullApi: ApiFromModules<{
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
   security: typeof security;
+  storageCleanup: typeof storageCleanup;
+  storageLifecycle: typeof storageLifecycle;
+  storagePlatform: typeof storagePlatform;
+  storageS3Mirror: typeof storageS3Mirror;
+  storageS3Primary: typeof storageS3Primary;
+  storageTypes: typeof storageTypes;
+  storageWebhook: typeof storageWebhook;
   users: typeof users;
 }>;
 

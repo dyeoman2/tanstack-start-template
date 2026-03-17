@@ -17,4 +17,25 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  'cleanup stale storage uploads',
+  { hours: 1 },
+  internal.storageCleanup.cleanupStaleUploadsInternal,
+  {},
+);
+
+crons.interval(
+  'enforce malware scan deadlines',
+  { minutes: 5 },
+  internal.storageCleanup.enforceMalwareDeadlinesInternal,
+  {},
+);
+
+crons.interval(
+  'reconcile orphaned mirrored storage objects',
+  { hours: 6 },
+  internal.storageCleanup.reconcileOrphanedMirrorObjectsInternal,
+  {},
+);
+
 export default crons;

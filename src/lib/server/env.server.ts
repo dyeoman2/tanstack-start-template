@@ -369,6 +369,24 @@ export function getEmailVerificationEnforcedAt(): number {
 }
 
 export type E2EPrincipalType = 'user' | 'admin';
+export type FileStorageBackendMode = 'convex' | 's3-primary' | 's3-mirror';
+
+export type StorageRuntimeConfig = {
+  awsRegion: string | null;
+  backendMode: FileStorageBackendMode;
+  convexSiteUrl: string | null;
+  fileServeSigningSecret: string | null;
+  fileUploadMaxBytes: number;
+  malwareScanSlaMs: number;
+  malwareWebhookSharedSecret: string | null;
+  mirrorRetryBaseDelayMs: number;
+  mirrorRetryMaxDelayMs: number;
+  s3DeleteMaxAttempts: number;
+  s3FilesBucket: string | null;
+  s3OrphanCleanupMaxScan: number;
+  s3OrphanCleanupMinAgeMs: number;
+  storageStaleUploadTtlMs: number;
+};
 
 export type E2EPrincipalConfig = {
   email: string;
@@ -419,6 +437,136 @@ export function getE2ETestSecret(): string {
 function readOptionalServerEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;
+}
+
+function readOptionalStorageEnv(canonicalName: string, legacyName?: string): string | null {
+  return readOptionalServerEnv(canonicalName) ?? (legacyName ? readOptionalServerEnv(legacyName) : null);
+}
+
+function parsePositiveInteger(
+  value: string | null,
+  name: string,
+  fallback: number,
+): number {
+  if (value === null) {
+    return fallback;
+  }
+
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} must be a positive integer.`);
+  }
+
+  return parsed;
+}
+
+function readRequiredStorageEnv(name: string, mode: FileStorageBackendMode): string {
+  const value = readOptionalStorageEnv(
+    name,
+    name === 'AWS_S3_FILES_BUCKET'
+      ? 'S3_FILES_BUCKET'
+      : name === 'AWS_MALWARE_WEBHOOK_SHARED_SECRET'
+        ? 'MALWARE_WEBHOOK_SHARED_SECRET'
+        : name === 'AWS_FILE_SERVE_SIGNING_SECRET'
+          ? 'FILE_SERVE_SIGNING_SECRET'
+          : undefined,
+  );
+  if (!value) {
+    throw new Error(`${name} environment variable is required for FILE_STORAGE_BACKEND=${mode}.`);
+  }
+  return value;
+}
+
+export function getFileStorageBackendMode(): FileStorageBackendMode {
+  const configured = readOptionalServerEnv('FILE_STORAGE_BACKEND');
+  if (!configured) {
+    return 'convex';
+  }
+
+  if (configured === 'convex' || configured === 's3-primary' || configured === 's3-mirror') {
+    return configured;
+  }
+
+  throw new Error(
+    'FILE_STORAGE_BACKEND must be one of: convex, s3-primary, s3-mirror.',
+  );
+}
+
+export function getStorageRuntimeConfig(): StorageRuntimeConfig {
+  const backendMode = getFileStorageBackendMode();
+  const baseConfig: StorageRuntimeConfig = {
+    awsRegion: readOptionalServerEnv('AWS_REGION'),
+    backendMode,
+    convexSiteUrl: readOptionalServerEnv('CONVEX_SITE_URL'),
+    fileServeSigningSecret: readOptionalStorageEnv(
+      'AWS_FILE_SERVE_SIGNING_SECRET',
+      'FILE_SERVE_SIGNING_SECRET',
+    ),
+    fileUploadMaxBytes: parsePositiveInteger(
+      readOptionalServerEnv('FILE_UPLOAD_MAX_BYTES'),
+      'FILE_UPLOAD_MAX_BYTES',
+      10 * 1024 * 1024,
+    ),
+    malwareScanSlaMs: parsePositiveInteger(
+      readOptionalStorageEnv('AWS_MALWARE_SCAN_SLA_MS', 'MALWARE_SCAN_SLA_MS'),
+      'AWS_MALWARE_SCAN_SLA_MS',
+      5 * 60 * 1000,
+    ),
+    malwareWebhookSharedSecret: readOptionalStorageEnv(
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+      'MALWARE_WEBHOOK_SHARED_SECRET',
+    ),
+    mirrorRetryBaseDelayMs: parsePositiveInteger(
+      readOptionalStorageEnv('AWS_MIRROR_RETRY_BASE_DELAY_MS', 'MIRROR_RETRY_BASE_DELAY_MS'),
+      'AWS_MIRROR_RETRY_BASE_DELAY_MS',
+      15 * 1000,
+    ),
+    mirrorRetryMaxDelayMs: parsePositiveInteger(
+      readOptionalStorageEnv('AWS_MIRROR_RETRY_MAX_DELAY_MS', 'MIRROR_RETRY_MAX_DELAY_MS'),
+      'AWS_MIRROR_RETRY_MAX_DELAY_MS',
+      15 * 60 * 1000,
+    ),
+    s3DeleteMaxAttempts: parsePositiveInteger(
+      readOptionalStorageEnv('AWS_S3_DELETE_MAX_ATTEMPTS', 'S3_DELETE_MAX_ATTEMPTS'),
+      'AWS_S3_DELETE_MAX_ATTEMPTS',
+      3,
+    ),
+    s3FilesBucket: readOptionalStorageEnv('AWS_S3_FILES_BUCKET', 'S3_FILES_BUCKET'),
+    s3OrphanCleanupMaxScan: parsePositiveInteger(
+      readOptionalStorageEnv('AWS_S3_ORPHAN_CLEANUP_MAX_SCAN', 'S3_ORPHAN_CLEANUP_MAX_SCAN'),
+      'AWS_S3_ORPHAN_CLEANUP_MAX_SCAN',
+      100,
+    ),
+    s3OrphanCleanupMinAgeMs: parsePositiveInteger(
+      readOptionalStorageEnv(
+        'AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS',
+        'S3_ORPHAN_CLEANUP_MIN_AGE_MS',
+      ),
+      'AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS',
+      24 * 60 * 60 * 1000,
+    ),
+    storageStaleUploadTtlMs: parsePositiveInteger(
+      readOptionalServerEnv('STORAGE_STALE_UPLOAD_TTL_MS'),
+      'STORAGE_STALE_UPLOAD_TTL_MS',
+      60 * 60 * 1000,
+    ),
+  };
+
+  if (backendMode === 'convex') {
+    return baseConfig;
+  }
+
+  return {
+    ...baseConfig,
+    awsRegion: readRequiredStorageEnv('AWS_REGION', backendMode),
+    convexSiteUrl: readRequiredStorageEnv('CONVEX_SITE_URL', backendMode),
+    fileServeSigningSecret: readRequiredStorageEnv('AWS_FILE_SERVE_SIGNING_SECRET', backendMode),
+    malwareWebhookSharedSecret: readRequiredStorageEnv(
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+      backendMode,
+    ),
+    s3FilesBucket: readRequiredStorageEnv('AWS_S3_FILES_BUCKET', backendMode),
+  };
 }
 
 export function getGoogleOAuthCredentials(): {

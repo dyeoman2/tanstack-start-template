@@ -278,11 +278,11 @@ export async function getAttachmentPreviewUrl(
   ctx: ActionCtx | QueryCtx | MutationCtx,
   attachment: ChatAttachmentDoc,
 ) {
-  if (attachment.kind !== 'image' || !attachment.rawStorageId || !('storage' in ctx)) {
+  if (attachment.kind !== 'image' || !attachment.storageId || !('storage' in ctx)) {
     return null;
   }
 
-  return await ctx.storage.getUrl(attachment.rawStorageId);
+  return await ctx.storage.getUrl((attachment.rawStorageId ?? (attachment.storageId as Id<'_storage'>)));
 }
 
 export function getThreadSortKey(thread: Pick<ChatThreadDoc, 'pinned' | 'updatedAt'>) {

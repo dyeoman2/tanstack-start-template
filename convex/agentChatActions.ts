@@ -28,6 +28,10 @@ import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateL
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { inspectFile } from '../src/lib/server/file-inspection.server';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
+import { getFileStorageBackendMode, getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { finalizeUploadWithMode, resolveFileUrlWithMode } from './storagePlatform';
+import { buildDeterministicStorageKey } from './storageS3Primary';
+import { getS3Object } from './lib/storageS3';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -125,6 +129,48 @@ function dedupeSources(
 async function computeBlobSha256Hex(blob: Blob) {
   const digest = await crypto.subtle.digest('SHA-256', await blob.arrayBuffer());
   return Buffer.from(digest).toString('hex');
+}
+
+async function toBlob(body: unknown, mimeType: string) {
+  if (!body) {
+    throw new Error('Uploaded file body was empty.');
+  }
+
+  if (body instanceof Blob) {
+    return body;
+  }
+
+  if (typeof body === 'string') {
+    return new Blob([body], { type: mimeType });
+  }
+
+  if (body instanceof Uint8Array) {
+    const copy = new Uint8Array(body.byteLength);
+    copy.set(body);
+    return new Blob([copy.buffer], {
+      type: mimeType,
+    });
+  }
+
+  if (body instanceof ArrayBuffer) {
+    return new Blob([new Uint8Array(body)], { type: mimeType });
+  }
+
+  if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
+    const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return new Blob([copy.buffer], {
+      type: mimeType,
+    });
+  }
+
+  if (typeof body === 'object' && body !== null && 'transformToString' in body) {
+    const text = await (body as { transformToString: () => Promise<string> }).transformToString();
+    return new Blob([text], { type: mimeType });
+  }
+
+  throw new Error('Uploaded file body could not be converted to a blob.');
 }
 
 async function getAssistantMessageForOrder(ctx: ChatDataCtx, agentThreadId: string, order: number) {
@@ -641,7 +687,7 @@ async function reconcileAbortedRunArtifacts(
 
 export const createChatAttachmentFromUpload = action({
   args: {
-    storageId: v.id('_storage'),
+    storageId: v.string(),
     uploadToken: v.string(),
     name: v.string(),
     mimeType: v.string(),
@@ -671,24 +717,42 @@ export const createChatAttachmentFromUpload = action({
     if (
       uploadTokenRecord.expectedFileName !== args.name.trim() ||
       uploadTokenRecord.expectedMimeType !== args.mimeType ||
-      uploadTokenRecord.expectedSizeBytes !== args.sizeBytes
+      uploadTokenRecord.expectedSizeBytes !== args.sizeBytes ||
+      (uploadTokenRecord.storageId && uploadTokenRecord.storageId !== args.storageId)
     ) {
       throw new ConvexError('Attachment metadata does not match the authorized upload.');
     }
 
-    const blob = await ctx.storage.get(args.storageId);
+    const backendMode = getFileStorageBackendMode();
+    const blob =
+      backendMode === 's3-primary'
+        ? await (async () => {
+            const runtimeConfig = getStorageRuntimeConfig();
+            const bucket = runtimeConfig.s3FilesBucket;
+            if (!bucket) {
+              throw new ConvexError('AWS_S3_FILES_BUCKET is not configured.');
+            }
+            const object = await getS3Object({
+              bucket,
+              key: buildDeterministicStorageKey(args.storageId),
+            });
+            return await toBlob(object.Body, args.mimeType);
+          })()
+        : await ctx.storage.get(args.storageId as Id<'_storage'>);
     if (!blob) {
       throw new Error('Uploaded file was not found.');
     }
 
-    const uploadedSha256 = await computeBlobSha256Hex(blob);
-    if (uploadedSha256 !== uploadTokenRecord.expectedSha256) {
-      throw new ConvexError('Uploaded file does not match the authorized upload.');
+    if (blob) {
+      const uploadedSha256 = await computeBlobSha256Hex(blob);
+      if (uploadedSha256 !== uploadTokenRecord.expectedSha256) {
+        throw new ConvexError('Uploaded file does not match the authorized upload.');
+      }
     }
 
     const validatedAttachment = validateChatAttachmentUpload({
-      blobSize: blob.size,
-      blobType: blob.type,
+      blobSize: blob?.size ?? args.sizeBytes,
+      blobType: blob?.type ?? args.mimeType,
       fileName: args.name,
       claimedMimeType: args.mimeType,
     });
@@ -703,11 +767,12 @@ export const createChatAttachmentFromUpload = action({
       agentMessageId: undefined,
       userId,
       organizationId,
+      storageId: args.storageId,
       kind,
       name: validatedAttachment.normalizedName,
       mimeType: validatedAttachment.mimeType,
       sizeBytes: validatedAttachment.sizeBytes,
-      rawStorageId: args.storageId,
+      rawStorageId: backendMode === 's3-primary' ? undefined : (args.storageId as Id<'_storage'>),
       extractedTextStorageId: undefined,
       agentFileId: undefined,
       promptSummary: initialSummary,
@@ -737,13 +802,21 @@ export const createChatAttachmentFromUpload = action({
     });
 
     const allowedKinds = kind === 'image' ? (['image'] as const) : (['document', 'pdf'] as const);
-    const inspectionResult = await inspectFile({
-      allowedKinds: [...allowedKinds],
-      blob,
-      fileName: validatedAttachment.normalizedName,
-      maxBytes: validatedAttachment.sizeBytes,
-      mimeType: validatedAttachment.mimeType,
-    });
+    const inspectionResult = blob
+      ? await inspectFile({
+          allowedKinds: [...allowedKinds],
+          blob,
+          fileName: validatedAttachment.normalizedName,
+          maxBytes: validatedAttachment.sizeBytes,
+          mimeType: validatedAttachment.mimeType,
+        })
+      : {
+          details: undefined,
+          engine: 'builtin-file-inspection' as const,
+          inspectedAt: Date.now(),
+          reason: 'unsupported_type' as const,
+          status: 'accepted' as const,
+        };
 
     await ctx.runMutation(internal.security.recordDocumentScanEventInternal, {
       attachmentId,
@@ -843,13 +916,15 @@ export const createChatAttachmentFromUpload = action({
         }),
       });
 
-      const stored = await storeFile(ctx, components.agent, blob, {
-        filename: validatedAttachment.normalizedName,
-      });
+      const stored = blob
+        ? await storeFile(ctx, components.agent, blob, {
+            filename: validatedAttachment.normalizedName,
+          })
+        : null;
       let extractedTextStorageId: Id<'_storage'> | undefined;
       let promptSummary = initialSummary;
 
-      if (kind === 'document') {
+      if (kind === 'document' && blob) {
         const extractedText = await extractDocumentText(
           blob,
           validatedAttachment.normalizedName,
@@ -869,7 +944,7 @@ export const createChatAttachmentFromUpload = action({
         attachmentId,
         patch: {
           extractedTextStorageId: extractedTextStorageId ?? null,
-          agentFileId: stored.file.fileId,
+          agentFileId: stored?.file.fileId ?? null,
           promptSummary,
           status: 'ready',
           errorMessage: null,
@@ -885,6 +960,20 @@ export const createChatAttachmentFromUpload = action({
       if (!attachment) {
         throw new Error('Attachment was not found after processing.');
       }
+
+      await finalizeUploadWithMode(ctx, {
+        backendMode,
+        fileName: validatedAttachment.normalizedName,
+        fileSize: validatedAttachment.sizeBytes,
+        mimeType: validatedAttachment.mimeType,
+        sourceId: attachmentId,
+        sourceType: 'chat_attachment',
+        storageId: args.storageId,
+      });
+
+      const resolvedUrl = await resolveFileUrlWithMode(ctx, {
+        storageId: args.storageId,
+      });
 
       if (kind === 'image') {
         await ctx.runMutation(internal.audit.insertAuditLog, {
@@ -909,7 +998,7 @@ export const createChatAttachmentFromUpload = action({
 
       return {
         ...attachment,
-        previewUrl: kind === 'image' ? stored.file.url : null,
+        previewUrl: kind === 'image' ? resolvedUrl.url : null,
       };
     } catch (error) {
       if (error instanceof ConvexError) {

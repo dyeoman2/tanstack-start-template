@@ -148,6 +148,7 @@ export type ChatAttachment = {
   _id: Id<'chatAttachments'>;
   threadId?: Id<'chatThreads'>;
   agentMessageId?: string;
+  storageId: string;
   kind: ChatAttachmentKind;
   name: string;
   mimeType: string;

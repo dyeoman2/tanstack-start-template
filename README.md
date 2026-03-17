@@ -258,9 +258,21 @@ In order to send password reset and transactional emails, you need to set up Res
 
 ### 🗂️ **Optional Infrastructure Setup**
 
-The template includes pre-configured infrastructure for file storage using AWS S3, but this is **not currently implemented** in the application. If you need document or file upload functionality, the infrastructure is ready to leverage:
+The template now includes an AWS-backed storage path for file-backed features, with `convex` remaining the zero-config default and S3 available for malware-scanned storage deployments:
 
-- [AWS S3 Storage Setup](infra/README.md) - Document and file storage infrastructure (ready but not implemented)
+- [AWS S3 Storage Setup](infra/README.md) - CDK infrastructure and runtime environment contract for `s3-primary` and `s3-mirror`
+
+For guided local setup, run:
+
+```bash
+pnpm run setup:storage
+```
+
+For guided production runtime env setup across Convex prod and Netlify, run:
+
+```bash
+pnpm run setup:storage:prod
+```
 
 ## 📄 License
 

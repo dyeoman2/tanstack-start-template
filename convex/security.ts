@@ -605,13 +605,13 @@ export const cleanupExpiredAttachments = internalAction({
     let processedCount = 0;
 
     for (const attachment of expiredAttachments) {
-      if (attachment.rawStorageId) {
-        await ctx.storage.delete(attachment.rawStorageId);
-      }
-
       if (attachment.extractedTextStorageId) {
         await ctx.storage.delete(attachment.extractedTextStorageId);
       }
+
+      await ctx.runAction(anyApi.storagePlatform.deleteStoredFileInternal, {
+        storageId: attachment.storageId,
+      });
 
       await ctx.runMutation(anyApi.agentChat.deleteAttachmentStorageInternal, {
         attachmentId: attachment._id,
@@ -638,7 +638,7 @@ export const listExpiredAttachmentsInternal = internalQuery({
     v.object({
       _id: v.id('chatAttachments'),
       extractedTextStorageId: v.optional(v.id('_storage')),
-      rawStorageId: v.optional(v.id('_storage')),
+      storageId: v.string(),
     }),
   ),
   handler: async (ctx, args) => {
@@ -650,7 +650,7 @@ export const listExpiredAttachmentsInternal = internalQuery({
     return expired.map((attachment) => ({
       _id: attachment._id,
       extractedTextStorageId: attachment.extractedTextStorageId,
-      rawStorageId: attachment.rawStorageId,
+      storageId: attachment.storageId,
     }));
   },
 });

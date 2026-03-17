@@ -2,6 +2,27 @@ import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 
 const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal('document'));
+const storageBackendModeValidator = v.union(
+  v.literal('convex'),
+  v.literal('s3-primary'),
+  v.literal('s3-mirror'),
+);
+const storageLifecycleMalwareStatusValidator = v.union(
+  v.literal('NOT_STARTED'),
+  v.literal('PENDING'),
+  v.literal('CLEAN'),
+  v.literal('INFECTED'),
+  v.literal('QUARANTINED_UNSCANNED'),
+);
+const storageLifecycleMirrorStatusValidator = v.union(
+  v.literal('PENDING'),
+  v.literal('MIRRORED'),
+  v.literal('FAILED'),
+);
+const storageLifecycleQuarantineReasonValidator = v.union(
+  v.literal('INFECTED'),
+  v.literal('QUARANTINED_UNSCANNED'),
+);
 const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('pending_scan'),
@@ -317,6 +338,7 @@ export default defineSchema({
     agentMessageId: v.optional(v.string()),
     userId: v.string(),
     organizationId: v.string(),
+    storageId: v.string(),
     kind: chatAttachmentKindValidator,
     name: v.string(),
     mimeType: v.string(),
@@ -339,12 +361,14 @@ export default defineSchema({
       'threadId',
       'createdAt',
     ])
+    .index('by_storageId', ['storageId'])
     .index('by_userId_and_createdAt', ['userId', 'createdAt'])
     .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
     .index('by_purgeEligibleAt', ['purgeEligibleAt']),
 
   chatAttachmentUploadTokens: defineTable({
     token: v.string(),
+    storageId: v.string(),
     userId: v.string(),
     organizationId: v.string(),
     sessionId: v.string(),
@@ -357,6 +381,57 @@ export default defineSchema({
   })
     .index('by_token', ['token'])
     .index('by_expiresAt', ['expiresAt']),
+
+  storageLifecycle: defineTable({
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    deletedAt: v.optional(v.number()),
+    storageId: v.string(),
+    sourceType: v.string(),
+    sourceId: v.string(),
+    backendMode: storageBackendModeValidator,
+    originalFileName: v.string(),
+    mimeType: v.optional(v.string()),
+    fileSize: v.optional(v.number()),
+    canonicalBucket: v.optional(v.string()),
+    canonicalKey: v.optional(v.string()),
+    canonicalVersionId: v.optional(v.string()),
+    mirrorBucket: v.optional(v.string()),
+    mirrorKey: v.optional(v.string()),
+    mirrorVersionId: v.optional(v.string()),
+    malwareStatus: v.optional(storageLifecycleMalwareStatusValidator),
+    mirrorStatus: v.optional(storageLifecycleMirrorStatusValidator),
+    mirrorAttempts: v.optional(v.number()),
+    mirrorLastError: v.optional(v.string()),
+    mirrorDeadlineAt: v.optional(v.number()),
+    malwareFindingId: v.optional(v.string()),
+    malwareScannedAt: v.optional(v.number()),
+    malwareDetectedAt: v.optional(v.number()),
+    quarantinedAt: v.optional(v.number()),
+    quarantineReason: v.optional(storageLifecycleQuarantineReasonValidator),
+    uploadedById: v.optional(v.id('users')),
+  })
+    .index('by_storageId', ['storageId'])
+    .index('by_source', ['sourceType', 'sourceId'])
+    .index('by_s3Key', ['canonicalBucket', 'canonicalKey'])
+    .index('by_mirrorDeadlineAt', ['mirrorDeadlineAt'])
+    .index('by_malwareStatus', ['malwareStatus'])
+    .index('by_deletedAt', ['deletedAt']),
+
+  storageLifecycleEvents: defineTable({
+    storageLifecycleId: v.id('storageLifecycle'),
+    storageId: v.string(),
+    sourceType: v.string(),
+    sourceId: v.string(),
+    eventType: v.string(),
+    actionResult: v.union(v.literal('success'), v.literal('failure')),
+    details: v.optional(v.string()),
+    actorUserId: v.optional(v.id('users')),
+    createdAt: v.number(),
+  })
+    .index('by_storageId_createdAt', ['storageId', 'createdAt'])
+    .index('by_source_createdAt', ['sourceType', 'sourceId', 'createdAt'])
+    .index('by_eventType_createdAt', ['eventType', 'createdAt']),
 
   aiPersonas: defineTable({
     userId: v.string(),

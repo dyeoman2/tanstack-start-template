@@ -1,111 +1,80 @@
-# TanStack Start Template Infrastructure
+# TanStack Start Template AWS Storage Infrastructure
 
-This directory contains the Infrastructure as Code (IaC) setup for the TanStack Start Template's document storage system using AWS S3.
+This directory now contains the AWS CDK scaffold for the malware-scanned S3 storage path used by the storage platform.
 
-## What This Sets Up
+## What It Deploys
 
-- **S3 Bucket**: `tanstack-start-template-documents` with proper CORS configuration for Netlify
-- **IAM User**: `tanstack-start-template-storage-user` with minimal required S3 permissions
-- **Access Keys**: Programmatically generated for the IAM user
-- **Security**: Least-privilege access with specific S3 permissions only
+- A versioned S3 files bucket with blocked public access, enforced SSL, S3-managed encryption, and retained deletion policy
+- A GuardDuty detector and malware protection plan for the bucket
+- An EventBridge rule for GuardDuty malware scan result events
+- A Lambda forwarder that signs normalized findings and posts them to Convex
+- Stack outputs for the bucket name, Lambda function name, and EventBridge rule name
 
-## Prerequisites
+## Layout
 
-1. **AWS Account** with appropriate permissions to create S3 buckets and IAM resources
-2. **AWS CLI configured** with your credentials:
+- `infra/storage.ts`: thin wrapper that runs CDK synth or deploy
+- `infra/aws-cdk/bin/app.mjs`: CDK app entrypoint
+- `infra/aws-cdk/lib/malware-scan-stack.cts`: stack definition
+- `infra/aws-cdk/lambda/guardduty-forwarder.mjs`: webhook forwarder implementation
 
-   ```bash
-   aws configure
-   ```
+## Required Deploy-Time Environment Variables
 
-3. **Node.js** and **pnpm** installed
+The CDK app reads stage-specific values with `_DEV` / `_PROD` suffixes and falls back to the unsuffixed name.
 
-## Quick Setup
+- `AWS_REGION`
+- `CONVEX_GUARDDUTY_WEBHOOK_URL_DEV`
+- `CONVEX_GUARDDUTY_WEBHOOK_URL_PROD`
+- `MALWARE_WEBHOOK_SHARED_SECRET_DEV`
+- `MALWARE_WEBHOOK_SHARED_SECRET_PROD`
+- `S3_FILES_BUCKET_NAME_DEV`
+- `S3_FILES_BUCKET_NAME_PROD`
 
-1. **Set your Netlify domain** (optional):
+## Commands
 
-   ```bash
-   export NETLIFY_DOMAIN=https://your-app-name.netlify.app
-   ```
-
-2. **Run the infrastructure setup**:
-
-   ```bash
-   pnpm infra:deploy
-   ```
-
-3. **Copy the generated environment variables** to your Netlify site settings
-
-## What Happens
-
-The script will:
-
-1. ✅ Create S3 bucket with CORS configuration for your Netlify domain
-2. ✅ Enable versioning for data protection
-3. ✅ Set up lifecycle rules to manage storage costs
-4. ✅ Create IAM user with minimal S3 permissions
-5. ✅ Generate access keys
-6. ✅ Output the exact environment variables needed for Netlify
-
-## Environment Variables for Netlify
-
-After running the script, add these to your Netlify site:
+Preview the synthesized stacks:
 
 ```bash
-S3_ENDPOINT=
-S3_REGION=us-west-1
-S3_ACCESS_KEY_ID=AKIA...
-S3_SECRET_ACCESS_KEY=your-secret-key
-S3_BUCKET_NAME=tanstack-start-template-documents
-S3_FORCE_PATH_STYLE=false
-S3_PUBLIC_URL=https://tanstack-start-template-documents.s3.amazonaws.com
+pnpm infra:preview
 ```
 
-## Manual Setup (Alternative)
+Deploy all configured stages:
 
-If you prefer to set up resources manually:
+```bash
+pnpm infra:deploy
+```
 
-1. **Create S3 Bucket**:
-   - Name: `tanstack-start-template-documents`
-   - Region: `us-east-1`
-   - Enable versioning
-   - Configure CORS for your Netlify domain
+If only one stage has complete env configuration, the app deploys only that stage.
 
-2. **Create IAM User**:
-   - Name: `tanstack-start-template-storage-user`
-   - Attach policy with S3 permissions for the bucket
+For guided production runtime env setup across Convex prod and Netlify:
 
-3. **Generate Access Keys** for the IAM user
+```bash
+pnpm run setup:storage:prod
+```
 
-## Security Notes
+## Runtime/App Environment Contract
 
-- The IAM user has **least-privilege access** - only the specific S3 operations needed
-- Resources are scoped to the specific bucket only
-- Access keys should be treated as sensitive secrets
-- Consider rotating access keys regularly
+The application storage platform expects these runtime variables when `FILE_STORAGE_BACKEND` is `s3-primary` or `s3-mirror`:
 
-## Cost Optimization
+- `FILE_STORAGE_BACKEND`
+- `AWS_REGION`
+- `AWS_S3_FILES_BUCKET`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_FILE_SERVE_SIGNING_SECRET`
+- `CONVEX_SITE_URL`
 
-The setup includes:
+Optional runtime tuning:
 
-- **Lifecycle rules**: Automatically delete old versions after 30 days
-- **Minimal permissions**: Only necessary S3 operations allowed
-- **No public access**: Files accessed via signed URLs only
+- `FILE_UPLOAD_MAX_BYTES`
+- `AWS_MALWARE_SCAN_SLA_MS`
+- `STORAGE_STALE_UPLOAD_TTL_MS`
+- `AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS`
+- `AWS_S3_ORPHAN_CLEANUP_MAX_SCAN`
+- `AWS_S3_DELETE_MAX_ATTEMPTS`
+- `AWS_MIRROR_RETRY_BASE_DELAY_MS`
+- `AWS_MIRROR_RETRY_MAX_DELAY_MS`
 
-## Troubleshooting
+## Notes
 
-### AWS Permissions Error
-
-Make sure your AWS user has permissions to create S3 buckets and IAM resources.
-
-### Bucket Already Exists
-
-The script handles existing buckets gracefully.
-
-### CORS Issues
-
-Update the `NETLIFY_DOMAIN` environment variable if your domain changes.
-
-## State Management
-
-The infrastructure state is tracked in `infra/.alchemy/state.json` (created after first run). This allows the system to know what resources exist and need to be updated or removed.
+- The Lambda signs webhook payloads with `X-Scriptflow-Signature` and `X-Scriptflow-Timestamp`.
+- The application verifies HMAC over `timestamp.payload`.
+- Bucket lifecycle expiration is intentionally not configured for canonical file retention; application lifecycle deletion remains the source of truth.

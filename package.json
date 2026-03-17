@@ -49,10 +49,13 @@
     "check": "biome check . && pnpm lint:convex && pnpm audit:code-health",
     "audit:code-health": "node --import tsx scripts/code-health-audit.ts check",
     "audit:inventory": "tsx scripts/code-health-audit.ts inventory",
+    "compliance:extract:nist-80053-moderate": "node scripts/compliance/extract-nist-80053-moderate.ts",
     "fix": "biome check --write .",
     "knip": "knip",
     "knip:prod": "knip --production",
     "setup:env": "tsx scripts/setup-env.ts",
+    "setup:storage": "tsx scripts/setup-storage.ts",
+    "setup:storage:prod": "tsx scripts/setup-storage-prod.ts",
     "setup:e2e": "tsx scripts/setup-e2e.ts",
     "setup:convex": "tsx scripts/setup-convex.ts",
     "setup:dev": "tsx scripts/setup-dev.ts",
@@ -139,6 +142,8 @@
     "@better-auth/cli": "1.4.21",
     "@biomejs/biome": "^2.4.7",
     "@convex-dev/eslint-plugin": "^1.2.0",
+    "aws-cdk": "^2.1029.1",
+    "aws-cdk-lib": "^2.191.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.1",
     "@tanstack/router-plugin": "^1.166.12",
@@ -160,6 +165,7 @@
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
     "vite": "8.0.0",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "constructs": "^10.4.2"
   }
 }

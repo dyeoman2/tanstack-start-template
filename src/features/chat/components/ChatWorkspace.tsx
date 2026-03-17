@@ -12,7 +12,7 @@ import { PersonaDialog } from '~/features/chat/components/PersonaDialog';
 import { mapAgentMessagesToChatMessages } from '~/features/chat/lib/agent-messages';
 import { inferChatAttachmentMimeType } from '~/features/chat/lib/attachments';
 import { CHAT_ROUTE, DEFAULT_CHAT_PERSONA } from '~/features/chat/lib/constants';
-import { toPersonaId, toRunId, toStorageId, toThreadId } from '~/features/chat/lib/ids';
+import { toPersonaId, toRunId, toThreadId } from '~/features/chat/lib/ids';
 import { optimisticallySendChatMessage } from '~/features/chat/lib/optimistic-send';
 import {
   clearOptimisticThread,
@@ -60,6 +60,58 @@ async function computeFileSha256Hex(file: File) {
   return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, '0')).join(
     '',
   );
+}
+
+async function uploadFileWithTarget(
+  file: File,
+  target: {
+    uploadMethod: 'POST' | 'PUT';
+    uploadUrl: string;
+    uploadHeaders?: Record<string, string>;
+    uploadFields?: Record<string, string>;
+  },
+) {
+  if (target.uploadMethod === 'PUT') {
+    const response = await fetch(target.uploadUrl, {
+      body: file,
+      headers: target.uploadHeaders,
+      method: 'PUT',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload ${file.name}.`);
+    }
+
+    return null;
+  }
+
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(target.uploadFields ?? {})) {
+    formData.append(key, value);
+  }
+  formData.append('file', file);
+
+  const response = await fetch(target.uploadUrl, {
+    body: formData,
+    headers: target.uploadHeaders,
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to upload ${file.name}.`);
+  }
+
+  const payload: unknown = await response.json();
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    !('storageId' in payload) ||
+    typeof payload.storageId !== 'string'
+  ) {
+    throw new Error('Upload did not return a storage identifier.');
+  }
+
+  return payload.storageId;
 }
 
 export function ChatWorkspaceSkeleton() {
@@ -250,8 +302,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     api.agentChatActions.createChatAttachmentFromUpload,
   );
   const stopRun = useAction(api.agentChatActions.stopRun);
-  const generateChatAttachmentUploadUrl = useMutation(
-    api.agentChat.generateChatAttachmentUploadUrl,
+  const generateChatAttachmentUploadTarget = useAction(
+    api.agentChat.generateChatAttachmentUploadTarget,
   );
   const precreateThread = useMutation(api.agentChat.precreateThread);
   const sendMessage = useMutation(api.agentChat.sendMessage).withOptimisticUpdate((store, args) => {
@@ -651,47 +703,21 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const handleUploadAttachment = async (file: File): Promise<ChatAttachment> => {
     const mimeType = inferChatAttachmentMimeType(file);
     const sha256 = await computeFileSha256Hex(file);
-    const uploadUrlWithToken = await generateChatAttachmentUploadUrl({
+    const { uploadTarget, uploadToken } = await generateChatAttachmentUploadTarget({
       fileName: file.name,
       mimeType,
       sizeBytes: file.size,
       sha256,
     });
-    const uploadUrl = new URL(uploadUrlWithToken);
-    const fragmentParams = new URLSearchParams(
-      uploadUrl.hash.startsWith('#') ? uploadUrl.hash.slice(1) : uploadUrl.hash,
-    );
-    const uploadToken = fragmentParams.get('chat-upload-token');
+    const uploadedStorageId = await uploadFileWithTarget(file, uploadTarget);
+    const storageId = uploadTarget.backend === 's3' ? uploadTarget.storageId : uploadedStorageId;
 
-    if (!uploadToken) {
-      throw new Error('Upload token was not issued for this attachment.');
-    }
-
-    uploadUrl.hash = '';
-    const uploadResponse = await fetch(uploadUrl.toString(), {
-      method: 'POST',
-      headers: {
-        'Content-Type': mimeType,
-      },
-      body: file,
-    });
-
-    if (!uploadResponse.ok) {
-      throw new Error(`Failed to upload ${file.name}.`);
-    }
-
-    const uploadPayload: unknown = await uploadResponse.json();
-    if (
-      !uploadPayload ||
-      typeof uploadPayload !== 'object' ||
-      !('storageId' in uploadPayload) ||
-      typeof uploadPayload.storageId !== 'string'
-    ) {
+    if (!storageId) {
       throw new Error('Upload did not return a storage identifier.');
     }
 
     const attachment = await createChatAttachmentFromUpload({
-      storageId: toStorageId(uploadPayload.storageId),
+      storageId,
       uploadToken,
       name: file.name,
       mimeType,
