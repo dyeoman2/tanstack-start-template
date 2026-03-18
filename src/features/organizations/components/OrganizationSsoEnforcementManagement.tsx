@@ -94,11 +94,7 @@ export function OrganizationSsoEnforcementManagement({
     return null;
   }
 
-  const persistEnforcement = async ({
-    nextMode,
-  }: {
-    nextMode: OrganizationEnterpriseAuthMode;
-  }) => {
+  const persistEnforcement = async ({ nextMode }: { nextMode: OrganizationEnterpriseAuthMode }) => {
     setIsSaving(true);
     setSaveError(null);
 
@@ -111,7 +107,8 @@ export function OrganizationSsoEnforcementManagement({
           memberCap: settings.policies.memberCap,
           mfaRequired: settings.policies.mfaRequired,
           enterpriseAuthMode: nextMode,
-          enterpriseProviderKey: nextMode === 'off' ? null : settings.policies.enterpriseProviderKey,
+          enterpriseProviderKey:
+            nextMode === 'off' ? null : settings.policies.enterpriseProviderKey,
           enterpriseProtocol:
             nextMode === 'off' ? null : (settings.policies.enterpriseProtocol ?? 'oidc'),
           allowBreakGlassPasswordLogin: false,

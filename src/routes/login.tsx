@@ -6,12 +6,19 @@ import { type FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Button } from '~/components/ui/button';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '~/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { Separator } from '~/components/ui/separator';
-import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { authClient } from '~/features/auth/auth-client';
+import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
@@ -285,8 +292,8 @@ function LoginPage() {
         <CardHeader>
           <CardTitle className="text-3xl">Sign in</CardTitle>
           <CardDescription>
-            Use your email and password, or continue with Google if your organization uses
-            Google Workspace sign-in.
+            Use your email and password, or continue with Google if your organization uses Google
+            Workspace sign-in.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">

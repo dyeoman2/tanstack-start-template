@@ -1,5 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 type InformativeReference = {
@@ -139,9 +138,7 @@ async function main() {
           subcategoryId: subcategoryNode.elementIdentifier,
           subcategoryTitle: subcategoryNode.text.trim(),
           implementationExamples: parseImplementationExamples(subcategoryNode.elements),
-          informativeReferences: parseInformativeReferences(
-            subcategoryNode.externalRelationships,
-          ),
+          informativeReferences: parseInformativeReferences(subcategoryNode.externalRelationships),
         });
       }
     }

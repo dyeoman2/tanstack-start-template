@@ -26,7 +26,9 @@ type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVe
 type BetterAuthUserOptions = NonNullable<BetterAuthOptions['user']>;
 
 type SendResetPassword = NonNullable<BetterAuthEmailAndPasswordOptions['sendResetPassword']>;
-type SendVerificationEmail = NonNullable<BetterAuthEmailVerificationOptions['sendVerificationEmail']>;
+type SendVerificationEmail = NonNullable<
+  BetterAuthEmailVerificationOptions['sendVerificationEmail']
+>;
 type SendChangeEmailConfirmation = NonNullable<
   NonNullable<BetterAuthUserOptions['changeEmail']>['sendChangeEmailConfirmation']
 >;

@@ -1,6 +1,6 @@
 import { v } from 'convex/values';
-import type { Doc } from './_generated/dataModel';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
+import type { Doc } from './_generated/dataModel';
 import type { QueryCtx } from './_generated/server';
 import { query } from './_generated/server';
 import { getVerifiedCurrentAuthUserOrNull } from './auth/access';

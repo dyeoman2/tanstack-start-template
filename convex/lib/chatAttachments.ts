@@ -44,9 +44,7 @@ function getLowercaseExtension(fileName: string) {
 function inferMimeTypeFromExtension(fileName: string) {
   const extension = getLowercaseExtension(fileName);
   return (
-    IMAGE_EXTENSION_TO_MIME.get(extension) ??
-    DOCUMENT_EXTENSION_TO_MIME.get(extension) ??
-    null
+    IMAGE_EXTENSION_TO_MIME.get(extension) ?? DOCUMENT_EXTENSION_TO_MIME.get(extension) ?? null
   );
 }
 

@@ -78,7 +78,9 @@ async function setNetlifyEnv(vars: Record<string, string>) {
 async function main() {
   console.log('🚀 Production storage setup\n');
   console.log('This script sets storage runtime env vars in both Convex prod and Netlify.');
-  console.log('It assumes you already have access to both CLIs and that your Netlify site is linked.\n');
+  console.log(
+    'It assumes you already have access to both CLIs and that your Netlify site is linked.\n',
+  );
 
   const shouldContinue = await askYesNo('Continue?', true);
   if (!shouldContinue) {
@@ -94,7 +96,10 @@ async function main() {
 
   if (storageMode !== 'convex') {
     const awsRegion = await askWithDefault('AWS region', 'us-west-1');
-    const bucket = await askWithDefault('AWS S3 files bucket', 'tanstack-start-template-files-prod');
+    const bucket = await askWithDefault(
+      'AWS S3 files bucket',
+      'tanstack-start-template-files-prod',
+    );
     const convexSiteUrl = await askWithDefault(
       'Convex site URL',
       'https://your-deployment.convex.site',
@@ -117,8 +122,7 @@ async function main() {
 
   console.log('\nValues to set:');
   for (const [name, value] of Object.entries(envVars)) {
-    const displayValue =
-      name.includes('SECRET') ? '[generated/set]' : value;
+    const displayValue = name.includes('SECRET') ? '[generated/set]' : value;
     console.log(`   ${name}=${displayValue}`);
   }
 

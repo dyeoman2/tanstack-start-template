@@ -1,10 +1,10 @@
 'use node';
 
-import type { ActionCtx } from './_generated/server';
+import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
+import type { ActionCtx } from './_generated/server';
 import { createPresignedS3Url, deleteS3Object, headS3Object } from './lib/storageS3';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
-import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 
 export function buildDeterministicStorageKey(storageId: string) {
   return `team/global/storage/${storageId}`;
@@ -41,10 +41,7 @@ export async function generateS3PrimaryUploadTarget(args: {
   };
 }
 
-export async function finalizeS3PrimaryUpload(
-  ctx: ActionCtx,
-  args: FinalizeUploadArgs,
-) {
+export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUploadArgs) {
   const runtimeConfig = getStorageRuntimeConfig();
   const bucket = runtimeConfig.s3FilesBucket;
   if (!bucket) {
@@ -76,10 +73,7 @@ export async function finalizeS3PrimaryUpload(
   });
 }
 
-export async function resolveS3PrimaryUrl(
-  ctx: ActionCtx,
-  args: ResolveFileUrlArgs,
-) {
+export async function resolveS3PrimaryUrl(ctx: ActionCtx, args: ResolveFileUrlArgs) {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });
@@ -93,10 +87,7 @@ export async function resolveS3PrimaryUrl(
   return signedServeUrl.url;
 }
 
-export async function deleteS3PrimaryObject(
-  ctx: ActionCtx,
-  args: { storageId: string },
-) {
+export async function deleteS3PrimaryObject(ctx: ActionCtx, args: { storageId: string }) {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });

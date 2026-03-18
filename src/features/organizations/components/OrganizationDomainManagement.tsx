@@ -18,13 +18,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '~/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import {
   Dialog,
@@ -93,7 +87,9 @@ export function OrganizationDomainManagement({
   const response = useQuery(api.organizationManagement.listOrganizationDomains, { slug });
   const addDomain = useMutation(api.organizationManagement.addOrganizationDomain);
   const removeDomain = useMutation(api.organizationManagement.removeOrganizationDomain);
-  const regenerateDomainToken = useMutation(api.organizationManagement.regenerateOrganizationDomainToken);
+  const regenerateDomainToken = useMutation(
+    api.organizationManagement.regenerateOrganizationDomainToken,
+  );
   const verifyDomain = useAction(api.organizationDomains.verifyOrganizationDomain);
   const detectDnsProvider = useAction(api.organizationDomains.detectOrganizationDomainDnsProvider);
   const [domain, setDomain] = useState(userEmailDomain);
@@ -197,7 +193,10 @@ export function OrganizationDomainManagement({
       }, 1500);
       showToast(`${label} copied.`, 'success');
     } catch (error) {
-      showToast(getServerFunctionErrorMessage(error, `Failed to copy ${label.toLowerCase()}`), 'error');
+      showToast(
+        getServerFunctionErrorMessage(error, `Failed to copy ${label.toLowerCase()}`),
+        'error',
+      );
     }
   };
 
@@ -296,286 +295,321 @@ export function OrganizationDomainManagement({
         </Alert>
       ) : null}
       {response === undefined ? (
-            <div className="flex min-h-32 items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground">
-              <Loader2 className="size-4 animate-spin" />
-              Loading Domains…
-            </div>
-          ) : sortedDomains.length === 0 ? (
-            canManageDomains ? (
-              <FieldGroup className="mt-1 w-full gap-3">
-                <Field>
-                  <FieldLabel htmlFor="first-domain" className="sr-only">
-                    Domain
-                  </FieldLabel>
-                  <FieldContent>
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
-                      <Input
-                        id="first-domain"
-                        name="domain"
-                        value={domain}
-                        onChange={(event) => setDomain(event.target.value)}
-                        placeholder="company.com…"
-                        autoComplete="off"
-                        spellCheck={false}
-                        className="lg:flex-1"
-                        disabled={isAdding || blockedMessage !== null}
-                      />
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => {
-                          void handleAddDomain();
-                        }}
-                        disabled={isAdding || domain.trim().length === 0 || blockedMessage !== null}
-                      >
-                        {isAdding ? <Loader2 className="animate-spin" /> : <ShieldCheck data-icon="inline-start" />}
-                        Add Domain
-                      </Button>
-                    </div>
-                    <FieldDescription className="text-left">
-                      Enter the company email domain you want to use for SSO, such as
-                      ` company.com`.
-                    </FieldDescription>
-                    {error ? <FieldError>{error}</FieldError> : null}
-                  </FieldContent>
-                </Field>
-              </FieldGroup>
-            ) : (
-              <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
-                <p className="font-medium text-foreground">No Verified Domains Yet</p>
-                <p className="mt-2">
-                  Ask an organization owner to add and verify a company domain before you enable
-                  SSO enforcement.
-                </p>
-              </div>
-            )
-          ) : (
-            <div className="flex flex-col gap-4">
-              {sortedDomains.map((item) => {
-                const isPending = pendingDomainId === item.id;
-                const isVerified = item.status === 'verified';
-                const dnsProviderHint = dnsProviderHints[item.id];
+        <div className="flex min-h-32 items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" />
+          Loading Domains…
+        </div>
+      ) : sortedDomains.length === 0 ? (
+        canManageDomains ? (
+          <FieldGroup className="mt-1 w-full gap-3">
+            <Field>
+              <FieldLabel htmlFor="first-domain" className="sr-only">
+                Domain
+              </FieldLabel>
+              <FieldContent>
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-start">
+                  <Input
+                    id="first-domain"
+                    name="domain"
+                    value={domain}
+                    onChange={(event) => setDomain(event.target.value)}
+                    placeholder="company.com…"
+                    autoComplete="off"
+                    spellCheck={false}
+                    className="lg:flex-1"
+                    disabled={isAdding || blockedMessage !== null}
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => {
+                      void handleAddDomain();
+                    }}
+                    disabled={isAdding || domain.trim().length === 0 || blockedMessage !== null}
+                  >
+                    {isAdding ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <ShieldCheck data-icon="inline-start" />
+                    )}
+                    Add Domain
+                  </Button>
+                </div>
+                <FieldDescription className="text-left">
+                  Enter the company email domain you want to use for SSO, such as ` company.com`.
+                </FieldDescription>
+                {error ? <FieldError>{error}</FieldError> : null}
+              </FieldContent>
+            </Field>
+          </FieldGroup>
+        ) : (
+          <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+            <p className="font-medium text-foreground">No Verified Domains Yet</p>
+            <p className="mt-2">
+              Ask an organization owner to add and verify a company domain before you enable SSO
+              enforcement.
+            </p>
+          </div>
+        )
+      ) : (
+        <div className="flex flex-col gap-4">
+          {sortedDomains.map((item) => {
+            const isPending = pendingDomainId === item.id;
+            const isVerified = item.status === 'verified';
+            const dnsProviderHint = dnsProviderHints[item.id];
 
-                return (
-                  <div key={item.id} className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm">
-                    <div className="flex flex-col gap-4">
-                      {/* Header: domain name, status badge, and actions */}
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex min-w-0 flex-1 flex-col gap-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="font-medium text-foreground">{item.domain}</p>
-                            <Badge variant={isVerified ? 'success' : 'warning'}>
-                              {isVerified ? 'Verified' : 'Pending Verification'}
-                            </Badge>
-                          </div>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          {canManageDomains ? (
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  type="button"
-                                  variant="ghost"
-                                  size="icon-sm"
-                                  disabled={isPending}
-                                >
-                                  <MoreVertical />
-                                  <span className="sr-only">More actions</span>
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                {isVerified ? (
-                                  <DropdownMenuItem
-                                    onClick={() => {
-                                      void handleVerify(item.id);
-                                    }}
-                                  >
-                                    <CheckCircle2 className="size-4" />
-                                    Re-verify
-                                  </DropdownMenuItem>
-                                ) : null}
-                                <DropdownMenuItem
-                                  onClick={() => {
-                                    void handleRegenerate(item.id);
-                                  }}
-                                >
-                                  <RefreshCcw className="size-4" />
-                                  Regenerate token
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  variant="destructive"
-                                  onClick={() =>
-                                    setRemovingDomain({
-                                      id: item.id,
-                                      domain: item.domain,
-                                      organizationId: item.organizationId,
-                                    })
-                                  }
-                                >
-                                  <Trash2 className="size-4" />
-                                  Remove domain
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          ) : null}
-                        </div>
+            return (
+              <div
+                key={item.id}
+                className="rounded-2xl border border-border/70 bg-card p-4 shadow-sm"
+              >
+                <div className="flex flex-col gap-4">
+                  {/* Header: domain name, status badge, and actions */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 flex-1 flex-col gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-foreground">{item.domain}</p>
+                        <Badge variant={isVerified ? 'success' : 'warning'}>
+                          {isVerified ? 'Verified' : 'Pending Verification'}
+                        </Badge>
                       </div>
-
-                      {!isVerified ? (
-                        <div className="flex flex-col gap-2.5 text-sm text-muted-foreground">
-                          <p className="font-medium text-foreground">DNS Setup</p>
-                          <ol className="list-inside list-decimal">
-                            <li className="space-y-2">
-                              <span>
-                                Open DNS settings for {item.domain}.
-                                {dnsProviderHint?.providerName ? (
-                                  <>
-                                    {' '}
-                                    Most likely managed in{' '}
-                                    {dnsProviderHint.providerUrl ? (
-                                      <a
-                                        href={dnsProviderHint.providerUrl}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-primary"
-                                      >
-                                        {dnsProviderHint.providerName}
-                                        <ExternalLink className="size-3.5" />
-                                      </a>
-                                    ) : (
-                                      <span className="font-medium text-foreground">
-                                        {dnsProviderHint.providerName}
-                                      </span>
-                                    )}
-                                    .
-                                  </>
-                                ) : null}
-                              </span>
-                            </li>
-                            <li>Add a TXT record in your provider&apos;s DNS settings using the host and value shown below.</li>
-                          </ol>
-
-                          <div className="overflow-hidden rounded-xl border border-border/70">
-                            <table className="w-full text-sm">
-                              <thead>
-                                <tr className="bg-muted/50">
-                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Type</th>
-                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Host</th>
-                                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">TXT Value</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                <tr className="border-t">
-                                  <td className="px-3 py-2.5 font-mono text-xs text-foreground">TXT</td>
-                                  <td className="px-3 py-2.5 align-top">
-                                    <div className="flex items-center gap-2">
-                                      <code className="break-all font-mono text-xs text-foreground">
-                                        {item.verificationRecordName}
-                                      </code>
-                                      {(() => {
-                                        const copyKey = `${item.id}-record-name`;
-                                        const isCopied = copiedField === copyKey;
-
-                                        return (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            className="text-muted-foreground hover:text-foreground"
-                                            onClick={() =>
-                                              void handleCopyField(item.verificationRecordName, 'Record name', copyKey)
-                                            }
-                                            aria-label={isCopied ? 'Record name copied' : 'Copy record name'}
-                                          >
-                                            {isCopied ? <Check /> : <Copy />}
-                                            <span className="sr-only">
-                                              {isCopied ? 'Record name copied' : 'Copy record name'}
-                                            </span>
-                                          </Button>
-                                        );
-                                      })()}
-                                    </div>
-                                  </td>
-                                  <td className="px-3 py-2.5 align-top">
-                                    <div className="flex items-center gap-2">
-                                      <code className="break-all font-mono text-xs text-foreground">
-                                        {item.verificationRecordValue}
-                                      </code>
-                                      {(() => {
-                                        const copyKey = `${item.id}-record-value`;
-                                        const isCopied = copiedField === copyKey;
-
-                                        return (
-                                          <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="icon-sm"
-                                            className="text-muted-foreground hover:text-foreground"
-                                            onClick={() =>
-                                              void handleCopyField(item.verificationRecordValue, 'Record value', copyKey)
-                                            }
-                                            aria-label={isCopied ? 'Record value copied' : 'Copy record value'}
-                                          >
-                                            {isCopied ? <Check /> : <Copy />}
-                                            <span className="sr-only">
-                                              {isCopied ? 'Record value copied' : 'Copy record value'}
-                                            </span>
-                                          </Button>
-                                        );
-                                      })()}
-                                    </div>
-                                  </td>
-                                </tr>
-                              </tbody>
-                            </table>
-                          </div>
-
-                          <p className="text-xs text-muted-foreground">
-                            Use the values exactly as shown. Some DNS providers automatically
-                            append the domain.
-                          </p>
-                          <p>3. Check whether the DNS record is available by clicking the button below.</p>
-                          <div className="flex flex-wrap items-center gap-3">
-                            {canManageDomains ? (
-                              <Button
-                                type="button"
-                                size="sm"
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {canManageDomains ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon-sm"
+                              disabled={isPending}
+                            >
+                              <MoreVertical />
+                              <span className="sr-only">More actions</span>
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {isVerified ? (
+                              <DropdownMenuItem
                                 onClick={() => {
                                   void handleVerify(item.id);
                                 }}
-                                disabled={isPending}
                               >
-                                {isPending ? <Loader2 className="animate-spin" /> : <CheckCircle2 data-icon="inline-start" />}
-                                Check DNS Record
-                              </Button>
+                                <CheckCircle2 className="size-4" />
+                                Re-verify
+                              </DropdownMenuItem>
                             ) : null}
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Clock className="size-3.5" />
-                              DNS changes usually show up within a few minutes, but can take up to
-                              48 hours.
-                            </div>
-                          </div>
-                        </div>
-                      ) : null}
-
-                      {item.verifiedAt ? (
-                        <p className="text-xs text-muted-foreground">
-                          Verified {new Date(item.verifiedAt).toLocaleString()}
-                        </p>
+                            <DropdownMenuItem
+                              onClick={() => {
+                                void handleRegenerate(item.id);
+                              }}
+                            >
+                              <RefreshCcw className="size-4" />
+                              Regenerate token
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              variant="destructive"
+                              onClick={() =>
+                                setRemovingDomain({
+                                  id: item.id,
+                                  domain: item.domain,
+                                  organizationId: item.organizationId,
+                                })
+                              }
+                            >
+                              <Trash2 className="size-4" />
+                              Remove domain
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       ) : null}
                     </div>
                   </div>
-                );
-              })}
-              {addDomainButton ? <div className="flex justify-end">{addDomainButton}</div> : null}
-            </div>
-          )}
+
+                  {!isVerified ? (
+                    <div className="flex flex-col gap-2.5 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">DNS Setup</p>
+                      <ol className="list-inside list-decimal">
+                        <li className="space-y-2">
+                          <span>
+                            Open DNS settings for {item.domain}.
+                            {dnsProviderHint?.providerName ? (
+                              <>
+                                {' '}
+                                Most likely managed in{' '}
+                                {dnsProviderHint.providerUrl ? (
+                                  <a
+                                    href={dnsProviderHint.providerUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1 font-medium text-foreground underline decoration-muted-foreground/40 underline-offset-4 transition-colors hover:text-primary"
+                                  >
+                                    {dnsProviderHint.providerName}
+                                    <ExternalLink className="size-3.5" />
+                                  </a>
+                                ) : (
+                                  <span className="font-medium text-foreground">
+                                    {dnsProviderHint.providerName}
+                                  </span>
+                                )}
+                                .
+                              </>
+                            ) : null}
+                          </span>
+                        </li>
+                        <li>
+                          Add a TXT record in your provider&apos;s DNS settings using the host and
+                          value shown below.
+                        </li>
+                      </ol>
+
+                      <div className="overflow-hidden rounded-xl border border-border/70">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="bg-muted/50">
+                              <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                                Type
+                              </th>
+                              <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                                Host
+                              </th>
+                              <th className="px-3 py-2 text-left font-medium text-muted-foreground">
+                                TXT Value
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-t">
+                              <td className="px-3 py-2.5 font-mono text-xs text-foreground">TXT</td>
+                              <td className="px-3 py-2.5 align-top">
+                                <div className="flex items-center gap-2">
+                                  <code className="break-all font-mono text-xs text-foreground">
+                                    {item.verificationRecordName}
+                                  </code>
+                                  {(() => {
+                                    const copyKey = `${item.id}-record-name`;
+                                    const isCopied = copiedField === copyKey;
+
+                                    return (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="text-muted-foreground hover:text-foreground"
+                                        onClick={() =>
+                                          void handleCopyField(
+                                            item.verificationRecordName,
+                                            'Record name',
+                                            copyKey,
+                                          )
+                                        }
+                                        aria-label={
+                                          isCopied ? 'Record name copied' : 'Copy record name'
+                                        }
+                                      >
+                                        {isCopied ? <Check /> : <Copy />}
+                                        <span className="sr-only">
+                                          {isCopied ? 'Record name copied' : 'Copy record name'}
+                                        </span>
+                                      </Button>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+                              <td className="px-3 py-2.5 align-top">
+                                <div className="flex items-center gap-2">
+                                  <code className="break-all font-mono text-xs text-foreground">
+                                    {item.verificationRecordValue}
+                                  </code>
+                                  {(() => {
+                                    const copyKey = `${item.id}-record-value`;
+                                    const isCopied = copiedField === copyKey;
+
+                                    return (
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon-sm"
+                                        className="text-muted-foreground hover:text-foreground"
+                                        onClick={() =>
+                                          void handleCopyField(
+                                            item.verificationRecordValue,
+                                            'Record value',
+                                            copyKey,
+                                          )
+                                        }
+                                        aria-label={
+                                          isCopied ? 'Record value copied' : 'Copy record value'
+                                        }
+                                      >
+                                        {isCopied ? <Check /> : <Copy />}
+                                        <span className="sr-only">
+                                          {isCopied ? 'Record value copied' : 'Copy record value'}
+                                        </span>
+                                      </Button>
+                                    );
+                                  })()}
+                                </div>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      <p className="text-xs text-muted-foreground">
+                        Use the values exactly as shown. Some DNS providers automatically append the
+                        domain.
+                      </p>
+                      <p>
+                        3. Check whether the DNS record is available by clicking the button below.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        {canManageDomains ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => {
+                              void handleVerify(item.id);
+                            }}
+                            disabled={isPending}
+                          >
+                            {isPending ? (
+                              <Loader2 className="animate-spin" />
+                            ) : (
+                              <CheckCircle2 data-icon="inline-start" />
+                            )}
+                            Check DNS Record
+                          </Button>
+                        ) : null}
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <Clock className="size-3.5" />
+                          DNS changes usually show up within a few minutes, but can take up to 48
+                          hours.
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {item.verifiedAt ? (
+                    <p className="text-xs text-muted-foreground">
+                      Verified {new Date(item.verifiedAt).toLocaleString()}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+          {addDomainButton ? <div className="flex justify-end">{addDomainButton}</div> : null}
+        </div>
+      )}
     </div>
   );
 
   return (
     <>
-      {embedded ? domainContent : (
+      {embedded ? (
+        domainContent
+      ) : (
         <Card className={cn(highlight ? 'border-primary shadow-md shadow-primary/5' : undefined)}>
           <CardHeader className="flex flex-row items-start justify-between gap-4">
             <div className="flex flex-col gap-1.5">
@@ -585,9 +619,7 @@ export function OrganizationDomainManagement({
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6">
-            {domainContent}
-          </CardContent>
+          <CardContent className="space-y-6">{domainContent}</CardContent>
         </Card>
       )}
 
@@ -647,7 +679,11 @@ export function OrganizationDomainManagement({
               }}
               disabled={isAdding || domain.trim().length === 0}
             >
-              {isAdding ? <Loader2 className="animate-spin" /> : <ShieldCheck data-icon="inline-start" />}
+              {isAdding ? (
+                <Loader2 className="animate-spin" />
+              ) : (
+                <ShieldCheck data-icon="inline-start" />
+              )}
               Add Domain
             </Button>
           </DialogFooter>

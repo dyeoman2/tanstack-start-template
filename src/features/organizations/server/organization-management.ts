@@ -1,16 +1,16 @@
 import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { normalizeOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { normalizeOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import {
   cancelBetterAuthOrganizationInvitation,
   checkBetterAuthOrganizationSlug,
   createBetterAuthOrganization,
   createBetterAuthOrganizationInvitation,
-  deleteBetterAuthOrganizationScimProvider,
   deleteBetterAuthOrganization,
+  deleteBetterAuthOrganizationScimProvider,
   generateBetterAuthOrganizationScimToken,
   removeBetterAuthOrganizationMember,
   updateBetterAuthOrganization,
@@ -347,10 +347,8 @@ export const generateOrganizationScimTokenServerFn = createServerFn({ method: 'P
         organizationId: data.organizationId,
       });
 
-      return await generateBetterAuthOrganizationScimToken(
-        data,
-        ({ code, message, status }) =>
-          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+      return await generateBetterAuthOrganizationScimToken(data, ({ code, message, status }) =>
+        normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Generate organization SCIM token');
@@ -367,10 +365,8 @@ export const deleteOrganizationScimProviderServerFn = createServerFn({ method: '
         organizationId: data.organizationId,
       });
 
-      return await deleteBetterAuthOrganizationScimProvider(
-        data,
-        ({ code, message, status }) =>
-          normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
+      return await deleteBetterAuthOrganizationScimProvider(data, ({ code, message, status }) =>
+        normalizeOrganizationAuthErrorMessage(code ?? undefined, message, status),
       );
     } catch (error) {
       throw handleServerError(error, 'Delete organization SCIM provider');

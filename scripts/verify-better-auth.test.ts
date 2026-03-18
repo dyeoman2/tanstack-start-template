@@ -14,13 +14,14 @@ describe('verifyAuthOk', () => {
 
   it('checks GET /api/auth/ok against the configured Better Auth verification url', async () => {
     process.env.BETTER_AUTH_VERIFY_URL = 'https://app.example.com';
-    const fetchMock = vi.fn(async () =>
-      new Response(JSON.stringify({ status: 'ok' }), {
-        status: 200,
-        headers: {
-          'content-type': 'application/json',
-        },
-      }),
+    const fetchMock = vi.fn(
+      async () =>
+        new Response(JSON.stringify({ status: 'ok' }), {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+          },
+        }),
     );
     vi.stubGlobal('fetch', fetchMock);
 
@@ -37,13 +38,14 @@ describe('verifyAuthOk', () => {
     process.env.BETTER_AUTH_VERIFY_URL = 'https://app.example.com';
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () =>
-        new Response(JSON.stringify({ status: 'unexpected' }), {
-          status: 200,
-          headers: {
-            'content-type': 'application/json',
-          },
-        }),
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ status: 'unexpected' }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          }),
       ),
     );
 

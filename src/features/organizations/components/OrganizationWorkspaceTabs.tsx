@@ -11,8 +11,7 @@ export function OrganizationWorkspaceTabs({
 }) {
   const location = useLocation();
   const currentPath = location.pathname;
-  const breadcrumbName =
-    organizationName ?? getOrganizationBreadcrumbName(location.state, slug);
+  const breadcrumbName = organizationName ?? getOrganizationBreadcrumbName(location.state, slug);
   const tabs = [
     { label: 'General', to: '/app/organizations/$slug/settings' as const },
     { label: 'Members', to: '/app/organizations/$slug/members' as const },

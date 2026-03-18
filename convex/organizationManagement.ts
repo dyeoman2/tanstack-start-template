@@ -18,11 +18,11 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
+import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import {
   applyAlwaysOnRegulatedBaseline,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
-import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';

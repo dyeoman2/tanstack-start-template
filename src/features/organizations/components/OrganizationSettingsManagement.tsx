@@ -22,7 +22,10 @@ import { OrganizationWorkspaceNav } from '~/features/organizations/components/Or
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 import type { OrganizationDirectorySearchParams } from '~/features/organizations/lib/organization-management';
-import { getServerFunctionErrorMessage, refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import {
+  getServerFunctionErrorMessage,
+  refreshOrganizationClientState,
+} from '~/features/organizations/lib/organization-session';
 import {
   deleteOrganizationServerFn,
   updateOrganizationSettingsServerFn,
@@ -190,7 +193,12 @@ export function OrganizationSettingsManagement({
         description="Manage the organization profile and sensitive lifecycle controls."
         actions={
           canUpdateSettings ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsEditDialogOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsEditDialogOpen(true)}
+            >
               <Pencil className="size-4" />
               Edit profile
             </Button>
@@ -231,11 +239,10 @@ export function OrganizationSettingsManagement({
               </p>
             </div>
           </div>
-
         </CardContent>
       </Card>
 
-      {(canLeaveOrganization || canDelete) ? (
+      {canLeaveOrganization || canDelete ? (
         <Card>
           <CardHeader>
             <CardTitle>Danger zone</CardTitle>
@@ -251,7 +258,11 @@ export function OrganizationSettingsManagement({
               </Button>
             ) : null}
             {canDelete ? (
-              <Button type="button" variant="destructive" onClick={() => setIsDeleteDialogOpen(true)}>
+              <Button
+                type="button"
+                variant="destructive"
+                onClick={() => setIsDeleteDialogOpen(true)}
+              >
                 <Trash2 className="size-4" />
                 Delete organization
               </Button>

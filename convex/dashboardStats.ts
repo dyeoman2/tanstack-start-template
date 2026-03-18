@@ -82,9 +82,7 @@ async function upsertDashboardStats(
 
   await ctx.db.patch(canonicalDoc._id, nextValue);
   await Promise.all(
-    statsDocs
-      .filter((doc) => doc._id !== canonicalDoc._id)
-      .map((doc) => ctx.db.delete(doc._id)),
+    statsDocs.filter((doc) => doc._id !== canonicalDoc._id).map((doc) => ctx.db.delete(doc._id)),
   );
 }
 

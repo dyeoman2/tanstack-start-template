@@ -17,8 +17,8 @@ describe('getServerFunctionErrorMessage', () => {
       '[Request ID: abc123] Server Error something noisy at handler (../convex/file.ts:1:1)',
     );
 
-    expect(getServerFunctionErrorMessage(error, 'Failed to update SSO enforcement. Try again.')).toBe(
-      'Failed to update SSO enforcement. Try again.',
-    );
+    expect(
+      getServerFunctionErrorMessage(error, 'Failed to update SSO enforcement. Try again.'),
+    ).toBe('Failed to update SSO enforcement. Try again.');
   });
 });

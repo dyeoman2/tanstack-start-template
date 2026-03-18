@@ -7,11 +7,7 @@ import { OrganizationWorkspaceNav } from '~/features/organizations/components/Or
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
 
-export function OrganizationDomainsPage({
-  slug,
-}: {
-  slug: string;
-}) {
+export function OrganizationDomainsPage({ slug }: { slug: string }) {
   const location = useLocation();
   const response = useQuery(api.organizationManagement.listOrganizationDomains, { slug });
   const organizationName = useStableOrganizationName({

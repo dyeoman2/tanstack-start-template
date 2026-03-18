@@ -34,7 +34,9 @@ export function useStableOrganizationName({
       return;
     }
 
-    setStableName((currentName) => (currentName === latestKnownName ? currentName : latestKnownName));
+    setStableName((currentName) =>
+      currentName === latestKnownName ? currentName : latestKnownName,
+    );
   }, [latestKnownName]);
 
   return latestKnownName ?? stableName ?? fallback;

@@ -1,13 +1,7 @@
 import { CheckIcon, CopyIcon, Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '~/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '~/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import {
   Dialog,
   DialogContent,
@@ -53,7 +47,8 @@ export function ProfileTwoFactorCard() {
   const [didCopyBackupCodes, setDidCopyBackupCodes] = useState(false);
 
   const isTwoFactorEnabled = useMemo(
-    () => (sessionData?.user as { twoFactorEnabled?: boolean } | undefined)?.twoFactorEnabled === true,
+    () =>
+      (sessionData?.user as { twoFactorEnabled?: boolean } | undefined)?.twoFactorEnabled === true,
     [sessionData],
   );
 
@@ -112,9 +107,7 @@ export function ProfileTwoFactorCard() {
     setIsBackupCodesOpen(false);
     setDidCopyBackupCodes(false);
 
-    const search = pendingTotpUri
-      ? `?totpURI=${encodeURIComponent(pendingTotpUri)}`
-      : '';
+    const search = pendingTotpUri ? `?totpURI=${encodeURIComponent(pendingTotpUri)}` : '';
 
     window.location.assign(`/two-factor${search}`);
   }
@@ -191,7 +184,11 @@ export function ProfileTwoFactorCard() {
             <Button type="button" variant="secondary" onClick={() => setIsDialogOpen(false)}>
               Cancel
             </Button>
-            <Button type="button" disabled={isSubmitting} onClick={isTwoFactorEnabled ? handleDisable : handleEnable}>
+            <Button
+              type="button"
+              disabled={isSubmitting}
+              onClick={isTwoFactorEnabled ? handleDisable : handleEnable}
+            >
               {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
               {isTwoFactorEnabled ? 'Disable Two-Factor' : 'Enable Two-Factor'}
             </Button>
@@ -204,20 +201,27 @@ export function ProfileTwoFactorCard() {
           <DialogHeader>
             <DialogTitle>Backup Codes</DialogTitle>
             <DialogDescription>
-              Save these backup codes in a secure place. You can use them to access your account
-              if you lose your two-factor authentication method.
+              Save these backup codes in a secure place. You can use them to access your account if
+              you lose your two-factor authentication method.
             </DialogDescription>
           </DialogHeader>
           <div className="grid grid-cols-2 gap-2">
             {backupCodes.map((code) => (
-              <div key={code} className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-center font-mono text-sm">
+              <div
+                key={code}
+                className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-center font-mono text-sm"
+              >
                 {code}
               </div>
             ))}
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={handleCopyBackupCodes}>
-              {didCopyBackupCodes ? <CheckIcon className="size-4" /> : <CopyIcon className="size-4" />}
+              {didCopyBackupCodes ? (
+                <CheckIcon className="size-4" />
+              ) : (
+                <CopyIcon className="size-4" />
+              )}
               {didCopyBackupCodes ? 'Copied to clipboard' : 'Copy all codes'}
             </Button>
             <Button type="button" onClick={handleContinueToAuthenticator}>

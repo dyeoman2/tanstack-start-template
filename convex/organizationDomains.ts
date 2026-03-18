@@ -1,20 +1,20 @@
-import { v } from 'convex/values';
 import { generateObject } from 'ai';
+import { v } from 'convex/values';
 import { z } from 'zod';
+import type { OrganizationDomainVerificationResult } from '../src/features/organizations/lib/organization-management';
 import {
   canManageDomains,
   deriveViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { DEFAULT_CHAT_MODEL_ID } from '../src/lib/shared/chat-models';
-import type { OrganizationDomainVerificationResult } from '../src/features/organizations/lib/organization-management';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import { getVerifiedCurrentUserFromActionOrThrow } from './auth/access';
 import { throwConvexError } from './auth/errors';
-import { findBetterAuthMember, findBetterAuthOrganizationById } from './lib/betterAuth';
 import { getOpenRouterProvider, getOpenRouterProviderOptions } from './lib/agentChat';
+import { findBetterAuthMember, findBetterAuthOrganizationById } from './lib/betterAuth';
 import { organizationDomainVerificationResultValidator } from './lib/returnValidators';
 
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
@@ -26,7 +26,8 @@ const ORGANIZATION_DOMAIN_PROVIDER_URLS = {
   godaddy: 'https://dcc.godaddy.com/manage/dns',
   namecheap: 'https://ap.www.namecheap.com/domains/domaincontrolpanel/',
   googleCloudDns: 'https://console.cloud.google.com/net-services/dns/zones',
-  azureDns: 'https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Network%2Fdnszones',
+  azureDns:
+    'https://portal.azure.com/#view/HubsExtension/BrowseResource/resourceType/Microsoft.Network%2Fdnszones',
   dnsimple: 'https://dnsimple.com/a',
   ns1: 'https://my.nsone.net/',
   vercel: 'https://vercel.com/dashboard/domains',
@@ -141,7 +142,9 @@ function getOrganizationDomainVerificationRecordValue(token: string) {
 
 function inferDnsProviderFromNameservers(nameservers: string[]): DnsProviderHint {
   for (const matcher of DNS_PROVIDER_MATCHERS) {
-    if (nameservers.some((nameserver) => matcher.patterns.some((pattern) => pattern.test(nameserver)))) {
+    if (
+      nameservers.some((nameserver) => matcher.patterns.some((pattern) => pattern.test(nameserver)))
+    ) {
       return {
         providerName: matcher.label,
         providerUrl: ORGANIZATION_DOMAIN_PROVIDER_URLS[matcher.key],
@@ -249,11 +252,9 @@ async function resolveDnsAnswers(
       throw new Error(`Resolver responded with ${response.status}`);
     }
 
-    const payload = (await response.json().catch(() => null)) as
-      | {
-          Answer?: Array<{ data?: string }>;
-        }
-      | null;
+    const payload = (await response.json().catch(() => null)) as {
+      Answer?: Array<{ data?: string }>;
+    } | null;
 
     return payload?.Answer ?? null;
   } finally {

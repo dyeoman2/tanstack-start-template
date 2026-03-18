@@ -1,6 +1,6 @@
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { getRecentStepUpWindowMs } from '~/lib/server/security-config.server';
 import { buildBetterAuthForwardHeaders, getBetterAuthRequest } from '~/lib/server/better-auth/http';
+import { getRecentStepUpWindowMs } from '~/lib/server/security-config.server';
 import { evaluateFreshSession } from '~/lib/shared/auth-policy';
 
 const INTERNAL_GET_SESSION_PATH = '/api/auth/get-session';

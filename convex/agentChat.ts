@@ -48,7 +48,6 @@ import {
   enforceChatPreflightOrThrow,
   getAdvisoryChatRateLimit,
 } from './lib/chatRateLimits';
-import { getOrganizationPolicies } from './organizationManagement';
 import {
   activeRunWithAccessValidator,
   advisoryChatRateLimitValidator,
@@ -62,8 +61,9 @@ import {
   personaWithAccessValidator,
   threadWithAccessValidator,
 } from './lib/returnValidators';
-import { uploadTargetResultValidator } from './storageTypes';
+import { getOrganizationPolicies } from './organizationManagement';
 import { createUploadTargetWithMode } from './storagePlatform';
+import { uploadTargetResultValidator } from './storageTypes';
 
 type PersonaDoc = Doc<'aiPersonas'>;
 type ChatViewerContext = Awaited<ReturnType<typeof getCurrentChatContext>>;

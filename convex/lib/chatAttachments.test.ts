@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  MAX_CHAT_ATTACHMENT_SIZE_BYTES,
-  validateChatAttachmentUpload,
-} from './chatAttachments';
+import { MAX_CHAT_ATTACHMENT_SIZE_BYTES, validateChatAttachmentUpload } from './chatAttachments';
 
 describe('validateChatAttachmentUpload', () => {
   it('accepts supported image uploads', () => {

@@ -1,14 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const {
-  assertUserIdMock,
-  findBetterAuthUserByEmailMock,
-  updateBetterAuthUserRecordMock,
-} = vi.hoisted(() => ({
-  assertUserIdMock: vi.fn(),
-  findBetterAuthUserByEmailMock: vi.fn(),
-  updateBetterAuthUserRecordMock: vi.fn(),
-}));
+const { assertUserIdMock, findBetterAuthUserByEmailMock, updateBetterAuthUserRecordMock } =
+  vi.hoisted(() => ({
+    assertUserIdMock: vi.fn(),
+    findBetterAuthUserByEmailMock: vi.fn(),
+    updateBetterAuthUserRecordMock: vi.fn(),
+  }));
 
 vi.mock('./_generated/server', () => ({
   internalAction: (config: unknown) => config,
@@ -66,10 +63,10 @@ describe('ensurePrincipalRole', () => {
       userId: 'user_ctx_1',
     });
 
-    const result = await ensurePrincipalRoleHandler(
-      { runAction } as never,
-      { email: 'e2e-user@local.test', role: 'user' },
-    );
+    const result = await ensurePrincipalRoleHandler({ runAction } as never, {
+      email: 'e2e-user@local.test',
+      role: 'user',
+    });
 
     expect(updateBetterAuthUserRecordMock).toHaveBeenCalledWith(
       expect.any(Object),
@@ -105,10 +102,10 @@ describe('ensurePrincipalRole', () => {
   it('returns found false when the auth user does not exist', async () => {
     findBetterAuthUserByEmailMock.mockResolvedValue(null);
 
-    const result = await ensurePrincipalRoleHandler(
-      { runAction: vi.fn() } as never,
-      { email: 'missing@local.test', role: 'user' },
-    );
+    const result = await ensurePrincipalRoleHandler({ runAction: vi.fn() } as never, {
+      email: 'missing@local.test',
+      role: 'user',
+    });
 
     expect(result).toEqual({ found: false });
   });

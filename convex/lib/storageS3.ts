@@ -21,14 +21,15 @@ type AwsCredentials = {
 const PRESIGN_EXPIRY_SECONDS = 60 * 60;
 
 function encodeRfc3986(value: string) {
-  return encodeURIComponent(value).replace(/[!*'()]/g, (char) =>
-    `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  return encodeURIComponent(value).replace(
+    /[!*'()]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
   );
 }
 
 function toAmzDate(date: Date) {
   const iso = date.toISOString().replace(/[:-]|\.\d{3}/g, '');
-  return iso.slice(0, 15) + 'Z';
+  return `${iso.slice(0, 15)}Z`;
 }
 
 function toDateStamp(date: Date) {
@@ -36,10 +37,7 @@ function toDateStamp(date: Date) {
 }
 
 async function hmac(key: Uint8Array | string, value: string) {
-  const rawKey =
-    typeof key === 'string'
-      ? new TextEncoder().encode(key)
-      : new Uint8Array(key);
+  const rawKey = typeof key === 'string' ? new TextEncoder().encode(key) : new Uint8Array(key);
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
     rawKey,
@@ -47,7 +45,9 @@ async function hmac(key: Uint8Array | string, value: string) {
     false,
     ['sign'],
   );
-  return new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value)));
+  return new Uint8Array(
+    await crypto.subtle.sign('HMAC', cryptoKey, new TextEncoder().encode(value)),
+  );
 }
 
 async function sha256Hex(value: string) {

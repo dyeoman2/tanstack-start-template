@@ -1,7 +1,7 @@
+import { spawn } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = new URL('../', import.meta.url);
@@ -118,7 +118,9 @@ export async function main() {
   console.log('[better-auth] Verifying plugin parity');
   await verifyPluginParity();
 
-  console.log('[better-auth] Convex adapter detected; validating local Better Auth schema via codegen');
+  console.log(
+    '[better-auth] Convex adapter detected; validating local Better Auth schema via codegen',
+  );
   await run('npx', ['convex', 'codegen']);
 
   console.log('[better-auth] Running TypeScript check');

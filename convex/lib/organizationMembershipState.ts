@@ -7,16 +7,11 @@ import { internalQuery, type MutationCtx, type QueryCtx } from '../_generated/se
 export type OrganizationMembershipStatus = 'active' | 'suspended' | 'deactivated';
 export type OrganizationMembershipStateDoc = Doc<'organizationMembershipStates'>;
 
-function hasDb(
-  ctx: GenericCtx<DataModel>,
-): ctx is QueryCtx | MutationCtx {
+function hasDb(ctx: GenericCtx<DataModel>): ctx is QueryCtx | MutationCtx {
   return 'db' in ctx;
 }
 
-async function queryMembershipStateRecord(
-  ctx: QueryCtx | MutationCtx,
-  membershipId: string,
-) {
+async function queryMembershipStateRecord(ctx: QueryCtx | MutationCtx, membershipId: string) {
   return await ctx.db
     .query('organizationMembershipStates')
     .withIndex('by_membership_id', (q) => q.eq('membershipId', membershipId))
@@ -97,7 +92,8 @@ export async function getOrganizationMembershipStateByOrganizationUser(
   }
 
   return await ctx.runQuery(
-    internal.lib.organizationMembershipState.getOrganizationMembershipStateByOrganizationUserInternal,
+    internal.lib.organizationMembershipState
+      .getOrganizationMembershipStateByOrganizationUserInternal,
     { organizationId, userId },
   );
 }
@@ -120,10 +116,10 @@ export async function getOrganizationMembershipStatuses(
 ) {
   const uniqueIds = Array.from(new Set(membershipIds.filter((id) => id.length > 0)));
   const records = await Promise.all(
-    uniqueIds.map(async (membershipId) => [
-      membershipId,
-      await getOrganizationMembershipStatus(ctx, membershipId),
-    ] as const),
+    uniqueIds.map(
+      async (membershipId) =>
+        [membershipId, await getOrganizationMembershipStatus(ctx, membershipId)] as const,
+    ),
   );
 
   return new Map(records);

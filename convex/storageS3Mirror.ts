@@ -1,12 +1,12 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
-import { internalAction } from './_generated/server';
+import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
-import { internal } from './_generated/api';
-import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
-import { deleteS3Object, getS3Object, listS3Objects, putS3Object } from './lib/storageS3';
+import { internalAction } from './_generated/server';
+import { deleteS3Object, listS3Objects, putS3Object } from './lib/storageS3';
 import { buildDeterministicStorageKey } from './storageS3Primary';
 import type { FinalizeUploadArgs } from './storageTypes';
 
@@ -145,11 +145,6 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
     });
     if (!lifecycle || lifecycle.deletedAt) {
       await deleteS3Object({ bucket, key: object.Key });
-      continue;
-    }
-
-    if (!lifecycle.mirrorKey || lifecycle.mirrorKey !== object.Key) {
-      continue;
     }
   }
 }

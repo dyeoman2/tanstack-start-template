@@ -149,7 +149,9 @@ async function main() {
     } catch (error) {
       lastError = error;
       if (!options.baseUrl) {
-        console.warn(`[agent-browser-auth] Failed auth bootstrap on ${baseUrl}, trying next candidate`);
+        console.warn(
+          `[agent-browser-auth] Failed auth bootstrap on ${baseUrl}, trying next candidate`,
+        );
       }
     }
   }

@@ -131,8 +131,12 @@ export function buildAuthorizationDeniedAuditEvent(input: AuthorizationDeniedAud
     ...(normalizeOptionalString(input.organizationId)
       ? { organizationId: normalizeOptionalString(input.organizationId) }
       : {}),
-    ...(normalizeOptionalString(input.email) ? { identifier: normalizeOptionalString(input.email) } : {}),
-    ...(normalizeOptionalString(input.ipAddress) ? { ipAddress: normalizeOptionalString(input.ipAddress) } : {}),
+    ...(normalizeOptionalString(input.email)
+      ? { identifier: normalizeOptionalString(input.email) }
+      : {}),
+    ...(normalizeOptionalString(input.ipAddress)
+      ? { ipAddress: normalizeOptionalString(input.ipAddress) }
+      : {}),
     outcome: 'failure' as const,
     ...(normalizeOptionalString(input.resourceId ?? input.invitationId)
       ? { resourceId: normalizeOptionalString(input.resourceId ?? input.invitationId) }

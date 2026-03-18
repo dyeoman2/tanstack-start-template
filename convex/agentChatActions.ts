@@ -3,6 +3,9 @@
 import { getFile, serializeMessage, storeFile } from '@convex-dev/agent';
 import type { ModelMessage } from 'ai';
 import { ConvexError, v } from 'convex/values';
+import { getFileStorageBackendMode, getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { inspectFile } from '../src/lib/server/file-inspection.server';
+import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import {
   type ChatModelCatalogEntry,
   DEFAULT_CHAT_MODEL_ID,
@@ -26,12 +29,9 @@ import {
 } from './lib/chatAttachments';
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
-import { inspectFile } from '../src/lib/server/file-inspection.server';
-import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
-import { getFileStorageBackendMode, getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { getS3Object } from './lib/storageS3';
 import { finalizeUploadWithMode, resolveFileUrlWithMode } from './storagePlatform';
 import { buildDeterministicStorageKey } from './storageS3Primary';
-import { getS3Object } from './lib/storageS3';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -157,7 +157,9 @@ async function toBlob(body: unknown, mimeType: string) {
   }
 
   if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
-    const bytes = await (body as { transformToByteArray: () => Promise<Uint8Array> }).transformToByteArray();
+    const bytes = await (
+      body as { transformToByteArray: () => Promise<Uint8Array> }
+    ).transformToByteArray();
     const copy = new Uint8Array(bytes.byteLength);
     copy.set(bytes);
     return new Blob([copy.buffer], {
@@ -836,7 +838,8 @@ export const createChatAttachmentFromUpload = action({
       await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
         attachmentId,
         patch: {
-          errorMessage: inspectionResult.details ?? 'Attachment quarantined during file inspection.',
+          errorMessage:
+            inspectionResult.details ?? 'Attachment quarantined during file inspection.',
           purgeEligibleAt: quarantineUntil,
           status: 'quarantined',
           updatedAt: Date.now(),

@@ -1,10 +1,10 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
+import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
-import { internal } from './_generated/api';
-import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -26,7 +26,12 @@ function timingSafeEqual(left: string, right: string) {
 
   let mismatch = 0;
   for (let index = 0; index < leftBytes.length; index += 1) {
-    mismatch |= leftBytes[index]! ^ rightBytes[index]!;
+    const leftByte = leftBytes[index];
+    const rightByte = rightBytes[index];
+    if (leftByte === undefined || rightByte === undefined) {
+      return false;
+    }
+    mismatch |= leftByte ^ rightByte;
   }
   return mismatch === 0;
 }
@@ -40,7 +45,9 @@ async function sign(secret: string, payload: string) {
     ['sign'],
   );
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  return Array.from(new Uint8Array(signature), (part) => part.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(signature), (part) => part.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }
 
 export async function verifyWebhookSignature(args: {
@@ -61,7 +68,10 @@ export async function verifyWebhookSignature(args: {
     throw new ConvexError('Webhook timestamp is stale.');
   }
 
-  const expected = await sign(runtimeConfig.malwareWebhookSharedSecret, `${args.timestamp}.${args.payload}`);
+  const expected = await sign(
+    runtimeConfig.malwareWebhookSharedSecret,
+    `${args.timestamp}.${args.payload}`,
+  );
   if (!timingSafeEqual(expected, args.signature)) {
     throw new ConvexError('Webhook signature verification failed.');
   }
@@ -169,6 +179,9 @@ export const createWebhookSignatureForPayload = action({
     if (!runtimeConfig.malwareWebhookSharedSecret) {
       throw new ConvexError('AWS_MALWARE_WEBHOOK_SHARED_SECRET is not configured.');
     }
-    return await sign(runtimeConfig.malwareWebhookSharedSecret, `${args.timestamp}.${args.payload}`);
+    return await sign(
+      runtimeConfig.malwareWebhookSharedSecret,
+      `${args.timestamp}.${args.payload}`,
+    );
   },
 });

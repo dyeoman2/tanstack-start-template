@@ -17,8 +17,8 @@ import {
 import { Field, FieldError, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
-import { generateOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import { refreshOrganizationClientState } from '~/features/organizations/lib/organization-session';
+import { generateOrganizationSlug } from '~/features/organizations/lib/organization-slug';
 import {
   checkOrganizationSlugServerFn,
   createOrganizationServerFn,

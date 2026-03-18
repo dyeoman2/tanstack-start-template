@@ -549,10 +549,7 @@ export async function updateBetterAuthAccountRecord(
   });
 }
 
-export async function deleteBetterAuthMemberRecord(
-  ctx: CtxWithRunMutation,
-  memberId: string,
-) {
+export async function deleteBetterAuthMemberRecord(ctx: CtxWithRunMutation, memberId: string) {
   await ctx.runMutation(components.betterAuth.adapter.deleteMany, {
     input: {
       model: 'member',

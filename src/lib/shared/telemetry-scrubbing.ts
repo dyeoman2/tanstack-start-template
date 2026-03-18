@@ -63,27 +63,29 @@ function sanitizeContexts(value: unknown): Record<string, TelemetryValue> | unde
 }
 
 export function sanitizeTelemetryEvent<T extends object>(event: T): T {
-  const sanitizedEntries = Object.entries(event as Record<string, unknown>).flatMap(([key, value]) => {
-    if (!SAFE_TOP_LEVEL_KEYS.has(key)) {
-      return [];
-    }
+  const sanitizedEntries = Object.entries(event as Record<string, unknown>).flatMap(
+    ([key, value]) => {
+      if (!SAFE_TOP_LEVEL_KEYS.has(key)) {
+        return [];
+      }
 
-    if (key === 'tags') {
-      const tags = sanitizeTags(value);
-      return tags ? [[key, tags]] : [];
-    }
+      if (key === 'tags') {
+        const tags = sanitizeTags(value);
+        return tags ? [[key, tags]] : [];
+      }
 
-    if (key === 'contexts') {
-      const contexts = sanitizeContexts(value);
-      return contexts ? [[key, contexts]] : [];
-    }
+      if (key === 'contexts') {
+        const contexts = sanitizeContexts(value);
+        return contexts ? [[key, contexts]] : [];
+      }
 
-    if (key === 'exception') {
-      return [[key, value]];
-    }
+      if (key === 'exception') {
+        return [[key, value]];
+      }
 
-    return [[key, sanitizePrimitive(value)]];
-  });
+      return [[key, sanitizePrimitive(value)]];
+    },
+  );
 
   return Object.fromEntries(sanitizedEntries) as T;
 }

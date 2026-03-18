@@ -1,11 +1,11 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
-import { action, internalAction } from './_generated/server';
-import type { ActionCtx } from './_generated/server';
-import { internal } from './_generated/api';
-import { createPresignedS3Url } from './lib/storageS3';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { internal } from './_generated/api';
+import type { ActionCtx } from './_generated/server';
+import { action, internalAction } from './_generated/server';
+import { createPresignedS3Url } from './lib/storageS3';
 
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
@@ -15,7 +15,12 @@ function timingSafeEqual(left: string, right: string) {
   }
   let mismatch = 0;
   for (let index = 0; index < leftBytes.length; index += 1) {
-    mismatch |= leftBytes[index]! ^ rightBytes[index]!;
+    const leftByte = leftBytes[index];
+    const rightByte = rightBytes[index];
+    if (leftByte === undefined || rightByte === undefined) {
+      return false;
+    }
+    mismatch |= leftByte ^ rightByte;
   }
   return mismatch === 0;
 }
@@ -29,7 +34,9 @@ async function sign(secret: string, payload: string) {
     ['sign'],
   );
   const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  return Array.from(new Uint8Array(signature), (part) => part.toString(16).padStart(2, '0')).join('');
+  return Array.from(new Uint8Array(signature), (part) => part.toString(16).padStart(2, '0')).join(
+    '',
+  );
 }
 
 export async function createFileServeSignature(storageId: string) {

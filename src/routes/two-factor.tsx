@@ -307,8 +307,12 @@ function TwoFactorPage() {
             </div>
 
             {!totpURI ? (
-              <label className="flex items-center gap-3 text-sm font-medium text-foreground">
+              <label
+                htmlFor="trust-device"
+                className="flex items-center gap-3 text-sm font-medium text-foreground"
+              >
                 <Checkbox
+                  id="trust-device"
                   checked={trustDevice}
                   onCheckedChange={(checked) => setTrustDevice(checked === true)}
                 />

@@ -282,7 +282,9 @@ export async function getAttachmentPreviewUrl(
     return null;
   }
 
-  return await ctx.storage.getUrl((attachment.rawStorageId ?? (attachment.storageId as Id<'_storage'>)));
+  return await ctx.storage.getUrl(
+    attachment.rawStorageId ?? (attachment.storageId as Id<'_storage'>),
+  );
 }
 
 export function getThreadSortKey(thread: Pick<ChatThreadDoc, 'pinned' | 'updatedAt'>) {

@@ -145,12 +145,13 @@ function extractAssessmentMethods(control: OscalControl) {
     .filter((part) => part.name === 'assessment-method')
     .map((part) => ({
       method: getPropValue(part.props, 'method'),
-      objects: part.parts
-        ?.filter((child) => child.name === 'assessment-objects')
-        .map((child) => child.prose ?? '')
-        .filter((value) => value.trim().length > 0)
-        .map(normalizeMultilineText)
-        .join('\n\n') || null,
+      objects:
+        part.parts
+          ?.filter((child) => child.name === 'assessment-objects')
+          .map((child) => child.prose ?? '')
+          .filter((value) => value.trim().length > 0)
+          .map(normalizeMultilineText)
+          .join('\n\n') || null,
     }));
 }
 

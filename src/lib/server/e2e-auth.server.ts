@@ -131,9 +131,12 @@ export async function establishE2EAuthSession(
   }
 
   if (createdViaSignUp) {
-    const verificationResult = await adminClient.mutation(internal.e2e.verifyPrincipalEmailByEmail, {
-      email: principal.email,
-    });
+    const verificationResult = await adminClient.mutation(
+      internal.e2e.verifyPrincipalEmailByEmail,
+      {
+        email: principal.email,
+      },
+    );
 
     if (!verificationResult.found) {
       throw new Response('Failed to mark e2e principal email as verified', { status: 500 });

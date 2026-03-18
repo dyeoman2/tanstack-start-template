@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
-  canDeleteOrganization,
   canChangeMemberRole,
+  canDeleteOrganization,
   canManageDomains,
   canManageOrganization,
   canRemoveMember,
@@ -97,16 +97,22 @@ describe('organization permission rules', () => {
 
   it('prevents non-site-admins from changing their own role or removing themselves', () => {
     const adminAssignableRoles = getAssignableRoles('admin', 'member', 2);
-    expect(canChangeMemberRole('admin', 'member', 'active', adminAssignableRoles, true)).toBe(false);
+    expect(canChangeMemberRole('admin', 'member', 'active', adminAssignableRoles, true)).toBe(
+      false,
+    );
     expect(canRemoveMember('admin', 'member', true, 2)).toBe(false);
-    expect(canChangeMemberRole('site-admin', 'member', 'active', adminAssignableRoles, true)).toBe(true);
+    expect(canChangeMemberRole('site-admin', 'member', 'active', adminAssignableRoles, true)).toBe(
+      true,
+    );
     expect(canRemoveMember('site-admin', 'member', true, 2)).toBe(true);
   });
 
   it('prevents org admins from modifying owners', () => {
     const adminAssignableOwnerRoles = getAssignableRoles('admin', 'owner', 2);
     expect(adminAssignableOwnerRoles).toEqual([]);
-    expect(canChangeMemberRole('admin', 'owner', 'active', adminAssignableOwnerRoles, false)).toBe(false);
+    expect(canChangeMemberRole('admin', 'owner', 'active', adminAssignableOwnerRoles, false)).toBe(
+      false,
+    );
     expect(canRemoveMember('admin', 'owner', false, 2)).toBe(false);
   });
 });

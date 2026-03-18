@@ -1,5 +1,5 @@
-import userEvent from '@testing-library/user-event';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationEnterpriseAuthManagement } from './OrganizationEnterpriseAuthManagement';
 
@@ -154,7 +154,9 @@ describe('OrganizationEnterpriseAuthManagement', () => {
 
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.queryByRole('button', { name: /save identity provider/i })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: /save identity provider/i }),
+    ).not.toBeInTheDocument();
   });
 
   it('keeps Google Workspace selectable even when it is not yet configured', () => {
@@ -350,5 +352,4 @@ describe('OrganizationEnterpriseAuthManagement', () => {
       expect(showToastMock).toHaveBeenCalledWith('Identity provider removed.', 'success');
     });
   });
-
 });

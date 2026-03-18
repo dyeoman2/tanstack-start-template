@@ -3,10 +3,9 @@ import type { Doc, Id } from './_generated/dataModel';
 import {
   internalMutation,
   internalQuery,
-  mutation,
-  query,
   type MutationCtx,
   type QueryCtx,
+  query,
 } from './_generated/server';
 import {
   malwareStatusValidator,
@@ -247,9 +246,13 @@ async function applyLifecyclePatch(
         ? nullableToOptional(args.patch.canonicalVersionId)
         : lifecycle.canonicalVersionId,
     deletedAt:
-      args.patch.deletedAt !== undefined ? nullableToOptional(args.patch.deletedAt) : lifecycle.deletedAt,
+      args.patch.deletedAt !== undefined
+        ? nullableToOptional(args.patch.deletedAt)
+        : lifecycle.deletedAt,
     fileSize:
-      args.patch.fileSize !== undefined ? nullableToOptional(args.patch.fileSize) : lifecycle.fileSize,
+      args.patch.fileSize !== undefined
+        ? nullableToOptional(args.patch.fileSize)
+        : lifecycle.fileSize,
     malwareDetectedAt:
       args.patch.malwareDetectedAt !== undefined
         ? nullableToOptional(args.patch.malwareDetectedAt)
@@ -267,7 +270,9 @@ async function applyLifecyclePatch(
         ? nullableToOptional(args.patch.malwareStatus)
         : lifecycle.malwareStatus,
     mimeType:
-      args.patch.mimeType !== undefined ? nullableToOptional(args.patch.mimeType) : lifecycle.mimeType,
+      args.patch.mimeType !== undefined
+        ? nullableToOptional(args.patch.mimeType)
+        : lifecycle.mimeType,
     mirrorAttempts:
       args.patch.mirrorAttempts !== undefined
         ? nullableToOptional(args.patch.mirrorAttempts)
@@ -281,7 +286,9 @@ async function applyLifecyclePatch(
         ? nullableToOptional(args.patch.mirrorDeadlineAt)
         : lifecycle.mirrorDeadlineAt,
     mirrorKey:
-      args.patch.mirrorKey !== undefined ? nullableToOptional(args.patch.mirrorKey) : lifecycle.mirrorKey,
+      args.patch.mirrorKey !== undefined
+        ? nullableToOptional(args.patch.mirrorKey)
+        : lifecycle.mirrorKey,
     mirrorLastError:
       args.patch.mirrorLastError !== undefined
         ? nullableToOptional(args.patch.mirrorLastError)

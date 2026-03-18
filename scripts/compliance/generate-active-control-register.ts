@@ -210,7 +210,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'rbac-boundaries',
         label: 'Role boundaries are enforced',
-        description: 'Account roles and tenant boundaries must prevent unauthorized cross-account access.',
+        description:
+          'Account roles and tenant boundaries must prevent unauthorized cross-account access.',
         verificationMethod: 'Authorization test coverage and admin workflow inspection',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -280,7 +281,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'route-guards',
         label: 'Protected routes are guarded',
-        description: 'Protected pages must require authorized access before rendering sensitive content.',
+        description:
+          'Protected pages must require authorized access before rendering sensitive content.',
         verificationMethod: 'Route guard review and route-level test coverage',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -299,7 +301,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'server-authorization',
         label: 'Server authorization checks enforce access',
-        description: 'Server-side actions and data access must enforce role-appropriate authorization.',
+        description:
+          'Server-side actions and data access must enforce role-appropriate authorization.',
         verificationMethod: 'Server function inspection and automated tests',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -344,7 +347,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'audit-event-capture',
         label: 'Security-relevant events are captured',
-        description: 'Authentication, administrative, and security-significant events must be recorded.',
+        description:
+          'Authentication, administrative, and security-significant events must be recorded.',
         verificationMethod: 'Audit log inspection',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -431,7 +435,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'provider-review-procedure',
         label: 'Provider review procedure is documented',
-        description: 'Internal review cadence and escalation expectations must be documented for platform operators.',
+        description:
+          'Internal review cadence and escalation expectations must be documented for platform operators.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
@@ -445,7 +450,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'provider-review-records',
         label: 'Provider review records are retained',
-        description: 'Completed review records or attestations must be retained for audit review activities.',
+        description:
+          'Completed review records or attestations must be retained for audit review activities.',
         verificationMethod: 'Review record inspection',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
@@ -504,7 +510,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'verified-email',
         label: 'Verified email checks are enforced',
-        description: 'Production authentication flows must enforce verified-email expectations where required.',
+        description:
+          'Production authentication flows must enforce verified-email expectations where required.',
         verificationMethod: 'Policy inspection and auth configuration review',
         required: true,
         suggestedEvidenceTypes: ['system', 'note'] as ChecklistEvidenceType[],
@@ -572,7 +579,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'strong-authenticators',
         label: 'Strong authenticators are available',
-        description: 'The platform must support strong authenticators such as passkeys or MFA factors.',
+        description:
+          'The platform must support strong authenticators such as passkeys or MFA factors.',
         verificationMethod: 'Authenticator capability review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -712,7 +720,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'incident-evidence-export',
         label: 'Incident-supporting evidence can be exported',
-        description: 'The platform should expose audit trails and evidence exports that support investigations.',
+        description:
+          'The platform should expose audit trails and evidence exports that support investigations.',
         verificationMethod: 'Evidence export walkthrough',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -757,7 +766,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'scanner-program',
         label: 'Vulnerability scanning is performed',
-        description: 'The hosted service security program must perform vulnerability discovery activities.',
+        description:
+          'The hosted service security program must perform vulnerability discovery activities.',
         verificationMethod: 'Scanner evidence review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
@@ -841,7 +851,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'session-transport',
         label: 'Secure session transport settings are enforced',
-        description: 'Session and temporary-link transport settings must align with secure transport expectations.',
+        description:
+          'Session and temporary-link transport settings must align with secure transport expectations.',
         verificationMethod: 'Session configuration review',
         required: true,
         suggestedEvidenceTypes: ['system', 'note'] as ChecklistEvidenceType[],
@@ -860,7 +871,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'certificate-operations',
         label: 'Certificate and edge operations are documented',
-        description: 'The hosted platform must retain evidence for certificate lifecycle management and edge enforcement.',
+        description:
+          'The hosted platform must retain evidence for certificate lifecycle management and edge enforcement.',
         verificationMethod: 'Infrastructure evidence review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
@@ -900,7 +912,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'storage-protection',
         label: 'Hosted storage protections are configured',
-        description: 'Data at rest protections must be configured for hosted storage within the service boundary.',
+        description:
+          'Data at rest protections must be configured for hosted storage within the service boundary.',
         verificationMethod: 'Storage configuration review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
@@ -957,7 +970,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     latestEvidenceStatus: 'warning' as const,
     evidenceAssessmentNote:
       'This register substantiates monitoring-related signals emitted by the platform, but it does not yet include complete provider evidence for alert routing, review cadence, or response follow-up. Customer procedures are still required for alert review, internal escalation, and coordination with the provider when customer action is needed.',
-    evidenceSources: ['Document Scan Events', 'Audit Integrity Checks', 'Telemetry Posture Summary'],
+    evidenceSources: [
+      'Document Scan Events',
+      'Audit Integrity Checks',
+      'Telemetry Posture Summary',
+    ],
     evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
@@ -965,7 +982,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'monitoring-signals',
         label: 'Monitoring signals are emitted',
-        description: 'The platform must emit monitoring-relevant security signals for operational review.',
+        description:
+          'The platform must emit monitoring-relevant security signals for operational review.',
         verificationMethod: 'Telemetry and event review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -984,7 +1002,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'provider-alert-procedure',
         label: 'Provider alert response procedure is documented',
-        description: 'Internal alert routing and response expectations must be documented for the hosted platform.',
+        description:
+          'Internal alert routing and response expectations must be documented for the hosted platform.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
@@ -998,7 +1017,8 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       {
         itemId: 'provider-alert-records',
         label: 'Provider alert review records are available',
-        description: 'The platform team must retain evidence of alert review or follow-up activities.',
+        description:
+          'The platform team must retain evidence of alert review or follow-up activities.',
         verificationMethod: 'Operational record review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],

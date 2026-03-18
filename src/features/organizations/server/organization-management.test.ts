@@ -108,17 +108,17 @@ vi.mock('~/lib/server/better-auth/api', () => ({
 
 import {
   bulkOrganizationDirectoryActionServerFn,
-  checkOrganizationSlugServerFn,
   cancelOrganizationInvitationServerFn,
+  checkOrganizationSlugServerFn,
   createOrganizationInvitationServerFn,
   createOrganizationServerFn,
-  deleteOrganizationServerFn,
-  removeOrganizationMemberServerFn,
-  reactivateOrganizationMemberServerFn,
   deactivateOrganizationMemberServerFn,
+  deleteOrganizationServerFn,
+  reactivateOrganizationMemberServerFn,
+  removeOrganizationMemberServerFn,
   suspendOrganizationMemberServerFn,
-  updateOrganizationPoliciesServerFn,
   updateOrganizationMemberRoleServerFn,
+  updateOrganizationPoliciesServerFn,
   updateOrganizationSettingsServerFn,
 } from './organization-management';
 
@@ -362,10 +362,7 @@ describe('organization management server functions', () => {
 
     expect(result).toEqual({ id: 'org_1', name: 'Acme', slug: 'acme' });
     expect(fetchAuthQueryMock).toHaveBeenCalledWith('getOrganizationCreationEligibility', {});
-    expect(checkBetterAuthOrganizationSlugMock).toHaveBeenCalledWith(
-      'acme',
-      expect.any(Function),
-    );
+    expect(checkBetterAuthOrganizationSlugMock).toHaveBeenCalledWith('acme', expect.any(Function));
     expect(createBetterAuthOrganizationMock).toHaveBeenCalledWith(
       {
         keepCurrentActiveOrganization: false,
@@ -426,10 +423,7 @@ describe('organization management server functions', () => {
       },
       expect.any(Function),
     );
-    expect(deleteBetterAuthOrganizationMock).toHaveBeenCalledWith(
-      'org_1',
-      expect.any(Function),
-    );
+    expect(deleteBetterAuthOrganizationMock).toHaveBeenCalledWith('org_1', expect.any(Function));
     expect(adminActionMock).toHaveBeenCalledWith('cleanupOrganizationDataInternal', {
       organizationId: 'org_1',
     });

@@ -82,7 +82,9 @@ export const Route = createFileRoute('/api/parse-pdf')({
             isWorkerConfigured = true;
           }
 
-          const blob = new Blob([await file.arrayBuffer()], { type: file.type || 'application/pdf' });
+          const blob = new Blob([await file.arrayBuffer()], {
+            type: file.type || 'application/pdf',
+          });
           const inspection = await inspectFile({
             allowedKinds: ['pdf'],
             blob,
@@ -103,7 +105,10 @@ export const Route = createFileRoute('/api/parse-pdf')({
           });
 
           if (inspection.status === 'rejected') {
-            return Response.json({ error: inspection.details ?? 'File rejected during inspection' }, { status: 400 });
+            return Response.json(
+              { error: inspection.details ?? 'File rejected during inspection' },
+              { status: 400 },
+            );
           }
 
           if (inspection.status === 'inspection_failed') {

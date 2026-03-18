@@ -1,14 +1,6 @@
 import { anyApi } from 'convex/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
-  buildStepUpRedirectSearch,
-  evaluateFreshSession,
-  evaluateAuthPolicy,
-  type AuthAssuranceState,
-  STEP_UP_REQUIREMENTS,
-  type StepUpRequirement,
-} from '../../src/lib/shared/auth-policy';
-import {
   ADMIN_ORGANIZATION_ACCESS,
   getOrganizationAccess,
   NO_ORGANIZATION_ACCESS,
@@ -18,6 +10,14 @@ import {
 } from '../../src/features/organizations/lib/organization-permissions';
 import { getEmailVerificationEnforcedAt } from '../../src/lib/server/env.server';
 import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
+import {
+  type AuthAssuranceState,
+  buildStepUpRedirectSearch,
+  evaluateAuthPolicy,
+  evaluateFreshSession,
+  STEP_UP_REQUIREMENTS,
+  type StepUpRequirement,
+} from '../../src/lib/shared/auth-policy';
 import { isEmailVerificationRequiredForUser } from '../../src/lib/shared/email-verification';
 import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
@@ -371,7 +371,9 @@ export async function getVerifiedCurrentSiteAdminUserOrThrow(ctx: QueryCtx | Mut
 }
 
 export async function getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx: ActionCtx) {
-  const user = ensureCurrentUserIsSiteAdminOrThrow(await getVerifiedCurrentUserFromActionOrThrow(ctx));
+  const user = ensureCurrentUserIsSiteAdminOrThrow(
+    await getVerifiedCurrentUserFromActionOrThrow(ctx),
+  );
   return await ensureCurrentUserHasMfaForSiteAdminOrThrow(ctx, user);
 }
 
@@ -453,10 +455,7 @@ export type CurrentUserProfile = {
   }>;
 };
 
-async function countPasskeysForUser(
-  ctx: QueryCtx | MutationCtx | ActionCtx,
-  authUserId: string,
-) {
+async function countPasskeysForUser(ctx: QueryCtx | MutationCtx | ActionCtx, authUserId: string) {
   const rawResult = await ctx.runQuery(components.betterAuth.adapter.findMany, {
     model: 'passkey',
     where: [

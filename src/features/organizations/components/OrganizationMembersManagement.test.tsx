@@ -52,7 +52,10 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useAction: () => (...args: unknown[]) => exportDirectoryCsvMock(...args),
+  useAction:
+    () =>
+    (...args: unknown[]) =>
+      exportDirectoryCsvMock(...args),
 }));
 
 vi.mock('~/features/auth/auth-client', () => ({

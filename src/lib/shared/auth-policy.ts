@@ -9,8 +9,7 @@ export const STEP_UP_REQUIREMENTS = {
   userAdministration: 'user_administration',
 } as const;
 
-export type StepUpRequirement =
-  (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
+export type StepUpRequirement = (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
 
 export type AuthAssuranceState = {
   emailVerified: boolean;
@@ -85,8 +84,7 @@ export function evaluateStepUpRequirement(input: {
 }): StepUpEvaluation {
   const now = input.now ?? Date.now();
   const verifiedAt = input.assurance.recentStepUpAt;
-  const validUntil =
-    verifiedAt === null ? null : verifiedAt + input.recentStepUpWindowMs;
+  const validUntil = verifiedAt === null ? null : verifiedAt + input.recentStepUpWindowMs;
   const satisfied = validUntil !== null && validUntil > now;
 
   return {

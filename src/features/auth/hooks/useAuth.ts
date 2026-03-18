@@ -86,7 +86,8 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   const isSiteAdmin = deriveIsSiteAdmin(role);
   const requiresEmailVerification =
     !!session?.user && (shouldFetchProfile ? (profile?.requiresEmailVerification ?? false) : false);
-  const requiresMfaSetup = !!session?.user && (shouldFetchProfile ? (profile?.requiresMfaSetup ?? false) : false);
+  const requiresMfaSetup =
+    !!session?.user && (shouldFetchProfile ? (profile?.requiresMfaSetup ?? false) : false);
   const hasRecentStepUp =
     !!session?.user &&
     (shouldFetchProfile

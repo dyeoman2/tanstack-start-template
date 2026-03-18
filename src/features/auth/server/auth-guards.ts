@@ -5,8 +5,8 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-r
 import { hasFreshBetterAuthSessionForCurrentRequest } from '~/lib/server/better-auth/fresh-session.server';
 import {
   buildStepUpRedirectSearch,
-  type StepUpRequirement,
   STEP_UP_REQUIREMENTS,
+  type StepUpRequirement,
 } from '~/lib/shared/auth-policy';
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';

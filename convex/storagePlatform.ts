@@ -1,11 +1,11 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
+import { getFileStorageBackendMode } from '../src/lib/server/env.server';
+import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
-import { internal } from './_generated/api';
-import { getFileStorageBackendMode } from '../src/lib/server/env.server';
 import { createFileServeSignature } from './fileServing';
 import { deleteMirrorObject, finalizeS3MirrorUpload } from './storageS3Mirror';
 import {
@@ -15,13 +15,13 @@ import {
   generateS3PrimaryUploadTarget,
 } from './storageS3Primary';
 import {
-  fileUrlResultValidator,
-  storageBackendModeValidator,
   type CreateUploadTargetArgs,
   type DeleteStoredFileArgs,
   type FinalizeUploadArgs,
+  fileUrlResultValidator,
   type RegisterFileForLifecycleTrackingArgs,
   type ResolveFileUrlArgs,
+  storageBackendModeValidator,
   uploadTargetResultValidator,
 } from './storageTypes';
 
@@ -29,10 +29,7 @@ function asConvexStorageId(storageId: string) {
   return storageId as Id<'_storage'>;
 }
 
-export async function createUploadTargetWithMode(
-  ctx: ActionCtx,
-  args: CreateUploadTargetArgs,
-) {
+export async function createUploadTargetWithMode(ctx: ActionCtx, args: CreateUploadTargetArgs) {
   const backendMode = getFileStorageBackendMode();
   if (backendMode === 's3-primary') {
     const storageId = crypto.randomUUID();
@@ -74,10 +71,7 @@ export async function registerFileForLifecycleTracking(
   });
 }
 
-export async function finalizeUploadWithMode(
-  ctx: ActionCtx,
-  args: FinalizeUploadArgs,
-) {
+export async function finalizeUploadWithMode(ctx: ActionCtx, args: FinalizeUploadArgs) {
   await registerFileForLifecycleTracking(ctx, args);
 
   if (args.backendMode === 'convex') {
@@ -98,10 +92,7 @@ export async function finalizeUploadWithMode(
   await finalizeS3MirrorUpload(ctx, args);
 }
 
-export async function resolveFileUrlWithMode(
-  ctx: ActionCtx,
-  args: ResolveFileUrlArgs,
-) {
+export async function resolveFileUrlWithMode(ctx: ActionCtx, args: ResolveFileUrlArgs) {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });
@@ -127,10 +118,7 @@ export async function resolveFileUrlWithMode(
   };
 }
 
-export async function deleteStoredFileWithMode(
-  ctx: ActionCtx,
-  args: DeleteStoredFileArgs,
-) {
+export async function deleteStoredFileWithMode(ctx: ActionCtx, args: DeleteStoredFileArgs) {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });

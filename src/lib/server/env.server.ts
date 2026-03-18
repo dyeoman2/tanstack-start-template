@@ -440,14 +440,12 @@ function readOptionalServerEnv(name: string): string | null {
 }
 
 function readOptionalStorageEnv(canonicalName: string, legacyName?: string): string | null {
-  return readOptionalServerEnv(canonicalName) ?? (legacyName ? readOptionalServerEnv(legacyName) : null);
+  return (
+    readOptionalServerEnv(canonicalName) ?? (legacyName ? readOptionalServerEnv(legacyName) : null)
+  );
 }
 
-function parsePositiveInteger(
-  value: string | null,
-  name: string,
-  fallback: number,
-): number {
+function parsePositiveInteger(value: string | null, name: string, fallback: number): number {
   if (value === null) {
     return fallback;
   }
@@ -487,9 +485,7 @@ export function getFileStorageBackendMode(): FileStorageBackendMode {
     return configured;
   }
 
-  throw new Error(
-    'FILE_STORAGE_BACKEND must be one of: convex, s3-primary, s3-mirror.',
-  );
+  throw new Error('FILE_STORAGE_BACKEND must be one of: convex, s3-primary, s3-mirror.');
 }
 
 export function getStorageRuntimeConfig(): StorageRuntimeConfig {
@@ -538,10 +534,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       100,
     ),
     s3OrphanCleanupMinAgeMs: parsePositiveInteger(
-      readOptionalStorageEnv(
-        'AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS',
-        'S3_ORPHAN_CLEANUP_MIN_AGE_MS',
-      ),
+      readOptionalStorageEnv('AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS', 'S3_ORPHAN_CLEANUP_MIN_AGE_MS'),
       'AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS',
       24 * 60 * 60 * 1000,
     ),

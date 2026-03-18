@@ -31,7 +31,9 @@ const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
 const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   string,
-  Array<'actorUserId' | 'organizationId' | 'outcome' | 'resourceType' | 'severity' | 'sourceSurface'>
+  Array<
+    'actorUserId' | 'organizationId' | 'outcome' | 'resourceType' | 'severity' | 'sourceSurface'
+  >
 >([
   [
     'organization_policy_updated',

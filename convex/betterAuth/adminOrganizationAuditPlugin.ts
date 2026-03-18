@@ -74,14 +74,6 @@ function isHandledAuthorizationDeniedPath(path: string) {
   return path.startsWith('/admin/') || path.startsWith('/organization/');
 }
 
-async function safelyRecord(recordAuditEvent: AuditRecorder, event: AuditRecord) {
-  try {
-    await recordAuditEvent(event);
-  } catch (error) {
-    console.error('Failed to write Better Auth admin/org audit log', error);
-  }
-}
-
 export function createAdminOrganizationAuditPlugin(
   recordAuditEvent: AuditRecorder,
 ): BetterAuthPlugin {

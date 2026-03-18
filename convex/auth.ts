@@ -31,12 +31,6 @@ import {
   resolveEnterpriseSessionContext,
   resolveInitialActiveOrganizationId,
 } from './betterAuth/policyServices';
-import {
-  createSendChangeEmailConfirmationHandler,
-  createSendInvitationEmailHandler,
-  createSendResetPasswordHandler,
-  createSendVerificationEmailHandler,
-} from './lib/betterAuthEmailServices';
 import betterAuthSchema from './betterAuth/schema';
 import {
   createSharedBetterAuthOptions,
@@ -70,6 +64,12 @@ import {
   updateBetterAuthSessionRecord,
   updateBetterAuthUserRecord,
 } from './lib/betterAuth';
+import {
+  createSendChangeEmailConfirmationHandler,
+  createSendInvitationEmailHandler,
+  createSendResetPasswordHandler,
+  createSendVerificationEmailHandler,
+} from './lib/betterAuthEmailServices';
 import {
   getOrganizationMembershipStateByOrganizationUser,
   getOrganizationMembershipStatuses,

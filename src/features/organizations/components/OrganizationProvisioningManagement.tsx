@@ -80,7 +80,9 @@ export function OrganizationProvisioningManagement({
 
   const scimConnectionConfigured = settings.enterpriseAuth?.scimConnectionConfigured ?? false;
   const scimBaseUrl =
-    typeof window === 'undefined' ? '/api/auth/scim/v2' : `${window.location.origin}/api/auth/scim/v2`;
+    typeof window === 'undefined'
+      ? '/api/auth/scim/v2'
+      : `${window.location.origin}/api/auth/scim/v2`;
 
   const handleGenerateScimToken = async () => {
     if (!providerKey) return;
@@ -291,7 +293,9 @@ export function OrganizationProvisioningManagement({
                   size="sm"
                   onClick={() => void handleGenerateScimToken()}
                   disabled={
-                    isGeneratingScimToken || !selectedProvider?.selectable || blockedMessage !== null
+                    isGeneratingScimToken ||
+                    !selectedProvider?.selectable ||
+                    blockedMessage !== null
                   }
                 >
                   {isGeneratingScimToken ? (
@@ -325,7 +329,9 @@ export function OrganizationProvisioningManagement({
                   size="sm"
                   onClick={() => void handleGenerateScimToken()}
                   disabled={
-                    isGeneratingScimToken || !selectedProvider?.selectable || blockedMessage !== null
+                    isGeneratingScimToken ||
+                    !selectedProvider?.selectable ||
+                    blockedMessage !== null
                   }
                 >
                   {isGeneratingScimToken ? (

@@ -8,10 +8,10 @@ import { admin } from 'better-auth/plugins/admin';
 import { organization } from 'better-auth/plugins/organization';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import {
-  getBetterAuthUrlForTooling,
-  getRequiredBetterAuthUrl,
   getBetterAuthTrustedOrigins,
+  getBetterAuthUrlForTooling,
   getGoogleOAuthCredentials,
+  getRequiredBetterAuthUrl,
   isTrustedBetterAuthOrigin,
   shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
@@ -262,19 +262,23 @@ async function handleSessionEnrichmentAfterHook(
     enterpriseProtocol: null,
   };
 
-  if (resolution.authMethod === 'social' && resolution.providerId && callbacks.resolveEnterpriseAuthSession) {
-      const enterpriseSession = await callbacks.resolveEnterpriseAuthSession({
-        providerId: resolution.providerId,
-        userEmail: newSession.user.email,
-        userId: newSession.user.id,
-      });
-      if (enterpriseSession) {
-        updatePayload.authMethod = 'enterprise';
-        updatePayload.enterpriseOrganizationId = enterpriseSession.organizationId;
-        updatePayload.enterpriseProviderKey = enterpriseSession.providerKey;
-        updatePayload.enterpriseProtocol = enterpriseSession.protocol;
-        updatePayload.activeOrganizationId = enterpriseSession.organizationId;
-      }
+  if (
+    resolution.authMethod === 'social' &&
+    resolution.providerId &&
+    callbacks.resolveEnterpriseAuthSession
+  ) {
+    const enterpriseSession = await callbacks.resolveEnterpriseAuthSession({
+      providerId: resolution.providerId,
+      userEmail: newSession.user.email,
+      userId: newSession.user.id,
+    });
+    if (enterpriseSession) {
+      updatePayload.authMethod = 'enterprise';
+      updatePayload.enterpriseOrganizationId = enterpriseSession.organizationId;
+      updatePayload.enterpriseProviderKey = enterpriseSession.providerKey;
+      updatePayload.enterpriseProtocol = enterpriseSession.protocol;
+      updatePayload.activeOrganizationId = enterpriseSession.organizationId;
+    }
   }
 
   await ctx.context.internalAdapter.updateSession(newSession.session.token, updatePayload);
@@ -291,9 +295,7 @@ export function createSharedBetterAuthOptions(
     ? getBetterAuthUrlForTooling()
     : getRequiredBetterAuthUrl();
   const disableRateLimit = shouldDisableAuthRateLimit();
-  const secureCookies = includeRuntimeEnvConfig
-    ? shouldUseSecureAuthCookies(betterAuthUrl)
-    : false;
+  const secureCookies = includeRuntimeEnvConfig ? shouldUseSecureAuthCookies(betterAuthUrl) : false;
   const googleOAuthCredentials = includeRuntimeEnvConfig ? getGoogleOAuthCredentials() : null;
 
   return {

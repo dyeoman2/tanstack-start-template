@@ -1,7 +1,4 @@
-const SECURITY_LOG_ALLOWLIST: Record<
-  SecurityLogPayload['scope'],
-  readonly string[]
-> = {
+const SECURITY_LOG_ALLOWLIST: Record<SecurityLogPayload['scope'], readonly string[]> = {
   audit: ['eventType', 'integrityCheckFailures', 'organizationId', 'reportId', 'reviewStatus'],
   health: ['component', 'status', 'timestamp'],
   retention: ['jobKind', 'processedCount', 'status'],

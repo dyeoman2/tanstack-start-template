@@ -110,8 +110,7 @@ export async function handleScimOrganizationLifecycleRequest(request: Request) {
     });
   }
 
-  const bodyJson =
-    operation === 'delete' ? undefined : await request.text().catch(() => undefined);
+  const bodyJson = operation === 'delete' ? undefined : await request.text().catch(() => undefined);
 
   if (operation === 'patch' && !shouldHandleScimPatchLifecycle(bodyJson)) {
     return null;

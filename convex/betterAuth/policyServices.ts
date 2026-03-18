@@ -4,7 +4,10 @@ import { anyApi } from 'convex/server';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { shouldCreateEnterpriseJitMembership } from '../../src/features/auth/lib/enterprise-jit';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
-import { getGoogleOAuthCredentials, isGoogleWorkspaceOAuthConfigured } from '../../src/lib/server/env.server';
+import {
+  getGoogleOAuthCredentials,
+  isGoogleWorkspaceOAuthConfigured,
+} from '../../src/lib/server/env.server';
 import { components } from '../_generated/api';
 import type { DataModel } from '../_generated/dataModel';
 import {

@@ -1,7 +1,7 @@
 import { Resend as ConvexResend, type EmailEvent, vEmailEvent, vEmailId } from '@convex-dev/resend';
 import { v } from 'convex/values';
-import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertVendorBoundary } from '../src/lib/server/vendor-boundary.server';
+import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {

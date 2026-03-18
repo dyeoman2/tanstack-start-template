@@ -81,7 +81,11 @@ export function isVendorApproved(args: {
   vendor: VendorKey;
 }) {
   const policy = getVendorBoundaryPolicy(args.vendor);
-  if (!(policy.allowedEnvironments as readonly ('development' | 'production' | 'test')[]).includes(args.environment)) {
+  if (
+    !(policy.allowedEnvironments as readonly ('development' | 'production' | 'test')[]).includes(
+      args.environment,
+    )
+  ) {
     return false;
   }
 

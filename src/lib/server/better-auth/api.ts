@@ -96,7 +96,10 @@ export type BetterAuthScimTokenResult = {
   scimToken: string;
 };
 
-function toServerError(error: BetterAuthActionError, mapErrorMessage?: BetterAuthErrorMapper): ServerError {
+function toServerError(
+  error: BetterAuthActionError,
+  mapErrorMessage?: BetterAuthErrorMapper,
+): ServerError {
   return new ServerError(mapErrorMessage?.(error) ?? error.message, error.status, error);
 }
 
@@ -419,7 +422,10 @@ export async function deleteBetterAuthOrganizationScimProvider(
   mapErrorMessage?: BetterAuthErrorMapper,
 ): Promise<{ success: boolean }> {
   return unwrapResult(
-    await convexAuthReactStart.fetchAuthAction(api.auth.deleteOrganizationScimProviderServer, input),
+    await convexAuthReactStart.fetchAuthAction(
+      api.auth.deleteOrganizationScimProviderServer,
+      input,
+    ),
     mapErrorMessage,
   );
 }

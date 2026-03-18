@@ -6,13 +6,15 @@ function normalizeFinding(event) {
   const scanResultDetails = detail?.scanResultDetails ?? {};
   const rawStatus = `${scanResultDetails?.scanResultStatus ?? ''}`.toUpperCase();
   const status = rawStatus === 'NO_THREATS_FOUND' ? 'CLEAN' : 'INFECTED';
-  const scannedAt = Date.parse(detail?.eventLastSeen ?? detail?.updatedAt ?? new Date().toISOString());
+  const scannedAt = Date.parse(
+    detail?.eventLastSeen ?? detail?.updatedAt ?? new Date().toISOString(),
+  );
 
   return {
     bucket: s3Object.bucketName,
     findingId: detail?.scanResultDetails?.scanDetections?.[0]?.threats?.[0]?.name
       ? `${detail?.id ?? 'guardduty'}:${detail.scanResultDetails.scanDetections[0].threats[0].name}`
-      : detail?.id ?? 'guardduty-finding',
+      : (detail?.id ?? 'guardduty-finding'),
     key: s3Object.objectKey,
     scannedAt: Number.isFinite(scannedAt) ? scannedAt : Date.now(),
     status,
@@ -54,7 +56,9 @@ export async function handler(event) {
 
   if (!response.ok) {
     const responseText = await response.text();
-    throw new Error(`Convex webhook rejected GuardDuty finding: ${response.status} ${responseText}`);
+    throw new Error(
+      `Convex webhook rejected GuardDuty finding: ${response.status} ${responseText}`,
+    );
   }
 
   return {

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { APIError } from 'better-auth/api';
 
 const mockFetchBetterAuthMembersByUserId = vi.hoisted(() => vi.fn());
 const mockFetchBetterAuthOrganizationsByIds = vi.hoisted(() => vi.fn());
@@ -187,14 +186,11 @@ describe('resolveInitialActiveOrganizationId', () => {
         ['member_2', 'suspended'],
       ]),
     );
-    mockFetchBetterAuthOrganizationsByIds.mockResolvedValue([
-      { _id: 'org_1' },
-      { _id: 'org_2' },
-    ]);
+    mockFetchBetterAuthOrganizationsByIds.mockResolvedValue([{ _id: 'org_1' }, { _id: 'org_2' }]);
 
-    await expect(
-      resolveInitialActiveOrganizationId(createCtx(), 'user_1', 'org_1'),
-    ).resolves.toBe('org_1');
+    await expect(resolveInitialActiveOrganizationId(createCtx(), 'user_1', 'org_1')).resolves.toBe(
+      'org_1',
+    );
   });
 
   it('skips suspended memberships and falls back to another active organization', async () => {
@@ -208,14 +204,11 @@ describe('resolveInitialActiveOrganizationId', () => {
         ['member_2', 'active'],
       ]),
     );
-    mockFetchBetterAuthOrganizationsByIds.mockResolvedValue([
-      { _id: 'org_1' },
-      { _id: 'org_2' },
-    ]);
+    mockFetchBetterAuthOrganizationsByIds.mockResolvedValue([{ _id: 'org_1' }, { _id: 'org_2' }]);
 
-    await expect(
-      resolveInitialActiveOrganizationId(createCtx(), 'user_1', 'org_1'),
-    ).resolves.toBe('org_2');
+    await expect(resolveInitialActiveOrganizationId(createCtx(), 'user_1', 'org_1')).resolves.toBe(
+      'org_2',
+    );
   });
 });
 

@@ -1,8 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  evaluateFreshSession,
-  STEP_UP_REQUIREMENTS,
-} from '~/lib/shared/auth-policy';
+import { evaluateFreshSession, STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
 describe('evaluateFreshSession', () => {
   const now = new Date('2026-03-16T20:00:00.000Z').getTime();

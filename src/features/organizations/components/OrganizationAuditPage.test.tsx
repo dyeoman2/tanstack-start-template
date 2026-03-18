@@ -383,7 +383,9 @@ describe('OrganizationAuditPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
 
-    rerender(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    rerender(
+      <OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />,
+    );
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Loading organization' })).not.toBeInTheDocument();

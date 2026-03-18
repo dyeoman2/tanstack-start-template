@@ -233,9 +233,7 @@ function normalizeControlChecklistStatus(value: string): ControlChecklistStatus 
   }
 }
 
-function normalizeChecklistEvidenceSufficiency(
-  value: string,
-): ControlChecklistEvidenceSufficiency {
+function normalizeChecklistEvidenceSufficiency(value: string): ControlChecklistEvidenceSufficiency {
   switch (value) {
     case 'missing':
     case 'partial':
@@ -300,18 +298,14 @@ function normalizeNist80066Mappings(
   }));
 }
 
-function normalizeChecklistEvidenceTypes(
-  value: string[],
-): ControlChecklistEvidenceType[] {
+function normalizeChecklistEvidenceTypes(value: string[]): ControlChecklistEvidenceType[] {
   return value.filter(
     (item): item is ControlChecklistEvidenceType =>
       item === 'file' || item === 'link' || item === 'note' || item === 'system',
   );
 }
 
-function normalizeActiveControlRegister(
-  value: ActiveControlRegisterInput,
-): ActiveControlRegister {
+function normalizeActiveControlRegister(value: ActiveControlRegisterInput): ActiveControlRegister {
   return {
     schemaVersion: value.schemaVersion,
     generatedAt: value.generatedAt,
@@ -405,9 +399,7 @@ export function getControlCoverageDisplayLabel(coverage: ControlCoverage) {
   return CONTROL_COVERAGE_DISPLAY_LABELS[coverage];
 }
 
-export function getControlResponsibilityDisplayLabel(
-  responsibility: ControlResponsibility | null,
-) {
+export function getControlResponsibilityDisplayLabel(responsibility: ControlResponsibility | null) {
   return responsibility ? CONTROL_RESPONSIBILITY_DISPLAY_LABELS[responsibility] : '—';
 }
 

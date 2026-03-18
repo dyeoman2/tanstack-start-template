@@ -42,12 +42,13 @@ export function OrganizationSwitcher() {
   const { data: organizations, isPending: organizationsPending } = authHooks.useListOrganizations();
   const { data: activeOrganization } = authHooks.useActiveOrganization();
   const eligibility = useQuery(api.organizationManagement.getOrganizationCreationEligibility, {});
-  const [activeOrganizationItem, setActiveOrganizationItem] = React.useState<OrganizationSwitcherItem>({
-    name: 'Select organization',
-    logo: Building2,
-    description: 'Choose a workspace',
-    to: '/app/organizations',
-  });
+  const [activeOrganizationItem, setActiveOrganizationItem] =
+    React.useState<OrganizationSwitcherItem>({
+      name: 'Select organization',
+      logo: Building2,
+      description: 'Choose a workspace',
+      to: '/app/organizations',
+    });
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
   const canCreateOrganization = eligibility?.canCreate ?? false;
   const creationReason = eligibility?.reason ?? null;
@@ -72,7 +73,8 @@ export function OrganizationSwitcher() {
           to: `/app/organizations/${activeOrganization.slug}/settings`,
         })
       : {
-          name: organizations && organizations.length > 0 ? 'Select organization' : 'No organization',
+          name:
+            organizations && organizations.length > 0 ? 'Select organization' : 'No organization',
           logo: Building2,
           description:
             organizations && organizations.length > 0

@@ -122,9 +122,14 @@ async function main() {
     console.log(`   Updated: ${envPath}`);
     console.log('');
     console.log('No AWS storage env vars are required for this mode.');
-    console.log('No Convex storage env sync is needed beyond FILE_STORAGE_BACKEND=convex if you want parity.');
+    console.log(
+      'No Convex storage env sync is needed beyond FILE_STORAGE_BACKEND=convex if you want parity.',
+    );
 
-    const syncConvex = await askYesNo('Sync FILE_STORAGE_BACKEND=convex into Convex env too?', false);
+    const syncConvex = await askYesNo(
+      'Sync FILE_STORAGE_BACKEND=convex into Convex env too?',
+      false,
+    );
     if (syncConvex) {
       try {
         trySetConvexEnv('FILE_STORAGE_BACKEND', 'convex');
@@ -155,7 +160,11 @@ async function main() {
 
   envContent = upsertEnvValue(envContent, 'AWS_REGION', awsRegion);
   envContent = upsertEnvValue(envContent, 'AWS_S3_FILES_BUCKET', bucket);
-  envContent = upsertEnvValue(envContent, 'AWS_MALWARE_WEBHOOK_SHARED_SECRET', maybeQuote(webhookSecret));
+  envContent = upsertEnvValue(
+    envContent,
+    'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+    maybeQuote(webhookSecret),
+  );
   envContent = upsertEnvValue(envContent, 'AWS_FILE_SERVE_SIGNING_SECRET', maybeQuote(serveSecret));
   envContent = upsertEnvValue(envContent, 'CONVEX_SITE_URL', convexSiteUrl);
 
@@ -172,7 +181,9 @@ async function main() {
   console.log('   AWS_FILE_SERVE_SIGNING_SECRET=[set]');
   console.log(`   CONVEX_SITE_URL=${convexSiteUrl}`);
   console.log('');
-  console.log('These same values must also exist in your Convex deployment env for AWS-backed modes.');
+  console.log(
+    'These same values must also exist in your Convex deployment env for AWS-backed modes.',
+  );
 
   const syncConvex = await askYesNo('Sync these storage env vars into Convex now?', true);
   if (!syncConvex) {
@@ -195,7 +206,9 @@ async function main() {
       console.log('\n✅ Convex env synced.');
     } catch {
       console.log('\n⚠️  Automatic Convex env sync failed.');
-      console.log('   Your .env.local is configured, but you still need to set the same values in Convex.');
+      console.log(
+        '   Your .env.local is configured, but you still need to set the same values in Convex.',
+      );
     }
   }
 

@@ -96,9 +96,7 @@ if (sentryApproved && sentryDsn && (isProduction || isDevelopment)) {
     enableLogs: false,
     tracesSampleRate: isProduction ? 0.05 : 0.01,
     // Node.js profiling
-    integrations: [
-      ...(nodeProfilingIntegration ? [nodeProfilingIntegration()] : []),
-    ],
+    integrations: [...(nodeProfilingIntegration ? [nodeProfilingIntegration()] : [])],
     beforeSend(event) {
       return sanitizeTelemetryEvent(event);
     },

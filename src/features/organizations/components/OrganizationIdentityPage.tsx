@@ -72,27 +72,28 @@ export function OrganizationIdentityPage({
           ? 'step-4'
           : null;
 
-  const domainBlockedMessage = settingsLoaded && !hasProviderSelected
-    ? 'Select and save an identity provider before verifying domains.'
-    : null;
+  const domainBlockedMessage =
+    settingsLoaded && !hasProviderSelected
+      ? 'Select and save an identity provider before verifying domains.'
+      : null;
 
   const enforcementBlockedMessage = !settingsLoaded
     ? null
     : !providerReady
-    ? 'Complete identity provider setup before choosing an enforcement level.'
-    : !hasVerifiedDomains
-      ? 'Verify at least one company domain before choosing an enforcement level.'
-      : null;
+      ? 'Complete identity provider setup before choosing an enforcement level.'
+      : !hasVerifiedDomains
+        ? 'Verify at least one company domain before choosing an enforcement level.'
+        : null;
 
   const provisioningBlockedMessage = !settingsLoaded
     ? null
     : !providerReady
-    ? 'Complete identity provider setup before provisioning users.'
-    : !hasVerifiedDomains
-      ? 'Verify at least one company domain before provisioning users.'
-      : !enforcementConfigured
-        ? 'Choose an enforcement level before setting up provisioning.'
-        : null;
+      ? 'Complete identity provider setup before provisioning users.'
+      : !hasVerifiedDomains
+        ? 'Verify at least one company domain before provisioning users.'
+        : !enforcementConfigured
+          ? 'Choose an enforcement level before setting up provisioning.'
+          : null;
 
   const prevCurrentStep = useRef(currentStep);
   const openStep = searchParams.step ?? currentStep ?? '';
@@ -186,7 +187,8 @@ export function OrganizationIdentityPage({
       sublabel: '(optional)',
       completed: provisioningConfigured,
       blockedMessage: provisioningBlockedMessage,
-      summary: 'Automatically create, update, and deprovision users from your identity provider using SCIM.',
+      summary:
+        'Automatically create, update, and deprovision users from your identity provider using SCIM.',
       content: (
         <OrganizationProvisioningManagement
           slug={slug}

@@ -43,10 +43,7 @@ export function getVendorBoundarySnapshot() {
   });
 }
 
-export function assertVendorBoundary(args: {
-  dataClasses: VendorDataClass[];
-  vendor: VendorKey;
-}) {
+export function assertVendorBoundary(args: { dataClasses: VendorDataClass[]; vendor: VendorKey }) {
   const environment = resolveVendorEnvironment(process.env.NODE_ENV);
   const policy = getVendorBoundaryPolicy(args.vendor);
   const approved = isVendorApproved({
@@ -63,8 +60,7 @@ export function assertVendorBoundary(args: {
   }
 
   const unsupportedDataClasses = args.dataClasses.filter(
-    (dataClass) =>
-      !(policy.allowedDataClasses as readonly VendorDataClass[]).includes(dataClass),
+    (dataClass) => !(policy.allowedDataClasses as readonly VendorDataClass[]).includes(dataClass),
   );
   if (unsupportedDataClasses.length > 0) {
     throw new VendorBoundaryError(

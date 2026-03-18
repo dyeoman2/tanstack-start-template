@@ -1,9 +1,5 @@
 export const ORGANIZATION_ROLE_VALUES = ['owner', 'admin', 'member'] as const;
-export const ORGANIZATION_MEMBER_STATUS_VALUES = [
-  'active',
-  'suspended',
-  'deactivated',
-] as const;
+export const ORGANIZATION_MEMBER_STATUS_VALUES = ['active', 'suspended', 'deactivated'] as const;
 
 export type OrganizationRole = (typeof ORGANIZATION_ROLE_VALUES)[number];
 export type OrganizationMemberStatus = (typeof ORGANIZATION_MEMBER_STATUS_VALUES)[number];

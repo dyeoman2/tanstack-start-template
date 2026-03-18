@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   getBetterAuthAllowedHosts,
-  getBetterAuthUrlForTooling,
   getBetterAuthSecret,
   getBetterAuthTrustedOrigins,
+  getBetterAuthUrlForTooling,
   getRequiredBetterAuthUrl,
   isE2EPrincipalEmail,
   isSafeE2EAuthRuntime,
