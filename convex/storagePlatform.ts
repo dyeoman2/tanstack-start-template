@@ -1,12 +1,11 @@
 'use node';
 
-import { ConvexError, v } from 'convex/values';
+import { v } from 'convex/values';
 import { getFileStorageBackendMode } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
-import { action, internalAction } from './_generated/server';
-import { createFileServeSignature } from './fileServing';
+import { internalAction } from './_generated/server';
 import { deleteMirrorObject, finalizeS3MirrorUpload } from './storageS3Mirror';
 import {
   buildDeterministicStorageKey,
@@ -92,7 +91,10 @@ export async function finalizeUploadWithMode(ctx: ActionCtx, args: FinalizeUploa
   await finalizeS3MirrorUpload(ctx, args);
 }
 
-export async function resolveFileUrlWithMode(ctx: ActionCtx, args: ResolveFileUrlArgs) {
+export async function resolveFileUrlWithMode(
+  ctx: ActionCtx,
+  args: ResolveFileUrlArgs,
+): Promise<{ storageId: string; url: string | null }> {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });
@@ -106,15 +108,16 @@ export async function resolveFileUrlWithMode(ctx: ActionCtx, args: ResolveFileUr
     return { storageId: args.storageId, url };
   }
 
-  const signature = await createFileServeSignature(args.storageId);
-  const convexSiteUrl = process.env.CONVEX_SITE_URL?.trim();
-  if (!convexSiteUrl) {
-    throw new ConvexError('CONVEX_SITE_URL is not configured.');
-  }
+  const signedServeUrl: { storageId: string; url: string } = await ctx.runAction(
+    internal.fileServing.createSignedServeUrlInternal,
+    {
+      storageId: args.storageId,
+    },
+  );
 
   return {
     storageId: args.storageId,
-    url: `${convexSiteUrl}/api/files/serve?id=${encodeURIComponent(args.storageId)}&sig=${encodeURIComponent(signature)}`,
+    url: signedServeUrl.url,
   };
 }
 
@@ -141,7 +144,7 @@ export async function deleteStoredFileWithMode(ctx: ActionCtx, args: DeleteStore
   });
 }
 
-export const createUploadTarget = action({
+export const createUploadTarget = internalAction({
   args: {
     contentType: v.string(),
     fileName: v.string(),
@@ -155,12 +158,12 @@ export const createUploadTarget = action({
   },
 });
 
-export const resolveFileUrl = action({
+export const resolveFileUrl = internalAction({
   args: {
     storageId: v.string(),
   },
   returns: fileUrlResultValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<{ storageId: string; url: string | null }> => {
     return await resolveFileUrlWithMode(ctx, args);
   },
 });

@@ -8,6 +8,8 @@ import { action, internalAction } from './_generated/server';
 import { requireStorageReadAccessFromActionOrThrow } from './auth/access';
 import { createPresignedS3Url } from './lib/storageS3';
 
+const FILE_SERVE_URL_TTL_MS = 15 * 60 * 1000;
+
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);
@@ -40,16 +42,33 @@ async function sign(secret: string, payload: string) {
   );
 }
 
-export async function createFileServeSignature(storageId: string) {
+function buildSignedServeUrl(params: {
+  convexSiteUrl: string;
+  expiresAt: number;
+  signature: string;
+  storageId: string;
+}) {
+  return `${params.convexSiteUrl}/api/files/serve?id=${encodeURIComponent(params.storageId)}&exp=${encodeURIComponent(String(params.expiresAt))}&sig=${encodeURIComponent(params.signature)}`;
+}
+
+export async function createFileServeSignature(storageId: string, expiresAt: number) {
   const runtimeConfig = getStorageRuntimeConfig();
   if (!runtimeConfig.fileServeSigningSecret) {
     throw new ConvexError('AWS_FILE_SERVE_SIGNING_SECRET is not configured.');
   }
-  return await sign(runtimeConfig.fileServeSigningSecret, `file_serve:${storageId}`);
+  return await sign(runtimeConfig.fileServeSigningSecret, `file_serve:${storageId}:${expiresAt}`);
 }
 
-export async function verifyFileServeSignature(storageId: string, signature: string) {
-  const expected = await createFileServeSignature(storageId);
+export async function verifyFileServeSignature(
+  storageId: string,
+  signature: string,
+  expiresAt: number,
+) {
+  if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+    throw new ConvexError('File serve signature has expired.');
+  }
+
+  const expected = await createFileServeSignature(storageId, expiresAt);
   if (!timingSafeEqual(expected, signature)) {
     throw new ConvexError('Invalid file serve signature.');
   }
@@ -100,10 +119,16 @@ export const createSignedServeUrlInternal = internalAction({
     if (!runtimeConfig.convexSiteUrl) {
       throw new ConvexError('CONVEX_SITE_URL is not configured.');
     }
-    const signature = await createFileServeSignature(args.storageId);
+    const expiresAt = Date.now() + FILE_SERVE_URL_TTL_MS;
+    const signature = await createFileServeSignature(args.storageId, expiresAt);
     return {
       storageId: args.storageId,
-      url: `${runtimeConfig.convexSiteUrl}/api/files/serve?id=${encodeURIComponent(args.storageId)}&sig=${encodeURIComponent(signature)}`,
+      url: buildSignedServeUrl({
+        convexSiteUrl: runtimeConfig.convexSiteUrl,
+        expiresAt,
+        signature,
+        storageId: args.storageId,
+      }),
     };
   },
 });
@@ -135,10 +160,16 @@ export const createSignedServeUrl = action({
     if (!runtimeConfig.convexSiteUrl) {
       throw new ConvexError('CONVEX_SITE_URL is not configured.');
     }
-    const signature = await createFileServeSignature(args.storageId);
+    const expiresAt = Date.now() + FILE_SERVE_URL_TTL_MS;
+    const signature = await createFileServeSignature(args.storageId, expiresAt);
     return {
       storageId: args.storageId,
-      url: `${runtimeConfig.convexSiteUrl}/api/files/serve?id=${encodeURIComponent(args.storageId)}&sig=${encodeURIComponent(signature)}`,
+      url: buildSignedServeUrl({
+        convexSiteUrl: runtimeConfig.convexSiteUrl,
+        expiresAt,
+        signature,
+        storageId: args.storageId,
+      }),
     };
   },
 });

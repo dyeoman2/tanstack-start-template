@@ -79,6 +79,8 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'email_verification_enforced',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'backup_restore_drill_completed',
+  'backup_restore_drill_failed',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -199,6 +201,8 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   email_verification_enforced: ['organization'],
   step_up_challenge_required: ['organization'],
   step_up_challenge_completed: ['organization'],
+  backup_restore_drill_completed: ['organization'],
+  backup_restore_drill_failed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

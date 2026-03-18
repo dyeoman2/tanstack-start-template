@@ -4,7 +4,7 @@ import { ConvexError, v } from 'convex/values';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
-import { action, internalAction } from './_generated/server';
+import { internalAction } from './_generated/server';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -171,7 +171,7 @@ export const applyGuardDutyFindingInternal = internalAction({
   },
 });
 
-export const createWebhookSignatureForPayload = action({
+export const createWebhookSignatureForPayload = internalAction({
   args: { payload: v.string(), timestamp: v.string() },
   returns: v.string(),
   handler: async (_ctx, args) => {

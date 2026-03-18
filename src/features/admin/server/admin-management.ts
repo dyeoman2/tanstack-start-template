@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { api } from '@convex/_generated/api';
+import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import {
@@ -30,6 +30,7 @@ import {
   updateBetterAuthUser,
 } from '~/lib/server/better-auth/api';
 import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 import type { OnboardingStatus } from '~/lib/shared/onboarding';
 
@@ -562,7 +563,7 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
       const response = await listBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
         normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
-      await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+      await createConvexAdminClient().action(internal.audit.recordClientAuditEvent, {
         eventType: 'admin_user_sessions_viewed',
         outcome: 'success',
         severity: 'info',

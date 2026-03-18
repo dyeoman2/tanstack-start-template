@@ -56,13 +56,15 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
     const storageId = url.searchParams.get('id');
+    const expiresAtParam = url.searchParams.get('exp');
     const signature = url.searchParams.get('sig');
 
-    if (!storageId || !signature) {
+    if (!storageId || !expiresAtParam || !signature) {
       return new Response('Missing required file serve parameters.', { status: 400 });
     }
 
-    await verifyFileServeSignature(storageId, signature);
+    const expiresAt = Number.parseInt(expiresAtParam, 10);
+    await verifyFileServeSignature(storageId, signature, expiresAt);
     const redirect = await resolveServeRedirect(ctx, storageId);
     return Response.redirect(redirect.url, 302);
   }),

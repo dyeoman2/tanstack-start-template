@@ -196,6 +196,65 @@ type SecurityControlWorkspace = Omit<ActiveControlRecord, 'mappings' | 'platform
   platformChecklist: SecurityChecklistItem[];
 };
 
+type AuditReadinessOverview = {
+  latestBackupDrill: {
+    artifactHash: string | null;
+    checkedAt: number;
+    drillId: string;
+    drillType: 'operator_recorded' | 'restore_verification';
+    failureReason: string | null;
+    initiatedByKind: 'system' | 'user';
+    initiatedByUserId: string | null;
+    restoredItemCount: number;
+    sourceDataset: string;
+    status: 'failure' | 'success';
+    targetEnvironment: 'development' | 'production' | 'test';
+    verificationMethod: string;
+  } | null;
+  latestRetentionJob: {
+    createdAt: number;
+    details?: string;
+    jobKind: 'attachment_purge' | 'audit_export_cleanup' | 'quarantine_cleanup';
+    processedCount: number;
+    status: 'failure' | 'success';
+  } | null;
+  metadataGaps: Array<{
+    createdAt: number;
+    eventType: string;
+    id: string;
+    resourceId: string | null;
+  }>;
+  recentDeniedActions: Array<{
+    createdAt: number;
+    eventType: string;
+    id: string;
+    metadata: string | null;
+    organizationId: string | null;
+  }>;
+  recentExports: Array<{
+    artifactType: 'audit_csv' | 'directory_csv' | 'evidence_report_export';
+    exportedAt: number;
+    manifestHash: string;
+    sourceReportId: Id<'evidenceReports'> | null;
+  }>;
+};
+
+type EvidenceReportListItem = {
+  id: Id<'evidenceReports'>;
+  createdAt: number;
+  generatedByUserId: string;
+  reportKind: 'audit_integrity' | 'audit_readiness' | 'security_posture';
+  contentHash: string;
+  exportHash: string | null;
+  exportManifestHash: string | null;
+  exportedAt: number | null;
+  exportedByUserId: string | null;
+  reviewStatus: 'needs_follow_up' | 'pending' | 'reviewed';
+  reviewedAt: number | null;
+  reviewedByUserId: string | null;
+  reviewNotes: string | null;
+};
+
 async function uploadFileWithTarget(
   file: File,
   target: {
@@ -270,7 +329,7 @@ function isSecurityTab(value: string): value is (typeof SECURITY_TABS)[number] {
   return SECURITY_TABS.includes(value as (typeof SECURITY_TABS)[number]);
 }
 
-function AdminSecurityRoute() {
+export function AdminSecurityRoute() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const {
@@ -288,7 +347,12 @@ function AdminSecurityRoute() {
   const { showToast } = useToast();
   const summary = useQuery(api.security.getSecurityPostureSummary, {});
   const controlWorkspaces = useQuery(api.security.listSecurityControlWorkspaces, {});
-  const evidenceReports = useQuery(api.security.listEvidenceReports, { limit: 10 });
+  const evidenceReports = useQuery(api.security.listEvidenceReports, {
+    limit: 10,
+  }) as EvidenceReportListItem[] | undefined;
+  const auditReadiness = useQuery(api.security.getAuditReadinessOverview, {}) as
+    | AuditReadinessOverview
+    | undefined;
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
   const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
   const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
@@ -310,6 +374,25 @@ function AdminSecurityRoute() {
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
   const controls = controlWorkspaces ?? [];
+  const auditReadinessSummary = useMemo(() => {
+    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
+    const staleDrill =
+      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
+
+    return {
+      latestDrill,
+      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
+      metadataGapCount: auditReadiness?.metadataGaps.length ?? 0,
+      recentDeniedCount: auditReadiness?.recentDeniedActions.length ?? 0,
+      recentExportCount: auditReadiness?.recentExports.length ?? 0,
+      staleDrill,
+    };
+  }, [auditReadiness]);
+  const restoreDrillFooter = auditReadinessSummary.staleDrill
+    ? 'Drill evidence is stale'
+    : auditReadinessSummary.latestDrill
+      ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
+      : 'No drill evidence recorded';
   const controlSummary = useMemo(() => {
     return controls.reduce(
       (summaryAccumulator, control) => {
@@ -886,10 +969,12 @@ function AdminSecurityRoute() {
     [reviewControlEvidence, showToast],
   );
 
-  const handleGenerateReport = async () => {
+  const handleGenerateReport = async (
+    reportKind: 'audit_readiness' | 'security_posture' = 'security_posture',
+  ) => {
     setIsGenerating(true);
     try {
-      const generated = await generateEvidenceReport({});
+      const generated = await generateEvidenceReport({ reportKind });
       setReport(generated.report);
       setSelectedReportId(generated.id);
     } finally {
@@ -1176,6 +1261,45 @@ function AdminSecurityRoute() {
         </TabsContent>
 
         <TabsContent value="evidence" className="space-y-6">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <SummaryCard
+              title="Recent Exports"
+              description="Manifest-backed audit, directory, and evidence exports recorded recently."
+              value={`${auditReadinessSummary.recentExportCount}`}
+              footer={
+                auditReadinessSummary.latestManifestHash
+                  ? `Latest manifest: ${auditReadinessSummary.latestManifestHash.slice(0, 16)}…`
+                  : 'No export manifests recorded'
+              }
+            />
+            <SummaryCard
+              title="Denied Actions"
+              description="Recent authorization denials captured through the canonical audit path."
+              value={`${auditReadinessSummary.recentDeniedCount}`}
+              footer="Review the latest denial reasons below"
+            />
+            <SummaryCard
+              title="Metadata Gaps"
+              description="Recent privileged events missing required evidence metadata fields."
+              value={`${auditReadinessSummary.metadataGapCount}`}
+              footer={
+                auditReadinessSummary.metadataGapCount === 0
+                  ? 'No gaps in the latest scan'
+                  : 'Investigate before sharing audit artifacts'
+              }
+            />
+            <SummaryCard
+              title="Restore Drill"
+              description="Most recent restore or operator-recorded backup verification evidence."
+              value={
+                auditReadinessSummary.latestDrill
+                  ? auditReadinessSummary.latestDrill.status
+                  : 'missing'
+              }
+              footer={restoreDrillFooter}
+            />
+          </div>
+
           <Card>
             <CardHeader>
               <CardTitle>Evidence Report</CardTitle>
@@ -1184,14 +1308,123 @@ function AdminSecurityRoute() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <Button onClick={handleGenerateReport} disabled={isGenerating}>
+              <Button
+                onClick={() => {
+                  void handleGenerateReport('security_posture');
+                }}
+                disabled={isGenerating}
+              >
                 {isGenerating ? 'Generating…' : 'Generate evidence report'}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  void handleGenerateReport('audit_readiness');
+                }}
+                disabled={isGenerating}
+              >
+                {isGenerating ? 'Generating…' : 'Generate audit readiness report'}
               </Button>
               {report ? (
                 <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
                   {report}
                 </pre>
               ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Audit Readiness Signals</CardTitle>
+              <CardDescription>
+                Surface manifest history, authorization denials, metadata gaps, and backup drill
+                evidence without opening raw JSON.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-6 xl:grid-cols-3">
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">Latest Backup Drill</h3>
+                {auditReadiness?.latestBackupDrill ? (
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <p>
+                      {auditReadiness.latestBackupDrill.status} ·{' '}
+                      {auditReadiness.latestBackupDrill.drillType}
+                    </p>
+                    <p>{auditReadiness.latestBackupDrill.sourceDataset}</p>
+                    <p>
+                      {new Date(auditReadiness.latestBackupDrill.checkedAt).toLocaleString()} ·{' '}
+                      {auditReadiness.latestBackupDrill.targetEnvironment}
+                    </p>
+                    <p>Verification: {auditReadiness.latestBackupDrill.verificationMethod}</p>
+                    <p>Restored items: {auditReadiness.latestBackupDrill.restoredItemCount}</p>
+                    {auditReadiness.latestBackupDrill.artifactHash ? (
+                      <p>Artifact hash: {auditReadiness.latestBackupDrill.artifactHash}</p>
+                    ) : null}
+                    {auditReadiness.latestBackupDrill.failureReason ? (
+                      <p>Failure: {auditReadiness.latestBackupDrill.failureReason}</p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No drill evidence recorded yet.</p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">Recent Export Artifacts</h3>
+                {auditReadiness?.recentExports.length ? (
+                  <div className="space-y-2">
+                    {auditReadiness.recentExports.slice(0, 5).map((artifact) => (
+                      <div
+                        key={`${artifact.artifactType}:${artifact.manifestHash}`}
+                        className="rounded-md border p-3 text-sm"
+                      >
+                        <p className="font-medium">{artifact.artifactType}</p>
+                        <p className="text-muted-foreground">
+                          {new Date(artifact.exportedAt).toLocaleString()}
+                        </p>
+                        <p className="text-muted-foreground">Manifest: {artifact.manifestHash}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No export artifacts recorded yet.</p>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h3 className="text-sm font-medium">Latest Findings</h3>
+                <div className="space-y-2">
+                  <div className="rounded-md border p-3 text-sm">
+                    <p className="font-medium">Metadata gaps</p>
+                    {auditReadiness?.metadataGaps.length ? (
+                      <div className="mt-2 space-y-1 text-muted-foreground">
+                        {auditReadiness.metadataGaps.slice(0, 3).map((gap) => (
+                          <p key={gap.id}>
+                            {gap.eventType} · {new Date(gap.createdAt).toLocaleString()}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-muted-foreground">No recent metadata gaps.</p>
+                    )}
+                  </div>
+                  <div className="rounded-md border p-3 text-sm">
+                    <p className="font-medium">Authorization denials</p>
+                    {auditReadiness?.recentDeniedActions.length ? (
+                      <div className="mt-2 space-y-1 text-muted-foreground">
+                        {auditReadiness.recentDeniedActions.slice(0, 3).map((denial) => (
+                          <p key={denial.id}>
+                            {new Date(denial.createdAt).toLocaleString()} ·{' '}
+                            {denial.organizationId ?? 'global'}
+                          </p>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-muted-foreground">No recent denials.</p>
+                    )}
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -1222,6 +1455,11 @@ function AdminSecurityRoute() {
                           {item.exportHash
                             ? `Last export hash: ${item.exportHash}`
                             : 'Not exported yet'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {item.exportManifestHash
+                            ? `Manifest hash: ${item.exportManifestHash}`
+                            : 'Manifest not recorded yet'}
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-2">

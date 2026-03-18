@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-18T16:06:21.869Z",
+  "generatedAt": "2026-03-18T16:56:33.287Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -15,15 +15,15 @@
       "title": "Account Management",
       "familyId": "AC",
       "familyTitle": "Access Control",
-      "implementationSummary": "This control ensures accounts are authorized, provisioned, changed, and removed through controlled lifecycle workflows. The platform supports that objective through organization policy controls, SCIM-backed provisioning paths, role-based boundaries, and auditable membership lifecycle events in the hosted service.",
+      "implementationSummary": "This control ensures accounts are approved, provisioned, changed, and removed through controlled lifecycle workflows. The platform supports that objective through invitation and policy controls, SCIM-backed provisioning paths, member-state lifecycle handling, and auditable membership events in the hosted service.",
       "controlStatement": "Define and document the types of accounts allowed and specifically prohibited for use within the system; Assign account managers; Require {{ insert: param, ac-02_odp.01 }} for group and role membership; Specify: Authorized users of the system; Group and role membership; and Access authorizations (i.e., privileges) and {{ insert: param, ac-02_odp.02 }} for each account; Require approvals by {{ insert: param, ac-02_odp.03 }} for requests to create accounts; Create, enable, modify, disable, and remove accounts in accordance with {{ insert: param, ac-02_odp.04 }}; Monitor the use of accounts; Notify account managers and {{ insert: param, ac-02_odp.05 }} within: {{ insert: param, ac-02_odp.06 }} when accounts are no longer required; {{ insert: param, ac-02_odp.07 }} when users are terminated or transferred; and {{ insert: param, ac-02_odp.08 }} when system usage or need-to-know changes for an individual; Authorize access to the system based on: A valid access authorization; Intended system usage; and {{ insert: param, ac-02_odp.09 }}; Review accounts for compliance with account management requirements {{ insert: param, ac-02_odp.10 }}; Establish and implement a process for changing shared or group account authenticators (if deployed) when individuals are removed from the group; and Align account management processes with personnel termination and transfer processes.",
       "priority": "p0",
       "platformChecklistItems": [
         {
-          "itemId": "rbac-boundaries",
-          "label": "Role boundaries are enforced",
-          "description": "Account roles and tenant boundaries must prevent unauthorized cross-account access.",
-          "verificationMethod": "Authorization test coverage and admin workflow inspection",
+          "itemId": "account-approval-and-role-assignment",
+          "label": "Account approval and role assignment controls exist",
+          "description": "Account creation and privileged role assignment should flow through authorized invitation, provisioning, or administrative paths.",
+          "verificationMethod": "Invitation, provisioning, and role-assignment workflow review",
           "required": true,
           "suggestedEvidenceTypes": [
             "system",
@@ -32,11 +32,18 @@
           "seed": {
             "status": "done",
             "owner": "Identity and Access Management",
-            "notes": "Member role changes validate organization membership and require site-admin write access before mutation.",
+            "notes": "Invitation policies, admin-managed member changes, and SCIM lifecycle paths provide controlled account creation and role assignment paths.",
             "evidence": [
               {
-                "title": "Site-admin member role mutation guard",
-                "description": "convex/auth.ts enforces assertSiteAdminWriteAccess before member role updates.",
+                "title": "Organization invitation and policy controls",
+                "description": "convex/organizationManagement.ts enforces invitePolicy, verifiedDomainsOnly, and memberCap controls before new organization access is granted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Controlled member role updates",
+                "description": "convex/organizationManagement.ts resolves organization access context before member role changes and provisioning actions proceed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -154,18 +161,6 @@
           {
             "subcategoryId": "PR.AA-05",
             "label": "PR / PR.AA: Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties"
-          },
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          },
-          {
-            "subcategoryId": "DE.CM-01",
-            "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
-          },
-          {
-            "subcategoryId": "DE.CM-03",
-            "label": "DE / DE.CM: Personnel activity and technology usage are monitored to find potentially adverse events"
           }
         ],
         "soc2": [
@@ -180,18 +175,6 @@
             "group": "common-criteria",
             "label": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users whose access is administered by the entity. For those users whose access is administered by the entity, user system credentials are removed when user access is no longer authorized.",
             "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.4",
-            "group": "common-criteria",
-            "label": "The entity responds to identified security incidents by executing a defined incident response program to understand, contain, remediate, and communicate security incidents, as appropriate.",
-            "trustServiceCategory": "security"
           }
         ]
       }
@@ -202,7 +185,7 @@
       "title": "Access Enforcement",
       "familyId": "AC",
       "familyTitle": "Access Control",
-      "implementationSummary": "This control ensures users and processes can perform only the actions and data access they are authorized to use. The platform addresses that objective through route-level guards, server-side authorization checks, and organization-scoped permission decisions for protected application flows and sensitive operations.",
+      "implementationSummary": "This control ensures users and processes can perform only the actions and data access they are authorized to use. The platform addresses that objective primarily through server-side authorization checks, organization-scoped permission decisions, and protected route guards that prevent accidental exposure in the user interface.",
       "controlStatement": "Access Enforcement is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -244,11 +227,18 @@
           "seed": {
             "status": "done",
             "owner": "Application Authorization",
-            "notes": "Server-side access checks rely on requireAuth and requireAdmin before sensitive actions.",
+            "notes": "Server-side access checks rely on shared auth guards, site-admin wrappers, and organization permission decisions before sensitive actions proceed.",
             "evidence": [
               {
                 "title": "Server auth guard enforcement",
                 "description": "src/features/auth/server/auth-guards.ts implements requireAuth and requireAdmin for protected server operations.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Authorization builders and access decisions",
+                "description": "convex/auth/authorized.ts and convex/auth/access.ts provide protected builders and role-aware access decisions for sensitive server paths.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -318,14 +308,6 @@
           {
             "subcategoryId": "PR.AA-05",
             "label": "PR / PR.AA: Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties"
-          },
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          },
-          {
-            "subcategoryId": "PR.IR-01",
-            "label": "PR / PR.IR: Networks and environments are protected from unauthorized logical access and usage"
           }
         ],
         "soc2": [
@@ -340,18 +322,315 @@
             "group": "common-criteria",
             "label": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles, responsibilities, or the system design and changes, giving consideration to the concepts of least privilege and segregation of duties, to meet the entity’s objectives.",
             "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AC-006",
+      "nist80053Id": "AC-6",
+      "title": "Least Privilege",
+      "familyId": "AC",
+      "familyTitle": "Access Control",
+      "implementationSummary": "This control ensures privileged access is limited to the minimum set of roles, actions, and conditions necessary for administrative or organization-scoped duties. The platform supports that objective through explicit role separation, organization-scoped permission checks, and stronger assurance requirements for elevated actions.",
+      "controlStatement": "Least Privilege is tracked as an active control in the platform register.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "privileged-roles-defined",
+          "label": "Privileged roles are explicitly defined and separated by responsibility",
+          "description": "Role definitions should distinguish site-admin, organization-owner, organization-admin, and member capabilities.",
+          "verificationMethod": "Role model and authorization helper review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Identity and Access Management",
+            "notes": "Privileged access is separated across site-admin, owner, admin, and member roles with explicit capability boundaries.",
+            "evidence": [
+              {
+                "title": "Organization role and capability model",
+                "description": "src/features/organizations/lib/organization-permissions.ts defines site-admin, owner, admin, and member access boundaries.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Authorized Convex builders",
+                "description": "convex/auth/authorized.ts separates organization-scoped and site-admin query, mutation, and action wrappers.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "least-privilege-authorization",
+          "label": "Admin and organization-management actions enforce least-privilege authorization",
+          "description": "Administrative and organization-management flows must enforce the narrowest allowed action set for the acting role.",
+          "verificationMethod": "Authorization path review and permission decision inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Identity and Access Management",
+            "notes": "Server-side guards, authorization builders, and organization permission decisions enforce role-appropriate access before privileged actions proceed.",
+            "evidence": [
+              {
+                "title": "Privileged server access guards",
+                "description": "src/features/auth/server/auth-guards.ts requires authenticated access and site-admin checks before privileged server flows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Organization permission decision logic",
+                "description": "convex/auth/access.ts evaluates membership state, viewer role, enterprise constraints, and permission-specific access before allowing organization actions.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "step-up-for-high-risk-actions",
+          "label": "High-risk actions require additional protections such as MFA or recent step-up",
+          "description": "High-risk operations should require stronger assurance such as MFA enrollment or recent step-up verification.",
+          "verificationMethod": "Auth policy and fresh-session protection review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Identity and Access Management",
+            "notes": "Site-admin access requires MFA or passkeys, and sensitive actions can require recent step-up verification.",
+            "evidence": [
+              {
+                "title": "MFA enforcement for site-admin access",
+                "description": "convex/auth/access.ts and src/features/auth/server/auth-guards.ts reject site-admin access when MFA or passkey requirements are not satisfied.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Recent step-up protections",
+                "description": "src/lib/shared/security-baseline.ts requires step-up for audit exports and src/features/auth/server/auth-guards.ts redirects users through the fresh-session flow when needed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Identity and Access Management",
+      "responsibility": "shared-responsibility",
+      "customerResponsibilityNotes": "Customer organizations are responsible for granting roles appropriately, reviewing privileged assignments, and limiting who receives elevated access within their tenant.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(4)",
+            "title": "Information access management",
+            "type": "standard",
+            "implementationSpecification": null
           },
+          {
+            "citation": "45 CFR 164.312(a)(1)",
+            "title": "Access control",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(4)",
+            "label": "HIPAA Standard: Implement policies and procedures for authorizing access to electronic protected health information that are consistent with the applicable requirements of subpart E of this part.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.AA-05",
+            "label": "PR / PR.AA: Access permissions, entitlements, and authorizations are defined in a policy, managed, enforced, and reviewed, and incorporate the principles of least privilege and separation of duties"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.1",
+            "group": "common-criteria",
+            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "CC6.3",
+            "group": "common-criteria",
+            "label": "The entity authorizes, modifies, or removes access to data, software, functions, and other protected information assets based on roles, responsibilities, or the system design and changes, giving consideration to the concepts of least privilege and segregation of duties, to meet the entity’s objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AU-012",
+      "nist80053Id": "AU-12",
+      "title": "Audit Record Generation",
+      "familyId": "AU",
+      "familyTitle": "Audit and Accountability",
+      "implementationSummary": "This control ensures the platform generates audit records for defined security-relevant events across application and backend workflows. The platform supports that objective through a canonical event inventory and event emission across authentication, administrative, evidence, and file-handling paths.",
+      "controlStatement": "Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on {{ insert: param, au-12_odp.01 }}; Allow {{ insert: param, au-12_odp.02 }} to select the event types that are to be logged by specific components of the system; and Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "audit-event-inventory",
+          "label": "Security-relevant events are explicitly defined in the audit event inventory",
+          "description": "The platform should maintain an explicit inventory of audit-relevant event types.",
+          "verificationMethod": "Audit event inventory review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "A shared event inventory defines the security-relevant audit events used throughout the app.",
+            "evidence": [
+              {
+                "title": "Canonical auth and security event inventory",
+                "description": "src/lib/shared/auth-audit.ts enumerates authentication, organization, evidence, attachment, vendor, and step-up audit event types.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "workflow-audit-emission",
+          "label": "Evidence, file-handling, vendor, and related security workflows emit audit records",
+          "description": "Core security-sensitive workflows should emit audit records during normal and failed operations.",
+          "verificationMethod": "Workflow-level audit emission review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Attachment inspection, evidence handling, and vendor access paths emit audit records for review.",
+            "evidence": [
+              {
+                "title": "Attachment inspection audit events",
+                "description": "convex/agentChatActions.ts emits chat_attachment_scan_passed, chat_attachment_scan_failed, and chat_attachment_quarantined events.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence and vendor audit events",
+                "description": "convex/security.ts emits evidence_report_generated, evidence_report_exported, and evidence_report_reviewed while convex/agentChatActions.ts emits outbound vendor access events.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "app-and-convex-audit-paths",
+          "label": "Audit generation is exercised through the application and Convex server paths",
+          "description": "Audit generation should be available from client-triggered workflows and backend Convex operations.",
+          "verificationMethod": "Client and backend audit path review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Both client-driven flows and backend actions route events through shared audit insertion paths.",
+            "evidence": [
+              {
+                "title": "Client audit event action",
+                "description": "convex/audit.ts provides recordClientAuditEvent for authenticated client-triggered audit emission.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Backend audit insertion",
+                "description": "convex/audit.ts exposes insertAuditLog and multiple Convex actions and mutations call it during protected workflows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Audit and Logging",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for determining which exported audit records they retain externally and how those records are integrated into their broader oversight processes.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
+            "title": "Information system activity review",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(D)",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.PS-04",
+            "label": "PR / PR.PS: Log records are generated and made available for continuous monitoring"
+          },
+          {
+            "subcategoryId": "DE.CM-01",
+            "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
+          },
+          {
+            "subcategoryId": "DE.CM-03",
+            "label": "DE / DE.CM: Personnel activity and technology usage are monitored to find potentially adverse events"
+          }
+        ],
+        "soc2": [
           {
             "criterionId": "CC7.2",
             "group": "common-criteria",
             "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
             "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "P5.1",
-            "group": "privacy",
-            "label": "The entity grants identified and authenticated data subjects the ability to access their stored personal information for review and, upon request, provides physical or electronic copies of that information to data subjects to meet the entity’s objectives related to privacy. If access is denied, data subjects are informed of the denial and reason for such denial, as required, to meet the entity’s objectives related to privacy.",
-            "trustServiceCategory": "privacy"
           }
         ]
       }
@@ -362,7 +641,7 @@
       "title": "Event Logging",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures security-relevant events are identified, recorded, protected, and made available for oversight. The platform addresses that objective by capturing audit events for authentication, administrative, and security-significant activity, integrity-linking those records, and exposing them for review and export.",
+      "implementationSummary": "This control ensures security-relevant events are identified and recorded with enough context to support oversight. The platform addresses that objective by capturing audit events for authentication, administrative, organization, evidence, and file-handling activity and by exposing those records to authorized reviewers.",
       "controlStatement": "Identify the types of events that the system is capable of logging in support of the audit function: {{ insert: param, au-02_odp.01 }}; Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged; Specify the following event types for logging within the system: {{ insert: param, au-2_prm_2 }}; Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and Review and update the event types selected for logging {{ insert: param, au-02_odp.04 }}.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -392,10 +671,10 @@
           }
         },
         {
-          "itemId": "audit-export",
-          "label": "Audit records can be reviewed and exported",
-          "description": "Authorized reviewers must be able to inspect and export audit evidence.",
-          "verificationMethod": "Admin workflow walkthrough",
+          "itemId": "audit-review-surface",
+          "label": "Authorized reviewers can inspect audit records",
+          "description": "Authorized reviewers must be able to inspect captured audit activity through supported review surfaces.",
+          "verificationMethod": "Audit review workflow walkthrough",
           "required": true,
           "suggestedEvidenceTypes": [
             "system",
@@ -404,18 +683,18 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "The platform exposes audit review and evidence export surfaces for security review.",
+            "notes": "The platform exposes audit history views to authorized reviewers in organization and security-admin surfaces.",
             "evidence": [
               {
                 "title": "Organization audit review UI",
-                "description": "src/features/organizations/components/OrganizationAuditPage.tsx provides audit history review and export flows.",
+                "description": "src/features/organizations/components/OrganizationAuditPage.tsx provides audit history review for authorized organization roles.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Security evidence export workflow",
-                "description": "src/routes/app/admin/security.tsx and convex/security.ts provide evidence report generation and export flows.",
+                "title": "Security admin audit review surface",
+                "description": "src/routes/app/admin/security.tsx exposes recent security signals and linked evidence for authorized administrative review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -424,10 +703,10 @@
           }
         },
         {
-          "itemId": "audit-integrity",
-          "label": "Audit record integrity is checked",
-          "description": "Audit records should retain integrity metadata or verification signals that help detect tampering.",
-          "verificationMethod": "Audit integrity implementation review",
+          "itemId": "audit-record-context",
+          "label": "Audit records retain actor and event context",
+          "description": "Recorded audit entries should retain event, actor, and related resource context needed for review.",
+          "verificationMethod": "Audit record structure review",
           "required": true,
           "suggestedEvidenceTypes": [
             "system",
@@ -436,11 +715,11 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Audit records are hash-linked and the platform can detect and log integrity failures.",
+            "notes": "Audit records carry event metadata and resource context that reviewers can inspect later.",
             "evidence": [
               {
-                "title": "Hash-linked audit log chain",
-                "description": "convex/audit.ts stores eventHash and previousEventHash for audit events and verifies the chain during integrity checks.",
+                "title": "Structured audit record insertion",
+                "description": "convex/audit.ts records eventType, actor, resource metadata, and serialized event metadata when audit entries are inserted.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -496,6 +775,152 @@
       }
     },
     {
+      "internalControlId": "CTRL-CM-006",
+      "nist80053Id": "CM-6",
+      "title": "Configuration Settings",
+      "familyId": "CM",
+      "familyTitle": "Configuration Management",
+      "implementationSummary": "This control ensures regulated security settings are defined centrally and enforced consistently across the hosted service. The platform supports that objective through centrally defined regulated defaults, fail-closed auth configuration validation, and explicit secure session settings in the auth runtime.",
+      "controlStatement": "Establish and document configuration settings for components employed within the system that reflect the most restrictive mode consistent with operational requirements using {{ insert: param, cm-06_odp.01 }}; Implement the configuration settings; Identify, document, and approve any deviations from established configuration settings for {{ insert: param, cm-06_odp.02 }} based on {{ insert: param, cm-06_odp.03 }} ; and Monitor and control changes to the configuration settings in accordance with organizational policies and procedures.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "regulated-defaults-defined",
+          "label": "Regulated security defaults are defined centrally and enforced consistently",
+          "description": "Regulated baseline defaults should be defined centrally and applied consistently to tenant-facing policy settings.",
+          "verificationMethod": "Security baseline constant review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Secure Configuration",
+            "notes": "The regulated baseline centralizes retention, MFA, verification, and step-up defaults for protected service behavior.",
+            "evidence": [
+              {
+                "title": "Central regulated baseline defaults",
+                "description": "src/lib/shared/security-baseline.ts defines regulated retention defaults, always-on baseline requirements, and organization policy defaults.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "fail-closed-auth-config",
+          "label": "Authentication and session settings fail closed when insecure configuration is supplied",
+          "description": "Auth and session configuration should reject insecure or malformed settings instead of silently degrading security.",
+          "verificationMethod": "Runtime config validation review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Secure Configuration",
+            "notes": "The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments.",
+            "evidence": [
+              {
+                "title": "Fail-closed Better Auth env validation",
+                "description": "src/lib/server/env.server.ts rejects invalid BETTER_AUTH_URL, preview host, and trusted-origin configuration at startup.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Explicit secure session settings",
+                "description": "convex/betterAuth/sharedOptions.ts sets session expiry, refresh, freshness, database-backed sessions, and disables cookie cache for security-sensitive revocation behavior.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "runtime-security-config-validated",
+          "label": "Security-sensitive runtime configuration is validated before the app starts",
+          "description": "Security-sensitive runtime settings should be validated during startup so unsafe configuration is rejected early.",
+          "verificationMethod": "Runtime configuration validation review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Secure Configuration",
+            "notes": "Security-sensitive runtime configuration is validated for auth origins and vendor configuration before protected paths proceed.",
+            "evidence": [
+              {
+                "title": "Auth and site URL validation",
+                "description": "src/lib/server/env.server.ts validates security-sensitive auth and site URL inputs as canonical origins before use.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Vendor runtime validation",
+                "description": "src/lib/server/openrouter.ts validates OpenRouter privacy mode and API key presence before outbound model use.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Secure Configuration",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for safe configuration of any customer-controlled integrations, identity providers, or downstream policies they connect to the platform.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(d)",
+            "title": "Person or entity authentication",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.312(d)",
+            "label": "HIPAA Standard: Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.PS-01",
+            "label": "PR / PR.PS: Configuration management practices are established and applied"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.1",
+            "group": "common-criteria",
+            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
       "internalControlId": "CTRL-IA-002",
       "nist80053Id": "IA-2",
       "title": "Identification and Authentication (Organizational Users)",
@@ -518,11 +943,18 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Protected application use depends on authenticated access flows.",
+            "notes": "Protected application use depends on authenticated sessions and server-side identity checks before access is granted.",
             "evidence": [
               {
-                "title": "Shared authenticated route enforcement",
-                "description": "src/features/auth/server/auth-guards.ts and route-guards.ts gate authenticated and admin application access.",
+                "title": "Authenticated access guardrails",
+                "description": "src/features/auth/server/auth-guards.ts and route-guards.ts gate protected access while convex/auth/access.ts resolves authenticated user context for server-side authorization.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Auth runtime session handling",
+                "description": "convex/betterAuth/sharedOptions.ts configures the Better Auth server plugin set and session handling used for authenticated access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -644,7 +1076,7 @@
       "title": "Protection of Information at Rest",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through managed encrypted storage, blocked public access, controlled file serving, and retention behavior for data managed within the service boundary.",
+      "implementationSummary": "This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through managed encrypted storage, blocked public access, and controlled file access for data managed within the service boundary.",
       "controlStatement": "Protection of Information at Rest is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -662,18 +1094,11 @@
           "seed": {
             "status": "done",
             "owner": "Data Protection",
-            "notes": "Managed storage configuration enforces blocked public access, server-side encryption, versioning, and signed file-serving paths.",
+            "notes": "Managed storage configuration enforces blocked public access, server-side encryption, and versioning for protected data at rest.",
             "evidence": [
               {
                 "title": "Encrypted S3 storage configuration",
                 "description": "infra/aws-cdk/lib/malware-scan-stack.cts provisions an S3 bucket with BLOCK_ALL public access, S3-managed encryption, enforceSSL, object ownership enforcement, and versioning.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Controlled file-serving paths",
-                "description": "convex/storagePlatform.ts resolves signed file URLs and routes non-Convex storage access through signed serve paths.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -682,10 +1107,10 @@
           }
         },
         {
-          "itemId": "retention-controls",
-          "label": "Retention behavior is implemented",
-          "description": "Retention jobs or controls must enforce data handling expectations.",
-          "verificationMethod": "Retention job review",
+          "itemId": "at-rest-access-paths-controlled",
+          "label": "Access to stored protected files is controlled",
+          "description": "Access to stored protected files should rely on controlled serve paths rather than open object access.",
+          "verificationMethod": "Stored file access path review",
           "required": true,
           "suggestedEvidenceTypes": [
             "system",
@@ -694,11 +1119,11 @@
           "seed": {
             "status": "done",
             "owner": "Data Protection",
-            "notes": "Retention jobs are tracked and surfaced in the security posture summary.",
+            "notes": "Protected files are served through controlled signed paths instead of open storage object access.",
             "evidence": [
               {
-                "title": "Retention job tracking",
-                "description": "convex/security.ts reports retention job status and convex/schema.ts defines retentionJobs.",
+                "title": "Controlled protected file access",
+                "description": "convex/storagePlatform.ts and convex/fileServing.ts route protected file access through signed serve paths instead of direct open object reads.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -749,6 +1174,608 @@
       }
     },
     {
+      "internalControlId": "CTRL-SC-007",
+      "nist80053Id": "SC-7",
+      "title": "Boundary Protection",
+      "familyId": "SC",
+      "familyTitle": "System and Communications Protection",
+      "implementationSummary": "This control ensures protected functions, files, and tenant-scoped resources are only accessible through approved boundary paths. The platform supports that objective through trusted-origin validation, signed file-serving paths, scoped storage access checks, and organization-boundary authorization logic.",
+      "controlStatement": "Monitor and control communications at the external managed interfaces to the system and at key internal managed interfaces within the system; Implement subnetworks for publicly accessible system components that are {{ insert: param, sc-07_odp }} separated from internal organizational networks; and Connect to external networks or systems only through managed interfaces consisting of boundary protection devices arranged in accordance with an organizational security and privacy architecture.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "trusted-origin-checks",
+          "label": "Trusted-origin and boundary checks restrict inbound access to approved origins",
+          "description": "Authentication and other boundary-sensitive request paths should reject unapproved origins and malformed boundary configuration.",
+          "verificationMethod": "Origin validation and auth middleware review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "The auth layer fails closed on invalid origin configuration and rejects requests from untrusted origins before credential handling.",
+            "evidence": [
+              {
+                "title": "Trusted-origin validation helpers",
+                "description": "src/lib/server/env.server.ts validates BETTER_AUTH_URL, preview hosts, and trusted origins as canonical approved origins.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Auth middleware origin rejection",
+                "description": "convex/betterAuth/sharedOptions.ts rejects authentication requests from untrusted origins before processing credentials.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "signed-boundary-crossings",
+          "label": "Signed file-serving and scoped access paths protect boundary crossings",
+          "description": "Boundary-crossing file access should rely on signatures and scoped authorization rather than open object access.",
+          "verificationMethod": "File-serving and signed URL review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "File serving requires scoped read authorization and signed serve URLs, and quarantined files are blocked.",
+            "evidence": [
+              {
+                "title": "Signed file-serving implementation",
+                "description": "convex/fileServing.ts signs serve URLs with HMAC and blocks quarantined or infected files before redirecting to storage.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Scoped storage read authorization",
+                "description": "convex/auth/access.ts resolves storage read access and logs authorization denial before rejecting unauthorized reads.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "tenant-and-admin-boundaries",
+          "label": "Tenant and admin boundaries prevent unauthorized cross-scope access",
+          "description": "Tenant-scoped and admin-scoped operations should reject unauthorized cross-scope access and route privileged operations through the correct boundary.",
+          "verificationMethod": "Tenant authorization and SCIM path review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "Organization membership, viewer role, and admin wrappers constrain cross-scope access, including SCIM management boundaries.",
+            "evidence": [
+              {
+                "title": "Tenant and viewer-role permission decisions",
+                "description": "convex/auth/access.ts resolves organization permission decisions using membership, viewer role, and enterprise access requirements.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Org-scoped SCIM boundary controls",
+                "description": "convex/betterAuth/sharedOptions.ts blocks direct Better Auth SCIM deletion and routes SCIM management through org-scoped access checks.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Infrastructure and Platform Security",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for boundary controls in their own networks, browsers, devices, and downstream integrations that connect to the hosted service.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.312(a)(1)",
+            "title": "Access control",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.312(e)(1)",
+            "title": "Transmission security",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.312(e)(1)",
+            "label": "HIPAA Standard: Implement technical security measures to guard against unauthorized access to electronic protected health information that is being transmitted over an electronic communications network.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.DS-02",
+            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-transit are protected"
+          },
+          {
+            "subcategoryId": "PR.DS-10",
+            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
+          },
+          {
+            "subcategoryId": "PR.IR-01",
+            "label": "PR / PR.IR: Networks and environments are protected from unauthorized logical access and usage"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.6",
+            "group": "common-criteria",
+            "label": "The entity implements logical access security measures to protect against threats from sources outside its system boundaries.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "CC6.7",
+            "group": "common-criteria",
+            "label": "The entity restricts the transmission, movement, and removal of information to authorized internal and external users and processes, and protects it during transmission, movement, or removal to meet the entity’s objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-SI-003",
+      "nist80053Id": "SI-3",
+      "title": "Malicious Code Protection",
+      "familyId": "SI",
+      "familyTitle": "System and Information Integrity",
+      "implementationSummary": "This control ensures files entering protected workflows are inspected for unsafe characteristics and contained when suspicious or infected conditions are detected. The platform supports that objective through built-in file inspection, quarantine and rejection paths, malware-finding ingestion, and downstream containment actions on affected files.",
+      "controlStatement": "Implement {{ insert: param, si-03_odp.01 }} malicious code protection mechanisms at system entry and exit points to detect and eradicate malicious code; Automatically update malicious code protection mechanisms as new releases are available in accordance with organizational configuration management policy and procedures; Configure malicious code protection mechanisms to: Perform periodic scans of the system {{ insert: param, si-03_odp.02 }} and real-time scans of files from external sources at {{ insert: param, si-03_odp.03 }} as the files are downloaded, opened, or executed in accordance with organizational policy; and {{ insert: param, si-03_odp.04 }} ; and send alert to {{ insert: param, si-03_odp.06 }} in response to malicious code detection; and Address the receipt of false positives during malicious code detection and eradication and the resulting potential impact on the availability of the system.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "files-inspected-before-acceptance",
+          "label": "Uploaded files are inspected before being accepted into protected workflows",
+          "description": "Protected document and attachment workflows should inspect file content characteristics before acceptance.",
+          "verificationMethod": "File-inspection pipeline review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "File and Content Security",
+            "notes": "Uploaded files are inspected for type, size, and signature mismatches before protected workflows accept them.",
+            "evidence": [
+              {
+                "title": "Built-in file inspection pipeline",
+                "description": "src/lib/server/file-inspection.server.ts validates file kind, size limits, and signature matches before returning accepted status.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Attachment scan event recording",
+                "description": "convex/agentChatActions.ts records document scan events for inspected attachments before downstream chat workflows continue.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "quarantine-or-reject-unsafe-files",
+          "label": "Suspicious or infected files are quarantined or rejected automatically",
+          "description": "Unsafe files should be quarantined or rejected automatically when inspection or malware findings indicate risk.",
+          "verificationMethod": "Quarantine and rejection path review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "File and Content Security",
+            "notes": "Signature mismatches are quarantined, unsupported files are rejected, and malware findings trigger quarantine.",
+            "evidence": [
+              {
+                "title": "Quarantine and rejection decisions",
+                "description": "src/lib/server/file-inspection.server.ts returns quarantined or rejected results for unsafe file conditions.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Attachment quarantine mutation flow",
+                "description": "convex/agentChatActions.ts marks affected attachments quarantined or rejected and records the reason for later review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "malware-findings-trigger-containment",
+          "label": "Malware findings are recorded and can trigger downstream containment actions",
+          "description": "Malware findings should be recorded with enough context to drive downstream containment and review.",
+          "verificationMethod": "Malware finding ingestion and storage review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "link"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "File and Content Security",
+            "notes": "GuardDuty malware findings are verified, recorded, and used to mark files infected and quarantine them.",
+            "evidence": [
+              {
+                "title": "Signed GuardDuty webhook verification",
+                "description": "convex/storageWebhook.ts verifies webhook signatures and timestamps before applying GuardDuty malware findings.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Malware finding persistence",
+                "description": "convex/schema.ts stores malware status, finding IDs, and quarantine timestamps on storageLifecycle records used for containment and review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Malware scanning infrastructure",
+                "description": "infra/aws-cdk/lib/malware-scan-stack.cts provisions the GuardDuty malware protection plan, result forwarding Lambda, and protected S3 bucket.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "File and Content Security",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for broader endpoint and email malware defenses outside the hosted file-ingest paths provided by the platform.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(A)",
+            "title": "Risk analysis",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(A)",
+            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [],
+        "soc2": [
+          {
+            "criterionId": "CC6.8",
+            "group": "common-criteria",
+            "label": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software to meet the entity’s objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-SI-007",
+      "nist80053Id": "SI-7",
+      "title": "Software, Firmware, and Information Integrity",
+      "familyId": "SI",
+      "familyTitle": "System and Information Integrity",
+      "implementationSummary": "This control ensures important service data and content flows retain integrity signals that help detect mismatches, tampering, or unsafe alteration. The platform supports that objective through file signature validation, hash-linked audit records, and integrity-linked evidence and signed file-serving flows.",
+      "controlStatement": "Employ integrity verification tools to detect unauthorized changes to the following software, firmware, and information: {{ insert: param, si-7_prm_1 }} ; and Take the following actions when unauthorized changes to the software, firmware, and information are detected: {{ insert: param, si-7_prm_2 }}.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "file-signature-integrity",
+          "label": "File type and signature validation protect against content integrity mismatches",
+          "description": "Protected file workflows should validate content signatures against declared type or extension expectations.",
+          "verificationMethod": "File integrity inspection review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Integrity Assurance",
+            "notes": "File inspection validates content signatures and quarantines mismatches before protected processing continues.",
+            "evidence": [
+              {
+                "title": "Signature and kind validation",
+                "description": "src/lib/server/file-inspection.server.ts resolves known file kinds and checks signatures before accepting files.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "audit-hash-integrity",
+          "label": "Audit data integrity is verified through chained hashes or equivalent controls",
+          "description": "Audit records should carry linked integrity values and be verifiable after creation.",
+          "verificationMethod": "Audit integrity mechanism review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Integrity Assurance",
+            "notes": "Audit events are linked through chained hashes and regularly verifiable through a dedicated integrity check path.",
+            "evidence": [
+              {
+                "title": "Audit hash chain",
+                "description": "convex/audit.ts computes eventHash values using previousEventHash so audit records form a verifiable chain.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit chain verification action",
+                "description": "convex/audit.ts provides verifyAuditIntegrityInternal to recompute hashes and detect integrity failures.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "integrity-protected-exports-and-access",
+          "label": "Integrity-protecting mechanisms exist for exported evidence and signed file access flows",
+          "description": "Evidence exports and signed file access paths should include integrity-preserving metadata or signatures that can be validated later.",
+          "verificationMethod": "Evidence export and signed file access review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Integrity Assurance",
+            "notes": "Evidence exports preserve content and export hashes, and signed file-serving paths protect storage access flows.",
+            "evidence": [
+              {
+                "title": "Evidence export integrity metadata",
+                "description": "convex/security.ts computes contentHash and exportHash values and stores exportIntegritySummary for evidence report exports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Signed file serve URLs",
+                "description": "convex/fileServing.ts generates HMAC-backed signed serve URLs for protected file access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Integrity Assurance",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for validating the integrity of any exported material after it leaves the service and for protecting customer-managed downstream storage or transmission paths.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.312(c)(1)",
+            "title": "Integrity",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.PS-02",
+            "label": "PR / PR.PS: Software is maintained, replaced, and removed commensurate with risk"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.8",
+            "group": "common-criteria",
+            "label": "The entity implements controls to prevent or detect and act upon the introduction of unauthorized or malicious software to meet the entity’s objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AU-009",
+      "nist80053Id": "AU-9",
+      "title": "Protection of Audit Information",
+      "familyId": "AU",
+      "familyTitle": "Audit and Accountability",
+      "implementationSummary": "This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, and integrity-linked evidence report exports, while immutable retention controls beyond the application layer are not yet fully evidenced here.",
+      "controlStatement": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion; and Alert {{ insert: param, au-09_odp }} upon detection of unauthorized access, modification, or deletion of audit information.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "audit-record-protection",
+          "label": "Audit records are protected against unauthorized modification or deletion",
+          "description": "Access to audit records should be restricted and managed to reduce unauthorized modification or deletion risk.",
+          "verificationMethod": "Audit access path and storage protection review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Audit and Logging",
+            "notes": "Audit access is constrained to privileged or self-scoped queries, but immutable storage or deletion-prevention evidence beyond app-layer controls is not attached yet.",
+            "evidence": [
+              {
+                "title": "Restricted audit query access",
+                "description": "convex/audit.ts limits audit-log queries so non-admin users can only read their own records.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Privileged audit export path",
+                "description": "convex/audit.ts restricts security audit export to verified site-admin users.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "tamper-detection",
+          "label": "Audit integrity checks detect broken hash chains or tampering conditions",
+          "description": "The audit subsystem should detect tampering conditions through integrity verification or equivalent controls.",
+          "verificationMethod": "Audit integrity implementation review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Audit events are hash-linked and the platform can detect and record chain verification failures.",
+            "evidence": [
+              {
+                "title": "Hash-linked audit insertion",
+                "description": "convex/audit.ts stores previousEventHash and eventHash when new audit records are inserted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit integrity verification",
+                "description": "convex/audit.ts recomputes the audit chain and emits audit_integrity_check_failed when hashes do not verify.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "export-integrity-metadata",
+          "label": "Audit-supporting exports preserve integrity metadata and review state",
+          "description": "Exported audit-supporting evidence should retain integrity metadata and reviewer state that can be validated later.",
+          "verificationMethod": "Evidence export and schema review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification.",
+            "evidence": [
+              {
+                "title": "Evidence report integrity fields",
+                "description": "convex/schema.ts defines contentHash, exportHash, exportIntegritySummary, reviewStatus, reviewedAt, and reviewedByUserId on evidenceReports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Integrity-linked export workflow",
+                "description": "convex/security.ts generates export bundles with content and export hashes, and src/routes/app/admin/security.tsx surfaces those values to reviewers.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Audit and Logging",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for protecting exported audit material after it leaves the service and for applying any downstream retention or immutability requirements they require.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.312(c)(1)",
+            "title": "Integrity",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.DS-10",
+            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
+          }
+        ],
+        "soc2": []
+      }
+    },
+    {
       "internalControlId": "CTRL-CP-009",
       "nist80053Id": "CP-9",
       "title": "System Backup",
@@ -789,15 +1816,15 @@
             "system"
           ],
           "seed": {
-            "status": "done",
+            "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The platform includes a backup verification report table and internal mutation for recording backup verification outcomes.",
+            "notes": "The platform includes a dedicated backup verification record path, but this workspace does not yet contain retained hosted-environment verification entries.",
             "evidence": [
               {
-                "title": "Backup verification storage",
-                "description": "convex/schema.ts defines backupVerificationReports and convex/security.ts exposes recordBackupVerification.",
+                "title": "Backup verification record path",
+                "description": "convex/schema.ts defines backupVerificationReports and convex/security.ts exposes recordBackupVerification for storing backup and restore verification outcomes.",
                 "evidenceType": "note",
-                "sufficiency": "sufficient",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -815,10 +1842,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The control workspace does not yet contain restore test results or recovery exercise records for the hosted production environment.",
-            "evidence": []
+            "notes": "The platform has a restore-verification record shape and audit events, but hosted-environment restore drill results are not attached in this workspace yet.",
+            "evidence": [
+              {
+                "title": "Restore verification data model",
+                "description": "convex/schema.ts stores restore_verification drill records and convex/security.ts records backup_restore_drill_completed and backup_restore_drill_failed audit events.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -854,14 +1889,6 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "PR.DS-01",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-at-rest are protected"
-          },
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          },
-          {
             "subcategoryId": "PR.DS-11",
             "label": "PR / PR.DS: Backups of data are created, protected, maintained, and tested"
           },
@@ -882,12 +1909,6 @@
             "group": "availability",
             "label": "The entity tests recovery plan procedures supporting system recovery to meet its objectives.",
             "trustServiceCategory": "availability"
-          },
-          {
-            "criterionId": "CC6.1",
-            "group": "common-criteria",
-            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
-            "trustServiceCategory": "security"
           }
         ]
       }
@@ -898,7 +1919,7 @@
       "title": "Vulnerability Monitoring and Scanning",
       "familyId": "RA",
       "familyTitle": "Risk Assessment",
-      "implementationSummary": "This control ensures vulnerabilities or security-relevant findings affecting the hosted service are identified, assessed, remediated, or formally risk-accepted. The app ships automated inspection and malware-finding hooks for file-ingest surfaces, but hosted-service vulnerability scanning cadence and remediation tracking still require operator processes.",
+      "implementationSummary": "This control addresses vulnerability and security finding identification. The app ships automated inspection and malware-finding hooks for file-ingest surfaces, but hosted-service vulnerability scanning cadence, remediation tracking, and formal risk treatment still require operator processes outside this repo-backed workspace.",
       "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -986,41 +2007,169 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "GV.SC-10",
-            "label": "GV / GV.SC: Cybersecurity supply chain risk management plans include provisions for activities that occur after the conclusion of a partnership or service agreement"
-          },
-          {
             "subcategoryId": "ID.RA-01",
             "label": "ID / ID.RA: Vulnerabilities in assets are identified, validated, and recorded"
+          }
+        ],
+        "soc2": []
+      }
+    },
+    {
+      "internalControlId": "CTRL-SA-009",
+      "nist80053Id": "SA-9",
+      "title": "External System Services",
+      "familyId": "SA",
+      "familyTitle": "System and Services Acquisition",
+      "implementationSummary": "This control ensures externally provided services are governed by defined boundary expectations, permitted data classes, and auditable usage. The platform supports that objective through a vendor boundary registry, explicit allowed-data-class policies, approval gates, and audit events for vendor use or denial, while buyer-facing contractual and subprocessor program artifacts remain outside this repo-backed register.",
+      "controlStatement": "Require that providers of external system services comply with organizational security and privacy requirements and employ the following controls: {{ insert: param, sa-09_odp.01 }}; Define and document organizational oversight and user roles and responsibilities with regard to external system services; and Employ the following processes, methods, and techniques to monitor control compliance by external service providers on an ongoing basis: {{ insert: param, sa-09_odp.02 }}.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "vendor-inventory-and-data-classes",
+          "label": "External services and subprocessors are inventoried with approved data classes",
+          "description": "Approved external services should be recorded with the categories of data the service is permitted to handle, even if broader legal subprocessor records live elsewhere.",
+          "verificationMethod": "Vendor boundary registry review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Vendor Risk Management",
+            "notes": "The repo models approved vendors, environments, and allowed data classes, but it is not yet a full buyer-facing subprocessor register with legal and assurance metadata.",
+            "evidence": [
+              {
+                "title": "Vendor boundary registry",
+                "description": "src/lib/shared/vendor-boundary.ts inventories approved vendors, allowed data classes, allowed environments, and approval flags.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Runtime vendor posture snapshot",
+                "description": "src/lib/server/vendor-boundary.server.ts exposes vendor approval status, allowed data classes, and environment posture for review surfaces.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "vendor-egress-policy",
+          "label": "Outbound access to vendors is constrained by policy and environment",
+          "description": "Outbound service use should be constrained by allowed environments, approval gates, and permitted data classes.",
+          "verificationMethod": "Vendor boundary enforcement review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Vendor Risk Management",
+            "notes": "Vendor egress is blocked when the vendor is not approved, the environment is not allowed, or the data classes exceed policy.",
+            "evidence": [
+              {
+                "title": "Vendor boundary enforcement helper",
+                "description": "src/lib/server/vendor-boundary.server.ts rejects outbound access when vendor approval, environment, or data-class policy is not satisfied.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Outbound service call guardrails",
+                "description": "src/lib/server/openrouter.ts and convex/emails.ts invoke assertVendorBoundary before outbound vendor access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "vendor-usage-auditable",
+          "label": "Vendor usage is auditable and blocked when approval requirements are not met",
+          "description": "Successful and denied vendor use should emit reviewable records showing whether policy conditions were met.",
+          "verificationMethod": "Vendor audit event review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Vendor Risk Management",
+            "notes": "Vendor use and denial conditions are recorded as audit events for later review.",
+            "evidence": [
+              {
+                "title": "Vendor access audit event inventory",
+                "description": "src/lib/shared/auth-audit.ts defines outbound_vendor_access_used and outbound_vendor_access_denied audit event types.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Vendor use and denial event emission",
+                "description": "convex/agentChatActions.ts records outbound vendor access used and denied events during chat generation workflows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Vendor Risk Management",
+      "responsibility": "shared-responsibility",
+      "customerResponsibilityNotes": "Customer organizations remain responsible for their own vendor due diligence, contract review, and deciding whether the platform vendor set satisfies their subprocessor and business-associate requirements.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(b)(1)",
+            "title": "Business associate contracts and other arrangements",
+            "type": "subsection",
+            "implementationSpecification": null
           },
           {
-            "subcategoryId": "ID.RA-08",
-            "label": "ID / ID.RA: Processes for receiving, analyzing, and responding to vulnerability disclosures are established"
+            "citation": "45 CFR 164.308(a)(1)(ii)(A)",
+            "title": "Risk analysis",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(b)(1)",
+            "label": "HIPAA Standard: A covered entity may permit a business associate to create, receive, maintain, or transmit electronic protected health information on the covered entity’s behalf only if the covered entity obtains satisfactory assurances, in accordance with § 164.314(a), that the business associate will appropriately safeguard the information. A covered entity is not required to obtain such satisfactory assurances from a business associate that is a subcontractor.",
+            "mappingType": "relationship"
           },
           {
-            "subcategoryId": "ID.IM-01",
-            "label": "ID / ID.IM: Improvements are identified from evaluations"
+            "referenceId": "164.308(a)(1)(ii)(A)",
+            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "GV.SC-05",
+            "label": "GV / GV.SC: Requirements to address cybersecurity risks in supply chains are established, prioritized, and integrated into contracts and other types of agreements with suppliers and other relevant third parties"
           },
           {
-            "subcategoryId": "ID.IM-02",
-            "label": "ID / ID.IM: Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties"
+            "subcategoryId": "GV.SC-06",
+            "label": "GV / GV.SC: Planning and due diligence are performed to reduce risks before entering into formal supplier or other third-party relationships"
           },
           {
-            "subcategoryId": "ID.IM-03",
-            "label": "ID / ID.IM: Improvements are identified from execution of operational processes, procedures, and activities"
+            "subcategoryId": "ID.AM-02",
+            "label": "ID / ID.AM: Inventories of software, services, and systems managed by the organization are maintained"
           }
         ],
         "soc2": [
           {
-            "criterionId": "CC7.1",
+            "criterionId": "CC9.2",
             "group": "common-criteria",
-            "label": "To meet its objectives, the entity uses detection and monitoring procedures to identify (1) changes to configurations that result in the introduction of new vulnerabilities, and (2) susceptibilities to newly discovered vulnerabilities.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+            "label": "The entity assesses and manages risks associated with vendors and business partners.",
             "trustServiceCategory": "security"
           }
         ]
@@ -1032,7 +2181,7 @@
       "title": "Transmission Confidentiality and Integrity",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective by enforcing HTTPS-oriented auth configuration, trusted-origin checks, secure cookie behavior, and SSL-only storage transport for managed file paths.",
+      "implementationSummary": "This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective through HTTPS-oriented auth configuration, trusted-origin checks, and secure session transport settings, while certificate lifecycle and edge enforcement evidence remain outside this repo-backed workspace.",
       "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1074,7 +2223,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Short-lived verification windows and temporary-link TTLs are surfaced in the security posture summary.",
+            "notes": "Session cookies are configured for secure transport on HTTPS origins and short-lived auth settings support controlled session handling.",
             "evidence": [
               {
                 "title": "Session transport configuration",
@@ -1157,7 +2306,7 @@
       "title": "Incident Handling",
       "familyId": "IR",
       "familyTitle": "Incident Response",
-      "implementationSummary": "This control ensures security incidents can be handled through defined response, investigation, and follow-up procedures. The platform supports that objective by providing audit trails, exportable evidence, and retained investigation artifacts that can assist incident investigation and post-incident analysis, while substantive incident response procedures remain customer-operated in this model.",
+      "implementationSummary": "This control addresses incident handling expectations. In this workspace the platform only evidences investigation-supporting audit trails, exportable evidence, and retained review artifacts; substantive incident response procedures remain outside the hosted product evidence and are customer or provider program responsibilities.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1215,7 +2364,7 @@
       ],
       "owner": "Security Incident Response",
       "responsibility": "customer",
-      "customerResponsibilityNotes": "Customer organizations are responsible for incident response procedures, internal escalation contacts, and customer-side post-incident handling.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling; the platform evidence here is only investigation-supporting material.",
       "mappings": {
         "hipaa": [
           {
@@ -1240,16 +2389,153 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "ID.IM-01",
-            "label": "ID / ID.IM: Improvements are identified from evaluations"
+            "subcategoryId": "RS.AN-03",
+            "label": "RS / RS.AN: Analysis is performed to establish what has taken place during an incident and the root cause of the incident"
           },
           {
-            "subcategoryId": "ID.IM-02",
-            "label": "ID / ID.IM: Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties"
+            "subcategoryId": "RS.CO-02",
+            "label": "RS / RS.CO: Internal and external stakeholders are notified of incidents"
+          }
+        ],
+        "soc2": []
+      }
+    },
+    {
+      "internalControlId": "CTRL-CA-007",
+      "nist80053Id": "CA-7",
+      "title": "Continuous Monitoring",
+      "familyId": "CA",
+      "familyTitle": "Assessment, Authorization, and Monitoring",
+      "implementationSummary": "This control ensures security-relevant posture signals are collected, summarized, and made available for recurring internal review. The platform supports that objective through a posture summary query, retained scan and retention records, audit-integrity telemetry, and evidence report generation from current monitoring state.",
+      "controlStatement": "Establishing the following system-level metrics to be monitored: {{ insert: param, ca-07_odp.01 }}; Establishing {{ insert: param, ca-07_odp.02 }} for monitoring and {{ insert: param, ca-07_odp.03 }} for assessment of control effectiveness; Ongoing control assessments in accordance with the continuous monitoring strategy; Ongoing monitoring of system and organization-defined metrics in accordance with the continuous monitoring strategy; Correlation and analysis of information generated by control assessments and monitoring; Response actions to address results of the analysis of control assessment and monitoring information; and Reporting the security and privacy status of the system to {{ insert: param, ca-7_prm_4 }} {{ insert: param, ca-7_prm_5 }}.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "posture-signals-collected",
+          "label": "Security posture signals are collected and summarized for ongoing review",
+          "description": "The platform should collect and summarize current security posture signals that operators can review repeatedly.",
+          "verificationMethod": "Security posture summary review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "The security posture summary aggregates authentication, scan, retention, backup, audit, telemetry, and vendor posture for review.",
+            "evidence": [
+              {
+                "title": "Security posture summary query",
+                "description": "convex/security.ts aggregates posture signals for MFA coverage, backups, retention, scans, audit integrity, telemetry, and vendor posture.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Admin summary dashboard",
+                "description": "src/routes/app/admin/security.tsx renders posture summary cards for MFA, file inspection, audit integrity, retention jobs, and telemetry.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "monitoring-output-coverage",
+          "label": "Monitoring outputs include audit integrity, file scanning, retention, and backup signals",
+          "description": "Monitoring state should include the main classes of signals needed for security posture review and follow-up.",
+          "verificationMethod": "Monitoring data model review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "Monitoring outputs include audit integrity failures, document scan records, retention jobs, and backup verification records.",
+            "evidence": [
+              {
+                "title": "Monitoring evidence tables",
+                "description": "convex/schema.ts defines documentScanEvents, retentionJobs, and backupVerificationReports used by posture and review workflows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit integrity monitoring signal",
+                "description": "convex/security.ts counts audit_integrity_check_failed events and includes the result in the posture summary.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "evidence-report-from-monitoring-state",
+          "label": "Reviewers can generate evidence reports from current monitoring state",
+          "description": "Current monitoring posture should be exportable into an evidence artifact suitable for recurring security review.",
+          "verificationMethod": "Evidence report generation review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "Reviewers can generate evidence reports from the current posture summary and supporting recent signals.",
+            "evidence": [
+              {
+                "title": "Evidence report generation action",
+                "description": "convex/security.ts generates a structured evidence report from current posture state, recent audit events, integrity checks, and control workspace data.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence report UI workflow",
+                "description": "src/routes/app/admin/security.tsx exposes Generate evidence report and review/export actions for current monitoring state.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Security Monitoring",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for establishing review cadence, assigning reviewers, and deciding how platform monitoring outputs are incorporated into broader organizational monitoring processes.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(D)",
+            "title": "Information system activity review",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
           },
           {
-            "subcategoryId": "ID.IM-03",
-            "label": "ID / ID.IM: Improvements are identified from execution of operational processes, procedures, and activities"
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(D)",
+            "label": "Implement procedures to regularly review records of information system activity, such as audit logs, access reports, and security incident tracking reports.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "DE.CM-01",
+            "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
           },
           {
             "subcategoryId": "DE.AE-02",
@@ -1258,95 +2544,13 @@
           {
             "subcategoryId": "DE.AE-03",
             "label": "DE / DE.AE: Information is correlated from multiple sources"
-          },
-          {
-            "subcategoryId": "DE.AE-06",
-            "label": "DE / DE.AE: Information on adverse events is provided to authorized staff and tools"
-          },
-          {
-            "subcategoryId": "DE.AE-08",
-            "label": "DE / DE.AE: Incidents are declared when adverse events meet the defined incident criteria"
-          },
-          {
-            "subcategoryId": "RS.MA-02",
-            "label": "RS / RS.MA: Incident reports are triaged and validated"
-          },
-          {
-            "subcategoryId": "RS.MA-03",
-            "label": "RS / RS.MA: Incidents are categorized and prioritized"
-          },
-          {
-            "subcategoryId": "RS.MA-04",
-            "label": "RS / RS.MA: Incidents are escalated or elevated as needed"
-          },
-          {
-            "subcategoryId": "RS.MA-05",
-            "label": "RS / RS.MA: The criteria for initiating incident recovery are applied"
-          },
-          {
-            "subcategoryId": "RS.AN-03",
-            "label": "RS / RS.AN: Analysis is performed to establish what has taken place during an incident and the root cause of the incident"
-          },
-          {
-            "subcategoryId": "RS.AN-06",
-            "label": "RS / RS.AN: Actions performed during an investigation are recorded, and the records' integrity and provenance are preserved"
-          },
-          {
-            "subcategoryId": "RS.AN-07",
-            "label": "RS / RS.AN: Incident data and metadata are collected, and their integrity and provenance are preserved"
-          },
-          {
-            "subcategoryId": "RS.AN-08",
-            "label": "RS / RS.AN: An incident's magnitude is estimated and validated"
-          },
-          {
-            "subcategoryId": "RS.CO-02",
-            "label": "RS / RS.CO: Internal and external stakeholders are notified of incidents"
-          },
-          {
-            "subcategoryId": "RS.CO-03",
-            "label": "RS / RS.CO: Information is shared with designated internal and external stakeholders"
-          },
-          {
-            "subcategoryId": "RS.MI-01",
-            "label": "RS / RS.MI: Incidents are contained"
-          },
-          {
-            "subcategoryId": "RS.MI-02",
-            "label": "RS / RS.MI: Incidents are eradicated"
-          },
-          {
-            "subcategoryId": "RC.RP-01",
-            "label": "RC / RC.RP: The recovery portion of the incident response plan is executed once initiated from the incident response process"
-          },
-          {
-            "subcategoryId": "RC.RP-02",
-            "label": "RC / RC.RP: Recovery actions are selected, scoped, prioritized, and performed"
-          },
-          {
-            "subcategoryId": "RC.RP-06",
-            "label": "RC / RC.RP: The end of incident recovery is declared based on criteria, and incident-related documentation is completed"
-          },
-          {
-            "subcategoryId": "RC.CO-03",
-            "label": "RC / RC.CO: Recovery activities and progress in restoring operational capabilities are communicated to designated internal and external stakeholders"
-          },
-          {
-            "subcategoryId": "RC.CO-04",
-            "label": "RC / RC.CO: Public updates on incident recovery are shared using approved methods and messaging"
           }
         ],
         "soc2": [
           {
-            "criterionId": "CC7.4",
+            "criterionId": "CC4.1",
             "group": "common-criteria",
-            "label": "The entity responds to identified security incidents by executing a defined incident response program to understand, contain, remediate, and communicate security incidents, as appropriate.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.5",
-            "group": "common-criteria",
-            "label": "The entity identifies, develops, and implements activities to recover from identified security incidents.",
+            "label": "COSO Principle 16: The entity selects, develops, and performs ongoing and/or separate evaluations to ascertain whether the components of internal control are present and functioning.",
             "trustServiceCategory": "security"
           }
         ]
@@ -1375,11 +2579,11 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Passkey support is integrated and exposed through profile management and Better Auth plugins.",
+            "notes": "The platform supports passkeys and built-in two-factor authentication for stronger authenticator management.",
             "evidence": [
               {
-                "title": "Passkey support",
-                "description": "convex/betterAuth/sharedOptions.ts enables passkey support and profile UI exposes add/delete passkey flows.",
+                "title": "Passkey and two-factor support",
+                "description": "convex/betterAuth/sharedOptions.ts enables passkey and two-factor plugins, and profile UI exposes authenticator management flows.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1400,7 +2604,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Recovery-related audit events are defined for reset requests and completion events.",
+            "notes": "Password reset request and completion events are defined for later review.",
             "evidence": [
               {
                 "title": "Password reset audit events",
@@ -1451,10 +2655,10 @@
       "mappings": {
         "hipaa": [
           {
-            "citation": "45 CFR 164.312(a)(2)(i)",
-            "title": "Unique user identification",
+            "citation": "45 CFR 164.308(a)(5)(ii)(D)",
+            "title": "Password management",
             "type": "implementation_specification",
-            "implementationSpecification": "required"
+            "implementationSpecification": "addressable"
           },
           {
             "citation": "45 CFR 164.312(d)",
@@ -1465,8 +2669,8 @@
         ],
         "nist80066": [
           {
-            "referenceId": "164.312(a)(2)(i)",
-            "label": "Assign a unique name and/or number for identifying and tracking user identity.",
+            "referenceId": "164.308(a)(5)(ii)(D)",
+            "label": "As reasonable and appropriate, train workforce members regarding procedures for:",
             "mappingType": "relationship"
           },
           {
@@ -1487,18 +2691,6 @@
         ],
         "soc2": [
           {
-            "criterionId": "CC5.1",
-            "group": "common-criteria",
-            "label": "COSO Principle 10: The entity selects and develops control activities that contribute to the mitigation of risks to the achievement of objectives to acceptable levels.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC5.2",
-            "group": "common-criteria",
-            "label": "COSO Principle 11: The entity also selects and develops general control activities over technology to support the achievement of objectives.",
-            "trustServiceCategory": "security"
-          },
-          {
             "criterionId": "CC6.1",
             "group": "common-criteria",
             "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
@@ -1508,12 +2700,6 @@
             "criterionId": "CC6.2",
             "group": "common-criteria",
             "label": "Prior to issuing system credentials and granting system access, the entity registers and authorizes new internal and external users whose access is administered by the entity. For those users whose access is administered by the entity, user system credentials are removed when user access is no longer authorized.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC8.1",
-            "group": "common-criteria",
-            "label": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves, and implements changes to infrastructure, data, software, and procedures to meet its objectives.",
             "trustServiceCategory": "security"
           }
         ]
@@ -1525,15 +2711,15 @@
       "title": "Audit Record Review, Analysis, and Reporting",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures audit records are reviewed, analyzed, and followed up through defined operational workflows. The platform provides review queues, stored review states, and integrity-linked evidence exports that support those workflows, while operator review cadence and escalation procedure remain deployment-owned.",
+      "implementationSummary": "This control ensures audit records and related security findings can be reviewed, analyzed, and followed up through defined workflows. The platform provides audit history views, review-state retention, and evidence-report workflows that support that process, while formal operator review cadence and escalation procedures remain deployment-owned.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
       "priority": "p1",
       "platformChecklistItems": [
         {
           "itemId": "review-queue-surface",
           "label": "Audit review surfaces exist",
-          "description": "The platform must provide a queue or surface for reviewing audit evidence.",
-          "verificationMethod": "Admin security UI walkthrough",
+          "description": "The platform must provide supported surfaces for reviewing audit activity and related security evidence.",
+          "verificationMethod": "Audit review UI walkthrough",
           "required": true,
           "suggestedEvidenceTypes": [
             "system",
@@ -1542,11 +2728,18 @@
           "seed": {
             "status": "done",
             "owner": "Security Operations",
-            "notes": "The security admin surface exposes evidence queues and review-oriented summaries.",
+            "notes": "Authorized users can review organization audit history and security-admin evidence state through built-in surfaces.",
             "evidence": [
               {
-                "title": "Security admin review queue",
-                "description": "src/routes/app/admin/security.tsx exposes control workspace and evidence review surfaces.",
+                "title": "Organization audit review surface",
+                "description": "src/features/organizations/components/OrganizationAuditPage.tsx exposes reviewable audit history for organization roles.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Security admin review surface",
+                "description": "src/routes/app/admin/security.tsx exposes control workspace and evidence review surfaces for security administrators.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1643,10 +2836,6 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "PR.PS-04",
-            "label": "PR / PR.PS: Log records are generated and made available for continuous monitoring"
-          },
-          {
             "subcategoryId": "DE.AE-02",
             "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
           },
@@ -1672,12 +2861,153 @@
       }
     },
     {
+      "internalControlId": "CTRL-CM-003",
+      "nist80053Id": "CM-3",
+      "title": "Configuration Change Control",
+      "familyId": "CM",
+      "familyTitle": "Configuration Management",
+      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through automated guardrail checks on Convex functions and reproducible compliance generation workflows, while formal approval records and operator change-management procedures are not yet fully evidenced in the repo-backed register.",
+      "controlStatement": "Determine and document the types of changes to the system that are configuration-controlled; Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses; Document configuration change decisions associated with the system; Implement approved configuration-controlled changes to the system; Retain records of configuration-controlled changes to the system for {{ insert: param, cm-03_odp.01 }}; Monitor and review activities associated with configuration-controlled changes to the system; and Coordinate and provide oversight for configuration change control activities through {{ insert: param, cm-03_odp.02 }} that convenes {{ insert: param, cm-03_odp.03 }}.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "controlled-change-path",
+          "label": "Security-relevant code and configuration changes follow a controlled change path",
+          "description": "Security-relevant changes should follow a defined, reviewable path rather than ad hoc mutation.",
+          "verificationMethod": "Change workflow and repo artifact review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Change Management",
+            "notes": "The repo shows reproducible generation and validation workflows, but formal approval or change-review records are not attached in the control workspace yet.",
+            "evidence": [
+              {
+                "title": "Reproducible compliance refresh workflow",
+                "description": "package.json defines compliance:refresh to regenerate the compliance artifacts from source rather than hand-editing outputs.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "automated-guardrail-checks",
+          "label": "Automated checks validate auth guardrails, function safety, and typed contracts",
+          "description": "Automated checks should validate authorization guardrails and type-level expectations for protected backend functions.",
+          "verificationMethod": "Automated code-health audit review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Change Management",
+            "notes": "Automated checks scan exported Convex functions for approved auth wrappers and required return validators.",
+            "evidence": [
+              {
+                "title": "Convex function code-health audit",
+                "description": "scripts/code-health-audit.ts classifies exported Convex functions, flags unprotected public functions, and fails when return validators are missing.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Auth-protected Convex builders",
+                "description": "convex/auth/authorized.ts provides builder-level wrappers for site-admin and organization-scoped protected functions.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "compliance-artifacts-reproducible",
+          "label": "Generated compliance artifacts are reproducible from source and refresh workflows",
+          "description": "Generated compliance outputs should be reproducible from tracked sources and scripted refresh workflows.",
+          "verificationMethod": "Compliance generation workflow review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Change Management",
+            "notes": "The active control register and related compliance artifacts are generated from source through scripted refresh commands.",
+            "evidence": [
+              {
+                "title": "Compliance refresh command chain",
+                "description": "package.json defines compliance:refresh as a scripted chain that regenerates framework extracts and the active control register from source inputs.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Generated control register source of truth",
+                "description": "scripts/compliance/generate-active-control-register.ts builds the active control register seed from framework extracts and local blueprint definitions.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Change Management",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for their own approval, CAB, and deployment control processes for any customer-managed integrations or operational changes outside the hosted service boundary.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.PS-01",
+            "label": "PR / PR.PS: Configuration management practices are established and applied"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC8.1",
+            "group": "common-criteria",
+            "label": "The entity authorizes, designs, develops or acquires, configures, documents, tests, approves, and implements changes to infrastructure, data, software, and procedures to meet its objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
       "internalControlId": "CTRL-SI-004",
       "nist80053Id": "SI-4",
       "title": "System Monitoring",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, malware findings, and telemetry posture summaries, but operator alert response procedures are not yet fully evidenced in this register.",
+      "implementationSummary": "This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, and security posture summaries, but operator alert response procedures are not yet fully evidenced in this register.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -1694,7 +3024,7 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring-related platform signals are exposed through document scan events, audit integrity checks, and telemetry posture summaries.",
+            "notes": "Monitoring-related platform signals are exposed through document scan events, audit integrity checks, and security posture summaries.",
             "evidence": [
               {
                 "title": "Security monitoring signals",
@@ -1784,44 +3114,12 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "ID.RA-01",
-            "label": "ID / ID.RA: Vulnerabilities in assets are identified, validated, and recorded"
-          },
-          {
-            "subcategoryId": "ID.IM-01",
-            "label": "ID / ID.IM: Improvements are identified from evaluations"
-          },
-          {
-            "subcategoryId": "ID.IM-02",
-            "label": "ID / ID.IM: Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties"
-          },
-          {
-            "subcategoryId": "ID.IM-03",
-            "label": "ID / ID.IM: Improvements are identified from execution of operational processes, procedures, and activities"
-          },
-          {
-            "subcategoryId": "PR.DS-01",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-at-rest are protected"
-          },
-          {
-            "subcategoryId": "PR.DS-02",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-transit are protected"
-          },
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          },
-          {
             "subcategoryId": "DE.CM-01",
             "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
           },
           {
             "subcategoryId": "DE.CM-06",
             "label": "DE / DE.CM: External service provider activities and services are monitored to find potentially adverse events"
-          },
-          {
-            "subcategoryId": "DE.CM-09",
-            "label": "DE / DE.CM: Computing hardware and software, runtime environments, and their data are monitored to find potentially adverse events"
           },
           {
             "subcategoryId": "DE.AE-02",
@@ -1833,12 +3131,6 @@
           }
         ],
         "soc2": [
-          {
-            "criterionId": "CC1.4",
-            "group": "common-criteria",
-            "label": "COSO Principal 4: The entity demonstrates a commitment to attract, develop, and retain competent individuals in alignment with objectives.",
-            "trustServiceCategory": "security"
-          },
           {
             "criterionId": "CC7.2",
             "group": "common-criteria",

@@ -53,6 +53,11 @@ import {
   findBetterAuthOrganizationBySlug,
   findBetterAuthScimProviderByOrganizationId,
 } from './lib/betterAuth';
+import {
+  buildOrganizationAuditProjection,
+  getOrganizationAuditEventLabel as getOrganizationAuditEventLabelFromLib,
+  parseAuditMetadata as parseAuditMetadataFromLib,
+} from './lib/organizationAuditEvents';
 import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
 import {
   getOrganizationMembershipStateRecord,
@@ -80,6 +85,12 @@ import {
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
 type OrganizationAuditSortField = 'label' | 'identifier' | 'userId' | 'createdAt';
+
+type OrganizationAuditEventRecord = Doc<'organizationAuditEvents'>;
+type OrganizationAuditEventViewSource =
+  | OrganizationAuditEventRecord
+  | NonNullable<ReturnType<typeof buildOrganizationAuditProjection>>;
+const EXPORT_ARTIFACT_SCHEMA_VERSION = '2026-03-18.audit-evidence.v1';
 
 type OrganizationAccessContext = {
   access: Awaited<ReturnType<typeof checkOrganizationAccess>>;
@@ -120,6 +131,15 @@ type OrganizationInvitationRow = {
   expiresAt: number;
   canRevoke: boolean;
 };
+
+function stringifyStable(value: unknown) {
+  return JSON.stringify(value, null, 2);
+}
+
+async function hashContent(value: string) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+  return Array.from(new Uint8Array(digest), (part) => part.toString(16).padStart(2, '0')).join('');
+}
 
 type OrganizationDirectoryRow = OrganizationMemberRow | OrganizationInvitationRow;
 type OrganizationInvitePolicy = 'owners_admins' | 'owners_only';
@@ -203,6 +223,8 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'email_verification_enforced',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'backup_restore_drill_completed',
+  'backup_restore_drill_failed',
 ]);
 const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'domain_verification_failed',
@@ -257,6 +279,8 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'email_verification_enforced',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'backup_restore_drill_completed',
+  'backup_restore_drill_failed',
 ]);
 const ORGANIZATION_DOMAIN_VERIFICATION_PREFIX = '_ba-verify';
 
@@ -743,258 +767,6 @@ function auditEventMatchesSearch(
   return haystacks.some((value) => value?.toLowerCase().includes(searchValue) ?? false);
 }
 
-function getOrganizationAuditEventLabel(eventType: string) {
-  switch (eventType) {
-    case 'organization_created':
-      return 'Organization created';
-    case 'organization_updated':
-      return 'Organization updated';
-    case 'member_added':
-      return 'Member added';
-    case 'member_removed':
-      return 'Member removed';
-    case 'member_role_updated':
-      return 'Member role updated';
-    case 'member_suspended':
-      return 'Member suspended';
-    case 'member_deactivated':
-      return 'Member deactivated';
-    case 'member_reactivated':
-      return 'Member reactivated';
-    case 'member_invited':
-      return 'Invitation sent';
-    case 'invite_accepted':
-      return 'Invitation accepted';
-    case 'invite_rejected':
-      return 'Invitation rejected';
-    case 'invite_cancelled':
-      return 'Invitation cancelled';
-    case 'domain_added':
-      return 'Domain added';
-    case 'domain_verification_succeeded':
-      return 'Domain verified';
-    case 'domain_verification_failed':
-      return 'Domain verification failed';
-    case 'domain_verification_token_regenerated':
-      return 'Domain verification token regenerated';
-    case 'domain_removed':
-      return 'Domain removed';
-    case 'organization_policy_updated':
-      return 'Organization policies updated';
-    case 'enterprise_auth_mode_updated':
-      return 'Enterprise auth mode updated';
-    case 'enterprise_login_succeeded':
-      return 'Enterprise login succeeded';
-    case 'enterprise_scim_user_provisioned':
-      return 'SCIM user provisioned';
-    case 'enterprise_scim_user_updated':
-      return 'SCIM user updated';
-    case 'enterprise_scim_user_deactivated':
-      return 'SCIM member deprovisioned';
-    case 'enterprise_scim_user_reactivated':
-      return 'SCIM member reactivated';
-    case 'scim_member_deprovisioned':
-      return 'SCIM member deprovisioned';
-    case 'scim_member_reactivated':
-      return 'SCIM member reactivated';
-    case 'scim_member_deprovision_failed':
-      return 'SCIM member deprovision failed';
-    case 'bulk_invite_revoked':
-      return 'Bulk invitation revoked';
-    case 'bulk_invite_resent':
-      return 'Bulk invitation resent';
-    case 'bulk_member_removed':
-      return 'Bulk member removed';
-    case 'authorization_denied':
-      return 'Authorization denied';
-    case 'admin_user_sessions_viewed':
-      return 'Admin user sessions viewed';
-    case 'directory_exported':
-      return 'Directory exported';
-    case 'audit_log_exported':
-      return 'Audit log exported';
-    case 'chat_thread_created':
-      return 'Chat thread created';
-    case 'chat_thread_deleted':
-      return 'Chat thread deleted';
-    case 'chat_attachment_uploaded':
-      return 'Chat attachment uploaded';
-    case 'chat_attachment_scan_passed':
-      return 'Chat attachment scan passed';
-    case 'chat_attachment_scan_failed':
-      return 'Chat attachment scan failed';
-    case 'chat_attachment_quarantined':
-      return 'Chat attachment quarantined';
-    case 'chat_attachment_deleted':
-      return 'Chat attachment deleted';
-    case 'attachment_access_url_issued':
-      return 'Attachment access URL issued';
-    case 'pdf_parse_requested':
-      return 'PDF parse requested';
-    case 'pdf_parse_succeeded':
-      return 'PDF parse succeeded';
-    case 'pdf_parse_failed':
-      return 'PDF parse failed';
-    case 'chat_run_completed':
-      return 'Chat run completed';
-    case 'chat_run_failed':
-      return 'Chat run failed';
-    case 'chat_web_search_used':
-      return 'Web search used';
-    case 'audit_integrity_check_failed':
-      return 'Audit integrity check failed';
-    case 'security_control_evidence_created':
-      return 'Security control evidence added';
-    case 'security_control_evidence_reviewed':
-      return 'Security control evidence approved';
-    case 'security_control_evidence_archived':
-      return 'Security control evidence archived';
-    case 'security_control_evidence_renewed':
-      return 'Security control evidence renewed';
-    default:
-      return eventType;
-  }
-}
-
-function parseAuditMetadata(metadata: string | undefined) {
-  if (!metadata) {
-    return undefined;
-  }
-
-  try {
-    return JSON.parse(metadata) as unknown;
-  } catch {
-    return metadata;
-  }
-}
-
-function getAuditMetadataRecord(metadata: unknown) {
-  return typeof metadata === 'object' && metadata !== null
-    ? (metadata as Record<string, unknown>)
-    : null;
-}
-
-function toAuditMetadataDisplayValue(value: unknown) {
-  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
-}
-
-function getAuditProviderLabel(value: unknown) {
-  const providerValue = toAuditMetadataDisplayValue(value);
-  if (!providerValue) {
-    return undefined;
-  }
-
-  if (providerValue === 'google-workspace' || providerValue.startsWith('google-workspace--')) {
-    return getEnterpriseProviderLabel('google-workspace');
-  }
-
-  if (providerValue === 'entra' || providerValue.startsWith('entra--')) {
-    return getEnterpriseProviderLabel('entra');
-  }
-
-  if (providerValue === 'okta' || providerValue.startsWith('okta--')) {
-    return getEnterpriseProviderLabel('okta');
-  }
-
-  return providerValue;
-}
-
-function getGenericAuditActorLabel(eventType: string) {
-  switch (eventType) {
-    case 'domain_added':
-    case 'domain_verification_succeeded':
-    case 'domain_verification_failed':
-    case 'domain_verification_token_regenerated':
-    case 'domain_removed':
-    case 'organization_policy_updated':
-    case 'enterprise_auth_mode_updated':
-      return 'Organization admin';
-    default:
-      return undefined;
-  }
-}
-
-function getAuditActorLabel(event: Doc<'auditLogs'>, metadata: unknown) {
-  const metadataRecord = getAuditMetadataRecord(metadata);
-
-  if (
-    event.eventType === 'enterprise_scim_token_generated' ||
-    event.eventType === 'enterprise_scim_token_deleted'
-  ) {
-    return (
-      getAuditProviderLabel(metadataRecord?.providerLabel) ??
-      getAuditProviderLabel(metadataRecord?.providerKey) ??
-      getAuditProviderLabel(metadataRecord?.providerId)
-    );
-  }
-
-  return (
-    toAuditMetadataDisplayValue(metadataRecord?.actorEmail) ??
-    toAuditMetadataDisplayValue(metadataRecord?.inviterEmail) ??
-    getGenericAuditActorLabel(event.eventType)
-  );
-}
-
-function getAuditTargetLabel(event: Doc<'auditLogs'>, metadata: unknown) {
-  const metadataRecord = getAuditMetadataRecord(metadata);
-
-  if (event.eventType === 'organization_policy_updated') {
-    return 'Organization policies';
-  }
-
-  if (event.eventType === 'enterprise_auth_mode_updated') {
-    return 'Enterprise auth settings';
-  }
-
-  if (
-    event.eventType === 'enterprise_scim_token_generated' ||
-    event.eventType === 'enterprise_scim_token_deleted'
-  ) {
-    return 'SCIM token';
-  }
-
-  return (
-    toAuditMetadataDisplayValue(metadataRecord?.targetEmail) ??
-    toAuditMetadataDisplayValue(metadataRecord?.email) ??
-    toAuditMetadataDisplayValue(metadataRecord?.domain) ??
-    getAuditProviderLabel(metadataRecord?.providerLabel) ??
-    getAuditProviderLabel(metadataRecord?.providerKey) ??
-    getAuditProviderLabel(metadataRecord?.providerId)
-  );
-}
-
-function getAuditSummary(eventType: string, metadata: unknown) {
-  const metadataRecord = getAuditMetadataRecord(metadata);
-
-  if (eventType === 'organization_policy_updated') {
-    const changedKeys = Array.isArray(metadataRecord?.changedKeys)
-      ? metadataRecord.changedKeys.filter((value): value is string => typeof value === 'string')
-      : [];
-
-    return changedKeys.length > 0 ? `Changed: ${changedKeys.join(', ')}` : undefined;
-  }
-
-  if (eventType === 'bulk_invite_revoked' || eventType === 'bulk_invite_resent') {
-    const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
-    return targetRole ? `Role: ${targetRole}` : undefined;
-  }
-
-  if (eventType === 'bulk_member_removed') {
-    const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
-    return targetRole ? `Removed ${targetRole}` : undefined;
-  }
-
-  if (
-    eventType === 'member_suspended' ||
-    eventType === 'member_deactivated' ||
-    eventType === 'member_reactivated'
-  ) {
-    return toAuditMetadataDisplayValue(metadataRecord?.reason);
-  }
-
-  return undefined;
-}
-
 function compareNullableStrings(
   left: string | undefined,
   right: string | undefined,
@@ -1007,23 +779,20 @@ function compareNullableStrings(
   return sortOrder === 'asc' ? result : -result;
 }
 
-function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
-  const metadata = parseAuditMetadata(event.metadata);
-  const actorLabel = getAuditActorLabel(event, metadata);
-  const targetLabel = getAuditTargetLabel(event, metadata);
-  const summary = getAuditSummary(event.eventType, metadata);
+function toOrganizationAuditEventViewModel(event: OrganizationAuditEventViewSource) {
+  const metadata = parseAuditMetadataFromLib(event.metadata);
 
   return {
-    id: event.id,
+    id: event.auditEventId,
     eventType: event.eventType,
-    label: getOrganizationAuditEventLabel(event.eventType),
-    ...(actorLabel ? { actorLabel } : {}),
-    ...(targetLabel ? { targetLabel } : {}),
-    ...(summary ? { summary } : {}),
+    label: event.label,
+    ...(event.actorLabel ? { actorLabel: event.actorLabel } : {}),
+    ...(event.targetLabel ? { targetLabel: event.targetLabel } : {}),
+    ...(event.summary ? { summary: event.summary } : {}),
     ...(event.userId ? { userId: event.userId } : {}),
     ...(event.actorUserId ? { actorUserId: event.actorUserId } : {}),
     ...(event.targetUserId ? { targetUserId: event.targetUserId } : {}),
-    ...(event.organizationId ? { organizationId: event.organizationId } : {}),
+    organizationId: event.organizationId,
     ...(event.identifier ? { identifier: event.identifier } : {}),
     ...(event.sessionId ? { sessionId: event.sessionId } : {}),
     ...(event.requestId ? { requestId: event.requestId } : {}),
@@ -1038,7 +807,7 @@ function toOrganizationAuditEventViewModel(event: Doc<'auditLogs'>) {
     createdAt: event.createdAt,
     ...(event.ipAddress ? { ipAddress: event.ipAddress } : {}),
     ...(event.userAgent ? { userAgent: event.userAgent } : {}),
-    ...(event.metadata ? { metadata } : {}),
+    ...(metadata !== undefined ? { metadata } : {}),
   };
 }
 
@@ -1100,7 +869,7 @@ function getAuditSearchStrategy(searchValue: string) {
   const matchingEventType = Array.from(ORGANIZATION_AUDIT_EVENT_TYPES).find(
     (eventType) =>
       eventType === normalizedValue ||
-      getOrganizationAuditEventLabel(eventType).toLowerCase() === normalizedValue,
+      getOrganizationAuditEventLabelFromLib(eventType).toLowerCase() === normalizedValue,
   );
   if (matchingEventType) {
     return { kind: 'eventType' as const, eventType: matchingEventType };
@@ -1130,7 +899,7 @@ function parseAuditDateBoundary(value: string | undefined, boundary: 'start' | '
   return Number.isNaN(parsedValue) ? null : parsedValue;
 }
 
-async function collectOrganizationAuditPage(
+export async function collectOrganizationAuditPage(
   ctx: QueryCtx,
   input: {
     organizationId: string;
@@ -1147,22 +916,86 @@ async function collectOrganizationAuditPage(
 ) {
   const { organizationId, requestedEventType, searchStrategy, sortOrder, cursor, numItems } = input;
 
+  const projectRawAuditPage = async (
+    page: PaginationResult<Doc<'auditLogs'>>,
+  ): Promise<{
+    page: OrganizationAuditEventViewSource[];
+    isDone: boolean;
+    continueCursor: string;
+  }> => ({
+    page: page.page
+      .map((event) =>
+        buildOrganizationAuditProjection({
+          id: event.id,
+          eventType: event.eventType,
+          userId: event.userId,
+          actorUserId: event.actorUserId,
+          targetUserId: event.targetUserId,
+          organizationId: event.organizationId,
+          identifier: event.identifier,
+          sessionId: event.sessionId,
+          requestId: event.requestId,
+          outcome: event.outcome,
+          severity: event.severity,
+          resourceType: event.resourceType,
+          resourceId: event.resourceId,
+          resourceLabel: event.resourceLabel,
+          sourceSurface: event.sourceSurface,
+          eventHash: event.eventHash,
+          previousEventHash: event.previousEventHash,
+          metadata: event.metadata,
+          createdAt: event.createdAt,
+          ipAddress: event.ipAddress,
+          userAgent: event.userAgent,
+        }),
+      )
+      .filter((event): event is NonNullable<typeof event> => event !== null),
+    isDone: page.isDone,
+    continueCursor: page.continueCursor,
+  });
+
   if (searchStrategy.kind === 'identifier') {
-    return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_identifier_and_createdAt', (q) =>
-        q.eq('identifier', searchStrategy.identifier),
+    const projectedPage = await ctx.db
+      .query('organizationAuditEvents')
+      .withIndex('by_organization_id_and_identifier_and_created_at', (q) =>
+        q.eq('organizationId', organizationId).eq('identifier', searchStrategy.identifier),
       )
       .order(sortOrder)
       .paginate({ cursor, numItems });
+    if (projectedPage.page.length > 0 || cursor !== null) {
+      return projectedPage;
+    }
+
+    return await projectRawAuditPage(
+      await ctx.db
+        .query('auditLogs')
+        .withIndex('by_identifier_and_createdAt', (q) =>
+          q.eq('identifier', searchStrategy.identifier),
+        )
+        .order(sortOrder)
+        .paginate({ cursor, numItems }),
+    );
   }
 
   if (searchStrategy.kind === 'userId') {
-    return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', searchStrategy.userId))
+    const projectedPage = await ctx.db
+      .query('organizationAuditEvents')
+      .withIndex('by_organization_id_and_user_id_and_created_at', (q) =>
+        q.eq('organizationId', organizationId).eq('userId', searchStrategy.userId),
+      )
       .order(sortOrder)
       .paginate({ cursor, numItems });
+    if (projectedPage.page.length > 0 || cursor !== null) {
+      return projectedPage;
+    }
+
+    return await projectRawAuditPage(
+      await ctx.db
+        .query('auditLogs')
+        .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', searchStrategy.userId))
+        .order(sortOrder)
+        .paginate({ cursor, numItems }),
+    );
   }
 
   if (requestedEventType || searchStrategy.kind === 'eventType') {
@@ -1172,20 +1005,44 @@ async function collectOrganizationAuditPage(
       throw new Error('Audit event type is required for event-type scoped queries');
     }
 
-    return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
+    const projectedPage = await ctx.db
+      .query('organizationAuditEvents')
+      .withIndex('by_organization_id_and_event_type_and_created_at', (q) =>
         q.eq('organizationId', organizationId).eq('eventType', eventType),
       )
       .order(sortOrder)
       .paginate({ cursor, numItems });
+    if (projectedPage.page.length > 0 || cursor !== null) {
+      return projectedPage;
+    }
+
+    return await projectRawAuditPage(
+      await ctx.db
+        .query('auditLogs')
+        .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
+          q.eq('organizationId', organizationId).eq('eventType', eventType),
+        )
+        .order(sortOrder)
+        .paginate({ cursor, numItems }),
+    );
   }
 
-  return await ctx.db
-    .query('auditLogs')
-    .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+  const projectedPage = await ctx.db
+    .query('organizationAuditEvents')
+    .withIndex('by_organization_id_and_created_at', (q) => q.eq('organizationId', organizationId))
     .order(sortOrder)
     .paginate({ cursor, numItems });
+  if (projectedPage.page.length > 0 || cursor !== null) {
+    return projectedPage;
+  }
+
+  return await projectRawAuditPage(
+    await ctx.db
+      .query('auditLogs')
+      .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+      .order(sortOrder)
+      .paginate({ cursor, numItems }),
+  );
 }
 
 async function insertOrganizationAuditLog(
@@ -2988,29 +2845,24 @@ export const listOrganizationAuditEvents = query({
     const targetEnd = targetStart + pageSize;
     const includeAllMatching = args.includeAllMatching ?? false;
     const matchedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
+    const pagedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
     let total = 0;
     let cursor: string | null = null;
     let isDone = false;
+    const shouldCollectAllForSorting = includeAllMatching || sortBy !== 'createdAt';
 
     while (!isDone) {
-      const auditPage: PaginationResult<Doc<'auditLogs'>> = await collectOrganizationAuditPage(
-        ctx,
-        {
-          organizationId,
-          requestedEventType,
-          searchStrategy,
-          sortOrder,
-          cursor,
-          numItems: 100,
-        },
-      );
+      const auditPage = await collectOrganizationAuditPage(ctx, {
+        organizationId,
+        requestedEventType,
+        searchStrategy,
+        sortOrder,
+        cursor,
+        numItems: 100,
+      });
 
       for (const event of auditPage.page) {
         if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
-          continue;
-        }
-
-        if (event.organizationId !== organizationId) {
           continue;
         }
 
@@ -3047,8 +2899,8 @@ export const listOrganizationAuditEvents = query({
               actorLabel: eventViewModel.actorLabel,
               targetLabel: eventViewModel.targetLabel,
               eventType: event.eventType,
-              identifier: event.identifier,
-              userId: event.userId,
+              identifier: event.identifier ?? undefined,
+              userId: event.userId ?? undefined,
               metadata: event.metadata,
             },
             searchValue,
@@ -3057,24 +2909,34 @@ export const listOrganizationAuditEvents = query({
           continue;
         }
 
-        matchedEvents.push(eventViewModel);
-
         total += 1;
+
+        if (shouldCollectAllForSorting) {
+          matchedEvents.push(eventViewModel);
+          continue;
+        }
+
+        if (total > targetStart && pagedEvents.length < pageSize) {
+          pagedEvents.push(eventViewModel);
+        }
       }
 
       cursor = auditPage.isDone ? null : auditPage.continueCursor;
       isDone = auditPage.isDone;
     }
 
-    const sortedEvents =
-      sortBy === 'createdAt'
+    const sortedEvents = shouldCollectAllForSorting
+      ? sortBy === 'createdAt'
         ? matchedEvents
         : [...matchedEvents].sort((left, right) =>
             compareOrganizationAuditEvents(left, right, sortBy, sortOrder),
-          );
-    const pagedEvents = includeAllMatching
+          )
+      : pagedEvents;
+    const finalEvents = includeAllMatching
       ? sortedEvents
-      : sortedEvents.slice(targetStart, targetEnd);
+      : shouldCollectAllForSorting
+        ? sortedEvents.slice(targetStart, targetEnd)
+        : pagedEvents;
     const returnedPageSize = includeAllMatching ? Math.max(sortedEvents.length, 1) : pageSize;
     const returnedPage = includeAllMatching ? 1 : page;
     const returnedTotalPages = includeAllMatching
@@ -3093,7 +2955,7 @@ export const listOrganizationAuditEvents = query({
       capabilities: {
         canViewAudit: capabilities.canViewAudit,
       },
-      events: pagedEvents,
+      events: finalEvents,
       pagination: {
         page: returnedPage,
         pageSize: returnedPageSize,
@@ -3249,6 +3111,51 @@ export const exportOrganizationAuditCsv = action({
         header.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','),
       ),
     ].join('\n');
+    const exportedAt = Date.now();
+    const exportHash = await hashContent(csv);
+    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
+      limit: 250,
+    });
+    const exportId = crypto.randomUUID();
+    const manifest = stringifyStable({
+      actorUserId: currentUser.authUserId,
+      contentHash: exportHash,
+      exactFilters: {
+        endDate: args.endDate ?? null,
+        eventType: args.eventType,
+        failuresOnly: args.failuresOnly ?? false,
+        preset: args.preset ?? 'all',
+        search: args.search,
+        startDate: args.startDate ?? null,
+      },
+      exportHash,
+      exportId,
+      exportedAt: new Date(exportedAt).toISOString(),
+      integritySummary: {
+        checkedAt: new Date(integrityCheck.checkedAt).toISOString(),
+        failureCount: integrityCheck.failures.length,
+        limit: integrityCheck.limit,
+        verified: integrityCheck.verified,
+      },
+      organizationScope: exportedOrganizationId ?? null,
+      reviewStatusAtExport: 'reviewed',
+      rowCount: rows.length,
+      schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+      sourceReportId: null,
+    });
+    const manifestHash = await hashContent(manifest);
+
+    await ctx.runMutation(internal.security.storeExportArtifact, {
+      artifactType: 'audit_csv',
+      exportedAt,
+      exportedByUserId: currentUser.authUserId,
+      manifestHash,
+      manifestJson: manifest,
+      organizationId: exportedOrganizationId,
+      payloadHash: exportHash,
+      payloadJson: csv,
+      schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+    });
 
     await ctx.runMutation(internal.audit.insertAuditLog, {
       eventType: 'audit_log_exported',
@@ -3264,14 +3171,20 @@ export const exportOrganizationAuditCsv = action({
       resourceId: organizationName,
       resourceLabel: `${organizationName}-audit`,
       sourceSurface: 'organization.audit_export',
-      metadata: JSON.stringify({
-        eventType: args.eventType,
-        preset: args.preset ?? 'all',
-        search: args.search,
-        startDate: args.startDate ?? null,
-        endDate: args.endDate ?? null,
-        failuresOnly: args.failuresOnly ?? false,
+      metadata: stringifyStable({
+        exportHash,
+        exportId,
+        filters: {
+          endDate: args.endDate ?? null,
+          eventType: args.eventType,
+          failuresOnly: args.failuresOnly ?? false,
+          preset: args.preset ?? 'all',
+          search: args.search,
+          startDate: args.startDate ?? null,
+        },
+        manifestHash,
         rowCount: rows.length,
+        scope: exportedOrganizationId ?? organizationName,
       }),
     });
 
@@ -3374,6 +3287,51 @@ export const exportOrganizationDirectoryCsv = action({
         header.map((key) => `"${String(row[key] ?? '').replaceAll('"', '""')}"`).join(','),
       ),
     ].join('\n');
+    const exportedAt = Date.now();
+    const exportHash = await hashContent(csv);
+    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
+      limit: 250,
+    });
+    const exportId = crypto.randomUUID();
+    const manifest = stringifyStable({
+      actorUserId: currentUser.authUserId,
+      contentHash: exportHash,
+      exactFilters: {
+        kind: args.kind,
+        search: args.search,
+        sortBy: args.sortBy,
+        sortOrder: args.sortOrder,
+        secondarySortBy: args.secondarySortBy,
+        secondarySortOrder: args.secondarySortOrder,
+      },
+      exportHash,
+      exportId,
+      exportedAt: new Date(exportedAt).toISOString(),
+      integritySummary: {
+        checkedAt: new Date(integrityCheck.checkedAt).toISOString(),
+        failureCount: integrityCheck.failures.length,
+        limit: integrityCheck.limit,
+        verified: integrityCheck.verified,
+      },
+      organizationScope: exportedOrganizationId ?? null,
+      reviewStatusAtExport: 'reviewed',
+      rowCount: rows.length,
+      schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+      sourceReportId: null,
+    });
+    const manifestHash = await hashContent(manifest);
+
+    await ctx.runMutation(internal.security.storeExportArtifact, {
+      artifactType: 'directory_csv',
+      exportedAt,
+      exportedByUserId: currentUser.authUserId,
+      manifestHash,
+      manifestJson: manifest,
+      organizationId: exportedOrganizationId,
+      payloadHash: exportHash,
+      payloadJson: csv,
+      schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+    });
 
     await ctx.runMutation(internal.audit.insertAuditLog, {
       eventType: 'directory_exported',
@@ -3389,10 +3347,20 @@ export const exportOrganizationDirectoryCsv = action({
       resourceId: organizationName,
       resourceLabel: `${organizationName}-directory`,
       sourceSurface: 'organization.directory_export',
-      metadata: JSON.stringify({
-        kind: args.kind,
-        search: args.search,
+      metadata: stringifyStable({
+        exportHash,
+        exportId,
+        filters: {
+          kind: args.kind,
+          search: args.search,
+          secondarySortBy: args.secondarySortBy,
+          secondarySortOrder: args.secondarySortOrder,
+          sortBy: args.sortBy,
+          sortOrder: args.sortOrder,
+        },
+        manifestHash,
         rowCount: rows.length,
+        scope: exportedOrganizationId ?? organizationName,
       }),
     });
 

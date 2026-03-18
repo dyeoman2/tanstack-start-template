@@ -500,18 +500,35 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index('by_attachment_id', ['attachmentId'])
+    .index('by_result_status_and_created_at', ['resultStatus', 'createdAt'])
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_created_at', ['createdAt']),
+
+  securityMetrics: defineTable({
+    key: v.string(),
+    totalDocumentScans: v.number(),
+    quarantinedDocumentScans: v.number(),
+    rejectedDocumentScans: v.number(),
+    lastDocumentScanAt: v.union(v.number(), v.null()),
+    updatedAt: v.number(),
+  }).index('by_key', ['key']),
 
   evidenceReports: defineTable({
     organizationId: v.optional(v.string()),
     generatedByUserId: v.string(),
-    reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+    reportKind: v.union(
+      v.literal('security_posture'),
+      v.literal('audit_integrity'),
+      v.literal('audit_readiness'),
+    ),
     contentJson: v.string(),
     contentHash: v.string(),
     exportBundleJson: v.optional(v.string()),
     exportHash: v.optional(v.string()),
     exportIntegritySummary: v.optional(v.string()),
+    exportManifestJson: v.optional(v.string()),
+    exportManifestHash: v.optional(v.string()),
+    latestExportArtifactId: v.optional(v.id('exportArtifacts')),
     exportedAt: v.union(v.number(), v.null()),
     exportedByUserId: v.union(v.string(), v.null()),
     reviewStatus: v.union(
@@ -526,6 +543,27 @@ export default defineSchema({
   })
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_created_at', ['createdAt']),
+
+  exportArtifacts: defineTable({
+    artifactType: v.union(
+      v.literal('audit_csv'),
+      v.literal('directory_csv'),
+      v.literal('evidence_report_export'),
+    ),
+    organizationId: v.optional(v.string()),
+    sourceReportId: v.optional(v.id('evidenceReports')),
+    exportedByUserId: v.string(),
+    manifestJson: v.string(),
+    manifestHash: v.string(),
+    payloadJson: v.string(),
+    payloadHash: v.string(),
+    exportedAt: v.number(),
+    createdAt: v.number(),
+    schemaVersion: v.string(),
+  })
+    .index('by_artifact_type_and_created_at', ['artifactType', 'createdAt'])
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_source_report_id', ['sourceReportId']),
 
   securityControlChecklistItems: defineTable({
     internalControlId: v.string(),
@@ -607,6 +645,82 @@ export default defineSchema({
     .index('by_internal_control_id', ['internalControlId'])
     .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
 
+  securityControlEvidenceActivity: defineTable({
+    auditEventId: v.string(),
+    createdAt: v.number(),
+    actorUserId: v.union(v.string(), v.null()),
+    eventType: v.union(
+      v.literal('security_control_evidence_created'),
+      v.literal('security_control_evidence_reviewed'),
+      v.literal('security_control_evidence_archived'),
+      v.literal('security_control_evidence_renewed'),
+    ),
+    evidenceId: v.string(),
+    evidenceTitle: v.string(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    lifecycleStatus: v.union(
+      v.literal('active'),
+      v.literal('archived'),
+      v.literal('superseded'),
+      v.null(),
+    ),
+    renewedFromEvidenceId: v.union(v.string(), v.null()),
+    replacedByEvidenceId: v.union(v.string(), v.null()),
+    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.null()),
+  })
+    .index('by_audit_event_id', ['auditEventId'])
+    .index('by_internal_control_id_and_item_id_and_created_at', [
+      'internalControlId',
+      'itemId',
+      'createdAt',
+    ]),
+
+  organizationAuditEvents: defineTable({
+    auditEventId: v.string(),
+    eventType: v.string(),
+    label: v.string(),
+    actorLabel: v.union(v.string(), v.null()),
+    targetLabel: v.union(v.string(), v.null()),
+    summary: v.union(v.string(), v.null()),
+    userId: v.union(v.string(), v.null()),
+    actorUserId: v.union(v.string(), v.null()),
+    targetUserId: v.union(v.string(), v.null()),
+    organizationId: v.string(),
+    identifier: v.union(v.string(), v.null()),
+    sessionId: v.union(v.string(), v.null()),
+    requestId: v.union(v.string(), v.null()),
+    outcome: v.union(v.literal('success'), v.literal('failure'), v.null()),
+    severity: v.union(v.literal('info'), v.literal('warning'), v.literal('critical'), v.null()),
+    resourceType: v.union(v.string(), v.null()),
+    resourceId: v.union(v.string(), v.null()),
+    resourceLabel: v.union(v.string(), v.null()),
+    sourceSurface: v.union(v.string(), v.null()),
+    eventHash: v.union(v.string(), v.null()),
+    previousEventHash: v.union(v.string(), v.null()),
+    metadata: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    ipAddress: v.union(v.string(), v.null()),
+    userAgent: v.union(v.string(), v.null()),
+  })
+    .index('by_audit_event_id', ['auditEventId'])
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_organization_id_and_event_type_and_created_at', [
+      'organizationId',
+      'eventType',
+      'createdAt',
+    ])
+    .index('by_organization_id_and_identifier_and_created_at', [
+      'organizationId',
+      'identifier',
+      'createdAt',
+    ])
+    .index('by_organization_id_and_user_id_and_created_at', [
+      'organizationId',
+      'userId',
+      'createdAt',
+    ]),
+
   retentionJobs: defineTable({
     jobKind: v.union(
       v.literal('attachment_purge'),
@@ -622,9 +736,27 @@ export default defineSchema({
     .index('by_created_at', ['createdAt']),
 
   backupVerificationReports: defineTable({
+    drillId: v.string(),
+    drillType: v.union(v.literal('operator_recorded'), v.literal('restore_verification')),
+    sourceDataset: v.string(),
+    targetEnvironment: v.union(
+      v.literal('development'),
+      v.literal('production'),
+      v.literal('test'),
+    ),
+    initiatedByUserId: v.union(v.string(), v.null()),
+    initiatedByKind: v.union(v.literal('system'), v.literal('user')),
+    verificationMethod: v.string(),
+    evidenceSummary: v.string(),
+    restoredItemCount: v.number(),
+    failureReason: v.union(v.string(), v.null()),
+    artifactHash: v.union(v.string(), v.null()),
+    artifactContentJson: v.union(v.string(), v.null()),
     status: v.union(v.literal('success'), v.literal('failure')),
     summary: v.string(),
     checkedAt: v.number(),
     createdAt: v.number(),
-  }).index('by_checked_at', ['checkedAt']),
+  })
+    .index('by_checked_at', ['checkedAt'])
+    .index('by_drill_id', ['drillId']),
 });

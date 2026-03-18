@@ -2042,14 +2042,14 @@ export const setThreadPersona = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const viewer = await getCurrentChatContext(ctx);
+    const { organizationId } = await getCurrentChatContext(ctx);
     await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
 
     if (args.personaId) {
-      const persona = await getPersonaForOrganization(ctx, args.personaId, viewer.organizationId);
+      const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
       if (!persona) {
         throw new ConvexError('Persona not found.');
       }

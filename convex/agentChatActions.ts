@@ -45,6 +45,10 @@ export type AuthenticatedChatContext = {
   currentUserName: string;
 };
 
+type ChatAttachmentWithPreview = Doc<'chatAttachments'> & {
+  previewUrl: string | null;
+};
+
 export type AgentMessageDoc = {
   _id: string;
   threadId: string;
@@ -696,7 +700,7 @@ export const createChatAttachmentFromUpload = action({
     sizeBytes: v.number(),
   },
   returns: chatAttachmentWithPreviewValidator,
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<ChatAttachmentWithPreview> => {
     const { userId, organizationId, sessionId } = await getAuthenticatedContext(ctx);
     await enforceChatAttachmentProcessingRateLimitOrThrow(ctx, {
       organizationId,
@@ -974,9 +978,12 @@ export const createChatAttachmentFromUpload = action({
         storageId: args.storageId,
       });
 
-      const resolvedUrl = await resolveFileUrlWithMode(ctx, {
-        storageId: args.storageId,
-      });
+      const resolvedUrl: { storageId: string; url: string | null } = await resolveFileUrlWithMode(
+        ctx,
+        {
+          storageId: args.storageId,
+        },
+      );
 
       if (kind === 'image') {
         await ctx.runMutation(internal.audit.insertAuditLog, {

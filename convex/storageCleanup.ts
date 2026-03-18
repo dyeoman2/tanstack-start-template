@@ -33,6 +33,17 @@ export const cleanupStaleUploadsInternal = internalAction({
       });
     }
 
+    const staleEvidenceUploads = await ctx.runQuery(
+      internal.storageCleanupData.listStaleEvidenceUploadsInternal,
+      {
+        cutoff,
+      },
+    );
+
+    for (const upload of staleEvidenceUploads) {
+      await deleteStaleUpload(ctx, upload.storageId);
+    }
+
     return null;
   },
 });

@@ -75,6 +75,8 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'email_verification_enforced',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'backup_restore_drill_completed',
+  'backup_restore_drill_failed',
 ] as const;
 const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = ['all', ...ORGANIZATION_AUDIT_EVENT_TYPES] as const;
 const ORGANIZATION_AUDIT_PRESET_VALUES = ['all', 'security'] as const;

@@ -20,8 +20,10 @@ import {
 import {
   getVerifiedCurrentAuthUserOrNull,
   getVerifiedCurrentUserFromActionOrThrow,
+  requireOrganizationPermissionFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
+import { buildOrganizationAuditProjection } from './lib/organizationAuditEvents';
 import { auditLogsDocValidator, auditLogsResponseValidator } from './lib/returnValidators';
 
 type AuditLogDoc = Doc<'auditLogs'>;
@@ -29,35 +31,135 @@ const AUDIT_FETCH_BATCH_SIZE = 128;
 const SECURITY_EXPORT_BATCH_SIZE = 100;
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
+const CLIENT_AUDIT_EVENT_TYPES = new Set<string>([
+  'admin_user_sessions_viewed',
+  'pdf_parse_failed',
+  'pdf_parse_requested',
+  'pdf_parse_succeeded',
+]);
 const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   string,
   Array<
-    'actorUserId' | 'organizationId' | 'outcome' | 'resourceType' | 'severity' | 'sourceSurface'
+    | 'actorUserId'
+    | 'organizationId'
+    | 'outcome'
+    | 'resourceType'
+    | 'resourceId'
+    | 'severity'
+    | 'sourceSurface'
   >
 >([
   [
     'organization_policy_updated',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
   [
     'enterprise_auth_mode_updated',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
   [
     'directory_exported',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
   [
     'audit_log_exported',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'evidence_report_generated',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'evidence_report_exported',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'evidence_report_reviewed',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'authorization_denied',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'attachment_access_url_issued',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'admin_user_sessions_viewed',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'backup_restore_drill_completed',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'backup_restore_drill_failed',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
   [
     'chat_attachment_quarantined',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
   [
     'chat_attachment_scan_failed',
-    ['actorUserId', 'organizationId', 'outcome', 'resourceType', 'severity', 'sourceSurface'],
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
 ]);
 
@@ -90,11 +192,129 @@ function parseMetadata(metadata: string | undefined) {
   }
 }
 
-function validateRegulatedAuditFields(record: {
+function requireMetadataObject(eventType: string, metadata: unknown) {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+    throw new Error(`Audit event ${eventType} requires structured metadata`);
+  }
+
+  return metadata as Record<string, unknown>;
+}
+
+function requireMetadataKey(
+  eventType: string,
+  metadata: Record<string, unknown>,
+  key: string,
+  kind: 'string' | 'number' | 'object' | 'array',
+) {
+  const value = metadata[key];
+  if (kind === 'string') {
+    if (typeof value !== 'string' || value.trim().length === 0) {
+      throw new Error(`Audit event ${eventType} metadata is missing required string key: ${key}`);
+    }
+    return;
+  }
+  if (kind === 'number') {
+    if (typeof value !== 'number' || Number.isNaN(value)) {
+      throw new Error(`Audit event ${eventType} metadata is missing required number key: ${key}`);
+    }
+    return;
+  }
+  if (kind === 'array') {
+    if (!Array.isArray(value)) {
+      throw new Error(`Audit event ${eventType} metadata is missing required array key: ${key}`);
+    }
+    return;
+  }
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Audit event ${eventType} metadata is missing required object key: ${key}`);
+  }
+}
+
+function validateEventSpecificMetadata(record: { eventType: string; metadata?: string }) {
+  const metadata = parseMetadata(record.metadata);
+  switch (record.eventType) {
+    case 'audit_log_exported':
+    case 'directory_exported': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'exportHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'exportId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'manifestHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'rowCount', 'number');
+      requireMetadataKey(record.eventType, parsed, 'scope', 'string');
+      requireMetadataKey(record.eventType, parsed, 'filters', 'object');
+      return;
+    }
+    case 'evidence_report_generated': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'contentHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'filters', 'object');
+      return;
+    }
+    case 'evidence_report_exported': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'exportHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'exportId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'manifestHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'rowCount', 'number');
+      requireMetadataKey(record.eventType, parsed, 'scope', 'string');
+      requireMetadataKey(record.eventType, parsed, 'filters', 'object');
+      return;
+    }
+    case 'evidence_report_reviewed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'reviewStatus', 'string');
+      return;
+    }
+    case 'authorization_denied': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'permission', 'string');
+      requireMetadataKey(record.eventType, parsed, 'reason', 'string');
+      return;
+    }
+    case 'attachment_access_url_issued': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'attachmentId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'expiresInMinutes', 'number');
+      requireMetadataKey(record.eventType, parsed, 'purpose', 'string');
+      return;
+    }
+    case 'admin_user_sessions_viewed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'targetUserId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'sessionCount', 'number');
+      return;
+    }
+    case 'organization_policy_updated': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'changedKeys', 'array');
+      return;
+    }
+    case 'enterprise_auth_mode_updated': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'nextMode', 'string');
+      requireMetadataKey(record.eventType, parsed, 'previousMode', 'string');
+      return;
+    }
+    case 'backup_restore_drill_completed':
+    case 'backup_restore_drill_failed': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'drillType', 'string');
+      requireMetadataKey(record.eventType, parsed, 'verificationMethod', 'string');
+      requireMetadataKey(record.eventType, parsed, 'restoredItemCount', 'number');
+      return;
+    }
+    default:
+      return;
+  }
+}
+
+export function validateRegulatedAuditFields(record: {
   actorUserId?: string;
   eventType: string;
+  metadata?: string;
   organizationId?: string;
   outcome?: string;
+  resourceId?: string;
   resourceType?: string;
   severity?: string;
   sourceSurface?: string;
@@ -114,6 +334,8 @@ function validateRegulatedAuditFields(record: {
       `Audit event ${record.eventType} is missing required baseline fields: ${missingFields.join(', ')}`,
     );
   }
+
+  validateEventSpecificMetadata(record);
 }
 
 function toAuditEvent(log: AuditLogDoc): AuthAuditEvent | null {
@@ -404,11 +626,39 @@ export const insertAuditLog = internalMutation({
       eventHash,
     });
 
+    const organizationProjection = buildOrganizationAuditProjection({
+      id,
+      eventType: record.eventType,
+      userId: record.userId,
+      actorUserId: record.actorUserId,
+      targetUserId: record.targetUserId,
+      organizationId: record.organizationId,
+      identifier: record.identifier,
+      sessionId: record.sessionId,
+      requestId: record.requestId,
+      outcome: record.outcome,
+      severity: record.severity,
+      resourceType: record.resourceType,
+      resourceId: record.resourceId,
+      resourceLabel: record.resourceLabel,
+      sourceSurface: record.sourceSurface,
+      eventHash,
+      previousEventHash,
+      metadata: record.metadata,
+      createdAt: record.createdAt,
+      ipAddress: record.ipAddress,
+      userAgent: record.userAgent,
+    });
+
+    if (organizationProjection) {
+      await ctx.db.insert('organizationAuditEvents', organizationProjection);
+    }
+
     return null;
   },
 });
 
-export const recordClientAuditEvent = action({
+export const recordClientAuditEvent = internalAction({
   args: {
     eventType: v.string(),
     organizationId: v.optional(v.string()),
@@ -425,6 +675,22 @@ export const recordClientAuditEvent = action({
   returns: v.null(),
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    if (!CLIENT_AUDIT_EVENT_TYPES.has(args.eventType)) {
+      throwConvexError('VALIDATION', `Unsupported client audit event type: ${args.eventType}`);
+    }
+
+    if (args.eventType === 'admin_user_sessions_viewed' && !user.isSiteAdmin) {
+      throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
+    }
+
+    if (args.organizationId) {
+      await requireOrganizationPermissionFromActionOrThrow(ctx, {
+        organizationId: args.organizationId,
+        permission: 'viewOrganization',
+        sourceSurface: args.sourceSurface ?? 'audit.client',
+      });
+    }
+
     await ctx.runMutation(anyApi.audit.insertAuditLog, {
       eventType: args.eventType,
       userId: user.authUserId,

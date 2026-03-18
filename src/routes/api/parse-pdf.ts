@@ -1,8 +1,9 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { api } from '@convex/_generated/api';
+import { api, internal } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { inspectFile } from '~/lib/server/file-inspection.server';
 import { logSecurityEvent } from '~/lib/server/observability.server';
 
@@ -50,7 +51,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           }
 
           const file = fileValue;
-          await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+          await createConvexAdminClient().action(internal.audit.recordClientAuditEvent, {
             eventType: 'pdf_parse_requested',
             organizationId: currentProfile.currentOrganization?.id ?? undefined,
             outcome: 'success',
@@ -93,16 +94,19 @@ export const Route = createFileRoute('/api/parse-pdf')({
             mimeType: file.type || 'application/pdf',
           });
 
-          await convexAuthReactStart.fetchAuthMutation(api.security.recordDocumentScanEvent, {
-            details: inspection.details ?? null,
-            fileName: file.name,
-            mimeType: file.type || 'application/pdf',
-            organizationId: currentProfile.currentOrganization?.id ?? 'unknown',
-            requestedByUserId: currentProfile.id,
-            resultStatus: inspection.status,
-            scannedAt: inspection.inspectedAt,
-            scannerEngine: inspection.engine,
-          });
+          await createConvexAdminClient().mutation(
+            internal.security.recordDocumentScanEventInternal,
+            {
+              details: inspection.details ?? null,
+              fileName: file.name,
+              mimeType: file.type || 'application/pdf',
+              organizationId: currentProfile.currentOrganization?.id ?? 'unknown',
+              requestedByUserId: currentProfile.id,
+              resultStatus: inspection.status,
+              scannedAt: inspection.inspectedAt,
+              scannerEngine: inspection.engine,
+            },
+          );
 
           if (inspection.status === 'rejected') {
             return Response.json(
@@ -164,7 +168,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
               })),
           );
 
-          await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+          await createConvexAdminClient().action(internal.audit.recordClientAuditEvent, {
             eventType: 'pdf_parse_succeeded',
             organizationId: currentProfile.currentOrganization?.id ?? undefined,
             outcome: 'success',
@@ -187,8 +191,8 @@ export const Route = createFileRoute('/api/parse-pdf')({
             images,
           });
         } catch (error) {
-          await convexAuthReactStart
-            .fetchAuthAction(api.audit.recordClientAuditEvent, {
+          await createConvexAdminClient()
+            .action(internal.audit.recordClientAuditEvent, {
               eventType: 'pdf_parse_failed',
               outcome: 'failure',
               severity: 'warning',

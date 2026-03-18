@@ -1,5 +1,6 @@
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
+import { getE2ETestSecret } from '../src/lib/server/env.server';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
@@ -7,13 +8,14 @@ import {
   ALWAYS_ON_REGULATED_BASELINE,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
-import { internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import { components, internal } from './_generated/api';
+import type { Doc, Id } from './_generated/dataModel';
 import {
   action,
   internalAction,
   internalMutation,
   internalQuery,
+  type ActionCtx,
   type MutationCtx,
   mutation,
   type QueryCtx,
@@ -24,6 +26,23 @@ import {
   getVerifiedCurrentSiteAdminUserOrThrow,
 } from './auth/access';
 import { fetchAllBetterAuthPasskeys, fetchAllBetterAuthUsers } from './lib/betterAuth';
+import {
+  buildSecurityEvidenceActivityProjection,
+  SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES,
+} from './lib/securityEvidenceActivity';
+import { createUploadTargetWithMode } from './storagePlatform';
+
+const SECURITY_METRICS_KEY = 'global';
+const MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT = {
+  bucket: 'security:evidence-upload-target',
+  config: {
+    kind: 'token bucket' as const,
+    rate: 12,
+    period: 15 * 60 * 1000,
+    capacity: 12,
+  },
+};
 
 const securityPostureSummaryValidator = v.object({
   audit: v.object({
@@ -75,11 +94,100 @@ const securityPostureSummaryValidator = v.object({
   ),
 });
 
+const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
+  'application/json',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/markdown',
+  'text/plain',
+]);
+
+const SECURITY_EVIDENCE_ALLOWED_EXTENSIONS = new Set([
+  '.csv',
+  '.gif',
+  '.jpeg',
+  '.jpg',
+  '.json',
+  '.md',
+  '.pdf',
+  '.png',
+  '.txt',
+  '.webp',
+  '.xlsx',
+]);
+
+function getLowercaseFileExtension(fileName: string) {
+  const normalized = fileName.trim().toLowerCase();
+  const extensionIndex = normalized.lastIndexOf('.');
+  return extensionIndex === -1 ? '' : normalized.slice(extensionIndex);
+}
+
+function validateSecurityEvidenceUploadInput(args: {
+  contentType: string;
+  fileName: string;
+  fileSize: number;
+}) {
+  const normalizedName = args.fileName.trim();
+  if (!normalizedName) {
+    throw new Error('Evidence file name is required.');
+  }
+
+  if (!Number.isFinite(args.fileSize) || args.fileSize <= 0) {
+    throw new Error('Evidence file must be larger than 0 bytes.');
+  }
+
+  if (args.fileSize > MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES) {
+    throw new Error('Evidence file exceeds the 25MB server-side limit.');
+  }
+
+  const normalizedMimeType = args.contentType.trim().toLowerCase();
+  const extension = getLowercaseFileExtension(normalizedName);
+  const allowedByMime =
+    normalizedMimeType.length > 0 && SECURITY_EVIDENCE_ALLOWED_MIME_TYPES.has(normalizedMimeType);
+  const allowedByExtension =
+    extension.length > 0 && SECURITY_EVIDENCE_ALLOWED_EXTENSIONS.has(extension);
+
+  if (!allowedByMime && !allowedByExtension) {
+    throw new Error('Evidence file type is not allowed for this workflow.');
+  }
+}
+
+async function enforceSecurityEvidenceUploadRateLimit(
+  ctx:
+    | Pick<MutationCtx, 'runMutation'>
+    | {
+        runMutation: (
+          ...args: Parameters<MutationCtx['runMutation']>
+        ) => ReturnType<MutationCtx['runMutation']>;
+      },
+  actorUserId: string,
+) {
+  const result = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    name: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.bucket,
+    key: actorUserId,
+    config: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.config,
+  });
+
+  if (!result.ok) {
+    throw new Error('Too many evidence upload requests. Please try again later.');
+  }
+}
+
 const evidenceReportValidator = v.object({
   createdAt: v.number(),
   exportHash: v.union(v.string(), v.null()),
   id: v.id('evidenceReports'),
   report: v.string(),
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+  ),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
 });
 
@@ -88,12 +196,19 @@ const evidenceReportRecordValidator = v.object({
   _creationTime: v.number(),
   organizationId: v.optional(v.string()),
   generatedByUserId: v.string(),
-  reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+  ),
   contentJson: v.string(),
   contentHash: v.string(),
   exportBundleJson: v.optional(v.string()),
   exportHash: v.optional(v.string()),
   exportIntegritySummary: v.optional(v.string()),
+  exportManifestJson: v.optional(v.string()),
+  exportManifestHash: v.optional(v.string()),
+  latestExportArtifactId: v.optional(v.id('exportArtifacts')),
   exportedAt: v.union(v.number(), v.null()),
   exportedByUserId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
@@ -107,9 +222,14 @@ const evidenceReportListItemValidator = v.object({
   id: v.id('evidenceReports'),
   createdAt: v.number(),
   generatedByUserId: v.string(),
-  reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+  ),
   contentHash: v.string(),
   exportHash: v.union(v.string(), v.null()),
+  exportManifestHash: v.union(v.string(), v.null()),
   exportedAt: v.union(v.number(), v.null()),
   exportedByUserId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
@@ -308,35 +428,170 @@ const securityControlWorkspaceListValidator = v.array(securityControlWorkspaceVa
 const securityControlEvidenceActivityListValidator = v.array(
   securityControlEvidenceActivityEventValidator,
 );
-const SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES = [
-  'security_control_evidence_created',
-  'security_control_evidence_reviewed',
-  'security_control_evidence_archived',
-  'security_control_evidence_renewed',
-] as const;
+const evidenceReportKindValidator = v.union(
+  v.literal('security_posture'),
+  v.literal('audit_integrity'),
+  v.literal('audit_readiness'),
+);
+const exportArtifactTypeValidator = v.union(
+  v.literal('audit_csv'),
+  v.literal('directory_csv'),
+  v.literal('evidence_report_export'),
+);
+const backupVerificationTargetEnvironmentValidator = v.union(
+  v.literal('development'),
+  v.literal('production'),
+  v.literal('test'),
+);
+const backupVerificationDrillTypeValidator = v.union(
+  v.literal('operator_recorded'),
+  v.literal('restore_verification'),
+);
+const backupVerificationInitiatedByKindValidator = v.union(v.literal('system'), v.literal('user'));
+const auditReadinessSnapshotValidator = v.object({
+  latestBackupDrill: v.union(
+    v.object({
+      artifactHash: v.union(v.string(), v.null()),
+      checkedAt: v.number(),
+      drillId: v.string(),
+      drillType: backupVerificationDrillTypeValidator,
+      failureReason: v.union(v.string(), v.null()),
+      initiatedByKind: backupVerificationInitiatedByKindValidator,
+      initiatedByUserId: v.union(v.string(), v.null()),
+      restoredItemCount: v.number(),
+      sourceDataset: v.string(),
+      status: v.union(v.literal('success'), v.literal('failure')),
+      targetEnvironment: backupVerificationTargetEnvironmentValidator,
+      verificationMethod: v.string(),
+    }),
+    v.null(),
+  ),
+  latestRetentionJob: v.union(
+    v.object({
+      createdAt: v.number(),
+      details: v.optional(v.string()),
+      jobKind: v.union(
+        v.literal('attachment_purge'),
+        v.literal('quarantine_cleanup'),
+        v.literal('audit_export_cleanup'),
+      ),
+      processedCount: v.number(),
+      status: v.union(v.literal('success'), v.literal('failure')),
+    }),
+    v.null(),
+  ),
+  metadataGaps: v.array(
+    v.object({
+      createdAt: v.number(),
+      eventType: v.string(),
+      id: v.string(),
+      resourceId: v.union(v.string(), v.null()),
+    }),
+  ),
+  recentDeniedActions: v.array(
+    v.object({
+      createdAt: v.number(),
+      eventType: v.string(),
+      id: v.string(),
+      metadata: v.union(v.string(), v.null()),
+      organizationId: v.union(v.string(), v.null()),
+    }),
+  ),
+  recentExports: v.array(
+    v.object({
+      artifactType: exportArtifactTypeValidator,
+      exportedAt: v.number(),
+      manifestHash: v.string(),
+      sourceReportId: v.union(v.id('evidenceReports'), v.null()),
+    }),
+  ),
+});
+const EXPORT_ARTIFACT_SCHEMA_VERSION = '2026-03-18.audit-evidence.v1';
+const BACKUP_DRILL_STALE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
 }
 
-function parseStableJson(value: string | undefined) {
-  if (!value) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    return typeof parsed === 'object' && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 async function hashContent(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (part) => part.toString(16).padStart(2, '0')).join('');
+}
+
+type ExportManifest = {
+  actorUserId: string;
+  contentHash: string;
+  exactFilters: Record<string, unknown>;
+  exportHash: string;
+  exportId: string;
+  exportedAt: string;
+  integritySummary: {
+    checkedAt: string | null;
+    failureCount: number;
+    limit: number;
+    verified: boolean;
+  };
+  organizationScope: string | null;
+  reviewStatusAtExport: 'pending' | 'reviewed' | 'needs_follow_up' | null;
+  rowCount: number;
+  schemaVersion: string;
+  sourceReportId: string | null;
+};
+
+export function buildExportManifest(input: {
+  actorUserId: string;
+  contentHash: string;
+  exactFilters: Record<string, unknown>;
+  exportHash: string;
+  exportId: string;
+  exportedAt: number;
+  integritySummary: {
+    checkedAt: number | null;
+    failureCount: number;
+    limit: number;
+    verified: boolean;
+  };
+  organizationScope: string | null;
+  reviewStatusAtExport: 'pending' | 'reviewed' | 'needs_follow_up' | null;
+  rowCount: number;
+  sourceReportId: string | null;
+}): ExportManifest {
+  return {
+    actorUserId: input.actorUserId,
+    contentHash: input.contentHash,
+    exactFilters: input.exactFilters,
+    exportHash: input.exportHash,
+    exportId: input.exportId,
+    exportedAt: new Date(input.exportedAt).toISOString(),
+    integritySummary: {
+      checkedAt:
+        input.integritySummary.checkedAt === null
+          ? null
+          : new Date(input.integritySummary.checkedAt).toISOString(),
+      failureCount: input.integritySummary.failureCount,
+      limit: input.integritySummary.limit,
+      verified: input.integritySummary.verified,
+    },
+    organizationScope: input.organizationScope,
+    reviewStatusAtExport: input.reviewStatusAtExport,
+    rowCount: input.rowCount,
+    schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+    sourceReportId: input.sourceReportId,
+  };
+}
+
+export function summarizeIntegrityCheck(integrityCheck: {
+  checkedAt?: number;
+  failures?: unknown[];
+  limit?: number;
+  verified?: boolean;
+}) {
+  return {
+    checkedAt: typeof integrityCheck.checkedAt === 'number' ? integrityCheck.checkedAt : null,
+    failureCount: Array.isArray(integrityCheck.failures) ? integrityCheck.failures.length : 0,
+    limit: typeof integrityCheck.limit === 'number' ? integrityCheck.limit : 0,
+    verified: integrityCheck.verified === true,
+  };
 }
 
 function deriveItemEvidenceSufficiency(
@@ -412,6 +667,44 @@ function getActorDisplayName(
   return actorDisplayById.get(authUserId) ?? 'Unknown';
 }
 
+async function resolveSeedSiteAdminActor(
+  ctx: QueryCtx,
+  preferredAuthUserId?: string,
+): Promise<{ authUserId: string | null; displayName: string }> {
+  if (preferredAuthUserId) {
+    const preferredProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', preferredAuthUserId))
+      .first();
+
+    if (preferredProfile) {
+      return {
+        authUserId: preferredAuthUserId,
+        displayName: preferredProfile.name?.trim() || preferredProfile.email?.trim() || 'Site admin',
+      };
+    }
+  }
+
+  const adminProfiles = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_role_and_created_at', (q) => q.eq('role', 'admin'))
+    .collect();
+  const siteAdminProfile = adminProfiles.find((profile) => profile.isSiteAdmin);
+
+  if (!siteAdminProfile) {
+    return {
+      authUserId: null,
+      displayName: 'Site admin',
+    };
+  }
+
+  return {
+    authUserId: siteAdminProfile.authUserId,
+    displayName:
+      siteAdminProfile.name?.trim() || siteAdminProfile.email?.trim() || 'Site admin',
+  };
+}
+
 async function recordSecurityControlEvidenceAuditEvent(
   ctx: MutationCtx,
   args: {
@@ -433,10 +726,15 @@ async function recordSecurityControlEvidenceAuditEvent(
     renewedFromEvidenceId?: string;
   },
 ) {
+  const auditEventId = crypto.randomUUID();
+  const createdAt = Date.now();
+
   await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    createdAt,
     actorUserId: args.actorUserId,
     userId: args.actorUserId,
     organizationId: args.organizationId,
+    requestId: auditEventId,
     outcome: 'success',
     severity: 'info',
     eventType: args.eventType,
@@ -454,6 +752,143 @@ async function recordSecurityControlEvidenceAuditEvent(
       replacedByEvidenceId: args.replacedByEvidenceId ?? null,
     }),
   });
+
+  await upsertSecurityControlEvidenceActivity(ctx, {
+    actorUserId: args.actorUserId,
+    auditEventId,
+    createdAt,
+    eventType: args.eventType,
+    evidenceId: args.evidenceId,
+    evidenceTitle: args.evidenceTitle,
+    internalControlId: args.internalControlId,
+    itemId: args.itemId,
+    lifecycleStatus: args.lifecycleStatus ?? null,
+    renewedFromEvidenceId: args.renewedFromEvidenceId ?? null,
+    replacedByEvidenceId: args.replacedByEvidenceId ?? null,
+    reviewStatus: args.reviewStatus ?? null,
+  });
+}
+
+async function updateSecurityMetrics(
+  ctx: MutationCtx,
+  args: {
+    resultStatus: 'accepted' | 'inspection_failed' | 'quarantined' | 'rejected';
+    scannedAt: number;
+  },
+) {
+  const existing = await ctx.db
+    .query('securityMetrics')
+    .withIndex('by_key', (q) => q.eq('key', SECURITY_METRICS_KEY))
+    .first();
+  const now = Date.now();
+
+  if (!existing) {
+    await ctx.db.insert('securityMetrics', {
+      key: SECURITY_METRICS_KEY,
+      totalDocumentScans: 1,
+      quarantinedDocumentScans: args.resultStatus === 'quarantined' ? 1 : 0,
+      rejectedDocumentScans: args.resultStatus === 'rejected' ? 1 : 0,
+      lastDocumentScanAt: args.scannedAt,
+      updatedAt: now,
+    });
+    return;
+  }
+
+  await ctx.db.patch(existing._id, {
+    totalDocumentScans: existing.totalDocumentScans + 1,
+    quarantinedDocumentScans:
+      existing.quarantinedDocumentScans + (args.resultStatus === 'quarantined' ? 1 : 0),
+    rejectedDocumentScans:
+      existing.rejectedDocumentScans + (args.resultStatus === 'rejected' ? 1 : 0),
+    lastDocumentScanAt:
+      existing.lastDocumentScanAt === null
+        ? args.scannedAt
+        : Math.max(existing.lastDocumentScanAt, args.scannedAt),
+    updatedAt: now,
+  });
+}
+
+async function _getSecurityMetricsSnapshot(ctx: QueryCtx) {
+  const existing = await ctx.db
+    .query('securityMetrics')
+    .withIndex('by_key', (q) => q.eq('key', SECURITY_METRICS_KEY))
+    .first();
+
+  if (existing) {
+    return existing;
+  }
+
+  const [latestScan, totalScans, quarantinedScans, rejectedScans] = await Promise.all([
+    ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
+    ctx.db.query('documentScanEvents').collect(),
+    ctx.db
+      .query('documentScanEvents')
+      .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'quarantined'))
+      .collect(),
+    ctx.db
+      .query('documentScanEvents')
+      .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'rejected'))
+      .collect(),
+  ]);
+
+  return {
+    _id: null,
+    totalDocumentScans: totalScans.length,
+    quarantinedDocumentScans: quarantinedScans.length,
+    rejectedDocumentScans: rejectedScans.length,
+    lastDocumentScanAt: latestScan?.createdAt ?? null,
+    updatedAt: latestScan?.createdAt ?? null,
+    key: SECURITY_METRICS_KEY,
+  };
+}
+
+async function upsertSecurityControlEvidenceActivity(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: string;
+    auditEventId: string;
+    createdAt: number;
+    eventType:
+      | 'security_control_evidence_created'
+      | 'security_control_evidence_reviewed'
+      | 'security_control_evidence_archived'
+      | 'security_control_evidence_renewed';
+    evidenceId: string;
+    evidenceTitle: string;
+    internalControlId: string;
+    itemId: string;
+    lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
+    renewedFromEvidenceId: string | null;
+    replacedByEvidenceId: string | null;
+    reviewStatus: 'pending' | 'reviewed' | null;
+  },
+) {
+  const existing = await ctx.db
+    .query('securityControlEvidenceActivity')
+    .withIndex('by_audit_event_id', (q) => q.eq('auditEventId', args.auditEventId))
+    .first();
+
+  const patch = {
+    actorUserId: args.actorUserId,
+    auditEventId: args.auditEventId,
+    createdAt: args.createdAt,
+    eventType: args.eventType,
+    evidenceId: args.evidenceId,
+    evidenceTitle: args.evidenceTitle,
+    internalControlId: args.internalControlId,
+    itemId: args.itemId,
+    lifecycleStatus: args.lifecycleStatus,
+    renewedFromEvidenceId: args.renewedFromEvidenceId,
+    replacedByEvidenceId: args.replacedByEvidenceId,
+    reviewStatus: args.reviewStatus,
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return;
+  }
+
+  await ctx.db.insert('securityControlEvidenceActivity', patch);
 }
 
 function getSeededEvidenceEntry(internalControlId: string, itemId: string, evidenceId: string) {
@@ -529,29 +964,22 @@ const documentScanEventArgs = {
   scannerEngine: v.string(),
 };
 
-export const recordDocumentScanEvent = mutation({
-  args: documentScanEventArgs,
-  returns: v.id('documentScanEvents'),
-  handler: async (ctx, args) => {
-    return await ctx.db.insert('documentScanEvents', {
-      ...args,
-      createdAt: Date.now(),
-      details: args.details ?? null,
-    });
-  },
-});
-
 export const recordDocumentScanEventInternal = internalMutation({
   args: {
     ...documentScanEventArgs,
   },
   returns: v.id('documentScanEvents'),
   handler: async (ctx, args) => {
-    return await ctx.db.insert('documentScanEvents', {
+    const recordId = await ctx.db.insert('documentScanEvents', {
       ...args,
       createdAt: Date.now(),
       details: args.details ?? null,
     });
+    await updateSecurityMetrics(ctx, {
+      resultStatus: args.resultStatus,
+      scannedAt: args.scannedAt,
+    });
+    return recordId;
   },
 });
 
@@ -575,22 +1003,88 @@ export const recordRetentionJob = internalMutation({
   },
 });
 
+export async function recordBackupVerificationHandler(
+  ctx: MutationCtx,
+  args: {
+    artifactContentJson?: string | null;
+    artifactHash?: string | null;
+    checkedAt: number;
+    drillId: string;
+    drillType: 'operator_recorded' | 'restore_verification';
+    evidenceSummary: string;
+    failureReason?: string | null;
+    initiatedByKind: 'system' | 'user';
+    initiatedByUserId?: string | null;
+    restoredItemCount: number;
+    status: 'success' | 'failure';
+    sourceDataset: string;
+    summary: string;
+    targetEnvironment: 'development' | 'production' | 'test';
+    verificationMethod: string;
+  },
+) {
+  const recordId = await ctx.db.insert('backupVerificationReports', {
+    ...args,
+    artifactContentJson: args.artifactContentJson ?? null,
+    artifactHash: args.artifactHash ?? null,
+    createdAt: Date.now(),
+    failureReason: args.failureReason ?? null,
+    initiatedByUserId: args.initiatedByUserId ?? null,
+  });
+
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: args.initiatedByUserId ?? undefined,
+    userId: args.initiatedByUserId ?? undefined,
+    eventType:
+      args.status === 'success' ? 'backup_restore_drill_completed' : 'backup_restore_drill_failed',
+    outcome: args.status === 'success' ? 'success' : 'failure',
+    resourceType: 'backup_restore_drill',
+    resourceId: args.drillId,
+    resourceLabel: args.sourceDataset,
+    severity: args.status === 'success' ? 'info' : 'warning',
+    sourceSurface: 'admin.security',
+    metadata: stringifyStable({
+      artifactHash: args.artifactHash ?? null,
+      checkedAt: args.checkedAt,
+      drillType: args.drillType,
+      evidenceSummary: args.evidenceSummary,
+      failureReason: args.failureReason ?? null,
+      initiatedByKind: args.initiatedByKind,
+      restoredItemCount: args.restoredItemCount,
+      targetEnvironment: args.targetEnvironment,
+      verificationMethod: args.verificationMethod,
+    }),
+  });
+
+  return recordId;
+}
+
 export const recordBackupVerification = internalMutation({
   args: {
+    artifactContentJson: v.optional(v.union(v.string(), v.null())),
+    artifactHash: v.optional(v.union(v.string(), v.null())),
     checkedAt: v.number(),
+    drillId: v.string(),
+    drillType: backupVerificationDrillTypeValidator,
+    evidenceSummary: v.string(),
+    failureReason: v.optional(v.union(v.string(), v.null())),
+    initiatedByKind: backupVerificationInitiatedByKindValidator,
+    initiatedByUserId: v.optional(v.union(v.string(), v.null())),
+    restoredItemCount: v.number(),
     status: v.union(v.literal('success'), v.literal('failure')),
+    sourceDataset: v.string(),
     summary: v.string(),
+    targetEnvironment: backupVerificationTargetEnvironmentValidator,
+    verificationMethod: v.string(),
   },
   returns: v.id('backupVerificationReports'),
-  handler: async (ctx, args) => {
-    return await ctx.db.insert('backupVerificationReports', {
-      ...args,
-      createdAt: Date.now(),
-    });
-  },
+  handler: recordBackupVerificationHandler,
 });
 
-async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
+async function listSecurityControlWorkspaceRecords(
+  ctx: QueryCtx,
+  seedActor?: { authUserId: string },
+) {
   const [checklistItems, evidenceRows] = await Promise.all([
     ctx.db.query('securityControlChecklistItems').collect(),
     ctx.db.query('securityControlEvidence').collect(),
@@ -619,6 +1113,7 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
     }),
   );
   const actorDisplayById = new Map(actorProfiles);
+  const seededActor = await resolveSeedSiteAdminActor(ctx, seedActor?.authUserId);
   const checklistStateByKey = new Map(
     checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item] as const),
   );
@@ -665,9 +1160,9 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
           replacedByEvidenceId: null,
           reviewStatus: 'reviewed' as const,
           reviewedAt: seededReviewedAt,
-          reviewedByDisplay: 'Seeded register',
+          reviewedByDisplay: seededActor.displayName,
           createdAt: seededReviewedAt,
-          uploadedByDisplay: 'Seeded register',
+          uploadedByDisplay: seededActor.displayName,
         }))
         .filter((entry) => !hiddenSeedEvidenceIds.has(entry.id));
       const archivedSeedEvidence = Array.from(hiddenSeedEvidenceIds)
@@ -707,9 +1202,9 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
             replacedByEvidenceId: archivedMetadata?.replacedByEvidenceId ?? null,
             reviewStatus: 'reviewed' as const,
             reviewedAt: seededReviewedAt,
-            reviewedByDisplay: 'Seeded register',
+            reviewedByDisplay: seededActor.displayName,
             createdAt: seededReviewedAt,
-            uploadedByDisplay: 'Seeded register',
+            uploadedByDisplay: seededActor.displayName,
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -853,7 +1348,7 @@ export const createEvidenceReport = internalMutation({
     contentHash: v.string(),
     generatedByUserId: v.string(),
     organizationId: v.optional(v.string()),
-    reportKind: v.union(v.literal('security_posture'), v.literal('audit_integrity')),
+    reportKind: evidenceReportKindValidator,
   },
   returns: v.id('evidenceReports'),
   handler: async (ctx, args) => {
@@ -862,6 +1357,9 @@ export const createEvidenceReport = internalMutation({
       exportBundleJson: undefined,
       exportHash: undefined,
       exportIntegritySummary: undefined,
+      exportManifestJson: undefined,
+      exportManifestHash: undefined,
+      latestExportArtifactId: undefined,
       exportedAt: null,
       exportedByUserId: null,
       reviewStatus: 'pending',
@@ -873,98 +1371,199 @@ export const createEvidenceReport = internalMutation({
   },
 });
 
+export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
+  await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+
+  const metrics = await _getSecurityMetricsSnapshot(ctx);
+  const [
+    authUsers,
+    passkeys,
+    latestRetentionJob,
+    latestBackupCheck,
+    latestAuditEvent,
+    integrityFailures,
+  ] = await Promise.all([
+    fetchAllBetterAuthUsers(ctx),
+    fetchAllBetterAuthPasskeys(ctx),
+    ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
+    ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
+    ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
+    ctx.db
+      .query('auditLogs')
+      .withIndex('by_eventType_and_createdAt', (q) =>
+        q.eq('eventType', 'audit_integrity_check_failed'),
+      )
+      .collect(),
+  ]);
+
+  const totalUsers = authUsers.length;
+  const usersWithPasskeys = new Set(
+    passkeys
+      .map((passkey) => passkey.userId)
+      .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0),
+  );
+  const mfaEnabledUsers = authUsers.filter(
+    (user) => user.twoFactorEnabled === true || usersWithPasskeys.has(user._id),
+  ).length;
+  const passkeyEnabledUsers = authUsers.filter((user) => usersWithPasskeys.has(user._id)).length;
+  const retentionPolicy = getRetentionPolicyConfig();
+  const vendorPosture = getVendorBoundarySnapshot();
+  const sentryPosture = vendorPosture.find((vendor) => vendor.vendor === 'sentry');
+
+  return {
+    audit: {
+      integrityFailures: integrityFailures.length,
+      lastEventAt: latestAuditEvent?.createdAt ?? null,
+    },
+    auth: {
+      emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
+      mfaCoveragePercent: totalUsers === 0 ? 0 : Math.round((mfaEnabledUsers / totalUsers) * 100),
+      mfaEnabledUsers,
+      passkeyEnabledUsers,
+      totalUsers,
+    },
+    backups: {
+      lastCheckedAt: latestBackupCheck?.checkedAt ?? null,
+      lastStatus: latestBackupCheck?.status ?? null,
+    },
+    retention: {
+      lastJobAt: latestRetentionJob?.createdAt ?? null,
+      lastJobStatus: latestRetentionJob?.status ?? null,
+    },
+    scanner: {
+      lastScanAt: metrics.lastDocumentScanAt,
+      quarantinedCount: metrics.quarantinedDocumentScans,
+      rejectedCount: metrics.rejectedDocumentScans,
+      totalScans: metrics.totalDocumentScans,
+    },
+    sessions: {
+      freshWindowMinutes: retentionPolicy.recentStepUpWindowMinutes,
+      sessionExpiryHours: 24,
+      temporaryLinkTtlMinutes: retentionPolicy.attachmentUrlTtlMinutes,
+    },
+    telemetry: {
+      sentryApproved: sentryPosture?.approved ?? false,
+      sentryEnabled: Boolean(process.env.VITE_SENTRY_DSN) && (sentryPosture?.approved ?? false),
+    },
+    vendors: vendorPosture,
+  };
+}
+
 export const getSecurityPostureSummary = query({
   args: {},
   returns: securityPostureSummaryValidator,
+  handler: getSecurityPostureSummaryHandler,
+});
+
+export const storeExportArtifact = internalMutation({
+  args: {
+    artifactType: exportArtifactTypeValidator,
+    exportedAt: v.number(),
+    exportedByUserId: v.string(),
+    manifestHash: v.string(),
+    manifestJson: v.string(),
+    organizationId: v.optional(v.string()),
+    payloadHash: v.string(),
+    payloadJson: v.string(),
+    schemaVersion: v.string(),
+    sourceReportId: v.optional(v.id('evidenceReports')),
+  },
+  returns: v.id('exportArtifacts'),
+  handler: async (ctx, args) => {
+    return await ctx.db.insert('exportArtifacts', {
+      ...args,
+      createdAt: Date.now(),
+    });
+  },
+});
+
+export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
+  const [latestBackupDrill, latestRetentionJob, recentAuditLogs, recentExports] = await Promise.all(
+    [
+      ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
+      ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
+      ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(200),
+      ctx.db
+        .query('exportArtifacts')
+        .withIndex('by_artifact_type_and_created_at')
+        .order('desc')
+        .take(50),
+    ],
+  );
+
+  const metadataGaps = recentAuditLogs
+    .filter(
+      (log) =>
+        ['info', 'warning', 'critical'].includes(log.severity ?? '') &&
+        ['success', 'failure'].includes(log.outcome ?? '') &&
+        (!log.resourceType || !log.resourceId || !log.sourceSurface),
+    )
+    .slice(0, 25)
+    .map((log) => ({
+      createdAt: log.createdAt,
+      eventType: log.eventType,
+      id: log.id,
+      resourceId: log.resourceId ?? null,
+    }));
+
+  return {
+    latestBackupDrill: latestBackupDrill
+      ? {
+          artifactHash: latestBackupDrill.artifactHash,
+          checkedAt: latestBackupDrill.checkedAt,
+          drillId: latestBackupDrill.drillId,
+          drillType: latestBackupDrill.drillType,
+          failureReason: latestBackupDrill.failureReason,
+          initiatedByKind: latestBackupDrill.initiatedByKind,
+          initiatedByUserId: latestBackupDrill.initiatedByUserId,
+          restoredItemCount: latestBackupDrill.restoredItemCount,
+          sourceDataset: latestBackupDrill.sourceDataset,
+          status: latestBackupDrill.status,
+          targetEnvironment: latestBackupDrill.targetEnvironment,
+          verificationMethod: latestBackupDrill.verificationMethod,
+        }
+      : null,
+    latestRetentionJob: latestRetentionJob
+      ? {
+          createdAt: latestRetentionJob.createdAt,
+          details: latestRetentionJob.details,
+          jobKind: latestRetentionJob.jobKind,
+          processedCount: latestRetentionJob.processedCount,
+          status: latestRetentionJob.status,
+        }
+      : null,
+    metadataGaps,
+    recentDeniedActions: recentAuditLogs
+      .filter((log) => log.eventType === 'authorization_denied')
+      .slice(0, 25)
+      .map((log) => ({
+        createdAt: log.createdAt,
+        eventType: log.eventType,
+        id: log.id,
+        metadata: log.metadata ?? null,
+        organizationId: log.organizationId ?? null,
+      })),
+    recentExports: recentExports.slice(0, 25).map((artifact) => ({
+      artifactType: artifact.artifactType,
+      exportedAt: artifact.exportedAt,
+      manifestHash: artifact.manifestHash,
+      sourceReportId: artifact.sourceReportId ?? null,
+    })),
+  };
+}
+
+export const getAuditReadinessSnapshot = internalQuery({
+  args: {},
+  returns: auditReadinessSnapshotValidator,
+  handler: getAuditReadinessSnapshotHandler,
+});
+
+export const getAuditReadinessOverview = query({
+  args: {},
+  returns: auditReadinessSnapshotValidator,
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-
-    const [
-      authUsers,
-      passkeys,
-      latestScan,
-      latestRetentionJob,
-      latestBackupCheck,
-      latestAuditEvent,
-      integrityFailures,
-      totalScans,
-      quarantinedScans,
-      rejectedScans,
-    ] = await Promise.all([
-      fetchAllBetterAuthUsers(ctx),
-      fetchAllBetterAuthPasskeys(ctx),
-      ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
-      ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
-      ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
-      ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
-      ctx.db
-        .query('auditLogs')
-        .withIndex('by_eventType_and_createdAt', (q) =>
-          q.eq('eventType', 'audit_integrity_check_failed'),
-        )
-        .collect(),
-      ctx.db.query('documentScanEvents').collect(),
-      ctx.db
-        .query('documentScanEvents')
-        .filter((q) => q.eq(q.field('resultStatus'), 'quarantined'))
-        .collect(),
-      ctx.db
-        .query('documentScanEvents')
-        .filter((q) => q.eq(q.field('resultStatus'), 'rejected'))
-        .collect(),
-    ]);
-
-    const totalUsers = authUsers.length;
-    const usersWithPasskeys = new Set(
-      passkeys
-        .map((passkey) => passkey.userId)
-        .filter((userId): userId is string => typeof userId === 'string' && userId.length > 0),
-    );
-    const mfaEnabledUsers = authUsers.filter(
-      (user) => user.twoFactorEnabled === true || usersWithPasskeys.has(user._id),
-    ).length;
-    const passkeyEnabledUsers = authUsers.filter((user) => usersWithPasskeys.has(user._id)).length;
-    const retentionPolicy = getRetentionPolicyConfig();
-    const vendorPosture = getVendorBoundarySnapshot();
-    const sentryPosture = vendorPosture.find((vendor) => vendor.vendor === 'sentry');
-
-    return {
-      audit: {
-        integrityFailures: integrityFailures.length,
-        lastEventAt: latestAuditEvent?.createdAt ?? null,
-      },
-      auth: {
-        emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
-        mfaCoveragePercent: totalUsers === 0 ? 0 : Math.round((mfaEnabledUsers / totalUsers) * 100),
-        mfaEnabledUsers,
-        passkeyEnabledUsers,
-        totalUsers,
-      },
-      backups: {
-        lastCheckedAt: latestBackupCheck?.checkedAt ?? null,
-        lastStatus: latestBackupCheck?.status ?? null,
-      },
-      retention: {
-        lastJobAt: latestRetentionJob?.createdAt ?? null,
-        lastJobStatus: latestRetentionJob?.status ?? null,
-      },
-      scanner: {
-        lastScanAt: latestScan?.createdAt ?? null,
-        quarantinedCount: quarantinedScans.length,
-        rejectedCount: rejectedScans.length,
-        totalScans: totalScans.length,
-      },
-      sessions: {
-        freshWindowMinutes: retentionPolicy.recentStepUpWindowMinutes,
-        sessionExpiryHours: 24,
-        temporaryLinkTtlMinutes: retentionPolicy.attachmentUrlTtlMinutes,
-      },
-      telemetry: {
-        sentryApproved: sentryPosture?.approved ?? false,
-        sentryEnabled: Boolean(process.env.VITE_SENTRY_DSN) && (sentryPosture?.approved ?? false),
-      },
-      vendors: vendorPosture,
-    };
+    return await getAuditReadinessSnapshotHandler(ctx);
   },
 });
 
@@ -972,21 +1571,74 @@ export const listSecurityControlWorkspaces = query({
   args: {},
   returns: securityControlWorkspaceListValidator,
   handler: async (ctx) => {
-    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    return await listSecurityControlWorkspaceRecords(ctx);
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    return await listSecurityControlWorkspaceRecords(ctx, {
+      authUserId: currentUser.authUserId,
+    });
   },
 });
 
-export const listSecurityControlEvidenceActivity = query({
+export async function listSecurityControlEvidenceActivityHandler(
+  ctx: QueryCtx,
   args: {
-    internalControlId: v.string(),
-    itemId: v.string(),
+    internalControlId: string;
+    itemId: string;
   },
-  returns: securityControlEvidenceActivityListValidator,
-  handler: async (ctx, args) => {
-    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+) {
+  await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
 
-    const auditLogs = (
+  type EvidenceActivityRow = {
+    actorUserId: string | null;
+    auditEventId: string;
+    createdAt: number;
+    eventType:
+      | 'security_control_evidence_created'
+      | 'security_control_evidence_reviewed'
+      | 'security_control_evidence_archived'
+      | 'security_control_evidence_renewed';
+    evidenceId: string;
+    evidenceTitle: string;
+    internalControlId: string;
+    itemId: string;
+    lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
+    renewedFromEvidenceId: string | null;
+    replacedByEvidenceId: string | null;
+    reviewStatus: 'pending' | 'reviewed' | null;
+  };
+
+  const activityLogs = await ctx.db
+    .query('securityControlEvidenceActivity')
+    .withIndex('by_internal_control_id_and_item_id_and_created_at', (q) =>
+      q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
+    )
+    .order('desc')
+    .collect();
+
+  let matchingLogs: EvidenceActivityRow[] = activityLogs.map(
+    (log): EvidenceActivityRow => ({
+      actorUserId: log.actorUserId,
+      auditEventId: log.auditEventId,
+      createdAt: log.createdAt,
+      eventType: log.eventType,
+      evidenceId: log.evidenceId,
+      evidenceTitle: log.evidenceTitle,
+      internalControlId: log.internalControlId,
+      itemId: log.itemId,
+      lifecycleStatus:
+        log.lifecycleStatus === 'active' ||
+        log.lifecycleStatus === 'archived' ||
+        log.lifecycleStatus === 'superseded'
+          ? log.lifecycleStatus
+          : null,
+      renewedFromEvidenceId: log.renewedFromEvidenceId,
+      replacedByEvidenceId: log.replacedByEvidenceId,
+      reviewStatus:
+        log.reviewStatus === 'pending' || log.reviewStatus === 'reviewed' ? log.reviewStatus : null,
+    }),
+  );
+
+  if (matchingLogs.length === 0) {
+    const auditLogs: Array<Doc<'auditLogs'>> = (
       await Promise.all(
         SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES.map((eventType) =>
           ctx.db
@@ -997,94 +1649,69 @@ export const listSecurityControlEvidenceActivity = query({
       )
     ).flat();
 
-    const matchingLogs = auditLogs.filter((log) => {
-      const metadata = parseStableJson(log.metadata);
-      return (
-        metadata?.internalControlId === args.internalControlId && metadata?.itemId === args.itemId
+    matchingLogs = auditLogs
+      .map((log) =>
+        buildSecurityEvidenceActivityProjection({
+          id: log.id,
+          actorUserId: log.actorUserId,
+          createdAt: log.createdAt,
+          eventType: log.eventType,
+          metadata: log.metadata,
+          resourceId: log.resourceId,
+          resourceLabel: log.resourceLabel,
+        }),
+      )
+      .filter((log): log is NonNullable<typeof log> => log !== null)
+      .filter(
+        (log) => log.internalControlId === args.internalControlId && log.itemId === args.itemId,
+      )
+      .sort(
+        (left, right) =>
+          right.createdAt - left.createdAt || right.auditEventId.localeCompare(left.auditEventId),
       );
-    });
+  }
 
-    const actorIds = Array.from(
-      new Set(
-        matchingLogs
-          .map((log) => log.actorUserId)
-          .filter((value): value is string => typeof value === 'string' && value.length > 0),
-      ),
-    );
-    const actorProfiles = await Promise.all(
-      actorIds.map(async (authUserId) => {
-        const profile = await ctx.db
-          .query('userProfiles')
-          .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
-          .first();
-        return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
-      }),
-    );
-    const actorDisplayById = new Map(actorProfiles);
+  const actorIds = Array.from(
+    new Set(
+      matchingLogs
+        .map((log) => log.actorUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
+  );
+  const actorProfiles = await Promise.all(
+    actorIds.map(async (authUserId) => {
+      const profile = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+        .first();
+      return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
+    }),
+  );
+  const actorDisplayById = new Map(actorProfiles);
 
-    return matchingLogs
-      .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
-      .map(
-        (
-          log,
-        ): {
-          id: string;
-          eventType:
-            | 'security_control_evidence_created'
-            | 'security_control_evidence_reviewed'
-            | 'security_control_evidence_archived'
-            | 'security_control_evidence_renewed';
-          actorDisplay: string | null;
-          createdAt: number;
-          evidenceId: string;
-          evidenceTitle: string;
-          internalControlId: string;
-          itemId: string;
-          lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
-          renewedFromEvidenceId: string | null;
-          replacedByEvidenceId: string | null;
-          reviewStatus: 'pending' | 'reviewed' | null;
-        } => {
-          const metadata = parseStableJson(log.metadata);
-          const lifecycleStatus =
-            metadata?.lifecycleStatus === 'active' ||
-            metadata?.lifecycleStatus === 'archived' ||
-            metadata?.lifecycleStatus === 'superseded'
-              ? metadata.lifecycleStatus
-              : null;
-          const reviewStatus =
-            metadata?.reviewStatus === 'pending'
-              ? 'pending'
-              : metadata?.reviewStatus === 'reviewed'
-                ? 'reviewed'
-                : null;
-          return {
-            id: log.id,
-            eventType:
-              log.eventType as (typeof SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES)[number],
-            actorDisplay: getActorDisplayName(actorDisplayById, log.actorUserId),
-            createdAt: log.createdAt,
-            evidenceId: typeof log.resourceId === 'string' ? log.resourceId : '',
-            evidenceTitle: typeof log.resourceLabel === 'string' ? log.resourceLabel : 'Evidence',
-            internalControlId:
-              typeof metadata?.internalControlId === 'string'
-                ? metadata.internalControlId
-                : args.internalControlId,
-            itemId: typeof metadata?.itemId === 'string' ? metadata.itemId : args.itemId,
-            lifecycleStatus,
-            renewedFromEvidenceId:
-              typeof metadata?.renewedFromEvidenceId === 'string'
-                ? metadata.renewedFromEvidenceId
-                : null,
-            replacedByEvidenceId:
-              typeof metadata?.replacedByEvidenceId === 'string'
-                ? metadata.replacedByEvidenceId
-                : null,
-            reviewStatus,
-          };
-        },
-      );
+  return matchingLogs.map((log) => ({
+    id: log.auditEventId,
+    eventType: log.eventType,
+    actorDisplay: getActorDisplayName(actorDisplayById, log.actorUserId ?? undefined),
+    createdAt: log.createdAt,
+    evidenceId: log.evidenceId,
+    evidenceTitle: log.evidenceTitle,
+    internalControlId: log.internalControlId,
+    itemId: log.itemId,
+    lifecycleStatus: log.lifecycleStatus,
+    renewedFromEvidenceId: log.renewedFromEvidenceId,
+    replacedByEvidenceId: log.replacedByEvidenceId,
+    reviewStatus: log.reviewStatus,
+  }));
+}
+
+export const listSecurityControlEvidenceActivity = query({
+  args: {
+    internalControlId: v.string(),
+    itemId: v.string(),
   },
+  returns: securityControlEvidenceActivityListValidator,
+  handler: listSecurityControlEvidenceActivityHandler,
 });
 
 export const addSecurityControlEvidenceLink = mutation({
@@ -1224,6 +1851,108 @@ export const reviewSecurityControlEvidence = mutation({
   },
 });
 
+export async function archiveSecurityControlEvidenceHandler(
+  ctx: MutationCtx,
+  args: {
+    evidenceId: string;
+    internalControlId: string;
+    itemId: string;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const now = Date.now();
+
+  if (args.evidenceId.includes(':seed:')) {
+    const seededEvidence = getSeededEvidenceEntry(
+      args.internalControlId,
+      args.itemId,
+      args.evidenceId,
+    );
+    if (!seededEvidence) {
+      throw new Error('Seeded evidence not found.');
+    }
+
+    const existing = await ctx.db
+      .query('securityControlChecklistItems')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
+      )
+      .unique();
+    const archivedSeedEvidence = existing?.archivedSeedEvidence ?? [];
+    const nextArchivedSeedEvidence = [
+      ...archivedSeedEvidence.filter((entry) => entry.evidenceId !== args.evidenceId),
+      {
+        evidenceId: args.evidenceId,
+        lifecycleStatus: 'archived' as const,
+        archivedAt: now,
+        archivedByUserId: currentUser.authUserId,
+      },
+    ];
+    const patch = {
+      hiddenSeedEvidenceIds: Array.from(
+        new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
+      ),
+      archivedSeedEvidence: nextArchivedSeedEvidence,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert('securityControlChecklistItems', {
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        createdAt: now,
+        ...patch,
+      });
+    }
+
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_archived',
+      evidenceId: args.evidenceId,
+      evidenceTitle: seededEvidence.entry.title,
+      evidenceType: seededEvidence.entry.evidenceType,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'archived',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'reviewed',
+    });
+
+    return null;
+  }
+
+  const evidenceId = args.evidenceId as Id<'securityControlEvidence'>;
+  const evidence = await ctx.db.get(evidenceId);
+  if (!evidence) {
+    throw new Error('Evidence not found.');
+  }
+  if ((evidence.lifecycleStatus ?? 'active') !== 'active') {
+    throw new Error('Only active evidence can be archived.');
+  }
+
+  await ctx.db.patch(evidenceId, {
+    lifecycleStatus: 'archived',
+    archivedAt: now,
+    archivedByUserId: currentUser.authUserId,
+    updatedAt: now,
+  });
+  await recordSecurityControlEvidenceAuditEvent(ctx, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'security_control_evidence_archived',
+    evidenceId: evidence._id,
+    evidenceTitle: evidence.title,
+    evidenceType: evidence.evidenceType,
+    internalControlId: evidence.internalControlId,
+    itemId: evidence.itemId,
+    lifecycleStatus: 'archived',
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    reviewStatus: evidence.reviewStatus ?? 'pending',
+  });
+  return null;
+}
+
 export const archiveSecurityControlEvidence = mutation({
   args: {
     evidenceId: v.string(),
@@ -1231,101 +1960,184 @@ export const archiveSecurityControlEvidence = mutation({
     itemId: v.string(),
   },
   returns: v.null(),
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const now = Date.now();
+  handler: archiveSecurityControlEvidenceHandler,
+});
 
-    if (args.evidenceId.includes(':seed:')) {
-      const seededEvidence = getSeededEvidenceEntry(
-        args.internalControlId,
-        args.itemId,
-        args.evidenceId,
-      );
-      if (!seededEvidence) {
-        throw new Error('Seeded evidence not found.');
-      }
+export async function renewSecurityControlEvidenceHandler(
+  ctx: MutationCtx,
+  args: {
+    evidenceId: string;
+    internalControlId: string;
+    itemId: string;
+  },
+): Promise<Id<'securityControlEvidence'>> {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const now = Date.now();
 
-      const existing = await ctx.db
-        .query('securityControlChecklistItems')
-        .withIndex('by_internal_control_id_and_item_id', (q) =>
-          q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
-        )
-        .unique();
-      const archivedSeedEvidence = existing?.archivedSeedEvidence ?? [];
-      const nextArchivedSeedEvidence = [
-        ...archivedSeedEvidence.filter((entry) => entry.evidenceId !== args.evidenceId),
-        {
-          evidenceId: args.evidenceId,
-          lifecycleStatus: 'archived' as const,
-          archivedAt: now,
-          archivedByUserId: currentUser.authUserId,
-        },
-      ];
-      const patch = {
-        hiddenSeedEvidenceIds: Array.from(
-          new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
-        ),
-        archivedSeedEvidence: nextArchivedSeedEvidence,
-        updatedAt: now,
-      };
+  if (args.evidenceId.includes(':seed:')) {
+    const seededEvidence = getSeededEvidenceEntry(
+      args.internalControlId,
+      args.itemId,
+      args.evidenceId,
+    );
+    if (!seededEvidence) {
+      throw new Error('Seeded evidence not found.');
+    }
 
-      if (existing) {
-        await ctx.db.patch(existing._id, patch);
-      } else {
-        await ctx.db.insert('securityControlChecklistItems', {
-          internalControlId: args.internalControlId,
-          itemId: args.itemId,
-          createdAt: now,
-          ...patch,
-        });
-      }
+    const newEvidenceId = await ctx.db.insert('securityControlEvidence', {
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: seededEvidence.entry.evidenceType,
+      title: seededEvidence.entry.title,
+      description: seededEvidence.entry.description ?? undefined,
+      url: seededEvidence.entry.url ?? undefined,
+      sufficiency: seededEvidence.entry.sufficiency,
+      uploadedByUserId: currentUser.authUserId,
+      reviewStatus: 'pending',
+      lifecycleStatus: 'active',
+      renewedFromEvidenceId: args.evidenceId as Id<'securityControlEvidence'>,
+      createdAt: now,
+      updatedAt: now,
+    });
 
-      await recordSecurityControlEvidenceAuditEvent(ctx, {
-        actorUserId: currentUser.authUserId,
-        eventType: 'security_control_evidence_archived',
+    const existing = await ctx.db
+      .query('securityControlChecklistItems')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
+      )
+      .unique();
+    const nextArchivedSeedEvidence = [
+      ...(existing?.archivedSeedEvidence ?? []).filter(
+        (entry) => entry.evidenceId !== args.evidenceId,
+      ),
+      {
         evidenceId: args.evidenceId,
-        evidenceTitle: seededEvidence.entry.title,
-        evidenceType: seededEvidence.entry.evidenceType,
+        lifecycleStatus: 'superseded' as const,
+        archivedAt: now,
+        archivedByUserId: currentUser.authUserId,
+        replacedByEvidenceId: newEvidenceId,
+      },
+    ];
+    const patch = {
+      hiddenSeedEvidenceIds: Array.from(
+        new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
+      ),
+      archivedSeedEvidence: nextArchivedSeedEvidence,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert('securityControlChecklistItems', {
         internalControlId: args.internalControlId,
         itemId: args.itemId,
-        lifecycleStatus: 'archived',
-        organizationId: currentUser.activeOrganizationId ?? undefined,
-        reviewStatus: 'reviewed',
+        createdAt: now,
+        ...patch,
       });
-
-      return null;
     }
 
-    const evidenceId = args.evidenceId as Id<'securityControlEvidence'>;
-    const evidence = await ctx.db.get(evidenceId);
-    if (!evidence) {
-      throw new Error('Evidence not found.');
-    }
-    if ((evidence.lifecycleStatus ?? 'active') !== 'active') {
-      throw new Error('Only active evidence can be archived.');
-    }
-
-    await ctx.db.patch(evidenceId, {
-      lifecycleStatus: 'archived',
-      archivedAt: now,
-      archivedByUserId: currentUser.authUserId,
-      updatedAt: now,
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId: newEvidenceId,
+      evidenceTitle: seededEvidence.entry.title,
+      evidenceType: seededEvidence.entry.evidenceType,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+      renewedFromEvidenceId: args.evidenceId,
     });
     await recordSecurityControlEvidenceAuditEvent(ctx, {
       actorUserId: currentUser.authUserId,
-      eventType: 'security_control_evidence_archived',
-      evidenceId: evidence._id,
-      evidenceTitle: evidence.title,
-      evidenceType: evidence.evidenceType,
-      internalControlId: evidence.internalControlId,
-      itemId: evidence.itemId,
-      lifecycleStatus: 'archived',
+      eventType: 'security_control_evidence_renewed',
+      evidenceId: newEvidenceId,
+      evidenceTitle: seededEvidence.entry.title,
+      evidenceType: seededEvidence.entry.evidenceType,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
       organizationId: currentUser.activeOrganizationId ?? undefined,
-      reviewStatus: evidence.reviewStatus ?? 'pending',
+      reviewStatus: 'pending',
+      renewedFromEvidenceId: args.evidenceId,
+      replacedByEvidenceId: newEvidenceId,
     });
-    return null;
-  },
-});
+
+    return newEvidenceId;
+  }
+
+  const evidenceId = args.evidenceId as Id<'securityControlEvidence'>;
+  const evidence = await ctx.db.get(evidenceId);
+  if (!evidence) {
+    throw new Error('Evidence not found.');
+  }
+  if ((evidence.lifecycleStatus ?? 'active') !== 'active') {
+    throw new Error('Only active evidence can be renewed.');
+  }
+
+  const newEvidenceId = await ctx.db.insert('securityControlEvidence', {
+    internalControlId: evidence.internalControlId,
+    itemId: evidence.itemId,
+    evidenceType: evidence.evidenceType,
+    title: evidence.title,
+    description: evidence.description,
+    url: evidence.url,
+    storageId: evidence.storageId,
+    fileName: evidence.fileName,
+    mimeType: evidence.mimeType,
+    sizeBytes: evidence.sizeBytes,
+    evidenceDate: evidence.evidenceDate,
+    reviewDueIntervalMonths: evidence.reviewDueIntervalMonths,
+    source: evidence.source,
+    sufficiency: evidence.sufficiency,
+    uploadedByUserId: currentUser.authUserId,
+    reviewStatus: 'pending',
+    lifecycleStatus: 'active',
+    renewedFromEvidenceId: evidence._id,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  await ctx.db.patch(evidenceId, {
+    lifecycleStatus: 'superseded',
+    archivedAt: now,
+    archivedByUserId: currentUser.authUserId,
+    replacedByEvidenceId: newEvidenceId,
+    updatedAt: now,
+  });
+
+  await recordSecurityControlEvidenceAuditEvent(ctx, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'security_control_evidence_created',
+    evidenceId: newEvidenceId,
+    evidenceTitle: evidence.title,
+    evidenceType: evidence.evidenceType,
+    internalControlId: evidence.internalControlId,
+    itemId: evidence.itemId,
+    lifecycleStatus: 'active',
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    reviewStatus: 'pending',
+    renewedFromEvidenceId: evidence._id,
+  });
+  await recordSecurityControlEvidenceAuditEvent(ctx, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'security_control_evidence_renewed',
+    evidenceId: newEvidenceId,
+    evidenceTitle: evidence.title,
+    evidenceType: evidence.evidenceType,
+    internalControlId: evidence.internalControlId,
+    itemId: evidence.itemId,
+    lifecycleStatus: 'active',
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    reviewStatus: 'pending',
+    renewedFromEvidenceId: evidence._id,
+    replacedByEvidenceId: newEvidenceId,
+  });
+
+  return newEvidenceId;
+}
 
 export const renewSecurityControlEvidence = mutation({
   args: {
@@ -1334,174 +2146,7 @@ export const renewSecurityControlEvidence = mutation({
     itemId: v.string(),
   },
   returns: v.id('securityControlEvidence'),
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const now = Date.now();
-
-    if (args.evidenceId.includes(':seed:')) {
-      const seededEvidence = getSeededEvidenceEntry(
-        args.internalControlId,
-        args.itemId,
-        args.evidenceId,
-      );
-      if (!seededEvidence) {
-        throw new Error('Seeded evidence not found.');
-      }
-
-      const newEvidenceId = await ctx.db.insert('securityControlEvidence', {
-        internalControlId: args.internalControlId,
-        itemId: args.itemId,
-        evidenceType: seededEvidence.entry.evidenceType,
-        title: seededEvidence.entry.title,
-        description: seededEvidence.entry.description ?? undefined,
-        url: seededEvidence.entry.url ?? undefined,
-        sufficiency: seededEvidence.entry.sufficiency,
-        uploadedByUserId: currentUser.authUserId,
-        reviewStatus: 'pending',
-        lifecycleStatus: 'active',
-        renewedFromEvidenceId: args.evidenceId as Id<'securityControlEvidence'>,
-        createdAt: now,
-        updatedAt: now,
-      });
-
-      const existing = await ctx.db
-        .query('securityControlChecklistItems')
-        .withIndex('by_internal_control_id_and_item_id', (q) =>
-          q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
-        )
-        .unique();
-      const nextArchivedSeedEvidence = [
-        ...(existing?.archivedSeedEvidence ?? []).filter(
-          (entry) => entry.evidenceId !== args.evidenceId,
-        ),
-        {
-          evidenceId: args.evidenceId,
-          lifecycleStatus: 'superseded' as const,
-          archivedAt: now,
-          archivedByUserId: currentUser.authUserId,
-          replacedByEvidenceId: newEvidenceId,
-        },
-      ];
-      const patch = {
-        hiddenSeedEvidenceIds: Array.from(
-          new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
-        ),
-        archivedSeedEvidence: nextArchivedSeedEvidence,
-        updatedAt: now,
-      };
-
-      if (existing) {
-        await ctx.db.patch(existing._id, patch);
-      } else {
-        await ctx.db.insert('securityControlChecklistItems', {
-          internalControlId: args.internalControlId,
-          itemId: args.itemId,
-          createdAt: now,
-          ...patch,
-        });
-      }
-
-      await recordSecurityControlEvidenceAuditEvent(ctx, {
-        actorUserId: currentUser.authUserId,
-        eventType: 'security_control_evidence_created',
-        evidenceId: newEvidenceId,
-        evidenceTitle: seededEvidence.entry.title,
-        evidenceType: seededEvidence.entry.evidenceType,
-        internalControlId: args.internalControlId,
-        itemId: args.itemId,
-        lifecycleStatus: 'active',
-        organizationId: currentUser.activeOrganizationId ?? undefined,
-        reviewStatus: 'pending',
-        renewedFromEvidenceId: args.evidenceId,
-      });
-      await recordSecurityControlEvidenceAuditEvent(ctx, {
-        actorUserId: currentUser.authUserId,
-        eventType: 'security_control_evidence_renewed',
-        evidenceId: newEvidenceId,
-        evidenceTitle: seededEvidence.entry.title,
-        evidenceType: seededEvidence.entry.evidenceType,
-        internalControlId: args.internalControlId,
-        itemId: args.itemId,
-        lifecycleStatus: 'active',
-        organizationId: currentUser.activeOrganizationId ?? undefined,
-        reviewStatus: 'pending',
-        renewedFromEvidenceId: args.evidenceId,
-        replacedByEvidenceId: newEvidenceId,
-      });
-
-      return newEvidenceId;
-    }
-
-    const evidenceId = args.evidenceId as Id<'securityControlEvidence'>;
-    const evidence = await ctx.db.get(evidenceId);
-    if (!evidence) {
-      throw new Error('Evidence not found.');
-    }
-    if ((evidence.lifecycleStatus ?? 'active') !== 'active') {
-      throw new Error('Only active evidence can be renewed.');
-    }
-
-    const newEvidenceId = await ctx.db.insert('securityControlEvidence', {
-      internalControlId: evidence.internalControlId,
-      itemId: evidence.itemId,
-      evidenceType: evidence.evidenceType,
-      title: evidence.title,
-      description: evidence.description,
-      url: evidence.url,
-      storageId: evidence.storageId,
-      fileName: evidence.fileName,
-      mimeType: evidence.mimeType,
-      sizeBytes: evidence.sizeBytes,
-      evidenceDate: evidence.evidenceDate,
-      reviewDueIntervalMonths: evidence.reviewDueIntervalMonths,
-      source: evidence.source,
-      sufficiency: evidence.sufficiency,
-      uploadedByUserId: currentUser.authUserId,
-      reviewStatus: 'pending',
-      lifecycleStatus: 'active',
-      renewedFromEvidenceId: evidence._id,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    await ctx.db.patch(evidenceId, {
-      lifecycleStatus: 'superseded',
-      archivedAt: now,
-      archivedByUserId: currentUser.authUserId,
-      replacedByEvidenceId: newEvidenceId,
-      updatedAt: now,
-    });
-
-    await recordSecurityControlEvidenceAuditEvent(ctx, {
-      actorUserId: currentUser.authUserId,
-      eventType: 'security_control_evidence_created',
-      evidenceId: newEvidenceId,
-      evidenceTitle: evidence.title,
-      evidenceType: evidence.evidenceType,
-      internalControlId: evidence.internalControlId,
-      itemId: evidence.itemId,
-      lifecycleStatus: 'active',
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      reviewStatus: 'pending',
-      renewedFromEvidenceId: evidence._id,
-    });
-    await recordSecurityControlEvidenceAuditEvent(ctx, {
-      actorUserId: currentUser.authUserId,
-      eventType: 'security_control_evidence_renewed',
-      evidenceId: newEvidenceId,
-      evidenceTitle: evidence.title,
-      evidenceType: evidence.evidenceType,
-      internalControlId: evidence.internalControlId,
-      itemId: evidence.itemId,
-      lifecycleStatus: 'active',
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      reviewStatus: 'pending',
-      renewedFromEvidenceId: evidence._id,
-      replacedByEvidenceId: newEvidenceId,
-    });
-
-    return newEvidenceId;
-  },
+  handler: renewSecurityControlEvidenceHandler,
 });
 
 export const createSecurityControlEvidenceUploadTarget = action({
@@ -1523,23 +2168,26 @@ export const createSecurityControlEvidenceUploadTarget = action({
     uploadUrl: v.string(),
   }),
   handler: async (ctx, args) => {
-    await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const target = await ctx.runAction(anyApi.storagePlatform.createUploadTarget, {
+    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    validateSecurityEvidenceUploadInput(args);
+    await enforceSecurityEvidenceUploadRateLimit(ctx, currentUser.authUserId);
+    const target = await createUploadTargetWithMode(ctx, {
       contentType: args.contentType,
       fileName: args.fileName,
       fileSize: args.fileSize,
       sourceId: `${args.internalControlId}:${args.itemId}`,
       sourceType: 'security_control_evidence',
     });
+    const backendMode: 'convex' | 's3-primary' | 's3-mirror' =
+      target.backend === 'convex'
+        ? 'convex'
+        : process.env.FILE_STORAGE_BACKEND_MODE === 's3-mirror'
+          ? 's3-mirror'
+          : 's3-primary';
 
     return {
       ...target,
-      backendMode:
-        target.backend === 'convex'
-          ? 'convex'
-          : process.env.FILE_STORAGE_BACKEND_MODE === 's3-mirror'
-            ? 's3-mirror'
-            : 's3-primary',
+      backendMode,
     };
   },
 });
@@ -1668,6 +2316,7 @@ export const listEvidenceReports = query({
       reportKind: report.reportKind,
       contentHash: report.contentHash,
       exportHash: report.exportHash ?? null,
+      exportManifestHash: report.exportManifestHash ?? null,
       exportedAt: report.exportedAt ?? null,
       exportedByUserId: report.exportedByUserId ?? null,
       reviewStatus: report.reviewStatus,
@@ -1727,73 +2376,126 @@ export const reviewEvidenceReport = mutation({
   },
 });
 
+export async function exportEvidenceReportHandler(
+  ctx: ActionCtx,
+  args: {
+    id: Id<'evidenceReports'>;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  const report = await ctx.runQuery(anyApi.security.getEvidenceReportInternal, {
+    id: args.id,
+  });
+  if (!report) {
+    throw new Error('Evidence report not found');
+  }
+
+  const exportedAt = Date.now();
+  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
+    limit: 250,
+  });
+  const exportBundle = stringifyStable({
+    contentHash: report.contentHash,
+    exportedAt: new Date(exportedAt).toISOString(),
+    integritySummary: {
+      contentHash: report.contentHash,
+      checkedAt: integrityCheck.checkedAt,
+      failureCount: integrityCheck.failures.length,
+      reviewedAt: report.reviewedAt ?? null,
+      reviewStatus: report.reviewStatus,
+    },
+    report: JSON.parse(report.contentJson),
+    reportId: report._id,
+  });
+  const exportHash = await hashContent(exportBundle);
+  const exportId = crypto.randomUUID();
+  const manifest = buildExportManifest({
+    actorUserId: currentUser.authUserId,
+    contentHash: report.contentHash,
+    exactFilters: {
+      reportId: report._id,
+      reportKind: report.reportKind,
+    },
+    exportHash,
+    exportId,
+    exportedAt,
+    integritySummary: summarizeIntegrityCheck(integrityCheck),
+    organizationScope: report.organizationId ?? currentUser.activeOrganizationId ?? null,
+    reviewStatusAtExport: report.reviewStatus,
+    rowCount: 1,
+    sourceReportId: report._id,
+  });
+  const manifestJson = stringifyStable(manifest);
+  const manifestHash = await hashContent(manifestJson);
+  const exportIntegritySummary = stringifyStable({
+    contentHash: report.contentHash,
+    exportHash,
+    manifestHash,
+    reviewStatus: report.reviewStatus,
+  });
+  const artifactId = await ctx.runMutation(anyApi.security.storeExportArtifact, {
+    artifactType: 'evidence_report_export',
+    exportedAt,
+    exportedByUserId: currentUser.authUserId,
+    manifestHash,
+    manifestJson,
+    organizationId: report.organizationId ?? currentUser.activeOrganizationId ?? undefined,
+    payloadHash: exportHash,
+    payloadJson: exportBundle,
+    schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
+    sourceReportId: args.id,
+  });
+
+  await ctx.runMutation(anyApi.security.storeEvidenceReportExport, {
+    id: args.id,
+    exportBundleJson: exportBundle,
+    exportHash,
+    exportIntegritySummary,
+    exportManifestHash: manifestHash,
+    exportManifestJson: manifestJson,
+    exportedAt,
+    exportedByUserId: currentUser.authUserId,
+    latestExportArtifactId: artifactId,
+  });
+
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'evidence_report_exported',
+    identifier: currentUser.authUser.email ?? undefined,
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    outcome: 'success',
+    resourceId: report._id,
+    resourceLabel: report.reportKind,
+    resourceType: 'evidence_report',
+    severity: 'info',
+    sourceSurface: 'admin.security',
+    userId: currentUser.authUserId,
+    metadata: stringifyStable({
+      exportHash,
+      exportId,
+      filters: manifest.exactFilters,
+      manifestHash,
+      rowCount: manifest.rowCount,
+      scope: manifest.organizationScope,
+    }),
+  });
+
+  return {
+    createdAt: report.createdAt,
+    exportHash,
+    id: report._id,
+    report: exportBundle,
+    reportKind: report.reportKind,
+    reviewStatus: report.reviewStatus,
+  };
+}
+
 export const exportEvidenceReport = action({
   args: {
     id: v.id('evidenceReports'),
   },
   returns: evidenceReportValidator,
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const report = await ctx.runQuery(anyApi.security.getEvidenceReportInternal, {
-      id: args.id,
-    });
-    if (!report) {
-      throw new Error('Evidence report not found');
-    }
-
-    const exportBundle = stringifyStable({
-      contentHash: report.contentHash,
-      exportedAt: new Date().toISOString(),
-      integritySummary: {
-        contentHash: report.contentHash,
-        reviewedAt: report.reviewedAt ?? null,
-        reviewStatus: report.reviewStatus,
-      },
-      report: JSON.parse(report.contentJson),
-      reportId: report._id,
-    });
-    const exportHash = await hashContent(exportBundle);
-    const exportedAt = Date.now();
-    const exportIntegritySummary = stringifyStable({
-      contentHash: report.contentHash,
-      exportHash,
-      reviewStatus: report.reviewStatus,
-    });
-
-    await ctx.runMutation(anyApi.security.storeEvidenceReportExport, {
-      id: args.id,
-      exportBundleJson: exportBundle,
-      exportHash,
-      exportIntegritySummary,
-      exportedAt,
-      exportedByUserId: currentUser.authUserId,
-    });
-
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
-      actorUserId: currentUser.authUserId,
-      eventType: 'evidence_report_exported',
-      identifier: currentUser.authUser.email ?? undefined,
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      outcome: 'success',
-      resourceId: report._id,
-      resourceLabel: report.reportKind,
-      resourceType: 'evidence_report',
-      severity: 'info',
-      sourceSurface: 'admin.security',
-      userId: currentUser.authUserId,
-      metadata: stringifyStable({
-        exportHash,
-      }),
-    });
-
-    return {
-      createdAt: report.createdAt,
-      exportHash,
-      id: report._id,
-      report: exportBundle,
-      reviewStatus: report.reviewStatus,
-    };
-  },
+  handler: exportEvidenceReportHandler,
 });
 
 export const getEvidenceReportInternal = internalQuery({
@@ -1812,8 +2514,11 @@ export const storeEvidenceReportExport = internalMutation({
     exportBundleJson: v.string(),
     exportHash: v.string(),
     exportIntegritySummary: v.string(),
+    exportManifestHash: v.string(),
+    exportManifestJson: v.string(),
     exportedAt: v.number(),
     exportedByUserId: v.string(),
+    latestExportArtifactId: v.id('exportArtifacts'),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1821,114 +2526,159 @@ export const storeEvidenceReportExport = internalMutation({
       exportBundleJson: args.exportBundleJson,
       exportHash: args.exportHash,
       exportIntegritySummary: args.exportIntegritySummary,
+      exportManifestHash: args.exportManifestHash,
+      exportManifestJson: args.exportManifestJson,
       exportedAt: args.exportedAt,
       exportedByUserId: args.exportedByUserId,
+      latestExportArtifactId: args.latestExportArtifactId,
     });
     return null;
   },
 });
 
-export const generateEvidenceReport = action({
-  args: {},
-  returns: evidenceReportValidator,
-  handler: async (ctx) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
-    const controlWorkspace = await ctx.runQuery(anyApi.security.listSecurityControlWorkspaces, {});
-    const recentAuditLogs: Array<{
-      createdAt: number;
-      eventType: string;
-      organizationId?: string;
-      outcome?: 'success' | 'failure';
-      resourceType?: string;
-      sourceSurface?: string;
-    }> = await ctx.runQuery(anyApi.audit.getRecentAuditLogsInternal, {
-      limit: 25,
-    });
-    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
-      limit: 250,
-    });
-    const currentOrganizationPolicies = currentUser.activeOrganizationId
-      ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPolicies, {
-          organizationId: currentUser.activeOrganizationId,
-        })
-      : null;
-    const vendorPosture = getVendorBoundarySnapshot();
-    const createdAt = Date.now();
-    const reportPayload = {
-      generatedAt: new Date(createdAt).toISOString(),
-      generatedByUserId: currentUser.authUserId,
-      baselineDefaults: {
-        organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
-      },
-      sessionPolicy: {
-        sessionExpiryHours: 24,
-        sessionRefreshHours: 4,
-        recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
-        temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
-      },
-      telemetryPosture: {
-        sentryApproved: vendorPosture.some(
-          (vendor) => vendor.vendor === 'sentry' && vendor.approved,
-        ),
-        sentryEnabled:
-          vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
-          Boolean(process.env.VITE_SENTRY_DSN),
-      },
-      vendorBoundary: vendorPosture,
-      verificationPosture: {
-        emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
-        mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
-      },
-      integrityCheck,
-      recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
-        createdAt: log.createdAt,
-        eventType: log.eventType,
-        outcome: log.outcome ?? null,
-        organizationId: log.organizationId ?? null,
-        resourceType: log.resourceType ?? null,
-        sourceSurface: log.sourceSurface ?? null,
-      })),
-      scopedOrganizationPolicies: currentOrganizationPolicies,
-      summary,
-      controls: controlWorkspace,
-    };
-    const report = stringifyStable(reportPayload);
-    const contentHash = await hashContent(report);
-
-    const id = await ctx.runMutation(anyApi.security.createEvidenceReport, {
-      contentJson: report,
-      contentHash,
-      generatedByUserId: currentUser.authUserId,
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      reportKind: 'security_posture',
-    });
-
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
-      actorUserId: currentUser.authUserId,
-      eventType: 'evidence_report_generated',
-      identifier: currentUser.authUser.email ?? undefined,
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      outcome: 'success',
-      resourceId: id,
-      resourceLabel: 'security_posture',
-      resourceType: 'evidence_report',
-      severity: 'info',
-      sourceSurface: 'admin.security',
-      userId: currentUser.authUserId,
-      metadata: stringifyStable({
-        contentHash,
-      }),
-    });
-
-    return {
-      createdAt,
-      exportHash: null,
-      id,
-      report,
-      reviewStatus: 'pending' as const,
-    };
+export async function generateEvidenceReportHandler(
+  ctx: ActionCtx,
+  args: {
+    reportKind?: 'security_posture' | 'audit_integrity' | 'audit_readiness';
   },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  const reportKind = args.reportKind ?? 'security_posture';
+  const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
+  const controlWorkspace = await ctx.runQuery(anyApi.security.listSecurityControlWorkspaces, {});
+  const recentAuditLogs: Array<{
+    createdAt: number;
+    eventType: string;
+    organizationId?: string;
+    outcome?: 'success' | 'failure';
+    resourceType?: string;
+    sourceSurface?: string;
+  }> = await ctx.runQuery(anyApi.audit.getRecentAuditLogsInternal, {
+    limit: 25,
+  });
+  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
+    limit: 250,
+  });
+  const auditReadinessSnapshot = await ctx.runQuery(anyApi.security.getAuditReadinessSnapshot, {});
+  const currentOrganizationPolicies = currentUser.activeOrganizationId
+    ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPolicies, {
+        organizationId: currentUser.activeOrganizationId,
+      })
+    : null;
+  const vendorPosture = getVendorBoundarySnapshot();
+  const createdAt = Date.now();
+  const reportPayload =
+    reportKind === 'audit_readiness'
+      ? {
+          generatedAt: new Date(createdAt).toISOString(),
+          generatedByUserId: currentUser.authUserId,
+          integrityCheck,
+          retention: {
+            lastJobAt: auditReadinessSnapshot.latestRetentionJob?.createdAt ?? null,
+            lastJobStatus: auditReadinessSnapshot.latestRetentionJob?.status ?? null,
+            processedCount: auditReadinessSnapshot.latestRetentionJob?.processedCount ?? null,
+          },
+          recentDeniedActions: auditReadinessSnapshot.recentDeniedActions,
+          recentExports: auditReadinessSnapshot.recentExports,
+          backupDrill: {
+            isStale:
+              auditReadinessSnapshot.latestBackupDrill === null ||
+              createdAt - auditReadinessSnapshot.latestBackupDrill.checkedAt >
+                BACKUP_DRILL_STALE_WINDOW_MS,
+            latest: auditReadinessSnapshot.latestBackupDrill,
+          },
+          metadataGaps: auditReadinessSnapshot.metadataGaps,
+          summary: {
+            backupDrillStatus: auditReadinessSnapshot.latestBackupDrill?.status ?? null,
+            deniedActionCount: auditReadinessSnapshot.recentDeniedActions.length,
+            exportCount: auditReadinessSnapshot.recentExports.length,
+            integrityFailureCount: integrityCheck.failures.length,
+            metadataGapCount: auditReadinessSnapshot.metadataGaps.length,
+          },
+        }
+      : {
+          generatedAt: new Date(createdAt).toISOString(),
+          generatedByUserId: currentUser.authUserId,
+          baselineDefaults: {
+            organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+          },
+          sessionPolicy: {
+            sessionExpiryHours: 24,
+            sessionRefreshHours: 4,
+            recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
+            temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
+          },
+          telemetryPosture: {
+            sentryApproved: vendorPosture.some(
+              (vendor) => vendor.vendor === 'sentry' && vendor.approved,
+            ),
+            sentryEnabled:
+              vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
+              Boolean(process.env.VITE_SENTRY_DSN),
+          },
+          vendorBoundary: vendorPosture,
+          verificationPosture: {
+            emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
+            mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
+          },
+          integrityCheck,
+          recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
+            createdAt: log.createdAt,
+            eventType: log.eventType,
+            outcome: log.outcome ?? null,
+            organizationId: log.organizationId ?? null,
+            resourceType: log.resourceType ?? null,
+            sourceSurface: log.sourceSurface ?? null,
+          })),
+          scopedOrganizationPolicies: currentOrganizationPolicies,
+          summary,
+          controls: controlWorkspace,
+        };
+  const report = stringifyStable(reportPayload);
+  const contentHash = await hashContent(report);
+
+  const id = await ctx.runMutation(anyApi.security.createEvidenceReport, {
+    contentJson: report,
+    contentHash,
+    generatedByUserId: currentUser.authUserId,
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    reportKind,
+  });
+
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'evidence_report_generated',
+    identifier: currentUser.authUser.email ?? undefined,
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    outcome: 'success',
+    resourceId: id,
+    resourceLabel: reportKind,
+    resourceType: 'evidence_report',
+    severity: 'info',
+    sourceSurface: 'admin.security',
+    userId: currentUser.authUserId,
+    metadata: stringifyStable({
+      contentHash,
+      filters: { reportKind },
+    }),
+  });
+
+  return {
+    createdAt,
+    exportHash: null,
+    id,
+    report,
+    reportKind,
+    reviewStatus: 'pending' as const,
+  };
+}
+
+export const generateEvidenceReport = action({
+  args: {
+    reportKind: v.optional(evidenceReportKindValidator),
+  },
+  returns: evidenceReportValidator,
+  handler: generateEvidenceReportHandler,
 });
 
 export const cleanupExpiredAttachments = internalAction({
@@ -1990,5 +2740,50 @@ export const listExpiredAttachmentsInternal = internalQuery({
       extractedTextStorageId: attachment.extractedTextStorageId,
       storageId: attachment.storageId,
     }));
+  },
+});
+
+export const reseedSecurityControlWorkspaceForDevelopment = mutation({
+  args: {
+    secret: v.string(),
+  },
+  returns: v.object({
+    activeSeedControlCount: v.number(),
+    deletedChecklistItems: v.number(),
+    deletedEvidence: v.number(),
+    deletedEvidenceActivity: v.number(),
+    deletedEvidenceReports: v.number(),
+    deletedExportArtifacts: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    if (args.secret !== getE2ETestSecret()) {
+      throw new Error('Invalid reseed secret.');
+    }
+
+    const [checklistItems, evidenceRows, evidenceActivityRows, evidenceReports, exportArtifacts] =
+      await Promise.all([
+        ctx.db.query('securityControlChecklistItems').collect(),
+        ctx.db.query('securityControlEvidence').collect(),
+        ctx.db.query('securityControlEvidenceActivity').collect(),
+        ctx.db.query('evidenceReports').collect(),
+        ctx.db.query('exportArtifacts').collect(),
+      ]);
+
+    await Promise.all([
+      ...checklistItems.map((row) => ctx.db.delete(row._id)),
+      ...evidenceRows.map((row) => ctx.db.delete(row._id)),
+      ...evidenceActivityRows.map((row) => ctx.db.delete(row._id)),
+      ...evidenceReports.map((row) => ctx.db.delete(row._id)),
+      ...exportArtifacts.map((row) => ctx.db.delete(row._id)),
+    ]);
+
+    return {
+      activeSeedControlCount: ACTIVE_CONTROL_REGISTER.controls.length,
+      deletedChecklistItems: checklistItems.length,
+      deletedEvidence: evidenceRows.length,
+      deletedEvidenceActivity: evidenceActivityRows.length,
+      deletedEvidenceReports: evidenceReports.length,
+      deletedExportArtifacts: exportArtifacts.length,
+    };
   },
 });
