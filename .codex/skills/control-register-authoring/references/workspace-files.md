@@ -40,11 +40,15 @@ rg -n "reseedSecurityControlWorkspaceForDevelopment|ACTIVE_CONTROL_REGISTER" con
 ## Common authoring mistakes
 
 - Letting `implementationSummary` cover multiple controls at once.
+- Letting the implementation summary claim more than the checklist items and seeded evidence actually prove.
 - Treating buyer packet artifacts as checklist items when they should just be evidence or separate trust documents.
 - Leaving inherited CSF and SOC 2 mappings untouched when they clearly overstate the repo evidence.
 - Using checklist items that really belong in `customerResponsibilityNotes`.
 - Marking a checklist item complete because a schema or mutation exists even though there is no actual retained evidence yet.
 - Using generic labels like `Seeded register` in the site admin workspace when a real site admin actor can be resolved.
+- Using vague actor words like `operator` when the real actor should be `provider`, `customer`, or `site admin`.
+- Marking a control as `customer` while writing checklist items that read like platform-owned operating procedures.
+- Softening a summary but leaving old checklist labels that still imply a broader program than the evidence supports.
 
 ## Typical update pattern
 
@@ -55,6 +59,8 @@ rg -n "reseedSecurityControlWorkspaceForDevelopment|ACTIVE_CONTROL_REGISTER" con
    - provider clarity
    - customer clarity
    - honest evidence scope
+   - summary and checklist consistency
+   - explicit actor naming
 5. Regenerate the seed JSON.
 6. If needed, update `convex/security.ts` so the site admin workspace materializes the control or attribution correctly.
 7. Reseed the site admin workspace.

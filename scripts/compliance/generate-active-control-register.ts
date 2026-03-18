@@ -472,19 +472,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
     implementationSummary:
-      'This control ensures audit records and related security findings can be reviewed, analyzed, and followed up through defined workflows. The platform provides audit history views, review-state retention, and evidence-report workflows that support that process, while formal operator review cadence and escalation procedures remain deployment-owned.',
+      'This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views and evidence-report review workflows, but a formal provider review cadence and escalation procedure are not yet evidenced in this workspace.',
     coverage: 'partial' as const,
-    responsibility: 'shared-responsibility' as const,
+    responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Security Operations',
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)', '45 CFR 164.316(b)(1)'],
-    csf20Ids: ['DE.AE-02', 'DE.AE-03'],
-    soc2CriterionIds: ['CC7.2', 'CC7.3'],
+    csf20Ids: ['DE.AE-02'],
+    soc2CriterionIds: ['CC7.2'],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'review-queue-surface',
-        label: 'Audit review surfaces exist',
+        label: 'Provider-facing audit review surfaces exist',
         description:
           'The platform must provide supported surfaces for reviewing audit activity and related security evidence.',
         verificationMethod: 'Audit review UI walkthrough',
@@ -492,12 +492,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Authorized users can review organization audit history and security-admin evidence state through built-in surfaces.',
+          'Security administrators can review audit history and evidence state through built-in provider-facing surfaces.',
           [
-            seededEvidence(
-              'Organization audit review surface',
-              'src/features/organizations/components/OrganizationAuditPage.tsx exposes reviewable audit history for organization roles.',
-            ),
             seededEvidence(
               'Security admin review surface',
               'src/routes/app/admin/security.tsx exposes control workspace and evidence review surfaces for security administrators.',
@@ -508,7 +504,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'review-record-retention',
-        label: 'Review records can be retained',
+        label: 'Audit review state and follow-up records can be retained',
         description:
           'The platform should retain review status, reviewer identity, notes, and export integrity data when audit evidence is reviewed.',
         verificationMethod: 'Evidence report schema and review workflow inspection',
@@ -532,22 +528,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-review-procedure',
-        label: 'Operator review procedure is documented',
+        label: 'Provider audit review procedure is documented',
         description:
-          'Internal review cadence and escalation expectations must be documented for platform operators.',
+          'The provider documents internal audit review cadence, escalation expectations, and follow-up steps for the hosted service.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'not_started',
-          'No operator-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.',
+          'No provider-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.',
           [],
           'Security Operations',
         ),
       },
     ],
     customerResponsibilityNotes:
-      'Customer organizations are responsible for establishing review cadence, escalation paths, and documented follow-up for the evidence surfaced by the platform.',
+      'Customer organizations are responsible for their own review and follow-up processes for any audit exports or evidence they retain outside the hosted service.',
   },
   {
     nist80053Id: 'IA-2',
@@ -792,21 +788,21 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
-      'This control addresses incident handling expectations. In this workspace the platform only evidences investigation-supporting audit trails, exportable evidence, and retained review artifacts; substantive incident response procedures remain outside the hosted product evidence and are customer or provider program responsibilities.',
-    coverage: 'not-covered' as const,
-    responsibility: 'customer' as const,
+      'This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, and retained review artifacts that can assist incident analysis, but provider incident response procedures and customer-side response workflows must be documented and operated outside these repo-backed product artifacts.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Security Incident Response',
     hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
-    csf20Ids: ['RS.AN-03', 'RS.CO-02'],
+    csf20Ids: ['RS.AN-03'],
     soc2CriterionIds: [],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'incident-evidence-export',
-        label: 'Incident-supporting evidence can be exported',
+        label: 'Provider investigation-supporting evidence can be exported',
         description:
-          'The platform should expose audit trails and evidence exports that support investigations.',
+          'The hosted service should expose audit trails and evidence exports that can support provider or customer investigations.',
         verificationMethod: 'Evidence export walkthrough',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -824,9 +820,9 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'investigation-artifacts-retained',
-        label: 'Investigation-supporting artifacts can be retained',
+        label: 'Provider investigation artifacts can be retained with integrity metadata',
         description:
-          'The platform should retain hashes, review state, and exported evidence metadata that support post-incident analysis.',
+          'The hosted service should retain hashes, review state, and exported evidence metadata that support later investigation and post-incident analysis.',
         verificationMethod: 'Evidence report retention review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file', 'note'] as ChecklistEvidenceType[],
@@ -842,9 +838,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           'Security Incident Response',
         ),
       },
+      {
+        itemId: 'provider-incident-response-procedure',
+        label: 'Provider incident response procedure is documented',
+        description:
+          'The provider should maintain documented incident response procedures covering triage, escalation, containment, customer coordination, and post-incident follow-up.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'No provider-owned incident response procedure is attached in the repo-backed control workspace yet.',
+          [],
+          'Security Incident Response',
+        ),
+      },
     ],
     customerResponsibilityNotes:
-      'Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling; the platform evidence here is only investigation-supporting material.',
+      'Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling in their own environment; the platform evidence here provides investigation support only.',
   },
   {
     nist80053Id: 'RA-5',
@@ -1035,31 +1046,31 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SI-4',
     internalControlId: 'CTRL-SI-004',
     implementationSummary:
-      'This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, and security posture summaries, but operator alert response procedures are not yet fully evidenced in this register.',
+      'This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The platform provides document scan records, audit-integrity failure signals, and security posture summaries for provider review, but provider alert response procedures are not yet evidenced in this register.',
     coverage: 'partial' as const,
-    responsibility: 'shared-responsibility' as const,
+    responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Security Monitoring',
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(c)(1)'],
-    csf20Ids: ['DE.CM-01', 'DE.CM-06', 'DE.AE-02', 'DE.AE-03'],
+    csf20Ids: ['DE.AE-02', 'DE.AE-03'],
     soc2CriterionIds: ['CC7.2'],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'monitoring-signals',
-        label: 'Monitoring signals are emitted',
+        label: 'Hosted-service monitoring signals are collected and surfaced',
         description:
-          'The platform must emit monitoring-relevant security signals for operational review.',
+          'The platform should collect and surface security-relevant monitoring signals for provider review.',
         verificationMethod: 'Telemetry and event review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Monitoring-related platform signals are exposed through document scan events, audit integrity checks, and security posture summaries.',
+          'Monitoring-related platform signals are collected and surfaced through document scan records, audit-integrity failures, and security posture summaries.',
           [
             seededEvidence(
               'Security monitoring signals',
-              'convex/security.ts reports document scan events, audit integrity failures, and telemetry posture.',
+              'convex/security.ts reports document scan records and security posture summaries, while convex/audit.ts records audit_integrity_check_failed events when integrity verification fails.',
             ),
           ],
           'Security Monitoring',
@@ -1067,34 +1078,38 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'provider-alert-procedure',
-        label: 'Operator alert response procedure is documented',
+        label: 'Provider alert response procedure is documented',
         description:
-          'Internal alert routing and response expectations must be documented for the hosted platform.',
+          'Provider alert routing and response expectations should be documented for the hosted platform.',
         verificationMethod: 'Procedure review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'not_started',
-          'No operator-owned monitoring response procedure is attached in the control workspace yet.',
+          'No provider-owned monitoring response procedure is attached in the control workspace yet.',
           [],
           'Security Monitoring',
         ),
       },
       {
         itemId: 'monitoring-records-retained',
-        label: 'Monitoring records are retained',
+        label: 'Monitoring records are retained for later review',
         description:
-          'The platform should retain monitoring outputs that investigators or operators can review after signals are generated.',
+          'The platform should retain monitoring outputs that providers can review after signals are generated.',
         verificationMethod: 'Monitoring record review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Monitoring-related records are retained through document scan events, audit-integrity failures, and evidence report metadata.',
+          'Monitoring-related records are retained through document scan events, retention job state, and audit-integrity failure records.',
           [
             seededEvidence(
               'Document scan event records',
               'convex/schema.ts defines documentScanEvents and convex/security.ts reports their latest status, rejection counts, and quarantine counts.',
+            ),
+            seededEvidence(
+              'Retention job records',
+              'convex/schema.ts defines retentionJobs and convex/security.ts reports retention job posture for later operational review.',
             ),
             seededEvidence(
               'Audit integrity failure records',
@@ -1291,13 +1306,13 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AU-12',
     internalControlId: 'CTRL-AU-012',
     implementationSummary:
-      'This control ensures the platform generates audit records for defined security-relevant events across application and backend workflows. The platform supports that objective through a canonical event inventory and event emission across authentication, administrative, evidence, and file-handling paths.',
+      'This control ensures the platform generates audit records for defined security-relevant events across application and backend workflows. The platform supports that objective through a canonical event inventory and event emission across evidence, attachment and file-handling, vendor, and related security workflows.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Audit and Logging',
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)'],
-    csf20Ids: ['PR.PS-04', 'DE.CM-01', 'DE.CM-03'],
+    csf20Ids: ['PR.PS-04'],
     soc2CriterionIds: ['CC7.2'],
     nist80066: [],
     platformChecklistItems: [
@@ -1325,7 +1340,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         itemId: 'workflow-audit-emission',
         label: 'Evidence, file-handling, vendor, and related security workflows emit audit records',
         description:
-          'Core security-sensitive workflows should emit audit records during normal and failed operations.',
+          'Documented evidence, attachment and file-handling, vendor, and related security workflows should emit audit records during normal and failed operations.',
         verificationMethod: 'Workflow-level audit emission review',
         required: true,
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
@@ -1377,21 +1392,21 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SA-9',
     internalControlId: 'CTRL-SA-009',
     implementationSummary:
-      'This control ensures externally provided services are governed by defined boundary expectations, permitted data classes, and auditable usage. The platform supports that objective through a vendor boundary registry, explicit allowed-data-class policies, approval gates, and audit events for vendor use or denial, while buyer-facing contractual and subprocessor program artifacts remain outside this repo-backed register.',
+      'This control ensures externally provided services used by the hosted service are constrained by approved boundary expectations, permitted data classes, and auditable usage. The platform supports that objective through an internal vendor boundary registry, environment and data-class policy enforcement, and audit events for vendor use or denial. Formal subprocessor disclosures, contractual commitments, and broader supplier due diligence remain outside this repo-backed workspace.',
     coverage: 'partial' as const,
-    responsibility: 'shared-responsibility' as const,
+    responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Vendor Risk Management',
     hipaaCitations: ['45 CFR 164.308(b)(1)', '45 CFR 164.308(a)(1)(ii)(A)'],
-    csf20Ids: ['GV.SC-05', 'GV.SC-06', 'ID.AM-02'],
-    soc2CriterionIds: ['CC9.2'],
+    csf20Ids: ['ID.AM-02'],
+    soc2CriterionIds: [],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'vendor-inventory-and-data-classes',
-        label: 'External services and subprocessors are inventoried with approved data classes',
+        label: 'External services are inventoried with approved data classes',
         description:
-          'Approved external services should be recorded with the categories of data the service is permitted to handle, even if broader legal subprocessor records live elsewhere.',
+          'Approved external services should be recorded with the categories of data they are permitted to handle, while broader legal subprocessor records live elsewhere.',
         verificationMethod: 'Vendor boundary registry review',
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
@@ -1439,7 +1454,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'vendor-usage-auditable',
-        label: 'Vendor usage is auditable and blocked when approval requirements are not met',
+        label: 'Vendor usage and denials are auditable',
         description:
           'Successful and denied vendor use should emit reviewable records showing whether policy conditions were met.',
         verificationMethod: 'Vendor audit event review',
@@ -2000,6 +2015,91 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     ],
     customerResponsibilityNotes:
       'Customer organizations are responsible for their own approval, CAB, and deployment control processes for any customer-managed integrations or operational changes outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'PL-2',
+    internalControlId: 'CTRL-PL-002',
+    implementationSummary:
+      'This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, and control-matrix documentation, but formal plan approval and recurring review workflow evidence are not yet attached here.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Security Planning',
+    hipaaCitations: [
+      '45 CFR 164.308(a)(1)(ii)(A)',
+      '45 CFR 164.308(a)(1)(ii)(B)',
+      '45 CFR 164.316(b)(1)',
+    ],
+    csf20Ids: ['ID.AM-03', 'ID.AM-08'],
+    soc2CriterionIds: ['CC5.3'],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'system-architecture-and-context-documented',
+        label: 'Architecture and service scope are documented',
+        description:
+          'The provider should maintain architecture and operational-context documentation for the hosted service boundary.',
+        verificationMethod: 'Architecture and design-document review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Architecture and deployment-scope documentation exists for the hosted service and can anchor a lightweight system plan.',
+          [
+            seededEvidence(
+              'Architecture overview document',
+              'docs/ARCHITECTURE.md documents routing, server-function boundaries, authentication, and the high-level application architecture.',
+            ),
+            seededEvidence(
+              'Control matrix scope narrative',
+              'docs/CONTROL_MATRIX.md explains which safeguards ship in app scope versus which operational gaps remain deployer-owned.',
+            ),
+          ],
+          'Security Planning',
+        ),
+      },
+      {
+        itemId: 'security-requirements-and-dependencies-documented',
+        label: 'Security requirements and external dependencies are documented',
+        description:
+          'The provider should document key security requirements, external dependencies, and the scope of controls or gaps relevant to the hosted service.',
+        verificationMethod: 'Security planning artifact review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo documents security requirements and external dependencies through linked security notes, control-matrix scope, and vendor-boundary definitions.',
+          [
+            seededEvidence(
+              'Auth security baseline notes',
+              'docs/AUTH_SECURITY.md documents strict auth defaults, session protections, origin validation, and deployer-owned security gaps.',
+            ),
+            seededEvidence(
+              'Vendor dependency boundary definitions',
+              'src/lib/shared/vendor-boundary.ts and src/lib/server/vendor-boundary.server.ts document approved outbound vendors, allowed data classes, and dependency boundaries.',
+            ),
+          ],
+          'Security Planning',
+        ),
+      },
+      {
+        itemId: 'provider-plan-review-and-approval-documented',
+        label: 'Provider plan review and approval workflow is documented',
+        description:
+          'The provider should document how the system security and privacy plan is reviewed, approved, and updated over time.',
+        verificationMethod: 'Planning procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider review cadence, approval record, or update procedure for these planning artifacts.',
+          [],
+          'Security Planning',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for documenting their own connected environment, local data flows, user roles, and any customer-operated safeguards or procedures that sit outside the hosted service boundary.',
   },
 ];
 

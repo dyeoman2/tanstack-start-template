@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-18T16:56:33.287Z",
+  "generatedAt": "2026-03-18T21:21:25.357Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -487,7 +487,7 @@
       "title": "Audit Record Generation",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures the platform generates audit records for defined security-relevant events across application and backend workflows. The platform supports that objective through a canonical event inventory and event emission across authentication, administrative, evidence, and file-handling paths.",
+      "implementationSummary": "This control ensures the platform generates audit records for defined security-relevant events across application and backend workflows. The platform supports that objective through a canonical event inventory and event emission across evidence, attachment and file-handling, vendor, and related security workflows.",
       "controlStatement": "Provide audit record generation capability for the event types the system is capable of auditing as defined in [AU-2a](#au-2_smt.a) on {{ insert: param, au-12_odp.01 }}; Allow {{ insert: param, au-12_odp.02 }} to select the event types that are to be logged by specific components of the system; and Generate audit records for the event types defined in [AU-2c](#au-2_smt.c) that include the audit record content defined in [AU-3](#au-3).",
       "priority": "p0",
       "platformChecklistItems": [
@@ -519,7 +519,7 @@
         {
           "itemId": "workflow-audit-emission",
           "label": "Evidence, file-handling, vendor, and related security workflows emit audit records",
-          "description": "Core security-sensitive workflows should emit audit records during normal and failed operations.",
+          "description": "Documented evidence, attachment and file-handling, vendor, and related security workflows should emit audit records during normal and failed operations.",
           "verificationMethod": "Workflow-level audit emission review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -615,14 +615,6 @@
           {
             "subcategoryId": "PR.PS-04",
             "label": "PR / PR.PS: Log records are generated and made available for continuous monitoring"
-          },
-          {
-            "subcategoryId": "DE.CM-01",
-            "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
-          },
-          {
-            "subcategoryId": "DE.CM-03",
-            "label": "DE / DE.CM: Personnel activity and technology usage are monitored to find potentially adverse events"
           }
         ],
         "soc2": [
@@ -1914,6 +1906,119 @@
       }
     },
     {
+      "internalControlId": "CTRL-IR-004",
+      "nist80053Id": "IR-4",
+      "title": "Incident Handling",
+      "familyId": "IR",
+      "familyTitle": "Incident Response",
+      "implementationSummary": "This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, and retained review artifacts that can assist incident analysis, but provider incident response procedures and customer-side response workflows must be documented and operated outside these repo-backed product artifacts.",
+      "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "incident-evidence-export",
+          "label": "Provider investigation-supporting evidence can be exported",
+          "description": "The hosted service should expose audit trails and evidence exports that can support provider or customer investigations.",
+          "verificationMethod": "Evidence export walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Audit and evidence export flows can support incident investigations and post-incident analysis.",
+            "evidence": [
+              {
+                "title": "Evidence export support",
+                "description": "src/routes/app/admin/security.tsx and convex/security.ts support evidence report generation and export.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "investigation-artifacts-retained",
+          "label": "Provider investigation artifacts can be retained with integrity metadata",
+          "description": "The hosted service should retain hashes, review state, and exported evidence metadata that support later investigation and post-incident analysis.",
+          "verificationMethod": "Evidence report retention review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Evidence reports persist review metadata and integrity-linked export details that can be used during investigations.",
+            "evidence": [
+              {
+                "title": "Integrity-linked evidence reports",
+                "description": "convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-incident-response-procedure",
+          "label": "Provider incident response procedure is documented",
+          "description": "The provider should maintain documented incident response procedures covering triage, escalation, containment, customer coordination, and post-incident follow-up.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Incident Response",
+            "notes": "No provider-owned incident response procedure is attached in the repo-backed control workspace yet.",
+            "evidence": []
+          }
+        }
+      ],
+      "owner": "Security Incident Response",
+      "responsibility": "shared-responsibility",
+      "customerResponsibilityNotes": "Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling in their own environment; the platform evidence here provides investigation support only.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(6)",
+            "title": "Security incident procedures",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(6)",
+            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "RS.AN-03",
+            "label": "RS / RS.AN: Analysis is performed to establish what has taken place during an incident and the root cause of the incident"
+          }
+        ],
+        "soc2": []
+      }
+    },
+    {
       "internalControlId": "CTRL-RA-005",
       "nist80053Id": "RA-5",
       "title": "Vulnerability Monitoring and Scanning",
@@ -2020,14 +2125,14 @@
       "title": "External System Services",
       "familyId": "SA",
       "familyTitle": "System and Services Acquisition",
-      "implementationSummary": "This control ensures externally provided services are governed by defined boundary expectations, permitted data classes, and auditable usage. The platform supports that objective through a vendor boundary registry, explicit allowed-data-class policies, approval gates, and audit events for vendor use or denial, while buyer-facing contractual and subprocessor program artifacts remain outside this repo-backed register.",
+      "implementationSummary": "This control ensures externally provided services used by the hosted service are constrained by approved boundary expectations, permitted data classes, and auditable usage. The platform supports that objective through an internal vendor boundary registry, environment and data-class policy enforcement, and audit events for vendor use or denial. Formal subprocessor disclosures, contractual commitments, and broader supplier due diligence remain outside this repo-backed workspace.",
       "controlStatement": "Require that providers of external system services comply with organizational security and privacy requirements and employ the following controls: {{ insert: param, sa-09_odp.01 }}; Define and document organizational oversight and user roles and responsibilities with regard to external system services; and Employ the following processes, methods, and techniques to monitor control compliance by external service providers on an ongoing basis: {{ insert: param, sa-09_odp.02 }}.",
       "priority": "p0",
       "platformChecklistItems": [
         {
           "itemId": "vendor-inventory-and-data-classes",
-          "label": "External services and subprocessors are inventoried with approved data classes",
-          "description": "Approved external services should be recorded with the categories of data the service is permitted to handle, even if broader legal subprocessor records live elsewhere.",
+          "label": "External services are inventoried with approved data classes",
+          "description": "Approved external services should be recorded with the categories of data they are permitted to handle, while broader legal subprocessor records live elsewhere.",
           "verificationMethod": "Vendor boundary registry review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2090,7 +2195,7 @@
         },
         {
           "itemId": "vendor-usage-auditable",
-          "label": "Vendor usage is auditable and blocked when approval requirements are not met",
+          "label": "Vendor usage and denials are auditable",
           "description": "Successful and denied vendor use should emit reviewable records showing whether policy conditions were met.",
           "verificationMethod": "Vendor audit event review",
           "required": true,
@@ -2122,7 +2227,7 @@
         }
       ],
       "owner": "Vendor Risk Management",
-      "responsibility": "shared-responsibility",
+      "responsibility": "platform",
       "customerResponsibilityNotes": "Customer organizations remain responsible for their own vendor due diligence, contract review, and deciding whether the platform vendor set satisfies their subprocessor and business-associate requirements.",
       "mappings": {
         "hipaa": [
@@ -2153,26 +2258,11 @@
         ],
         "csf20": [
           {
-            "subcategoryId": "GV.SC-05",
-            "label": "GV / GV.SC: Requirements to address cybersecurity risks in supply chains are established, prioritized, and integrated into contracts and other types of agreements with suppliers and other relevant third parties"
-          },
-          {
-            "subcategoryId": "GV.SC-06",
-            "label": "GV / GV.SC: Planning and due diligence are performed to reduce risks before entering into formal supplier or other third-party relationships"
-          },
-          {
             "subcategoryId": "ID.AM-02",
             "label": "ID / ID.AM: Inventories of software, services, and systems managed by the organization are maintained"
           }
         ],
-        "soc2": [
-          {
-            "criterionId": "CC9.2",
-            "group": "common-criteria",
-            "label": "The entity assesses and manages risks associated with vendors and business partners.",
-            "trustServiceCategory": "security"
-          }
-        ]
+        "soc2": []
       }
     },
     {
@@ -2298,106 +2388,6 @@
             "trustServiceCategory": "security"
           }
         ]
-      }
-    },
-    {
-      "internalControlId": "CTRL-IR-004",
-      "nist80053Id": "IR-4",
-      "title": "Incident Handling",
-      "familyId": "IR",
-      "familyTitle": "Incident Response",
-      "implementationSummary": "This control addresses incident handling expectations. In this workspace the platform only evidences investigation-supporting audit trails, exportable evidence, and retained review artifacts; substantive incident response procedures remain outside the hosted product evidence and are customer or provider program responsibilities.",
-      "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
-      "priority": "p0",
-      "platformChecklistItems": [
-        {
-          "itemId": "incident-evidence-export",
-          "label": "Incident-supporting evidence can be exported",
-          "description": "The platform should expose audit trails and evidence exports that support investigations.",
-          "verificationMethod": "Evidence export walkthrough",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "Audit and evidence export flows can support incident investigations and post-incident analysis.",
-            "evidence": [
-              {
-                "title": "Evidence export support",
-                "description": "src/routes/app/admin/security.tsx and convex/security.ts support evidence report generation and export.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "investigation-artifacts-retained",
-          "label": "Investigation-supporting artifacts can be retained",
-          "description": "The platform should retain hashes, review state, and exported evidence metadata that support post-incident analysis.",
-          "verificationMethod": "Evidence report retention review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "system",
-            "file",
-            "note"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Security Incident Response",
-            "notes": "Evidence reports persist review metadata and integrity-linked export details that can be used during investigations.",
-            "evidence": [
-              {
-                "title": "Integrity-linked evidence reports",
-                "description": "convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        }
-      ],
-      "owner": "Security Incident Response",
-      "responsibility": "customer",
-      "customerResponsibilityNotes": "Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling; the platform evidence here is only investigation-supporting material.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(6)",
-            "title": "Security incident procedures",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.316(b)(1)",
-            "title": "Documentation",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(6)",
-            "label": "HIPAA Standard: Implement policies and procedures to address security incidents.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "RS.AN-03",
-            "label": "RS / RS.AN: Analysis is performed to establish what has taken place during an incident and the root cause of the incident"
-          },
-          {
-            "subcategoryId": "RS.CO-02",
-            "label": "RS / RS.CO: Internal and external stakeholders are notified of incidents"
-          }
-        ],
-        "soc2": []
       }
     },
     {
@@ -2711,13 +2701,13 @@
       "title": "Audit Record Review, Analysis, and Reporting",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures audit records and related security findings can be reviewed, analyzed, and followed up through defined workflows. The platform provides audit history views, review-state retention, and evidence-report workflows that support that process, while formal operator review cadence and escalation procedures remain deployment-owned.",
+      "implementationSummary": "This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views and evidence-report review workflows, but a formal provider review cadence and escalation procedure are not yet evidenced in this workspace.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
       "priority": "p1",
       "platformChecklistItems": [
         {
           "itemId": "review-queue-surface",
-          "label": "Audit review surfaces exist",
+          "label": "Provider-facing audit review surfaces exist",
           "description": "The platform must provide supported surfaces for reviewing audit activity and related security evidence.",
           "verificationMethod": "Audit review UI walkthrough",
           "required": true,
@@ -2728,15 +2718,8 @@
           "seed": {
             "status": "done",
             "owner": "Security Operations",
-            "notes": "Authorized users can review organization audit history and security-admin evidence state through built-in surfaces.",
+            "notes": "Security administrators can review audit history and evidence state through built-in provider-facing surfaces.",
             "evidence": [
-              {
-                "title": "Organization audit review surface",
-                "description": "src/features/organizations/components/OrganizationAuditPage.tsx exposes reviewable audit history for organization roles.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
               {
                 "title": "Security admin review surface",
                 "description": "src/routes/app/admin/security.tsx exposes control workspace and evidence review surfaces for security administrators.",
@@ -2749,7 +2732,7 @@
         },
         {
           "itemId": "review-record-retention",
-          "label": "Review records can be retained",
+          "label": "Audit review state and follow-up records can be retained",
           "description": "The platform should retain review status, reviewer identity, notes, and export integrity data when audit evidence is reviewed.",
           "verificationMethod": "Evidence report schema and review workflow inspection",
           "required": true,
@@ -2782,8 +2765,8 @@
         },
         {
           "itemId": "provider-review-procedure",
-          "label": "Operator review procedure is documented",
-          "description": "Internal review cadence and escalation expectations must be documented for platform operators.",
+          "label": "Provider audit review procedure is documented",
+          "description": "The provider documents internal audit review cadence, escalation expectations, and follow-up steps for the hosted service.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2793,14 +2776,14 @@
           "seed": {
             "status": "not_started",
             "owner": "Security Operations",
-            "notes": "No operator-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.",
+            "notes": "No provider-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.",
             "evidence": []
           }
         }
       ],
       "owner": "Security Operations",
-      "responsibility": "shared-responsibility",
-      "customerResponsibilityNotes": "Customer organizations are responsible for establishing review cadence, escalation paths, and documented follow-up for the evidence surfaced by the platform.",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for their own review and follow-up processes for any audit exports or evidence they retain outside the hosted service.",
       "mappings": {
         "hipaa": [
           {
@@ -2838,10 +2821,6 @@
           {
             "subcategoryId": "DE.AE-02",
             "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"
-          },
-          {
-            "subcategoryId": "DE.AE-03",
-            "label": "DE / DE.AE: Information is correlated from multiple sources"
           }
         ],
         "soc2": [
@@ -2849,12 +2828,6 @@
             "criterionId": "CC7.2",
             "group": "common-criteria",
             "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.3",
-            "group": "common-criteria",
-            "label": "The entity evaluates security events to determine whether they could or have resulted in a failure of the entity to meet its objectives (security incidents) and, if so, takes actions to prevent or address such failures.",
             "trustServiceCategory": "security"
           }
         ]
@@ -3002,19 +2975,167 @@
       }
     },
     {
+      "internalControlId": "CTRL-PL-002",
+      "nist80053Id": "PL-2",
+      "title": "System Security and Privacy Plans",
+      "familyId": "PL",
+      "familyTitle": "Planning",
+      "implementationSummary": "This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, and control-matrix documentation, but formal plan approval and recurring review workflow evidence are not yet attached here.",
+      "controlStatement": "Develop security and privacy plans for the system that: Are consistent with the organization’s enterprise architecture; Explicitly define the constituent system components; Describe the operational context of the system in terms of mission and business processes; Identify the individuals that fulfill system roles and responsibilities; Identify the information types processed, stored, and transmitted by the system; Provide the security categorization of the system, including supporting rationale; Describe any specific threats to the system that are of concern to the organization; Provide the results of a privacy risk assessment for systems processing personally identifiable information; Describe the operational environment for the system and any dependencies on or connections to other systems or system components; Provide an overview of the security and privacy requirements for the system; Identify any relevant control baselines or overlays, if applicable; Describe the controls in place or planned for meeting the security and privacy requirements, including a rationale for any tailoring decisions; Include risk determinations for security and privacy architecture and design decisions; Include security- and privacy-related activities affecting the system that require planning and coordination with {{ insert: param, pl-02_odp.01 }} ; and Are reviewed and approved by the authorizing official or designated representative prior to plan implementation. Distribute copies of the plans and communicate subsequent changes to the plans to {{ insert: param, pl-02_odp.02 }}; Review the plans {{ insert: param, pl-02_odp.03 }}; Update the plans to address changes to the system and environment of operation or problems identified during plan implementation or control assessments; and Protect the plans from unauthorized disclosure and modification.",
+      "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "system-architecture-and-context-documented",
+          "label": "Architecture and service scope are documented",
+          "description": "The provider should maintain architecture and operational-context documentation for the hosted service boundary.",
+          "verificationMethod": "Architecture and design-document review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Planning",
+            "notes": "Architecture and deployment-scope documentation exists for the hosted service and can anchor a lightweight system plan.",
+            "evidence": [
+              {
+                "title": "Architecture overview document",
+                "description": "docs/ARCHITECTURE.md documents routing, server-function boundaries, authentication, and the high-level application architecture.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Control matrix scope narrative",
+                "description": "docs/CONTROL_MATRIX.md explains which safeguards ship in app scope versus which operational gaps remain deployer-owned.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "security-requirements-and-dependencies-documented",
+          "label": "Security requirements and external dependencies are documented",
+          "description": "The provider should document key security requirements, external dependencies, and the scope of controls or gaps relevant to the hosted service.",
+          "verificationMethod": "Security planning artifact review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Planning",
+            "notes": "The repo documents security requirements and external dependencies through linked security notes, control-matrix scope, and vendor-boundary definitions.",
+            "evidence": [
+              {
+                "title": "Auth security baseline notes",
+                "description": "docs/AUTH_SECURITY.md documents strict auth defaults, session protections, origin validation, and deployer-owned security gaps.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Vendor dependency boundary definitions",
+                "description": "src/lib/shared/vendor-boundary.ts and src/lib/server/vendor-boundary.server.ts document approved outbound vendors, allowed data classes, and dependency boundaries.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-plan-review-and-approval-documented",
+          "label": "Provider plan review and approval workflow is documented",
+          "description": "The provider should document how the system security and privacy plan is reviewed, approved, and updated over time.",
+          "verificationMethod": "Planning procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Planning",
+            "notes": "The repo-backed workspace does not yet include a formal provider review cadence, approval record, or update procedure for these planning artifacts.",
+            "evidence": []
+          }
+        }
+      ],
+      "owner": "Security Planning",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for documenting their own connected environment, local data flows, user roles, and any customer-operated safeguards or procedures that sit outside the hosted service boundary.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(A)",
+            "title": "Risk analysis",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.316(b)(1)",
+            "title": "Documentation",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(A)",
+            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "ID.AM-03",
+            "label": "ID / ID.AM: Representations of the organization's authorized network communication and internal and external network data flows are maintained"
+          },
+          {
+            "subcategoryId": "ID.AM-08",
+            "label": "ID / ID.AM: Systems, hardware, software, services, and data are managed throughout their life cycles"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC5.3",
+            "group": "common-criteria",
+            "label": "COSO Principle 12: The entity deploys control activities through policies that establish what is expected and in procedures that put policies into action.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      }
+    },
+    {
       "internalControlId": "CTRL-SI-004",
       "nist80053Id": "SI-4",
       "title": "System Monitoring",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, and security posture summaries, but operator alert response procedures are not yet fully evidenced in this register.",
+      "implementationSummary": "This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The platform provides document scan records, audit-integrity failure signals, and security posture summaries for provider review, but provider alert response procedures are not yet evidenced in this register.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
       "priority": "p1",
       "platformChecklistItems": [
         {
           "itemId": "monitoring-signals",
-          "label": "Monitoring signals are emitted",
-          "description": "The platform must emit monitoring-relevant security signals for operational review.",
+          "label": "Hosted-service monitoring signals are collected and surfaced",
+          "description": "The platform should collect and surface security-relevant monitoring signals for provider review.",
           "verificationMethod": "Telemetry and event review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -3024,11 +3145,11 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring-related platform signals are exposed through document scan events, audit integrity checks, and security posture summaries.",
+            "notes": "Monitoring-related platform signals are collected and surfaced through document scan records, audit-integrity failures, and security posture summaries.",
             "evidence": [
               {
                 "title": "Security monitoring signals",
-                "description": "convex/security.ts reports document scan events, audit integrity failures, and telemetry posture.",
+                "description": "convex/security.ts reports document scan records and security posture summaries, while convex/audit.ts records audit_integrity_check_failed events when integrity verification fails.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3038,8 +3159,8 @@
         },
         {
           "itemId": "provider-alert-procedure",
-          "label": "Operator alert response procedure is documented",
-          "description": "Internal alert routing and response expectations must be documented for the hosted platform.",
+          "label": "Provider alert response procedure is documented",
+          "description": "Provider alert routing and response expectations should be documented for the hosted platform.",
           "verificationMethod": "Procedure review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -3049,14 +3170,14 @@
           "seed": {
             "status": "not_started",
             "owner": "Security Monitoring",
-            "notes": "No operator-owned monitoring response procedure is attached in the control workspace yet.",
+            "notes": "No provider-owned monitoring response procedure is attached in the control workspace yet.",
             "evidence": []
           }
         },
         {
           "itemId": "monitoring-records-retained",
-          "label": "Monitoring records are retained",
-          "description": "The platform should retain monitoring outputs that investigators or operators can review after signals are generated.",
+          "label": "Monitoring records are retained for later review",
+          "description": "The platform should retain monitoring outputs that providers can review after signals are generated.",
           "verificationMethod": "Monitoring record review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -3067,11 +3188,18 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring-related records are retained through document scan events, audit-integrity failures, and evidence report metadata.",
+            "notes": "Monitoring-related records are retained through document scan events, retention job state, and audit-integrity failure records.",
             "evidence": [
               {
                 "title": "Document scan event records",
                 "description": "convex/schema.ts defines documentScanEvents and convex/security.ts reports their latest status, rejection counts, and quarantine counts.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Retention job records",
+                "description": "convex/schema.ts defines retentionJobs and convex/security.ts reports retention job posture for later operational review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3088,7 +3216,7 @@
         }
       ],
       "owner": "Security Monitoring",
-      "responsibility": "shared-responsibility",
+      "responsibility": "platform",
       "customerResponsibilityNotes": "Customer organizations are responsible for reviewing service notifications, acting on customer-visible alerts, and integrating platform outputs into their own operational response processes.",
       "mappings": {
         "hipaa": [
@@ -3113,14 +3241,6 @@
           }
         ],
         "csf20": [
-          {
-            "subcategoryId": "DE.CM-01",
-            "label": "DE / DE.CM: Networks and network services are monitored to find potentially adverse events"
-          },
-          {
-            "subcategoryId": "DE.CM-06",
-            "label": "DE / DE.CM: External service provider activities and services are monitored to find potentially adverse events"
-          },
           {
             "subcategoryId": "DE.AE-02",
             "label": "DE / DE.AE: Potentially adverse events are analyzed to better understand associated activities"

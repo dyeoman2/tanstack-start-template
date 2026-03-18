@@ -27,10 +27,12 @@ Use this skill to add or revise controls that appear in the site admin security 
 - Do not hand-edit `compliance/generated/active-control-register.seed.json`. Always regenerate it from the script.
 - Prefer explicit `csf20Ids` and `soc2CriterionIds` overrides when the inherited crosswalk is broader than the app evidence actually supports.
 - Keep implementation summaries narrow. Do not let one control drift into adjacent controls.
+- Ensure the implementation summary is fully supportable by the checklist items and seeded evidence. If the checklist or evidence is narrower than the summary, narrow the summary.
 - Keep shared-responsibility wording precise:
   - platform items describe what the hosted service does
   - customer responsibility notes describe what the customer must govern or operate
   - provider-internal process items should be clearly labeled as provider or operator duties, not customer guidance
+- Prefer explicit actor labels. Use `Provider`, `Customer`, `Platform`, `Hosted service`, or `Site admin` instead of ambiguous terms like `operator` unless the actor is immediately clarified.
 - Evidence should point to concrete code, config, UI, or schema artifacts already in the repo.
 - Seed evidence at the checklist-item level, not only at the control level.
 - When evidence only proves part of the claim, set sufficiency to `partial` and keep the checklist status honest.
@@ -47,6 +49,7 @@ When adding a new control blueprint, fill in this structure deliberately:
 - `implementationSummary`
   - Explain what the hosted service actually does.
   - Avoid mentioning customer duties here except to frame boundaries.
+  - Do not mention an evidence source or workflow here unless that support appears in the checklist evidence below.
 - `responsibility`
   - Use `platform` when the checklist items describe hosted-service behavior we operate.
   - Use `shared-responsibility` when the control depends on both platform features and customer governance.
@@ -64,6 +67,21 @@ When adding a new control blueprint, fill in this structure deliberately:
 - `customerResponsibilityNotes`
   - Keep this separate from the checklist.
   - Describe what the customer must configure, review, govern, or operate outside the hosted service.
+
+## Responsibility Patterns
+
+Use these patterns consistently:
+
+- `platform` control
+  - Checklist items should primarily describe hosted-service behavior or provider-operated procedures.
+- `shared-responsibility` control
+  - Checklist items may include provider capabilities and provider-operated procedures, but customer duties should stay in `customerResponsibilityNotes` unless a checklist item is explicitly labeled as customer-owned.
+- `customer` control
+  - Only use this when the core control obligation is customer-operated.
+  - If the platform merely supplies support artifacts, label the checklist items as support-oriented, for example:
+    - `Investigation-supporting evidence can be exported`
+    - `Provider artifacts can support customer review`
+  - Do not make a customer-owned control read like a platform-operated procedure.
 
 ## Mapping Rubric
 
@@ -93,12 +111,16 @@ Before considering a control update complete, verify all of these:
 
 - The control exists in the NIST moderate source file.
 - The implementation summary does not drift into adjacent controls.
+- Every sentence in the implementation summary is backed by at least one checklist item and its seeded evidence.
 - Responsibility matches the actual checklist content.
 - Customer responsibilities are not mixed into provider checklist items.
+- Actor labels are explicit. Replace vague nouns like `operator` unless the ownership is unmistakable.
 - Each checklist item has at least one concrete evidence artifact or is intentionally incomplete.
 - Partial support is marked `partial` or incomplete instead of overstated as complete.
 - CSF and SOC 2 mappings are explicitly narrowed when the inherited crosswalk is too broad.
 - Provider-internal process items are labeled as provider or operator duties, not written like customer instructions.
+- Checklist labels and descriptions match the softened scope of the summary. If the summary no longer claims a full subprocessor program, SSP, or monitoring program, the checklist labels should not imply one.
+- Customer-owned controls that rely on provider evidence are clearly framed as provider support artifacts, not provider ownership of the full control.
 - The regenerated seed changed only because of source edits, not hand edits.
 
 ## Checklist And Evidence Patterns
