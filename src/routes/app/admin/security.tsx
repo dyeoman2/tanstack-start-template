@@ -3,9 +3,10 @@ import type { Id } from '@convex/_generated/dataModel';
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useAction, useMutation, useQuery } from 'convex/react';
+import { Archive, Check, History, MoreHorizontal, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import type { ReactNode } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { z } from 'zod';
 import {
   createSortableHeader,
@@ -24,6 +25,13 @@ import {
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu';
 import { ExportButton } from '~/components/ui/export-button';
 import { Input } from '~/components/ui/input';
 import {
@@ -34,13 +42,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '~/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -72,17 +73,25 @@ const CONTROL_EVIDENCE_FILTER_VALUES = ['all', 'ready', 'partial', 'missing'] as
 const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 type SecurityChecklistEvidence = {
+  archivedAt: number | null;
+  archivedByDisplay: string | null;
   createdAt: number;
   description: string | null;
   evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
   fileName: string | null;
   id: string;
+  lifecycleStatus: 'active' | 'archived' | 'superseded';
   mimeType: string | null;
+  renewedFromEvidenceId: string | null;
+  replacedByEvidenceId: string | null;
+  reviewStatus: 'pending' | 'reviewed';
   reviewedAt: number | null;
+  reviewedByDisplay: string | null;
   sizeBytes: number | null;
   storageId: string | null;
   sufficiency: 'missing' | 'partial' | 'sufficient';
   title: string;
+  uploadedByDisplay: string | null;
   url: string | null;
 };
 
@@ -212,13 +221,13 @@ function AdminSecurityRoute() {
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
   const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
   const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
-  const updateChecklistItem = useMutation(api.security.updateSecurityControlChecklistItem);
+  const reviewControlEvidence = useMutation(api.security.reviewSecurityControlEvidence);
   const addEvidenceLink = useMutation(api.security.addSecurityControlEvidenceLink);
   const addEvidenceNote = useMutation(api.security.addSecurityControlEvidenceNote);
+  const archiveControlEvidence = useMutation(api.security.archiveSecurityControlEvidence);
   const createEvidenceUploadTarget = useAction(api.security.createSecurityControlEvidenceUploadTarget);
   const finalizeEvidenceUpload = useAction(api.security.finalizeSecurityControlEvidenceUpload);
-  const removeControlEvidence = useAction(api.security.removeSecurityControlEvidence);
-  const hideSeededControlEvidence = useMutation(api.security.hideSeededSecurityControlEvidence);
+  const renewControlEvidence = useMutation(api.security.renewSecurityControlEvidence);
   const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
   const [report, setReport] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
@@ -526,21 +535,58 @@ function AdminSecurityRoute() {
     try {
       const csv = Papa.unparse(
         sortedControls.map((control) => ({
+          evidenceStatus: formatEvidenceReadiness(control.evidenceReadiness),
+          evidenceProgress: getEvidenceProgress(control).label,
           controlId: control.nist80053Id,
           title: control.title,
-          responsibility: control.responsibility ?? '',
+          responsibility: formatControlResponsibility(control.responsibility),
           implementationSummary: control.implementationSummary,
           controlStatement: control.controlStatement,
           familyId: control.familyId,
           familyTitle: control.familyTitle,
           owner: control.owner,
           priority: control.priority,
-          evidenceReadiness: control.evidenceReadiness,
-          checklistCompletion: `${control.platformChecklist.filter((item) => item.status === 'done' || item.status === 'not_applicable').length}/${control.platformChecklist.filter((item) => item.required).length}`,
-          evidenceCount: control.platformChecklist.reduce(
-            (count, item) => count + item.evidence.length,
-            0,
-          ),
+          reviewedEvidenceCount: control.platformChecklist.reduce((count, item) => {
+            return (
+              count +
+              item.evidence.filter(
+                (evidence) =>
+                  evidence.lifecycleStatus === 'active' && evidence.reviewStatus === 'reviewed',
+              ).length
+            );
+          }, 0),
+          evidenceReviewStatuses: control.platformChecklist
+            .flatMap((item) =>
+              item.evidence
+                .filter((evidence) => evidence.lifecycleStatus === 'active')
+                .map(
+                  (evidence) =>
+                    `${item.label}: ${evidence.title} · ${formatEvidenceReviewStatus(evidence.reviewStatus)}${evidence.reviewedAt ? ` · ${new Date(evidence.reviewedAt).toISOString()}` : ''}${evidence.reviewedByDisplay ? ` · ${evidence.reviewedByDisplay}` : ''}`,
+                ),
+            )
+            .join('; '),
+          evidenceHistoryStatuses: control.platformChecklist
+            .flatMap((item) =>
+              item.evidence
+                .filter((evidence) => evidence.lifecycleStatus !== 'active')
+                .map(
+                  (evidence) =>
+                    `${item.label}: ${evidence.title} · ${formatEvidenceLifecycleStatus(evidence.lifecycleStatus)}${evidence.archivedAt ? ` · ${new Date(evidence.archivedAt).toISOString()}` : ''}${evidence.archivedByDisplay ? ` · ${evidence.archivedByDisplay}` : ''}`,
+                ),
+            )
+            .join('; '),
+          checklistCompletion: `${control.platformChecklist.filter((item) => item.status === 'done').length}/${control.platformChecklist.length}`,
+          evidenceCount: control.platformChecklist.reduce((count, item) => {
+            return (
+              count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length
+            );
+          }, 0),
+          archivedEvidenceCount: control.platformChecklist.reduce((count, item) => {
+            return (
+              count +
+              item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active').length
+            );
+          }, 0),
           lastReviewedAt: control.lastReviewedAt ? new Date(control.lastReviewedAt).toISOString() : '',
           customerResponsibilityNotes: control.customerResponsibilityNotes ?? '',
           hipaaMappings: control.mappings.hipaa
@@ -594,27 +640,6 @@ function AdminSecurityRoute() {
       setIsExportingControls(false);
     }
   }, [showToast, sortedControls]);
-
-  const handleChecklistItemUpdate = useCallback(
-    async (args: {
-      internalControlId: string;
-      itemId: string;
-      notes?: string;
-      owner?: string;
-      status: SecurityChecklistItem['status'];
-    }) => {
-      setBusyControlAction(`${args.internalControlId}:${args.itemId}:save`);
-      try {
-        await updateChecklistItem(args);
-        showToast('Checklist item updated.', 'success');
-      } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Failed to update checklist item', 'error');
-      } finally {
-        setBusyControlAction(null);
-      }
-    },
-    [showToast, updateChecklistItem],
-  );
 
   const handleAddEvidenceLink = useCallback(
     async (args: {
@@ -718,27 +743,52 @@ function AdminSecurityRoute() {
     [createSignedServeUrl, showToast],
   );
 
-  const handleRemoveEvidence = useCallback(
+  const handleArchiveEvidence = useCallback(
     async (args: { evidenceId: string; internalControlId: string; itemId: string }) => {
-      setBusyControlAction(`${args.evidenceId}:remove`);
+      setBusyControlAction(`${args.evidenceId}:archive`);
       try {
-        if (args.evidenceId.includes(':seed:')) {
-          await hideSeededControlEvidence({
-            evidenceId: args.evidenceId,
-            internalControlId: args.internalControlId,
-            itemId: args.itemId,
-          });
-        } else {
-          await removeControlEvidence({ evidenceId: args.evidenceId as Id<'securityControlEvidence'> });
-        }
-        showToast('Evidence removed.', 'success');
+        await archiveControlEvidence(args);
+        showToast('Evidence archived.', 'success');
       } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Failed to remove evidence', 'error');
+        showToast(error instanceof Error ? error.message : 'Failed to archive evidence', 'error');
       } finally {
         setBusyControlAction(null);
       }
     },
-    [hideSeededControlEvidence, removeControlEvidence, showToast],
+    [archiveControlEvidence, showToast],
+  );
+
+  const handleRenewEvidence = useCallback(
+    async (args: { evidenceId: string; internalControlId: string; itemId: string }) => {
+      setBusyControlAction(`${args.evidenceId}:renew`);
+      try {
+        await renewControlEvidence(args);
+        showToast('Evidence renewed. Review the new copy before it counts toward completion.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to renew evidence', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [renewControlEvidence, showToast],
+  );
+
+  const handleReviewEvidence = useCallback(
+    async (args: { evidenceId: string }) => {
+      setBusyControlAction(`${args.evidenceId}:review`);
+      try {
+        await reviewControlEvidence({
+          evidenceId: args.evidenceId as Id<'securityControlEvidence'>,
+          reviewStatus: 'reviewed',
+        });
+        showToast('Evidence marked as reviewed.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to review evidence', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [reviewControlEvidence, showToast],
   );
 
   const handleGenerateReport = async () => {
@@ -1187,9 +1237,10 @@ function AdminSecurityRoute() {
               control={selectedControl}
               onAddEvidenceLink={handleAddEvidenceLink}
               onAddEvidenceNote={handleAddEvidenceNote}
-              onChecklistItemUpdate={handleChecklistItemUpdate}
+              onArchiveEvidence={handleArchiveEvidence}
               onOpenEvidence={handleOpenEvidence}
-              onRemoveEvidence={handleRemoveEvidence}
+              onReviewEvidence={handleReviewEvidence}
+              onRenewEvidence={handleRenewEvidence}
               onUploadEvidenceFile={handleUploadEvidenceFile}
             />
           ) : null}
@@ -1361,15 +1412,14 @@ function ControlDetailSheet(props: {
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
-  onChecklistItemUpdate: (args: {
+  onArchiveEvidence: (args: {
+    evidenceId: string;
     internalControlId: string;
     itemId: string;
-    notes?: string;
-    owner?: string;
-    status: SecurityChecklistItem['status'];
   }) => Promise<void>;
   onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
-  onRemoveEvidence: (args: {
+  onReviewEvidence: (args: { evidenceId: string }) => Promise<void>;
+  onRenewEvidence: (args: {
     evidenceId: string;
     internalControlId: string;
     itemId: string;
@@ -1406,28 +1456,29 @@ function ControlDetailSheet(props: {
               label="Control last reviewed"
               value={
                 control.lastReviewedAt
-                  ? new Date(control.lastReviewedAt).toLocaleDateString()
+                  ? formatEvidenceTimestamp(control.lastReviewedAt)
                   : 'No completed review recorded'
               }
             />
           </dl>
         </DetailSection>
 
-        <DetailSection title="Implementation summary">
+        <DetailSection title="Description">
           <p className="text-sm leading-relaxed text-muted-foreground">
             {control.implementationSummary}
           </p>
         </DetailSection>
 
-        <DetailSection title="Control checklist">
+        <DetailSection title="Checklist">
           <PlatformChecklistSection
             busyAction={props.busyAction}
             control={control}
             onAddEvidenceLink={props.onAddEvidenceLink}
             onAddEvidenceNote={props.onAddEvidenceNote}
-            onChecklistItemUpdate={props.onChecklistItemUpdate}
+            onArchiveEvidence={props.onArchiveEvidence}
             onOpenEvidence={props.onOpenEvidence}
-            onRemoveEvidence={props.onRemoveEvidence}
+            onReviewEvidence={props.onReviewEvidence}
+            onRenewEvidence={props.onRenewEvidence}
             onUploadEvidenceFile={props.onUploadEvidenceFile}
           />
         </DetailSection>
@@ -1494,15 +1545,14 @@ function PlatformChecklistSection(props: {
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
-  onChecklistItemUpdate: (args: {
+  onArchiveEvidence: (args: {
+    evidenceId: string;
     internalControlId: string;
     itemId: string;
-    notes?: string;
-    owner?: string;
-    status: SecurityChecklistItem['status'];
   }) => Promise<void>;
   onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
-  onRemoveEvidence: (args: {
+  onReviewEvidence: (args: { evidenceId: string }) => Promise<void>;
+  onRenewEvidence: (args: {
     evidenceId: string;
     internalControlId: string;
     itemId: string;
@@ -1526,9 +1576,10 @@ function PlatformChecklistSection(props: {
           item={item}
           onAddEvidenceLink={props.onAddEvidenceLink}
           onAddEvidenceNote={props.onAddEvidenceNote}
-          onChecklistItemUpdate={props.onChecklistItemUpdate}
+          onArchiveEvidence={props.onArchiveEvidence}
           onOpenEvidence={props.onOpenEvidence}
-          onRemoveEvidence={props.onRemoveEvidence}
+          onReviewEvidence={props.onReviewEvidence}
+          onRenewEvidence={props.onRenewEvidence}
           onUploadEvidenceFile={props.onUploadEvidenceFile}
         />
       ))}
@@ -1555,15 +1606,14 @@ function ChecklistAccordionItem(props: {
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
-  onChecklistItemUpdate: (args: {
+  onArchiveEvidence: (args: {
+    evidenceId: string;
     internalControlId: string;
     itemId: string;
-    notes?: string;
-    owner?: string;
-    status: SecurityChecklistItem['status'];
   }) => Promise<void>;
   onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
-  onRemoveEvidence: (args: {
+  onReviewEvidence: (args: { evidenceId: string }) => Promise<void>;
+  onRenewEvidence: (args: {
     evidenceId: string;
     internalControlId: string;
     itemId: string;
@@ -1578,219 +1628,155 @@ function ChecklistAccordionItem(props: {
   }) => Promise<void>;
 }) {
   const { control, item } = props;
-  const [status, setStatus] = useState<SecurityChecklistItem['status']>(item.status);
-  const [owner, setOwner] = useState(item.owner ?? '');
-  const [notes, setNotes] = useState(item.notes ?? '');
-  const [isEditingItem, setIsEditingItem] = useState(false);
   const [isAddingProof, setIsAddingProof] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [pendingArchiveEvidence, setPendingArchiveEvidence] =
+    useState<SecurityChecklistEvidence | null>(null);
+  const [pendingRenewEvidence, setPendingRenewEvidence] =
+    useState<SecurityChecklistEvidence | null>(null);
   const [proofComposerTab, setProofComposerTab] = useState<'link' | 'note' | 'file'>('link');
   const [linkTitle, setLinkTitle] = useState('');
   const [linkUrl, setLinkUrl] = useState('');
   const [linkDescription, setLinkDescription] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteDescription, setNoteDescription] = useState('');
-  const saveKey = `${control.internalControlId}:${item.itemId}:save`;
   const linkKey = `${control.internalControlId}:${item.itemId}:link`;
   const noteKey = `${control.internalControlId}:${item.itemId}:note`;
   const fileKey = `${control.internalControlId}:${item.itemId}:file`;
-  useEffect(() => {
-    setStatus(item.status);
-    setOwner(item.owner ?? '');
-    setNotes(item.notes ?? '');
-  }, [item.notes, item.owner, item.status]);
+  const activeEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active');
+  const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
 
   return (
     <AccordionItem value={item.itemId} className="border-b last:border-b-0">
-      <AccordionTrigger className="px-4 py-3 text-left focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-border/70 data-[state=open]:bg-muted/20">
-        <div className="flex flex-1 flex-wrap items-center gap-2 pr-4">
+      <AccordionTrigger className="px-5 py-4 text-left focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-border/70 data-[state=open]:bg-muted/20">
+        <div className="flex flex-1 items-center justify-between gap-4 pr-4">
           <span className="text-sm font-medium">{item.label}</span>
-          {!item.required ? <Badge variant="outline">Optional</Badge> : null}
-          <Badge variant={getChecklistStatusBadgeVariant(item.status)}>
-            {formatChecklistStatus(item.status)}
-          </Badge>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {!item.required ? <Badge variant="outline">Optional</Badge> : null}
+            <Badge variant={getChecklistStatusBadgeVariant(item.status)}>
+              {formatChecklistStatus(item.status)}
+            </Badge>
+          </div>
         </div>
       </AccordionTrigger>
       <AccordionContent className="space-y-4 px-4 pb-4">
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{item.description}</p>
-          <div className="grid gap-3 text-sm md:grid-cols-2">
-            <div className="space-y-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Verification method
-              </p>
-              <p className="text-foreground">{item.verificationMethod}</p>
-            </div>
-            {(item.owner ?? owner).trim().length > 0 ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Owner
-                </p>
-                <p className="text-foreground">{item.owner ?? owner}</p>
-              </div>
-            ) : null}
-            {(item.notes ?? notes).trim().length > 0 ? (
-              <div className="space-y-1 md:col-span-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Notes
-                </p>
-                <p className="text-muted-foreground">{item.notes ?? notes}</p>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsEditingItem(true)}
-            >
-              Edit checklist item
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setIsAddingProof(true)}
-            >
-              Add evidence
-            </Button>
-          </div>
+          <p className="text-sm font-medium">Evidence</p>
         </div>
 
-        <div className="space-y-3 rounded-md border p-3">
-          <p className="text-sm font-medium">Evidence</p>
-          {item.evidence.length ? (
-            <div className="space-y-2">
-              {item.evidence.map((evidence) => (
-                <div
-                  key={evidence.id}
-                  className="flex flex-wrap items-start justify-between gap-3 rounded-md border px-3 py-2"
-                >
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <p className="text-sm font-medium">{evidence.title}</p>
-                      <Badge variant="outline">{formatEvidenceType(evidence.evidenceType)}</Badge>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {evidence.description ?? 'No additional description provided.'}
-                    </p>
-                    {evidence.url ? (
-                      <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
-                    ) : null}
+        {activeEvidence.length ? (
+          <div className="space-y-3">
+            {activeEvidence.map((evidence) => (
+              <div key={evidence.id} className="space-y-3 rounded-md border px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
+                  <div className="flex items-center gap-2">
+                    <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
+                      {formatEvidenceReviewStatus(evidence.reviewStatus)}
+                    </Badge>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={`Evidence actions for ${evidence.title}`}
+                          title="Evidence actions"
+                          disabled={
+                            props.busyAction === `${evidence.id}:archive` ||
+                            props.busyAction === `${evidence.id}:renew`
+                          }
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end">
+                        {!evidence.id.includes(':seed:') && evidence.reviewStatus === 'pending' ? (
+                          <DropdownMenuItem
+                            disabled={props.busyAction === `${evidence.id}:review`}
+                            onSelect={() => {
+                              void props.onReviewEvidence({
+                                evidenceId: evidence.id,
+                              });
+                            }}
+                          >
+                            <Check className="size-4" />
+                            Approve
+                          </DropdownMenuItem>
+                        ) : null}
+                        <DropdownMenuItem onSelect={() => setPendingArchiveEvidence(evidence)}>
+                          <Archive className="size-4" />
+                          Archive
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => setPendingRenewEvidence(evidence)}>
+                          <RefreshCw className="size-4" />
+                          Renew
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    {evidence.evidenceType !== 'note' ? (
-                      <Button type="button" variant="outline" onClick={() => void props.onOpenEvidence(evidence)}>
-                        Open
-                      </Button>
-                    ) : null}
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs text-muted-foreground">
+                    {evidence.description ?? 'No additional description provided.'}
+                  </p>
+                  {evidence.url ? (
+                    <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
+                  ) : null}
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p>
+                      <span className="font-medium text-foreground">Added:</span>{' '}
+                      {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">Reviewed:</span>{' '}
+                      {evidence.reviewedAt
+                        ? `${evidence.reviewedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.reviewedAt)}`
+                        : 'Not reviewed'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {evidence.evidenceType !== 'note' ? (
                     <Button
                       type="button"
                       variant="outline"
-                      disabled={props.busyAction === `${evidence.id}:remove`}
-                      onClick={() => {
-                        void props.onRemoveEvidence({
-                          evidenceId: evidence.id,
-                          internalControlId: control.internalControlId,
-                          itemId: item.itemId,
-                        });
-                      }}
+                      size="sm"
+                      onClick={() => void props.onOpenEvidence(evidence)}
                     >
-                      Remove
+                      Open
                     </Button>
-                  </div>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No evidence attached yet.</p>
-          )}
-        </div>
-      </AccordionContent>
-
-      <Dialog open={isEditingItem} onOpenChange={setIsEditingItem}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit checklist item</DialogTitle>
-            <DialogDescription>{item.label}</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Status
-                </label>
-                <Select
-                  value={status}
-                  onValueChange={(value: SecurityChecklistItem['status']) => {
-                    setStatus(value);
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="not_started">Not started</SelectItem>
-                    <SelectItem value="in_progress">In progress</SelectItem>
-                    <SelectItem value="done">Completed</SelectItem>
-                    <SelectItem value="not_applicable">Not applicable</SelectItem>
-                  </SelectContent>
-                </Select>
               </div>
-              <div className="space-y-2">
-                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Owner
-                </label>
-                <Input
-                  value={owner}
-                  onChange={(event) => setOwner(event.target.value)}
-                  placeholder="Assign owner"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Notes
-              </label>
-              <Textarea
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-                placeholder="Operational notes or verification details"
-              />
+            ))}
+            <div className="flex flex-wrap justify-start gap-2">
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
+                Add evidence
+              </Button>
+              {historyEvidence.length ? (
+                <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+                  <History className="size-4" />
+                  Evidence history
+                </Button>
+              ) : null}
             </div>
           </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => {
-                setStatus(item.status);
-                setOwner(item.owner ?? '');
-                setNotes(item.notes ?? '');
-                setIsEditingItem(false);
-              }}
-            >
-              Cancel
+        ) : (
+          <div className="flex flex-wrap justify-start gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
+              Add evidence
             </Button>
-            <Button
-              type="button"
-              disabled={props.busyAction === saveKey}
-              onClick={() => {
-                void props.onChecklistItemUpdate({
-                  internalControlId: control.internalControlId,
-                  itemId: item.itemId,
-                  notes,
-                  owner,
-                  status,
-                }).then(() => {
-                  setIsEditingItem(false);
-                });
-              }}
-            >
-              {props.busyAction === saveKey ? 'Saving…' : 'Save checklist item'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            {historyEvidence.length ? (
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+                <History className="size-4" />
+                Evidence history
+              </Button>
+            ) : null}
+          </div>
+        )}
+      </AccordionContent>
 
       <Dialog open={isAddingProof} onOpenChange={setIsAddingProof}>
         <DialogContent className="sm:max-w-2xl">
@@ -1934,6 +1920,138 @@ function ChecklistAccordionItem(props: {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
+        <DialogContent className="sm:max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Evidence history</DialogTitle>
+            <DialogDescription>{item.label}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            {historyEvidence.length ? (
+              historyEvidence.map((evidence) => (
+                <div key={evidence.id} className="space-y-2 rounded-md border px-3 py-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={getEvidenceLifecycleBadgeVariant(evidence.lifecycleStatus)}>
+                        {formatEvidenceLifecycleStatus(evidence.lifecycleStatus)}
+                      </Badge>
+                      <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
+                        {formatEvidenceReviewStatus(evidence.reviewStatus)}
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {evidence.description ?? 'No additional description provided.'}
+                  </p>
+                  {evidence.url ? (
+                    <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
+                  ) : null}
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    <p>
+                      <span className="font-medium text-foreground">Added:</span>{' '}
+                      {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">Reviewed:</span>{' '}
+                      {evidence.reviewedAt
+                        ? `${evidence.reviewedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.reviewedAt)}`
+                        : 'Not reviewed'}
+                    </p>
+                    <p>
+                      <span className="font-medium text-foreground">
+                        {evidence.lifecycleStatus === 'superseded' ? 'Superseded:' : 'Archived:'}
+                      </span>{' '}
+                      {evidence.archivedAt
+                        ? `${evidence.archivedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.archivedAt)}`
+                        : 'Not recorded'}
+                    </p>
+                  </div>
+                  {evidence.evidenceType !== 'note' ? (
+                    <div className="flex justify-start">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => void props.onOpenEvidence(evidence)}
+                      >
+                        Open
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground">No archived evidence yet.</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <DeleteConfirmationDialog
+        open={pendingArchiveEvidence !== null}
+        onClose={() => setPendingArchiveEvidence(null)}
+        title="Archive evidence?"
+        description={
+          pendingArchiveEvidence
+            ? `${pendingArchiveEvidence.title} will be removed from the active checklist and kept in evidence history.`
+            : 'This will archive the selected evidence item and preserve it in history.'
+        }
+        deleteText="Archive evidence"
+        isDeleting={
+          pendingArchiveEvidence
+            ? props.busyAction === `${pendingArchiveEvidence.id}:archive`
+            : false
+        }
+        pendingText="Archiving..."
+        onConfirm={() => {
+          if (!pendingArchiveEvidence) {
+            return;
+          }
+          void props
+            .onArchiveEvidence({
+              evidenceId: pendingArchiveEvidence.id,
+              internalControlId: control.internalControlId,
+              itemId: item.itemId,
+            })
+            .then(() => {
+              setPendingArchiveEvidence(null);
+            });
+        }}
+      />
+
+      <DeleteConfirmationDialog
+        open={pendingRenewEvidence !== null}
+        onClose={() => setPendingRenewEvidence(null)}
+        title="Renew evidence?"
+        description={
+          pendingRenewEvidence
+            ? `${pendingRenewEvidence.title} will be duplicated with a new added timestamp for now, its review metadata will be cleared, and the current evidence will move to history.`
+            : 'This will create a renewed copy and archive the current evidence.'
+        }
+        deleteText="Renew evidence"
+        isDeleting={
+          pendingRenewEvidence
+            ? props.busyAction === `${pendingRenewEvidence.id}:renew`
+            : false
+        }
+        pendingText="Renewing..."
+        onConfirm={() => {
+          if (!pendingRenewEvidence) {
+            return;
+          }
+          void props
+            .onRenewEvidence({
+              evidenceId: pendingRenewEvidence.id,
+              internalControlId: control.internalControlId,
+              itemId: item.itemId,
+            })
+            .then(() => {
+              setPendingRenewEvidence(null);
+            });
+        }}
+      />
     </AccordionItem>
   );
 }
@@ -2016,7 +2134,7 @@ function getChecklistStatusBadgeVariant(
     case 'done':
       return 'default';
     case 'in_progress':
-      return 'outline';
+      return 'secondary';
     case 'not_started':
       return 'secondary';
     case 'not_applicable':
@@ -2036,15 +2154,13 @@ function formatEvidenceReadiness(readiness: SecurityControlWorkspace['evidenceRe
 }
 
 function getEvidenceProgress(control: SecurityControlWorkspace) {
-  const requiredItems = control.platformChecklist.filter((item) => item.required);
-  const completeItems = requiredItems.filter(
-    (item) => item.evidenceSufficiency === 'sufficient',
-  );
+  const checklistItems = control.platformChecklist;
+  const completeItems = checklistItems.filter((item) => item.status === 'done');
 
   return {
     completeCount: completeItems.length,
-    label: `${completeItems.length}/${requiredItems.length}`,
-    requiredCount: requiredItems.length,
+    label: `${completeItems.length}/${checklistItems.length}`,
+    requiredCount: checklistItems.length,
   };
 }
 
@@ -2053,25 +2169,62 @@ function formatChecklistStatus(status: SecurityChecklistItem['status']) {
     case 'done':
       return 'Completed';
     case 'in_progress':
-      return 'In progress';
+      return 'Incomplete';
     case 'not_started':
-      return 'Not started';
+      return 'Incomplete';
     case 'not_applicable':
-      return 'Not applicable';
+      return 'Incomplete';
   }
 }
 
-function formatEvidenceType(type: SecurityChecklistEvidence['evidenceType']) {
-  switch (type) {
-    case 'file':
-      return 'File';
-    case 'link':
-      return 'Link';
-    case 'note':
-      return 'Note';
-    case 'system_snapshot':
-      return 'System snapshot';
+function getEvidenceReviewBadgeVariant(
+  reviewStatus: SecurityChecklistEvidence['reviewStatus'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (reviewStatus) {
+    case 'reviewed':
+      return 'default';
+    case 'pending':
+      return 'outline';
   }
+}
+
+function getEvidenceLifecycleBadgeVariant(
+  lifecycleStatus: SecurityChecklistEvidence['lifecycleStatus'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (lifecycleStatus) {
+    case 'active':
+      return 'outline';
+    case 'archived':
+      return 'secondary';
+    case 'superseded':
+      return 'outline';
+  }
+}
+
+function formatEvidenceReviewStatus(reviewStatus: SecurityChecklistEvidence['reviewStatus']) {
+  switch (reviewStatus) {
+    case 'reviewed':
+      return 'Reviewed';
+    case 'pending':
+      return 'Pending review';
+  }
+}
+
+function formatEvidenceLifecycleStatus(
+  lifecycleStatus: SecurityChecklistEvidence['lifecycleStatus'],
+) {
+  switch (lifecycleStatus) {
+    case 'active':
+      return 'Active';
+    case 'archived':
+      return 'Archived';
+    case 'superseded':
+      return 'Superseded';
+  }
+}
+
+function formatEvidenceTimestamp(timestamp: number) {
+  return new Date(timestamp).toLocaleString();
 }
 
 function SummaryCard(props: {

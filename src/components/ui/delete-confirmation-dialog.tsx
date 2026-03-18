@@ -39,6 +39,8 @@ export interface DeleteConfirmationDialogProps {
   deleteText?: DeleteButtonContent;
   /** Whether the delete operation is in progress */
   isDeleting?: boolean;
+  /** Text while the operation is in progress */
+  pendingText?: string;
   /** Error message to display */
   error?: string;
   /** Callback when delete is confirmed */
@@ -58,6 +60,7 @@ export function DeleteConfirmationDialog({
   cancelText = 'Cancel',
   deleteText = 'Delete',
   isDeleting = false,
+  pendingText = 'Deleting...',
   error,
   onConfirm,
   variant = 'normal',
@@ -156,7 +159,7 @@ export function DeleteConfirmationDialog({
                     }}
                     disabled={!canSubmit || isDeleting}
                   >
-                    {isDeleting ? 'Deleting...' : deleteText}
+                    {isDeleting ? pendingText : deleteText}
                   </AlertDialogAction>
                 )}
               </form.Subscribe>
@@ -185,7 +188,7 @@ export function DeleteConfirmationDialog({
                 }}
                 disabled={isDeleting}
               >
-                {isDeleting ? 'Deleting...' : deleteText}
+                {isDeleting ? pendingText : deleteText}
               </AlertDialogAction>
             </AlertDialogFooter>
           </>

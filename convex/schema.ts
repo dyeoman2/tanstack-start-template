@@ -545,6 +545,17 @@ export default defineSchema({
     owner: v.optional(v.string()),
     notes: v.optional(v.string()),
     hiddenSeedEvidenceIds: v.optional(v.array(v.string())),
+    archivedSeedEvidence: v.optional(
+      v.array(
+        v.object({
+          evidenceId: v.string(),
+          lifecycleStatus: v.union(v.literal('archived'), v.literal('superseded')),
+          archivedAt: v.number(),
+          archivedByUserId: v.string(),
+          replacedByEvidenceId: v.optional(v.string()),
+        }),
+      ),
+    ),
     completedAt: v.optional(v.number()),
     completedByUserId: v.optional(v.string()),
     lastReviewedAt: v.optional(v.number()),
@@ -573,7 +584,16 @@ export default defineSchema({
     sizeBytes: v.optional(v.number()),
     sufficiency: v.union(v.literal('missing'), v.literal('partial'), v.literal('sufficient')),
     uploadedByUserId: v.string(),
+    reviewStatus: v.optional(v.union(v.literal('pending'), v.literal('reviewed'))),
     reviewedAt: v.optional(v.number()),
+    reviewedByUserId: v.optional(v.string()),
+    lifecycleStatus: v.optional(
+      v.union(v.literal('active'), v.literal('archived'), v.literal('superseded')),
+    ),
+    archivedAt: v.optional(v.number()),
+    archivedByUserId: v.optional(v.string()),
+    replacedByEvidenceId: v.optional(v.string()),
+    renewedFromEvidenceId: v.optional(v.string()),
     createdAt: v.number(),
     updatedAt: v.number(),
   })

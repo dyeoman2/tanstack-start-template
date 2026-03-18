@@ -10,6 +10,7 @@ import { throwConvexError } from './auth/errors';
 
 const USER_PROFILES_BACKFILL_BATCH_SIZE = 100;
 const AUDIT_LOGS_BACKFILL_BATCH_SIZE = 100;
+const SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE = 100;
 const ONBOARDING_BACKFILL_STATUS = 'not_started' as const;
 
 type LegacyAuditLogDoc = Doc<'auditLogs'> & {
@@ -338,6 +339,166 @@ export const runUserProfilesOnboardingNormalization = action({
     while (true) {
       const result = await ctx.runMutation(
         internal.migrations.normalizeUserProfilesOnboardingBatch,
+        {
+          cursor,
+        },
+      );
+
+      batches += 1;
+      processed += result.processed;
+      updated += result.updated;
+
+      if (result.done || result.continueCursor === null) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+    }
+
+    return {
+      batches,
+      processed,
+      updated,
+    };
+  },
+});
+
+export const backfillSecurityControlEvidenceReviewStateBatch = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+  },
+  returns: v.object({
+    continueCursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query('securityControlEvidence').paginate({
+      cursor: args.cursor ?? null,
+      numItems: SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE,
+    });
+
+    let updated = 0;
+
+    for (const evidence of result.page) {
+      if (evidence.reviewStatus !== undefined) {
+        continue;
+      }
+
+      await ctx.db.patch(evidence._id, {
+        reviewStatus: evidence.reviewedAt ? 'reviewed' : 'pending',
+      });
+      updated += 1;
+    }
+
+    return {
+      continueCursor: result.isDone ? null : result.continueCursor,
+      done: result.isDone,
+      processed: result.page.length,
+      updated,
+    };
+  },
+});
+
+export const runSecurityControlEvidenceReviewStateBackfill = action({
+  args: {},
+  returns: v.object({
+    batches: v.number(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
+    let batches = 0;
+    let processed = 0;
+    let updated = 0;
+    let cursor: string | undefined;
+
+    while (true) {
+      const result = await ctx.runMutation(
+        internal.migrations.backfillSecurityControlEvidenceReviewStateBatch,
+        {
+          cursor,
+        },
+      );
+
+      batches += 1;
+      processed += result.processed;
+      updated += result.updated;
+
+      if (result.done || result.continueCursor === null) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+    }
+
+    return {
+      batches,
+      processed,
+      updated,
+    };
+  },
+});
+
+export const backfillSecurityControlEvidenceLifecycleBatch = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+  },
+  returns: v.object({
+    continueCursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query('securityControlEvidence').paginate({
+      cursor: args.cursor ?? null,
+      numItems: SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE,
+    });
+
+    let updated = 0;
+
+    for (const evidence of result.page) {
+      if (evidence.lifecycleStatus !== undefined) {
+        continue;
+      }
+
+      await ctx.db.patch(evidence._id, {
+        lifecycleStatus: 'active',
+      });
+      updated += 1;
+    }
+
+    return {
+      continueCursor: result.isDone ? null : result.continueCursor,
+      done: result.isDone,
+      processed: result.page.length,
+      updated,
+    };
+  },
+});
+
+export const runSecurityControlEvidenceLifecycleBackfill = action({
+  args: {},
+  returns: v.object({
+    batches: v.number(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
+    let batches = 0;
+    let processed = 0;
+    let updated = 0;
+    let cursor: string | undefined;
+
+    while (true) {
+      const result = await ctx.runMutation(
+        internal.migrations.backfillSecurityControlEvidenceLifecycleBatch,
         {
           cursor,
         },
