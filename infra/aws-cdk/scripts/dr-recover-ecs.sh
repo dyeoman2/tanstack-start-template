@@ -32,22 +32,35 @@ get_output() {
   echo "${STACK_OUTPUTS}" | jq -r ".[] | select(.OutputKey==\"${key}\") | .OutputValue"
 }
 
+first_nonempty() {
+  for value in "$@"; do
+    if [[ -n "${value}" ]]; then
+      printf '%s' "${value}"
+      return 0
+    fi
+  done
+  return 0
+}
+
 unset CONVEX_DEPLOYMENT 2>/dev/null || true
 export CONVEX_DEPLOYMENT=""
 
-PROJECT_SLUG="${DR_PROJECT_SLUG:-tanstack-start-template}"
-STACK_NAME="${DR_STACK_NAME:-TanStackStartDrEcsStack}"
-BACKEND_SUBDOMAIN="${DR_BACKEND_SUBDOMAIN:-dr-backend}"
-SITE_SUBDOMAIN="${DR_SITE_SUBDOMAIN:-dr-site}"
-FRONTEND_SUBDOMAIN="${DR_FRONTEND_SUBDOMAIN:-dr}"
-DR_ENV_SECRET_NAME="${DR_ENV_SECRET_NAME:-${PROJECT_SLUG}/dr-convex-env-vars}"
-CLOUDFLARE_TOKEN_SECRET_NAME="${DR_CLOUDFLARE_TOKEN_SECRET_NAME:-${PROJECT_SLUG}/dr-cloudflare-dns-token}"
-CLOUDFLARE_ZONE_SECRET_NAME="${DR_CLOUDFLARE_ZONE_SECRET_NAME:-${PROJECT_SLUG}/dr-cloudflare-zone-id}"
-NETLIFY_HOOK_SECRET_NAME="${DR_NETLIFY_HOOK_SECRET_NAME:-${PROJECT_SLUG}/dr-netlify-build-hook}"
+PROJECT_SLUG="$(first_nonempty "${AWS_DR_PROJECT_SLUG:-}" "${DR_PROJECT_SLUG:-}" "tanstack-start-template")"
+STACK_NAME="$(first_nonempty "${AWS_DR_STACK_NAME:-}" "${DR_STACK_NAME:-}" "TanStackStartDrEcsStack")"
+BACKEND_SUBDOMAIN="$(first_nonempty "${AWS_DR_BACKEND_SUBDOMAIN:-}" "${DR_BACKEND_SUBDOMAIN:-}" "dr-backend")"
+SITE_SUBDOMAIN="$(first_nonempty "${AWS_DR_SITE_SUBDOMAIN:-}" "${DR_SITE_SUBDOMAIN:-}" "dr-site")"
+FRONTEND_SUBDOMAIN="$(first_nonempty "${AWS_DR_FRONTEND_SUBDOMAIN:-}" "${DR_FRONTEND_SUBDOMAIN:-}" "dr")"
+DR_ENV_SECRET_NAME="$(first_nonempty "${AWS_DR_ENV_SECRET_NAME:-}" "${DR_ENV_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-convex-env-vars")"
+CLOUDFLARE_TOKEN_SECRET_NAME="$(first_nonempty "${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME:-}" "${DR_CLOUDFLARE_TOKEN_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-cloudflare-dns-token")"
+CLOUDFLARE_ZONE_SECRET_NAME="$(first_nonempty "${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME:-}" "${DR_CLOUDFLARE_ZONE_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-cloudflare-zone-id")"
+NETLIFY_HOOK_SECRET_NAME="$(first_nonempty "${AWS_DR_NETLIFY_HOOK_SECRET_NAME:-}" "${DR_NETLIFY_HOOK_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-netlify-build-hook")"
 TOTAL_STEPS=10
 
-[[ -z "${DR_DOMAIN:-}" ]] && fail "DR_DOMAIN is required"
-[[ -z "${DR_BACKUP_S3_BUCKET:-}" ]] && fail "DR_BACKUP_S3_BUCKET is required"
+AWS_DR_DOMAIN_RESOLVED="$(first_nonempty "${AWS_DR_DOMAIN:-}" "${DR_DOMAIN:-}")"
+AWS_DR_BACKUP_S3_BUCKET_RESOLVED="$(first_nonempty "${AWS_DR_BACKUP_S3_BUCKET:-}" "${DR_BACKUP_S3_BUCKET:-}")"
+
+[[ -z "${AWS_DR_DOMAIN_RESOLVED}" ]] && fail "AWS_DR_DOMAIN is required"
+[[ -z "${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}" ]] && fail "AWS_DR_BACKUP_S3_BUCKET is required"
 
 command -v aws >/dev/null || fail "AWS CLI not found"
 command -v pnpm >/dev/null || fail "pnpm not found"
@@ -58,9 +71,9 @@ command -v docker >/dev/null || warn "Docker not found; recovery will use ECS Ex
 aws sts get-caller-identity >/dev/null 2>&1 || fail "AWS credentials are not configured"
 ok "AWS credentials verified"
 
-BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${DR_DOMAIN}"
-SITE_FQDN="${SITE_SUBDOMAIN}.${DR_DOMAIN}"
-FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${DR_DOMAIN}"
+BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
+SITE_FQDN="${SITE_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
+FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
 BACKEND_URL="https://${BACKEND_FQDN}"
 SITE_URL="https://${SITE_FQDN}"
 FRONTEND_URL="https://${FRONTEND_FQDN}"
@@ -190,14 +203,14 @@ ok "Convex functions deployed"
 
 log "Step 6/${TOTAL_STEPS}: Downloading latest S3 backup"
 latest_key=$(aws s3api list-objects-v2 \
-  --bucket "${DR_BACKUP_S3_BUCKET}" \
+  --bucket "${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}" \
   --prefix "convex-backups/" \
   --query 'sort_by(Contents, &LastModified)[-1].Key' \
   --output text)
 
-[[ -z "${latest_key}" || "${latest_key}" == "None" ]] && fail "No backups found in s3://${DR_BACKUP_S3_BUCKET}/convex-backups/"
+[[ -z "${latest_key}" || "${latest_key}" == "None" ]] && fail "No backups found in s3://${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}/convex-backups/"
 backup_file="./dr-backup-$(date -u +%Y%m%dT%H%M%S).zip"
-aws s3 cp "s3://${DR_BACKUP_S3_BUCKET}/${latest_key}" "${backup_file}"
+aws s3 cp "s3://${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}/${latest_key}" "${backup_file}"
 ok "Downloaded latest backup ${latest_key}"
 
 log "Step 7/${TOTAL_STEPS}: Importing backup into self-hosted Convex"
@@ -271,16 +284,16 @@ if [[ -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
   cf_api="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records"
   cf_auth="Authorization: Bearer ${CF_API_TOKEN}"
   for subdomain in "${BACKEND_SUBDOMAIN}" "${SITE_SUBDOMAIN}" "${FRONTEND_SUBDOMAIN}"; do
-    fqdn="${subdomain}.${DR_DOMAIN}"
+    fqdn="${subdomain}.${AWS_DR_DOMAIN_RESOLVED}"
     content="${ALB_DNS}"
     proxied=true
     if [[ "${subdomain}" == "${FRONTEND_SUBDOMAIN}" ]]; then
-      content="${DR_FRONTEND_CNAME_TARGET:-}"
+      content="$(first_nonempty "${AWS_DR_FRONTEND_CNAME_TARGET:-}" "${DR_FRONTEND_CNAME_TARGET:-}")"
       proxied=false
     fi
 
     if [[ -z "${content}" ]]; then
-      warn "Skipping ${fqdn}; DR_FRONTEND_CNAME_TARGET is required for frontend DNS automation"
+      warn "Skipping ${fqdn}; AWS_DR_FRONTEND_CNAME_TARGET is required for frontend DNS automation"
       continue
     fi
 

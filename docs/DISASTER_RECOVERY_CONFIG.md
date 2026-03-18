@@ -5,10 +5,10 @@
 Required for [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-backup-convex-s3.yml):
 
 - `CONVEX_DEPLOY_KEY`
-- `DR_BACKUP_AWS_ACCESS_KEY_ID`
-- `DR_BACKUP_AWS_SECRET_ACCESS_KEY`
-- `DR_BACKUP_AWS_REGION`
-- `DR_BACKUP_S3_BUCKET`
+- `AWS_DR_BACKUP_ACCESS_KEY_ID`
+- `AWS_DR_BACKUP_SECRET_ACCESS_KEY`
+- `AWS_DR_BACKUP_REGION`
+- `AWS_DR_BACKUP_S3_BUCKET`
 
 Recommended for local self-hosted deploy validation inside the workflow:
 
@@ -40,23 +40,25 @@ If the recommended test secrets are omitted, the workflow falls back to local de
 
 ### DR backup stack
 
-- `DR_BACKUP_S3_BUCKET`
-- `DR_BACKUP_CI_USER_NAME`
-- `DR_PROJECT_SLUG`
+- `AWS_DR_BACKUP_S3_BUCKET`
+- `AWS_DR_BACKUP_CI_USER_NAME`
+- `AWS_DR_PROJECT_SLUG`
 
 ### DR ECS stack
 
-- `DR_DOMAIN`
-- `DR_BACKEND_SUBDOMAIN`
-- `DR_SITE_SUBDOMAIN`
-- `DR_FRONTEND_SUBDOMAIN`
-- `DR_PROJECT_SLUG`
-- `DR_INSTANCE_SECRET`
-- `DR_CONVEX_IMAGE`
-- `DR_ECS_CPU`
-- `DR_ECS_MEMORY_MIB`
-- `DR_AURORA_MIN_ACU`
-- `DR_AURORA_MAX_ACU`
+- `AWS_DR_DOMAIN`
+- `AWS_DR_STACK_NAME`
+- `AWS_DR_BACKEND_SUBDOMAIN`
+- `AWS_DR_SITE_SUBDOMAIN`
+- `AWS_DR_FRONTEND_SUBDOMAIN`
+- `AWS_DR_FRONTEND_CNAME_TARGET`
+- `AWS_DR_PROJECT_SLUG`
+- `AWS_DR_INSTANCE_SECRET`
+- `AWS_DR_CONVEX_IMAGE`
+- `AWS_DR_ECS_CPU`
+- `AWS_DR_ECS_MEMORY_MIB`
+- `AWS_DR_AURORA_MIN_ACU`
+- `AWS_DR_AURORA_MAX_ACU`
 
 ## AWS Secrets Manager Secrets
 
@@ -67,7 +69,14 @@ Expected by [dr-recover-ecs.sh](/Users/yeoman/Desktop/tanstack/tanstack-start-te
 - `tanstack-start-template/dr-cloudflare-zone-id`
 - `tanstack-start-template/dr-netlify-build-hook`
 
-If `DR_PROJECT_SLUG` is changed, the secret names change to match that slug.
+If `AWS_DR_PROJECT_SLUG` is changed, the secret names change to match that slug.
+
+Optional override env vars for non-default secret names:
+
+- `AWS_DR_ENV_SECRET_NAME`
+- `AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME`
+- `AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME`
+- `AWS_DR_NETLIFY_HOOK_SECRET_NAME`
 
 ## Runtime Variables Replayed During Recovery
 
@@ -95,6 +104,6 @@ The Netlify DR site should be configured ahead of time with:
 - the same repository
 - a dedicated build hook URL stored in Secrets Manager
 - frontend env vars that point to the DR Convex backend and site hosts
-- a DNS target value exposed to the recovery script via `DR_FRONTEND_CNAME_TARGET`
+- a DNS target value exposed to the recovery script via `AWS_DR_FRONTEND_CNAME_TARGET`
 
 This repo automates the build hook trigger and Cloudflare DNS repointing, but it does not create the Netlify site for you.

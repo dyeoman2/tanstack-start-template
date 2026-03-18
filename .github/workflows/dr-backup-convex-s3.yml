@@ -38,9 +38,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          aws-access-key-id: ${{ secrets.DR_BACKUP_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.DR_BACKUP_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.DR_BACKUP_AWS_REGION || 'us-west-1' }}
+          aws-access-key-id: ${{ secrets.AWS_DR_BACKUP_ACCESS_KEY_ID || secrets.DR_BACKUP_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_DR_BACKUP_SECRET_ACCESS_KEY || secrets.DR_BACKUP_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DR_BACKUP_REGION || secrets.DR_BACKUP_AWS_REGION || 'us-west-1' }}
 
       - name: Export Convex production database
         id: export
@@ -66,18 +66,18 @@ jobs:
 
           aws s3 cp \
             "${ZIP_FILE}" \
-            "s3://${DR_BACKUP_S3_BUCKET}/${s3_key}" \
+            "s3://${AWS_DR_BACKUP_S3_BUCKET}/${s3_key}" \
             --sse AES256
 
           echo "s3_key=${s3_key}" >> "$GITHUB_OUTPUT"
         env:
-          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
           ZIP_FILE: ${{ steps.export.outputs.zip_file }}
 
       - name: Verify upload
         run: |
           result=$(aws s3api head-object \
-            --bucket "${DR_BACKUP_S3_BUCKET}" \
+            --bucket "${AWS_DR_BACKUP_S3_BUCKET}" \
             --key "${S3_KEY}" \
             --query '{Size: ContentLength, ETag: ETag, SSE: ServerSideEncryption}' \
             --output json)
@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
         env:
-          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
           S3_KEY: ${{ steps.upload.outputs.s3_key }}
 
       - name: Deploy test - push functions to local Convex
@@ -175,7 +175,7 @@ jobs:
             echo "| File | \`${ZIP_FILE}\` |"
             echo "| Size | ${FILE_SIZE_MB} MB |"
             echo "| S3 Key | \`${S3_KEY}\` |"
-            echo "| Bucket | \`${DR_BACKUP_S3_BUCKET}\` |"
+            echo "| Bucket | \`${AWS_DR_BACKUP_S3_BUCKET}\` |"
             echo ""
             echo "Export status: **${{ steps.export.outcome }}**"
             echo "Upload status: **${{ steps.upload.outcome }}**"
@@ -183,7 +183,7 @@ jobs:
             echo "Deploy test: **${{ steps.deploy_test.outcome }}**"
           } >> "$GITHUB_STEP_SUMMARY"
         env:
-          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
           FILE_SIZE_MB: ${{ steps.export.outputs.file_size_mb }}
           S3_KEY: ${{ steps.upload.outputs.s3_key }}
           TIMESTAMP: ${{ steps.export.outputs.timestamp }}

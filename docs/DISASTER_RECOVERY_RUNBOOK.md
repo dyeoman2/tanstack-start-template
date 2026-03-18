@@ -41,7 +41,7 @@ Outputs:
 Set at minimum:
 
 ```bash
-export DR_DOMAIN=example.com
+export AWS_DR_DOMAIN=example.com
 ```
 
 Preview:
@@ -56,7 +56,7 @@ Deploy:
 pnpm run infra:dr:ecs:deploy
 ```
 
-The DR ECS stack is only synthesized when `DR_DOMAIN` is set.
+The DR ECS stack is only synthesized when `AWS_DR_DOMAIN` is set.
 
 ## Refresh the DR Runtime Env Secret
 
@@ -92,14 +92,14 @@ The workflow should not be considered successful unless export, upload, deploy-t
 Set required env vars:
 
 ```bash
-export DR_DOMAIN=example.com
-export DR_BACKUP_S3_BUCKET=your-dr-backup-bucket
+export AWS_DR_DOMAIN=example.com
+export AWS_DR_BACKUP_S3_BUCKET=your-dr-backup-bucket
 ```
 
 Recommended optional env vars:
 
 ```bash
-export DR_FRONTEND_CNAME_TARGET=your-dr-site.netlify.app
+export AWS_DR_FRONTEND_CNAME_TARGET=your-dr-site.netlify.app
 export BETTER_AUTH_SECRET=your-production-better-auth-secret
 export JWKS='{"keys":[...]}'
 ```
@@ -125,7 +125,7 @@ Run recovery:
 
 ## Post-Recovery Checks
 
-- Confirm `${DR_BACKUP_S3_BUCKET}` contains recent `convex-backups/` objects
+- Confirm `${AWS_DR_BACKUP_S3_BUCKET}` contains recent `convex-backups/` objects
 - Confirm the backend responds at `https://dr-backend.<domain>/version`
 - Confirm the Convex site host responds at `https://dr-site.<domain>`
 - Confirm the Netlify DR site builds successfully
