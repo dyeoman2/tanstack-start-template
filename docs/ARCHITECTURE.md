@@ -671,8 +671,9 @@ Servers call Convex through `setupFetchClient` for authenticated operations (`sr
 
 ## 11. Tooling & Quality Gates
 
-- `pnpm fix` runs Biome formatting and linting.
-- `pnpm typecheck` ensures type safety.
+- `pnpm format` and `pnpm lint` run Oxc formatting and linting.
+- `pnpm typecheck` runs Oxc type-aware analysis.
+- `pnpm check` runs formatting, linting, type-aware analysis, and code-health audit checks together.
 - Convex guard wrappers ensure all privileged operations require proper authorization.
 
 ---

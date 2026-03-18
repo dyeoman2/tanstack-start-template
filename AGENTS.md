@@ -206,9 +206,9 @@ export function DashboardRoute() {
 ```bash
 pnpm dev             # Dev server
 pnpm build           # Build + typecheck
-pnpm typecheck       # TypeScript check
-pnpm lint            # Lint with Biome
-pnpm format          # Format with Biome
+pnpm typecheck       # Oxc type-aware analysis
+pnpm lint            # Lint with Oxlint
+pnpm format          # Format with Oxfmt
 npx convex dev       # Start Convex development server
 npx convex deploy    # Deploy Convex functions to production
 npx convex dashboard # Open Convex dashboard

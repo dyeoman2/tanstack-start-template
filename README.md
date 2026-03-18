@@ -51,7 +51,7 @@ After registering and logging in, you can explore these demo features:
 
 - **End-to-end type safety** from database to UI
 - **Hot reloading** and fast development server
-- **Biome** for lightning-fast linting and formatting
+- **Oxc** for fast linting, formatting, and type-aware analysis
 - **Performance monitoring** hooks for development insights
 - **Automatic cache management** with Convex real-time subscriptions
 

@@ -3,7 +3,6 @@ import { ArrowRight, Monitor, Shield, Zap } from 'lucide-react';
 import type { ComponentProps, ComponentType, FC } from 'react';
 import type { IconType } from 'react-icons';
 import {
-  SiBiome,
   SiGithub,
   SiNetlify,
   SiReact,
@@ -79,11 +78,11 @@ const coreTechnologies: TechItem[] = [
     url: 'https://resend.com/',
   },
   {
-    name: 'Biome',
-    description: 'Fast linting and formatting to keep the codebase consistent.',
-    Icon: SiBiome,
-    iconClassName: 'text-blue-600',
-    url: 'https://biomejs.dev/',
+    name: 'Oxc',
+    description: 'Fast linting, formatting, and type-aware analysis for the codebase.',
+    Icon: Zap,
+    iconClassName: 'text-orange-500',
+    url: 'https://oxc.rs/',
   },
   {
     name: 'React 19',
