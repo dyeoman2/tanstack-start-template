@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-18T22:18:34.799Z",
+  "generatedAt": "2026-03-18T22:34:51.479Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -69,7 +69,7 @@
             "evidence": [
               {
                 "title": "Organization access policy controls",
-                "description": "Organization access policy controls enforcing invitePolicy, verifiedDomainsOnly, and memberCap policy checks; src/features/organizations/components/OrganizationPoliciesCard.tsx exposes the management interface.",
+                "description": "Organization policy controls showing invitation policy, verified-domain restrictions, member-cap settings, and the related management interface.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -79,6 +79,39 @@
                 "description": "Workflow managing SCIM endpoint and bearer-token lifecycle for automated provisioning.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "account-access-reviewed-periodically",
+          "label": "Account access can be reviewed periodically",
+          "description": "The hosted service should provide reviewable membership and session context so providers or customers can periodically validate whether account access remains appropriate.",
+          "verificationMethod": "Membership and session review workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Identity and Access Management",
+            "notes": "Organization membership state and active session details are reviewable, but the workspace does not yet include a formal recurring access-review record or cadence.",
+            "evidence": [
+              {
+                "title": "Organization membership management interface",
+                "description": "Interface Organization member management views show current members, roles, and suspended or deactivated state for customer administrators reviewing access.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Administrative user session review interface",
+                "description": "Interface Administrative session review dialogs show active sessions, creation time, expiry, IP address, and revocation actions for user access review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -108,7 +141,7 @@
               },
               {
                 "title": "Organization audit review interface",
-                "description": "Interface providing membership-related audit history to organization owners, admins, and site admins.",
+                "description": "Organization audit review interface showing membership lifecycle and related audit history available to authorized organization administrators and site admins.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -361,7 +394,7 @@
               },
               {
                 "title": "Authorized Convex builders",
-                "description": "Authorized Convex builders separates organization-scoped and site admin query, mutation, and action wrappers.",
+                "description": "Protected query, mutation, and action builders separating site admin and organization-scoped access paths.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -386,14 +419,14 @@
             "evidence": [
               {
                 "title": "Privileged server access guards",
-                "description": "Privileged server access guards requiring authenticated access and site admin checks before privileged server flows.",
+                "description": "Privileged server access guards showing authenticated-access and site-admin checks required before privileged server flows proceed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Organization permission decision logic",
-                "description": "Organization permission decision logic evaluates membership state, viewer role, enterprise constraints, and permission-specific access before allowing organization actions.",
+                "description": "Authorization decision logic describing membership state, viewer role, enterprise constraints, and permission-specific checks used before organization actions proceed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -418,16 +451,49 @@
             "evidence": [
               {
                 "title": "MFA enforcement for site admin access",
-                "description": "MFA enforcement for site admin access reject site admin access when MFA or passkey requirements are not satisfied.",
+                "description": "Site admin access enforcement showing MFA or passkey requirements before privileged administrative access is granted.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Recent step-up protections",
-                "description": "Recent step-up protections requiring step-up for audit exports and src/features/auth/server/auth-guards.ts redirects users through the fresh-session flow when needed.",
+                "description": "Recent step-up protections showing step-up requirements for audit exports and fresh-session redirects for sensitive actions.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "privileged-access-review-can-be-performed",
+          "label": "Privileged access assignments can be reviewed periodically",
+          "description": "The hosted service should present role and membership information that supports periodic review of privileged access assignments.",
+          "verificationMethod": "Role and membership review walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Identity and Access Management",
+            "notes": "Privileged roles and membership state are reviewable, but the workspace does not yet include a formal recurring privileged-access review record or cadence.",
+            "evidence": [
+              {
+                "title": "Organization member role management interface",
+                "description": "Interface Organization membership views present current member roles and status so customer administrators can review privileged assignments.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Administrative user role management interface",
+                "description": "Interface Administrative user-management views present current top-level user roles and related session actions for provider review of privileged access.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -533,14 +599,14 @@
             "evidence": [
               {
                 "title": "Attachment inspection audit events",
-                "description": "Event inventory recording chat_attachment_scan_passed, chat_attachment_scan_failed, and chat_attachment_quarantined events.",
+                "description": "Audit event inventory listing attachment inspection events for passed, failed, and quarantined files.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence and vendor audit events",
-                "description": "Event inventory recording evidence_report_generated, evidence_report_exported, and evidence_report_reviewed while convex/agentChatActions.ts emits outbound vendor access events.",
+                "description": "Audit event inventory listing evidence-report and outbound-vendor events recorded for review of security workflows.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -565,14 +631,14 @@
             "evidence": [
               {
                 "title": "Client audit event action",
-                "description": "Workflow providing recordClientAuditEvent for authenticated client-triggered audit emission.",
+                "description": "Client-triggered audit event action available for authenticated audit record creation.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Backend audit insertion",
-                "description": "Backend audit insertion providing insertAuditLog and multiple Convex actions and mutations call it during protected workflows.",
+                "description": "Backend audit insertion workflow used across protected server-side actions and mutations.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -654,7 +720,7 @@
             "evidence": [
               {
                 "title": "Audit event inventory",
-                "description": "Inventory describing a broad set of security-relevant audit event types.",
+                "description": "Audit event inventory listing the security-relevant event types captured for authentication, administrative, organization, evidence, and file-handling activity.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -679,14 +745,14 @@
             "evidence": [
               {
                 "title": "Organization audit review interface",
-                "description": "Interface providing audit history review for authorized organization roles.",
+                "description": "Organization audit review interface showing membership lifecycle and related audit history available to authorized organization administrators and site admins.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Administrative security audit review route",
-                "description": "Route providing recent security signals and linked evidence for authorized administrative review.",
+                "description": "Administrative security route showing recent security signals and linked evidence available for authorized administrative review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -711,7 +777,7 @@
             "evidence": [
               {
                 "title": "Structured audit record insertion",
-                "description": "Schema recording eventType, actor, resource metadata, and serialized event metadata when audit entries are inserted.",
+                "description": "Audit record schema retaining event type, actor, resource metadata, and serialized event metadata for later review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -818,14 +884,14 @@
             "evidence": [
               {
                 "title": "Fail-closed Better Auth env validation",
-                "description": "Fail-closed Better Auth env validation rejecting invalid BETTER_AUTH_URL, preview host, and trusted-origin configuration at startup.",
+                "description": "Fail-closed authentication environment validation rejecting invalid auth URL, preview-host, and trusted-origin configuration at startup.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Explicit secure session settings",
-                "description": "Explicit secure session settings sets session expiry, refresh, freshness, database-backed sessions, and disables cookie cache for security-sensitive revocation behavior.",
+                "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, and cookie-cache protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -850,14 +916,14 @@
             "evidence": [
               {
                 "title": "Auth and site URL validation",
-                "description": "Auth and site URL validation validating security-sensitive auth and site URL inputs as canonical origins before use.",
+                "description": "Runtime validation showing canonical origin checks for security-sensitive auth and site URLs before use.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Vendor runtime validation",
-                "description": "Vendor runtime validation validating OpenRouter privacy mode and API key presence before outbound model use.",
+                "description": "Runtime validation showing privacy-mode and API-key checks required before outbound model use.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -939,14 +1005,14 @@
             "evidence": [
               {
                 "title": "Authenticated access guardrails",
-                "description": "Authenticated access guardrails gate protected access while convex/auth/access.ts resolves authenticated user context for server-side authorization.",
+                "description": "Authentication guardrails showing protected access checks and authenticated user context resolution for server-side authorization.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Auth runtime session handling",
-                "description": "Auth runtime session handling configures the Better Auth server plugin set and session handling used for authenticated access.",
+                "description": "Authentication runtime configuration showing the session handling and plugin protections used for authenticated access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -971,7 +1037,7 @@
             "evidence": [
               {
                 "title": "Verified email enforcement",
-                "description": "Verified email enforcement redirects unverified accounts away from protected access and src/lib/shared/security-baseline.ts requires verified email by default.",
+                "description": "Verified-email enforcement showing protected access restrictions for unverified accounts and the verified-email requirement applied by default.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -996,14 +1062,14 @@
             "evidence": [
               {
                 "title": "Regulated MFA baseline",
-                "description": "Regulated MFA baseline requiring MFA or passkeys for regulated organizations and src/features/organizations/components/OrganizationPoliciesCard.tsx presents the always-enforced posture.",
+                "description": "Regulated MFA baseline showing required MFA or passkey protections for regulated organizations and the related policy posture presented to administrators.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "MFA and fresh-session enforcement",
-                "description": "MFA and fresh-session enforcement require MFA/passkey presence or a fresh session before privileged access and regulated join flows.",
+                "description": "Authentication enforcement showing MFA, passkey, and fresh-session requirements before privileged or regulated access proceeds.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1362,7 +1428,7 @@
               },
               {
                 "title": "Attachment scan event recording",
-                "description": "Event inventory recording document scan events for inspected attachments before downstream chat workflows continue.",
+                "description": "Document scan event records retained for inspected attachments before downstream workflows continue.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1427,7 +1493,7 @@
               },
               {
                 "title": "Malware finding persistence",
-                "description": "Malware finding persistence retaining malware status, finding IDs, and quarantine timestamps on storageLifecycle records used for containment and review.",
+                "description": "Malware-finding records retaining finding identifiers, malware status, and quarantine timestamps for containment and review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1543,7 +1609,7 @@
               },
               {
                 "title": "Audit chain verification action",
-                "description": "Workflow providing verifyAuditIntegrityInternal to recompute hashes and detect integrity failures.",
+                "description": "Audit integrity verification action that recomputes hash chains and records integrity failures for later review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1575,7 +1641,7 @@
               },
               {
                 "title": "Signed file serve URLs",
-                "description": "Signed file serve URLs supporting generation of HMAC-backed signed serve URLs for protected file access.",
+                "description": "Signed file-serving URLs used for protected file access with HMAC-backed integrity validation.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1724,7 +1790,7 @@
               },
               {
                 "title": "Integrity-linked export workflow",
-                "description": "Workflow supporting generation of export bundles with content and export hashes, and src/routes/app/admin/security.tsx surfaces those values to reviewers.",
+                "description": "Export workflow generating bundles with content hashes and export hashes displayed for reviewer verification.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1814,7 +1880,7 @@
             "evidence": [
               {
                 "title": "Backup verification record path",
-                "description": "Workflow describing backupVerificationReports and convex/security.ts exposes recordBackupVerification for storing backup and restore verification outcomes.",
+                "description": "Backup verification record workflow storing backup and restore verification outcomes for later provider review.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -1840,7 +1906,7 @@
             "evidence": [
               {
                 "title": "Restore verification data model",
-                "description": "Schema retaining restore_verification drill records and convex/security.ts records backup_restore_drill_completed and backup_restore_drill_failed audit events.",
+                "description": "Restore-verification schema and related audit events retained for backup drill and recovery review.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -1932,7 +1998,7 @@
             "evidence": [
               {
                 "title": "Evidence export support",
-                "description": "Evidence export support supporting evidence report generation and export.",
+                "description": "Evidence report workflow generating and exporting structured artifacts that can be reviewed during investigations.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1959,6 +2025,38 @@
               {
                 "title": "Integrity-linked evidence reports",
                 "description": "Integrity-linked evidence reports retaining contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "incident-handling-decisions-can-be-retained",
+          "label": "Incident handling decisions and follow-up notes can be retained for review",
+          "description": "Investigation-supporting records should retain reviewer notes and follow-up status so providers can document handling decisions during or after an incident.",
+          "verificationMethod": "Evidence report review workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Evidence report review records retain review status, reviewer attribution, and notes that can support documented handling and follow-up decisions.",
+            "evidence": [
+              {
+                "title": "Evidence report review record structure",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence report review and follow-up workflow",
+                "description": "Workflow Administrative security review actions record reviewed or needs-follow-up status with trimmed reviewer notes for later investigation review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2053,7 +2151,7 @@
               },
               {
                 "title": "GuardDuty malware finding pipeline",
-                "description": "Workflow provisions S3 malware scanning and convex/storageWebhook.ts verifies signed findings before quarantining affected files.",
+                "description": "Malware-finding workflow showing S3 malware scanning, signed finding verification, and quarantine actions for affected files.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -2077,6 +2175,39 @@
             "owner": "Security Engineering",
             "notes": "No remediation-tracking or risk-acceptance artifact is attached from the codebase.",
             "evidence": []
+          }
+        },
+        {
+          "itemId": "security-findings-can-be-reviewed-and-prioritized",
+          "label": "Security findings can be reviewed with severity and disposition context",
+          "description": "The hosted service should retain reviewable finding details so providers can distinguish severity, status, and disposition before remediation decisions are made.",
+          "verificationMethod": "Finding review and telemetry inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Security Engineering",
+            "notes": "Security findings and scan outcomes retain severity and status context in audit and monitoring records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.",
+            "evidence": [
+              {
+                "title": "Organization audit severity records",
+                "description": "Organization audit severity records Organization audit records show event severity and event details for file-scan failures, quarantines, and related security findings under review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Security monitoring summary",
+                "description": "Summary Administrative security posture summaries show scan status, rejection counts, quarantine counts, and related finding totals for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -2153,7 +2284,7 @@
               },
               {
                 "title": "Runtime vendor posture snapshot",
-                "description": "Runtime vendor posture snapshot providing vendor approval status, allowed data classes, and environment posture for review interfaces.",
+                "description": "Vendor posture snapshot showing approval status, allowed data classes, and environment restrictions for configured external services.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -2210,14 +2341,46 @@
             "evidence": [
               {
                 "title": "Vendor access audit event inventory",
-                "description": "Inventory describing outbound_vendor_access_used and outbound_vendor_access_denied audit event types.",
+                "description": "Audit event inventory listing vendor-use and vendor-denial event types available for later review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Vendor use and denial event emission",
-                "description": "Event inventory recording outbound vendor access used and denied events during chat generation workflows.",
+                "description": "Audit event inventory listing vendor-use and vendor-denial events recorded during protected vendor-backed workflows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "external-service-approval-state-can-be-reviewed",
+          "label": "External-service approval state and review context can be reviewed",
+          "description": "The hosted service should present current approval state and review context for approved external services so providers can validate whether vendor use remains authorized.",
+          "verificationMethod": "Vendor posture review walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Vendor Risk Management",
+            "notes": "The site admin workspace presents vendor approval state, approval source, allowed data classes, and environment restrictions for configured external services.",
+            "evidence": [
+              {
+                "title": "Site admin vendor posture interface",
+                "description": "Interface Administrative vendor posture cards show current approval state, approval source, allowed data classes, and allowed environments for configured services.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Vendor boundary posture data",
+                "description": "Vendor boundary posture data Vendor posture records include approval flags, approval source, data-class limits, and environment restrictions used during provider review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2317,7 +2480,7 @@
             "evidence": [
               {
                 "title": "Session transport configuration",
-                "description": "Session transport configuration enables secure cookies for HTTPS origins and convex/security.ts reports sessionExpiryHours, freshWindowMinutes, and temporaryLinkTtlMinutes.",
+                "description": "Session transport configuration showing secure cookie settings, session expiry values, fresh-session windows, and related transport protections.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2481,14 +2644,14 @@
             "evidence": [
               {
                 "title": "Evidence report generation action",
-                "description": "Workflow supporting generation of a structured evidence report from current posture state, recent audit events, integrity checks, and control workspace data.",
+                "description": "Evidence report generation workflow producing structured evidence reports from current posture, audit activity, integrity checks, and control workspace data.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence report interface workflow",
-                "description": "Interface providing Generate evidence report and review/export actions for current monitoring state.",
+                "description": "Interface showing evidence report generation, review, and export actions available from current monitoring state.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2637,6 +2800,38 @@
               }
             ]
           }
+        },
+        {
+          "itemId": "compromised-authenticators-can-be-revoked",
+          "label": "Compromised sessions and authenticators can be revoked",
+          "description": "The hosted service should provide revocation paths for active sessions or other authenticator context when compromise is suspected.",
+          "verificationMethod": "Session revocation workflow review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "The platform provides current-user and site admin session revocation paths that support containment after suspected credential compromise.",
+            "evidence": [
+              {
+                "title": "Administrative session revocation workflow",
+                "description": "Workflow Administrative user-session review includes revoke-one and revoke-all actions for active sessions associated with a managed user.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Sensitive session revocation endpoints",
+                "description": "Sensitive session revocation endpoints Auth configuration includes explicit revoke-session and revoke-all-sessions routes with server-side rate limiting for security-sensitive session invalidation.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
         }
       ],
       "owner": "Authentication",
@@ -2722,7 +2917,7 @@
             "evidence": [
               {
                 "title": "Auth security guidance",
-                "description": "Documentation documenting privileged-access expectations such as MFA or passkey use, trusted-origin requirements, and deployer-owned security gaps.",
+                "description": "Auth security documentation describing privileged-access expectations, trusted-origin requirements, and deployer-owned security gaps.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2952,7 +3147,7 @@
             "evidence": [
               {
                 "title": "Administrative security review route",
-                "description": "Route providing control workspace and evidence review interfaces for security administrators.",
+                "description": "Administrative security route showing the control workspace, audit review records, and evidence review actions available to authorized security administrators.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2978,14 +3173,14 @@
             "evidence": [
               {
                 "title": "Evidence report review record structure",
-                "description": "Schema describing reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportIntegritySummary fields for evidenceReports.",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence report review workflow",
-                "description": "Workflow allowing reviewers to mark evidence reports as reviewed or requiring follow-up with notes.",
+                "description": "Review workflow for recording evidence report status, reviewer notes, and follow-up actions.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3090,21 +3285,21 @@
             "evidence": [
               {
                 "title": "Evidence report generation action",
-                "description": "Workflow supporting generation of structured evidence reports from posture state, recent audit events, integrity checks, and control workspace data.",
+                "description": "Evidence report generation workflow producing structured evidence reports from current posture, audit activity, integrity checks, and control workspace data.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Site admin report generation interface",
-                "description": "Interface providing Generate evidence report and Generate audit readiness report actions in the site admin workspace.",
+                "description": "Site admin interface showing evidence report and audit readiness report actions for current control and posture data.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Control matrix operational evidence note",
-                "description": "Documentation documenting that evidence report generation persists structured evidence snapshots for compliance-ready exports.",
+                "description": "Control matrix documentation describing evidence report generation as a source of structured evidence snapshots for compliance-ready exports.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3143,7 +3338,7 @@
               },
               {
                 "title": "Site admin review workflow",
-                "description": "Workflow allowing site admins to mark evidence reports as reviewed or requiring follow-up with reviewer notes.",
+                "description": "Site admin review workflow for recording evidence report status, reviewer attribution, reviewer notes, and follow-up actions.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3168,7 +3363,7 @@
             "evidence": [
               {
                 "title": "Evidence report export action",
-                "description": "Workflow packages report content, manifest data, contentHash, exportHash, and exportIntegritySummary for evidence report export.",
+                "description": "Evidence report export workflow packaging report content, manifest data, and integrity metadata for reviewer distribution.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3182,7 +3377,7 @@
               },
               {
                 "title": "Site admin export interface",
-                "description": "Interface providing export actions and displays content and export hashes for evidence reports.",
+                "description": "Site admin interface showing export actions and displayed content and export hashes for evidence reports.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3271,7 +3466,7 @@
               },
               {
                 "title": "Operational readiness note",
-                "description": "Documentation documenting that the site admin security workspace exposes internal operational evidence and deployer-owned gaps for review.",
+                "description": "Control matrix documentation describing internal operational evidence and deployer-owned gaps surfaced in the site admin security workspace.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3303,7 +3498,7 @@
               },
               {
                 "title": "Evidence report follow-up workflow",
-                "description": "Workflow persists reviewed or needs follow-up state with trimmed reviewer notes, and src/routes/app/admin/security.tsx exposes the review queue actions.",
+                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3328,7 +3523,7 @@
             "evidence": [
               {
                 "title": "Evidence activity storage and query path",
-                "description": "Workflow describing security control evidence activity and convex/security.ts lists evidence activity history by control and checklist item.",
+                "description": "Evidence activity records and query path showing creation, review, archival, and renewal history by control and checklist item.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3338,6 +3533,39 @@
                 "description": "Interface showing evidence activity history showing review, archive, and renewal events in the evidence history dialog.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "follow-up-owners-dates-and-milestones-can-be-recorded",
+          "label": "Follow-up owners, dates, and milestone expectations can be retained with action artifacts",
+          "description": "The workspace should retain provider notes or attached artifacts that document ownership, target dates, and milestone expectations for follow-up actions.",
+          "verificationMethod": "Evidence review and attachment workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Security Assurance",
+            "notes": "The workspace retains follow-up notes, reviewer identity, and attached evidence artifacts, but it does not yet provide a dedicated milestone-tracking data model.",
+            "evidence": [
+              {
+                "title": "Evidence report follow-up workflow",
+                "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Security control evidence attachment workflow",
+                "description": "Workflow Control evidence items can be attached, reviewed, and retained with notes and history to support provider action tracking artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -3591,12 +3819,29 @@
             "evidence": [
               {
                 "title": "Reproducible compliance refresh workflow",
-                "description": "Workflow describing compliance:refresh to regenerate the compliance artifacts from source rather than hand-editing outputs.",
+                "description": "Compliance refresh workflow showing regeneration of compliance artifacts from source instead of manual edits.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
               }
             ]
+          }
+        },
+        {
+          "itemId": "provider-change-approval-and-rollback-procedure-documented",
+          "label": "Provider change approval and rollback procedure is documented",
+          "description": "The provider should document approval expectations, rollback planning, and emergency-change handling for security-relevant changes to the hosted service.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Change Management",
+            "notes": "The workspace does not yet include a provider-owned change approval, rollback, or emergency-change procedure for hosted-service changes.",
+            "evidence": []
           }
         },
         {
@@ -3623,7 +3868,7 @@
               },
               {
                 "title": "Auth-protected Convex builders",
-                "description": "Auth-protected Convex builders providing builder-level wrappers for site admin and organization-scoped protected functions.",
+                "description": "Protected builder wrappers used for site admin and organization-scoped functions that require authenticated access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3648,14 +3893,14 @@
             "evidence": [
               {
                 "title": "Compliance refresh command chain",
-                "description": "Compliance refresh command chain describing compliance:refresh as a scripted chain that regenerates framework extracts and the active control register from source inputs.",
+                "description": "Compliance refresh command chain showing scripted regeneration of framework extracts and the active control register from source inputs.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Generated control register source of truth",
-                "description": "Generated control register source of truth builds the active control register seed from framework extracts and local blueprint definitions.",
+                "description": "Control register generation workflow showing that the active control register seed is built from framework extracts and local blueprint definitions.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3732,7 +3977,7 @@
             "evidence": [
               {
                 "title": "Architecture overview",
-                "description": "Architecture overview documenting the application shell, server-function boundaries, Convex runtime, authentication stack, and high-level service architecture.",
+                "description": "Architecture overview describing the application shell, server-function boundaries, Convex runtime, authentication stack, and high-level service architecture.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3778,7 +4023,7 @@
               },
               {
                 "title": "Managed malware-scan stack definition",
-                "description": "Managed malware-scan stack definition describing the files bucket, GuardDuty malware protection plan, EventBridge rule, and forwarding Lambda used for the hosted document-scanning path.",
+                "description": "Managed malware-scan stack definition showing the protected files bucket, GuardDuty malware protection plan, event routing, and forwarding components used for document scanning.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -3813,6 +4058,39 @@
                 "description": "Interface showing vendor posture cards showing approval state, approval source, and allowed data classes for configured services.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "inventory-records-include-environment-and-lifecycle-context",
+          "label": "Inventory records include environment, approval, and lifecycle context where tracked",
+          "description": "Provider inventory records should include the environment, approval context, and lifecycle state of tracked components or services where that information is available.",
+          "verificationMethod": "Inventory record review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Configuration Management",
+            "notes": "Vendor and managed-component inventory records include environment, approval, and some lifecycle context, but they do not yet form a complete accountable system inventory.",
+            "evidence": [
+              {
+                "title": "Vendor boundary inventory records",
+                "description": "Inventory Vendor inventory records include approval flags, approval source, allowed environments, and allowed data classes for configured external services.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Managed component lifecycle records",
+                "description": "Managed component lifecycle records Managed model catalog records retain deprecated state and optional deprecation dates for tracked provider-managed components.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -4051,7 +4329,7 @@
               },
               {
                 "title": "Backup verification write path",
-                "description": "Workflow providing backup verification write handlers for persisting restore verification and operator-recorded drill evidence.",
+                "description": "Workflow for recording backup verification and restore-drill evidence for later provider review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4076,7 +4354,7 @@
             "evidence": [
               {
                 "title": "Restore drill audit events",
-                "description": "Event inventory recording backup restore drill completed and failed audit events when verification results are stored.",
+                "description": "Audit event inventory listing restore-drill completion and failure events recorded when verification results are stored.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4090,7 +4368,7 @@
               },
               {
                 "title": "Operational evidence note",
-                "description": "Documentation describing that backup verification records provide timestamped evidence that operators can link with deployment runbooks.",
+                "description": "Control matrix documentation describing retained operational evidence available for provider review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4115,14 +4393,14 @@
             "evidence": [
               {
                 "title": "Audit readiness report generation",
-                "description": "Audit readiness report generation providing Generate audit readiness report for current manifest, denial, metadata-gap, and restore-drill evidence.",
+                "description": "Audit readiness report action showing current manifest, denial, metadata-gap, and restore-drill evidence included in readiness output.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Operational evidence summary",
-                "description": "Summary describing that the site admin security workspace exposes backup verification as part of internal operational evidence.",
+                "description": "Operational evidence summary showing backup verification as part of the site admin security workspace evidence set.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4241,14 +4519,14 @@
             "evidence": [
               {
                 "title": "Evidence report review record structure",
-                "description": "Schema Stored evidence reports retain content hashes, review status, reviewer attribution, notes, and export-integrity metadata for later provider review.",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence report review interface",
-                "description": "Interface The administrative security interface allows authorized reviewers to inspect report status, review notes, and export metadata associated with incident-supporting artifacts.",
+                "description": "Administrative security interface showing report status, review notes, and export metadata associated with incident-supporting artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4330,14 +4608,14 @@
             "evidence": [
               {
                 "title": "Site admin evidence and readiness actions",
-                "description": "Workflow The administrative security interface exposes evidence-report and audit-readiness generation actions for current posture and review status.",
+                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Generated investigation-supporting exports",
-                "description": "Generated investigation-supporting exports Security workflows generate structured exports containing posture, audit, review, and integrity metadata that can be reused during exercises.",
+                "description": "Generated exports containing posture, audit, review, and integrity metadata that can be reused during investigations and exercises.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4372,6 +4650,39 @@
                 "description": "Audit readiness evidence review The site admin security workflow packages recent metadata gaps, denial events, and restore-drill evidence into readiness reports for provider review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "incident-exercise-results-can-be-retained",
+          "label": "Incident exercise artifacts and results can be retained for later review",
+          "description": "The hosted service should retain exercise-supporting records, review notes, or related recovery artifacts that providers can reference after an incident-response exercise.",
+          "verificationMethod": "Exercise artifact retention review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Security Incident Response",
+            "notes": "The workspace retains recovery verification records and reviewable evidence-report context, but it does not yet contain a full set of incident exercise results or after-action records.",
+            "evidence": [
+              {
+                "title": "Restore drill record structure",
+                "description": "Schema Retained backup verification records capture recent recovery drill outcomes, timestamps, summaries, and artifact hashes for later provider review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Evidence report review and follow-up workflow",
+                "description": "Workflow Evidence report review records retain reviewer notes, review status, and integrity metadata that could be referenced when capturing exercise follow-up.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -4451,21 +4762,21 @@
             "evidence": [
               {
                 "title": "Evidence report generation and export",
-                "description": "Evidence report generation and export supporting generation and export of evidence reports with structured posture, audit, and integrity data for review.",
+                "description": "Evidence report workflow generating structured exports containing posture, audit, review, and integrity data for reviewer use.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Site admin evidence and readiness actions",
-                "description": "Workflow providing Generate evidence report and Generate audit readiness report actions in the site admin workspace.",
+                "description": "Site admin interface showing evidence report and audit readiness actions available for investigation and planning artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Operational evidence note",
-                "description": "Documentation describing that audit log exports and related evidence are available, while incident response reporting remains a deployer task.",
+                "description": "Control matrix documentation describing retained operational evidence available for provider review.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -4490,14 +4801,14 @@
             "evidence": [
               {
                 "title": "Integrity-linked evidence report metadata",
-                "description": "Schema retaining contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.",
+                "description": "Evidence report schema and retained integrity metadata, including content hash, export hash, export integrity summary, and review metadata.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence report review record structure",
-                "description": "Schema describing reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields used to preserve incident-supporting context.",
+                "description": "Evidence report schema and retained review metadata, including review status, reviewer identity, review timestamps, review notes, content hash, and export integrity fields.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4596,7 +4907,7 @@
             "evidence": [
               {
                 "title": "Architecture overview document",
-                "description": "Architecture overview document documenting routing, server-function boundaries, authentication, and the high-level application architecture.",
+                "description": "Architecture overview document describing routing, server-function boundaries, authentication, and the high-level application architecture.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4628,7 +4939,7 @@
             "evidence": [
               {
                 "title": "Auth security baseline notes",
-                "description": "Documentation documenting strict auth defaults, session protections, origin validation, and deployer-owned security gaps.",
+                "description": "Auth security documentation describing strict authentication defaults, session protections, origin validation, and deployer-owned security gaps.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4751,7 +5062,7 @@
               },
               {
                 "title": "Site admin evidence upload and review flows",
-                "description": "Workflow supporting attaching, reviewing, and exporting evidence for site admin controls.",
+                "description": "Site admin evidence workflow for attaching, reviewing, and exporting provider control artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4934,14 +5245,14 @@
             "evidence": [
               {
                 "title": "Membership lifecycle audit event inventory",
-                "description": "Inventory describing member removed, suspended, deactivated, reactivated, and SCIM deprovisioning lifecycle event types.",
+                "description": "Audit event inventory listing member removal, suspension, deactivation, reactivation, and SCIM deprovisioning lifecycle events.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Organization audit review interface",
-                "description": "Interface providing reviewable membership and SCIM lifecycle audit history to authorized organization roles and site admins.",
+                "description": "Organization audit review interface showing membership lifecycle and related audit history available to authorized organization administrators and site admins.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5030,14 +5341,14 @@
             "evidence": [
               {
                 "title": "Vendor boundary registry",
-                "description": "Vendor boundary registry documenting approved vendors, allowed data classes, allowed environments, and approval expectations for hosted-service external services.",
+                "description": "Vendor boundary registry describing approved vendors, allowed data classes, allowed environments, and approval expectations for hosted-service external services.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Vendor boundary posture materialization",
-                "description": "Vendor boundary posture materialization providing current approval posture, allowed data classes, and environment restrictions for configured external services.",
+                "description": "Vendor boundary posture data showing current approval state, allowed data classes, and environment restrictions for configured external services.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5062,14 +5373,14 @@
             "evidence": [
               {
                 "title": "Vendor access audit event inventory",
-                "description": "Inventory describing outbound vendor access used and denied event types for review.",
+                "description": "Audit event inventory listing vendor-use and vendor-denial event types available for later review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Vendor use and denial event emission",
-                "description": "Event inventory recording outbound vendor access used and denied events during protected vendor-backed workflows.",
+                "description": "Audit event inventory listing vendor-use and vendor-denial events recorded during protected vendor-backed workflows.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5101,7 +5412,7 @@
               },
               {
                 "title": "Evidence review and export flows",
-                "description": "Workflow supporting attaching, reviewing, and exporting evidence artifacts for provider controls.",
+                "description": "Evidence workflow for attaching, reviewing, and exporting provider control artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5203,7 +5514,7 @@
               },
               {
                 "title": "Model catalog review interface",
-                "description": "Interface allowing site admins to review and update deprecated state for curated managed models.",
+                "description": "Model catalog interface showing deprecated status and update actions for curated managed models.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5235,7 +5546,7 @@
               },
               {
                 "title": "Code-health audit script",
-                "description": "Code-health audit script providing check and inventory modes for provider review of exported Convex functions and related implementation risk conditions.",
+                "description": "Code-health audit script used to review exported Convex functions and related implementation risk conditions.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -5317,14 +5628,14 @@
             "evidence": [
               {
                 "title": "Better Auth secret validation",
-                "description": "Better Auth secret validation requiring BETTER_AUTH_SECRET outside tests and enforces minimum secret expectations before auth can start.",
+                "description": "Authentication secret validation requiring the Better Auth secret and minimum secret expectations before auth starts outside tests.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Storage signing secret validation",
-                "description": "Storage signing secret validation reads signing secrets while convex/fileServing.ts and convex/storageWebhook.ts throw when required signing secrets are not configured.",
+                "description": "Storage signing secret validation showing required signing-secret checks before protected file serving and webhook processing proceed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5349,14 +5660,14 @@
             "evidence": [
               {
                 "title": "Signed file-serving flow",
-                "description": "Workflow imports an HMAC key from the configured file-serving secret and signs or verifies protected file serve URLs.",
+                "description": "Signed file-serving workflow showing HMAC-backed signing and verification used for protected file access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Webhook signature verification",
-                "description": "Webhook signature verification signing and verifying GuardDuty webhook payloads with the configured shared secret, and infra/aws-cdk/lambda/guardduty-forwarder.mjs generates the forwarding signature.",
+                "description": "Webhook signature verification flow showing signed GuardDuty payload validation before malware findings are accepted.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5598,7 +5909,7 @@
             "evidence": [
               {
                 "title": "Security monitoring signals",
-                "description": "Security monitoring signals summarizing document scan records and security posture summaries, while convex/audit.ts records audit_integrity_check_failed events when integrity verification fails.",
+                "description": "Security monitoring summary showing document scan records, audit-integrity signals, and related security posture indicators.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5641,14 +5952,14 @@
             "evidence": [
               {
                 "title": "Document scan event records",
-                "description": "Event inventory describing documentScanEvents and convex/security.ts reports their latest status, rejection counts, and quarantine counts.",
+                "description": "Document scan records showing latest scan status, rejection counts, and quarantine counts for reviewed files.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Retention job records",
-                "description": "Retention job records describing retentionJobs and convex/security.ts reports retention job posture for later operational review.",
+                "description": "Retention job records showing retention posture and job outcomes available for later operational review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
