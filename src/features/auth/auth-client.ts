@@ -12,7 +12,6 @@ export { getTwoFactorRedirectHref } from './auth-client-internal';
 // works cleanly with this Convex + Better Auth stack.
 export type AuthSession = typeof rawAuthClient.$Infer.Session;
 export type AuthSessionData = AuthSession['session'];
-type AuthSessionUser = AuthSession['user'];
 type AppAuthClient = Pick<
   typeof rawAuthClient,
   | '$store'

@@ -76,10 +76,7 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'step_up_challenge_required',
   'step_up_challenge_completed',
 ] as const;
-const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
-  'all',
-  ...ORGANIZATION_AUDIT_EVENT_TYPES,
-] as const;
+const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = ['all', ...ORGANIZATION_AUDIT_EVENT_TYPES] as const;
 const ORGANIZATION_AUDIT_PRESET_VALUES = ['all', 'security'] as const;
 export const ORGANIZATION_AUDIT_SORT_FIELDS = [
   'label',
@@ -99,8 +96,6 @@ export const organizationDirectorySearchSchema = z.object({
   kind: z.enum(ORGANIZATION_DIRECTORY_KIND_VALUES).default('all'),
 });
 
-type OrganizationDirectorySortField = (typeof ORGANIZATION_DIRECTORY_SORT_FIELDS)[number];
-type OrganizationDirectorySortOrder = 'asc' | 'desc';
 export type OrganizationDirectoryKind = (typeof ORGANIZATION_DIRECTORY_KIND_VALUES)[number];
 export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALUES)[number];
 export type OrganizationMemberStatus = (typeof ORGANIZATION_MEMBER_STATUS_VALUES)[number];
@@ -124,14 +119,6 @@ export const organizationAuditSearchSchema = z.object({
 export type OrganizationAuditSearchParams = z.infer<typeof organizationAuditSearchSchema>;
 export type OrganizationAuditSortField = (typeof ORGANIZATION_AUDIT_SORT_FIELDS)[number];
 
-type OrganizationCreationEligibility = {
-  count: number;
-  limit: number | null;
-  canCreate: boolean;
-  reason: string | null;
-  isUnlimited: boolean;
-};
-
 export type OrganizationCapabilities = {
   availableInviteRoles: OrganizationDirectoryRole[];
   canInvite: boolean;
@@ -142,24 +129,6 @@ export type OrganizationCapabilities = {
   canManageDomains: boolean;
   canViewAudit: boolean;
   canManagePolicies: boolean;
-};
-
-type OrganizationPolicies = {
-  invitePolicy: OrganizationInvitePolicy;
-  verifiedDomainsOnly: boolean;
-  memberCap: number | null;
-  mfaRequired: boolean;
-  auditExportRequiresStepUp: boolean;
-  attachmentSharingAllowed: boolean;
-  dataRetentionDays: number;
-  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
-  enterpriseProviderKey: OrganizationEnterpriseProviderKey | null;
-  enterpriseProtocol: OrganizationEnterpriseAuthProtocol | null;
-  enterpriseEnabledAt: number | null;
-  enterpriseEnforcedAt: number | null;
-  allowBreakGlassPasswordLogin: boolean;
-  temporaryLinkTtlMinutes: number;
-  webSearchAllowed: boolean;
 };
 
 export const ORGANIZATION_ENTERPRISE_PROVIDER_KEYS = ['google-workspace', 'entra', 'okta'] as const;
@@ -183,16 +152,6 @@ export type OrganizationEnterpriseProviderOption = {
   status: OrganizationEnterpriseProviderStatus;
   selectable: boolean;
 };
-
-type OrganizationEnterpriseAuthSummary = {
-  providerKey: OrganizationEnterpriseProviderKey;
-  providerLabel: string;
-  protocol: OrganizationEnterpriseAuthProtocol;
-  providerStatus: OrganizationEnterpriseProviderStatus;
-  managedDomains: string[];
-  scimProviderId: string;
-  scimConnectionConfigured: boolean;
-} | null;
 
 export type OrganizationMemberRow = {
   id: string;
@@ -252,61 +211,4 @@ export type OrganizationDomainVerificationResult = {
   reason: string | null;
 };
 
-type OrganizationEnterpriseAuthResolutionResult = {
-  organizationId: string;
-  organizationSlug: string;
-  organizationName: string;
-  providerKey: OrganizationEnterpriseProviderKey;
-  providerLabel: string;
-  providerStatus: OrganizationEnterpriseProviderStatus;
-  protocol: OrganizationEnterpriseAuthProtocol;
-  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
-  managedDomain: string;
-  verifiedDomains: string[];
-  canUsePasswordFallback: boolean;
-} | null;
-
-type OrganizationEnterpriseAccessResult = {
-  allowed: boolean;
-  reason: string | null;
-  requiresEnterpriseAuth: boolean;
-  providerKey: OrganizationEnterpriseProviderKey | null;
-  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
-};
-
 export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];
-
-type OrganizationAuditEventViewModel = {
-  id: string;
-  eventType: OrganizationAuditEventType;
-  label: string;
-  actorLabel?: string;
-  targetLabel?: string;
-  summary?: string;
-  userId?: string;
-  actorUserId?: string;
-  targetUserId?: string;
-  organizationId?: string;
-  identifier?: string;
-  sessionId?: string;
-  requestId?: string;
-  outcome?: 'success' | 'failure';
-  severity?: 'info' | 'warning' | 'critical';
-  resourceType?: string;
-  resourceId?: string;
-  resourceLabel?: string;
-  sourceSurface?: string;
-  eventHash?: string;
-  previousEventHash?: string;
-  createdAt: number;
-  ipAddress?: string;
-  userAgent?: string;
-  metadata?: unknown;
-};
-
-type OrganizationAuditPagination = {
-  page: number;
-  pageSize: number;
-  total: number;
-  totalPages: number;
-};

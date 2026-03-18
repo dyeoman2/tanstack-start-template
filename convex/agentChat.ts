@@ -2043,7 +2043,7 @@ export const setThreadPersona = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
-    const { thread } = await requireThreadPermission(ctx, {
+    await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
