@@ -193,6 +193,10 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'evidence_report_generated',
   'evidence_report_exported',
   'evidence_report_reviewed',
+  'security_control_evidence_created',
+  'security_control_evidence_reviewed',
+  'security_control_evidence_archived',
+  'security_control_evidence_renewed',
   'outbound_vendor_access_denied',
   'outbound_vendor_access_used',
   'mfa_enrollment_enforced',
@@ -243,6 +247,10 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'evidence_report_generated',
   'evidence_report_exported',
   'evidence_report_reviewed',
+  'security_control_evidence_created',
+  'security_control_evidence_reviewed',
+  'security_control_evidence_archived',
+  'security_control_evidence_renewed',
   'outbound_vendor_access_denied',
   'outbound_vendor_access_used',
   'mfa_enrollment_enforced',
@@ -835,6 +843,14 @@ function getOrganizationAuditEventLabel(eventType: string) {
       return 'Web search used';
     case 'audit_integrity_check_failed':
       return 'Audit integrity check failed';
+    case 'security_control_evidence_created':
+      return 'Security control evidence added';
+    case 'security_control_evidence_reviewed':
+      return 'Security control evidence approved';
+    case 'security_control_evidence_archived':
+      return 'Security control evidence archived';
+    case 'security_control_evidence_renewed':
+      return 'Security control evidence renewed';
     default:
       return eventType;
   }

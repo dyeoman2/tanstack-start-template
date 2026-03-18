@@ -95,6 +95,25 @@ type SecurityChecklistEvidence = {
   url: string | null;
 };
 
+type SecurityChecklistEvidenceActivity = {
+  actorDisplay: string | null;
+  createdAt: number;
+  evidenceId: string;
+  evidenceTitle: string;
+  eventType:
+    | 'security_control_evidence_created'
+    | 'security_control_evidence_reviewed'
+    | 'security_control_evidence_archived'
+    | 'security_control_evidence_renewed';
+  id: string;
+  internalControlId: string;
+  itemId: string;
+  lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
+  renewedFromEvidenceId: string | null;
+  replacedByEvidenceId: string | null;
+  reviewStatus: 'pending' | 'reviewed' | null;
+};
+
 type SecurityChecklistItem = {
   completedAt: number | null;
   description: string;
@@ -1645,6 +1664,15 @@ function ChecklistAccordionItem(props: {
   const fileKey = `${control.internalControlId}:${item.itemId}:file`;
   const activeEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active');
   const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
+  const evidenceActivity = useQuery(
+    api.security.listSecurityControlEvidenceActivity,
+    isHistoryOpen
+      ? {
+          internalControlId: control.internalControlId,
+          itemId: item.itemId,
+        }
+      : 'skip',
+  );
 
   return (
     <AccordionItem value={item.itemId} className="border-b last:border-b-0">
@@ -1755,12 +1783,10 @@ function ChecklistAccordionItem(props: {
               <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
                 Add evidence
               </Button>
-              {historyEvidence.length ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
-                  <History className="size-4" />
-                  Evidence history
-                </Button>
-              ) : null}
+              <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+                <History className="size-4" />
+                Evidence history
+              </Button>
             </div>
           </div>
         ) : (
@@ -1768,12 +1794,10 @@ function ChecklistAccordionItem(props: {
             <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
               Add evidence
             </Button>
-            {historyEvidence.length ? (
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
-                <History className="size-4" />
-                Evidence history
-              </Button>
-            ) : null}
+            <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+              <History className="size-4" />
+              Evidence history
+            </Button>
           </div>
         )}
       </AccordionContent>
@@ -1929,62 +1953,95 @@ function ChecklistAccordionItem(props: {
           </DialogHeader>
           <div className="space-y-3">
             {historyEvidence.length ? (
-              historyEvidence.map((evidence) => (
-                <div key={evidence.id} className="space-y-2 rounded-md border px-3 py-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={getEvidenceLifecycleBadgeVariant(evidence.lifecycleStatus)}>
-                        {formatEvidenceLifecycleStatus(evidence.lifecycleStatus)}
-                      </Badge>
-                      <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
-                        {formatEvidenceReviewStatus(evidence.reviewStatus)}
-                      </Badge>
+              <>
+                <p className="text-sm font-medium">Archived evidence</p>
+                {historyEvidence.map((evidence) => (
+                  <div key={evidence.id} className="space-y-2 rounded-md border px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
+                      <div className="flex items-center gap-2">
+                        <Badge variant={getEvidenceLifecycleBadgeVariant(evidence.lifecycleStatus)}>
+                          {formatEvidenceLifecycleStatus(evidence.lifecycleStatus)}
+                        </Badge>
+                        <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
+                          {formatEvidenceReviewStatus(evidence.reviewStatus)}
+                        </Badge>
+                      </div>
                     </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {evidence.description ?? 'No additional description provided.'}
-                  </p>
-                  {evidence.url ? (
-                    <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
-                  ) : null}
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    <p>
-                      <span className="font-medium text-foreground">Added:</span>{' '}
-                      {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
+                    <p className="text-xs text-muted-foreground">
+                      {evidence.description ?? 'No additional description provided.'}
                     </p>
-                    <p>
-                      <span className="font-medium text-foreground">Reviewed:</span>{' '}
-                      {evidence.reviewedAt
-                        ? `${evidence.reviewedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.reviewedAt)}`
-                        : 'Not reviewed'}
-                    </p>
-                    <p>
-                      <span className="font-medium text-foreground">
-                        {evidence.lifecycleStatus === 'superseded' ? 'Superseded:' : 'Archived:'}
-                      </span>{' '}
-                      {evidence.archivedAt
-                        ? `${evidence.archivedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.archivedAt)}`
-                        : 'Not recorded'}
-                    </p>
-                  </div>
-                  {evidence.evidenceType !== 'note' ? (
-                    <div className="flex justify-start">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => void props.onOpenEvidence(evidence)}
-                      >
-                        Open
-                      </Button>
+                    {evidence.url ? (
+                      <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
+                    ) : null}
+                    <div className="space-y-1 text-xs text-muted-foreground">
+                      <p>
+                        <span className="font-medium text-foreground">Added:</span>{' '}
+                        {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">Reviewed:</span>{' '}
+                        {evidence.reviewedAt
+                          ? `${evidence.reviewedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.reviewedAt)}`
+                          : 'Not reviewed'}
+                      </p>
+                      <p>
+                        <span className="font-medium text-foreground">
+                          {evidence.lifecycleStatus === 'superseded' ? 'Superseded:' : 'Archived:'}
+                        </span>{' '}
+                        {evidence.archivedAt
+                          ? `${evidence.archivedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.archivedAt)}`
+                          : 'Not recorded'}
+                      </p>
                     </div>
-                  ) : null}
-                </div>
-              ))
+                    {evidence.evidenceType !== 'note' ? (
+                      <div className="flex justify-start">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => void props.onOpenEvidence(evidence)}
+                        >
+                          Open
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </>
             ) : (
               <p className="text-sm text-muted-foreground">No archived evidence yet.</p>
             )}
+            <div className="space-y-3">
+              <p className="text-sm font-medium">Activity</p>
+              {evidenceActivity === undefined ? (
+                <p className="text-sm text-muted-foreground">Loading activity…</p>
+              ) : evidenceActivity.length > 0 ? (
+                <div className="space-y-2">
+                  {evidenceActivity.map((event: SecurityChecklistEvidenceActivity) => (
+                    <div key={event.id} className="space-y-1 rounded-md border px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium">{formatEvidenceActivityEvent(event.eventType)}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatEvidenceTimestamp(event.createdAt)}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {event.actorDisplay ?? 'Unknown'} · {event.evidenceTitle}
+                      </p>
+                      {event.eventType === 'security_control_evidence_renewed' &&
+                      event.renewedFromEvidenceId ? (
+                        <p className="text-xs text-muted-foreground">
+                          Renewed from {event.renewedFromEvidenceId}
+                        </p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No activity yet.</p>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -2207,6 +2264,21 @@ function formatEvidenceReviewStatus(reviewStatus: SecurityChecklistEvidence['rev
       return 'Reviewed';
     case 'pending':
       return 'Pending review';
+  }
+}
+
+function formatEvidenceActivityEvent(
+  eventType: SecurityChecklistEvidenceActivity['eventType'],
+) {
+  switch (eventType) {
+    case 'security_control_evidence_created':
+      return 'Added';
+    case 'security_control_evidence_reviewed':
+      return 'Approved';
+    case 'security_control_evidence_archived':
+      return 'Archived';
+    case 'security_control_evidence_renewed':
+      return 'Renewed';
   }
 }
 

@@ -10,6 +10,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  type MutationCtx,
   mutation,
   query,
   type QueryCtx,
@@ -132,6 +133,12 @@ const evidenceTypeValidator = v.union(
   v.literal('note'),
   v.literal('system_snapshot'),
 );
+const securityControlEvidenceAuditEventTypeValidator = v.union(
+  v.literal('security_control_evidence_created'),
+  v.literal('security_control_evidence_reviewed'),
+  v.literal('security_control_evidence_archived'),
+  v.literal('security_control_evidence_renewed'),
+);
 const evidenceLifecycleStatusValidator = v.union(
   v.literal('active'),
   v.literal('archived'),
@@ -179,6 +186,23 @@ const controlChecklistItemValidator = v.object({
   status: checklistStatusValidator,
   suggestedEvidenceTypes: v.array(suggestedEvidenceTypeValidator),
   verificationMethod: v.string(),
+});
+const securityControlEvidenceActivityEventValidator = v.object({
+  id: v.string(),
+  eventType: securityControlEvidenceAuditEventTypeValidator,
+  actorDisplay: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+  evidenceId: v.string(),
+  evidenceTitle: v.string(),
+  itemId: v.string(),
+  internalControlId: v.string(),
+  lifecycleStatus: v.union(
+    evidenceLifecycleStatusValidator,
+    v.null(),
+  ),
+  renewedFromEvidenceId: v.union(v.string(), v.null()),
+  replacedByEvidenceId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.null()),
 });
 const securityControlWorkspaceValidator = v.object({
   controlStatement: v.string(),
@@ -272,9 +296,33 @@ const securityControlWorkspaceValidator = v.object({
   title: v.string(),
 });
 const securityControlWorkspaceListValidator = v.array(securityControlWorkspaceValidator);
+const securityControlEvidenceActivityListValidator = v.array(
+  securityControlEvidenceActivityEventValidator,
+);
+const SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES = [
+  'security_control_evidence_created',
+  'security_control_evidence_reviewed',
+  'security_control_evidence_archived',
+  'security_control_evidence_renewed',
+] as const;
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
+}
+
+function parseStableJson(value: string | undefined) {
+  if (!value) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return typeof parsed === 'object' && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 async function hashContent(value: string) {
@@ -326,6 +374,50 @@ function getActorDisplayName(
     return null;
   }
   return actorDisplayById.get(authUserId) ?? 'Unknown';
+}
+
+async function recordSecurityControlEvidenceAuditEvent(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: string;
+    evidenceId: string;
+    evidenceTitle: string;
+    eventType:
+      | 'security_control_evidence_created'
+      | 'security_control_evidence_reviewed'
+      | 'security_control_evidence_archived'
+      | 'security_control_evidence_renewed';
+    evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+    internalControlId: string;
+    itemId: string;
+    lifecycleStatus?: 'active' | 'archived' | 'superseded';
+    organizationId?: string;
+    replacedByEvidenceId?: string;
+    reviewStatus?: 'pending' | 'reviewed';
+    renewedFromEvidenceId?: string;
+  },
+) {
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: args.actorUserId,
+    userId: args.actorUserId,
+    organizationId: args.organizationId,
+    outcome: 'success',
+    severity: 'info',
+    eventType: args.eventType,
+    resourceType: 'security_control_evidence',
+    resourceId: args.evidenceId,
+    resourceLabel: args.evidenceTitle,
+    sourceSurface: 'security_admin_controls',
+    metadata: stringifyStable({
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: args.evidenceType,
+      lifecycleStatus: args.lifecycleStatus ?? null,
+      reviewStatus: args.reviewStatus ?? null,
+      renewedFromEvidenceId: args.renewedFromEvidenceId ?? null,
+      replacedByEvidenceId: args.replacedByEvidenceId ?? null,
+    }),
+  });
 }
 
 function getSeededEvidenceEntry(
@@ -820,6 +912,111 @@ export const listSecurityControlWorkspaces = query({
   },
 });
 
+export const listSecurityControlEvidenceActivity = query({
+  args: {
+    internalControlId: v.string(),
+    itemId: v.string(),
+  },
+  returns: securityControlEvidenceActivityListValidator,
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+
+    const auditLogs = (
+      await Promise.all(
+        SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES.map((eventType) =>
+          ctx.db
+            .query('auditLogs')
+            .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
+            .collect(),
+        ),
+      )
+    ).flat();
+
+    const matchingLogs = auditLogs.filter((log) => {
+      const metadata = parseStableJson(log.metadata);
+      return (
+        metadata?.internalControlId === args.internalControlId &&
+        metadata?.itemId === args.itemId
+      );
+    });
+
+    const actorIds = Array.from(
+      new Set(
+        matchingLogs
+          .map((log) => log.actorUserId)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      ),
+    );
+    const actorProfiles = await Promise.all(
+      actorIds.map(async (authUserId) => {
+        const profile = await ctx.db
+          .query('userProfiles')
+          .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+          .first();
+        return [
+          authUserId,
+          profile?.name?.trim() || profile?.email?.trim() || null,
+        ] as const;
+      }),
+    );
+    const actorDisplayById = new Map(actorProfiles);
+
+    return matchingLogs
+      .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
+      .map((log): {
+        id: string;
+        eventType: 'security_control_evidence_created' | 'security_control_evidence_reviewed' | 'security_control_evidence_archived' | 'security_control_evidence_renewed';
+        actorDisplay: string | null;
+        createdAt: number;
+        evidenceId: string;
+        evidenceTitle: string;
+        internalControlId: string;
+        itemId: string;
+        lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
+        renewedFromEvidenceId: string | null;
+        replacedByEvidenceId: string | null;
+        reviewStatus: 'pending' | 'reviewed' | null;
+      } => {
+        const metadata = parseStableJson(log.metadata);
+        const lifecycleStatus =
+          metadata?.lifecycleStatus === 'active' ||
+          metadata?.lifecycleStatus === 'archived' ||
+          metadata?.lifecycleStatus === 'superseded'
+            ? metadata.lifecycleStatus
+            : null;
+        const reviewStatus =
+          metadata?.reviewStatus === 'pending'
+            ? 'pending'
+            : metadata?.reviewStatus === 'reviewed'
+              ? 'reviewed'
+              : null;
+        return {
+          id: log.id,
+          eventType: log.eventType as (typeof SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES)[number],
+          actorDisplay: getActorDisplayName(actorDisplayById, log.actorUserId),
+          createdAt: log.createdAt,
+          evidenceId: typeof log.resourceId === 'string' ? log.resourceId : '',
+          evidenceTitle: typeof log.resourceLabel === 'string' ? log.resourceLabel : 'Evidence',
+          internalControlId:
+            typeof metadata?.internalControlId === 'string'
+              ? metadata.internalControlId
+              : args.internalControlId,
+          itemId: typeof metadata?.itemId === 'string' ? metadata.itemId : args.itemId,
+          lifecycleStatus,
+          renewedFromEvidenceId:
+            typeof metadata?.renewedFromEvidenceId === 'string'
+              ? metadata.renewedFromEvidenceId
+              : null,
+          replacedByEvidenceId:
+            typeof metadata?.replacedByEvidenceId === 'string'
+              ? metadata.replacedByEvidenceId
+              : null,
+          reviewStatus,
+        };
+      });
+  },
+});
+
 export const updateSecurityControlChecklistItem = mutation({
   args: {
     internalControlId: v.string(),
@@ -958,7 +1155,7 @@ export const addSecurityControlEvidenceLink = mutation({
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const now = Date.now();
-    return await ctx.db.insert('securityControlEvidence', {
+    const evidenceId = await ctx.db.insert('securityControlEvidence', {
       internalControlId: args.internalControlId,
       itemId: args.itemId,
       evidenceType: 'link',
@@ -972,6 +1169,19 @@ export const addSecurityControlEvidenceLink = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId,
+      evidenceTitle: args.title.trim(),
+      evidenceType: 'link',
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+    });
+    return evidenceId;
   },
 });
 
@@ -987,7 +1197,7 @@ export const addSecurityControlEvidenceNote = mutation({
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const now = Date.now();
-    return await ctx.db.insert('securityControlEvidence', {
+    const evidenceId = await ctx.db.insert('securityControlEvidence', {
       internalControlId: args.internalControlId,
       itemId: args.itemId,
       evidenceType: 'note',
@@ -1000,6 +1210,19 @@ export const addSecurityControlEvidenceNote = mutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId,
+      evidenceTitle: args.title.trim(),
+      evidenceType: 'note',
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+    });
+    return evidenceId;
   },
 });
 
@@ -1026,6 +1249,20 @@ export const reviewSecurityControlEvidence = mutation({
       reviewedByUserId: args.reviewStatus === 'reviewed' ? currentUser.authUserId : undefined,
       updatedAt: now,
     });
+    if (args.reviewStatus === 'reviewed') {
+      await recordSecurityControlEvidenceAuditEvent(ctx, {
+        actorUserId: currentUser.authUserId,
+        eventType: 'security_control_evidence_reviewed',
+        evidenceId: evidence._id,
+        evidenceTitle: evidence.title,
+        evidenceType: evidence.evidenceType,
+        internalControlId: evidence.internalControlId,
+        itemId: evidence.itemId,
+        lifecycleStatus: evidence.lifecycleStatus ?? 'active',
+        organizationId: currentUser.activeOrganizationId ?? undefined,
+        reviewStatus: 'reviewed',
+      });
+    }
     return null;
   },
 });
@@ -1089,6 +1326,19 @@ export const archiveSecurityControlEvidence = mutation({
         });
       }
 
+      await recordSecurityControlEvidenceAuditEvent(ctx, {
+        actorUserId: currentUser.authUserId,
+        eventType: 'security_control_evidence_archived',
+        evidenceId: args.evidenceId,
+        evidenceTitle: seededEvidence.entry.title,
+        evidenceType: seededEvidence.entry.evidenceType,
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        lifecycleStatus: 'archived',
+        organizationId: currentUser.activeOrganizationId ?? undefined,
+        reviewStatus: 'reviewed',
+      });
+
       return null;
     }
 
@@ -1106,6 +1356,18 @@ export const archiveSecurityControlEvidence = mutation({
       archivedAt: now,
       archivedByUserId: currentUser.authUserId,
       updatedAt: now,
+    });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_archived',
+      evidenceId: evidence._id,
+      evidenceTitle: evidence.title,
+      evidenceType: evidence.evidenceType,
+      internalControlId: evidence.internalControlId,
+      itemId: evidence.itemId,
+      lifecycleStatus: 'archived',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: evidence.reviewStatus ?? 'pending',
     });
     return null;
   },
@@ -1186,6 +1448,34 @@ export const renewSecurityControlEvidence = mutation({
         });
       }
 
+      await recordSecurityControlEvidenceAuditEvent(ctx, {
+        actorUserId: currentUser.authUserId,
+        eventType: 'security_control_evidence_created',
+        evidenceId: newEvidenceId,
+        evidenceTitle: seededEvidence.entry.title,
+        evidenceType: seededEvidence.entry.evidenceType,
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        lifecycleStatus: 'active',
+        organizationId: currentUser.activeOrganizationId ?? undefined,
+        reviewStatus: 'pending',
+        renewedFromEvidenceId: args.evidenceId,
+      });
+      await recordSecurityControlEvidenceAuditEvent(ctx, {
+        actorUserId: currentUser.authUserId,
+        eventType: 'security_control_evidence_renewed',
+        evidenceId: newEvidenceId,
+        evidenceTitle: seededEvidence.entry.title,
+        evidenceType: seededEvidence.entry.evidenceType,
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        lifecycleStatus: 'active',
+        organizationId: currentUser.activeOrganizationId ?? undefined,
+        reviewStatus: 'pending',
+        renewedFromEvidenceId: args.evidenceId,
+        replacedByEvidenceId: newEvidenceId,
+      });
+
       return newEvidenceId;
     }
 
@@ -1224,6 +1514,34 @@ export const renewSecurityControlEvidence = mutation({
       archivedByUserId: currentUser.authUserId,
       replacedByEvidenceId: newEvidenceId,
       updatedAt: now,
+    });
+
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId: newEvidenceId,
+      evidenceTitle: evidence.title,
+      evidenceType: evidence.evidenceType,
+      internalControlId: evidence.internalControlId,
+      itemId: evidence.itemId,
+      lifecycleStatus: 'active',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+      renewedFromEvidenceId: evidence._id,
+    });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_control_evidence_renewed',
+      evidenceId: newEvidenceId,
+      evidenceTitle: evidence.title,
+      evidenceType: evidence.evidenceType,
+      internalControlId: evidence.internalControlId,
+      itemId: evidence.itemId,
+      lifecycleStatus: 'active',
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+      renewedFromEvidenceId: evidence._id,
+      replacedByEvidenceId: newEvidenceId,
     });
 
     return newEvidenceId;
@@ -1303,6 +1621,7 @@ export const finalizeSecurityControlEvidenceUpload = action({
       internalControlId: args.internalControlId,
       itemId: args.itemId,
       mimeType: args.mimeType,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
       storageId: args.storageId,
       sufficiency: args.sufficiency,
       title: args.title.trim(),
@@ -1367,6 +1686,7 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
     internalControlId: v.string(),
     itemId: v.string(),
     mimeType: v.string(),
+    organizationId: v.optional(v.string()),
     storageId: v.string(),
     sufficiency: evidenceSufficiencyValidator,
     title: v.string(),
@@ -1375,7 +1695,7 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
   returns: v.id('securityControlEvidence'),
   handler: async (ctx, args) => {
     const now = Date.now();
-    return await ctx.db.insert('securityControlEvidence', {
+    const evidenceId = await ctx.db.insert('securityControlEvidence', {
       internalControlId: args.internalControlId,
       itemId: args.itemId,
       evidenceType: 'file',
@@ -1392,6 +1712,19 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
       createdAt: now,
       updatedAt: now,
     });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: args.uploadedByUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId,
+      evidenceTitle: args.title,
+      evidenceType: 'file',
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
+      organizationId: args.organizationId,
+      reviewStatus: 'pending',
+    });
+    return evidenceId;
   },
 });
 
