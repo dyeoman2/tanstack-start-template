@@ -22,7 +22,7 @@ export const Route = createFileRoute('/reset-password')({
   component: ResetPasswordPage,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
-    token: z.string().min(1, 'Reset token is required'),
+    token: z.string().min(1, 'Reset token is required').optional(),
   }),
 });
 
@@ -78,6 +78,11 @@ function ResetPasswordPage() {
       // Show validation errors if any
       if (errors.length > 0) {
         setError(errors.join('. '));
+        return;
+      }
+
+      if (!token) {
+        setError('Invalid or missing reset token. Please request a new password reset.');
         return;
       }
 
