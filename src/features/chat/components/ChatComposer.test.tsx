@@ -128,12 +128,12 @@ describe('ChatComposer', () => {
     ).toBeGreaterThan(0);
   });
 
-  it('focuses the message input when autoFocus is enabled', () => {
+  it('focuses the message input when focusOnMount is enabled', () => {
     render(
       <ToastProvider>
         <TooltipProvider>
           <ChatComposer
-            autoFocus
+            focusOnMount
             isSending={false}
             modelOptions={[
               {

@@ -66,7 +66,7 @@ type ComposerAttachmentDraft = {
 
 type ChatComposerProps = {
   disabled?: boolean;
-  autoFocus?: boolean;
+  focusOnMount?: boolean;
   isSending: boolean;
   canStop?: boolean;
   isStopping?: boolean;
@@ -133,7 +133,7 @@ function toComposerAttachmentPart(attachment: ComposerAttachmentDraft): ChatAtta
 
 export function ChatComposer({
   disabled = false,
-  autoFocus = false,
+  focusOnMount = false,
   isSending,
   canStop = false,
   isStopping = false,
@@ -309,12 +309,12 @@ export function ChatComposer({
   }, [editingMessageId, editingMessageText]);
 
   useEffect(() => {
-    if (!autoFocus || disabled || isEditing) {
+    if (!focusOnMount || disabled || isEditing) {
       return;
     }
 
     textAreaRef.current?.focus();
-  }, [autoFocus, disabled, isEditing]);
+  }, [disabled, focusOnMount, isEditing]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;

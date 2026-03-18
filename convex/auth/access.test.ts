@@ -22,9 +22,8 @@ describe('access constants', () => {
     process.env.BETTER_AUTH_SECRET = 'test-secret-abcdefghijklmnopqrstuvwxyz';
     process.env.BETTER_AUTH_URL = 'http://127.0.0.1:3000';
 
-    const { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } = await import(
-      './access'
-    );
+    const { ADMIN_ACCESS, EDIT_ACCESS, NO_ACCESS, SITE_ADMIN_ACCESS, VIEW_ACCESS } =
+      await import('./access');
 
     expect(SITE_ADMIN_ACCESS.delete).toBe(true);
     expect(ADMIN_ACCESS.edit).toBe(true);

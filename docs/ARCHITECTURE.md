@@ -120,20 +120,20 @@ export const getCurrentUserProfile = query({
   args: {},
   handler: async (ctx) => {
     // Database operations with automatic type generation
-  }
+  },
 });
 ```
 
 ### 3.3 Key Differences
 
-| Aspect | TanStack Start Server Functions | Convex Functions |
-|--------|-------------------------------|------------------|
-| **Execution Context** | Node.js server | Convex cloud runtime |
-| **Database Access** | Via Convex client (`setupFetchClient`) | Direct database access |
-| **Real-time** | No | Yes (subscriptions) |
-| **Caching** | Manual | Automatic (Convex) |
-| **Secrets Access** | Yes | No (security boundary) |
-| **File Extension** | `.ts` | `.ts` |
+| Aspect                | TanStack Start Server Functions        | Convex Functions       |
+| --------------------- | -------------------------------------- | ---------------------- |
+| **Execution Context** | Node.js server                         | Convex cloud runtime   |
+| **Database Access**   | Via Convex client (`setupFetchClient`) | Direct database access |
+| **Real-time**         | No                                     | Yes (subscriptions)    |
+| **Caching**           | Manual                                 | Automatic (Convex)     |
+| **Secrets Access**    | Yes                                    | No (security boundary) |
+| **File Extension**    | `.ts`                                  | `.ts`                  |
 
 ---
 
@@ -301,18 +301,18 @@ Single source of truth for role → capability mapping. Role validation is enfor
 ```ts
 // convex/authz/policy.map.ts
 export const Caps = {
-  'route:/app': ['user', 'admin'],           // Authenticated users
-  'route:/app/admin': ['admin'],             // Admin-only routes
-  'route:/app/admin.users': ['admin'],       // User management
-  'route:/app/admin.stats': ['admin'],       // System statistics
-  'route:/app/profile': ['user', 'admin'],   // Profile access
-  'user.write': ['admin'],                   // User role management
+  'route:/app': ['user', 'admin'], // Authenticated users
+  'route:/app/admin': ['admin'], // Admin-only routes
+  'route:/app/admin.users': ['admin'], // User management
+  'route:/app/admin.stats': ['admin'], // System statistics
+  'route:/app/profile': ['user', 'admin'], // Profile access
+  'user.write': ['admin'], // User role management
   'user.bootstrap': ['public', 'user', 'admin'], // Bootstrap (logic-restricted)
-  'profile.read': ['user', 'admin'],         // Read own profile
-  'profile.write': ['user', 'admin'],        // Update own profile
+  'profile.read': ['user', 'admin'], // Read own profile
+  'profile.write': ['user', 'admin'], // Update own profile
   'util.firstUserCheck': ['public', 'user', 'admin'], // Public utilities
   'util.emailServiceStatus': ['public', 'user', 'admin'],
-  'dashboard.read': ['admin'],               // Admin dashboard access
+  'dashboard.read': ['admin'], // Admin dashboard access
 } as const;
 
 export const PublicCaps = new Set<Capability>([
@@ -331,7 +331,7 @@ userProfiles: defineTable({
   role: v.union(v.literal('user'), v.literal('admin')), // Enforced enum
   createdAt: v.number(),
   updatedAt: v.number(),
-})
+});
 ```
 
 **Benefits:**
@@ -412,7 +412,9 @@ const authState = useAuthState(); // No DB calls
 const { isSiteAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 
 // Conditional rendering using the derived global-admin flag
-{isSiteAdmin && <AdminButton />}
+{
+  isSiteAdmin && <AdminButton />;
+}
 ```
 
 **Performance Optimization:**
@@ -441,7 +443,6 @@ const { isSiteAdmin } = useAuth({ fetchRole: authState.isAuthenticated });
 `convex/users.ts` bootstraps the app-side user context and keeps the `userProfiles` projection synchronized from Better Auth. The projection is intentionally derived data rather than a separate permission source.
 
 `convex/dashboard.ts` keeps `getDashboardData` as a plain Convex `query` so non-admin callers receive a structured access state instead of a thrown authorization error—the dashboard UI listens for that state and shows a friendly fallback.
-
 
 ### 5.6 Route Guards
 
@@ -503,13 +504,13 @@ Choose the pattern based on whether you want immediate blocking (throwing) or sm
 
 ## Performance Characteristics
 
-| Scenario | Convex traffic | Notes |
-|----------|----------------|-------|
-| Public/auth marketing routes | None | `useAuthState()` only; no Convex hooks run |
-| App shell guard | 1 cached query | `useAuth` always calls `api.users.getCurrentUserProfile`; unauthenticated sessions get a fast `null` |
-| Admin dashboard load | 1 guarded query | `api.dashboard.getDashboardData` returns data only for admins |
-| SPA navigation | Subscription reuse | Convex keeps previous queries hot; no extra loaders |
-| Role changes | Auto-invalidation | Convex subscriptions refresh affected queries automatically |
+| Scenario                     | Convex traffic     | Notes                                                                                                |
+| ---------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| Public/auth marketing routes | None               | `useAuthState()` only; no Convex hooks run                                                           |
+| App shell guard              | 1 cached query     | `useAuth` always calls `api.users.getCurrentUserProfile`; unauthenticated sessions get a fast `null` |
+| Admin dashboard load         | 1 guarded query    | `api.dashboard.getDashboardData` returns data only for admins                                        |
+| SPA navigation               | Subscription reuse | Convex keeps previous queries hot; no extra loaders                                                  |
+| Role changes                 | Auto-invalidation  | Convex subscriptions refresh affected queries automatically                                          |
 
 ## Best Practices
 
@@ -769,10 +770,10 @@ export const bootstrapUserContext = action({
 
 ### 13.4 Bootstrap States
 
-| State | User Profiles Exist | Bootstrap Allowed | Role Assigned |
-|-------|-------------------|-------------------|----------------|
-| **Initial** | 0 | ✅ Yes | `admin` |
-| **Normal** | 1+ | ❌ No | `user` |
+| State       | User Profiles Exist | Bootstrap Allowed | Role Assigned |
+| ----------- | ------------------- | ----------------- | ------------- |
+| **Initial** | 0                   | ✅ Yes            | `admin`       |
+| **Normal**  | 1+                  | ❌ No             | `user`        |
 
 ### 13.5 Error Handling
 

@@ -6,7 +6,7 @@ import { cn } from '~/lib/utils';
 
 function ItemGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
-    // biome-ignore lint/a11y/useSemanticElements: This component uses role="list" appropriately for list-like containers
+    // This container intentionally exposes list semantics through ARIA.
     <div
       role="list"
       data-slot="item-group"

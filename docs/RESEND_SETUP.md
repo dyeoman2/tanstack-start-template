@@ -104,6 +104,7 @@ The password reset emails use professional HTML templates with:
 ### How It Works
 
 The integration runs entirely in Convex:
+
 - The `@convex-dev/resend` component handles all email operations
 - Environment variables (`RESEND_API_KEY`, `RESEND_EMAIL_SENDER`) are read from Convex
 - Email sending is queued and batched for reliability
@@ -186,11 +187,13 @@ const createPasswordResetEmailTemplate = (resetLink: string, userName?: string) 
 Set the `RESEND_EMAIL_SENDER` environment variable in Convex:
 
 **Development:**
+
 ```bash
 npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
 ```
 
 **Production:**
+
 ```bash
 npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
 ```

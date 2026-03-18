@@ -81,7 +81,7 @@ const SidebarProvider = React.forwardRef<
           setInternalOpen(nextOpen);
         }
 
-        // biome-ignore lint/suspicious/noDocumentCookie: shadcn persists sidebar state with a simple cookie.
+        // Persist sidebar state for the next page load.
         document.cookie = `${SIDEBAR_COOKIE_NAME}=${nextOpen}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
       },
       [open, setOpenProp],

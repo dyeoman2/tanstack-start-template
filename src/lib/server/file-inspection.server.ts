@@ -113,7 +113,8 @@ export async function inspectFile(args: {
       const sizeMB = (args.blob.size / (1024 * 1024)).toFixed(2);
       return {
         details: `File size (${sizeMB}MB) exceeds the maximum allowed size of ${(
-          args.maxBytes / (1024 * 1024)
+          args.maxBytes /
+          (1024 * 1024)
         ).toFixed(0)}MB.`,
         engine: 'builtin-file-inspection',
         inspectedAt,

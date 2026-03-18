@@ -101,7 +101,7 @@ export function DeleteConfirmationDialog({
             onSubmit={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              form.handleSubmit();
+              void form.handleSubmit();
             }}
           >
             <div className="grid gap-4 pb-4">
@@ -155,7 +155,7 @@ export function DeleteConfirmationDialog({
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      form.handleSubmit();
+                      void form.handleSubmit();
                     }}
                     disabled={!canSubmit || isDeleting}
                   >

@@ -53,7 +53,7 @@ export function ProfilePage({ searchParams }: { searchParams?: ProfilePageSearch
         await signOut();
       } finally {
         setIsSigningOut(false);
-        router.navigate({ to: '/login', search: { redirectTo: '/app/profile' } });
+        void router.navigate({ to: '/login', search: { redirectTo: '/app/profile' } });
       }
     };
 

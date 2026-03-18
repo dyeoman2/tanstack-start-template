@@ -246,7 +246,7 @@ async function main() {
     try {
       console.log(`   Setting ${name}...`);
       runConvexEnvSet(name, value);
-    } catch (_error) {
+    } catch {
       console.log(`   ⚠️  Failed to set ${name} (may already be set)`);
     }
   }
@@ -265,7 +265,7 @@ async function main() {
     try {
       console.log(`   Running ${actionName}...`);
       runOpenRouterSeed(actionName);
-    } catch (_error) {
+    } catch {
       console.log(`   ⚠️  Failed to run ${actionName}. You can retry later from /app/admin.`);
     }
   }

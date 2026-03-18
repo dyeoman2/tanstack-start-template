@@ -16,8 +16,7 @@ const inputGroupVariants = cva('', {
 });
 
 interface InputGroupProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof inputGroupVariants> {}
+  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof inputGroupVariants> {}
 
 const InputGroup = React.forwardRef<HTMLDivElement, InputGroupProps>(
   ({ className, ...props }, ref) => (
@@ -64,8 +63,7 @@ const inputGroupAddonVariants = cva(
 );
 
 interface InputGroupAddonProps
-  extends React.HTMLAttributes<HTMLDivElement>,
-    VariantProps<typeof inputGroupAddonVariants> {}
+  extends React.HTMLAttributes<HTMLDivElement>, VariantProps<typeof inputGroupAddonVariants> {}
 
 const InputGroupAddon = React.forwardRef<HTMLDivElement, InputGroupAddonProps>(
   ({ className, align, ...props }, ref) => (

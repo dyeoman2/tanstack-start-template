@@ -150,7 +150,7 @@ export function UserBanDialog({ open, user, onClose }: UserBanDialogProps) {
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            form.handleSubmit();
+            void form.handleSubmit();
           }}
         >
           <div className="grid gap-4 py-4">

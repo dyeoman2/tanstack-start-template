@@ -55,9 +55,8 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
     process.env.BETTER_AUTH_URL = 'https://app.example.com';
     process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com';
     const runAfterMock = vi.fn(async () => {});
-    const { createSendChangeEmailConfirmationHandler } = await import(
-      './lib/betterAuthEmailServices'
-    );
+    const { createSendChangeEmailConfirmationHandler } =
+      await import('./lib/betterAuthEmailServices');
 
     const sendChangeEmailConfirmation = createSendChangeEmailConfirmationHandler({
       scheduler: {

@@ -1,0 +1,6 @@
+interface:
+  display_name: Control Register Authoring
+  short_description: Author site admin controls.
+  default_prompt:
+    Use $control-register-authoring to add or update a site admin control using the repo
+    generator, mappings, checklist items, and seeded evidence patterns.

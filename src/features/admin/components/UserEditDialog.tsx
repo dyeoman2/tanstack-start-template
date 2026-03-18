@@ -102,7 +102,7 @@ export function UserEditDialog({ open, user, onClose }: UserEditDialogProps) {
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            form.handleSubmit();
+            void form.handleSubmit();
           }}
         >
           <div className="grid gap-4 py-4">

@@ -7,9 +7,9 @@ type SlotProps = React.HTMLAttributes<HTMLElement> & { children: React.ReactElem
 export const Slot = React.forwardRef<HTMLElement, SlotProps>((props, _ref) => {
   const { children, ...rest } = props;
   const child = React.Children.only(children) as React.ReactElement;
-  // biome-ignore lint/suspicious/noExplicitAny: Slot shim requires cloning unknown props
+  // Slot cloning needs loose prop merging because the child prop type is unknown here.
   const merged = { ...(rest as any), children: (child as any).props.children };
-  // biome-ignore lint/suspicious/noExplicitAny: Clone with unknown child prop types
+  // Clone the unknown child element with the merged props.
   return React.cloneElement(child as any, merged as any);
 });
 

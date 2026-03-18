@@ -107,11 +107,12 @@ export function getChatLanguageModel(modelId: ChatModelId, supportsWebSearch: bo
     return cached;
   }
 
-  const nextModel = getOpenRouterProvider().chat(modelId, {
-    ...(supportsWebSearch && shouldUseOpenRouterWebSearch(modelId)
+  const nextModel = getOpenRouterProvider().chat(
+    modelId,
+    supportsWebSearch && shouldUseOpenRouterWebSearch(modelId)
       ? { plugins: [getOpenRouterWebSearchPlugin(modelId)] }
-      : {}),
-  });
+      : {},
+  );
   modelCache.set(cacheKey, nextModel);
   return nextModel;
 }
@@ -142,8 +143,8 @@ export function getOpenRouterProviderOptions(args: {
 
   return {
     openrouter: {
-      ...(routingSettings ?? {}),
-      ...(useProviderSearch ? (getOpenRouterWebSearchProviderOptions(args.modelId) ?? {}) : {}),
+      ...routingSettings,
+      ...(useProviderSearch ? getOpenRouterWebSearchProviderOptions(args.modelId) : {}),
     },
   } as const;
 }
@@ -300,7 +301,14 @@ export function toFailureStatus(reason: 'abort' | 'error') {
 }
 
 export function classifyChatRunFailure(error: unknown): ChatRunFailureKind {
-  const message = error instanceof Error ? error.message : String(error ?? '');
+  const message =
+    typeof error === 'string'
+      ? error
+      : error instanceof Error
+        ? error.message
+        : error == null
+          ? ''
+          : JSON.stringify(error);
   const normalized = message.toLowerCase();
 
   if (

@@ -105,7 +105,7 @@ export function UserPasswordResetDialog({ open, user, onClose }: UserPasswordRes
           onSubmit={(event) => {
             event.preventDefault();
             event.stopPropagation();
-            form.handleSubmit();
+            void form.handleSubmit();
           }}
         >
           <div className="grid gap-4 py-4">

@@ -106,7 +106,7 @@ function buildSettings(overrides?: Record<string, unknown>) {
         selectable: false,
       },
     ],
-    ...(overrides ?? {}),
+    ...overrides,
   };
 }
 

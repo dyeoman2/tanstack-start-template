@@ -43,7 +43,7 @@ function RouteErrorBoundary({
             <Button
               onClick={() => {
                 reset();
-                router.invalidate();
+                void router.invalidate();
               }}
               size="sm"
               variant="outline"

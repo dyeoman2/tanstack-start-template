@@ -1,32 +1,29 @@
 {
   "name": "tanstack-start-template",
+  "version": "1.0.0",
   "private": true,
-  "sideEffects": false,
-  "type": "module",
+  "description": "TanStack Start chat template built with TanStack Start, Better Auth, Convex, Tailwind CSS, shadcn/ui, and OpenRouter via Vercel AI SDK",
+  "keywords": [
+    "authentication",
+    "convex",
+    "fullstack",
+    "netlify",
+    "react",
+    "resend",
+    "starter",
+    "tanstack start",
+    "template",
+    "typescript"
+  ],
+  "homepage": "https://github.com/dyeoman2/tanstack-start-template",
   "license": "MIT",
   "author": "Daniel Yeoman",
-  "version": "1.0.0",
-  "description": "TanStack Start chat template built with TanStack Start, Better Auth, Convex, Tailwind CSS, shadcn/ui, and OpenRouter via Vercel AI SDK",
-  "homepage": "https://github.com/dyeoman2/tanstack-start-template",
   "repository": {
     "type": "git",
     "url": "https://github.com/dyeoman2/tanstack-start-template.git"
   },
-  "engines": {
-    "node": ">=24"
-  },
-  "keywords": [
-    "tanstack start",
-    "react",
-    "typescript",
-    "starter",
-    "template",
-    "fullstack",
-    "authentication",
-    "convex",
-    "resend",
-    "netlify"
-  ],
+  "type": "module",
+  "sideEffects": false,
   "scripts": {
     "dev": "concurrently -n vite,convex -c blue,green \"NODE_OPTIONS='--import ./instrument.server.mjs' vite dev\" \"pnpm exec convex dev\"",
     "dev:full": "tsx scripts/dev-full.ts",
@@ -42,10 +39,10 @@
     "agent:close": "tsx scripts/agent-browser-close.ts",
     "agent:inspect": "tsx scripts/agent-browser-inspect.ts",
     "playwright:inspect": "tsx scripts/playwright-inspect.ts",
-    "typecheck": "tsc --noEmit",
-    "lint": "biome check --write . --unsafe",
-    "lint:convex": "eslint convex --max-warnings=0",
-    "check": "biome check . && pnpm lint:convex && pnpm audit:code-health",
+    "typecheck": "./oxlint-typecheck.sh",
+    "lint": "pnpm exec oxlint --fix .",
+    "lint:check": "pnpm exec oxlint .",
+    "check": "pnpm exec oxfmt --check . && pnpm run lint:check && pnpm run typecheck && pnpm audit:code-health",
     "audit:code-health": "node --import tsx scripts/code-health-audit.ts check",
     "audit:inventory": "tsx scripts/code-health-audit.ts inventory",
     "compliance:extract:nist-80053-moderate": "node scripts/compliance/extract-nist-80053-moderate.ts",
@@ -67,11 +64,19 @@
     "better-auth:generate-schema": "pnpm exec better-auth generate --config better-auth.cli.ts --output /tmp/better-auth-generated-schema.ts -y",
     "verify:better-auth": "node scripts/verify-better-auth.mjs",
     "make-admin": "tsx scripts/make-admin.ts",
-    "precommit": "biome check --write",
+    "format": "pnpm exec oxfmt .",
+    "format:check": "pnpm exec oxfmt --check .",
+    "precommit": "pnpm run format && pnpm run lint",
     "updates": "npx npm-check-updates",
     "analyze": "pnpm build && npx vite-bundle-analyzer dist/client/assets/*.js",
     "infra:deploy": "tsx infra/storage.ts",
-    "infra:preview": "tsx infra/storage.ts --preview"
+    "infra:preview": "tsx infra/storage.ts --preview",
+    "infra:dr:backup:deploy": "tsx infra/dr.ts --stack TanStackStartDrBackupStack",
+    "infra:dr:backup:preview": "tsx infra/dr.ts --preview --stack TanStackStartDrBackupStack",
+    "infra:dr:ecs:deploy": "tsx infra/dr.ts --stack TanStackStartDrEcsStack",
+    "infra:dr:ecs:preview": "tsx infra/dr.ts --preview --stack TanStackStartDrEcsStack",
+    "infra:dr:deploy": "tsx infra/dr.ts --all",
+    "infra:dr:preview": "tsx infra/dr.ts --preview --all"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1011.0",
@@ -140,7 +145,6 @@
   },
   "devDependencies": {
     "@better-auth/cli": "1.4.21",
-    "@biomejs/biome": "^2.4.8",
     "@convex-dev/eslint-plugin": "^1.2.0",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.2",
@@ -153,19 +157,23 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/react-syntax-highlighter": "^15.5.13",
-    "@typescript-eslint/parser": "^8.57.1",
     "@vitejs/plugin-react": "^6.0.1",
     "aws-cdk": "^2.1111.0",
     "aws-cdk-lib": "^2.243.0",
     "concurrently": "^9.2.1",
     "constructs": "^10.5.1",
-    "eslint": "^9.39.4",
     "jsdom": "^29.0.0",
     "knip": "^5.88.0",
+    "oxfmt": "^0.41.0",
+    "oxlint": "^1.56.0",
+    "oxlint-tsgolint": "^0.17.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "8.0.0",
     "vitest": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

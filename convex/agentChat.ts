@@ -107,10 +107,14 @@ async function getCurrentChatContext(ctx: QueryCtx | MutationCtx) {
     throw new ConvexError('Authentication session is unavailable.');
   }
 
+  if (typeof identity.sessionId !== 'string') {
+    throw new ConvexError('Authentication session is invalid.');
+  }
+
   return {
     userId: user._id,
     organizationId,
-    sessionId: String(identity.sessionId),
+    sessionId: identity.sessionId,
     isSiteAdmin: user.isSiteAdmin,
     currentUserName: getCurrentUserDisplayName(user),
   };
@@ -125,10 +129,14 @@ async function getCurrentChatContextOrNull(ctx: QueryCtx | MutationCtx) {
     return null;
   }
 
+  if (typeof identity.sessionId !== 'string') {
+    return null;
+  }
+
   return {
     userId: user._id,
     organizationId,
-    sessionId: String(identity.sessionId),
+    sessionId: identity.sessionId,
     isSiteAdmin: user.isSiteAdmin,
     currentUserName: getCurrentUserDisplayName(user),
   };
@@ -1582,18 +1590,18 @@ export const sendMessage = mutation({
       model: selectedModel,
     });
     const userMessage = await buildUserMessage(ctx, args.text, attachments);
+    const promptMetadata = {
+      authorName: currentUserName,
+      authorUserId: userId,
+      ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
+      ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
+    };
     const savedPrompt = await baseChatAgent.saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
       messages: [userMessage.message],
       skipEmbeddings: true,
-      metadata: [
-        {
-          ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
-          ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
-          ...{ authorUserId: userId, authorName: currentUserName },
-        },
-      ],
+      metadata: [promptMetadata],
       failPendingSteps: false,
     });
     const promptMessage = savedPrompt.messages[savedPrompt.messages.length - 1];

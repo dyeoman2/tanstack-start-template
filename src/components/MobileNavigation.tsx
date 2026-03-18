@@ -58,12 +58,12 @@ export function MobileNavigation() {
       await signOut();
       handleLinkClick(); // Close the mobile menu
       // Navigate to home page after successful sign out
-      navigate({ to: '/' });
+      void navigate({ to: '/' });
     } catch (error) {
       console.error('Error signing out:', error);
       handleLinkClick(); // Close the mobile menu
       // Still navigate to home even if there's an error
-      navigate({ to: '/' });
+      void navigate({ to: '/' });
     }
   };
 

@@ -40,7 +40,7 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function normalizeAdapterFindManyResult<T extends GenericConvexDocument>(
-  result: AdapterResultVariant<T> | unknown,
+  result: unknown,
 ): NormalizedAdapterResult<T> {
   if (Array.isArray(result)) {
     return {

@@ -62,10 +62,10 @@ function shouldHandleScimPatchLifecycle(bodyJson: string | undefined) {
 
       return Boolean(
         !path &&
-          typeof value === 'object' &&
-          value !== null &&
-          'active' in value &&
-          typeof value.active === 'boolean',
+        typeof value === 'object' &&
+        value !== null &&
+        'active' in value &&
+        typeof value.active === 'boolean',
       );
     });
   } catch {

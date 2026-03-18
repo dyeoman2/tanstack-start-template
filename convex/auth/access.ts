@@ -301,7 +301,7 @@ async function getCurrentAuthSessionOrNull(
   ctx: QueryCtx | MutationCtx,
 ): Promise<BetterAuthSessionRecord | null> {
   const identity = await ctx.auth.getUserIdentity();
-  if (!identity?.sessionId) {
+  if (!identity?.sessionId || typeof identity.sessionId !== 'string') {
     return null;
   }
 
@@ -311,7 +311,7 @@ async function getCurrentAuthSessionOrNull(
       {
         field: '_id',
         operator: 'eq',
-        value: String(identity.sessionId),
+        value: identity.sessionId,
       },
       {
         field: 'expiresAt',

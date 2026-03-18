@@ -139,7 +139,7 @@ export function UserManagement() {
         return;
       }
 
-      navigate({
+      void navigate({
         to: '/app/admin/users',
         search: {
           ...adminUsersSearchParams,
@@ -157,7 +157,7 @@ export function UserManagement() {
         return;
       }
 
-      navigate({
+      void navigate({
         to: '/app/admin/users',
         search: {
           ...adminUsersSearchParams,

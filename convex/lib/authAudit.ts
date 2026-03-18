@@ -227,7 +227,7 @@ function buildEventMetadata(state: ResolvedAuthAuditState, extra?: Record<string
     ...(state.responseStatus !== undefined ? { responseStatus: state.responseStatus } : {}),
     ...(state.responseErrorCode ? { responseErrorCode: state.responseErrorCode } : {}),
     ...(state.responseErrorMessage ? { responseErrorMessage: state.responseErrorMessage } : {}),
-    ...(extra ?? {}),
+    ...extra,
   };
 
   return maybeStringifyMetadata(metadata);

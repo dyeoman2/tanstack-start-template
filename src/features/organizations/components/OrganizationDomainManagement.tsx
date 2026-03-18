@@ -107,10 +107,10 @@ export function OrganizationDomainManagement({
   const requestedProviderHintsRef = useRef<Set<string>>(new Set());
 
   const canManageDomains = response?.capabilities.canManageDomains ?? false;
-  const domains = response?.domains ?? [];
+  const domains = response?.domains;
   const organizationId = response?.organization.id ?? null;
   const sortedDomains = useMemo(
-    () => [...domains].sort((left, right) => left.domain.localeCompare(right.domain)),
+    () => [...(domains ?? [])].sort((left, right) => left.domain.localeCompare(right.domain)),
     [domains],
   );
 

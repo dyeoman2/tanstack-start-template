@@ -37,7 +37,7 @@ vi.mock('~/lib/server/error-utils.server', () => ({
   handleServerError: handleServerErrorMock,
 }));
 
-import { markCurrentUserOnboardingCompleteServerFn } from './onboarding.server';
+import { markCurrentUserOnboardingCompleteServerFn } from './onboarding';
 
 describe('markCurrentUserOnboardingCompleteServerFn', () => {
   beforeEach(() => {

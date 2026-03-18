@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import {
   Dialog,
@@ -41,6 +41,7 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
   const canCreate = eligibility?.canCreate ?? false;
   const creationReason = eligibility?.reason ?? null;
   const isEligibilityPending = eligibility === undefined;
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const form = useForm({
     defaultValues: {
@@ -102,6 +103,7 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
 
   useEffect(() => {
     if (open) {
+      nameInputRef.current?.focus();
       return;
     }
 
@@ -148,13 +150,13 @@ export function CreateOrganizationDialog({ open, onOpenChange }: CreateOrganizat
               <Field>
                 <FieldLabel htmlFor="organization-name">Name</FieldLabel>
                 <Input
+                  ref={nameInputRef}
                   id="organization-name"
                   value={field.state.value}
                   onChange={(event) => field.handleChange(event.target.value)}
                   onBlur={field.handleBlur}
                   placeholder="Cottage Hospital"
                   disabled={form.state.isSubmitting}
-                  autoFocus
                 />
                 <FieldError>
                   {field.state.meta.isTouched ? field.state.meta.errors[0] : undefined}

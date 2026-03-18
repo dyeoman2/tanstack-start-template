@@ -59,11 +59,26 @@ const APPROVED_HELPER_PATTERNS = [
   /\bgetCurrentUserOrNull\s*\(/,
   /\bgetCurrentAuthUserOrThrow\s*\(/,
   /\bgetCurrentAuthUserOrNull\s*\(/,
+  /\bgetVerifiedCurrentUserFromActionOrThrow\s*\(/,
+  /\bgetVerifiedCurrentSiteAdminUserOrThrow\s*\(/,
+  /\bgetVerifiedCurrentSiteAdminUserFromActionOrThrow\s*\(/,
   /\bgetOrganizationAccessContextBySlug\s*\(/,
+  /\bgetOrganizationAccessContextById\s*\(/,
   /\brequireSiteAdmin\s*\(/,
+  /\brequireOrganizationPermission\s*\(/,
+  /\brequireOrganizationPermissionFromActionOrThrow\s*\(/,
+  /\brequireStorageReadAccessFromActionOrThrow\s*\(/,
+  /\brequireThreadPermission\s*\(/,
   /\bgetCurrentChatContext\s*\(/,
   /\bgetCurrentChatContextOrNull\s*\(/,
   /\bgetAuthenticatedContext\s*\(/,
+  /\bcanUserSelfServeCreateOrganization\s*\(/,
+  /\bassertScimManagementAccess\s*\(/,
+  /\bresolveEnterpriseSessionContext\s*\(/,
+  /\bauthComponent\.getAuthUser\s*\(/,
+  /\brunBetterAuthAction\s*\(/,
+  /\bassertOrganizationSettingsWriteAccess\s*\(/,
+  /\bchangeOrganizationMemberStatus\s*\(/,
 ];
 const AUTH_ALLOWLIST: Record<string, string> = {
   'convex/auth.ts:enforcePdfParseRateLimit':
@@ -75,6 +90,36 @@ const AUTH_ALLOWLIST: Record<string, string> = {
   'convex/playground.ts:playground':
     'Agent playground API registration is intentionally public and not a standard Convex function builder.',
   'convex/users.ts:getUserCount': 'Bootstrap helper used to detect first-user setup state.',
+  'convex/auth/access.ts:resolveOrganizationPermissionById':
+    'Public permission-check endpoint used to evaluate organization access decisions.',
+  'convex/auth/access.ts:resolveOrganizationPermissionBySlug':
+    'Public permission-check endpoint used to evaluate organization access decisions.',
+  'convex/organizationManagement.ts:getOrganizationEnterpriseAuthSettings':
+    'Read-only wrapper around guarded organization settings query for enterprise auth screens.',
+  'convex/organizationManagement.ts:resolveOrganizationEnterpriseAuthByEmail':
+    'Public sign-in discovery endpoint used before authentication is established.',
+  'convex/users.ts:ensureCurrentUserContext':
+    'Authenticated bootstrap action that hydrates the current user context after login.',
+  'convex/auth.ts:resolvePasswordResetEmail':
+    'Password-reset bridge action used after token verification during reset completion.',
+  'convex/agentChat.ts:generateChatAttachmentUploadTarget':
+    'Uses the internal current-chat context gate before issuing upload targets.',
+  'convex/agentChat.ts:deletePersona':
+    'Uses the internal current-chat context gate and persona ownership checks.',
+  'convex/organizationDomains.ts:verifyOrganizationDomain':
+    'Delegates to a guarded verification handler that validates organization membership.',
+  'convex/security.ts:getSecurityPostureSummary':
+    'Delegates to a site-admin-only handler for security posture data.',
+  'convex/security.ts:listSecurityControlEvidenceActivity':
+    'Delegates to a site-admin-only handler for evidence activity data.',
+  'convex/security.ts:renewSecurityControlEvidence':
+    'Delegates to a site-admin-only renewal handler for evidence records.',
+  'convex/security.ts:exportEvidenceReport':
+    'Delegates to a site-admin-only export handler for evidence reports.',
+  'convex/security.ts:generateEvidenceReport':
+    'Delegates to a site-admin-only generation handler for evidence reports.',
+  'convex/security.ts:reseedSecurityControlWorkspaceForDevelopment':
+    'Development-only reseed endpoint protected by the e2e shared secret.',
 };
 
 function isConvexSourceFile(filePath: string) {

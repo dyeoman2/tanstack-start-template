@@ -436,8 +436,8 @@ async function main() {
       {
         outputPath: path.relative(process.cwd(), OUTPUT_PATH),
         citationCount: dedupedRecords.length,
-        sections: [...new Set(dedupedRecords.map((record) => sectionFromCitation(record.citation)))]
-          .length,
+        sections: new Set(dedupedRecords.map((record) => sectionFromCitation(record.citation)))
+          .size,
       },
       null,
       2,

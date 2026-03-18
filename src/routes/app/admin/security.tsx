@@ -373,7 +373,8 @@ export function AdminSecurityRoute() {
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
-  const controls = controlWorkspaces ?? [];
+  const controls = controlWorkspaces;
+  const controlItems = useMemo(() => controls ?? [], [controls]);
   const auditReadinessSummary = useMemo(() => {
     const latestDrill = auditReadiness?.latestBackupDrill ?? null;
     const staleDrill =
@@ -394,7 +395,7 @@ export function AdminSecurityRoute() {
       ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
       : 'No drill evidence recorded';
   const controlSummary = useMemo(() => {
-    return controls.reduce(
+    return controlItems.reduce(
       (summaryAccumulator, control) => {
         summaryAccumulator.totalControls += 1;
         if (control.responsibility) {
@@ -417,16 +418,15 @@ export function AdminSecurityRoute() {
         },
       },
     );
-  }, [controls]);
+  }, [controlItems]);
   const familyOptions = useMemo<TableFilterOption<string>[]>(
     () => [
       { label: 'All families', value: 'all' },
       ...Array.from(
         new Map(
-          (controls.length > 0 ? controls : ACTIVE_CONTROL_REGISTER.controls).map((control) => [
-            control.familyId,
-            control.familyTitle,
-          ]),
+          (controlItems.length > 0 ? controlItems : ACTIVE_CONTROL_REGISTER.controls).map(
+            (control) => [control.familyId, control.familyTitle],
+          ),
         ).entries(),
       )
         .sort(([leftId, leftTitle], [rightId, rightTitle]) => {
@@ -437,7 +437,7 @@ export function AdminSecurityRoute() {
           value: familyId,
         })),
     ],
-    [controls],
+    [controlItems],
   );
   const responsibilityOptions = useMemo<
     TableFilterOption<'all' | NonNullable<SecurityControlWorkspace['responsibility']>>[]
@@ -464,7 +464,7 @@ export function AdminSecurityRoute() {
   const normalizedControlSearchTerm = controlSearchTerm.trim().toLowerCase();
   const filteredControls = useMemo(
     () =>
-      controls.filter((control) => {
+      controlItems.filter((control) => {
         if (responsibilityFilter !== 'all' && control.responsibility !== responsibilityFilter) {
           return false;
         }
@@ -507,7 +507,7 @@ export function AdminSecurityRoute() {
         return searchableText.includes(normalizedControlSearchTerm);
       }),
     [
-      controls,
+      controlItems,
       evidenceReadinessFilter,
       familyFilter,
       normalizedControlSearchTerm,
@@ -560,9 +560,9 @@ export function AdminSecurityRoute() {
   const selectedControl = useMemo(
     () =>
       selectedControlId
-        ? (controls.find((control) => control.internalControlId === selectedControlId) ?? null)
+        ? (controlItems.find((control) => control.internalControlId === selectedControlId) ?? null)
         : null,
-    [controls, selectedControlId],
+    [controlItems, selectedControlId],
   );
   const controlPagination = useMemo(
     () => ({

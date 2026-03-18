@@ -174,9 +174,7 @@ async function parseCsv(blob: Blob, fileName: string) {
 }
 
 async function parseExcel(blob: Blob, fileName: string) {
-  const [{ default: readXlsxFile, readSheetNames }] = await Promise.all([
-    import('read-excel-file/universal'),
-  ]);
+  const { default: readXlsxFile, readSheetNames } = await import('read-excel-file/universal');
   const sheetNames = await readSheetNames(blob);
 
   let content = `[Excel File: ${fileName}]\n\n`;

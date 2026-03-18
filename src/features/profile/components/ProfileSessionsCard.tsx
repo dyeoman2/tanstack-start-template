@@ -83,7 +83,7 @@ export function ProfileSessionsCard() {
       if (!success) {
         throw new Error('Failed to revoke session');
       }
-    } catch (_error) {
+    } catch {
       // Toasts and error state are handled by the hook.
     } finally {
       setPendingSessionId(null);
@@ -98,7 +98,7 @@ export function ProfileSessionsCard() {
       if (!success) {
         throw new Error('Failed to revoke other sessions');
       }
-    } catch (_error) {
+    } catch {
       // Toasts and error state are handled by the hook.
     } finally {
       setIsRevokingOthers(false);

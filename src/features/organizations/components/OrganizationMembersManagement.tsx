@@ -160,7 +160,8 @@ export function OrganizationMembersManagement({
 
   const isLoading = directory === undefined;
   const inviteDialogOpen = inviteDialogOpenProp ?? inviteDialogOpenInternal;
-  const rows = directory?.rows ?? [];
+  const rows = directory?.rows;
+  const rowItems = useMemo(() => rows ?? [], [rows]);
   const pagination = directory?.pagination ?? {
     page: searchParams.page,
     pageSize: searchParams.pageSize,
@@ -443,8 +444,8 @@ export function OrganizationMembersManagement({
     [selectedRoleMember],
   );
   const selectedRows = useMemo(
-    () => rows.filter((row) => selectedRowIds.has(row.id)),
-    [rows, selectedRowIds],
+    () => rowItems.filter((row) => selectedRowIds.has(row.id)),
+    [rowItems, selectedRowIds],
   );
   const selectedMembers = selectedRows.filter(
     (row): row is Extract<OrganizationDirectoryRow, { kind: 'member' }> => row.kind === 'member',
@@ -454,7 +455,7 @@ export function OrganizationMembersManagement({
   );
 
   const toggleAllRows = (checked: boolean) => {
-    setSelectedRowIds(checked ? new Set(rows.map((row) => row.id)) : new Set());
+    setSelectedRowIds(checked ? new Set(rowItems.map((row) => row.id)) : new Set());
   };
 
   const toggleRow = (rowId: string, checked: boolean) => {
@@ -651,7 +652,7 @@ export function OrganizationMembersManagement({
 
         <OrganizationMembersTable
           slug={slug}
-          rows={rows}
+          rows={rowItems}
           pagination={pagination}
           searchParams={searchParams}
           selectedRowIds={selectedRowIds}

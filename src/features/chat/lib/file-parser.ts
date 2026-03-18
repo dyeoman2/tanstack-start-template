@@ -126,9 +126,7 @@ async function parseExcel(file: File): Promise<ParsedFile> {
     throw new Error(`File size (${sizeMB}MB) exceeds the maximum allowed size of 10MB`);
   }
 
-  const [{ default: readXlsxFile, readSheetNames }] = await Promise.all([
-    import('read-excel-file/browser'),
-  ]);
+  const { default: readXlsxFile, readSheetNames } = await import('read-excel-file/browser');
   const sheetNames = await readSheetNames(file);
 
   if (sheetNames.length > MAX_SPREADSHEET_SHEETS) {

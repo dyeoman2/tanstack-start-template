@@ -1,0 +1,68 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "oxc",
+    "typescript",
+    "unicorn",
+    "react",
+    "react-perf",
+    "import",
+    "promise",
+    "vitest",
+    "jsx-a11y",
+    "node"
+  ],
+  "ignorePatterns": [
+    "dist/**",
+    "node_modules/**",
+    ".cursor/**",
+    "src/routeTree.gen.ts",
+    "worker-configuration.d.ts",
+    "convex/_generated/**",
+    "convex/betterAuth/_generated/**",
+    ".claude/**",
+    "compliance/sources/**",
+    "compliance/generated/**/*.json"
+  ],
+  "overrides": [
+    {
+      "files": ["src/**/*.{ts,tsx}"],
+      "env": {
+        "browser": true
+      }
+    },
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "**/*.spec.ts",
+        "**/*.spec.tsx",
+        "src/test/**/*.{ts,tsx}"
+      ],
+      "env": {
+        "vitest": true
+      }
+    },
+    {
+      "files": [
+        "scripts/**/*.{ts,mjs}",
+        "infra/**/*.{ts,mjs,cts}",
+        "*.config.{js,cjs,mjs,ts,cts}",
+        "vite.config.ts"
+      ],
+      "env": {
+        "node": true
+      }
+    },
+    {
+      "files": ["convex/**/*.ts", "convex/**/*.tsx"],
+      "jsPlugins": ["@convex-dev/eslint-plugin"],
+      "rules": {
+        "@convex-dev/import-wrong-runtime": "off",
+        "@convex-dev/no-old-registered-function-syntax": "error",
+        "@convex-dev/require-args-validator": "error",
+        "@convex-dev/explicit-table-ids": "error"
+      }
+    }
+  ]
+}

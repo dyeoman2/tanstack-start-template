@@ -48,7 +48,10 @@ describe('inspectFile', () => {
   it('rejects files larger than the configured limit', async () => {
     const result = await inspectFile({
       allowedKinds: ['document'],
-      blob: makeBlob(new Array(32).fill(0x61), 'text/plain'),
+      blob: makeBlob(
+        Array.from({ length: 32 }, () => 0x61),
+        'text/plain',
+      ),
       fileName: 'large.txt',
       maxBytes: 16,
       mimeType: 'text/plain',

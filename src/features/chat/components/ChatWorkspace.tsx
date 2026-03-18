@@ -339,10 +339,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     }
 
     return (
-      personasList.find((persona: ChatPersona) => persona._id === effectivePersonaId)?.name ??
+      (personas ?? []).find((persona: ChatPersona) => persona._id === effectivePersonaId)?.name ??
       'Persona'
     );
-  }, [effectivePersonaId, personasList]);
+  }, [effectivePersonaId, personas]);
   const currentMessages: ChatMessage[] = useMemo(
     () => (threadId ? mapAgentMessagesToChatMessages(threadId, messageFeed.results) : []),
     [messageFeed.results, threadId],
@@ -444,8 +444,8 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
   const hasThreadActivity = displayedMessages.length > 0 || Boolean(latestRunState);
   const isThreadPending = Boolean(
     threadId &&
-      !hasThreadActivity &&
-      (thread === undefined || messageFeed.status === 'LoadingFirstPage'),
+    !hasThreadActivity &&
+    (thread === undefined || messageFeed.status === 'LoadingFirstPage'),
   );
   const shouldShowCenteredComposer = !isThreadPending && showEmptyState;
   const composerDisabled =
@@ -469,10 +469,10 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
     );
   const shouldShowRunErrorBanner = Boolean(
     latestRunState &&
-      latestRunState.status === 'error' &&
-      latestRunState.runId &&
-      latestRunErrorKey !== dismissedRunErrorKey &&
-      !hasRenderedAssistantErrorForLatestRun,
+    latestRunState.status === 'error' &&
+    latestRunState.runId &&
+    latestRunErrorKey !== dismissedRunErrorKey &&
+    !hasRenderedAssistantErrorForLatestRun,
   );
 
   useEffect(() => {
@@ -895,7 +895,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               </p>
               <div className="mt-8 w-full max-w-3xl">
                 <ChatComposer
-                  autoFocus={shouldAutoFocusComposer}
+                  focusOnMount={shouldAutoFocusComposer}
                   disabled={composerDisabled}
                   isSending={isSending}
                   canStop={canStopGeneration}
@@ -971,7 +971,7 @@ export function ChatWorkspace({ threadId }: { threadId?: string }) {
               <div className="sticky bottom-0 shrink-0 bg-gradient-to-t from-background via-background/95 to-transparent px-4 pb-4 pt-6 md:px-6">
                 <div className="mx-auto w-full max-w-5xl">
                   <ChatComposer
-                    autoFocus={shouldAutoFocusComposer}
+                    focusOnMount={shouldAutoFocusComposer}
                     disabled={composerDisabled}
                     isSending={isSending}
                     canStop={canStopGeneration}

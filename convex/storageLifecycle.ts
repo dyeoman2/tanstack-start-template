@@ -1,11 +1,10 @@
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import {
-  internalMutation,
   internalQuery,
+  internalMutation,
   type MutationCtx,
   type QueryCtx,
-  query,
 } from './_generated/server';
 import {
   malwareStatusValidator,
@@ -320,7 +319,7 @@ async function applyLifecyclePatch(
   });
 }
 
-export const getByStorageId = query({
+export const getByStorageId = internalQuery({
   args: { storageId: v.string() },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
@@ -336,7 +335,7 @@ export const getByStorageIdInternal = internalQuery({
   },
 });
 
-export const getBySource = query({
+export const getBySource = internalQuery({
   args: { sourceId: v.string(), sourceType: v.string() },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {

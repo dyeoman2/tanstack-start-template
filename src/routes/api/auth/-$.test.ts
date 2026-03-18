@@ -18,6 +18,14 @@ vi.mock('~/features/auth/server/scim-route.server', () => ({
 }));
 
 describe('/api/auth/$ route', () => {
+  function requirePostHandler(postHandler: RoutePostHandler | undefined): RoutePostHandler {
+    if (!postHandler) {
+      throw new Error('Expected POST handler to be defined');
+    }
+
+    return postHandler;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     handleScimOrganizationLifecycleRequestMock.mockResolvedValue(null);
@@ -34,8 +42,11 @@ describe('/api/auth/$ route', () => {
     );
 
     const { Route } = await import('./$');
-    const postHandler = (Route.options.server?.handlers as Record<string, RoutePostHandler>).POST;
-    const response = await postHandler({
+    const serverHandlers = Route.options.server?.handlers as
+      | Record<string, RoutePostHandler>
+      | undefined;
+    const postHandler = serverHandlers?.POST;
+    const response = await requirePostHandler(postHandler)({
       request: new Request('http://127.0.0.1:3000/api/auth/change-email', {
         method: 'POST',
       }),
@@ -55,8 +66,11 @@ describe('/api/auth/$ route', () => {
     );
 
     const { Route } = await import('./$');
-    const postHandler = (Route.options.server?.handlers as Record<string, RoutePostHandler>).POST;
-    const response = await postHandler({
+    const serverHandlers = Route.options.server?.handlers as
+      | Record<string, RoutePostHandler>
+      | undefined;
+    const postHandler = serverHandlers?.POST;
+    const response = await requirePostHandler(postHandler)({
       request: new Request('http://127.0.0.1:3000/api/auth/scim/v2/Users/user-1', {
         method: 'POST',
       }),

@@ -1,6 +1,6 @@
 import { Check, Copy } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { type HTMLAttributes, memo, useCallback } from 'react';
+import { Children, type HTMLAttributes, memo, useCallback } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -72,7 +72,10 @@ function CodeBlock({
 }: HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
   const match = /language-(\w+)/.exec(className || '');
   const { resolvedTheme } = useTheme();
-  const code = String(children).replace(/\n$/, '');
+  const code = Children.toArray(children)
+    .map((child) => (typeof child === 'string' ? child : ''))
+    .join('')
+    .replace(/\n$/, '');
   const { copy, copied } = useCopyToClipboard();
 
   const handleCopy = useCallback(() => {

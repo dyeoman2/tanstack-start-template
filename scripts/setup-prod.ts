@@ -96,7 +96,7 @@ async function setupConvexProduction(): Promise<{
     }
 
     return null;
-  } catch (_error) {
+  } catch {
     console.log('❌ Convex deployment failed. You can try again later with: npx convex deploy');
     console.log('   Make sure you have the correct permissions and environment variables set.');
     throw new Error('Convex deployment failed');

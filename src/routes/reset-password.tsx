@@ -15,7 +15,7 @@ import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import {
   markCurrentUserOnboardingCompleteServerFn,
   resolvePasswordResetEmailServerFn,
-} from '~/features/auth/server/onboarding.server';
+} from '~/features/auth/server/onboarding';
 
 export const Route = createFileRoute('/reset-password')({
   staticData: true,
@@ -130,7 +130,7 @@ function ResetPasswordPage() {
 
         // Navigate to the app after showing success message
         setTimeout(() => {
-          router.navigate({ to: '/app' });
+          void router.navigate({ to: '/app' });
         }, 2000);
       } catch (error: unknown) {
         const errorObj = error as {
@@ -173,7 +173,7 @@ function ResetPasswordPage() {
   useEffect(() => {
     if (session?.user && success) {
       setTimeout(() => {
-        router.navigate({ to: '/app' });
+        void router.navigate({ to: '/app' });
       }, 1000);
     }
   }, [session, success, router]);
@@ -237,7 +237,7 @@ function ResetPasswordPage() {
           onSubmit={(e) => {
             e.preventDefault();
             e.stopPropagation();
-            form.handleSubmit();
+            void form.handleSubmit();
           }}
         >
           {error && (
