@@ -6,7 +6,7 @@ import {
   type VendorKey,
 } from '../shared/vendor-boundary';
 
-export class VendorBoundaryError extends Error {
+class VendorBoundaryError extends Error {
   constructor(
     public readonly vendor: VendorKey,
     message: string,

@@ -11,7 +11,3 @@ export function toPersonaId(value: string): Id<'aiPersonas'> {
 export function toRunId(value: string): Id<'chatRuns'> {
   return value as Id<'chatRuns'>;
 }
-
-export function toStorageId(value: string): Id<'_storage'> {
-  return value as Id<'_storage'>;
-}

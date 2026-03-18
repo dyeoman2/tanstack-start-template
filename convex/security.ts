@@ -225,12 +225,6 @@ const securityControlEvidenceActivityEventValidator = v.object({
 });
 const securityControlWorkspaceValidator = v.object({
   controlStatement: v.string(),
-  coverage: v.union(
-    v.literal('covered'),
-    v.literal('partial'),
-    v.literal('not-covered'),
-    v.literal('not-applicable'),
-  ),
   customerResponsibilityNotes: v.union(v.string(), v.null()),
   evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
   familyId: v.string(),
@@ -301,12 +295,6 @@ const securityControlWorkspaceValidator = v.object({
   nist80053Id: v.string(),
   owner: v.string(),
   platformChecklist: v.array(controlChecklistItemValidator),
-  platformImplementationStatus: v.union(
-    v.literal('covered'),
-    v.literal('partial'),
-    v.literal('not-covered'),
-    v.literal('not-applicable'),
-  ),
   priority: v.union(v.literal('p0'), v.literal('p1'), v.literal('p2')),
   responsibility: v.union(
     v.literal('platform'),
@@ -492,28 +480,6 @@ function getSeededEvidenceEntry(internalControlId: string, itemId: string, evide
   };
 }
 
-function derivePlatformImplementationStatus(
-  items: Array<{
-    required: boolean;
-    status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
-  }>,
-) {
-  const requiredItems = items.filter((item) => item.required);
-  if (requiredItems.length === 0) {
-    return 'not-applicable' as const;
-  }
-  const satisfied = requiredItems.filter(
-    (item) => item.status === 'done' || item.status === 'not_applicable',
-  ).length;
-  if (satisfied === requiredItems.length) {
-    return 'covered' as const;
-  }
-  if (satisfied === 0 && requiredItems.every((item) => item.status === 'not_started')) {
-    return 'not-covered' as const;
-  }
-  return 'partial' as const;
-}
-
 function deriveEvidenceReadiness(
   items: Array<{
     evidence: Array<{
@@ -653,9 +619,8 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
     }),
   );
   const actorDisplayById = new Map(actorProfiles);
-
   const checklistStateByKey = new Map(
-    checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item]),
+    checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item] as const),
   );
   const evidenceByKey = evidenceRows.reduce<Map<string, Array<(typeof evidenceRows)[number]>>>(
     (accumulator, evidence) => {
@@ -671,10 +636,10 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
 
   return ACTIVE_CONTROL_REGISTER.controls.map((control) => {
     const platformChecklist = control.platformChecklistItems.map((item) => {
-      const state = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
-      const hiddenSeedEvidenceIds = new Set(state?.hiddenSeedEvidenceIds ?? []);
+      const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
+      const hiddenSeedEvidenceIds = new Set(itemState?.hiddenSeedEvidenceIds ?? []);
       const archivedSeedEvidenceById = new Map(
-        (state?.archivedSeedEvidence ?? []).map((entry) => [entry.evidenceId, entry] as const),
+        (itemState?.archivedSeedEvidence ?? []).map((entry) => [entry.evidenceId, entry] as const),
       );
       const seededEvidence = item.seed.evidence
         .map((entry, index) => ({
@@ -793,6 +758,29 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
       const evidence = [...seededEvidence, ...persistedEvidence, ...archivedSeedEvidence];
       const derivedStatus = deriveChecklistItemStatus(evidence);
       const itemHasExpiringSoonEvidence = hasExpiringSoonEvidence(evidence);
+      const completedAt =
+        derivedStatus === 'done'
+          ? evidence
+              .filter(
+                (entry) => entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
+              )
+              .reduce<number | null>((latest, entry) => {
+                const candidate = entry.reviewedAt ?? entry.createdAt;
+                return latest === null ? candidate : Math.max(latest, candidate);
+              }, null)
+          : null;
+      const lastReviewedAtCandidates = [
+        item.seed.evidence.length > 0 || derivedStatus !== 'not_started' ? seededReviewedAt : null,
+        completedAt,
+        ...evidence.flatMap((entry) => [entry.reviewedAt, entry.createdAt, entry.archivedAt]),
+        ...archivedSeedEvidence.map((entry) => entry.archivedAt),
+      ];
+      const lastReviewedAt = lastReviewedAtCandidates.reduce<number | null>((latest, value) => {
+        if (typeof value !== 'number') {
+          return latest;
+        }
+        return latest === null ? value : Math.max(latest, value);
+      }, null);
 
       return {
         itemId: item.itemId,
@@ -802,33 +790,16 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
         required: item.required,
         suggestedEvidenceTypes: item.suggestedEvidenceTypes,
         status: derivedStatus,
-        owner: state?.owner ?? item.seed.owner,
-        notes: state?.notes ?? item.seed.notes,
-        completedAt:
-          derivedStatus === 'done'
-            ? (state?.completedAt ??
-              evidence
-                .filter(
-                  (entry) =>
-                    entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
-                )
-                .reduce<number | null>((latest, entry) => {
-                  const candidate = entry.reviewedAt ?? entry.createdAt;
-                  return latest === null ? candidate : Math.max(latest, candidate);
-                }, null))
-            : null,
-        lastReviewedAt:
-          state?.lastReviewedAt ??
-          (item.seed.evidence.length > 0 || derivedStatus !== 'not_started'
-            ? seededReviewedAt
-            : null),
+        owner: item.seed.owner,
+        notes: item.seed.notes,
+        completedAt,
+        lastReviewedAt,
         evidence,
         evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
         hasExpiringSoonEvidence: itemHasExpiringSoonEvidence,
       };
     });
 
-    const platformImplementationStatus = derivePlatformImplementationStatus(platformChecklist);
     const evidenceReadiness = deriveEvidenceReadiness(platformChecklist);
     const controlHasExpiringSoonEvidence = platformChecklist.some(
       (item) => item.hasExpiringSoonEvidence,
@@ -868,8 +839,6 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
           text: null,
         })),
       },
-      coverage: platformImplementationStatus,
-      platformImplementationStatus,
       evidenceReadiness,
       hasExpiringSoonEvidence: controlHasExpiringSoonEvidence,
       lastReviewedAt,
@@ -1118,134 +1087,6 @@ export const listSecurityControlEvidenceActivity = query({
   },
 });
 
-export const updateSecurityControlChecklistItem = mutation({
-  args: {
-    internalControlId: v.string(),
-    itemId: v.string(),
-    notes: v.optional(v.string()),
-    owner: v.optional(v.string()),
-    status: checklistStatusValidator,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const existing = await ctx.db
-      .query('securityControlChecklistItems')
-      .withIndex('by_internal_control_id_and_item_id', (q) =>
-        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
-      )
-      .unique();
-    const now = Date.now();
-    const patch = {
-      status: args.status,
-      owner: args.owner?.trim() || undefined,
-      notes: args.notes?.trim() || undefined,
-      completedAt: args.status === 'done' || args.status === 'not_applicable' ? now : undefined,
-      completedByUserId:
-        args.status === 'done' || args.status === 'not_applicable'
-          ? currentUser.authUserId
-          : undefined,
-      lastReviewedAt: now,
-      lastReviewedByUserId: currentUser.authUserId,
-      updatedAt: now,
-    };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-    } else {
-      await ctx.db.insert('securityControlChecklistItems', {
-        internalControlId: args.internalControlId,
-        itemId: args.itemId,
-        createdAt: now,
-        ...patch,
-      });
-    }
-
-    return null;
-  },
-});
-
-export const hideSeededSecurityControlEvidence = mutation({
-  args: {
-    evidenceId: v.string(),
-    internalControlId: v.string(),
-    itemId: v.string(),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const existing = await ctx.db
-      .query('securityControlChecklistItems')
-      .withIndex('by_internal_control_id_and_item_id', (q) =>
-        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
-      )
-      .unique();
-    const now = Date.now();
-    const nextHiddenSeedEvidenceIds = Array.from(
-      new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
-    );
-    const patch = {
-      hiddenSeedEvidenceIds: nextHiddenSeedEvidenceIds,
-      lastReviewedAt: now,
-      lastReviewedByUserId: currentUser.authUserId,
-      updatedAt: now,
-    };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-    } else {
-      await ctx.db.insert('securityControlChecklistItems', {
-        internalControlId: args.internalControlId,
-        itemId: args.itemId,
-        status: 'not_started',
-        createdAt: now,
-        ...patch,
-      });
-    }
-
-    return null;
-  },
-});
-
-export const updateSecurityControlReviewState = mutation({
-  args: {
-    internalControlId: v.string(),
-    reviewNotes: v.optional(v.string()),
-    reviewStatus: v.union(
-      v.literal('pending'),
-      v.literal('reviewed'),
-      v.literal('needs_follow_up'),
-    ),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const existing = await ctx.db
-      .query('securityControlStates')
-      .withIndex('by_internal_control_id', (q) => q.eq('internalControlId', args.internalControlId))
-      .unique();
-    const now = Date.now();
-    const patch = {
-      reviewNotes: args.reviewNotes?.trim() || undefined,
-      reviewStatus: args.reviewStatus,
-      reviewedAt: args.reviewStatus === 'reviewed' ? now : undefined,
-      reviewedByUserId: args.reviewStatus === 'reviewed' ? currentUser.authUserId : undefined,
-      updatedAt: now,
-    };
-
-    if (existing) {
-      await ctx.db.patch(existing._id, patch);
-    } else {
-      await ctx.db.insert('securityControlStates', {
-        internalControlId: args.internalControlId,
-        createdAt: now,
-        ...patch,
-      });
-    }
-    return null;
-  },
-});
-
 export const addSecurityControlEvidenceLink = mutation({
   args: {
     description: v.optional(v.string()),
@@ -1425,8 +1266,6 @@ export const archiveSecurityControlEvidence = mutation({
           new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
         ),
         archivedSeedEvidence: nextArchivedSeedEvidence,
-        lastReviewedAt: now,
-        lastReviewedByUserId: currentUser.authUserId,
         updatedAt: now,
       };
 
@@ -1436,7 +1275,6 @@ export const archiveSecurityControlEvidence = mutation({
         await ctx.db.insert('securityControlChecklistItems', {
           internalControlId: args.internalControlId,
           itemId: args.itemId,
-          status: 'not_started',
           createdAt: now,
           ...patch,
         });
@@ -1549,8 +1387,6 @@ export const renewSecurityControlEvidence = mutation({
           new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
         ),
         archivedSeedEvidence: nextArchivedSeedEvidence,
-        lastReviewedAt: now,
-        lastReviewedByUserId: currentUser.authUserId,
         updatedAt: now,
       };
 
@@ -1560,7 +1396,6 @@ export const renewSecurityControlEvidence = mutation({
         await ctx.db.insert('securityControlChecklistItems', {
           internalControlId: args.internalControlId,
           itemId: args.itemId,
-          status: 'not_started',
           createdAt: now,
           ...patch,
         });
@@ -1757,54 +1592,6 @@ export const finalizeSecurityControlEvidenceUpload = action({
   },
 });
 
-export const removeSecurityControlEvidence = action({
-  args: {
-    evidenceId: v.id('securityControlEvidence'),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const evidence = await ctx.runQuery(internal.security.getSecurityControlEvidenceInternal, {
-      evidenceId: args.evidenceId,
-    });
-    if (!evidence) {
-      return null;
-    }
-    if (evidence.storageId) {
-      await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
-        storageId: evidence.storageId,
-      });
-    }
-    await ctx.runMutation(internal.security.deleteSecurityControlEvidenceInternal, {
-      evidenceId: args.evidenceId,
-    });
-    return null;
-  },
-});
-
-export const getSecurityControlEvidenceInternal = internalQuery({
-  args: {
-    evidenceId: v.id('securityControlEvidence'),
-  },
-  returns: v.union(
-    v.object({
-      _id: v.id('securityControlEvidence'),
-      storageId: v.optional(v.string()),
-    }),
-    v.null(),
-  ),
-  handler: async (ctx, args) => {
-    const evidence = await ctx.db.get(args.evidenceId);
-    if (!evidence) {
-      return null;
-    }
-    return {
-      _id: evidence._id,
-      storageId: evidence.storageId,
-    };
-  },
-});
-
 export const createSecurityControlEvidenceFileInternal = internalMutation({
   args: {
     description: v.optional(v.string()),
@@ -1858,17 +1645,6 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
       reviewStatus: 'pending',
     });
     return evidenceId;
-  },
-});
-
-export const deleteSecurityControlEvidenceInternal = internalMutation({
-  args: {
-    evidenceId: v.id('securityControlEvidence'),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.delete(args.evidenceId);
-    return null;
   },
 });
 

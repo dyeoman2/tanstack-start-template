@@ -1,10 +1,17 @@
 import { anyApi } from 'convex/server';
+import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../../src/features/auth/lib/user-role';
 import {
   ADMIN_ORGANIZATION_ACCESS,
+  canManageDomains,
+  canManageOrganization,
+  canManageOrganizationPolicies,
+  canViewOrganizationAudit,
+  deriveViewerRole,
   getOrganizationAccess,
   NO_ORGANIZATION_ACCESS,
   type OrganizationAccess,
+  type OrganizationViewerRole,
   SITE_ADMIN_ORGANIZATION_ACCESS,
   VIEW_ORGANIZATION_ACCESS,
 } from '../../src/features/organizations/lib/organization-permissions';
@@ -23,6 +30,7 @@ import { assertUserId } from '../../src/lib/shared/user-id';
 import { components } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
+import { query } from '../_generated/server';
 import { authComponent, type BetterAuthSessionData, type BetterAuthSessionUser } from '../auth';
 import type { Doc as BetterAuthDoc } from '../betterAuth/_generated/dataModel';
 import {
@@ -32,6 +40,7 @@ import {
   fetchBetterAuthOrganizationsByIds,
   findBetterAuthMember,
   findBetterAuthOrganizationById,
+  findBetterAuthOrganizationBySlug,
 } from '../lib/betterAuth';
 import {
   getOrganizationMembershipStatus,
@@ -64,6 +73,179 @@ export const VIEW_ACCESS: ACCESS = {
 export const NO_ACCESS: ACCESS = {
   ...NO_ORGANIZATION_ACCESS,
 };
+
+export const ORGANIZATION_PERMISSION_VALUES = [
+  'viewOrganization',
+  'manageMembers',
+  'manageDomains',
+  'managePolicies',
+  'viewAudit',
+  'exportAudit',
+  'manageEvidence',
+  'readThread',
+  'writeThread',
+  'readAttachment',
+  'deleteAttachment',
+  'issueAttachmentAccessUrl',
+] as const;
+
+export type OrganizationPermission = (typeof ORGANIZATION_PERMISSION_VALUES)[number];
+
+type OrganizationPoliciesForAuthorization = {
+  allowBreakGlassPasswordLogin: boolean;
+  enterpriseAuthMode: 'off' | 'optional' | 'required';
+  enterpriseProviderKey: 'google-workspace' | 'entra' | 'okta' | null;
+};
+
+type AuthorizationAssurance = {
+  emailVerified: boolean;
+  enterpriseSatisfied: boolean;
+  mfaSatisfied: boolean;
+  recentStepUpSatisfied: boolean;
+};
+
+export type OrganizationPermissionDecision = {
+  assurance: AuthorizationAssurance;
+  membership: BetterAuthMember | null;
+  membershipStatus: 'active' | 'deactivated' | 'suspended' | null;
+  organizationId: string;
+  organizationSlug: string | null;
+  permission: OrganizationPermission;
+  user: CurrentUser;
+  viewerRole: OrganizationViewerRole;
+};
+
+type AuthorizationFailure = {
+  code: 'FORBIDDEN' | 'NOT_FOUND';
+  reason: string;
+};
+
+type StorageReadAccessResult =
+  | {
+      allowed: false;
+      organizationId: string | null;
+      permission: OrganizationPermission | null;
+      reason: string;
+    }
+  | {
+      allowed: true;
+      organizationId: string | null;
+      permission: OrganizationPermission | null;
+      reason: null;
+    };
+
+const organizationPermissionValidator = v.union(
+  ...ORGANIZATION_PERMISSION_VALUES.map((permission) => v.literal(permission)),
+);
+
+function getPermissionStepUpRequirement(
+  permission: OrganizationPermission,
+): StepUpRequirement | null {
+  switch (permission) {
+    case 'managePolicies':
+      return STEP_UP_REQUIREMENTS.organizationAdmin;
+    case 'exportAudit':
+      return STEP_UP_REQUIREMENTS.auditExport;
+    case 'manageEvidence':
+      return STEP_UP_REQUIREMENTS.auditExport;
+    case 'issueAttachmentAccessUrl':
+      return STEP_UP_REQUIREMENTS.attachmentAccess;
+    default:
+      return null;
+  }
+}
+
+function requiresEnterpriseSatisfied(permission: OrganizationPermission) {
+  switch (permission) {
+    case 'manageDomains':
+    case 'managePolicies':
+    case 'viewAudit':
+    case 'exportAudit':
+      return true;
+    default:
+      return false;
+  }
+}
+
+function canSiteAdminPerform(permission: OrganizationPermission) {
+  switch (permission) {
+    case 'viewOrganization':
+    case 'manageMembers':
+    case 'manageDomains':
+    case 'managePolicies':
+    case 'viewAudit':
+    case 'exportAudit':
+    case 'manageEvidence':
+    case 'readThread':
+    case 'writeThread':
+    case 'readAttachment':
+    case 'deleteAttachment':
+    case 'issueAttachmentAccessUrl':
+      return true;
+  }
+}
+
+function isViewerRoleAllowed(
+  permission: OrganizationPermission,
+  viewerRole: OrganizationViewerRole,
+) {
+  switch (permission) {
+    case 'viewOrganization':
+      return viewerRole !== null;
+    case 'manageMembers':
+      return canManageOrganization(viewerRole);
+    case 'manageDomains':
+      return canManageDomains(viewerRole);
+    case 'managePolicies':
+      return canManageOrganizationPolicies(viewerRole);
+    case 'viewAudit':
+    case 'exportAudit':
+      return canViewOrganizationAudit(viewerRole);
+    case 'manageEvidence':
+      return false;
+    default:
+      return viewerRole !== null;
+  }
+}
+
+async function getOrganizationPoliciesForAuthorization(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+): Promise<OrganizationPoliciesForAuthorization> {
+  const policy = await ctx.db
+    .query('organizationPolicies')
+    .withIndex('by_organization_id', (query) => query.eq('organizationId', organizationId))
+    .first();
+
+  return {
+    allowBreakGlassPasswordLogin: policy?.allowBreakGlassPasswordLogin ?? false,
+    enterpriseAuthMode: policy?.enterpriseAuthMode ?? 'off',
+    enterpriseProviderKey: policy?.enterpriseProviderKey ?? null,
+  };
+}
+
+async function getVerifiedDomainsForAuthorization(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  const domains = await ctx.db
+    .query('organizationDomains')
+    .withIndex('by_organization_id', (query) => query.eq('organizationId', organizationId))
+    .collect();
+
+  return domains
+    .filter((domain) => domain.status === 'verified')
+    .map((domain) => domain.normalizedDomain);
+}
+
+function normalizeEmailDomain(email: string | undefined | null) {
+  if (!email) {
+    return '';
+  }
+
+  const [, domain = ''] = email.trim().toLowerCase().split('@');
+  return domain;
+}
 
 export type CurrentUser = Doc<'users'> & {
   activeOrganizationId: string | null;
@@ -498,6 +680,184 @@ async function resolveUserAuthAssuranceState(
   });
 }
 
+async function evaluateEnterpriseAuthorization(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    membership: BetterAuthMember | null;
+    organizationId: string;
+    user: CurrentUser;
+  },
+) {
+  const policies = await getOrganizationPoliciesForAuthorization(ctx, input.organizationId);
+  if (policies.enterpriseAuthMode !== 'required') {
+    return true;
+  }
+
+  if (input.user.isSiteAdmin) {
+    return true;
+  }
+
+  const verifiedDomains = await getVerifiedDomainsForAuthorization(ctx, input.organizationId);
+  const emailDomain = normalizeEmailDomain(input.user.authUser.email);
+  const matchesManagedDomain = verifiedDomains.includes(emailDomain);
+  if (!matchesManagedDomain) {
+    return true;
+  }
+
+  if (policies.allowBreakGlassPasswordLogin && input.membership?.role === 'owner') {
+    return true;
+  }
+
+  return (
+    input.user.authSession?.authMethod === 'enterprise' &&
+    input.user.authSession.enterpriseOrganizationId === input.organizationId &&
+    input.user.authSession.enterpriseProviderKey === policies.enterpriseProviderKey
+  );
+}
+
+async function buildOrganizationPermissionDecision(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    organizationId?: string;
+    organizationSlug?: string;
+    permission: OrganizationPermission;
+  },
+): Promise<OrganizationPermissionDecision | AuthorizationFailure> {
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const organization = input.organizationId
+    ? await findBetterAuthOrganizationById(ctx, input.organizationId)
+    : input.organizationSlug
+      ? await findBetterAuthOrganizationBySlug(ctx, input.organizationSlug)
+      : null;
+
+  if (!organization) {
+    return {
+      code: 'NOT_FOUND',
+      reason: 'Organization not found',
+    };
+  }
+
+  const organizationId = organization._id ?? organization.id;
+  if (!organizationId) {
+    return {
+      code: 'NOT_FOUND',
+      reason: 'Organization not found',
+    };
+  }
+
+  const membership = await findBetterAuthMember(ctx, organizationId, user.authUserId);
+  const membershipStatus =
+    membership === null ? null : await getOrganizationMembershipStatus(ctx, membership._id);
+  const viewerRole = deriveViewerRole({
+    isSiteAdmin: user.isSiteAdmin,
+    membershipRole: membershipStatus === 'active' ? membership?.role : null,
+  });
+
+  const assuranceState = await resolveUserAuthAssuranceState(ctx, user);
+  const authPolicy = evaluateAuthPolicy({
+    assurance: assuranceState,
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+    requirement: getPermissionStepUpRequirement(input.permission),
+  });
+  const enterpriseSatisfied = await evaluateEnterpriseAuthorization(ctx, {
+    membership,
+    organizationId,
+    user,
+  });
+
+  const decision: OrganizationPermissionDecision = {
+    assurance: {
+      emailVerified: assuranceState.emailVerified,
+      enterpriseSatisfied,
+      mfaSatisfied: !authPolicy.requiresMfaSetup,
+      recentStepUpSatisfied: authPolicy.stepUp.required ? authPolicy.stepUp.satisfied : true,
+    },
+    membership,
+    membershipStatus,
+    organizationId,
+    organizationSlug: organization.slug ?? null,
+    permission: input.permission,
+    user,
+    viewerRole,
+  };
+
+  if (user.isSiteAdmin && canSiteAdminPerform(input.permission)) {
+    if (!decision.assurance.mfaSatisfied) {
+      return {
+        code: 'FORBIDDEN',
+        reason: 'Multi-factor authentication is required for site admin access',
+      };
+    }
+    if (!decision.assurance.recentStepUpSatisfied) {
+      return {
+        code: 'FORBIDDEN',
+        reason: 'Recent step-up authentication is required',
+      };
+    }
+    return decision;
+  }
+
+  if (membership === null || membershipStatus !== 'active' || viewerRole === null) {
+    return {
+      code: 'FORBIDDEN',
+      reason: 'You are not a member of this organization',
+    };
+  }
+
+  if (!isViewerRoleAllowed(input.permission, viewerRole)) {
+    return {
+      code: 'FORBIDDEN',
+      reason: 'You do not have access to this organization resource',
+    };
+  }
+
+  if (requiresEnterpriseSatisfied(input.permission) && !decision.assurance.enterpriseSatisfied) {
+    return {
+      code: 'FORBIDDEN',
+      reason: 'This organization requires enterprise sign-in',
+    };
+  }
+
+  if (!decision.assurance.recentStepUpSatisfied) {
+    return {
+      code: 'FORBIDDEN',
+      reason: 'Recent step-up authentication is required',
+    };
+  }
+
+  return decision;
+}
+
+async function recordAuthorizationDenied(
+  ctx: MutationCtx | ActionCtx,
+  input: {
+    organizationId?: string;
+    permission: OrganizationPermission;
+    reason: string;
+    sourceSurface?: string;
+    user: CurrentUser;
+  },
+) {
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    eventType: 'authorization_denied',
+    userId: input.user.authUserId,
+    actorUserId: input.user.authUserId,
+    organizationId: input.organizationId,
+    identifier: input.user.authUser.email?.toLowerCase(),
+    sessionId: input.user.authSession?.id ?? undefined,
+    outcome: 'failure',
+    severity: 'warning',
+    resourceType: 'organization_permission',
+    resourceId: input.organizationId,
+    resourceLabel: input.permission,
+    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    metadata: JSON.stringify({
+      permission: input.permission,
+      reason: input.reason,
+    }),
+  });
+}
+
 async function resolveOrganizationsForUser(
   ctx: QueryCtx | MutationCtx,
   authUserId: string,
@@ -595,3 +955,353 @@ export async function listOrganizationMembers(
 ): Promise<BetterAuthMember[]> {
   return await fetchBetterAuthMembersByOrganizationId(ctx, organizationId);
 }
+
+export async function requireOrganizationPermission(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    organizationId?: string;
+    organizationSlug?: string;
+    permission: OrganizationPermission;
+    sourceSurface?: string;
+  },
+): Promise<OrganizationPermissionDecision> {
+  const result = await buildOrganizationPermissionDecision(ctx, input);
+  if ('code' in result) {
+    throwConvexError(result.code, result.reason);
+  }
+
+  return result;
+}
+
+export async function requireOrganizationPermissionFromActionOrThrow(
+  ctx: ActionCtx,
+  input: {
+    organizationId?: string;
+    organizationSlug?: string;
+    permission: OrganizationPermission;
+    sourceSurface?: string;
+  },
+): Promise<OrganizationPermissionDecision> {
+  const result = (
+    input.organizationId
+      ? await ctx.runQuery(anyApi['auth/access'].resolveOrganizationPermissionById, {
+          organizationId: input.organizationId,
+          permission: input.permission,
+        })
+      : await ctx.runQuery(anyApi['auth/access'].resolveOrganizationPermissionBySlug, {
+          organizationSlug: input.organizationSlug ?? '',
+          permission: input.permission,
+        })
+  ) as
+    | {
+        allowed: false;
+        organizationId: string | null;
+        reason: string;
+      }
+    | {
+        allowed: true;
+        decision: OrganizationPermissionDecision;
+      };
+
+  if (!result.allowed) {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    await recordAuthorizationDenied(ctx, {
+      organizationId: result.organizationId ?? input.organizationId,
+      permission: input.permission,
+      reason: result.reason,
+      sourceSurface: input.sourceSurface,
+      user,
+    });
+    throwConvexError('FORBIDDEN', result.reason);
+  }
+
+  return result.decision;
+}
+
+export async function requireAttachmentPermission(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    attachmentId: Doc<'chatAttachments'>['_id'];
+    permission: Extract<
+      OrganizationPermission,
+      'deleteAttachment' | 'issueAttachmentAccessUrl' | 'readAttachment'
+    >;
+  },
+) {
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const attachment = await ctx.db.get(input.attachmentId);
+  if (!attachment || attachment.deletedAt) {
+    throwConvexError('NOT_FOUND', 'Attachment not found');
+  }
+
+  const decision = await requireOrganizationPermission(ctx, {
+    organizationId: attachment.organizationId,
+    permission: input.permission === 'deleteAttachment' ? 'deleteAttachment' : 'readAttachment',
+  });
+
+  const isOwner = attachment.userId === user.authUserId;
+  const canAccess = user.isSiteAdmin || isOwner;
+  if (!canAccess) {
+    throwConvexError('FORBIDDEN', 'Attachment access denied');
+  }
+
+  if (input.permission === 'issueAttachmentAccessUrl') {
+    const attachmentDecision = await requireOrganizationPermission(ctx, {
+      organizationId: attachment.organizationId,
+      permission: 'issueAttachmentAccessUrl',
+    });
+    return {
+      ...attachmentDecision,
+      attachment,
+    };
+  }
+
+  return {
+    ...decision,
+    attachment,
+  };
+}
+
+export async function requireThreadPermission(
+  ctx: QueryCtx | MutationCtx,
+  input: {
+    permission: Extract<OrganizationPermission, 'readThread' | 'writeThread'>;
+    threadId: Doc<'chatThreads'>['_id'];
+  },
+) {
+  const user = await getVerifiedCurrentUserOrThrow(ctx);
+  const thread = await ctx.db.get(input.threadId);
+  if (!thread || thread.deletedAt) {
+    throwConvexError('NOT_FOUND', 'Thread not found');
+  }
+
+  const decision = await requireOrganizationPermission(ctx, {
+    organizationId: thread.organizationId,
+    permission: input.permission,
+  });
+  const isOwner = thread.ownerUserId === user.authUserId;
+  const canAccess = user.isSiteAdmin || isOwner;
+  if (!canAccess) {
+    throwConvexError('FORBIDDEN', 'Thread access denied');
+  }
+
+  return {
+    ...decision,
+    thread,
+  };
+}
+
+export async function requireStorageReadAccessFromActionOrThrow(
+  ctx: ActionCtx,
+  input: {
+    sourceSurface?: string;
+    storageId: string;
+  },
+) {
+  const result = (await ctx.runQuery(anyApi['auth/access'].resolveStorageReadAccess, {
+    storageId: input.storageId,
+  })) as StorageReadAccessResult;
+
+  if (!result.allowed) {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    await recordAuthorizationDenied(ctx, {
+      organizationId: result.organizationId ?? user.activeOrganizationId ?? undefined,
+      permission: result.permission ?? 'readAttachment',
+      reason: result.reason,
+      sourceSurface: input.sourceSurface ?? 'storage.read',
+      user,
+    });
+    throwConvexError('FORBIDDEN', result.reason);
+  }
+
+  return result;
+}
+
+export const resolveOrganizationPermissionById = query({
+  args: {
+    organizationId: v.string(),
+    permission: organizationPermissionValidator,
+  },
+  returns: v.union(
+    v.object({
+      allowed: v.literal(false),
+      organizationId: v.union(v.string(), v.null()),
+      reason: v.string(),
+    }),
+    v.object({
+      allowed: v.literal(true),
+      decision: v.any(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const result = await buildOrganizationPermissionDecision(ctx, args);
+    if ('code' in result) {
+      return {
+        allowed: false as const,
+        organizationId: args.organizationId,
+        reason: result.reason,
+      };
+    }
+    return {
+      allowed: true as const,
+      decision: result,
+    };
+  },
+});
+
+export const resolveOrganizationPermissionBySlug = query({
+  args: {
+    organizationSlug: v.string(),
+    permission: organizationPermissionValidator,
+  },
+  returns: v.union(
+    v.object({
+      allowed: v.literal(false),
+      organizationId: v.union(v.string(), v.null()),
+      reason: v.string(),
+    }),
+    v.object({
+      allowed: v.literal(true),
+      decision: v.any(),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const result = await buildOrganizationPermissionDecision(ctx, {
+      organizationSlug: args.organizationSlug,
+      permission: args.permission,
+    });
+    if ('code' in result) {
+      return {
+        allowed: false as const,
+        organizationId: null,
+        reason: result.reason,
+      };
+    }
+    return {
+      allowed: true as const,
+      decision: result,
+    };
+  },
+});
+
+export const resolveStorageReadAccess = query({
+  args: {
+    storageId: v.string(),
+  },
+  returns: v.object({
+    allowed: v.boolean(),
+    organizationId: v.union(v.string(), v.null()),
+    permission: v.union(v.string(), v.null()),
+    reason: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    const lifecycle = await ctx.db
+      .query('storageLifecycle')
+      .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
+      .first();
+
+    if (!lifecycle) {
+      return {
+        allowed: false,
+        organizationId: null,
+        permission: null,
+        reason: 'Stored file not found',
+      };
+    }
+
+    if (lifecycle.sourceType === 'chat_attachment') {
+      const attachment = await ctx.db
+        .query('chatAttachments')
+        .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
+        .unique();
+      if (!attachment || attachment.deletedAt) {
+        return {
+          allowed: false,
+          organizationId: null,
+          permission: 'issueAttachmentAccessUrl',
+          reason: 'Attachment not found',
+        };
+      }
+
+      const decision = await buildOrganizationPermissionDecision(ctx, {
+        organizationId: attachment.organizationId,
+        permission: 'issueAttachmentAccessUrl',
+      });
+      if ('code' in decision) {
+        return {
+          allowed: false,
+          organizationId: attachment.organizationId,
+          permission: 'issueAttachmentAccessUrl',
+          reason: decision.reason,
+        };
+      }
+
+      if (!user.isSiteAdmin && attachment.userId !== user.authUserId) {
+        return {
+          allowed: false,
+          organizationId: attachment.organizationId,
+          permission: 'issueAttachmentAccessUrl',
+          reason: 'Attachment access denied',
+        };
+      }
+
+      return {
+        allowed: true,
+        organizationId: attachment.organizationId,
+        permission: 'issueAttachmentAccessUrl',
+        reason: null,
+      };
+    }
+
+    if (lifecycle.sourceType === 'security_control_evidence') {
+      const assurance = await resolveUserAuthAssuranceState(ctx, user);
+      const authPolicy = evaluateAuthPolicy({
+        assurance,
+        recentStepUpWindowMs: getRecentStepUpWindowMs(),
+        requirement: getPermissionStepUpRequirement('manageEvidence'),
+      });
+
+      if (!user.isSiteAdmin) {
+        return {
+          allowed: false,
+          organizationId: user.activeOrganizationId,
+          permission: 'manageEvidence',
+          reason: 'Site admin access required',
+        };
+      }
+
+      if (authPolicy.requiresMfaSetup) {
+        return {
+          allowed: false,
+          organizationId: user.activeOrganizationId,
+          permission: 'manageEvidence',
+          reason: 'Multi-factor authentication is required for site admin access',
+        };
+      }
+
+      if (!authPolicy.stepUp.satisfied) {
+        return {
+          allowed: false,
+          organizationId: user.activeOrganizationId,
+          permission: 'manageEvidence',
+          reason: 'Recent step-up authentication is required',
+        };
+      }
+
+      return {
+        allowed: true,
+        organizationId: user.activeOrganizationId,
+        permission: 'manageEvidence',
+        reason: null,
+      };
+    }
+
+    return {
+      allowed: false,
+      organizationId: user.activeOrganizationId,
+      permission: null,
+      reason: 'Stored file access is not available for this resource type',
+    };
+  },
+});

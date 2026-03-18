@@ -28,7 +28,7 @@ import {
   isValidContinuationPromptMessage,
   resolveThread,
 } from './agentChatActions';
-import { getVerifiedCurrentUserOrThrow } from './auth/access';
+import { getVerifiedCurrentUserOrThrow, requireThreadPermission } from './auth/access';
 import {
   assertChatModelSupportsWebSearch,
   type ChatAttachmentDoc,
@@ -239,12 +239,18 @@ async function getThreadForViewer(
   threadId: Id<'chatThreads'>,
   viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
 ) {
-  const thread = await ctx.db.get(threadId);
-  if (!thread || !canViewThread(thread, viewer)) {
+  try {
+    const { thread } = await requireThreadPermission(ctx, {
+      threadId,
+      permission: 'readThread',
+    });
+    if (!canViewThread(thread, viewer)) {
+      return null;
+    }
+    return thread;
+  } catch {
     return null;
   }
-
-  return thread;
 }
 
 async function listAccessibleThreads(
@@ -2037,13 +2043,10 @@ export const setThreadPersona = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
-      throw new ConvexError('Thread not found.');
-    }
-    if (!canManageThread(thread, viewer)) {
-      throw new ConvexError('You do not have permission to update this thread.');
-    }
+    const { thread } = await requireThreadPermission(ctx, {
+      threadId: args.threadId,
+      permission: 'writeThread',
+    });
 
     if (args.personaId) {
       const persona = await getPersonaForOrganization(ctx, args.personaId, viewer.organizationId);
@@ -2067,14 +2070,10 @@ export const renameThread = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
-      throw new ConvexError('Thread not found.');
-    }
-    if (!canManageThread(thread, viewer)) {
-      throw new ConvexError('You do not have permission to rename this thread.');
-    }
+    const { thread } = await requireThreadPermission(ctx, {
+      threadId: args.threadId,
+      permission: 'writeThread',
+    });
 
     const title = args.title.trim();
 
@@ -2100,14 +2099,10 @@ export const setThreadPinned = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
-      throw new ConvexError('Thread not found.');
-    }
-    if (!canManageThread(thread, viewer)) {
-      throw new ConvexError('You do not have permission to update this thread.');
-    }
+    const { thread } = await requireThreadPermission(ctx, {
+      threadId: args.threadId,
+      permission: 'writeThread',
+    });
     if (thread.pinned === args.pinned) {
       return null;
     }
@@ -2127,13 +2122,10 @@ export const deleteThread = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
-      throw new ConvexError('Thread not found.');
-    }
-    if (!canManageThread(thread, viewer)) {
-      throw new ConvexError('You do not have permission to delete this thread.');
-    }
+    const { thread } = await requireThreadPermission(ctx, {
+      threadId: args.threadId,
+      permission: 'writeThread',
+    });
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
       threadId: args.threadId,

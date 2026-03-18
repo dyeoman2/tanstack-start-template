@@ -155,16 +155,7 @@ type SecurityChecklistItem = {
   verificationMethod: string;
 };
 
-type SecurityControlWorkspace = Omit<
-  ActiveControlRecord,
-  | 'coverage'
-  | 'evidence'
-  | 'lastReviewedAt'
-  | 'mappings'
-  | 'platformChecklistItems'
-  | 'reviewStatus'
-  | 'seedReview'
-> & {
+type SecurityControlWorkspace = Omit<ActiveControlRecord, 'mappings' | 'platformChecklistItems'> & {
   evidenceReadiness: 'missing' | 'partial' | 'ready';
   hasExpiringSoonEvidence: boolean;
   lastReviewedAt: number | null;

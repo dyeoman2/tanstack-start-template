@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import type { Id } from '../../../../convex/_generated/dataModel';
 
-export const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
+const ORGANIZATION_DIRECTORY_SORT_FIELDS = [
   'name',
   'email',
   'kind',
@@ -76,11 +76,11 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'step_up_challenge_required',
   'step_up_challenge_completed',
 ] as const;
-export const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
+const ORGANIZATION_AUDIT_EVENT_FILTER_VALUES = [
   'all',
   ...ORGANIZATION_AUDIT_EVENT_TYPES,
 ] as const;
-export const ORGANIZATION_AUDIT_PRESET_VALUES = ['all', 'security'] as const;
+const ORGANIZATION_AUDIT_PRESET_VALUES = ['all', 'security'] as const;
 export const ORGANIZATION_AUDIT_SORT_FIELDS = [
   'label',
   'identifier',
@@ -99,8 +99,8 @@ export const organizationDirectorySearchSchema = z.object({
   kind: z.enum(ORGANIZATION_DIRECTORY_KIND_VALUES).default('all'),
 });
 
-export type OrganizationDirectorySortField = (typeof ORGANIZATION_DIRECTORY_SORT_FIELDS)[number];
-export type OrganizationDirectorySortOrder = 'asc' | 'desc';
+type OrganizationDirectorySortField = (typeof ORGANIZATION_DIRECTORY_SORT_FIELDS)[number];
+type OrganizationDirectorySortOrder = 'asc' | 'desc';
 export type OrganizationDirectoryKind = (typeof ORGANIZATION_DIRECTORY_KIND_VALUES)[number];
 export type OrganizationDirectoryRole = (typeof ORGANIZATION_DIRECTORY_ROLE_VALUES)[number];
 export type OrganizationMemberStatus = (typeof ORGANIZATION_MEMBER_STATUS_VALUES)[number];
@@ -124,7 +124,7 @@ export const organizationAuditSearchSchema = z.object({
 export type OrganizationAuditSearchParams = z.infer<typeof organizationAuditSearchSchema>;
 export type OrganizationAuditSortField = (typeof ORGANIZATION_AUDIT_SORT_FIELDS)[number];
 
-export type OrganizationCreationEligibility = {
+type OrganizationCreationEligibility = {
   count: number;
   limit: number | null;
   canCreate: boolean;
@@ -144,7 +144,7 @@ export type OrganizationCapabilities = {
   canManagePolicies: boolean;
 };
 
-export type OrganizationPolicies = {
+type OrganizationPolicies = {
   invitePolicy: OrganizationInvitePolicy;
   verifiedDomainsOnly: boolean;
   memberCap: number | null;
@@ -184,7 +184,7 @@ export type OrganizationEnterpriseProviderOption = {
   selectable: boolean;
 };
 
-export type OrganizationEnterpriseAuthSummary = {
+type OrganizationEnterpriseAuthSummary = {
   providerKey: OrganizationEnterpriseProviderKey;
   providerLabel: string;
   protocol: OrganizationEnterpriseAuthProtocol;
@@ -252,7 +252,7 @@ export type OrganizationDomainVerificationResult = {
   reason: string | null;
 };
 
-export type OrganizationEnterpriseAuthResolutionResult = {
+type OrganizationEnterpriseAuthResolutionResult = {
   organizationId: string;
   organizationSlug: string;
   organizationName: string;
@@ -266,7 +266,7 @@ export type OrganizationEnterpriseAuthResolutionResult = {
   canUsePasswordFallback: boolean;
 } | null;
 
-export type OrganizationEnterpriseAccessResult = {
+type OrganizationEnterpriseAccessResult = {
   allowed: boolean;
   reason: string | null;
   requiresEnterpriseAuth: boolean;
@@ -276,7 +276,7 @@ export type OrganizationEnterpriseAccessResult = {
 
 export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];
 
-export type OrganizationAuditEventViewModel = {
+type OrganizationAuditEventViewModel = {
   id: string;
   eventType: OrganizationAuditEventType;
   label: string;
@@ -304,7 +304,7 @@ export type OrganizationAuditEventViewModel = {
   metadata?: unknown;
 };
 
-export type OrganizationAuditPagination = {
+type OrganizationAuditPagination = {
   page: number;
   pageSize: number;
   total: number;

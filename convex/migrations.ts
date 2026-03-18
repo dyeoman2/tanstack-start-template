@@ -10,7 +10,7 @@ import { throwConvexError } from './auth/errors';
 
 const USER_PROFILES_BACKFILL_BATCH_SIZE = 100;
 const AUDIT_LOGS_BACKFILL_BATCH_SIZE = 100;
-const SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE = 100;
+const SECURITY_CONTROL_CHECKLIST_ITEMS_BATCH_SIZE = 100;
 const ONBOARDING_BACKFILL_STATUS = 'not_started' as const;
 
 type LegacyAuditLogDoc = Doc<'auditLogs'> & {
@@ -20,6 +20,16 @@ type LegacyAuditLogDoc = Doc<'auditLogs'> & {
   entityType?: string;
   source?: string;
   targetUserId?: string;
+};
+
+type LegacySecurityControlChecklistItemDoc = Doc<'securityControlChecklistItems'> & {
+  completedAt?: number;
+  completedByUserId?: string;
+  lastReviewedAt?: number;
+  lastReviewedByUserId?: string;
+  notes?: string;
+  owner?: string;
+  status?: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
 };
 
 function normalizeOptionalString(value: string | undefined) {
@@ -363,166 +373,6 @@ export const runUserProfilesOnboardingNormalization = action({
   },
 });
 
-export const backfillSecurityControlEvidenceReviewStateBatch = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-  },
-  returns: v.object({
-    continueCursor: v.union(v.string(), v.null()),
-    done: v.boolean(),
-    processed: v.number(),
-    updated: v.number(),
-  }),
-  handler: async (ctx, args) => {
-    const result = await ctx.db.query('securityControlEvidence').paginate({
-      cursor: args.cursor ?? null,
-      numItems: SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE,
-    });
-
-    let updated = 0;
-
-    for (const evidence of result.page) {
-      if (evidence.reviewStatus !== undefined) {
-        continue;
-      }
-
-      await ctx.db.patch(evidence._id, {
-        reviewStatus: evidence.reviewedAt ? 'reviewed' : 'pending',
-      });
-      updated += 1;
-    }
-
-    return {
-      continueCursor: result.isDone ? null : result.continueCursor,
-      done: result.isDone,
-      processed: result.page.length,
-      updated,
-    };
-  },
-});
-
-export const runSecurityControlEvidenceReviewStateBackfill = action({
-  args: {},
-  returns: v.object({
-    batches: v.number(),
-    processed: v.number(),
-    updated: v.number(),
-  }),
-  handler: async (ctx) => {
-    await requireSiteAdmin(ctx);
-
-    let batches = 0;
-    let processed = 0;
-    let updated = 0;
-    let cursor: string | undefined;
-
-    while (true) {
-      const result = await ctx.runMutation(
-        internal.migrations.backfillSecurityControlEvidenceReviewStateBatch,
-        {
-          cursor,
-        },
-      );
-
-      batches += 1;
-      processed += result.processed;
-      updated += result.updated;
-
-      if (result.done || result.continueCursor === null) {
-        break;
-      }
-
-      cursor = result.continueCursor;
-    }
-
-    return {
-      batches,
-      processed,
-      updated,
-    };
-  },
-});
-
-export const backfillSecurityControlEvidenceLifecycleBatch = internalMutation({
-  args: {
-    cursor: v.optional(v.string()),
-  },
-  returns: v.object({
-    continueCursor: v.union(v.string(), v.null()),
-    done: v.boolean(),
-    processed: v.number(),
-    updated: v.number(),
-  }),
-  handler: async (ctx, args) => {
-    const result = await ctx.db.query('securityControlEvidence').paginate({
-      cursor: args.cursor ?? null,
-      numItems: SECURITY_CONTROL_EVIDENCE_BACKFILL_BATCH_SIZE,
-    });
-
-    let updated = 0;
-
-    for (const evidence of result.page) {
-      if (evidence.lifecycleStatus !== undefined) {
-        continue;
-      }
-
-      await ctx.db.patch(evidence._id, {
-        lifecycleStatus: 'active',
-      });
-      updated += 1;
-    }
-
-    return {
-      continueCursor: result.isDone ? null : result.continueCursor,
-      done: result.isDone,
-      processed: result.page.length,
-      updated,
-    };
-  },
-});
-
-export const runSecurityControlEvidenceLifecycleBackfill = action({
-  args: {},
-  returns: v.object({
-    batches: v.number(),
-    processed: v.number(),
-    updated: v.number(),
-  }),
-  handler: async (ctx) => {
-    await requireSiteAdmin(ctx);
-
-    let batches = 0;
-    let processed = 0;
-    let updated = 0;
-    let cursor: string | undefined;
-
-    while (true) {
-      const result = await ctx.runMutation(
-        internal.migrations.backfillSecurityControlEvidenceLifecycleBatch,
-        {
-          cursor,
-        },
-      );
-
-      batches += 1;
-      processed += result.processed;
-      updated += result.updated;
-
-      if (result.done || result.continueCursor === null) {
-        break;
-      }
-
-      cursor = result.continueCursor;
-    }
-
-    return {
-      batches,
-      processed,
-      updated,
-    };
-  },
-});
-
 export const normalizeAuditLogsBatch = internalMutation({
   args: {
     cursor: v.optional(v.string()),
@@ -667,6 +517,100 @@ export const runAuditLogsNormalization = action({
       processed,
       updated,
       skipped,
+    };
+  },
+});
+
+export const normalizeSecurityControlChecklistItemsBatch = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+  },
+  returns: v.object({
+    continueCursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db.query('securityControlChecklistItems').paginate({
+      cursor: args.cursor ?? null,
+      numItems: SECURITY_CONTROL_CHECKLIST_ITEMS_BATCH_SIZE,
+    });
+
+    let updated = 0;
+
+    for (const item of result.page as LegacySecurityControlChecklistItemDoc[]) {
+      const hasLegacyFields =
+        item.status !== undefined ||
+        item.owner !== undefined ||
+        item.notes !== undefined ||
+        item.completedAt !== undefined ||
+        item.completedByUserId !== undefined ||
+        item.lastReviewedAt !== undefined ||
+        item.lastReviewedByUserId !== undefined;
+
+      if (!hasLegacyFields) {
+        continue;
+      }
+
+      await ctx.db.replace(item._id, {
+        internalControlId: item.internalControlId,
+        itemId: item.itemId,
+        hiddenSeedEvidenceIds: item.hiddenSeedEvidenceIds,
+        archivedSeedEvidence: item.archivedSeedEvidence,
+        createdAt: item.createdAt,
+        updatedAt: item.updatedAt,
+      });
+      updated += 1;
+    }
+
+    return {
+      continueCursor: result.isDone ? null : result.continueCursor,
+      done: result.isDone,
+      processed: result.page.length,
+      updated,
+    };
+  },
+});
+
+export const runSecurityControlChecklistItemsNormalization = action({
+  args: {},
+  returns: v.object({
+    batches: v.number(),
+    processed: v.number(),
+    updated: v.number(),
+  }),
+  handler: async (ctx) => {
+    await requireSiteAdmin(ctx);
+
+    let batches = 0;
+    let processed = 0;
+    let updated = 0;
+    let cursor: string | undefined;
+
+    while (true) {
+      const result = await ctx.runMutation(
+        internal.migrations.normalizeSecurityControlChecklistItemsBatch,
+        {
+          cursor,
+        },
+      );
+
+      batches += 1;
+      processed += result.processed;
+      updated += result.updated;
+
+      if (result.done || result.continueCursor === null) {
+        break;
+      }
+
+      cursor = result.continueCursor;
+    }
+
+    return {
+      batches,
+      processed,
+      updated,
     };
   },
 });

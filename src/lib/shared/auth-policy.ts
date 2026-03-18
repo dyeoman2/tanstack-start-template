@@ -76,7 +76,7 @@ export function evaluateFreshSession(input: {
   };
 }
 
-export function evaluateStepUpRequirement(input: {
+function evaluateStepUpRequirement(input: {
   assurance: AuthAssuranceState;
   now?: number;
   recentStepUpWindowMs: number;

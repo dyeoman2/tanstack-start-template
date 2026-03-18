@@ -121,9 +121,6 @@ type ChecklistStatus = 'done' | 'in_progress' | 'not_applicable' | 'not_started'
 type ChecklistEvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
 type SeededChecklistEvidenceType = 'link' | 'note' | 'system_snapshot';
 
-type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
-type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
-
 const MODERATE_CONTROLS_PATH = path.resolve(
   process.cwd(),
   'compliance/generated/nist-800-53-moderate-controls.json',
@@ -181,29 +178,51 @@ function seededChecklist(
   };
 }
 
-function seededReview(status: ReviewStatus, notes: string | null) {
-  return {
-    status,
-    notes,
-  };
-}
-
-const ACTIVE_CONTROL_BLUEPRINTS = [
+const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
+  hipaaCitations: string[];
+  coverage: Coverage;
+  implementationSummary: string;
+  internalControlId: string;
+  nist80053Id: string;
+  nist80066: Array<{
+    label: string | null;
+    mappingType: 'key-activity' | 'relationship' | 'sample-question' | null;
+    referenceId: string;
+  }>;
+  owner: string;
+  priority: 'p0' | 'p1' | 'p2';
+  platformChecklistItems: Array<{
+    description: string;
+    itemId: string;
+    label: string;
+    required: boolean;
+    seed: {
+      evidence: Array<{
+        description: string | null;
+        evidenceType: SeededChecklistEvidenceType;
+        sufficiency: ChecklistEvidenceSufficiency;
+        title: string;
+        url: string | null;
+      }>;
+      notes: string;
+      owner: string;
+      status: ChecklistStatus;
+    };
+    suggestedEvidenceTypes: ChecklistEvidenceType[];
+    verificationMethod: string;
+  }>;
+  responsibility: Responsibility;
+  customerResponsibilityNotes: string;
+}> = [
   {
     nist80053Id: 'AC-2',
     internalControlId: 'CTRL-AC-002',
     implementationSummary:
-      'This control ensures accounts are authorized, role assignments are governed, and account changes remain reviewable across the account lifecycle. The platform supports that objective through role-based account boundaries, admin-managed access changes, and auditable membership events in the hosted service.',
+      'This control ensures accounts are authorized, provisioned, changed, and removed through controlled lifecycle workflows. The platform supports that objective through organization policy controls, SCIM-backed provisioning paths, role-based boundaries, and auditable membership lifecycle events in the hosted service.',
     coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Identity and Access Management',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates platform account boundaries, access-change workflows, and audit visibility. Customer evidence is still required for workforce onboarding, offboarding, and periodic access review.',
-    evidenceSources: ['Auth Users', 'Organization Membership Changes', 'Admin Audit Events'],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(3)', '45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -227,6 +246,29 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
       {
+        itemId: 'account-lifecycle-controls',
+        label: 'Account lifecycle controls are implemented',
+        description:
+          'Invitations, provisioning, suspension, deactivation, and reactivation workflows must support controlled onboarding and offboarding.',
+        verificationMethod: 'Organization management and provisioning workflow review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Organization policies constrain invitations and seat growth, while SCIM and member-state workflows support lifecycle changes.',
+          [
+            seededEvidence(
+              'Organization access policy controls',
+              'convex/organizationManagement.ts enforces invitePolicy, verifiedDomainsOnly, and memberCap policy checks; src/features/organizations/components/OrganizationPoliciesCard.tsx exposes the management surface.',
+            ),
+            seededEvidence(
+              'SCIM provisioning workflow',
+              'src/features/organizations/components/OrganizationProvisioningManagement.tsx and src/features/organizations/server/organization-management.ts manage SCIM endpoint and bearer-token lifecycle for automated provisioning.',
+            ),
+          ],
+        ),
+      },
+      {
         itemId: 'membership-audit',
         label: 'Membership changes are auditable',
         description: 'Administrative membership changes must emit reviewable audit records.',
@@ -239,7 +281,7 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           [
             seededEvidence(
               'Organization membership audit events',
-              'src/lib/shared/auth-audit.ts defines member_added, member_removed, and member_role_updated event types.',
+              'src/lib/shared/auth-audit.ts defines member_added, member_removed, member_role_updated, member_suspended, member_deactivated, member_reactivated, and SCIM lifecycle event types.',
             ),
             seededEvidence(
               'Organization audit review surface',
@@ -249,10 +291,6 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
     ],
-    seedReview: seededReview(
-      'reviewed',
-      'Reviewed against member-role mutation guards and organization audit event definitions.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for workforce onboarding, termination, role assignment approval, and periodic access review.',
   },
@@ -260,21 +298,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'AC-3',
     internalControlId: 'CTRL-AC-003',
     implementationSummary:
-      'This control ensures users and processes can perform only the actions and data access they are authorized to use. The platform addresses that objective through route-level and server-side authorization checks for protected application flows and sensitive operations.',
+      'This control ensures users and processes can perform only the actions and data access they are authorized to use. The platform addresses that objective through route-level guards, server-side authorization checks, and organization-scoped permission decisions for protected application flows and sensitive operations.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Application Authorization',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'pass' as const,
-    evidenceAssessmentNote:
-      'Built-in route guards, server authorization checks, and test coverage provide direct support for this platform control.',
-    evidenceSources: [
-      'Route Guards',
-      'Convex requireAuth/requireAdmin checks',
-      'Authorization Tests',
-    ],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(4)', '45 CFR 164.312(a)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -318,11 +346,31 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           'Application Authorization',
         ),
       },
+      {
+        itemId: 'organization-permissions',
+        label: 'Organization-scoped permissions restrict actions',
+        description:
+          'Organization membership, role, and policy context must constrain who can manage organization resources.',
+        verificationMethod: 'Organization access context and permission helper review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Organization access is evaluated against viewer role, membership state, and policy gates before privileged actions are allowed.',
+          [
+            seededEvidence(
+              'Organization permission helpers',
+              'src/features/organizations/lib/organization-permissions.ts defines organization capability rules used across directory and policy workflows.',
+            ),
+            seededEvidence(
+              'Organization access enforcement',
+              'convex/organizationManagement.ts resolves organization access context and rejects unauthorized member, policy, and provisioning mutations.',
+            ),
+          ],
+          'Application Authorization',
+        ),
+      },
     ],
-    seedReview: seededReview(
-      'reviewed',
-      'Reviewed against shared route guards and server auth guard enforcement.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for defining roles, approving privileged access, and maintaining least-privilege assignments within the service.',
   },
@@ -330,17 +378,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'AU-2',
     internalControlId: 'CTRL-AU-002',
     implementationSummary:
-      'This control ensures security-relevant events are identified, recorded, and available for oversight. The platform addresses that objective by capturing audit events for authentication, administrative, and security-significant activity and exposing those records for review and export.',
+      'This control ensures security-relevant events are identified, recorded, protected, and made available for oversight. The platform addresses that objective by capturing audit events for authentication, administrative, and security-significant activity, integrity-linking those records, and exposing them for review and export.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Audit and Logging',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'pass' as const,
-    evidenceAssessmentNote:
-      'The platform records and exposes security-relevant audit events, and the listed evidence sources directly support that behavior.',
-    evidenceSources: ['Audit Logs', 'Auth Audit Plugin', 'Evidence Reports'],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)'],
     nist80066: [],
     platformChecklistItems: [
@@ -387,11 +429,27 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           'Audit and Logging',
         ),
       },
+      {
+        itemId: 'audit-integrity',
+        label: 'Audit record integrity is checked',
+        description:
+          'Audit records should retain integrity metadata or verification signals that help detect tampering.',
+        verificationMethod: 'Audit integrity implementation review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Audit records are hash-linked and the platform can detect and log integrity failures.',
+          [
+            seededEvidence(
+              'Hash-linked audit log chain',
+              'convex/audit.ts stores eventHash and previousEventHash for audit events and verifies the chain during integrity checks.',
+            ),
+          ],
+          'Audit and Logging',
+        ),
+      },
     ],
-    seedReview: seededReview(
-      'reviewed',
-      'Reviewed against audit event coverage and audit/evidence export surfaces.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for reviewing exported audit records and aligning retention or downstream log handling with their own policies when those records leave the platform.',
   },
@@ -399,17 +457,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
     implementationSummary:
-      'This control ensures audit records are reviewed, analyzed, and followed up through defined operational workflows. The platform provides evidence queues and audit-integrity signals that support those workflows, but provider-operated review procedures and retained review records are not yet fully evidenced in this register.',
+      'This control ensures audit records are reviewed, analyzed, and followed up through defined operational workflows. The platform provides review queues, stored review states, and integrity-linked evidence exports that support those workflows, while operator review cadence and escalation procedure remain deployment-owned.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Operations',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates evidence queues and integrity checks provided by the platform, but it does not yet include completed provider review records, documented review cadence, or escalation artifacts. Customer procedures are also still required for customer-side review cadence, escalation, and documented follow-up.',
-    evidenceSources: ['Evidence Reports', 'Audit Integrity Checks', 'Admin Security Dashboard'],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(b)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -433,8 +485,32 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
       {
+        itemId: 'review-record-retention',
+        label: 'Review records can be retained',
+        description:
+          'The platform should retain review status, reviewer identity, notes, and export integrity data when audit evidence is reviewed.',
+        verificationMethod: 'Evidence report schema and review workflow inspection',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Evidence reports persist review status, notes, reviewer identity, and integrity-linked export data for later inspection.',
+          [
+            seededEvidence(
+              'Evidence report review storage',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportIntegritySummary fields for evidenceReports.',
+            ),
+            seededEvidence(
+              'Evidence report review workflow',
+              'src/routes/app/admin/security.tsx and convex/security.ts allow reviewers to mark evidence reports reviewed or needs follow-up with notes.',
+            ),
+          ],
+          'Security Operations',
+        ),
+      },
+      {
         itemId: 'provider-review-procedure',
-        label: 'Provider review procedure is documented',
+        label: 'Operator review procedure is documented',
         description:
           'Internal review cadence and escalation expectations must be documented for platform operators.',
         verificationMethod: 'Procedure review',
@@ -442,31 +518,12 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'not_started',
-          'No provider-side documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.',
-          [],
-          'Security Operations',
-        ),
-      },
-      {
-        itemId: 'provider-review-records',
-        label: 'Provider review records are retained',
-        description:
-          'Completed review records or attestations must be retained for audit review activities.',
-        verificationMethod: 'Review record inspection',
-        required: true,
-        suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
-        seed: seededChecklist(
-          'not_started',
-          'No retained provider review records or attestations are currently attached.',
+          'No operator-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.',
           [],
           'Security Operations',
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Platform review surfaces exist, but provider review procedure and retained review records still need evidence.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for establishing review cadence, escalation paths, and documented follow-up for the evidence surfaced by the platform.',
   },
@@ -474,17 +531,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'IA-2',
     internalControlId: 'CTRL-IA-002',
     implementationSummary:
-      'This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email checks, and MFA or passkey capability, but this register does not yet fully evidence provider-enforced production authentication policy.',
-    coverage: 'partial' as const,
+      'This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email enforcement, MFA or passkey enforcement for regulated access, and fresh-session step-up for sensitive operations.',
+    coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Authentication',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates platform authentication flows and MFA capabilities, but it does not yet fully demonstrate provider-side enforcement expectations for production authentication policy. Customer evidence is still required for identity proofing, MFA enforcement policy, and account lifecycle governance.',
-    evidenceSources: ['Better Auth Users', 'MFA Coverage Summary', 'Passkey Enrollment'],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
     nist80066: [],
     platformChecklistItems: [
@@ -501,7 +552,7 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           [
             seededEvidence(
               'Shared authenticated route enforcement',
-              'src/features/auth/server/auth-guards.ts and route-guards.ts gate authenticated application access.',
+              'src/features/auth/server/auth-guards.ts and route-guards.ts gate authenticated and admin application access.',
             ),
           ],
           'Authentication',
@@ -517,40 +568,41 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         suggestedEvidenceTypes: ['system', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Verified email is part of the regulated baseline and surfaced in the security posture summary.',
+          'Verified email is enforced before protected access and is part of the regulated baseline.',
           [
             seededEvidence(
-              'Verified email baseline',
-              'convex/security.ts reports emailVerificationRequired from ALWAYS_ON_REGULATED_BASELINE.',
+              'Verified email enforcement',
+              'src/features/auth/server/auth-guards.ts redirects unverified accounts away from protected access and src/lib/shared/security-baseline.ts requires verified email by default.',
             ),
           ],
           'Authentication',
         ),
       },
       {
-        itemId: 'mfa-capability',
-        label: 'MFA and passkeys are supported',
-        description: 'The platform must support stronger authenticators for eligible accounts.',
-        verificationMethod: 'MFA coverage summary review',
+        itemId: 'mfa-enforcement',
+        label: 'MFA or passkeys are enforced for regulated access',
+        description:
+          'The platform must enforce stronger authenticators for privileged or regulated organization access paths.',
+        verificationMethod: 'Authentication policy and step-up workflow review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Passkeys and MFA coverage are exposed in the security posture summary and Better Auth integration.',
+          'The regulated baseline requires MFA or passkeys, and privileged access paths enforce that requirement.',
           [
             seededEvidence(
-              'MFA coverage summary',
-              'convex/security.ts calculates MFA and passkey coverage from Better Auth users and passkeys.',
+              'Regulated MFA baseline',
+              'src/lib/shared/security-baseline.ts requires MFA or passkeys for regulated organizations and src/features/organizations/components/OrganizationPoliciesCard.tsx presents the always-enforced posture.',
+            ),
+            seededEvidence(
+              'MFA and fresh-session enforcement',
+              'src/features/auth/server/auth-guards.ts and convex/organizationManagement.ts require MFA/passkey presence or a fresh session before privileged access and regulated join flows.',
             ),
           ],
           'Authentication',
         ),
       },
     ],
-    seedReview: seededReview(
-      'reviewed',
-      'Reviewed against authenticated route enforcement, verified-email baseline, and MFA/passkey coverage reporting.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for identity proofing, MFA policy decisions, user enrollment expectations, and account lifecycle governance.',
   },
@@ -558,21 +610,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'IA-5',
     internalControlId: 'CTRL-IA-005',
     implementationSummary:
-      'This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through stronger authenticators, recovery-related auditing, and verification controls around account reset and recovery flows.',
+      'This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through stronger authenticators, recovery-related auditing, and guarded reset or account-recovery flows.',
     coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Authentication',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates stronger authenticator support and recovery auditing provided by the platform. Customer procedures are still required for credential policy choices and account recovery approvals.',
-    evidenceSources: [
-      'Passkey Enrollment Records',
-      'Password Reset Audit Events',
-      'Email Verification Policy',
-    ],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.312(a)(2)(i)', '45 CFR 164.312(d)'],
     nist80066: [],
     platformChecklistItems: [
@@ -615,11 +657,31 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           'Authentication',
         ),
       },
+      {
+        itemId: 'recovery-guardrails',
+        label: 'Recovery and authenticator changes are guarded',
+        description:
+          'Authenticator recovery and sign-in credential changes must be constrained by rate limits or fresh-session checks.',
+        verificationMethod: 'Recovery flow configuration review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Sensitive auth endpoints are rate-limited and sign-in email changes require a fresh session.',
+          [
+            seededEvidence(
+              'Better Auth recovery rate limits',
+              'convex/betterAuth/sharedOptions.ts applies per-route rate limits for password reset, verification email, and credential-management endpoints.',
+            ),
+            seededEvidence(
+              'Fresh-session change-email protection',
+              'convex/betterAuth/sharedOptions.ts blocks change-email unless the session satisfies the recent step-up freshness window.',
+            ),
+          ],
+          'Authentication',
+        ),
+      },
     ],
-    seedReview: seededReview(
-      'reviewed',
-      'Reviewed against passkey capability and reset audit event coverage.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for defining allowed credential types, approving recovery workflows, and governing exceptions to standard authentication policy.',
   },
@@ -627,17 +689,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
     implementationSummary:
-      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. For the hosted service, that means provider-operated backup and restore capability for the production environment; this workspace currently evidences backup-verification recordkeeping, but provider-operated backup configuration and restore-test evidence are not yet fully attached here.',
+      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. For the hosted service, that means operator-run backup and restore capability for the production environment; this workspace currently evidences backup-verification recordkeeping, but operator backup configuration and restore-test evidence are not yet fully attached here.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
     owner: 'Infrastructure Operations',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register currently substantiates the platform workflow for recording backup-verification outcomes. Additional provider evidence is still required to demonstrate backup configuration, retention, and restore testing for the hosted service.',
-    evidenceSources: ['Backup Verification Reports'],
-    evidenceCount: 1,
     hipaaCitations: ['45 CFR 164.308(a)(7)(ii)(A)', '45 CFR 164.308(a)(7)(ii)(B)'],
     nist80066: [],
     platformChecklistItems: [
@@ -692,10 +748,6 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Provider-operated backup and restore evidence is still needed before this hosted SaaS control can be presented as fully substantiated.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for determining whether the hosted service backup and recovery posture satisfies their retention, recovery-time, and business continuity requirements, and for protecting any data they export or replicate outside the service.',
   },
@@ -703,17 +755,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
-      'This control ensures security incidents can be handled through defined response, investigation, and follow-up procedures. The platform supports that objective by providing audit trails and evidence outputs that can assist incident investigation and post-incident analysis, while substantive incident response procedures remain customer-operated in this model.',
+      'This control ensures security incidents can be handled through defined response, investigation, and follow-up procedures. The platform supports that objective by providing audit trails, exportable evidence, and retained investigation artifacts that can assist incident investigation and post-incident analysis, while substantive incident response procedures remain customer-operated in this model.',
     coverage: 'not-covered' as const,
     responsibility: 'customer' as const,
     priority: 'p0' as const,
     owner: 'Security Incident Response',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'missing' as const,
-    evidenceAssessmentNote:
-      'This register substantiates supporting platform evidence, but it does not include completed incident response exercises, response records, or runbook reviews for customer-side procedures.',
-    evidenceSources: ['Incident Runbooks', 'Audit Event Export', 'Evidence Reports'],
-    evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -737,11 +783,27 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           'Security Incident Response',
         ),
       },
+      {
+        itemId: 'investigation-artifacts-retained',
+        label: 'Investigation-supporting artifacts can be retained',
+        description:
+          'The platform should retain hashes, review state, and exported evidence metadata that support post-incident analysis.',
+        verificationMethod: 'Evidence report retention review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Evidence reports persist review metadata and integrity-linked export details that can be used during investigations.',
+          [
+            seededEvidence(
+              'Integrity-linked evidence reports',
+              'convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Platform evidence export support exists, but customer-side incident procedures remain outside platform scope.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for incident response procedures, internal escalation contacts, and customer-side post-incident handling.',
   },
@@ -749,35 +811,34 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'RA-5',
     internalControlId: 'CTRL-RA-005',
     implementationSummary:
-      'This control ensures vulnerabilities affecting the hosted service are identified, assessed, remediated, or formally risk-accepted. The platform security program addresses that objective through vulnerability discovery, triage, remediation tracking, and risk treatment for the hosted service environment.',
-    coverage: 'covered' as const,
+      'This control ensures vulnerabilities or security-relevant findings affecting the hosted service are identified, assessed, remediated, or formally risk-accepted. The app ships automated inspection and malware-finding hooks for file-ingest surfaces, but hosted-service vulnerability scanning cadence and remediation tracking still require operator processes.',
+    coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Security Engineering',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register identifies expected vulnerability-management evidence for the hosted service, but current attachments do not yet fully demonstrate scanning cadence and remediation closure.',
-    evidenceSources: ['Scanner Integrations', 'Dependency Audit Results', 'Risk Review Notes'],
-    evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(A)', '45 CFR 164.308(a)(1)(ii)(B)'],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'scanner-program',
-        label: 'Vulnerability scanning is performed',
+        label: 'Automated security scanning hooks exist',
         description:
-          'The hosted service security program must perform vulnerability discovery activities.',
-        verificationMethod: 'Scanner evidence review',
+          'The platform should implement automated inspection or malware-finding hooks for security-relevant ingest paths.',
+        verificationMethod: 'Scanner implementation review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The platform has malware/document scanning telemetry, but that is not full hosted-service vulnerability management evidence.',
+          'The platform has built-in file inspection and GuardDuty webhook integration for file-ingest surfaces, but that is not full hosted-service vulnerability-management evidence.',
           [
             seededEvidence(
-              'Document scanning telemetry',
-              'convex/security.ts reports documentScanEvents summary for file inspection, which is related security telemetry but not full vulnerability management coverage.',
+              'Built-in file inspection',
+              'src/lib/server/file-inspection.server.ts inspects file signatures, types, and size limits before files proceed through document workflows.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'GuardDuty malware finding pipeline',
+              'infra/aws-cdk/lib/malware-scan-stack.cts provisions S3 malware scanning and convex/storageWebhook.ts verifies signed findings before quarantining affected files.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -799,10 +860,6 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Related security telemetry exists, but repo-backed evidence is not sufficient to mark full vulnerability-management coverage complete.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for addressing vulnerabilities in their own endpoints, identity stores, integrations, and operational environments connected to the service.',
   },
@@ -810,39 +867,29 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'SC-8',
     internalControlId: 'CTRL-SC-008',
     implementationSummary:
-      'This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective by providing secure transport for hosted traffic and enforcing transport-sensitive application behavior.',
-    coverage: 'covered' as const,
+      'This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective by enforcing HTTPS-oriented auth configuration, trusted-origin checks, secure cookie behavior, and SSL-only storage transport for managed file paths.',
+    coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Infrastructure and Platform Security',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates platform transport-sensitive settings and secure-session behavior. Additional infrastructure evidence may still be required to verify certificate lifecycle management and edge enforcement operated for the hosted service.',
-    evidenceSources: [
-      'HTTPS deployment policy',
-      'Secure Link TTL Settings',
-      'Session Transport Configuration',
-    ],
-    evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.312(e)(1)', '45 CFR 164.312(e)(2)(i)'],
     nist80066: [],
     platformChecklistItems: [
       {
         itemId: 'tls-enabled',
-        label: 'TLS is enabled for hosted endpoints',
-        description: 'Production traffic to hosted endpoints must use secure transport.',
-        verificationMethod: 'HTTPS endpoint verification',
+        label: 'HTTPS-oriented endpoint configuration is enforced',
+        description:
+          'Production auth configuration and trusted origins must require secure transport for hosted endpoints.',
+        verificationMethod: 'Auth URL and origin configuration review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The hosted app is designed for HTTPS operation, but no explicit repo-backed production certificate artifact is attached here.',
+          'done',
+          'Better Auth configuration fails closed unless production origins use HTTPS and trusted origins are explicitly allowed.',
           [
             seededEvidence(
-              'Secure transport implementation summary',
-              'convex/security.ts surfaces secure-session posture, but production TLS termination proof is still infrastructure-specific.',
-              { sufficiency: 'partial' },
+              'HTTPS Better Auth configuration',
+              'src/lib/server/env.server.ts requires BETTER_AUTH_URL and trusted origins to use HTTPS unless they point to loopback development.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -862,7 +909,7 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
           [
             seededEvidence(
               'Session transport configuration',
-              'convex/security.ts reports sessionExpiryHours, recentStepUpWindowMinutes, and temporaryLinkTtlMinutes.',
+              'convex/betterAuth/sharedOptions.ts enables secure cookies for HTTPS origins and convex/security.ts reports sessionExpiryHours, freshWindowMinutes, and temporaryLinkTtlMinutes.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -884,10 +931,6 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Application-side secure-session settings are evidenced, but hosted certificate and edge-operation proof still needs attachment.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for requiring secure access to the service within their own networks, browsers, devices, and downstream integrations.',
   },
@@ -895,17 +938,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'SC-28',
     internalControlId: 'CTRL-SC-028',
     implementationSummary:
-      'This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through hosted storage protections, data-handling controls, and retention behavior for data managed within the service boundary.',
+      'This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through managed encrypted storage, blocked public access, controlled file serving, and retention behavior for data managed within the service boundary.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
     owner: 'Data Protection',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates platform data-handling and retention behaviors. Additional hosted infrastructure evidence may still be required for encryption-at-rest configuration and key-management verification.',
-    evidenceSources: ['Storage Configuration', 'Retention Jobs', 'Vendor Boundary Policy'],
-    evidenceCount: 2,
     hipaaCitations: ['45 CFR 164.312(a)(2)(iv)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -918,13 +955,16 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'Hosted storage protections are part of the design, but repo-backed proof for encryption-at-rest and key management is not attached yet.',
+          'done',
+          'Managed storage configuration enforces blocked public access, server-side encryption, versioning, and signed file-serving paths.',
           [
             seededEvidence(
-              'Hosted storage lifecycle tracking',
-              'convex/storagePlatform.ts and convex/schema.ts show managed storage lifecycle handling inside the service boundary.',
-              { sufficiency: 'partial' },
+              'Encrypted S3 storage configuration',
+              'infra/aws-cdk/lib/malware-scan-stack.cts provisions an S3 bucket with BLOCK_ALL public access, S3-managed encryption, enforceSSL, object ownership enforcement, and versioning.',
+            ),
+            seededEvidence(
+              'Controlled file-serving paths',
+              'convex/storagePlatform.ts resolves signed file URLs and routes non-Convex storage access through signed serve paths.',
             ),
           ],
           'Data Protection',
@@ -950,10 +990,6 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Retention behavior is evidenced, but hosted encryption-at-rest and key-management proof still needs to be attached.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for governing exported data, retention obligations they impose on platform use, and any external storage or integrations they control.',
   },
@@ -961,21 +997,11 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
     nist80053Id: 'SI-4',
     internalControlId: 'CTRL-SI-004',
     implementationSummary:
-      'This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, and telemetry posture summaries, but provider-operated alert response procedures and retained follow-up records are not yet fully evidenced in this register.',
+      'This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, malware findings, and telemetry posture summaries, but operator alert response procedures are not yet fully evidenced in this register.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
     owner: 'Security Monitoring',
-    reviewStatus: 'pending' as const,
-    latestEvidenceStatus: 'warning' as const,
-    evidenceAssessmentNote:
-      'This register substantiates monitoring-related signals emitted by the platform, but it does not yet include complete provider evidence for alert routing, review cadence, or response follow-up. Customer procedures are still required for alert review, internal escalation, and coordination with the provider when customer action is needed.',
-    evidenceSources: [
-      'Document Scan Events',
-      'Audit Integrity Checks',
-      'Telemetry Posture Summary',
-    ],
-    evidenceCount: 3,
     hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(D)', '45 CFR 164.312(c)(1)'],
     nist80066: [],
     platformChecklistItems: [
@@ -1001,7 +1027,7 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
       },
       {
         itemId: 'provider-alert-procedure',
-        label: 'Provider alert response procedure is documented',
+        label: 'Operator alert response procedure is documented',
         description:
           'Internal alert routing and response expectations must be documented for the hosted platform.',
         verificationMethod: 'Procedure review',
@@ -1009,79 +1035,40 @@ const ACTIVE_CONTROL_BLUEPRINTS = [
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'not_started',
-          'No provider-operated monitoring response procedure is attached in the control workspace yet.',
+          'No operator-owned monitoring response procedure is attached in the control workspace yet.',
           [],
           'Security Monitoring',
         ),
       },
       {
-        itemId: 'provider-alert-records',
-        label: 'Provider alert review records are available',
+        itemId: 'monitoring-records-retained',
+        label: 'Monitoring records are retained',
         description:
-          'The platform team must retain evidence of alert review or follow-up activities.',
-        verificationMethod: 'Operational record review',
+          'The platform should retain monitoring outputs that investigators or operators can review after signals are generated.',
+        verificationMethod: 'Monitoring record review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No provider alert review or follow-up records are currently attached.',
-          [],
+          'done',
+          'Monitoring-related records are retained through document scan events, audit-integrity failures, and evidence report metadata.',
+          [
+            seededEvidence(
+              'Document scan event records',
+              'convex/schema.ts defines documentScanEvents and convex/security.ts reports their latest status, rejection counts, and quarantine counts.',
+            ),
+            seededEvidence(
+              'Audit integrity failure records',
+              'convex/audit.ts emits audit_integrity_check_failed events when the audit log hash chain does not verify.',
+            ),
+          ],
           'Security Monitoring',
         ),
       },
     ],
-    seedReview: seededReview(
-      'needs-follow-up',
-      'Monitoring signals are present, but provider alert-routing procedure and review records still need evidence.',
-    ),
     customerResponsibilityNotes:
       'Customer organizations are responsible for reviewing service notifications, acting on customer-visible alerts, and integrating platform outputs into their own operational response processes.',
   },
-] satisfies ReadonlyArray<{
-  evidenceCount: number;
-  evidenceAssessmentNote: string;
-  evidenceSources: string[];
-  hipaaCitations: string[];
-  coverage: Coverage;
-  implementationSummary: string;
-  internalControlId: string;
-  latestEvidenceStatus: EvidenceStatus;
-  nist80053Id: string;
-  nist80066: Array<{
-    label: string | null;
-    mappingType: 'key-activity' | 'relationship' | 'sample-question' | null;
-    referenceId: string;
-  }>;
-  owner: string;
-  priority: 'p0' | 'p1' | 'p2';
-  platformChecklistItems: Array<{
-    description: string;
-    itemId: string;
-    label: string;
-    required: boolean;
-    seed: {
-      evidence: Array<{
-        description: string | null;
-        evidenceType: SeededChecklistEvidenceType;
-        sufficiency: ChecklistEvidenceSufficiency;
-        title: string;
-        url: string | null;
-      }>;
-      notes: string;
-      owner: string;
-      status: ChecklistStatus;
-    };
-    suggestedEvidenceTypes: ChecklistEvidenceType[];
-    verificationMethod: string;
-  }>;
-  responsibility: Responsibility;
-  seedReview: {
-    notes: string | null;
-    status: ReviewStatus;
-  };
-  reviewStatus: ReviewStatus;
-  customerResponsibilityNotes: string;
-}>;
+];
 
 function flattenStatement(statement: string[]): string | null {
   if (statement.length === 0) {
@@ -1195,101 +1182,93 @@ async function main() {
   );
   const soc2Index = soc2Mappings.indexes?.nist80053 ?? {};
 
-  const controls = ACTIVE_CONTROL_BLUEPRINTS.map((blueprint) => {
-    const sourceControl = nistControlMap.get(blueprint.nist80053Id);
+  const controls = [...ACTIVE_CONTROL_BLUEPRINTS]
+    .sort((left, right) => {
+      const priorityCompare = left.priority.localeCompare(right.priority);
+      if (priorityCompare !== 0) {
+        return priorityCompare;
+      }
 
-    if (!sourceControl) {
-      throw new Error(`Missing NIST 800-53 moderate control: ${blueprint.nist80053Id}`);
-    }
+      const coverageCompare = coverageSortValue(left.coverage) - coverageSortValue(right.coverage);
+      if (coverageCompare !== 0) {
+        return coverageCompare;
+      }
 
-    return {
-      internalControlId: blueprint.internalControlId,
-      nist80053Id: sourceControl.nist80053Id,
-      title: sourceControl.title,
-      familyId: sourceControl.familyId,
-      familyTitle: sourceControl.familyTitle,
-      coverage: blueprint.coverage,
-      implementationSummary: blueprint.implementationSummary,
-      controlStatement:
-        flattenStatement(sourceControl.statement) ??
-        `${sourceControl.title} is tracked as an active control in the platform register.`,
-      priority: blueprint.priority,
-      platformChecklistItems: blueprint.platformChecklistItems,
-      owner: blueprint.owner,
-      responsibility: blueprint.responsibility,
-      seedReview: blueprint.seedReview,
-      reviewStatus: blueprint.reviewStatus,
-      lastReviewedAt: null,
-      customerResponsibilityNotes: blueprint.customerResponsibilityNotes,
-      mappings: {
-        hipaa: blueprint.hipaaCitations.map((citation) => {
-          const record = hipaaMap.get(citation);
-          if (!record) {
-            throw new Error(`Missing HIPAA citation mapping for ${citation}`);
-          }
+      return left.nist80053Id.localeCompare(right.nist80053Id);
+    })
+    .map((blueprint) => {
+      const sourceControl = nistControlMap.get(blueprint.nist80053Id);
 
-          return {
-            citation: record.citation,
-            title: record.title,
-            type: record.type,
-            implementationSpecification: record.implementationSpecification,
-          };
-        }),
-        nist80066: [
-          ...blueprint.hipaaCitations
-            .flatMap((citation) => {
-              const reference = nist80066Map.get(citation);
-              if (!reference) {
-                return [];
-              }
+      if (!sourceControl) {
+        throw new Error(`Missing NIST 800-53 moderate control: ${blueprint.nist80053Id}`);
+      }
 
-              return [
-                {
-                  referenceId: reference.referenceId,
-                  label: reference.text,
-                  mappingType: 'relationship' as const,
-                },
-              ];
-            })
-            .filter(
-              (mapping, index, allMappings) =>
-                allMappings.findIndex(
-                  (candidate) => candidate.referenceId === mapping.referenceId,
-                ) === index,
-            ),
-          ...blueprint.nist80066,
-        ],
-        csf20: (csfIndex[sourceControl.nist80053Id] ?? []).map((entry) => ({
-          subcategoryId: entry.subcategoryId,
-          label: `${entry.functionId} / ${entry.categoryId}: ${entry.subcategoryTitle}`,
-        })),
-        soc2: (soc2Index[sourceControl.nist80053Id] ?? []).map((entry) => ({
-          criterionId: entry.criterionId,
-          group: entry.group,
-          label: entry.title,
-          trustServiceCategory: entry.trustServiceCategory,
-        })),
-      },
-      evidence: {
-        assessmentNote: blueprint.evidenceAssessmentNote,
-        latestEvidenceStatus: blueprint.latestEvidenceStatus,
-        evidenceCount: blueprint.evidenceCount,
-        evidenceSources: blueprint.evidenceSources,
-      },
-    };
-  }).sort((left, right) => {
-    const priorityCompare = left.priority.localeCompare(right.priority);
-    if (priorityCompare !== 0) {
-      return priorityCompare;
-    }
+      return {
+        internalControlId: blueprint.internalControlId,
+        nist80053Id: sourceControl.nist80053Id,
+        title: sourceControl.title,
+        familyId: sourceControl.familyId,
+        familyTitle: sourceControl.familyTitle,
+        implementationSummary: blueprint.implementationSummary,
+        controlStatement:
+          flattenStatement(sourceControl.statement) ??
+          `${sourceControl.title} is tracked as an active control in the platform register.`,
+        priority: blueprint.priority,
+        platformChecklistItems: blueprint.platformChecklistItems,
+        owner: blueprint.owner,
+        responsibility: blueprint.responsibility,
+        customerResponsibilityNotes: blueprint.customerResponsibilityNotes,
+        mappings: {
+          hipaa: blueprint.hipaaCitations.map((citation) => {
+            const record = hipaaMap.get(citation);
+            if (!record) {
+              throw new Error(`Missing HIPAA citation mapping for ${citation}`);
+            }
 
-    const coverageCompare = coverageSortValue(left.coverage) - coverageSortValue(right.coverage);
-    if (coverageCompare !== 0) {
-      return coverageCompare;
-    }
+            return {
+              citation: record.citation,
+              title: record.title,
+              type: record.type,
+              implementationSpecification: record.implementationSpecification,
+            };
+          }),
+          nist80066: [
+            ...blueprint.hipaaCitations
+              .flatMap((citation) => {
+                const reference = nist80066Map.get(citation);
+                if (!reference) {
+                  return [];
+                }
 
-    return left.nist80053Id.localeCompare(right.nist80053Id);
-  });
+                return [
+                  {
+                    referenceId: reference.referenceId,
+                    label: reference.text,
+                    mappingType: 'relationship' as const,
+                  },
+                ];
+              })
+              .filter(
+                (mapping, index, allMappings) =>
+                  allMappings.findIndex(
+                    (candidate) => candidate.referenceId === mapping.referenceId,
+                  ) === index,
+              ),
+            ...blueprint.nist80066,
+          ],
+          csf20: (csfIndex[sourceControl.nist80053Id] ?? []).map((entry) => ({
+            subcategoryId: entry.subcategoryId,
+            label: `${entry.functionId} / ${entry.categoryId}: ${entry.subcategoryTitle}`,
+          })),
+          soc2: (soc2Index[sourceControl.nist80053Id] ?? []).map((entry) => ({
+            criterionId: entry.criterionId,
+            group: entry.group,
+            label: entry.title,
+            trustServiceCategory: entry.trustServiceCategory,
+          })),
+        },
+      };
+    });
 
   const payload = {
     schemaVersion: '1.0.0',

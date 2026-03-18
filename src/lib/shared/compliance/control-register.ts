@@ -1,23 +1,12 @@
 import activeControlRegisterJson from '../../../../compliance/generated/active-control-register.seed.json';
 
-export type ControlCoverage = 'covered' | 'not-applicable' | 'not-covered' | 'partial';
 export type ControlResponsibility = 'customer' | 'platform' | 'shared-responsibility';
 
-export type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
-export type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
 export type ControlChecklistEvidenceType = 'file' | 'link' | 'note' | 'system';
-export type ControlChecklistStatus = 'done' | 'in_progress' | 'not_applicable' | 'not_started';
 export type ControlChecklistEvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
 export type SeededChecklistEvidenceType = 'link' | 'note' | 'system_snapshot';
 
-export const CONTROL_COVERAGE_DISPLAY_LABELS: Record<ControlCoverage, string> = {
-  covered: 'Covered',
-  partial: 'Partial',
-  'not-covered': 'Not covered',
-  'not-applicable': 'Not applicable',
-};
-
-export const CONTROL_RESPONSIBILITY_DISPLAY_LABELS: Record<ControlResponsibility, string> = {
+const CONTROL_RESPONSIBILITY_DISPLAY_LABELS: Record<ControlResponsibility, string> = {
   platform: 'Platform',
   'shared-responsibility': 'Shared responsibility',
   customer: 'Customer',
@@ -38,18 +27,10 @@ export type ActiveControlRegister = {
 
 export type ActiveControlRecord = {
   controlStatement: string;
-  coverage: ControlCoverage;
   implementationSummary: string;
-  evidence: {
-    assessmentNote: string;
-    evidenceCount: number;
-    evidenceSources: string[];
-    latestEvidenceStatus: EvidenceStatus;
-  };
   familyId: string;
   familyTitle: string;
   internalControlId: string;
-  lastReviewedAt: string | null;
   mappings: {
     csf20: Array<{
       label: string | null;
@@ -101,17 +82,11 @@ export type ActiveControlRecord = {
       }>;
       notes: string | null;
       owner: string | null;
-      status: ControlChecklistStatus;
     };
     suggestedEvidenceTypes: ControlChecklistEvidenceType[];
     verificationMethod: string;
   }>;
   responsibility: ControlResponsibility | null;
-  seedReview: {
-    notes: string | null;
-    status: ReviewStatus;
-  };
-  reviewStatus: ReviewStatus;
   customerResponsibilityNotes: string | null;
   title: string;
 };
@@ -119,18 +94,10 @@ export type ActiveControlRecord = {
 type ActiveControlRegisterInput = {
   controls: Array<{
     controlStatement: string;
-    coverage: string;
     implementationSummary: string;
-    evidence: {
-      assessmentNote: string;
-      evidenceCount: number;
-      evidenceSources: string[];
-      latestEvidenceStatus: string;
-    };
     familyId: string;
     familyTitle: string;
     internalControlId: string;
-    lastReviewedAt: string | null;
     mappings: {
       csf20: Array<{
         label: string | null;
@@ -172,17 +139,11 @@ type ActiveControlRegisterInput = {
         }>;
         notes: string | null;
         owner: string | null;
-        status: string;
       };
       suggestedEvidenceTypes: string[];
       verificationMethod: string;
     }>;
     responsibility: string | null;
-    seedReview: {
-      notes: string | null;
-      status: string;
-    };
-    reviewStatus: string;
     customerResponsibilityNotes: string | null;
     title: string;
   }>;
@@ -197,18 +158,6 @@ type ActiveControlRegisterInput = {
   schemaVersion: string;
 };
 
-function normalizeControlCoverage(value: string): ControlCoverage {
-  switch (value) {
-    case 'covered':
-    case 'partial':
-    case 'not-covered':
-    case 'not-applicable':
-      return value;
-    default:
-      throw new Error(`Unsupported control coverage: ${value}`);
-  }
-}
-
 function normalizeControlResponsibility(value: string | null): ControlResponsibility | null {
   switch (value) {
     case 'platform':
@@ -218,18 +167,6 @@ function normalizeControlResponsibility(value: string | null): ControlResponsibi
       return value;
     default:
       throw new Error(`Unsupported control responsibility: ${value}`);
-  }
-}
-
-function normalizeControlChecklistStatus(value: string): ControlChecklistStatus {
-  switch (value) {
-    case 'not_started':
-    case 'in_progress':
-    case 'done':
-    case 'not_applicable':
-      return value;
-    default:
-      throw new Error(`Unsupported checklist status: ${value}`);
   }
 }
 
@@ -252,30 +189,6 @@ function normalizeSeededChecklistEvidenceType(value: string): SeededChecklistEvi
       return value;
     default:
       throw new Error(`Unsupported seeded evidence type: ${value}`);
-  }
-}
-
-function normalizeReviewStatus(value: string): ReviewStatus {
-  switch (value) {
-    case 'pending':
-    case 'reviewed':
-    case 'needs-follow-up':
-      return value;
-    default:
-      throw new Error(`Unsupported review status: ${value}`);
-  }
-}
-
-function normalizeEvidenceStatus(value: string): EvidenceStatus {
-  switch (value) {
-    case 'pass':
-    case 'warning':
-    case 'fail':
-    case 'missing':
-    case 'not-tested':
-      return value;
-    default:
-      throw new Error(`Unsupported evidence status: ${value}`);
   }
 }
 
@@ -315,7 +228,6 @@ function normalizeActiveControlRegister(value: ActiveControlRegisterInput): Acti
     },
     controls: value.controls.map<ActiveControlRecord>((control) => ({
       ...control,
-      coverage: normalizeControlCoverage(control.coverage),
       priority:
         control.priority === 'p0' || control.priority === 'p1' || control.priority === 'p2'
           ? control.priority
@@ -323,7 +235,6 @@ function normalizeActiveControlRegister(value: ActiveControlRegisterInput): Acti
               throw new Error(`Unsupported control priority: ${control.priority}`);
             })(),
       responsibility: normalizeControlResponsibility(control.responsibility),
-      reviewStatus: normalizeReviewStatus(control.reviewStatus),
       mappings: {
         hipaa: control.mappings.hipaa.map((mapping) => ({
           ...mapping,
@@ -366,15 +277,10 @@ function normalizeActiveControlRegister(value: ActiveControlRegisterInput): Acti
               : 'security',
         })),
       },
-      evidence: {
-        ...control.evidence,
-        latestEvidenceStatus: normalizeEvidenceStatus(control.evidence.latestEvidenceStatus),
-      },
       platformChecklistItems: control.platformChecklistItems.map((item) => ({
         ...item,
         seed: {
           ...item.seed,
-          status: normalizeControlChecklistStatus(item.seed.status),
           evidence: item.seed.evidence.map((evidence) => ({
             ...evidence,
             evidenceType: normalizeSeededChecklistEvidenceType(evidence.evidenceType),
@@ -383,10 +289,6 @@ function normalizeActiveControlRegister(value: ActiveControlRegisterInput): Acti
         },
         suggestedEvidenceTypes: normalizeChecklistEvidenceTypes(item.suggestedEvidenceTypes),
       })),
-      seedReview: {
-        ...control.seedReview,
-        status: normalizeReviewStatus(control.seedReview.status),
-      },
     })),
   };
 }
@@ -395,67 +297,6 @@ const activeControlRegisterInput: ActiveControlRegisterInput = activeControlRegi
 
 export const ACTIVE_CONTROL_REGISTER = normalizeActiveControlRegister(activeControlRegisterInput);
 
-export function getControlCoverageDisplayLabel(coverage: ControlCoverage) {
-  return CONTROL_COVERAGE_DISPLAY_LABELS[coverage];
-}
-
 export function getControlResponsibilityDisplayLabel(responsibility: ControlResponsibility | null) {
   return responsibility ? CONTROL_RESPONSIBILITY_DISPLAY_LABELS[responsibility] : '—';
-}
-
-export function getActiveControlRegisterSummary() {
-  const controls = ACTIVE_CONTROL_REGISTER.controls;
-
-  const byCoverage = controls.reduce<Record<ControlCoverage, number>>(
-    (accumulator, control) => {
-      accumulator[control.coverage] += 1;
-      return accumulator;
-    },
-    {
-      covered: 0,
-      partial: 0,
-      'not-covered': 0,
-      'not-applicable': 0,
-    },
-  );
-
-  const byResponsibility = controls.reduce<Record<ControlResponsibility, number>>(
-    (accumulator, control) => {
-      if (control.responsibility) {
-        accumulator[control.responsibility] += 1;
-      }
-      return accumulator;
-    },
-    {
-      platform: 0,
-      'shared-responsibility': 0,
-      customer: 0,
-    },
-  );
-
-  const byEvidence = controls.reduce<Record<EvidenceStatus, number>>(
-    (accumulator, control) => {
-      accumulator[control.evidence.latestEvidenceStatus] += 1;
-      return accumulator;
-    },
-    {
-      pass: 0,
-      warning: 0,
-      fail: 0,
-      missing: 0,
-      'not-tested': 0,
-    },
-  );
-
-  const overdueReviewCount = controls.filter(
-    (control) => control.reviewStatus !== 'reviewed',
-  ).length;
-
-  return {
-    totalControls: controls.length,
-    byCoverage,
-    byResponsibility,
-    byEvidence,
-    overdueReviewCount,
-  };
 }

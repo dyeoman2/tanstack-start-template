@@ -97,7 +97,6 @@
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-separator": "^1.1.8",
     "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-tabs": "^1.1.13",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@react-email/components": "^1.0.10",
     "@react-email/render": "^2.0.4",
@@ -115,7 +114,6 @@
     "clsx": "^2.1.1",
     "convex": "^1.33.1",
     "date-fns": "^4.1.0",
-    "input-otp": "^1.4.2",
     "jose": "^6.2.1",
     "lucide-react": "^0.577.0",
     "next-themes": "^0.4.6",
@@ -125,7 +123,6 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "react-hook-form": "^7.71.2",
     "react-icons": "^5.6.0",
     "react-markdown": "^10.1.0",
     "react-syntax-highlighter": "^16.1.1",
@@ -142,7 +139,6 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@aws-sdk/client-iam": "^3.1011.0",
     "@better-auth/cli": "1.4.21",
     "@biomejs/biome": "^2.4.7",
     "@convex-dev/eslint-plugin": "^1.2.0",

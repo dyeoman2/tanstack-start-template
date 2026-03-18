@@ -18,7 +18,6 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
-import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import {
   applyAlwaysOnRegulatedBaseline,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
@@ -38,7 +37,8 @@ import {
   checkOrganizationAccess,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
-  requireStepUpFromActionOrThrow,
+  requireOrganizationPermission,
+  requireOrganizationPermissionFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
@@ -1593,6 +1593,15 @@ export const getOrganizationSettings = query({
   },
   returns: v.union(organizationSettingsValidator, v.null()),
   handler: async (ctx, args) => {
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationSlug: args.slug,
+        permission: 'viewOrganization',
+        sourceSurface: 'organization.settings',
+      });
+    } catch {
+      return null;
+    }
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
     if (!context || !context.access.view) {
       return null;
@@ -1762,6 +1771,11 @@ export const updateOrganizationPolicies = mutation({
     }),
   }),
   handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.policy_update',
+    });
     const context = await getOrganizationAccessContextById(ctx, args.organizationId);
     if (!context || !context.access.view) {
       throwConvexError('NOT_FOUND', 'Organization not found');
@@ -2410,6 +2424,15 @@ export const listOrganizationDomains = query({
   },
   returns: v.union(organizationDomainsResponseValidator, v.null()),
   handler: async (ctx, args) => {
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationSlug: args.slug,
+        permission: 'viewOrganization',
+        sourceSurface: 'organization.domains',
+      });
+    } catch {
+      return null;
+    }
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
     if (!context || !context.access.view) {
       return null;
@@ -2473,6 +2496,11 @@ export const addOrganizationDomain = mutation({
   },
   returns: organizationDomainValidator,
   handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'manageDomains',
+      sourceSurface: 'organization.domain_add',
+    });
     const context = await getOrganizationAccessContextById(ctx, args.organizationId);
     if (!context || !context.access.view) {
       throwConvexError('NOT_FOUND', 'Organization not found');
@@ -2538,6 +2566,11 @@ export const removeOrganizationDomain = mutation({
     success: v.literal(true),
   }),
   handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'manageDomains',
+      sourceSurface: 'organization.domain_remove',
+    });
     const context = await getOrganizationAccessContextById(ctx, args.organizationId);
     if (!context || !context.access.view) {
       throwConvexError('NOT_FOUND', 'Organization not found');
@@ -2573,6 +2606,11 @@ export const regenerateOrganizationDomainToken = mutation({
   },
   returns: organizationDomainValidator,
   handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'manageDomains',
+      sourceSurface: 'organization.domain_token_regenerate',
+    });
     const context = await getOrganizationAccessContextById(ctx, args.organizationId);
     if (!context || !context.access.view) {
       throwConvexError('NOT_FOUND', 'Organization not found');
@@ -2885,6 +2923,15 @@ export const listOrganizationAuditEvents = query({
   },
   returns: v.union(organizationAuditResponseValidator, v.null()),
   handler: async (ctx, args) => {
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationSlug: args.slug,
+        permission: 'viewAudit',
+        sourceSurface: 'organization.audit',
+      });
+    } catch {
+      return null;
+    }
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
     if (!context || !context.access.view) {
       return null;
@@ -3128,7 +3175,12 @@ export const exportOrganizationAuditCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
-    const currentUser = await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.auditExport);
+    const authorization = await requireOrganizationPermissionFromActionOrThrow(ctx, {
+      organizationSlug: args.slug,
+      permission: 'exportAudit',
+      sourceSurface: 'organization.audit_export',
+    });
+    const currentUser = authorization.user;
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';
@@ -3260,7 +3312,12 @@ export const exportOrganizationDirectoryCsv = action({
     csv: v.string(),
   }),
   handler: async (ctx, args) => {
-    const currentUser = await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.auditExport);
+    const authorization = await requireOrganizationPermissionFromActionOrThrow(ctx, {
+      organizationSlug: args.slug,
+      permission: 'exportAudit',
+      sourceSurface: 'organization.directory_export',
+    });
+    const currentUser = authorization.user;
     const rows: Array<Record<string, string>> = [];
     let pageNumber = 1;
     let organizationName = 'organization';

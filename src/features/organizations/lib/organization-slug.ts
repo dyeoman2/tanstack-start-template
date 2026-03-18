@@ -1,5 +1,5 @@
 const ORGANIZATION_SLUG_SUFFIX_LENGTH = 8;
-export const MAX_ORGANIZATION_SLUG_LENGTH = 48;
+const MAX_ORGANIZATION_SLUG_LENGTH = 48;
 
 export function normalizeOrganizationSlug(value: string) {
   const slug = value

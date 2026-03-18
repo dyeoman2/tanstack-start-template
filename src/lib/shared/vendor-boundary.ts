@@ -20,7 +20,7 @@ export type VendorBoundaryPolicy = {
   displayName: string;
 };
 
-export const VENDOR_BOUNDARY_REGISTRY: Record<VendorKey, VendorBoundaryPolicy> = {
+const VENDOR_BOUNDARY_REGISTRY: Record<VendorKey, VendorBoundaryPolicy> = {
   openrouter: {
     approvalEnvVar: null,
     approvedByDefault: true,
@@ -62,7 +62,7 @@ export function resolveVendorEnvironment(
   return normalizeEnvironment(nodeEnv);
 }
 
-export function isTruthyConfigFlag(value: string | undefined) {
+function isTruthyConfigFlag(value: string | undefined) {
   if (!value) {
     return false;
   }

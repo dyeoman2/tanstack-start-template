@@ -5,6 +5,7 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
+import { requireStorageReadAccessFromActionOrThrow } from './auth/access';
 import { createPresignedS3Url } from './lib/storageS3';
 
 function timingSafeEqual(left: string, right: string) {
@@ -124,7 +125,12 @@ export const createSignedServeUrl = action({
     storageId: v.string(),
     url: v.string(),
   }),
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    await requireStorageReadAccessFromActionOrThrow(ctx, {
+      storageId: args.storageId,
+      sourceSurface: 'file.serve_url_create',
+    });
+
     const runtimeConfig = getStorageRuntimeConfig();
     if (!runtimeConfig.convexSiteUrl) {
       throw new ConvexError('CONVEX_SITE_URL is not configured.');

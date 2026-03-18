@@ -527,28 +527,16 @@ export default defineSchema({
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_created_at', ['createdAt']),
 
-  securityControlStates: defineTable({
-    internalControlId: v.string(),
-    reviewNotes: v.optional(v.string()),
-    reviewStatus: v.union(
-      v.literal('pending'),
-      v.literal('reviewed'),
-      v.literal('needs_follow_up'),
-    ),
-    reviewedAt: v.optional(v.number()),
-    reviewedByUserId: v.optional(v.string()),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  }).index('by_internal_control_id', ['internalControlId']),
-
   securityControlChecklistItems: defineTable({
     internalControlId: v.string(),
     itemId: v.string(),
-    status: v.union(
-      v.literal('not_started'),
-      v.literal('in_progress'),
-      v.literal('done'),
-      v.literal('not_applicable'),
+    status: v.optional(
+      v.union(
+        v.literal('not_started'),
+        v.literal('in_progress'),
+        v.literal('done'),
+        v.literal('not_applicable'),
+      ),
     ),
     owner: v.optional(v.string()),
     notes: v.optional(v.string()),

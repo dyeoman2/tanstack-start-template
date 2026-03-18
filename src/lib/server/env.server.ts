@@ -27,7 +27,7 @@ function isTestRuntime() {
  * Automatically infer the site URL based on deployment environment.
  * Prefers explicit overrides and falls back to hosting platform defaults.
  */
-export function getSiteUrl(): string {
+function getSiteUrl(): string {
   const candidates: Array<[string | undefined, string]> = [
     [process.env.BETTER_AUTH_URL, 'BETTER_AUTH_URL'],
     [process.env.SITE_URL, 'SITE_URL'],
@@ -177,7 +177,7 @@ export function isTrustedBetterAuthOrigin(
   return configuredOrigins.some((configuredOrigin) => configuredOrigin === origin.origin);
 }
 
-export function getConfiguredBetterAuthOrigins(siteUrl = getRequiredBetterAuthUrl()): string[] {
+function getConfiguredBetterAuthOrigins(siteUrl = getRequiredBetterAuthUrl()): string[] {
   const runtimeConfig =
     siteUrl === getRequiredBetterAuthUrl()
       ? getBetterAuthRuntimeConfig()
