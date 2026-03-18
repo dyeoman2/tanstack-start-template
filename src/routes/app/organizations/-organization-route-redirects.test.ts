@@ -24,7 +24,7 @@ function getRedirect(thunk: () => unknown) {
 }
 
 describe('organization route redirects', () => {
-  it('redirects the organization index route to settings', () => {
+  it('redirects the organization index route to members', () => {
     const redirect = getRedirect(() =>
       OrganizationIndexRoute.options.beforeLoad?.({
         params: { slug: 'acme' },
@@ -32,25 +32,18 @@ describe('organization route redirects', () => {
     );
 
     expect((redirect as { options: unknown }).options).toMatchObject({
-      to: '/app/organizations/$slug/settings',
+      to: '/app/organizations/$slug/members',
       params: { slug: 'acme' },
       replace: true,
     });
   });
 
-  it('redirects the organization members route to settings with search params', () => {
-    const redirect = getRedirect(() =>
+  it('does not redirect the organization members route', () => {
+    expect(
       OrganizationMembersRoute.options.beforeLoad?.({
         params: { slug: 'acme' },
         search,
       } as never),
-    );
-
-    expect((redirect as { options: unknown }).options).toMatchObject({
-      to: '/app/organizations/$slug/settings',
-      params: { slug: 'acme' },
-      search,
-      replace: true,
-    });
+    ).toBeUndefined();
   });
 });

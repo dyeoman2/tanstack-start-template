@@ -1,7 +1,9 @@
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
+import type { Id } from './_generated/dataModel';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
+import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { ALWAYS_ON_REGULATED_BASELINE, REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
 import {
   action,
@@ -10,7 +12,9 @@ import {
   internalQuery,
   mutation,
   query,
+  type QueryCtx,
 } from './_generated/server';
+import { internal } from './_generated/api';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
@@ -111,6 +115,150 @@ const evidenceReportListItemValidator = v.object({
 });
 
 const evidenceReportListValidator = v.array(evidenceReportListItemValidator);
+const checklistStatusValidator = v.union(
+  v.literal('not_started'),
+  v.literal('in_progress'),
+  v.literal('done'),
+  v.literal('not_applicable'),
+);
+const evidenceSufficiencyValidator = v.union(
+  v.literal('missing'),
+  v.literal('partial'),
+  v.literal('sufficient'),
+);
+const evidenceTypeValidator = v.union(
+  v.literal('file'),
+  v.literal('link'),
+  v.literal('note'),
+  v.literal('system_snapshot'),
+);
+const suggestedEvidenceTypeValidator = v.union(
+  v.literal('file'),
+  v.literal('link'),
+  v.literal('note'),
+  v.literal('system'),
+);
+const controlEvidenceValidator = v.object({
+  createdAt: v.number(),
+  description: v.union(v.string(), v.null()),
+  evidenceType: evidenceTypeValidator,
+  fileName: v.union(v.string(), v.null()),
+  id: v.string(),
+  mimeType: v.union(v.string(), v.null()),
+  reviewedAt: v.union(v.number(), v.null()),
+  sizeBytes: v.union(v.number(), v.null()),
+  storageId: v.union(v.string(), v.null()),
+  sufficiency: evidenceSufficiencyValidator,
+  title: v.string(),
+  url: v.union(v.string(), v.null()),
+});
+const controlChecklistItemValidator = v.object({
+  completedAt: v.union(v.number(), v.null()),
+  description: v.string(),
+  evidence: v.array(controlEvidenceValidator),
+  evidenceSufficiency: evidenceSufficiencyValidator,
+  itemId: v.string(),
+  label: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  notes: v.union(v.string(), v.null()),
+  owner: v.union(v.string(), v.null()),
+  required: v.boolean(),
+  status: checklistStatusValidator,
+  suggestedEvidenceTypes: v.array(suggestedEvidenceTypeValidator),
+  verificationMethod: v.string(),
+});
+const securityControlWorkspaceValidator = v.object({
+  controlStatement: v.string(),
+  coverage: v.union(
+    v.literal('covered'),
+    v.literal('partial'),
+    v.literal('not-covered'),
+    v.literal('not-applicable'),
+  ),
+  customerResponsibilityNotes: v.union(v.string(), v.null()),
+  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  familyId: v.string(),
+  familyTitle: v.string(),
+  implementationSummary: v.string(),
+  internalControlId: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  mappings: v.object({
+    csf20: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        subcategoryId: v.string(),
+      }),
+    ),
+    hipaa: v.array(
+      v.object({
+        citation: v.string(),
+        implementationSpecification: v.union(
+          v.literal('addressable'),
+          v.literal('required'),
+          v.null(),
+        ),
+        title: v.union(v.string(), v.null()),
+        type: v.union(
+          v.literal('implementation_specification'),
+          v.literal('section'),
+          v.literal('standard'),
+          v.literal('subsection'),
+          v.null(),
+        ),
+      }),
+    ),
+    nist80066: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        mappingType: v.union(
+          v.literal('key-activity'),
+          v.literal('relationship'),
+          v.literal('sample-question'),
+          v.null(),
+        ),
+        referenceId: v.string(),
+      }),
+    ),
+    soc2: v.array(
+      v.object({
+        criterionId: v.string(),
+        group: v.union(
+          v.literal('availability'),
+          v.literal('common-criteria'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+        ),
+        label: v.union(v.string(), v.null()),
+        trustServiceCategory: v.union(
+          v.literal('availability'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+          v.literal('security'),
+        ),
+      }),
+    ),
+  }),
+  nist80053Id: v.string(),
+  owner: v.string(),
+  platformChecklist: v.array(controlChecklistItemValidator),
+  platformImplementationStatus: v.union(
+    v.literal('covered'),
+    v.literal('partial'),
+    v.literal('not-covered'),
+    v.literal('not-applicable'),
+  ),
+  priority: v.union(v.literal('p0'), v.literal('p1'), v.literal('p2')),
+  responsibility: v.union(
+    v.literal('platform'),
+    v.literal('shared-responsibility'),
+    v.literal('customer'),
+    v.null(),
+  ),
+  title: v.string(),
+});
+const securityControlWorkspaceListValidator = v.array(securityControlWorkspaceValidator);
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -119,6 +267,56 @@ function stringifyStable(value: unknown) {
 async function hashContent(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (part) => part.toString(16).padStart(2, '0')).join('');
+}
+
+function deriveItemEvidenceSufficiency(
+  evidence: Array<{ sufficiency: 'missing' | 'partial' | 'sufficient' }>,
+) {
+  if (evidence.some((item) => item.sufficiency === 'sufficient')) {
+    return 'sufficient' as const;
+  }
+  if (evidence.some((item) => item.sufficiency === 'partial')) {
+    return 'partial' as const;
+  }
+  return 'missing' as const;
+}
+
+function derivePlatformImplementationStatus(
+  items: Array<{ required: boolean; status: 'done' | 'in_progress' | 'not_applicable' | 'not_started' }>,
+) {
+  const requiredItems = items.filter((item) => item.required);
+  if (requiredItems.length === 0) {
+    return 'not-applicable' as const;
+  }
+  const satisfied = requiredItems.filter(
+    (item) => item.status === 'done' || item.status === 'not_applicable',
+  ).length;
+  if (satisfied === requiredItems.length) {
+    return 'covered' as const;
+  }
+  if (satisfied === 0 && requiredItems.every((item) => item.status === 'not_started')) {
+    return 'not-covered' as const;
+  }
+  return 'partial' as const;
+}
+
+function deriveEvidenceReadiness(
+  items: Array<{
+    evidenceSufficiency: 'missing' | 'partial' | 'sufficient';
+    required: boolean;
+  }>,
+) {
+  const requiredItems = items.filter((item) => item.required);
+  if (requiredItems.length === 0) {
+    return 'ready' as const;
+  }
+  if (requiredItems.every((item) => item.evidenceSufficiency === 'sufficient')) {
+    return 'ready' as const;
+  }
+  if (requiredItems.every((item) => item.evidenceSufficiency === 'missing')) {
+    return 'missing' as const;
+  }
+  return 'partial' as const;
 }
 
 const documentScanEventArgs = {
@@ -198,6 +396,125 @@ export const recordBackupVerification = internalMutation({
     });
   },
 });
+
+async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
+  const [checklistItems, evidenceRows] = await Promise.all([
+    ctx.db.query('securityControlChecklistItems').collect(),
+    ctx.db.query('securityControlEvidence').collect(),
+  ]);
+
+  const checklistStateByKey = new Map(
+    checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item]),
+  );
+  const evidenceByKey = evidenceRows.reduce<
+    Map<string, Array<(typeof evidenceRows)[number]>>
+  >((accumulator, evidence) => {
+    const key = `${evidence.internalControlId}:${evidence.itemId}`;
+    const current = accumulator.get(key) ?? [];
+    current.push(evidence);
+    accumulator.set(key, current);
+    return accumulator;
+  }, new Map());
+  const seededReviewedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+
+  return ACTIVE_CONTROL_REGISTER.controls.map((control) => {
+    const platformChecklist = control.platformChecklistItems.map((item) => {
+      const state = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
+      const hiddenSeedEvidenceIds = new Set(state?.hiddenSeedEvidenceIds ?? []);
+      const seededEvidence = item.seed.evidence
+        .map((entry, index) => ({
+          id: `${control.internalControlId}:${item.itemId}:seed:${index}` as Id<'securityControlEvidence'>,
+          title: entry.title,
+          description: entry.description,
+          evidenceType: entry.evidenceType,
+          url: entry.url,
+          storageId: null,
+          fileName: null,
+          mimeType: null,
+          sizeBytes: null,
+          sufficiency: entry.sufficiency,
+          reviewedAt: seededReviewedAt,
+          createdAt: seededReviewedAt,
+        }))
+        .filter((entry) => !hiddenSeedEvidenceIds.has(entry.id));
+      const persistedEvidence = (
+        evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? []
+      ).map((entry) => ({
+        id: entry._id,
+        title: entry.title,
+        description: entry.description ?? null,
+        evidenceType: entry.evidenceType,
+        url: entry.url ?? null,
+        storageId: entry.storageId ?? null,
+        fileName: entry.fileName ?? null,
+        mimeType: entry.mimeType ?? null,
+        sizeBytes: entry.sizeBytes ?? null,
+        sufficiency: entry.sufficiency,
+        reviewedAt: entry.reviewedAt ?? null,
+        createdAt: entry.createdAt,
+      }));
+      const evidence = [...seededEvidence, ...persistedEvidence];
+
+      return {
+        itemId: item.itemId,
+        label: item.label,
+        description: item.description,
+        verificationMethod: item.verificationMethod,
+        required: item.required,
+        suggestedEvidenceTypes: item.suggestedEvidenceTypes,
+        status: state?.status ?? item.seed.status,
+        owner: state?.owner ?? item.seed.owner,
+        notes: state?.notes ?? item.seed.notes,
+        completedAt:
+          state?.completedAt ??
+          (item.seed.status === 'done' || item.seed.status === 'not_applicable'
+            ? seededReviewedAt
+            : null),
+        lastReviewedAt:
+          state?.lastReviewedAt ??
+          (item.seed.evidence.length > 0 || item.seed.status !== 'not_started'
+            ? seededReviewedAt
+            : null),
+        evidence,
+        evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
+      };
+    });
+
+    const platformImplementationStatus = derivePlatformImplementationStatus(platformChecklist);
+    const evidenceReadiness = deriveEvidenceReadiness(platformChecklist);
+    const lastReviewedAtCandidates = platformChecklist.flatMap((item) => [
+      item.lastReviewedAt,
+      item.completedAt,
+      ...item.evidence.flatMap((evidence) => [evidence.reviewedAt, evidence.createdAt]),
+    ]);
+    const lastReviewedAt = lastReviewedAtCandidates.reduce<number | null>((latest, value) => {
+      if (typeof value !== 'number') {
+        return latest;
+      }
+      return latest === null ? value : Math.max(latest, value);
+    }, null);
+
+    return {
+      internalControlId: control.internalControlId,
+      nist80053Id: control.nist80053Id,
+      title: control.title,
+      familyId: control.familyId,
+      familyTitle: control.familyTitle,
+      owner: control.owner,
+      priority: control.priority,
+      responsibility: control.responsibility,
+      implementationSummary: control.implementationSummary,
+      customerResponsibilityNotes: control.customerResponsibilityNotes,
+      controlStatement: control.controlStatement,
+      mappings: control.mappings,
+      coverage: platformImplementationStatus,
+      platformImplementationStatus,
+      evidenceReadiness,
+      lastReviewedAt,
+      platformChecklist,
+    };
+  });
+}
 
 export const createEvidenceReport = internalMutation({
   args: {
@@ -316,6 +633,368 @@ export const getSecurityPostureSummary = query({
       },
       vendors: vendorPosture,
     };
+  },
+});
+
+export const listSecurityControlWorkspaces = query({
+  args: {},
+  returns: securityControlWorkspaceListValidator,
+  handler: async (ctx) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    return await listSecurityControlWorkspaceRecords(ctx);
+  },
+});
+
+export const updateSecurityControlChecklistItem = mutation({
+  args: {
+    internalControlId: v.string(),
+    itemId: v.string(),
+    notes: v.optional(v.string()),
+    owner: v.optional(v.string()),
+    status: checklistStatusValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const existing = await ctx.db
+      .query('securityControlChecklistItems')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
+      )
+      .unique();
+    const now = Date.now();
+    const patch = {
+      status: args.status,
+      owner: args.owner?.trim() || undefined,
+      notes: args.notes?.trim() || undefined,
+      completedAt:
+        args.status === 'done' || args.status === 'not_applicable' ? now : undefined,
+      completedByUserId:
+        args.status === 'done' || args.status === 'not_applicable'
+          ? currentUser.authUserId
+          : undefined,
+      lastReviewedAt: now,
+      lastReviewedByUserId: currentUser.authUserId,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert('securityControlChecklistItems', {
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        createdAt: now,
+        ...patch,
+      });
+    }
+
+    return null;
+  },
+});
+
+export const hideSeededSecurityControlEvidence = mutation({
+  args: {
+    evidenceId: v.string(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const existing = await ctx.db
+      .query('securityControlChecklistItems')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q.eq('internalControlId', args.internalControlId).eq('itemId', args.itemId),
+      )
+      .unique();
+    const now = Date.now();
+    const nextHiddenSeedEvidenceIds = Array.from(
+      new Set([...(existing?.hiddenSeedEvidenceIds ?? []), args.evidenceId]),
+    );
+    const patch = {
+      hiddenSeedEvidenceIds: nextHiddenSeedEvidenceIds,
+      lastReviewedAt: now,
+      lastReviewedByUserId: currentUser.authUserId,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert('securityControlChecklistItems', {
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        status: 'not_started',
+        createdAt: now,
+        ...patch,
+      });
+    }
+
+    return null;
+  },
+});
+
+export const updateSecurityControlReviewState = mutation({
+  args: {
+    internalControlId: v.string(),
+    reviewNotes: v.optional(v.string()),
+    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const existing = await ctx.db
+      .query('securityControlStates')
+      .withIndex('by_internal_control_id', (q) => q.eq('internalControlId', args.internalControlId))
+      .unique();
+    const now = Date.now();
+    const patch = {
+      reviewNotes: args.reviewNotes?.trim() || undefined,
+      reviewStatus: args.reviewStatus,
+      reviewedAt: args.reviewStatus === 'reviewed' ? now : undefined,
+      reviewedByUserId: args.reviewStatus === 'reviewed' ? currentUser.authUserId : undefined,
+      updatedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert('securityControlStates', {
+        internalControlId: args.internalControlId,
+        createdAt: now,
+        ...patch,
+      });
+    }
+    return null;
+  },
+});
+
+export const addSecurityControlEvidenceLink = mutation({
+  args: {
+    description: v.optional(v.string()),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    sufficiency: evidenceSufficiencyValidator,
+    title: v.string(),
+    url: v.string(),
+  },
+  returns: v.id('securityControlEvidence'),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const now = Date.now();
+    return await ctx.db.insert('securityControlEvidence', {
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: 'link',
+      title: args.title.trim(),
+      description: args.description?.trim() || undefined,
+      url: args.url.trim(),
+      sufficiency: args.sufficiency,
+      uploadedByUserId: currentUser.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const addSecurityControlEvidenceNote = mutation({
+  args: {
+    description: v.string(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    sufficiency: evidenceSufficiencyValidator,
+    title: v.string(),
+  },
+  returns: v.id('securityControlEvidence'),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const now = Date.now();
+    return await ctx.db.insert('securityControlEvidence', {
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: 'note',
+      title: args.title.trim(),
+      description: args.description.trim(),
+      sufficiency: args.sufficiency,
+      uploadedByUserId: currentUser.authUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const createSecurityControlEvidenceUploadTarget = action({
+  args: {
+    contentType: v.string(),
+    fileName: v.string(),
+    fileSize: v.number(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+  },
+  returns: v.object({
+    backend: v.union(v.literal('convex'), v.literal('s3')),
+    backendMode: v.union(v.literal('convex'), v.literal('s3-primary'), v.literal('s3-mirror')),
+    expiresAt: v.number(),
+    storageId: v.string(),
+    uploadFields: v.optional(v.record(v.string(), v.string())),
+    uploadHeaders: v.optional(v.record(v.string(), v.string())),
+    uploadMethod: v.union(v.literal('POST'), v.literal('PUT')),
+    uploadUrl: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    const target = await ctx.runAction(anyApi.storagePlatform.createUploadTarget, {
+      contentType: args.contentType,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      sourceId: `${args.internalControlId}:${args.itemId}`,
+      sourceType: 'security_control_evidence',
+    });
+
+    return {
+      ...target,
+      backendMode:
+        target.backend === 'convex'
+          ? 'convex'
+          : (process.env.FILE_STORAGE_BACKEND_MODE === 's3-mirror'
+              ? 's3-mirror'
+              : 's3-primary'),
+    };
+  },
+});
+
+export const finalizeSecurityControlEvidenceUpload = action({
+  args: {
+    backendMode: v.union(v.literal('convex'), v.literal('s3-primary'), v.literal('s3-mirror')),
+    description: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    mimeType: v.string(),
+    storageId: v.string(),
+    sufficiency: evidenceSufficiencyValidator,
+    title: v.string(),
+  },
+  returns: v.id('securityControlEvidence'),
+  handler: async (ctx, args): Promise<Id<'securityControlEvidence'>> => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    await ctx.runAction(internal.storagePlatform.finalizeUploadInternal, {
+      backendMode: args.backendMode,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      mimeType: args.mimeType,
+      sourceId: `${args.internalControlId}:${args.itemId}`,
+      sourceType: 'security_control_evidence',
+      storageId: args.storageId,
+    });
+
+    return await ctx.runMutation(internal.security.createSecurityControlEvidenceFileInternal, {
+      description: args.description?.trim() || undefined,
+      fileName: args.fileName,
+      fileSize: args.fileSize,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      mimeType: args.mimeType,
+      storageId: args.storageId,
+      sufficiency: args.sufficiency,
+      title: args.title.trim(),
+      uploadedByUserId: currentUser.authUserId,
+    });
+  },
+});
+
+export const removeSecurityControlEvidence = action({
+  args: {
+    evidenceId: v.id('securityControlEvidence'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    const evidence = await ctx.runQuery(internal.security.getSecurityControlEvidenceInternal, {
+      evidenceId: args.evidenceId,
+    });
+    if (!evidence) {
+      return null;
+    }
+    if (evidence.storageId) {
+      await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
+        storageId: evidence.storageId,
+      });
+    }
+    await ctx.runMutation(internal.security.deleteSecurityControlEvidenceInternal, {
+      evidenceId: args.evidenceId,
+    });
+    return null;
+  },
+});
+
+export const getSecurityControlEvidenceInternal = internalQuery({
+  args: {
+    evidenceId: v.id('securityControlEvidence'),
+  },
+  returns: v.union(
+    v.object({
+      _id: v.id('securityControlEvidence'),
+      storageId: v.optional(v.string()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const evidence = await ctx.db.get(args.evidenceId);
+    if (!evidence) {
+      return null;
+    }
+    return {
+      _id: evidence._id,
+      storageId: evidence.storageId,
+    };
+  },
+});
+
+export const createSecurityControlEvidenceFileInternal = internalMutation({
+  args: {
+    description: v.optional(v.string()),
+    fileName: v.string(),
+    fileSize: v.number(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    mimeType: v.string(),
+    storageId: v.string(),
+    sufficiency: evidenceSufficiencyValidator,
+    title: v.string(),
+    uploadedByUserId: v.string(),
+  },
+  returns: v.id('securityControlEvidence'),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    return await ctx.db.insert('securityControlEvidence', {
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: 'file',
+      title: args.title,
+      description: args.description,
+      storageId: args.storageId,
+      fileName: args.fileName,
+      mimeType: args.mimeType,
+      sizeBytes: args.fileSize,
+      sufficiency: args.sufficiency,
+      uploadedByUserId: args.uploadedByUserId,
+      createdAt: now,
+      updatedAt: now,
+    });
+  },
+});
+
+export const deleteSecurityControlEvidenceInternal = internalMutation({
+  args: {
+    evidenceId: v.id('securityControlEvidence'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.delete(args.evidenceId);
+    return null;
   },
 });
 
@@ -501,6 +1180,7 @@ export const generateEvidenceReport = action({
   handler: async (ctx) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
     const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
+    const controlWorkspace = await ctx.runQuery(anyApi.security.listSecurityControlWorkspaces, {});
     const recentAuditLogs: Array<{
       createdAt: number;
       eventType: string;
@@ -557,6 +1237,7 @@ export const generateEvidenceReport = action({
         })),
         scopedOrganizationPolicies: currentOrganizationPolicies,
         summary,
+        controls: controlWorkspace,
       };
     const report = stringifyStable(reportPayload);
     const contentHash = await hashContent(report);

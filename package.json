@@ -166,7 +166,7 @@
     "concurrently": "^9.2.1",
     "constructs": "^10.5.1",
     "eslint": "^9.39.4",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.0.0",
     "knip": "^5.87.0",
     "rollup-plugin-visualizer": "^7.0.1",
     "tailwindcss": "^4.2.1",

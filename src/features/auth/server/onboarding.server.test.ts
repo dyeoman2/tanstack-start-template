@@ -8,6 +8,9 @@ const { requireAuthMock, fetchAuthMutationMock, handleServerErrorMock } = vi.hoi
 
 vi.mock('@tanstack/react-start', () => ({
   createServerFn: () => ({
+    inputValidator() {
+      return this;
+    },
     handler: (handler: (...args: unknown[]) => unknown) => handler,
   }),
 }));

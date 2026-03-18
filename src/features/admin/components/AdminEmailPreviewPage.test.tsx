@@ -75,7 +75,7 @@ describe('AdminEmailPreviewPage', () => {
     expect(within(comboboxes[0]).getByText('Organization Invitation')).toBeInTheDocument();
     expect(within(comboboxes[1]).getByText('Member invite')).toBeInTheDocument();
     expect(
-      screen.getByText('A standard member invitation into a team workspace.'),
+      screen.getByText('A standard member invitation into an organization workspace.'),
     ).toBeInTheDocument();
     expect(screen.getByTestId('email-preview-frame')).toHaveAttribute(
       'srcdoc',

@@ -5,7 +5,7 @@ import type { ColumnDef } from '@tanstack/react-table';
 import { useAction, useMutation, useQuery } from 'convex/react';
 import Papa from 'papaparse';
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 import {
   createSortableHeader,
@@ -25,6 +25,22 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { ExportButton } from '~/components/ui/export-button';
+import { Input } from '~/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -39,29 +55,118 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/comp
 import {
   ACTIVE_CONTROL_REGISTER,
   type ActiveControlRecord,
-  type ControlCoverage,
+  type ControlChecklistEvidenceType,
   type ControlResponsibility,
-  getControlCoverageDisplayLabel,
   getControlResponsibilityDisplayLabel,
-  getActiveControlRegisterSummary,
 } from '~/lib/shared/compliance/control-register';
 
 const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors'] as const;
-const CONTROL_TABLE_SORT_FIELDS = ['control', 'coverage', 'responsibility', 'family'] as const;
-const CONTROL_COVERAGE_FILTER_VALUES = [
-  'all',
-  'covered',
-  'partial',
-  'not-covered',
-  'not-applicable',
-] as const;
+const CONTROL_TABLE_SORT_FIELDS = ['control', 'evidence', 'responsibility', 'family'] as const;
 const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
   'all',
   'platform',
   'shared-responsibility',
-  'operator-owned',
+  'customer',
 ] as const;
+const CONTROL_EVIDENCE_FILTER_VALUES = ['all', 'ready', 'partial', 'missing'] as const;
 const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+type SecurityChecklistEvidence = {
+  createdAt: number;
+  description: string | null;
+  evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+  fileName: string | null;
+  id: string;
+  mimeType: string | null;
+  reviewedAt: number | null;
+  sizeBytes: number | null;
+  storageId: string | null;
+  sufficiency: 'missing' | 'partial' | 'sufficient';
+  title: string;
+  url: string | null;
+};
+
+type SecurityChecklistItem = {
+  completedAt: number | null;
+  description: string;
+  evidence: SecurityChecklistEvidence[];
+  evidenceSufficiency: 'missing' | 'partial' | 'sufficient';
+  itemId: string;
+  label: string;
+  lastReviewedAt: number | null;
+  notes: string | null;
+  owner: string | null;
+  required: boolean;
+  status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
+  suggestedEvidenceTypes: ControlChecklistEvidenceType[];
+  verificationMethod: string;
+};
+
+type SecurityControlWorkspace = Omit<
+  ActiveControlRecord,
+  | 'coverage'
+  | 'evidence'
+  | 'lastReviewedAt'
+  | 'platformChecklistItems'
+  | 'reviewStatus'
+  | 'seedReview'
+> & {
+  evidenceReadiness: 'missing' | 'partial' | 'ready';
+  lastReviewedAt: number | null;
+  platformChecklist: SecurityChecklistItem[];
+};
+
+async function uploadFileWithTarget(
+  file: File,
+  target: {
+    uploadMethod: 'POST' | 'PUT';
+    uploadUrl: string;
+    uploadHeaders?: Record<string, string>;
+    uploadFields?: Record<string, string>;
+  },
+) {
+  if (target.uploadMethod === 'PUT') {
+    const response = await fetch(target.uploadUrl, {
+      body: file,
+      headers: target.uploadHeaders,
+      method: 'PUT',
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to upload ${file.name}.`);
+    }
+
+    return null;
+  }
+
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(target.uploadFields ?? {})) {
+    formData.append(key, value);
+  }
+  formData.append('file', file);
+
+  const response = await fetch(target.uploadUrl, {
+    body: formData,
+    headers: target.uploadHeaders,
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to upload ${file.name}.`);
+  }
+
+  const payload: unknown = await response.json();
+  if (
+    !payload ||
+    typeof payload !== 'object' ||
+    !('storageId' in payload) ||
+    typeof payload.storageId !== 'string'
+  ) {
+    throw new Error('Upload did not return a storage identifier.');
+  }
+
+  return payload.storageId;
+}
 
 const securitySearchSchema = z.object({
   tab: z.enum(SECURITY_TABS).default('overview'),
@@ -70,8 +175,8 @@ const securitySearchSchema = z.object({
   sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).default('control'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
-  coverage: z.enum(CONTROL_COVERAGE_FILTER_VALUES).default('all'),
   responsibility: z.enum(CONTROL_RESPONSIBILITY_FILTER_VALUES).default('all'),
+  evidenceReadiness: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
   selectedControl: z.string().optional(),
 });
@@ -95,31 +200,65 @@ function AdminSecurityRoute() {
     sortBy,
     sortOrder,
     search: controlSearchTerm,
-    coverage: coverageFilter,
     responsibility: responsibilityFilter,
+    evidenceReadiness: evidenceReadinessFilter,
     family: familyFilter,
     selectedControl: selectedControlId,
   } = search;
   const { showToast } = useToast();
   const summary = useQuery(api.security.getSecurityPostureSummary, {});
+  const controlWorkspaces = useQuery(api.security.listSecurityControlWorkspaces, {});
   const evidenceReports = useQuery(api.security.listEvidenceReports, { limit: 10 });
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
   const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
   const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
+  const updateChecklistItem = useMutation(api.security.updateSecurityControlChecklistItem);
+  const addEvidenceLink = useMutation(api.security.addSecurityControlEvidenceLink);
+  const addEvidenceNote = useMutation(api.security.addSecurityControlEvidenceNote);
+  const createEvidenceUploadTarget = useAction(api.security.createSecurityControlEvidenceUploadTarget);
+  const finalizeEvidenceUpload = useAction(api.security.finalizeSecurityControlEvidenceUpload);
+  const removeControlEvidence = useAction(api.security.removeSecurityControlEvidence);
+  const hideSeededControlEvidence = useMutation(api.security.hideSeededSecurityControlEvidence);
+  const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
   const [report, setReport] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
   const [isExportingControls, setIsExportingControls] = useState(false);
-
-  const controlSummary = getActiveControlRegisterSummary();
+  const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
+  const controls = controlWorkspaces ?? [];
+  const controlSummary = useMemo(() => {
+    return controls.reduce(
+      (summaryAccumulator, control) => {
+        summaryAccumulator.totalControls += 1;
+        if (control.responsibility) {
+          summaryAccumulator.byResponsibility[control.responsibility] += 1;
+        }
+        summaryAccumulator.byEvidence[control.evidenceReadiness] += 1;
+        return summaryAccumulator;
+      },
+      {
+        totalControls: 0,
+        byResponsibility: {
+          platform: 0,
+          'shared-responsibility': 0,
+          customer: 0,
+        },
+        byEvidence: {
+          ready: 0,
+          partial: 0,
+          missing: 0,
+        },
+      },
+    );
+  }, [controls]);
   const familyOptions = useMemo<TableFilterOption<string>[]>(
     () => [
       { label: 'All families', value: 'all' },
       ...Array.from(
         new Map(
-          ACTIVE_CONTROL_REGISTER.controls.map((control) => [
+          (controls.length > 0 ? controls : ACTIVE_CONTROL_REGISTER.controls).map((control) => [
             control.familyId,
             control.familyTitle,
           ]),
@@ -133,40 +272,44 @@ function AdminSecurityRoute() {
           value: familyId,
         })),
     ],
-    [],
-  );
-  const coverageOptions = useMemo<TableFilterOption<'all' | ControlCoverage>[]>(
-    () => [
-      { label: 'All coverage', value: 'all' },
-      { label: 'Covered', value: 'covered' },
-      { label: 'Partial', value: 'partial' },
-      { label: 'Not covered', value: 'not-covered' },
-      { label: 'Not applicable', value: 'not-applicable' },
-    ],
-    [],
+    [controls],
   );
   const responsibilityOptions = useMemo<
-    TableFilterOption<'all' | NonNullable<ActiveControlRecord['responsibility']>>[]
+    TableFilterOption<'all' | NonNullable<SecurityControlWorkspace['responsibility']>>[]
   >(
     () => [
       { label: 'All responsibilities', value: 'all' },
       { label: 'Platform', value: 'platform' },
       { label: 'Shared responsibility', value: 'shared-responsibility' },
-      { label: 'Operator-owned', value: 'operator-owned' },
+      { label: 'Customer', value: 'customer' },
+    ],
+    [],
+  );
+  const evidenceReadinessOptions = useMemo<
+    TableFilterOption<'all' | SecurityControlWorkspace['evidenceReadiness']>[]
+  >(
+    () => [
+      { label: 'All evidence', value: 'all' },
+      { label: 'Complete', value: 'ready' },
+      { label: 'Partial', value: 'partial' },
+      { label: 'Missing', value: 'missing' },
     ],
     [],
   );
   const normalizedControlSearchTerm = controlSearchTerm.trim().toLowerCase();
   const filteredControls = useMemo(
     () =>
-      ACTIVE_CONTROL_REGISTER.controls.filter((control) => {
-        if (coverageFilter !== 'all' && control.coverage !== coverageFilter) {
+      controls.filter((control) => {
+        if (
+          responsibilityFilter !== 'all' &&
+          control.responsibility !== responsibilityFilter
+        ) {
           return false;
         }
 
         if (
-          responsibilityFilter !== 'all' &&
-          control.responsibility !== responsibilityFilter
+          evidenceReadinessFilter !== 'all' &&
+          control.evidenceReadiness !== evidenceReadinessFilter
         ) {
           return false;
         }
@@ -186,11 +329,11 @@ function AdminSecurityRoute() {
           control.familyId,
           control.familyTitle,
           control.owner,
-          control.coverage,
           control.responsibility ?? '',
-          control.reviewStatus,
-          control.evidence.latestEvidenceStatus,
-          control.sharedResponsibilityNotes ?? '',
+          control.evidenceReadiness,
+          control.customerResponsibilityNotes ?? '',
+          control.platformChecklist.map((item) => item.label).join(' '),
+          control.platformChecklist.map((item) => item.notes ?? '').join(' '),
           control.mappings.hipaa.map((mapping) => mapping.citation).join(' '),
           control.mappings.csf20.map((mapping) => mapping.subcategoryId).join(' '),
           control.mappings.nist80066.map((mapping) => mapping.referenceId).join(' '),
@@ -201,7 +344,13 @@ function AdminSecurityRoute() {
 
         return searchableText.includes(normalizedControlSearchTerm);
       }),
-    [coverageFilter, familyFilter, normalizedControlSearchTerm, responsibilityFilter],
+    [
+      controls,
+      evidenceReadinessFilter,
+      familyFilter,
+      normalizedControlSearchTerm,
+      responsibilityFilter,
+    ],
   );
   const sortedControls = useMemo(() => {
     const sorted = [...filteredControls];
@@ -210,8 +359,8 @@ function AdminSecurityRoute() {
       let comparison = 0;
 
       switch (sortBy) {
-        case 'coverage':
-          comparison = left.coverage.localeCompare(right.coverage);
+        case 'evidence':
+          comparison = left.evidenceReadiness.localeCompare(right.evidenceReadiness);
           break;
         case 'responsibility':
           comparison = (left.responsibility ?? '').localeCompare(right.responsibility ?? '');
@@ -249,11 +398,11 @@ function AdminSecurityRoute() {
   const selectedControl = useMemo(
     () =>
       selectedControlId
-        ? (ACTIVE_CONTROL_REGISTER.controls.find(
+        ? (controls.find(
             (control) => control.internalControlId === selectedControlId,
           ) ?? null)
         : null,
-    [selectedControlId],
+    [controls, selectedControlId],
   );
   const controlPagination = useMemo(
     () => ({
@@ -281,8 +430,8 @@ function AdminSecurityRoute() {
         sortBy: (typeof CONTROL_TABLE_SORT_FIELDS)[number];
         sortOrder: 'asc' | 'desc';
         search: string;
-        coverage: 'all' | ControlCoverage;
-        responsibility: 'all' | NonNullable<ActiveControlRecord['responsibility']>;
+        responsibility: 'all' | NonNullable<SecurityControlWorkspace['responsibility']>;
+        evidenceReadiness: 'all' | SecurityControlWorkspace['evidenceReadiness'];
         family: string;
         selectedControl: string | undefined;
       }>,
@@ -326,7 +475,7 @@ function AdminSecurityRoute() {
     },
     [updateControlSearch],
   );
-  const controlColumns = useMemo<ColumnDef<ActiveControlRecord, unknown>[]>(
+  const controlColumns = useMemo<ColumnDef<SecurityControlWorkspace, unknown>[]>(
     () => [
       {
         accessorKey: 'control',
@@ -339,16 +488,6 @@ function AdminSecurityRoute() {
         cell: ({ row }) => <ControlCell control={row.original} />,
       },
       {
-        accessorKey: 'coverage',
-        header: createSortableHeader(
-          'Coverage',
-          'coverage',
-          controlSearchParams,
-          handleControlSorting,
-        ),
-        cell: ({ row }) => <CoverageCell control={row.original} />,
-      },
-      {
         accessorKey: 'responsibility',
         header: createSortableHeader(
           'Responsibility',
@@ -357,6 +496,16 @@ function AdminSecurityRoute() {
           handleControlSorting,
         ),
         cell: ({ row }) => <ResponsibilityCell control={row.original} />,
+      },
+      {
+        accessorKey: 'evidence',
+        header: createSortableHeader(
+          'Evidence',
+          'evidence',
+          controlSearchParams,
+          handleControlSorting,
+        ),
+        cell: ({ row }) => <EvidenceReadinessCell control={row.original} />,
       },
       {
         accessorKey: 'family',
@@ -379,7 +528,6 @@ function AdminSecurityRoute() {
         sortedControls.map((control) => ({
           controlId: control.nist80053Id,
           title: control.title,
-          coverage: control.coverage,
           responsibility: control.responsibility ?? '',
           implementationSummary: control.implementationSummary,
           controlStatement: control.controlStatement,
@@ -387,13 +535,14 @@ function AdminSecurityRoute() {
           familyTitle: control.familyTitle,
           owner: control.owner,
           priority: control.priority,
-          evidenceStatus: control.evidence.latestEvidenceStatus,
-          evidenceAssessment: control.evidence.assessmentNote,
-          evidenceCount: control.evidence.evidenceCount,
-          evidenceSources: control.evidence.evidenceSources.join('; '),
-          reviewStatus: control.reviewStatus,
-          lastReviewedAt: control.lastReviewedAt ?? '',
-          sharedResponsibilityNotes: control.sharedResponsibilityNotes ?? '',
+          evidenceReadiness: control.evidenceReadiness,
+          checklistCompletion: `${control.platformChecklist.filter((item) => item.status === 'done' || item.status === 'not_applicable').length}/${control.platformChecklist.filter((item) => item.required).length}`,
+          evidenceCount: control.platformChecklist.reduce(
+            (count, item) => count + item.evidence.length,
+            0,
+          ),
+          lastReviewedAt: control.lastReviewedAt ? new Date(control.lastReviewedAt).toISOString() : '',
+          customerResponsibilityNotes: control.customerResponsibilityNotes ?? '',
           hipaaMappings: control.mappings.hipaa
             .map(
               (mapping) =>
@@ -421,7 +570,7 @@ function AdminSecurityRoute() {
             )
             .join('; '),
           soc2MappingsJson: JSON.stringify(control.mappings.soc2),
-          evidenceJson: JSON.stringify(control.evidence),
+          checklistJson: JSON.stringify(control.platformChecklist),
           fullControlJson: JSON.stringify(control),
         })),
       );
@@ -445,6 +594,152 @@ function AdminSecurityRoute() {
       setIsExportingControls(false);
     }
   }, [showToast, sortedControls]);
+
+  const handleChecklistItemUpdate = useCallback(
+    async (args: {
+      internalControlId: string;
+      itemId: string;
+      notes?: string;
+      owner?: string;
+      status: SecurityChecklistItem['status'];
+    }) => {
+      setBusyControlAction(`${args.internalControlId}:${args.itemId}:save`);
+      try {
+        await updateChecklistItem(args);
+        showToast('Checklist item updated.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to update checklist item', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [showToast, updateChecklistItem],
+  );
+
+  const handleAddEvidenceLink = useCallback(
+    async (args: {
+      description?: string;
+      internalControlId: string;
+      itemId: string;
+      sufficiency: SecurityChecklistEvidence['sufficiency'];
+      title: string;
+      url: string;
+    }) => {
+      setBusyControlAction(`${args.internalControlId}:${args.itemId}:link`);
+      try {
+        await addEvidenceLink(args);
+        showToast('Evidence link attached.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to attach evidence link', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [addEvidenceLink, showToast],
+  );
+
+  const handleAddEvidenceNote = useCallback(
+    async (args: {
+      description: string;
+      internalControlId: string;
+      itemId: string;
+      sufficiency: SecurityChecklistEvidence['sufficiency'];
+      title: string;
+    }) => {
+      setBusyControlAction(`${args.internalControlId}:${args.itemId}:note`);
+      try {
+        await addEvidenceNote(args);
+        showToast('Evidence note attached.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to attach evidence note', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [addEvidenceNote, showToast],
+  );
+
+  const handleUploadEvidenceFile = useCallback(
+    async (args: {
+      description?: string;
+      file: File;
+      internalControlId: string;
+      itemId: string;
+      sufficiency: SecurityChecklistEvidence['sufficiency'];
+      title: string;
+    }) => {
+      setBusyControlAction(`${args.internalControlId}:${args.itemId}:file`);
+      try {
+        const target = await createEvidenceUploadTarget({
+          contentType: args.file.type || 'application/octet-stream',
+          fileName: args.file.name,
+          fileSize: args.file.size,
+          internalControlId: args.internalControlId,
+          itemId: args.itemId,
+        });
+        const uploadedStorageId = await uploadFileWithTarget(args.file, target);
+        await finalizeEvidenceUpload({
+          backendMode: target.backendMode,
+          description: args.description,
+          fileName: args.file.name,
+          fileSize: args.file.size,
+          internalControlId: args.internalControlId,
+          itemId: args.itemId,
+          mimeType: args.file.type || 'application/octet-stream',
+          storageId: uploadedStorageId ?? target.storageId,
+          sufficiency: args.sufficiency,
+          title: args.title,
+        });
+        showToast('Evidence file uploaded.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to upload evidence file', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [createEvidenceUploadTarget, finalizeEvidenceUpload, showToast],
+  );
+
+  const handleOpenEvidence = useCallback(
+    async (evidence: SecurityChecklistEvidence) => {
+      if (evidence.evidenceType === 'link' && evidence.url) {
+        window.open(evidence.url, '_blank', 'noopener,noreferrer');
+        return;
+      }
+      if (evidence.storageId) {
+        try {
+          const resolved = await createSignedServeUrl({ storageId: evidence.storageId });
+          window.open(resolved.url, '_blank', 'noopener,noreferrer');
+        } catch (error) {
+          showToast(error instanceof Error ? error.message : 'Failed to open evidence file', 'error');
+        }
+      }
+    },
+    [createSignedServeUrl, showToast],
+  );
+
+  const handleRemoveEvidence = useCallback(
+    async (args: { evidenceId: string; internalControlId: string; itemId: string }) => {
+      setBusyControlAction(`${args.evidenceId}:remove`);
+      try {
+        if (args.evidenceId.includes(':seed:')) {
+          await hideSeededControlEvidence({
+            evidenceId: args.evidenceId,
+            internalControlId: args.internalControlId,
+            itemId: args.itemId,
+          });
+        } else {
+          await removeControlEvidence({ evidenceId: args.evidenceId as Id<'securityControlEvidence'> });
+        }
+        showToast('Evidence removed.', 'success');
+      } catch (error) {
+        showToast(error instanceof Error ? error.message : 'Failed to remove evidence', 'error');
+      } finally {
+        setBusyControlAction(null);
+      }
+    },
+    [hideSeededControlEvidence, removeControlEvidence, showToast],
+  );
 
   const handleGenerateReport = async () => {
     setIsGenerating(true);
@@ -611,22 +906,22 @@ function AdminSecurityRoute() {
               footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
             />
             <SummaryCard
-              title="Covered"
-              description="Controls where the platform has completed its intended portion."
-              value={`${controlSummary.byCoverage.covered}`}
-              footer={`${controlSummary.byCoverage.partial} partial controls`}
+              title="Complete Evidence"
+              description="Controls where every required checklist item has attached evidence."
+              value={`${controlSummary.byEvidence.ready}`}
+              footer={`${controlSummary.byEvidence.partial} partial controls`}
             />
             <SummaryCard
               title="Shared responsibility"
-              description="Controls that still require action or governance by your organization."
+              description="Controls where customer governance or procedures are still required."
               value={`${controlSummary.byResponsibility['shared-responsibility']}`}
               footer={`${controlSummary.byResponsibility.platform} platform controls`}
             />
             <SummaryCard
-              title="Operator-owned"
-              description="Controls that must be handled externally by your organization."
-              value={`${controlSummary.byResponsibility['operator-owned']}`}
-              footer={`${controlSummary.byCoverage['not-covered']} not covered controls`}
+              title="Customer"
+              description="Controls primarily fulfilled through customer-side governance or procedure."
+              value={`${controlSummary.byResponsibility.customer}`}
+              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
             />
           </div>
         </TabsContent>
@@ -635,7 +930,7 @@ function AdminSecurityRoute() {
           <div className="space-y-1">
             <h2 className="text-lg font-semibold">Control Register</h2>
             <p className="text-sm text-muted-foreground">
-              Active control register with coverage, responsibility, and framework mapping detail.
+              Active control register with evidence, responsibility, and framework mapping detail.
             </p>
           </div>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
@@ -646,22 +941,22 @@ function AdminSecurityRoute() {
               footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
             />
             <SummaryCard
-              title="Covered"
-              description="Controls where the platform has completed its intended portion."
-              value={`${controlSummary.byCoverage.covered}`}
-              footer={`${controlSummary.byCoverage.partial} partial controls`}
+              title="Complete Evidence"
+              description="Controls where every required checklist item has attached evidence."
+              value={`${controlSummary.byEvidence.ready}`}
+              footer={`${controlSummary.byEvidence.partial} partial controls`}
             />
             <SummaryCard
               title="Shared responsibility"
-              description="Controls that still require action or governance by your organization."
+              description="Controls where customer governance or procedures are still required."
               value={`${controlSummary.byResponsibility['shared-responsibility']}`}
               footer={`${controlSummary.byResponsibility.platform} platform controls`}
             />
             <SummaryCard
-              title="Operator-owned"
-              description="Controls that must be handled externally by your organization."
-              value={`${controlSummary.byResponsibility['operator-owned']}`}
-              footer={`${controlSummary.byCoverage['not-covered']} not covered controls`}
+              title="Customer"
+              description="Controls primarily fulfilled through customer-side governance or procedure."
+              value={`${controlSummary.byResponsibility.customer}`}
+              footer={`${controlSummary.byEvidence.missing} missing evidence controls`}
             />
           </div>
 
@@ -671,24 +966,6 @@ function AdminSecurityRoute() {
                 {controlPagination.total} matches
               </p>
               <div className="flex flex-wrap items-center gap-2">
-                <TableFilter<'all' | ControlCoverage>
-                  value={coverageFilter}
-                  options={coverageOptions}
-                  onValueChange={(value) => {
-                    updateControlSearch({ coverage: value, page: 1 });
-                  }}
-                  className="shrink-0"
-                  ariaLabel="Filter controls by coverage"
-                />
-                <TableFilter<'all' | NonNullable<ActiveControlRecord['responsibility']>>
-                  value={responsibilityFilter}
-                  options={responsibilityOptions}
-                  onValueChange={(value) => {
-                    updateControlSearch({ responsibility: value, page: 1 });
-                  }}
-                  className="shrink-0"
-                  ariaLabel="Filter controls by responsibility"
-                />
                 <TableFilter<string>
                   value={familyFilter}
                   options={familyOptions}
@@ -698,6 +975,24 @@ function AdminSecurityRoute() {
                   className="shrink-0"
                   ariaLabel="Filter controls by family"
                 />
+                <TableFilter<'all' | NonNullable<SecurityControlWorkspace['responsibility']>>
+                  value={responsibilityFilter}
+                  options={responsibilityOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ responsibility: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by responsibility"
+                />
+                <TableFilter<'all' | SecurityControlWorkspace['evidenceReadiness']>
+                  value={evidenceReadinessFilter}
+                  options={evidenceReadinessOptions}
+                  onValueChange={(value) => {
+                    updateControlSearch({ evidenceReadiness: value, page: 1 });
+                  }}
+                  className="shrink-0"
+                  ariaLabel="Filter controls by evidence readiness"
+                />
               </div>
             </div>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
@@ -706,7 +1001,7 @@ function AdminSecurityRoute() {
                 onSearch={(value) => {
                   updateControlSearch({ search: value, page: 1 });
                 }}
-                placeholder="Search by control, family, owner, responsibility, or framework"
+                placeholder="Search by control, checklist item, owner, responsibility, or framework"
                 isSearching={false}
                 className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
                 ariaLabel="Search controls"
@@ -720,7 +1015,7 @@ function AdminSecurityRoute() {
             </div>
           </div>
 
-          <DataTable<ActiveControlRecord, (typeof controlColumns)[number]>
+          <DataTable<SecurityControlWorkspace, (typeof controlColumns)[number]>
             data={paginatedControls}
             columns={controlColumns}
             pagination={controlPagination}
@@ -886,14 +1181,25 @@ function AdminSecurityRoute() {
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          {selectedControl ? <ControlDetailSheet control={selectedControl} /> : null}
+          {selectedControl ? (
+            <ControlDetailSheet
+              busyAction={busyControlAction}
+              control={selectedControl}
+              onAddEvidenceLink={handleAddEvidenceLink}
+              onAddEvidenceNote={handleAddEvidenceNote}
+              onChecklistItemUpdate={handleChecklistItemUpdate}
+              onOpenEvidence={handleOpenEvidence}
+              onRemoveEvidence={handleRemoveEvidence}
+              onUploadEvidenceFile={handleUploadEvidenceFile}
+            />
+          ) : null}
         </SheetContent>
       </Sheet>
     </div>
   );
 }
 
-function ControlCell({ control }: { control: ActiveControlRecord }) {
+function ControlCell({ control }: { control: SecurityControlWorkspace }) {
   return (
     <div className="min-w-0 py-1">
       <TooltipProvider delayDuration={150}>
@@ -915,7 +1221,7 @@ function ControlCell({ control }: { control: ActiveControlRecord }) {
               </div>
               <div className="space-y-1">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
-                  Implementation summary
+                  Control summary
                 </p>
                 <p className="text-xs leading-relaxed">{control.implementationSummary}</p>
               </div>
@@ -927,17 +1233,7 @@ function ControlCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
-function CoverageCell({ control }: { control: ActiveControlRecord }) {
-  const badge = (
-    <Badge variant={getCoverageBadgeVariant(control.coverage)}>
-      {formatControlCoverage(control.coverage)}
-    </Badge>
-  );
-
-  return <div className="space-y-2 py-1">{badge}</div>;
-}
-
-function ResponsibilityCell({ control }: { control: ActiveControlRecord }) {
+function ResponsibilityCell({ control }: { control: SecurityControlWorkspace }) {
   if (!control.responsibility) {
     return <div className="py-1 text-sm text-muted-foreground">—</div>;
   }
@@ -950,16 +1246,16 @@ function ResponsibilityCell({ control }: { control: ActiveControlRecord }) {
 
   return (
     <div className="space-y-2 py-1">
-      {control.sharedResponsibilityNotes ? (
+      {control.customerResponsibilityNotes ? (
         <TooltipProvider delayDuration={150}>
           <Tooltip>
             <TooltipTrigger asChild>{badge}</TooltipTrigger>
             <TooltipContent side="top" align="start" className="max-w-sm">
               <div className="space-y-2">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-primary-foreground/80">
-                  Responsibility notes
+                  Customer responsibilities
                 </p>
-                <p className="text-xs leading-relaxed">{control.sharedResponsibilityNotes}</p>
+                <p className="text-xs leading-relaxed">{control.customerResponsibilityNotes}</p>
               </div>
             </TooltipContent>
           </Tooltip>
@@ -971,7 +1267,19 @@ function ResponsibilityCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
-function FrameworkSummaryCell({ control }: { control: ActiveControlRecord }) {
+function EvidenceReadinessCell({ control }: { control: SecurityControlWorkspace }) {
+  const progress = getEvidenceProgress(control);
+
+  return (
+    <div className="space-y-2 py-1">
+      <Badge variant={getEvidenceReadinessBadgeVariant(control.evidenceReadiness)}>
+        {formatEvidenceReadiness(control.evidenceReadiness)} {progress.label}
+      </Badge>
+    </div>
+  );
+}
+
+function FrameworkSummaryCell({ control }: { control: SecurityControlWorkspace }) {
   const frameworkSummaries = [
     {
       label: 'HIPAA',
@@ -1035,7 +1343,48 @@ function FrameworkSummaryCell({ control }: { control: ActiveControlRecord }) {
   );
 }
 
-function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
+function ControlDetailSheet(props: {
+  busyAction: string | null;
+  control: SecurityControlWorkspace;
+  onAddEvidenceLink: (args: {
+    description?: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+    url: string;
+  }) => Promise<void>;
+  onAddEvidenceNote: (args: {
+    description: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+  onChecklistItemUpdate: (args: {
+    internalControlId: string;
+    itemId: string;
+    notes?: string;
+    owner?: string;
+    status: SecurityChecklistItem['status'];
+  }) => Promise<void>;
+  onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
+  onRemoveEvidence: (args: {
+    evidenceId: string;
+    internalControlId: string;
+    itemId: string;
+  }) => Promise<void>;
+  onUploadEvidenceFile: (args: {
+    description?: string;
+    file: File;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+}) {
+  const { control } = props;
+
   return (
     <>
       <SheetHeader className="border-b">
@@ -1046,22 +1395,15 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
       </SheetHeader>
 
       <div className="space-y-6 p-4">
-        <div className="flex flex-wrap gap-2">
-          <Badge variant={getCoverageBadgeVariant(control.coverage)}>
-            {formatControlCoverage(control.coverage)}
-          </Badge>
-          {control.responsibility ? (
-            <Badge variant={getResponsibilityBadgeVariant(control.responsibility)}>
-              {formatControlResponsibility(control.responsibility)}
-            </Badge>
-          ) : null}
-        </div>
-
-        <DetailSection title="Ownership">
-          <dl className="grid gap-4 sm:grid-cols-2">
+        <DetailSection title="Overview">
+          <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+            <DetailItem
+              label="Responsibility"
+              value={formatControlResponsibility(control.responsibility)}
+            />
             <DetailItem label="Control owner" value={control.owner} />
             <DetailItem
-              label="Last reviewed"
+              label="Control last reviewed"
               value={
                 control.lastReviewedAt
                   ? new Date(control.lastReviewedAt).toLocaleDateString()
@@ -1077,24 +1419,23 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
           </p>
         </DetailSection>
 
-        <DetailSection title="Responsibility notes">
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            {control.sharedResponsibilityNotes ?? 'No additional notes recorded.'}
-          </p>
+        <DetailSection title="Control checklist">
+          <PlatformChecklistSection
+            busyAction={props.busyAction}
+            control={control}
+            onAddEvidenceLink={props.onAddEvidenceLink}
+            onAddEvidenceNote={props.onAddEvidenceNote}
+            onChecklistItemUpdate={props.onChecklistItemUpdate}
+            onOpenEvidence={props.onOpenEvidence}
+            onRemoveEvidence={props.onRemoveEvidence}
+            onUploadEvidenceFile={props.onUploadEvidenceFile}
+          />
         </DetailSection>
 
-        <DetailSection title="Evidence assessment">
+        <DetailSection title="Customer responsibilities">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {control.evidence.assessmentNote}
+            {control.customerResponsibilityNotes ?? 'No additional customer responsibilities recorded.'}
           </p>
-        </DetailSection>
-
-        <DetailSection title="Evidence sources">
-          <ul className="list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-            {control.evidence.evidenceSources.map((source) => (
-              <li key={source}>{source}</li>
-            ))}
-          </ul>
         </DetailSection>
 
         <DetailSection title="Framework mappings">
@@ -1132,6 +1473,468 @@ function ControlDetailSheet({ control }: { control: ActiveControlRecord }) {
         </DetailSection>
       </div>
     </>
+  );
+}
+
+function PlatformChecklistSection(props: {
+  busyAction: string | null;
+  control: SecurityControlWorkspace;
+  onAddEvidenceLink: (args: {
+    description?: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+    url: string;
+  }) => Promise<void>;
+  onAddEvidenceNote: (args: {
+    description: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+  onChecklistItemUpdate: (args: {
+    internalControlId: string;
+    itemId: string;
+    notes?: string;
+    owner?: string;
+    status: SecurityChecklistItem['status'];
+  }) => Promise<void>;
+  onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
+  onRemoveEvidence: (args: {
+    evidenceId: string;
+    internalControlId: string;
+    itemId: string;
+  }) => Promise<void>;
+  onUploadEvidenceFile: (args: {
+    description?: string;
+    file: File;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+}) {
+  return (
+    <Accordion type="multiple" className="rounded-md border">
+      {props.control.platformChecklist.map((item) => (
+        <ChecklistAccordionItem
+          key={item.itemId}
+          busyAction={props.busyAction}
+          control={props.control}
+          item={item}
+          onAddEvidenceLink={props.onAddEvidenceLink}
+          onAddEvidenceNote={props.onAddEvidenceNote}
+          onChecklistItemUpdate={props.onChecklistItemUpdate}
+          onOpenEvidence={props.onOpenEvidence}
+          onRemoveEvidence={props.onRemoveEvidence}
+          onUploadEvidenceFile={props.onUploadEvidenceFile}
+        />
+      ))}
+    </Accordion>
+  );
+}
+
+function ChecklistAccordionItem(props: {
+  busyAction: string | null;
+  control: SecurityControlWorkspace;
+  item: SecurityChecklistItem;
+  onAddEvidenceLink: (args: {
+    description?: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+    url: string;
+  }) => Promise<void>;
+  onAddEvidenceNote: (args: {
+    description: string;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+  onChecklistItemUpdate: (args: {
+    internalControlId: string;
+    itemId: string;
+    notes?: string;
+    owner?: string;
+    status: SecurityChecklistItem['status'];
+  }) => Promise<void>;
+  onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
+  onRemoveEvidence: (args: {
+    evidenceId: string;
+    internalControlId: string;
+    itemId: string;
+  }) => Promise<void>;
+  onUploadEvidenceFile: (args: {
+    description?: string;
+    file: File;
+    internalControlId: string;
+    itemId: string;
+    sufficiency: SecurityChecklistEvidence['sufficiency'];
+    title: string;
+  }) => Promise<void>;
+}) {
+  const { control, item } = props;
+  const [status, setStatus] = useState<SecurityChecklistItem['status']>(item.status);
+  const [owner, setOwner] = useState(item.owner ?? '');
+  const [notes, setNotes] = useState(item.notes ?? '');
+  const [isEditingItem, setIsEditingItem] = useState(false);
+  const [isAddingProof, setIsAddingProof] = useState(false);
+  const [proofComposerTab, setProofComposerTab] = useState<'link' | 'note' | 'file'>('link');
+  const [linkTitle, setLinkTitle] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkDescription, setLinkDescription] = useState('');
+  const [noteTitle, setNoteTitle] = useState('');
+  const [noteDescription, setNoteDescription] = useState('');
+  const saveKey = `${control.internalControlId}:${item.itemId}:save`;
+  const linkKey = `${control.internalControlId}:${item.itemId}:link`;
+  const noteKey = `${control.internalControlId}:${item.itemId}:note`;
+  const fileKey = `${control.internalControlId}:${item.itemId}:file`;
+  useEffect(() => {
+    setStatus(item.status);
+    setOwner(item.owner ?? '');
+    setNotes(item.notes ?? '');
+  }, [item.notes, item.owner, item.status]);
+
+  return (
+    <AccordionItem value={item.itemId} className="border-b last:border-b-0">
+      <AccordionTrigger className="px-4 py-3 text-left focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-border/70 data-[state=open]:bg-muted/20">
+        <div className="flex flex-1 flex-wrap items-center gap-2 pr-4">
+          <span className="text-sm font-medium">{item.label}</span>
+          {!item.required ? <Badge variant="outline">Optional</Badge> : null}
+          <Badge variant={getChecklistStatusBadgeVariant(item.status)}>
+            {formatChecklistStatus(item.status)}
+          </Badge>
+        </div>
+      </AccordionTrigger>
+      <AccordionContent className="space-y-4 px-4 pb-4">
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">{item.description}</p>
+          <div className="grid gap-3 text-sm md:grid-cols-2">
+            <div className="space-y-1">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Verification method
+              </p>
+              <p className="text-foreground">{item.verificationMethod}</p>
+            </div>
+            {(item.owner ?? owner).trim().length > 0 ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Owner
+                </p>
+                <p className="text-foreground">{item.owner ?? owner}</p>
+              </div>
+            ) : null}
+            {(item.notes ?? notes).trim().length > 0 ? (
+              <div className="space-y-1 md:col-span-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Notes
+                </p>
+                <p className="text-muted-foreground">{item.notes ?? notes}</p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsEditingItem(true)}
+            >
+              Edit checklist item
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIsAddingProof(true)}
+            >
+              Add evidence
+            </Button>
+          </div>
+        </div>
+
+        <div className="space-y-3 rounded-md border p-3">
+          <p className="text-sm font-medium">Evidence</p>
+          {item.evidence.length ? (
+            <div className="space-y-2">
+              {item.evidence.map((evidence) => (
+                <div
+                  key={evidence.id}
+                  className="flex flex-wrap items-start justify-between gap-3 rounded-md border px-3 py-2"
+                >
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-medium">{evidence.title}</p>
+                      <Badge variant="outline">{formatEvidenceType(evidence.evidenceType)}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {evidence.description ?? 'No additional description provided.'}
+                    </p>
+                    {evidence.url ? (
+                      <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {evidence.evidenceType !== 'note' ? (
+                      <Button type="button" variant="outline" onClick={() => void props.onOpenEvidence(evidence)}>
+                        Open
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={props.busyAction === `${evidence.id}:remove`}
+                      onClick={() => {
+                        void props.onRemoveEvidence({
+                          evidenceId: evidence.id,
+                          internalControlId: control.internalControlId,
+                          itemId: item.itemId,
+                        });
+                      }}
+                    >
+                      Remove
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground">No evidence attached yet.</p>
+          )}
+        </div>
+      </AccordionContent>
+
+      <Dialog open={isEditingItem} onOpenChange={setIsEditingItem}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit checklist item</DialogTitle>
+            <DialogDescription>{item.label}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Status
+                </label>
+                <Select
+                  value={status}
+                  onValueChange={(value: SecurityChecklistItem['status']) => {
+                    setStatus(value);
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_started">Not started</SelectItem>
+                    <SelectItem value="in_progress">In progress</SelectItem>
+                    <SelectItem value="done">Completed</SelectItem>
+                    <SelectItem value="not_applicable">Not applicable</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Owner
+                </label>
+                <Input
+                  value={owner}
+                  onChange={(event) => setOwner(event.target.value)}
+                  placeholder="Assign owner"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Notes
+              </label>
+              <Textarea
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+                placeholder="Operational notes or verification details"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setStatus(item.status);
+                setOwner(item.owner ?? '');
+                setNotes(item.notes ?? '');
+                setIsEditingItem(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={props.busyAction === saveKey}
+              onClick={() => {
+                void props.onChecklistItemUpdate({
+                  internalControlId: control.internalControlId,
+                  itemId: item.itemId,
+                  notes,
+                  owner,
+                  status,
+                }).then(() => {
+                  setIsEditingItem(false);
+                });
+              }}
+            >
+              {props.busyAction === saveKey ? 'Saving…' : 'Save checklist item'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAddingProof} onOpenChange={setIsAddingProof}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add evidence</DialogTitle>
+            <DialogDescription>
+              {item.label}. Suggested evidence: {item.suggestedEvidenceTypes.join(', ')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Tabs
+              value={proofComposerTab}
+              onValueChange={(value) => setProofComposerTab(value as 'link' | 'note' | 'file')}
+              className="space-y-3"
+            >
+              <TabsList className="w-full justify-start overflow-auto">
+                <TabsTrigger value="link">Link</TabsTrigger>
+                <TabsTrigger value="note">Note</TabsTrigger>
+                <TabsTrigger value="file">File</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="link" className="space-y-2">
+                <Input
+                  value={linkTitle}
+                  onChange={(event) => setLinkTitle(event.target.value)}
+                  placeholder="Link title"
+                />
+                <Input
+                  value={linkUrl}
+                  onChange={(event) => setLinkUrl(event.target.value)}
+                  placeholder="https://…"
+                />
+                <Textarea
+                  value={linkDescription}
+                  onChange={(event) => setLinkDescription(event.target.value)}
+                  placeholder="What this evidence shows"
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      props.busyAction === linkKey ||
+                      linkTitle.trim().length === 0 ||
+                      linkUrl.trim().length === 0
+                    }
+                    onClick={() => {
+                      void props.onAddEvidenceLink({
+                        internalControlId: control.internalControlId,
+                        itemId: item.itemId,
+                        title: linkTitle,
+                        url: linkUrl,
+                        description: linkDescription,
+                        sufficiency: 'sufficient',
+                      }).then(() => {
+                        setLinkTitle('');
+                        setLinkUrl('');
+                        setLinkDescription('');
+                        setIsAddingProof(false);
+                      });
+                    }}
+                  >
+                    {props.busyAction === linkKey ? 'Attaching…' : 'Attach link'}
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+
+              <TabsContent value="note" className="space-y-2">
+                <Input
+                  value={noteTitle}
+                  onChange={(event) => setNoteTitle(event.target.value)}
+                  placeholder="Note title"
+                />
+                <Textarea
+                  value={noteDescription}
+                  onChange={(event) => setNoteDescription(event.target.value)}
+                  placeholder="Paste reviewer note or summary"
+                />
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      props.busyAction === noteKey ||
+                      noteTitle.trim().length === 0 ||
+                      noteDescription.trim().length === 0
+                    }
+                    onClick={() => {
+                      void props.onAddEvidenceNote({
+                        internalControlId: control.internalControlId,
+                        itemId: item.itemId,
+                        title: noteTitle,
+                        description: noteDescription,
+                        sufficiency: 'sufficient',
+                      }).then(() => {
+                        setNoteTitle('');
+                        setNoteDescription('');
+                        setIsAddingProof(false);
+                      });
+                    }}
+                  >
+                    {props.busyAction === noteKey ? 'Saving…' : 'Attach note'}
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+
+              <TabsContent value="file" className="space-y-2">
+                <Input
+                  type="file"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) {
+                      return;
+                    }
+                    void props.onUploadEvidenceFile({
+                      file,
+                      internalControlId: control.internalControlId,
+                      itemId: item.itemId,
+                      title: file.name,
+                      sufficiency: 'sufficient',
+                    }).finally(() => {
+                      event.target.value = '';
+                      setIsAddingProof(false);
+                    });
+                  }}
+                />
+                {props.busyAction === fileKey ? (
+                  <p className="text-xs text-muted-foreground">Uploading evidence file…</p>
+                ) : null}
+                <DialogFooter>
+                  <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
+                    Close
+                  </Button>
+                </DialogFooter>
+              </TabsContent>
+            </Tabs>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </AccordionItem>
   );
 }
 
@@ -1174,27 +1977,8 @@ function FrameworkAccordionItem(props: { title: string; value: string; values: s
   );
 }
 
-function formatControlCoverage(coverage: ControlCoverage) {
-  return getControlCoverageDisplayLabel(coverage);
-}
-
 function formatControlResponsibility(responsibility: ControlResponsibility | null) {
   return getControlResponsibilityDisplayLabel(responsibility);
-}
-
-function getCoverageBadgeVariant(
-  coverage: ControlCoverage,
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (coverage) {
-    case 'covered':
-      return 'default';
-    case 'partial':
-      return 'outline';
-    case 'not-covered':
-      return 'destructive';
-    case 'not-applicable':
-      return 'secondary';
-  }
 }
 
 function getResponsibilityBadgeVariant(
@@ -1205,10 +1989,88 @@ function getResponsibilityBadgeVariant(
       return 'default';
     case 'shared-responsibility':
       return 'secondary';
-    case 'operator-owned':
+    case 'customer':
       return 'destructive';
     case null:
       return 'outline';
+  }
+}
+
+function getEvidenceReadinessBadgeVariant(
+  readiness: SecurityControlWorkspace['evidenceReadiness'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (readiness) {
+    case 'ready':
+      return 'default';
+    case 'partial':
+      return 'outline';
+    case 'missing':
+      return 'destructive';
+  }
+}
+
+function getChecklistStatusBadgeVariant(
+  status: SecurityChecklistItem['status'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'done':
+      return 'default';
+    case 'in_progress':
+      return 'outline';
+    case 'not_started':
+      return 'secondary';
+    case 'not_applicable':
+      return 'destructive';
+  }
+}
+
+function formatEvidenceReadiness(readiness: SecurityControlWorkspace['evidenceReadiness']) {
+  switch (readiness) {
+    case 'ready':
+      return 'Complete';
+    case 'partial':
+      return 'Partial';
+    case 'missing':
+      return 'Missing';
+  }
+}
+
+function getEvidenceProgress(control: SecurityControlWorkspace) {
+  const requiredItems = control.platformChecklist.filter((item) => item.required);
+  const completeItems = requiredItems.filter(
+    (item) => item.evidenceSufficiency === 'sufficient',
+  );
+
+  return {
+    completeCount: completeItems.length,
+    label: `${completeItems.length}/${requiredItems.length}`,
+    requiredCount: requiredItems.length,
+  };
+}
+
+function formatChecklistStatus(status: SecurityChecklistItem['status']) {
+  switch (status) {
+    case 'done':
+      return 'Completed';
+    case 'in_progress':
+      return 'In progress';
+    case 'not_started':
+      return 'Not started';
+    case 'not_applicable':
+      return 'Not applicable';
+  }
+}
+
+function formatEvidenceType(type: SecurityChecklistEvidence['evidenceType']) {
+  switch (type) {
+    case 'file':
+      return 'File';
+    case 'link':
+      return 'Link';
+    case 'note':
+      return 'Note';
+    case 'system_snapshot':
+      return 'System snapshot';
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-17T21:47:08.888Z",
+  "generatedAt": "2026-03-17T23:38:10.227Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -16,14 +16,77 @@
       "familyId": "AC",
       "familyTitle": "Access Control",
       "coverage": "covered",
-      "implementationSummary": "The platform supports role-based account boundaries, admin-managed access changes, and audit visibility into membership changes. Workforce onboarding, offboarding, and periodic access review remain operator responsibilities.",
+      "implementationSummary": "This control ensures accounts are authorized, role assignments are governed, and account changes remain reviewable across the account lifecycle. The platform supports that objective through role-based account boundaries, admin-managed access changes, and auditable membership events in the hosted service.",
       "controlStatement": "Define and document the types of accounts allowed and specifically prohibited for use within the system; Assign account managers; Require {{ insert: param, ac-02_odp.01 }} for group and role membership; Specify: Authorized users of the system; Group and role membership; and Access authorizations (i.e., privileges) and {{ insert: param, ac-02_odp.02 }} for each account; Require approvals by {{ insert: param, ac-02_odp.03 }} for requests to create accounts; Create, enable, modify, disable, and remove accounts in accordance with {{ insert: param, ac-02_odp.04 }}; Monitor the use of accounts; Notify account managers and {{ insert: param, ac-02_odp.05 }} within: {{ insert: param, ac-02_odp.06 }} when accounts are no longer required; {{ insert: param, ac-02_odp.07 }} when users are terminated or transferred; and {{ insert: param, ac-02_odp.08 }} when system usage or need-to-know changes for an individual; Authorize access to the system based on: A valid access authorization; Intended system usage; and {{ insert: param, ac-02_odp.09 }}; Review accounts for compliance with account management requirements {{ insert: param, ac-02_odp.10 }}; Establish and implement a process for changing shared or group account authenticators (if deployed) when individuals are removed from the group; and Align account management processes with personnel termination and transfer processes.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "rbac-boundaries",
+          "label": "Role boundaries are enforced",
+          "description": "Account roles and tenant boundaries must prevent unauthorized cross-account access.",
+          "verificationMethod": "Authorization test coverage and admin workflow inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Identity and Access Management",
+            "notes": "Member role changes validate organization membership and require site-admin write access before mutation.",
+            "evidence": [
+              {
+                "title": "Site-admin member role mutation guard",
+                "description": "convex/auth.ts enforces assertSiteAdminWriteAccess before member role updates.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "membership-audit",
+          "label": "Membership changes are auditable",
+          "description": "Administrative membership changes must emit reviewable audit records.",
+          "verificationMethod": "Audit event review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Identity and Access Management",
+            "notes": "Membership lifecycle events are emitted as audit events and reviewable through organization audit history.",
+            "evidence": [
+              {
+                "title": "Organization membership audit events",
+                "description": "src/lib/shared/auth-audit.ts defines member_added, member_removed, and member_role_updated event types.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Organization audit review surface",
+                "description": "src/features/organizations/components/OrganizationAuditPage.tsx exposes membership-related audit history to organization owners, admins, and site admins.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Identity and Access Management",
       "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "reviewed",
+        "notes": "Reviewed against member-role mutation guards and organization audit event definitions."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The template enforces account boundaries and admin workflows, but your organization still owns workforce onboarding, termination, and periodic access review.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for workforce onboarding, termination, role assignment approval, and periodic access review.",
       "mappings": {
         "hipaa": [
           {
@@ -107,7 +170,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Supporting evidence exists for platform account boundaries and audit visibility, but workforce onboarding, offboarding, and periodic access review remain external responsibilities and have not been verified here.",
+        "assessmentNote": "This register substantiates platform account boundaries, access-change workflows, and audit visibility. Customer evidence is still required for workforce onboarding, offboarding, and periodic access review.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -124,14 +187,70 @@
       "familyId": "AC",
       "familyTitle": "Access Control",
       "coverage": "covered",
-      "implementationSummary": "The platform enforces route- and server-side authorization checks for protected application actions and data access.",
-      "controlStatement": "Access Enforcement is tracked as an active control in the starter register.",
+      "implementationSummary": "This control ensures users and processes can perform only the actions and data access they are authorized to use. The platform addresses that objective through route-level and server-side authorization checks for protected application flows and sensitive operations.",
+      "controlStatement": "Access Enforcement is tracked as an active control in the platform register.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "route-guards",
+          "label": "Protected routes are guarded",
+          "description": "Protected pages must require authorized access before rendering sensitive content.",
+          "verificationMethod": "Route guard review and route-level test coverage",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Application Authorization",
+            "notes": "Protected routes are guarded through shared auth and admin guard utilities.",
+            "evidence": [
+              {
+                "title": "Shared route guards",
+                "description": "src/features/auth/server/route-guards.ts and auth-guards.ts provide requireAuth and requireAdmin guard paths used across protected flows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "server-authorization",
+          "label": "Server authorization checks enforce access",
+          "description": "Server-side actions and data access must enforce role-appropriate authorization.",
+          "verificationMethod": "Server function inspection and automated tests",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Application Authorization",
+            "notes": "Server-side access checks rely on requireAuth and requireAdmin before sensitive actions.",
+            "evidence": [
+              {
+                "title": "Server auth guard enforcement",
+                "description": "src/features/auth/server/auth-guards.ts implements requireAuth and requireAdmin for protected server operations.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Application Authorization",
       "responsibility": "platform",
+      "seedReview": {
+        "status": "reviewed",
+        "notes": "Reviewed against shared route guards and server auth guard enforcement."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "Platform guards and server-side authorization are built in. Each deployment still needs correct role assignment and least-privilege policy choices.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for defining roles, approving privileged access, and maintaining least-privilege assignments within the service.",
       "mappings": {
         "hipaa": [
           {
@@ -196,7 +315,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Built-in route guards, server authorization checks, and test coverage provide direct support for this control in the template.",
+        "assessmentNote": "Built-in route guards, server authorization checks, and test coverage provide direct support for this platform control.",
         "latestEvidenceStatus": "pass",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -213,14 +332,77 @@
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
       "coverage": "covered",
-      "implementationSummary": "The platform records security-relevant audit events and exposes them for review and export.",
+      "implementationSummary": "This control ensures security-relevant events are identified, recorded, and available for oversight. The platform addresses that objective by capturing audit events for authentication, administrative, and security-significant activity and exposing those records for review and export.",
       "controlStatement": "Identify the types of events that the system is capable of logging in support of the audit function: {{ insert: param, au-02_odp.01 }}; Coordinate the event logging function with other organizational entities requiring audit-related information to guide and inform the selection criteria for events to be logged; Specify the following event types for logging within the system: {{ insert: param, au-2_prm_2 }}; Provide a rationale for why the event types selected for logging are deemed to be adequate to support after-the-fact investigations of incidents; and Review and update the event types selected for logging {{ insert: param, au-02_odp.04 }}.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "audit-event-capture",
+          "label": "Security-relevant events are captured",
+          "description": "Authentication, administrative, and security-significant events must be recorded.",
+          "verificationMethod": "Audit log inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Audit event types cover authentication, organization, attachment, and evidence-report activity.",
+            "evidence": [
+              {
+                "title": "Audit event inventory",
+                "description": "src/lib/shared/auth-audit.ts defines a broad set of security-relevant audit event types.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "audit-export",
+          "label": "Audit records can be reviewed and exported",
+          "description": "Authorized reviewers must be able to inspect and export audit evidence.",
+          "verificationMethod": "Admin workflow walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "The platform exposes audit review and evidence export surfaces for security review.",
+            "evidence": [
+              {
+                "title": "Organization audit review UI",
+                "description": "src/features/organizations/components/OrganizationAuditPage.tsx provides audit history review and export flows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Security evidence export workflow",
+                "description": "src/routes/app/admin/security.tsx and convex/security.ts provide evidence report generation and export flows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Audit and Logging",
       "responsibility": "platform",
+      "seedReview": {
+        "status": "reviewed",
+        "notes": "Reviewed against audit event coverage and audit/evidence export surfaces."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The starter records security-relevant events, but each deployment must decide retention, alerting, and external log shipping.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for reviewing exported audit records and aligning retention or downstream log handling with their own policies when those records leave the platform.",
       "mappings": {
         "hipaa": [
           {
@@ -264,7 +446,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "The template records and exposes security-relevant audit events, and the listed evidence sources directly support that behavior.",
+        "assessmentNote": "The platform records and exposes security-relevant audit events, and the listed evidence sources directly support that behavior.",
         "latestEvidenceStatus": "pass",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -275,20 +457,221 @@
       }
     },
     {
+      "internalControlId": "CTRL-RA-005",
+      "nist80053Id": "RA-5",
+      "title": "Vulnerability Monitoring and Scanning",
+      "familyId": "RA",
+      "familyTitle": "Risk Assessment",
+      "coverage": "covered",
+      "implementationSummary": "This control ensures vulnerabilities affecting the hosted service are identified, assessed, remediated, or formally risk-accepted. The platform security program addresses that objective through vulnerability discovery, triage, remediation tracking, and risk treatment for the hosted service environment.",
+      "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "scanner-program",
+          "label": "Vulnerability scanning is performed",
+          "description": "The hosted service security program must perform vulnerability discovery activities.",
+          "verificationMethod": "Scanner evidence review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "system"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Security Engineering",
+            "notes": "The platform has malware/document scanning telemetry, but that is not full hosted-service vulnerability management evidence.",
+            "evidence": [
+              {
+                "title": "Document scanning telemetry",
+                "description": "convex/security.ts reports documentScanEvents summary for file inspection, which is related security telemetry but not full vulnerability management coverage.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "remediation-tracking",
+          "label": "Remediation and risk treatment are tracked",
+          "description": "The platform must retain remediation tracking or risk acceptance artifacts.",
+          "verificationMethod": "Issue or risk tracking review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Engineering",
+            "notes": "No remediation-tracking or risk-acceptance artifact is attached from the codebase.",
+            "evidence": []
+          }
+        }
+      ],
+      "owner": "Security Engineering",
+      "responsibility": "platform",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Related security telemetry exists, but repo-backed evidence is not sufficient to mark full vulnerability-management coverage complete."
+      },
+      "reviewStatus": "pending",
+      "lastReviewedAt": null,
+      "customerResponsibilityNotes": "Customer organizations are responsible for addressing vulnerabilities in their own endpoints, identity stores, integrations, and operational environments connected to the service.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(A)",
+            "title": "Risk analysis",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
+            "title": "Risk management",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.308(a)(1)(ii)(A)",
+            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.308(a)(1)(ii)(B)",
+            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "GV.SC-10",
+            "label": "GV / GV.SC: Cybersecurity supply chain risk management plans include provisions for activities that occur after the conclusion of a partnership or service agreement"
+          },
+          {
+            "subcategoryId": "ID.RA-01",
+            "label": "ID / ID.RA: Vulnerabilities in assets are identified, validated, and recorded"
+          },
+          {
+            "subcategoryId": "ID.RA-08",
+            "label": "ID / ID.RA: Processes for receiving, analyzing, and responding to vulnerability disclosures are established"
+          },
+          {
+            "subcategoryId": "ID.IM-01",
+            "label": "ID / ID.IM: Improvements are identified from evaluations"
+          },
+          {
+            "subcategoryId": "ID.IM-02",
+            "label": "ID / ID.IM: Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties"
+          },
+          {
+            "subcategoryId": "ID.IM-03",
+            "label": "ID / ID.IM: Improvements are identified from execution of operational processes, procedures, and activities"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC7.1",
+            "group": "common-criteria",
+            "label": "To meet its objectives, the entity uses detection and monitoring procedures to identify (1) changes to configurations that result in the introduction of new vulnerabilities, and (2) susceptibilities to newly discovered vulnerabilities.",
+            "trustServiceCategory": "security"
+          },
+          {
+            "criterionId": "CC7.2",
+            "group": "common-criteria",
+            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      },
+      "evidence": {
+        "assessmentNote": "This register identifies expected vulnerability-management evidence for the hosted service, but current attachments do not yet fully demonstrate scanning cadence and remediation closure.",
+        "latestEvidenceStatus": "warning",
+        "evidenceCount": 2,
+        "evidenceSources": [
+          "Scanner Integrations",
+          "Dependency Audit Results",
+          "Risk Review Notes"
+        ]
+      }
+    },
+    {
       "internalControlId": "CTRL-SC-028",
       "nist80053Id": "SC-28",
       "title": "Protection of Information at Rest",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
       "coverage": "covered",
-      "implementationSummary": "The platform includes data handling and retention controls, while encryption-at-rest and key management depend on infrastructure configuration.",
-      "controlStatement": "Protection of Information at Rest is tracked as an active control in the starter register.",
+      "implementationSummary": "This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through hosted storage protections, data-handling controls, and retention behavior for data managed within the service boundary.",
+      "controlStatement": "Protection of Information at Rest is tracked as an active control in the platform register.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "storage-protection",
+          "label": "Hosted storage protections are configured",
+          "description": "Data at rest protections must be configured for hosted storage within the service boundary.",
+          "verificationMethod": "Storage configuration review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "system"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Data Protection",
+            "notes": "Hosted storage protections are part of the design, but repo-backed proof for encryption-at-rest and key management is not attached yet.",
+            "evidence": [
+              {
+                "title": "Hosted storage lifecycle tracking",
+                "description": "convex/storagePlatform.ts and convex/schema.ts show managed storage lifecycle handling inside the service boundary.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "retention-controls",
+          "label": "Retention behavior is implemented",
+          "description": "Retention jobs or controls must enforce data handling expectations.",
+          "verificationMethod": "Retention job review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Data Protection",
+            "notes": "Retention jobs are tracked and surfaced in the security posture summary.",
+            "evidence": [
+              {
+                "title": "Retention job tracking",
+                "description": "convex/security.ts reports retention job status and convex/schema.ts defines retentionJobs.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Data Protection",
-      "responsibility": "shared-responsibility",
+      "responsibility": "platform",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Retention behavior is evidenced, but hosted encryption-at-rest and key-management proof still needs to be attached."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The template includes retention and file-handling controls, but encryption at rest and key-management settings are infrastructure choices.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for governing exported data, retention obligations they impose on platform use, and any external storage or integrations they control.",
       "mappings": {
         "hipaa": [
           {
@@ -327,7 +710,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "The template covers data handling and retention behaviors, but encryption-at-rest and key-management proof depend on infrastructure evidence outside the app.",
+        "assessmentNote": "This register substantiates platform data-handling and retention behaviors. Additional hosted infrastructure evidence may still be required for encryption-at-rest configuration and key-management verification.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -344,14 +727,88 @@
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
       "coverage": "covered",
-      "implementationSummary": "The platform assumes secure transport and exposes transport-sensitive settings, but TLS termination and edge network configuration remain your organization’s concerns.",
-      "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the starter register.",
+      "implementationSummary": "This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective by providing secure transport for hosted traffic and enforcing transport-sensitive application behavior.",
+      "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the platform register.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "tls-enabled",
+          "label": "TLS is enabled for hosted endpoints",
+          "description": "Production traffic to hosted endpoints must use secure transport.",
+          "verificationMethod": "HTTPS endpoint verification",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "in_progress",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "The hosted app is designed for HTTPS operation, but no explicit repo-backed production certificate artifact is attached here.",
+            "evidence": [
+              {
+                "title": "Secure transport implementation summary",
+                "description": "convex/security.ts surfaces secure-session posture, but production TLS termination proof is still infrastructure-specific.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "session-transport",
+          "label": "Secure session transport settings are enforced",
+          "description": "Session and temporary-link transport settings must align with secure transport expectations.",
+          "verificationMethod": "Session configuration review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "Short-lived verification windows and temporary-link TTLs are surfaced in the security posture summary.",
+            "evidence": [
+              {
+                "title": "Session transport configuration",
+                "description": "convex/security.ts reports sessionExpiryHours, recentStepUpWindowMinutes, and temporaryLinkTtlMinutes.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "certificate-operations",
+          "label": "Certificate and edge operations are documented",
+          "description": "The hosted platform must retain evidence for certificate lifecycle management and edge enforcement.",
+          "verificationMethod": "Infrastructure evidence review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "Certificate lifecycle management and edge enforcement artifacts are not stored in the repo-backed control workspace yet.",
+            "evidence": []
+          }
+        }
+      ],
       "owner": "Infrastructure and Platform Security",
-      "responsibility": "shared-responsibility",
+      "responsibility": "platform",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Application-side secure-session settings are evidenced, but hosted certificate and edge-operation proof still needs attachment."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The app assumes secure transport, but TLS termination, certificate management, and network edge configuration remain your organization’s responsibilities.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for requiring secure access to the service within their own networks, browsers, devices, and downstream integrations.",
       "mappings": {
         "hipaa": [
           {
@@ -395,7 +852,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Transport-related settings are identified, but TLS termination, certificate management, and edge enforcement remain external responsibilities for your organization.",
+        "assessmentNote": "This register substantiates platform transport-sensitive settings and secure-session behavior. Additional infrastructure evidence may still be required to verify certificate lifecycle management and edge enforcement operated for the hosted service.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -406,92 +863,89 @@
       }
     },
     {
-      "internalControlId": "CTRL-IA-002",
-      "nist80053Id": "IA-2",
-      "title": "Identification and Authentication (Organizational Users)",
-      "familyId": "IA",
-      "familyTitle": "Identification and Authentication",
-      "coverage": "partial",
-      "implementationSummary": "The platform includes authenticated access flows, verified-email checks, and MFA/passkey support for user accounts.",
-      "controlStatement": "Identification and Authentication (Organizational Users) is tracked as an active control in the starter register.",
-      "priority": "p0",
-      "owner": "Authentication",
-      "responsibility": "shared-responsibility",
-      "reviewStatus": "pending",
-      "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "Authentication scaffolding is built in, but production identity proofing, MFA policy, and account lifecycle decisions remain with your organization.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.312(a)(2)(i)",
-            "title": "Unique user identification",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.312(d)",
-            "title": "Person or entity authentication",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.312(a)(2)(i)",
-            "label": "Assign a unique name and/or number for identifying and tracking user identity.",
-            "mappingType": "relationship"
-          },
-          {
-            "referenceId": "164.312(d)",
-            "label": "HIPAA Standard: Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "PR.AA-01",
-            "label": "PR / PR.AA: Identities and credentials for authorized users, services, and hardware are managed by the organization"
-          },
-          {
-            "subcategoryId": "PR.AA-03",
-            "label": "PR / PR.AA: Users, services, and hardware are authenticated"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC6.1",
-            "group": "common-criteria",
-            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
-            "trustServiceCategory": "security"
-          }
-        ]
-      },
-      "evidence": {
-        "assessmentNote": "Authentication and MFA-related evidence exists, but production identity proofing, MFA enforcement policy, and account lifecycle decisions remain partly with your organization.",
-        "latestEvidenceStatus": "warning",
-        "evidenceCount": 3,
-        "evidenceSources": [
-          "Better Auth Users",
-          "MFA Coverage Summary",
-          "Passkey Enrollment"
-        ]
-      }
-    },
-    {
       "internalControlId": "CTRL-CP-009",
       "nist80053Id": "CP-9",
       "title": "System Backup",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "coverage": "not-covered",
-      "implementationSummary": "The platform can record backup verification results, but the backup process, restore testing, and recovery operations are external to the app.",
+      "coverage": "partial",
+      "implementationSummary": "This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. For the hosted service, that means provider-operated backup and restore capability for the production environment; this workspace currently evidences backup-verification recordkeeping, but provider-operated backup configuration and restore-test evidence are not yet fully attached here.",
       "controlStatement": "Conduct backups of user-level information contained in {{ insert: param, cp-09_odp.01 }} {{ insert: param, cp-09_odp.02 }}; Conduct backups of system-level information contained in the system {{ insert: param, cp-09_odp.03 }}; Conduct backups of system documentation, including security- and privacy-related documentation {{ insert: param, cp-09_odp.04 }} ; and Protect the confidentiality, integrity, and availability of backup information.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "hosted-backups-configured",
+          "label": "Hosted service backups are configured",
+          "description": "Provider-operated backups for production service data and essential system information should be defined and enabled.",
+          "verificationMethod": "Infrastructure backup configuration review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file",
+            "link"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Infrastructure Operations",
+            "notes": "The control register does not yet include provider backup configuration evidence for the hosted production environment.",
+            "evidence": []
+          }
+        },
+        {
+          "itemId": "backup-verification-records-maintained",
+          "label": "Backup verification records are maintained",
+          "description": "The platform should retain verification outcomes or supporting records for completed backup checks and recovery validation.",
+          "verificationMethod": "Backup verification workflow review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure Operations",
+            "notes": "The platform includes a backup verification report table and internal mutation for recording backup verification outcomes.",
+            "evidence": [
+              {
+                "title": "Backup verification storage",
+                "description": "convex/schema.ts defines backupVerificationReports and convex/security.ts exposes recordBackupVerification.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "restore-testing-recorded",
+          "label": "Restore testing is performed and recorded",
+          "description": "Provider-operated restore tests and recovery validation results should be documented for the hosted service.",
+          "verificationMethod": "Restore test record review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Infrastructure Operations",
+            "notes": "The control workspace does not yet contain restore test results or recovery exercise records for the hosted production environment.",
+            "evidence": []
+          }
+        }
+      ],
       "owner": "Infrastructure Operations",
-      "responsibility": "operator-owned",
+      "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Provider-operated backup and restore evidence is still needed before this hosted SaaS control can be presented as fully substantiated."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The app can record backup verification outcomes, but the actual backup strategy and restore testing remain your organization’s responsibilities.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for determining whether the hosted service backup and recovery posture satisfies their retention, recovery-time, and business continuity requirements, and for protecting any data they export or replicate outside the service.",
       "mappings": {
         "hipaa": [
           {
@@ -559,11 +1013,164 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Backup verification is expected to come from deployment infrastructure, and no completed backup or restore evidence is attached in this register.",
-        "latestEvidenceStatus": "missing",
+        "assessmentNote": "This register currently substantiates the platform workflow for recording backup-verification outcomes. Additional provider evidence is still required to demonstrate backup configuration, retention, and restore testing for the hosted service.",
+        "latestEvidenceStatus": "warning",
         "evidenceCount": 1,
         "evidenceSources": [
           "Backup Verification Reports"
+        ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-IA-002",
+      "nist80053Id": "IA-2",
+      "title": "Identification and Authentication (Organizational Users)",
+      "familyId": "IA",
+      "familyTitle": "Identification and Authentication",
+      "coverage": "partial",
+      "implementationSummary": "This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email checks, and MFA or passkey capability, but this register does not yet fully evidence provider-enforced production authentication policy.",
+      "controlStatement": "Identification and Authentication (Organizational Users) is tracked as an active control in the platform register.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "authenticated-access",
+          "label": "Authenticated access is required",
+          "description": "The platform must require authenticated access for protected user areas.",
+          "verificationMethod": "Authentication flow walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Protected application use depends on authenticated access flows.",
+            "evidence": [
+              {
+                "title": "Shared authenticated route enforcement",
+                "description": "src/features/auth/server/auth-guards.ts and route-guards.ts gate authenticated application access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "verified-email",
+          "label": "Verified email checks are enforced",
+          "description": "Production authentication flows must enforce verified-email expectations where required.",
+          "verificationMethod": "Policy inspection and auth configuration review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Verified email is part of the regulated baseline and surfaced in the security posture summary.",
+            "evidence": [
+              {
+                "title": "Verified email baseline",
+                "description": "convex/security.ts reports emailVerificationRequired from ALWAYS_ON_REGULATED_BASELINE.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "mfa-capability",
+          "label": "MFA and passkeys are supported",
+          "description": "The platform must support stronger authenticators for eligible accounts.",
+          "verificationMethod": "MFA coverage summary review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Passkeys and MFA coverage are exposed in the security posture summary and Better Auth integration.",
+            "evidence": [
+              {
+                "title": "MFA coverage summary",
+                "description": "convex/security.ts calculates MFA and passkey coverage from Better Auth users and passkeys.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Authentication",
+      "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "reviewed",
+        "notes": "Reviewed against authenticated route enforcement, verified-email baseline, and MFA/passkey coverage reporting."
+      },
+      "reviewStatus": "pending",
+      "lastReviewedAt": null,
+      "customerResponsibilityNotes": "Customer organizations are responsible for identity proofing, MFA policy decisions, user enrollment expectations, and account lifecycle governance.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.312(a)(2)(i)",
+            "title": "Unique user identification",
+            "type": "implementation_specification",
+            "implementationSpecification": "required"
+          },
+          {
+            "citation": "45 CFR 164.312(d)",
+            "title": "Person or entity authentication",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.312(a)(2)(i)",
+            "label": "Assign a unique name and/or number for identifying and tracking user identity.",
+            "mappingType": "relationship"
+          },
+          {
+            "referenceId": "164.312(d)",
+            "label": "HIPAA Standard: Implement procedures to verify that a person or entity seeking access to electronic protected health information is the one claimed.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.AA-01",
+            "label": "PR / PR.AA: Identities and credentials for authorized users, services, and hardware are managed by the organization"
+          },
+          {
+            "subcategoryId": "PR.AA-03",
+            "label": "PR / PR.AA: Users, services, and hardware are authenticated"
+          }
+        ],
+        "soc2": [
+          {
+            "criterionId": "CC6.1",
+            "group": "common-criteria",
+            "label": "The entity implements logical access security software, infrastructure, and architectures over protected information assets to protect them from security events to meet the entity's objectives.",
+            "trustServiceCategory": "security"
+          }
+        ]
+      },
+      "evidence": {
+        "assessmentNote": "This register substantiates platform authentication flows and MFA capabilities, but it does not yet fully demonstrate provider-side enforcement expectations for production authentication policy. Customer evidence is still required for identity proofing, MFA enforcement policy, and account lifecycle governance.",
+        "latestEvidenceStatus": "warning",
+        "evidenceCount": 3,
+        "evidenceSources": [
+          "Better Auth Users",
+          "MFA Coverage Summary",
+          "Passkey Enrollment"
         ]
       }
     },
@@ -574,14 +1181,45 @@
       "familyId": "IR",
       "familyTitle": "Incident Response",
       "coverage": "not-covered",
-      "implementationSummary": "The platform provides audit trails and evidence outputs that can support incident response, but response execution remains an operational responsibility.",
+      "implementationSummary": "This control ensures security incidents can be handled through defined response, investigation, and follow-up procedures. The platform supports that objective by providing audit trails and evidence outputs that can assist incident investigation and post-incident analysis, while substantive incident response procedures remain customer-operated in this model.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
       "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "incident-evidence-export",
+          "label": "Incident-supporting evidence can be exported",
+          "description": "The platform should expose audit trails and evidence exports that support investigations.",
+          "verificationMethod": "Evidence export walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Incident Response",
+            "notes": "Audit and evidence export flows can support incident investigations and post-incident analysis.",
+            "evidence": [
+              {
+                "title": "Evidence export support",
+                "description": "src/routes/app/admin/security.tsx and convex/security.ts support evidence report generation and export.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Security Incident Response",
-      "responsibility": "operator-owned",
+      "responsibility": "customer",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Platform evidence export support exists, but customer-side incident procedures remain outside platform scope."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The product emits evidence and audit trails, but incident response procedures, contacts, and post-incident handling remain with your organization.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for incident response procedures, internal escalation contacts, and customer-side post-incident handling.",
       "mappings": {
         "hipaa": [
           {
@@ -718,7 +1356,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "The control points to supporting incident materials, but no completed incident response evidence or exercised runbook review is recorded here.",
+        "assessmentNote": "This register substantiates supporting platform evidence, but it does not include completed incident response exercises, response records, or runbook reviews for customer-side procedures.",
         "latestEvidenceStatus": "missing",
         "evidenceCount": 2,
         "evidenceSources": [
@@ -729,114 +1367,76 @@
       }
     },
     {
-      "internalControlId": "CTRL-RA-005",
-      "nist80053Id": "RA-5",
-      "title": "Vulnerability Monitoring and Scanning",
-      "familyId": "RA",
-      "familyTitle": "Risk Assessment",
-      "coverage": "not-covered",
-      "implementationSummary": "The platform can surface security-related signals, but vulnerability scanning, triage, remediation, and risk acceptance are not automated by the template.",
-      "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
-      "priority": "p0",
-      "owner": "Security Engineering",
-      "responsibility": "operator-owned",
-      "reviewStatus": "pending",
-      "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The starter does not perform vulnerability management for you. Your organization needs scanning, triage, remediation, and documented risk treatment.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(A)",
-            "title": "Risk analysis",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          },
-          {
-            "citation": "45 CFR 164.308(a)(1)(ii)(B)",
-            "title": "Risk management",
-            "type": "implementation_specification",
-            "implementationSpecification": "required"
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.308(a)(1)(ii)(A)",
-            "label": "Conduct an accurate and thorough assessment of the potential risks and vulnerabilities to the confidentiality, integrity, and availability of ePHI held by the covered entity or business associate.",
-            "mappingType": "relationship"
-          },
-          {
-            "referenceId": "164.308(a)(1)(ii)(B)",
-            "label": "Implement security measures sufficient to reduce risks and vulnerabilities to a reasonable and appropriate level to comply with §164.306(a)",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "GV.SC-10",
-            "label": "GV / GV.SC: Cybersecurity supply chain risk management plans include provisions for activities that occur after the conclusion of a partnership or service agreement"
-          },
-          {
-            "subcategoryId": "ID.RA-01",
-            "label": "ID / ID.RA: Vulnerabilities in assets are identified, validated, and recorded"
-          },
-          {
-            "subcategoryId": "ID.RA-08",
-            "label": "ID / ID.RA: Processes for receiving, analyzing, and responding to vulnerability disclosures are established"
-          },
-          {
-            "subcategoryId": "ID.IM-01",
-            "label": "ID / ID.IM: Improvements are identified from evaluations"
-          },
-          {
-            "subcategoryId": "ID.IM-02",
-            "label": "ID / ID.IM: Improvements are identified from security tests and exercises, including those done in coordination with suppliers and relevant third parties"
-          },
-          {
-            "subcategoryId": "ID.IM-03",
-            "label": "ID / ID.IM: Improvements are identified from execution of operational processes, procedures, and activities"
-          }
-        ],
-        "soc2": [
-          {
-            "criterionId": "CC7.1",
-            "group": "common-criteria",
-            "label": "To meet its objectives, the entity uses detection and monitoring procedures to identify (1) changes to configurations that result in the introduction of new vulnerabilities, and (2) susceptibilities to newly discovered vulnerabilities.",
-            "trustServiceCategory": "security"
-          },
-          {
-            "criterionId": "CC7.2",
-            "group": "common-criteria",
-            "label": "The entity monitors system components and the operation of those components for anomalies that are indicative of malicious acts, natural disasters, and errors affecting the entity's ability to meet its objectives; anomalies are analyzed to determine whether they represent security events.",
-            "trustServiceCategory": "security"
-          }
-        ]
-      },
-      "evidence": {
-        "assessmentNote": "The expected vulnerability scanning and remediation evidence has not been attached, so this control remains unsupported in the current register.",
-        "latestEvidenceStatus": "missing",
-        "evidenceCount": 0,
-        "evidenceSources": [
-          "Scanner Integrations",
-          "Dependency Audit Results",
-          "Risk Review Notes"
-        ]
-      }
-    },
-    {
       "internalControlId": "CTRL-IA-005",
       "nist80053Id": "IA-5",
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
       "coverage": "covered",
-      "implementationSummary": "The platform supports stronger authenticators, reset auditing, and verification controls around account recovery flows.",
+      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through stronger authenticators, recovery-related auditing, and verification controls around account reset and recovery flows.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "strong-authenticators",
+          "label": "Strong authenticators are available",
+          "description": "The platform must support strong authenticators such as passkeys or MFA factors.",
+          "verificationMethod": "Authenticator capability review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Passkey support is integrated and exposed through profile management and Better Auth plugins.",
+            "evidence": [
+              {
+                "title": "Passkey support",
+                "description": "convex/betterAuth/sharedOptions.ts enables passkey support and profile UI exposes add/delete passkey flows.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "recovery-audit",
+          "label": "Recovery events are audited",
+          "description": "Password reset and recovery events must be logged for review.",
+          "verificationMethod": "Audit log inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Recovery-related audit events are defined for reset requests and completion events.",
+            "evidence": [
+              {
+                "title": "Password reset audit events",
+                "description": "src/lib/shared/auth-audit.ts includes password_reset_requested and password_reset_completed event types.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
       "owner": "Authentication",
       "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "reviewed",
+        "notes": "Reviewed against passkey capability and reset audit event coverage."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The template supports stronger authenticators and reset auditing, but your organization must choose allowed credential types and recovery workflows.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for defining allowed credential types, approving recovery workflows, and governing exceptions to standard authentication policy.",
       "mappings": {
         "hipaa": [
           {
@@ -908,7 +1508,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "The template supports stronger authenticators and recovery auditing, but credential policy choices and account recovery procedures are not fully evidenced here.",
+        "assessmentNote": "This register substantiates stronger authenticator support and recovery auditing provided by the platform. Customer procedures are still required for credential policy choices and account recovery approvals.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -925,14 +1525,80 @@
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
       "coverage": "partial",
-      "implementationSummary": "The platform provides evidence queues and audit integrity signals, but human review cadence and follow-up procedures must be operated by the organization.",
+      "implementationSummary": "This control ensures audit records are reviewed, analyzed, and followed up through defined operational workflows. The platform provides evidence queues and audit-integrity signals that support those workflows, but provider-operated review procedures and retained review records are not yet fully evidenced in this register.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
       "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "review-queue-surface",
+          "label": "Audit review surfaces exist",
+          "description": "The platform must provide a queue or surface for reviewing audit evidence.",
+          "verificationMethod": "Admin security UI walkthrough",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Operations",
+            "notes": "The security admin surface exposes evidence queues and review-oriented summaries.",
+            "evidence": [
+              {
+                "title": "Security admin review queue",
+                "description": "src/routes/app/admin/security.tsx exposes control workspace and evidence review surfaces.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-review-procedure",
+          "label": "Provider review procedure is documented",
+          "description": "Internal review cadence and escalation expectations must be documented for platform operators.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Operations",
+            "notes": "No provider-side documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.",
+            "evidence": []
+          }
+        },
+        {
+          "itemId": "provider-review-records",
+          "label": "Provider review records are retained",
+          "description": "Completed review records or attestations must be retained for audit review activities.",
+          "verificationMethod": "Review record inspection",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Operations",
+            "notes": "No retained provider review records or attestations are currently attached.",
+            "evidence": []
+          }
+        }
+      ],
       "owner": "Security Operations",
       "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Platform review surfaces exist, but provider review procedure and retained review records still need evidence."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "The app exposes evidence and review queues, but an operator must establish review cadence, escalation, and documented follow-up.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for establishing review cadence, escalation paths, and documented follow-up for the evidence surfaced by the platform.",
       "mappings": {
         "hipaa": [
           {
@@ -996,7 +1662,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Evidence queues and integrity checks exist, but the actual review cadence, escalation, and documented follow-up process are not yet demonstrated.",
+        "assessmentNote": "This register substantiates evidence queues and integrity checks provided by the platform, but it does not yet include completed provider review records, documented review cadence, or escalation artifacts. Customer procedures are also still required for customer-side review cadence, escalation, and documented follow-up.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [
@@ -1013,14 +1679,80 @@
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
       "coverage": "partial",
-      "implementationSummary": "The platform emits monitoring-relevant signals such as scan events, audit integrity checks, and telemetry posture summaries.",
+      "implementationSummary": "This control ensures the service is monitored for indicators of attack, misuse, or operationally significant security events. The platform emits monitoring-relevant signals such as scan events, audit-integrity checks, and telemetry posture summaries, but provider-operated alert response procedures and retained follow-up records are not yet fully evidenced in this register.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
       "priority": "p1",
+      "platformChecklistItems": [
+        {
+          "itemId": "monitoring-signals",
+          "label": "Monitoring signals are emitted",
+          "description": "The platform must emit monitoring-relevant security signals for operational review.",
+          "verificationMethod": "Telemetry and event review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Security Monitoring",
+            "notes": "Monitoring-related platform signals are exposed through document scan events, audit integrity checks, and telemetry posture summaries.",
+            "evidence": [
+              {
+                "title": "Security monitoring signals",
+                "description": "convex/security.ts reports document scan events, audit integrity failures, and telemetry posture.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "provider-alert-procedure",
+          "label": "Provider alert response procedure is documented",
+          "description": "Internal alert routing and response expectations must be documented for the hosted platform.",
+          "verificationMethod": "Procedure review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Monitoring",
+            "notes": "No provider-operated monitoring response procedure is attached in the control workspace yet.",
+            "evidence": []
+          }
+        },
+        {
+          "itemId": "provider-alert-records",
+          "label": "Provider alert review records are available",
+          "description": "The platform team must retain evidence of alert review or follow-up activities.",
+          "verificationMethod": "Operational record review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "link",
+            "note"
+          ],
+          "seed": {
+            "status": "not_started",
+            "owner": "Security Monitoring",
+            "notes": "No provider alert review or follow-up records are currently attached.",
+            "evidence": []
+          }
+        }
+      ],
       "owner": "Security Monitoring",
       "responsibility": "shared-responsibility",
+      "seedReview": {
+        "status": "needs-follow-up",
+        "notes": "Monitoring signals are present, but provider alert-routing procedure and review records still need evidence."
+      },
       "reviewStatus": "pending",
       "lastReviewedAt": null,
-      "sharedResponsibilityNotes": "Built-in monitoring covers app-level signals, but production alerting, correlation, and 24x7 monitoring posture are external to the template.",
+      "customerResponsibilityNotes": "Customer organizations are responsible for reviewing service notifications, acting on customer-visible alerts, and integrating platform outputs into their own operational response processes.",
       "mappings": {
         "hipaa": [
           {
@@ -1109,7 +1841,7 @@
         ]
       },
       "evidence": {
-        "assessmentNote": "Monitoring-related signals exist, but alert routing, correlation, and operational review of those signals are not yet fully evidenced.",
+        "assessmentNote": "This register substantiates monitoring-related signals emitted by the platform, but it does not yet include complete provider evidence for alert routing, review cadence, or response follow-up. Customer procedures are still required for alert review, internal escalation, and coordination with the provider when customer action is needed.",
         "latestEvidenceStatus": "warning",
         "evidenceCount": 3,
         "evidenceSources": [

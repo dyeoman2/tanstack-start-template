@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   accessConstants,
   checkOrganizationAccessMock,
+  getVerifiedCurrentSiteAdminUserFromActionOrThrowMock,
   getVerifiedCurrentSiteAdminUserOrThrowMock,
   getVerifiedCurrentUserOrThrowMock,
 } = vi.hoisted(() => ({
@@ -31,6 +32,7 @@ const {
     },
   },
   checkOrganizationAccessMock: vi.fn(),
+  getVerifiedCurrentSiteAdminUserFromActionOrThrowMock: vi.fn(),
   getVerifiedCurrentSiteAdminUserOrThrowMock: vi.fn(),
   getVerifiedCurrentUserOrThrowMock: vi.fn(),
 }));
@@ -39,6 +41,8 @@ vi.mock('./access', async () => {
   return {
     ADMIN_ACCESS: accessConstants.ADMIN_ACCESS,
     checkOrganizationAccess: checkOrganizationAccessMock,
+    getVerifiedCurrentSiteAdminUserFromActionOrThrow:
+      getVerifiedCurrentSiteAdminUserFromActionOrThrowMock,
     getVerifiedCurrentSiteAdminUserOrThrow: getVerifiedCurrentSiteAdminUserOrThrowMock,
     getVerifiedCurrentUserOrThrow: getVerifiedCurrentUserOrThrowMock,
   };
@@ -163,7 +167,7 @@ describe('authorized helpers', () => {
       },
       isSiteAdmin: true,
     };
-    getVerifiedCurrentSiteAdminUserOrThrowMock.mockResolvedValue(siteAdmin);
+    getVerifiedCurrentSiteAdminUserFromActionOrThrowMock.mockResolvedValue(siteAdmin);
 
     const ctx = await authorizeSiteAdminActionContext({} as never);
 

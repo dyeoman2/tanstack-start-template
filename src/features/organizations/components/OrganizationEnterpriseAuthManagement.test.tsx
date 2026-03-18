@@ -200,7 +200,7 @@ describe('OrganizationEnterpriseAuthManagement', () => {
 
     render(<OrganizationEnterpriseAuthManagement slug="cottage-hospital" />);
 
-    expect(screen.getByRole('radio', { name: /google workspace/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /google workspace/i })).toBeChecked();
   });
 
   it('saves immediately and shows a success toast when a selectable provider is chosen', async () => {
@@ -242,7 +242,7 @@ describe('OrganizationEnterpriseAuthManagement', () => {
       });
     });
     expect(showToastMock).toHaveBeenCalledWith('Identity provider updated.', 'success');
-    expect(screen.getByRole('radio', { name: /okta/i })).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByRole('radio', { name: /okta/i })).toBeChecked();
   });
 
   it('does not auto-save when the selected provider is not yet actionable', async () => {

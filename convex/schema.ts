@@ -523,6 +523,63 @@ export default defineSchema({
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_created_at', ['createdAt']),
 
+  securityControlStates: defineTable({
+    internalControlId: v.string(),
+    reviewNotes: v.optional(v.string()),
+    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+    reviewedAt: v.optional(v.number()),
+    reviewedByUserId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_internal_control_id', ['internalControlId']),
+
+  securityControlChecklistItems: defineTable({
+    internalControlId: v.string(),
+    itemId: v.string(),
+    status: v.union(
+      v.literal('not_started'),
+      v.literal('in_progress'),
+      v.literal('done'),
+      v.literal('not_applicable'),
+    ),
+    owner: v.optional(v.string()),
+    notes: v.optional(v.string()),
+    hiddenSeedEvidenceIds: v.optional(v.array(v.string())),
+    completedAt: v.optional(v.number()),
+    completedByUserId: v.optional(v.string()),
+    lastReviewedAt: v.optional(v.number()),
+    lastReviewedByUserId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_internal_control_id', ['internalControlId'])
+    .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
+
+  securityControlEvidence: defineTable({
+    internalControlId: v.string(),
+    itemId: v.string(),
+    evidenceType: v.union(
+      v.literal('file'),
+      v.literal('link'),
+      v.literal('note'),
+      v.literal('system_snapshot'),
+    ),
+    title: v.string(),
+    description: v.optional(v.string()),
+    url: v.optional(v.string()),
+    storageId: v.optional(v.string()),
+    fileName: v.optional(v.string()),
+    mimeType: v.optional(v.string()),
+    sizeBytes: v.optional(v.number()),
+    sufficiency: v.union(v.literal('missing'), v.literal('partial'), v.literal('sufficient')),
+    uploadedByUserId: v.string(),
+    reviewedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_internal_control_id', ['internalControlId'])
+    .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
+
   retentionJobs: defineTable({
     jobKind: v.union(
       v.literal('attachment_purge'),

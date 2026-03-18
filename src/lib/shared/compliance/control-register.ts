@@ -1,10 +1,14 @@
 import activeControlRegisterJson from '../../../../compliance/generated/active-control-register.seed.json';
 
 export type ControlCoverage = 'covered' | 'not-applicable' | 'not-covered' | 'partial';
-export type ControlResponsibility = 'operator-owned' | 'platform' | 'shared-responsibility';
+export type ControlResponsibility = 'customer' | 'platform' | 'shared-responsibility';
 
 export type ReviewStatus = 'needs-follow-up' | 'pending' | 'reviewed';
 export type EvidenceStatus = 'fail' | 'missing' | 'not-tested' | 'pass' | 'warning';
+export type ControlChecklistEvidenceType = 'file' | 'link' | 'note' | 'system';
+export type ControlChecklistStatus = 'done' | 'in_progress' | 'not_applicable' | 'not_started';
+export type ControlChecklistEvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
+export type SeededChecklistEvidenceType = 'link' | 'note' | 'system_snapshot';
 
 export const CONTROL_COVERAGE_DISPLAY_LABELS: Record<ControlCoverage, string> = {
   covered: 'Covered',
@@ -16,7 +20,7 @@ export const CONTROL_COVERAGE_DISPLAY_LABELS: Record<ControlCoverage, string> = 
 export const CONTROL_RESPONSIBILITY_DISPLAY_LABELS: Record<ControlResponsibility, string> = {
   platform: 'Platform',
   'shared-responsibility': 'Shared responsibility',
-  'operator-owned': 'Operator-owned',
+  customer: 'Customer',
 };
 
 export type ActiveControlRegister = {
@@ -82,9 +86,33 @@ export type ActiveControlRecord = {
   nist80053Id: string;
   owner: string;
   priority: 'p0' | 'p1' | 'p2';
+  platformChecklistItems: Array<{
+    description: string;
+    itemId: string;
+    label: string;
+    required: boolean;
+    seed: {
+      evidence: Array<{
+        description: string | null;
+        evidenceType: SeededChecklistEvidenceType;
+        sufficiency: ControlChecklistEvidenceSufficiency;
+        title: string;
+        url: string | null;
+      }>;
+      notes: string | null;
+      owner: string | null;
+      status: ControlChecklistStatus;
+    };
+    suggestedEvidenceTypes: ControlChecklistEvidenceType[];
+    verificationMethod: string;
+  }>;
   responsibility: ControlResponsibility | null;
+  seedReview: {
+    notes: string | null;
+    status: ReviewStatus;
+  };
   reviewStatus: ReviewStatus;
-  sharedResponsibilityNotes: string | null;
+  customerResponsibilityNotes: string | null;
   title: string;
 };
 
@@ -129,9 +157,33 @@ type ActiveControlRegisterInput = {
     nist80053Id: string;
     owner: string;
     priority: string;
+    platformChecklistItems: Array<{
+      description: string;
+      itemId: string;
+      label: string;
+      required: boolean;
+      seed: {
+        evidence: Array<{
+          description: string | null;
+          evidenceType: string;
+          sufficiency: string;
+          title: string;
+          url: string | null;
+        }>;
+        notes: string | null;
+        owner: string | null;
+        status: string;
+      };
+      suggestedEvidenceTypes: string[];
+      verificationMethod: string;
+    }>;
     responsibility: string | null;
+    seedReview: {
+      notes: string | null;
+      status: string;
+    };
     reviewStatus: string;
-    sharedResponsibilityNotes: string | null;
+    customerResponsibilityNotes: string | null;
     title: string;
   }>;
   generatedAt: string;
@@ -161,11 +213,47 @@ function normalizeControlResponsibility(value: string | null): ControlResponsibi
   switch (value) {
     case 'platform':
     case 'shared-responsibility':
-    case 'operator-owned':
+    case 'customer':
     case null:
       return value;
     default:
       throw new Error(`Unsupported control responsibility: ${value}`);
+  }
+}
+
+function normalizeControlChecklistStatus(value: string): ControlChecklistStatus {
+  switch (value) {
+    case 'not_started':
+    case 'in_progress':
+    case 'done':
+    case 'not_applicable':
+      return value;
+    default:
+      throw new Error(`Unsupported checklist status: ${value}`);
+  }
+}
+
+function normalizeChecklistEvidenceSufficiency(
+  value: string,
+): ControlChecklistEvidenceSufficiency {
+  switch (value) {
+    case 'missing':
+    case 'partial':
+    case 'sufficient':
+      return value;
+    default:
+      throw new Error(`Unsupported checklist evidence sufficiency: ${value}`);
+  }
+}
+
+function normalizeSeededChecklistEvidenceType(value: string): SeededChecklistEvidenceType {
+  switch (value) {
+    case 'link':
+    case 'note':
+    case 'system_snapshot':
+      return value;
+    default:
+      throw new Error(`Unsupported seeded evidence type: ${value}`);
   }
 }
 
@@ -212,6 +300,15 @@ function normalizeNist80066Mappings(
   }));
 }
 
+function normalizeChecklistEvidenceTypes(
+  value: string[],
+): ControlChecklistEvidenceType[] {
+  return value.filter(
+    (item): item is ControlChecklistEvidenceType =>
+      item === 'file' || item === 'link' || item === 'note' || item === 'system',
+  );
+}
+
 function normalizeActiveControlRegister(
   value: ActiveControlRegisterInput,
 ): ActiveControlRegister {
@@ -222,7 +319,7 @@ function normalizeActiveControlRegister(
       ...value.generatedFrom,
       soc2Source: value.generatedFrom.soc2Source ?? null,
     },
-    controls: value.controls.map((control) => ({
+    controls: value.controls.map<ActiveControlRecord>((control) => ({
       ...control,
       coverage: normalizeControlCoverage(control.coverage),
       priority:
@@ -279,6 +376,23 @@ function normalizeActiveControlRegister(
         ...control.evidence,
         latestEvidenceStatus: normalizeEvidenceStatus(control.evidence.latestEvidenceStatus),
       },
+      platformChecklistItems: control.platformChecklistItems.map((item) => ({
+        ...item,
+        seed: {
+          ...item.seed,
+          status: normalizeControlChecklistStatus(item.seed.status),
+          evidence: item.seed.evidence.map((evidence) => ({
+            ...evidence,
+            evidenceType: normalizeSeededChecklistEvidenceType(evidence.evidenceType),
+            sufficiency: normalizeChecklistEvidenceSufficiency(evidence.sufficiency),
+          })),
+        },
+        suggestedEvidenceTypes: normalizeChecklistEvidenceTypes(item.suggestedEvidenceTypes),
+      })),
+      seedReview: {
+        ...control.seedReview,
+        status: normalizeReviewStatus(control.seedReview.status),
+      },
     })),
   };
 }
@@ -323,7 +437,7 @@ export function getActiveControlRegisterSummary() {
     {
       platform: 0,
       'shared-responsibility': 0,
-      'operator-owned': 0,
+      customer: 0,
     },
   );
 
