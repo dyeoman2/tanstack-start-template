@@ -9,13 +9,13 @@ import {
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
 import { components, internal } from './_generated/api';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Id } from './_generated/dataModel';
 import {
+  type ActionCtx,
   action,
   internalAction,
   internalMutation,
   internalQuery,
-  type ActionCtx,
   type MutationCtx,
   mutation,
   type QueryCtx,
@@ -26,10 +26,6 @@ import {
   getVerifiedCurrentSiteAdminUserOrThrow,
 } from './auth/access';
 import { fetchAllBetterAuthPasskeys, fetchAllBetterAuthUsers } from './lib/betterAuth';
-import {
-  buildSecurityEvidenceActivityProjection,
-  SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES,
-} from './lib/securityEvidenceActivity';
 import { createUploadTargetWithMode } from './storagePlatform';
 
 const SECURITY_METRICS_KEY = 'global';
@@ -680,7 +676,8 @@ async function resolveSeedSiteAdminActor(
     if (preferredProfile) {
       return {
         authUserId: preferredAuthUserId,
-        displayName: preferredProfile.name?.trim() || preferredProfile.email?.trim() || 'Site admin',
+        displayName:
+          preferredProfile.name?.trim() || preferredProfile.email?.trim() || 'Site admin',
       };
     }
   }
@@ -700,8 +697,7 @@ async function resolveSeedSiteAdminActor(
 
   return {
     authUserId: siteAdminProfile.authUserId,
-    displayName:
-      siteAdminProfile.name?.trim() || siteAdminProfile.email?.trim() || 'Site admin',
+    displayName: siteAdminProfile.name?.trim() || siteAdminProfile.email?.trim() || 'Site admin',
   };
 }
 
@@ -820,22 +816,24 @@ async function _getSecurityMetricsSnapshot(ctx: QueryCtx) {
 
   const [latestScan, totalScans, quarantinedScans, rejectedScans] = await Promise.all([
     ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
-    ctx.db.query('documentScanEvents').collect(),
-    ctx.db
-      .query('documentScanEvents')
-      .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'quarantined'))
-      .collect(),
-    ctx.db
-      .query('documentScanEvents')
-      .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'rejected'))
-      .collect(),
+    countQueryResults(ctx.db.query('documentScanEvents').withIndex('by_created_at')),
+    countQueryResults(
+      ctx.db
+        .query('documentScanEvents')
+        .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'quarantined')),
+    ),
+    countQueryResults(
+      ctx.db
+        .query('documentScanEvents')
+        .withIndex('by_result_status_and_created_at', (q) => q.eq('resultStatus', 'rejected')),
+    ),
   ]);
 
   return {
     _id: null,
-    totalDocumentScans: totalScans.length,
-    quarantinedDocumentScans: quarantinedScans.length,
-    rejectedDocumentScans: rejectedScans.length,
+    totalDocumentScans: totalScans,
+    quarantinedDocumentScans: quarantinedScans,
+    rejectedDocumentScans: rejectedScans,
     lastDocumentScanAt: latestScan?.createdAt ?? null,
     updatedAt: latestScan?.createdAt ?? null,
     key: SECURITY_METRICS_KEY,
@@ -945,6 +943,14 @@ function hasExpiringSoonEvidence(
   return evidence.some(
     (entry) => entry.lifecycleStatus === 'active' && entry.expiryStatus === 'expiring_soon',
   );
+}
+
+async function countQueryResults(query: AsyncIterable<unknown>) {
+  let count = 0;
+  for await (const _entry of query) {
+    count += 1;
+  }
+  return count;
 }
 
 const documentScanEventArgs = {
@@ -1085,10 +1091,32 @@ async function listSecurityControlWorkspaceRecords(
   ctx: QueryCtx,
   seedActor?: { authUserId: string },
 ) {
-  const [checklistItems, evidenceRows] = await Promise.all([
-    ctx.db.query('securityControlChecklistItems').collect(),
-    ctx.db.query('securityControlEvidence').collect(),
-  ]);
+  const perControlRows = await Promise.all(
+    ACTIVE_CONTROL_REGISTER.controls.map(async (control) => {
+      const [checklistItems, evidenceRows] = await Promise.all([
+        ctx.db
+          .query('securityControlChecklistItems')
+          .withIndex('by_internal_control_id', (q) =>
+            q.eq('internalControlId', control.internalControlId),
+          )
+          .collect(),
+        ctx.db
+          .query('securityControlEvidence')
+          .withIndex('by_internal_control_id', (q) =>
+            q.eq('internalControlId', control.internalControlId),
+          )
+          .collect(),
+      ]);
+
+      return {
+        internalControlId: control.internalControlId,
+        checklistItems,
+        evidenceRows,
+      };
+    }),
+  );
+  const checklistItems = perControlRows.flatMap((entry) => entry.checklistItems);
+  const evidenceRows = perControlRows.flatMap((entry) => entry.evidenceRows);
   const actorIds = Array.from(
     new Set(
       [
@@ -1388,12 +1416,13 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
     ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
     ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
     ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
-    ctx.db
-      .query('auditLogs')
-      .withIndex('by_eventType_and_createdAt', (q) =>
-        q.eq('eventType', 'audit_integrity_check_failed'),
-      )
-      .collect(),
+    countQueryResults(
+      ctx.db
+        .query('auditLogs')
+        .withIndex('by_eventType_and_createdAt', (q) =>
+          q.eq('eventType', 'audit_integrity_check_failed'),
+        ),
+    ),
   ]);
 
   const totalUsers = authUsers.length;
@@ -1412,7 +1441,7 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
 
   return {
     audit: {
-      integrityFailures: integrityFailures.length,
+      integrityFailures,
       lastEventAt: latestAuditEvent?.createdAt ?? null,
     },
     auth: {
@@ -1614,7 +1643,7 @@ export async function listSecurityControlEvidenceActivityHandler(
     .order('desc')
     .collect();
 
-  let matchingLogs: EvidenceActivityRow[] = activityLogs.map(
+  const matchingLogs: EvidenceActivityRow[] = activityLogs.map(
     (log): EvidenceActivityRow => ({
       actorUserId: log.actorUserId,
       auditEventId: log.auditEventId,
@@ -1636,40 +1665,6 @@ export async function listSecurityControlEvidenceActivityHandler(
         log.reviewStatus === 'pending' || log.reviewStatus === 'reviewed' ? log.reviewStatus : null,
     }),
   );
-
-  if (matchingLogs.length === 0) {
-    const auditLogs: Array<Doc<'auditLogs'>> = (
-      await Promise.all(
-        SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES.map((eventType) =>
-          ctx.db
-            .query('auditLogs')
-            .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
-            .collect(),
-        ),
-      )
-    ).flat();
-
-    matchingLogs = auditLogs
-      .map((log) =>
-        buildSecurityEvidenceActivityProjection({
-          id: log.id,
-          actorUserId: log.actorUserId,
-          createdAt: log.createdAt,
-          eventType: log.eventType,
-          metadata: log.metadata,
-          resourceId: log.resourceId,
-          resourceLabel: log.resourceLabel,
-        }),
-      )
-      .filter((log): log is NonNullable<typeof log> => log !== null)
-      .filter(
-        (log) => log.internalControlId === args.internalControlId && log.itemId === args.itemId,
-      )
-      .sort(
-        (left, right) =>
-          right.createdAt - left.createdAt || right.auditEventId.localeCompare(left.auditEventId),
-      );
-  }
 
   const actorIds = Array.from(
     new Set(

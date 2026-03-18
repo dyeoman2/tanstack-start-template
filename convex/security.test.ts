@@ -466,7 +466,10 @@ describe('audit evidence helpers', () => {
     const ctx = {
       db: {
         query: (table: string) => ({
-          withIndex: (_index: string, buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown) => {
+          withIndex: (
+            _index: string,
+            buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
             const filters: Array<[string, unknown]> = [];
             const q = {
               eq(field: string, value: unknown) {
@@ -489,10 +492,14 @@ describe('audit evidence helpers', () => {
               };
             }
             if (table === 'retentionJobs') {
-              return { order: () => ({ first: async () => ({ createdAt: 90, status: 'success' }) }) };
+              return {
+                order: () => ({ first: async () => ({ createdAt: 90, status: 'success' }) }),
+              };
             }
             if (table === 'backupVerificationReports') {
-              return { order: () => ({ first: async () => ({ checkedAt: 80, status: 'failure' }) }) };
+              return {
+                order: () => ({ first: async () => ({ checkedAt: 80, status: 'failure' }) }),
+              };
             }
             if (table === 'auditLogs') {
               if (
@@ -528,7 +535,10 @@ describe('audit evidence helpers', () => {
     const ctx = {
       db: {
         query: (table: string) => ({
-          withIndex: (_index: string, buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown) => {
+          withIndex: (
+            _index: string,
+            buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
             const q = {
               eq(_field: string, _value: unknown) {
                 return q;
@@ -720,9 +730,9 @@ describe('audit evidence helpers', () => {
   it('exports evidence reports with manifest and artifact metadata', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-18T16:00:00.000Z'));
-    vi
-      .spyOn(globalThis.crypto, 'randomUUID')
-      .mockReturnValue('00000000-0000-4000-8000-000000000123');
+    vi.spyOn(globalThis.crypto, 'randomUUID').mockReturnValue(
+      '00000000-0000-4000-8000-000000000123',
+    );
     const reportRecord = {
       _id: 'report-1',
       createdAt: Date.parse('2026-03-18T15:30:00.000Z'),

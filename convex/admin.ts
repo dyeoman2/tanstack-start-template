@@ -5,7 +5,12 @@ import type { OnboardingStatus } from '../src/lib/shared/onboarding';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  type QueryCtx,
+} from './_generated/server';
 import { siteAdminAction, siteAdminMutation, siteAdminQuery } from './auth/authorized';
 import { throwConvexError } from './auth/errors';
 import {
@@ -170,18 +175,249 @@ function buildChatModelCatalogEntry(
 
 type AdminUserSortField = 'name' | 'email' | 'role' | 'emailVerified' | 'createdAt';
 type UserProfileDoc = Doc<'userProfiles'>;
+type UserRole = UserProfileDoc['role'];
 
 function normalizeSearchValue(value: string) {
   const trimmed = value.trim().toLowerCase();
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function matchesAdminUserSearch(user: UserProfileDoc, searchValue: string | null) {
-  if (!searchValue) {
-    return true;
+async function collectAdminUserSearchMatches(
+  ctx: QueryCtx,
+  searchValue: string,
+  roleFilter: 'admin' | 'user' | null,
+) {
+  const searchQuery =
+    roleFilter === null
+      ? ctx.db
+          .query('adminUserSearch')
+          .withSearchIndex('search_text', (q) => q.search('searchText', searchValue))
+      : ctx.db
+          .query('adminUserSearch')
+          .withSearchIndex('search_text', (q) =>
+            q.search('searchText', searchValue).eq('role', roleFilter),
+          );
+
+  const profiles: UserProfileDoc[] = [];
+  for await (const match of searchQuery) {
+    const profile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (q) => q.eq('authUserId', match.authUserId))
+      .first();
+    if (profile) {
+      profiles.push(profile);
+    }
   }
 
-  return user.emailLower.includes(searchValue) || (user.nameLower?.includes(searchValue) ?? false);
+  return profiles;
+}
+
+async function countIndexedUserProfiles(ctx: QueryCtx, roleFilter: 'admin' | 'user' | null) {
+  let count = 0;
+  const query =
+    roleFilter === null
+      ? ctx.db.query('userProfiles').withIndex('by_created_at')
+      : ctx.db.query('userProfiles').withIndex('by_role', (q) => q.eq('role', roleFilter));
+
+  for await (const _profile of query) {
+    count += 1;
+  }
+
+  return count;
+}
+
+function getRoleSortBuckets(direction: 'asc' | 'desc'): UserRole[] {
+  return direction === 'asc' ? ['admin', 'user'] : ['user', 'admin'];
+}
+
+function getEmailVerifiedSortBuckets(direction: 'asc' | 'desc') {
+  return direction === 'asc' ? [false, true] : [true, false];
+}
+
+async function fetchRoleBucketProfiles(
+  ctx: QueryCtx,
+  args: {
+    role: UserRole;
+    secondarySortBy: AdminUserSortField;
+    secondarySortOrder: 'asc' | 'desc';
+    takeCount: number;
+  },
+) {
+  switch (args.secondarySortBy) {
+    case 'name':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_role_and_name_lower', (q) => q.eq('role', args.role))
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'email':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_role_and_email_lower', (q) => q.eq('role', args.role))
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'emailVerified':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_role_and_email_verified', (q) => q.eq('role', args.role))
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'createdAt':
+    case 'role':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_role_and_created_at', (q) => q.eq('role', args.role))
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+  }
+}
+
+async function fetchEmailVerifiedBucketProfiles(
+  ctx: QueryCtx,
+  args: {
+    emailVerified: boolean;
+    roleFilter: UserRole | null;
+    secondarySortBy: AdminUserSortField;
+    secondarySortOrder: 'asc' | 'desc';
+    takeCount: number;
+  },
+) {
+  if (args.roleFilter !== null) {
+    const roleFilter = args.roleFilter;
+
+    switch (args.secondarySortBy) {
+      case 'name':
+        return await ctx.db
+          .query('userProfiles')
+          .withIndex('by_role_and_email_verified_and_name_lower', (q) =>
+            q.eq('role', roleFilter).eq('emailVerified', args.emailVerified),
+          )
+          .order(args.secondarySortOrder)
+          .take(args.takeCount);
+      case 'email':
+        return await ctx.db
+          .query('userProfiles')
+          .withIndex('by_role_and_email_verified_and_email_lower', (q) =>
+            q.eq('role', roleFilter).eq('emailVerified', args.emailVerified),
+          )
+          .order(args.secondarySortOrder)
+          .take(args.takeCount);
+      case 'createdAt':
+        return await ctx.db
+          .query('userProfiles')
+          .withIndex('by_role_and_email_verified_and_created_at', (q) =>
+            q.eq('role', roleFilter).eq('emailVerified', args.emailVerified),
+          )
+          .order(args.secondarySortOrder)
+          .take(args.takeCount);
+      case 'role':
+      case 'emailVerified':
+        return await ctx.db
+          .query('userProfiles')
+          .withIndex('by_role_and_email_verified', (q) =>
+            q.eq('role', roleFilter).eq('emailVerified', args.emailVerified),
+          )
+          .order('asc')
+          .take(args.takeCount);
+    }
+  }
+
+  switch (args.secondarySortBy) {
+    case 'name':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_email_verified_and_name_lower', (q) =>
+          q.eq('emailVerified', args.emailVerified),
+        )
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'email':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_email_verified_and_email_lower', (q) =>
+          q.eq('emailVerified', args.emailVerified),
+        )
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'role':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_email_verified_and_role', (q) => q.eq('emailVerified', args.emailVerified))
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'createdAt':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_email_verified_and_created_at', (q) =>
+          q.eq('emailVerified', args.emailVerified),
+        )
+        .order(args.secondarySortOrder)
+        .take(args.takeCount);
+    case 'emailVerified':
+      return await ctx.db
+        .query('userProfiles')
+        .withIndex('by_email_verified', (q) => q.eq('emailVerified', args.emailVerified))
+        .order('asc')
+        .take(args.takeCount);
+  }
+}
+
+async function fetchBucketedPrimarySortProfiles(
+  ctx: QueryCtx,
+  args: {
+    endIndex: number;
+    roleFilter: UserRole | null;
+    secondarySortBy: AdminUserSortField;
+    secondarySortOrder: 'asc' | 'desc';
+    sortBy: 'role' | 'emailVerified';
+    sortOrder: 'asc' | 'desc';
+  },
+) {
+  if (args.sortBy === 'role') {
+    if (args.roleFilter !== null) {
+      return await fetchRoleBucketProfiles(ctx, {
+        role: args.roleFilter,
+        secondarySortBy: args.secondarySortBy,
+        secondarySortOrder: args.secondarySortOrder,
+        takeCount: args.endIndex,
+      });
+    }
+
+    const profiles: UserProfileDoc[] = [];
+    for (const role of getRoleSortBuckets(args.sortOrder)) {
+      const remaining = args.endIndex - profiles.length;
+      if (remaining <= 0) {
+        break;
+      }
+      profiles.push(
+        ...(await fetchRoleBucketProfiles(ctx, {
+          role,
+          secondarySortBy: args.secondarySortBy,
+          secondarySortOrder: args.secondarySortOrder,
+          takeCount: remaining,
+        })),
+      );
+    }
+    return profiles;
+  }
+
+  const profiles: UserProfileDoc[] = [];
+  for (const emailVerified of getEmailVerifiedSortBuckets(args.sortOrder)) {
+    const remaining = args.endIndex - profiles.length;
+    if (remaining <= 0) {
+      break;
+    }
+    profiles.push(
+      ...(await fetchEmailVerifiedBucketProfiles(ctx, {
+        emailVerified,
+        roleFilter: args.roleFilter,
+        secondarySortBy: args.secondarySortBy,
+        secondarySortOrder: args.secondarySortOrder,
+        takeCount: remaining,
+      })),
+    );
+  }
+  return profiles;
 }
 
 function compareAdminUserValues(
@@ -316,10 +552,20 @@ export const listUsers = siteAdminQuery({
     const endIndex = startIndex + pageSize;
     const searchValue = normalizeSearchValue(args.search);
     const roleFilter = args.role === 'all' ? null : args.role;
+    const searchMatchedProfiles = searchValue
+      ? sortAdminUsersPage(await collectAdminUserSearchMatches(ctx, searchValue, roleFilter), args)
+      : null;
 
     const indexedProfiles = async (): Promise<UserProfileDoc[] | null> => {
-      if (searchValue) {
-        return null;
+      if (args.sortBy === 'role' || args.sortBy === 'emailVerified') {
+        return await fetchBucketedPrimarySortProfiles(ctx, {
+          endIndex,
+          roleFilter,
+          secondarySortBy: args.secondarySortBy,
+          secondarySortOrder: args.secondarySortOrder,
+          sortBy: args.sortBy,
+          sortOrder: args.sortOrder,
+        });
       }
 
       if (args.sortBy === 'name') {
@@ -367,47 +613,28 @@ export const listUsers = siteAdminQuery({
       return null;
     };
 
-    const fallbackProfiles = async (): Promise<UserProfileDoc[]> => {
-      const profiles =
-        roleFilter !== null
-          ? await ctx.db
-              .query('userProfiles')
-              .withIndex('by_role', (q) => q.eq('role', roleFilter))
-              .collect()
-          : await ctx.db.query('userProfiles').withIndex('by_created_at').collect();
-
-      return sortAdminUsersPage(
-        profiles.filter((profile) => matchesAdminUserSearch(profile, searchValue)),
-        args,
-      );
-    };
-
     const candidateProfiles = await indexedProfiles();
-    const matchedProfiles =
-      candidateProfiles === null
-        ? await fallbackProfiles()
-        : candidateProfiles.filter((profile) => matchesAdminUserSearch(profile, searchValue));
+    if (candidateProfiles === null) {
+      throw new Error(`Unsupported admin user sort field: ${args.sortBy}`);
+    }
+    const matchedProfiles = searchMatchedProfiles ?? candidateProfiles;
 
     const totalUsers =
-      candidateProfiles !== null && !searchValue
-        ? roleFilter !== null
-          ? (
-              await ctx.db
-                .query('userProfiles')
-                .withIndex('by_role', (q) => q.eq('role', roleFilter))
-                .collect()
-            ).length
-          : ((
-              await ctx.db
-                .query('userProfileSyncState')
-                .withIndex('by_key', (q) => q.eq('key', 'global'))
-                .first()
-            )?.totalUsers ??
-            (await ctx.db.query('userProfiles').withIndex('by_created_at').collect()).length)
-        : matchedProfiles.length;
+      searchMatchedProfiles !== null
+        ? searchMatchedProfiles.length
+        : candidateProfiles !== null
+          ? roleFilter !== null
+            ? await countIndexedUserProfiles(ctx, roleFilter)
+            : ((
+                await ctx.db
+                  .query('userProfileSyncState')
+                  .withIndex('by_key', (q) => q.eq('key', 'global'))
+                  .first()
+              )?.totalUsers ?? (await countIndexedUserProfiles(ctx, null)))
+          : matchedProfiles.length;
 
     const sortedPageUsers =
-      candidateProfiles === null
+      searchMatchedProfiles !== null
         ? matchedProfiles.slice(startIndex, endIndex)
         : sortAdminUsersPage(matchedProfiles, args).slice(startIndex, endIndex);
     const pageUserIds = sortedPageUsers.map((user) => user.authUserId);

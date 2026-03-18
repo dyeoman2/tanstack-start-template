@@ -101,11 +101,20 @@ export default defineSchema({
   })
     .index('by_auth_user_id', ['authUserId'])
     .index('by_role', ['role'])
+    .index('by_email_verified', ['emailVerified'])
     .index('by_email_lower', ['emailLower'])
     .index('by_name_lower', ['nameLower'])
     .index('by_role_and_created_at', ['role', 'createdAt'])
+    .index('by_role_and_email_verified', ['role', 'emailVerified'])
+    .index('by_role_and_email_verified_and_name_lower', ['role', 'emailVerified', 'nameLower'])
+    .index('by_role_and_email_verified_and_email_lower', ['role', 'emailVerified', 'emailLower'])
+    .index('by_role_and_email_verified_and_created_at', ['role', 'emailVerified', 'createdAt'])
     .index('by_role_and_email_lower', ['role', 'emailLower'])
     .index('by_role_and_name_lower', ['role', 'nameLower'])
+    .index('by_email_verified_and_role', ['emailVerified', 'role'])
+    .index('by_email_verified_and_name_lower', ['emailVerified', 'nameLower'])
+    .index('by_email_verified_and_email_lower', ['emailVerified', 'emailLower'])
+    .index('by_email_verified_and_created_at', ['emailVerified', 'createdAt'])
     .index('by_onboarding_email_id', ['onboardingEmailId'])
     .index('by_onboarding_email_message_id', ['onboardingEmailMessageId'])
     .index('by_created_at', ['createdAt']),
@@ -115,6 +124,18 @@ export default defineSchema({
     lastFullSyncAt: v.number(),
     totalUsers: v.number(),
   }).index('by_key', ['key']),
+
+  adminUserSearch: defineTable({
+    authUserId: v.string(),
+    role: v.union(v.literal('user'), v.literal('admin')),
+    searchText: v.string(),
+    updatedAt: v.number(),
+  })
+    .index('by_auth_user_id', ['authUserId'])
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['role'],
+    }),
 
   emailLifecycleEvents: defineTable({
     messageId: v.string(),

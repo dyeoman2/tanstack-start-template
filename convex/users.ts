@@ -426,10 +426,15 @@ async function upsertUserProfileRecord(ctx: MutationCtx, authUser: BetterAuthUse
 
   if (existing) {
     await ctx.db.replace(existing._id, nextValue);
-    return;
+  } else {
+    await ctx.db.insert('userProfiles', nextValue);
   }
 
-  await ctx.db.insert('userProfiles', nextValue);
+  await upsertAdminUserSearchRecord(ctx, {
+    authUserId: nextValue.authUserId,
+    role: nextValue.role,
+    searchText: buildAdminUserSearchText(nextValue),
+  });
 }
 
 async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string) {
@@ -449,6 +454,51 @@ async function syncUserProfileByAuthUserId(ctx: MutationCtx, authUserId: string)
   }
 
   await upsertUserProfileRecord(ctx, authUser as BetterAuthUser);
+}
+
+function buildAdminUserSearchText(input: { emailLower: string; nameLower: string | null }) {
+  return [input.emailLower, input.nameLower]
+    .filter((value): value is string => value !== null)
+    .join(' ');
+}
+
+async function upsertAdminUserSearchRecord(
+  ctx: MutationCtx,
+  args: {
+    authUserId: string;
+    role: 'user' | 'admin';
+    searchText: string;
+  },
+) {
+  const existing = await ctx.db
+    .query('adminUserSearch')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', args.authUserId))
+    .first();
+
+  const nextValue = {
+    authUserId: args.authUserId,
+    role: args.role,
+    searchText: args.searchText,
+    updatedAt: Date.now(),
+  };
+
+  if (existing) {
+    await ctx.db.patch(existing._id, nextValue);
+    return;
+  }
+
+  await ctx.db.insert('adminUserSearch', nextValue);
+}
+
+async function deleteAdminUserSearchRecord(ctx: MutationCtx, authUserId: string) {
+  const existing = await ctx.db
+    .query('adminUserSearch')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+    .first();
+
+  if (existing) {
+    await ctx.db.delete(existing._id);
+  }
 }
 
 export const getUserCount = query({
@@ -574,6 +624,8 @@ export const deleteAuthUserProfile = internalMutation({
       await ctx.db.delete(existing._id);
     }
 
+    await deleteAdminUserSearchRecord(ctx, args.authUserId);
+
     return { success: true };
   },
 });
@@ -659,10 +711,15 @@ export const syncUserProfilesSnapshotBatch = internalMutation({
 
       if (existing) {
         await ctx.db.replace(existing._id, nextValue);
-        continue;
+      } else {
+        await ctx.db.insert('userProfiles', nextValue);
       }
 
-      await ctx.db.insert('userProfiles', nextValue);
+      await upsertAdminUserSearchRecord(ctx, {
+        authUserId: nextValue.authUserId,
+        role: nextValue.role,
+        searchText: buildAdminUserSearchText(nextValue),
+      });
     }
 
     return { processed: args.users.length };
@@ -696,7 +753,11 @@ export const deleteUserProfilesBatch = internalMutation({
   }),
   handler: async (ctx, args) => {
     for (const profileId of args.profileIds) {
+      const profile = await ctx.db.get(profileId);
       await ctx.db.delete(profileId);
+      if (profile) {
+        await deleteAdminUserSearchRecord(ctx, profile.authUserId);
+      }
     }
 
     return { deleted: args.profileIds.length };

@@ -423,7 +423,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       {
         itemId: 'audit-review-surface',
         label: 'Authorized reviewers can inspect audit records',
-        description: 'Authorized reviewers must be able to inspect captured audit activity through supported review surfaces.',
+        description:
+          'Authorized reviewers must be able to inspect captured audit activity through supported review surfaces.',
         verificationMethod: 'Audit review workflow walkthrough',
         required: true,
         suggestedEvidenceTypes: ['system', 'note'] as ChecklistEvidenceType[],
@@ -484,7 +485,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       {
         itemId: 'review-queue-surface',
         label: 'Audit review surfaces exist',
-        description: 'The platform must provide supported surfaces for reviewing audit activity and related security evidence.',
+        description:
+          'The platform must provide supported surfaces for reviewing audit activity and related security evidence.',
         verificationMethod: 'Audit review UI walkthrough',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
@@ -1008,7 +1010,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       {
         itemId: 'at-rest-access-paths-controlled',
         label: 'Access to stored protected files is controlled',
-        description: 'Access to stored protected files should rely on controlled serve paths rather than open object access.',
+        description:
+          'Access to stored protected files should rely on controlled serve paths rather than open object access.',
         verificationMethod: 'Stored file access path review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
