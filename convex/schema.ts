@@ -514,7 +514,11 @@ export default defineSchema({
     exportIntegritySummary: v.optional(v.string()),
     exportedAt: v.union(v.number(), v.null()),
     exportedByUserId: v.union(v.string(), v.null()),
-    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+    reviewStatus: v.union(
+      v.literal('pending'),
+      v.literal('reviewed'),
+      v.literal('needs_follow_up'),
+    ),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),
     reviewNotes: v.union(v.string(), v.null()),
@@ -526,7 +530,11 @@ export default defineSchema({
   securityControlStates: defineTable({
     internalControlId: v.string(),
     reviewNotes: v.optional(v.string()),
-    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+    reviewStatus: v.union(
+      v.literal('pending'),
+      v.literal('reviewed'),
+      v.literal('needs_follow_up'),
+    ),
     reviewedAt: v.optional(v.number()),
     reviewedByUserId: v.optional(v.string()),
     createdAt: v.number(),
@@ -582,6 +590,17 @@ export default defineSchema({
     fileName: v.optional(v.string()),
     mimeType: v.optional(v.string()),
     sizeBytes: v.optional(v.number()),
+    evidenceDate: v.optional(v.number()),
+    reviewDueIntervalMonths: v.optional(v.union(v.literal(3), v.literal(6), v.literal(12))),
+    source: v.optional(
+      v.union(
+        v.literal('manual_upload'),
+        v.literal('internal_review'),
+        v.literal('automated_system_check'),
+        v.literal('external_report'),
+        v.literal('vendor_attestation'),
+      ),
+    ),
     sufficiency: v.union(v.literal('missing'), v.literal('partial'), v.literal('sufficient')),
     uploadedByUserId: v.string(),
     reviewStatus: v.optional(v.union(v.literal('pending'), v.literal('reviewed'))),

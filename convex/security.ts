@@ -1,10 +1,14 @@
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
-import type { Id } from './_generated/dataModel';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
-import { ALWAYS_ON_REGULATED_BASELINE, REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '../src/lib/shared/security-baseline';
+import {
+  ALWAYS_ON_REGULATED_BASELINE,
+  REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+} from '../src/lib/shared/security-baseline';
+import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import {
   action,
   internalAction,
@@ -12,10 +16,9 @@ import {
   internalQuery,
   type MutationCtx,
   mutation,
-  query,
   type QueryCtx,
+  query,
 } from './_generated/server';
-import { internal } from './_generated/api';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
@@ -127,6 +130,19 @@ const evidenceSufficiencyValidator = v.union(
   v.literal('partial'),
   v.literal('sufficient'),
 );
+const evidenceReviewDueIntervalValidator = v.union(v.literal(3), v.literal(6), v.literal(12));
+const evidenceSourceValidator = v.union(
+  v.literal('manual_upload'),
+  v.literal('internal_review'),
+  v.literal('automated_system_check'),
+  v.literal('external_report'),
+  v.literal('vendor_attestation'),
+);
+const evidenceExpiryStatusValidator = v.union(
+  v.literal('none'),
+  v.literal('current'),
+  v.literal('expiring_soon'),
+);
 const evidenceTypeValidator = v.union(
   v.literal('file'),
   v.literal('link'),
@@ -160,12 +176,17 @@ const controlEvidenceValidator = v.object({
   mimeType: v.union(v.string(), v.null()),
   archivedAt: v.union(v.number(), v.null()),
   archivedByDisplay: v.union(v.string(), v.null()),
+  evidenceDate: v.union(v.number(), v.null()),
+  expiryStatus: evidenceExpiryStatusValidator,
   renewedFromEvidenceId: v.union(v.string(), v.null()),
   replacedByEvidenceId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed')),
+  reviewDueAt: v.union(v.number(), v.null()),
+  reviewDueIntervalMonths: v.union(evidenceReviewDueIntervalValidator, v.null()),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByDisplay: v.union(v.string(), v.null()),
   sizeBytes: v.union(v.number(), v.null()),
+  source: v.union(evidenceSourceValidator, v.null()),
   storageId: v.union(v.string(), v.null()),
   sufficiency: evidenceSufficiencyValidator,
   title: v.string(),
@@ -177,6 +198,7 @@ const controlChecklistItemValidator = v.object({
   description: v.string(),
   evidence: v.array(controlEvidenceValidator),
   evidenceSufficiency: evidenceSufficiencyValidator,
+  hasExpiringSoonEvidence: v.boolean(),
   itemId: v.string(),
   label: v.string(),
   lastReviewedAt: v.union(v.number(), v.null()),
@@ -196,10 +218,7 @@ const securityControlEvidenceActivityEventValidator = v.object({
   evidenceTitle: v.string(),
   itemId: v.string(),
   internalControlId: v.string(),
-  lifecycleStatus: v.union(
-    evidenceLifecycleStatusValidator,
-    v.null(),
-  ),
+  lifecycleStatus: v.union(evidenceLifecycleStatusValidator, v.null()),
   renewedFromEvidenceId: v.union(v.string(), v.null()),
   replacedByEvidenceId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.null()),
@@ -216,6 +235,7 @@ const securityControlWorkspaceValidator = v.object({
   evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
   familyId: v.string(),
   familyTitle: v.string(),
+  hasExpiringSoonEvidence: v.boolean(),
   implementationSummary: v.string(),
   internalControlId: v.string(),
   lastReviewedAt: v.union(v.number(), v.null()),
@@ -234,6 +254,7 @@ const securityControlWorkspaceValidator = v.object({
           v.literal('required'),
           v.null(),
         ),
+        text: v.union(v.string(), v.null()),
         title: v.union(v.string(), v.null()),
         type: v.union(
           v.literal('implementation_specification'),
@@ -366,6 +387,33 @@ function deriveChecklistItemStatus(
   return 'in_progress' as const;
 }
 
+function addMonths(timestamp: number, months: 3 | 6 | 12): number {
+  const date = new Date(timestamp);
+  date.setMonth(date.getMonth() + months);
+  return date.getTime();
+}
+
+function deriveEvidenceExpiryStatus(input: {
+  reviewDueAt: number | null;
+  reviewedAt: number | null;
+}) {
+  if (input.reviewDueAt === null || input.reviewedAt === null) {
+    return 'none' as const;
+  }
+
+  const now = Date.now();
+  if (input.reviewDueAt <= now) {
+    return 'current' as const;
+  }
+
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  if (input.reviewDueAt - now <= thirtyDaysMs) {
+    return 'expiring_soon' as const;
+  }
+
+  return 'current' as const;
+}
+
 function getActorDisplayName(
   actorDisplayById: Map<string, string | null>,
   authUserId: string | undefined,
@@ -420,11 +468,7 @@ async function recordSecurityControlEvidenceAuditEvent(
   });
 }
 
-function getSeededEvidenceEntry(
-  internalControlId: string,
-  itemId: string,
-  evidenceId: string,
-) {
+function getSeededEvidenceEntry(internalControlId: string, itemId: string, evidenceId: string) {
   const control = ACTIVE_CONTROL_REGISTER.controls.find(
     (entry) => entry.internalControlId === internalControlId,
   );
@@ -434,8 +478,7 @@ function getSeededEvidenceEntry(
   }
 
   const index = item.seed.evidence.findIndex(
-    (_, currentIndex) =>
-      `${internalControlId}:${itemId}:seed:${currentIndex}` === evidenceId,
+    (_, currentIndex) => `${internalControlId}:${itemId}:seed:${currentIndex}` === evidenceId,
   );
 
   if (index < 0) {
@@ -450,7 +493,10 @@ function getSeededEvidenceEntry(
 }
 
 function derivePlatformImplementationStatus(
-  items: Array<{ required: boolean; status: 'done' | 'in_progress' | 'not_applicable' | 'not_started' }>,
+  items: Array<{
+    required: boolean;
+    status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
+  }>,
 ) {
   const requiredItems = items.filter((item) => item.required);
   if (requiredItems.length === 0) {
@@ -477,9 +523,7 @@ function deriveEvidenceReadiness(
   }>,
 ) {
   const activeEvidenceCount = items.reduce((count, item) => {
-    return (
-      count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length
-    );
+    return count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length;
   }, 0);
 
   if (activeEvidenceCount === 0) {
@@ -489,6 +533,17 @@ function deriveEvidenceReadiness(
     return 'ready' as const;
   }
   return 'partial' as const;
+}
+
+function hasExpiringSoonEvidence(
+  evidence: Array<{
+    expiryStatus: 'none' | 'current' | 'expiring_soon';
+    lifecycleStatus: 'active' | 'archived' | 'superseded';
+  }>,
+) {
+  return evidence.some(
+    (entry) => entry.lifecycleStatus === 'active' && entry.expiryStatus === 'expiring_soon',
+  );
 }
 
 const documentScanEventArgs = {
@@ -594,10 +649,7 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
         .query('userProfiles')
         .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
         .first();
-      return [
-        authUserId,
-        profile?.name?.trim() || profile?.email?.trim() || null,
-      ] as const;
+      return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
     }),
   );
   const actorDisplayById = new Map(actorProfiles);
@@ -605,15 +657,16 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
   const checklistStateByKey = new Map(
     checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item]),
   );
-  const evidenceByKey = evidenceRows.reduce<
-    Map<string, Array<(typeof evidenceRows)[number]>>
-  >((accumulator, evidence) => {
-    const key = `${evidence.internalControlId}:${evidence.itemId}`;
-    const current = accumulator.get(key) ?? [];
-    current.push(evidence);
-    accumulator.set(key, current);
-    return accumulator;
-  }, new Map());
+  const evidenceByKey = evidenceRows.reduce<Map<string, Array<(typeof evidenceRows)[number]>>>(
+    (accumulator, evidence) => {
+      const key = `${evidence.internalControlId}:${evidence.itemId}`;
+      const current = accumulator.get(key) ?? [];
+      current.push(evidence);
+      accumulator.set(key, current);
+      return accumulator;
+    },
+    new Map(),
+  );
   const seededReviewedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
 
   return ACTIVE_CONTROL_REGISTER.controls.map((control) => {
@@ -634,6 +687,11 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
           fileName: null,
           mimeType: null,
           sizeBytes: null,
+          evidenceDate: null,
+          reviewDueIntervalMonths: null,
+          reviewDueAt: null,
+          expiryStatus: 'none' as const,
+          source: null,
           sufficiency: entry.sufficiency,
           lifecycleStatus: 'active' as const,
           archivedAt: null,
@@ -668,6 +726,11 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
             fileName: null,
             mimeType: null,
             sizeBytes: null,
+            evidenceDate: null,
+            reviewDueIntervalMonths: null,
+            reviewDueAt: null,
+            expiryStatus: 'none' as const,
+            source: null,
             sufficiency: seededEntry.entry.sufficiency,
             lifecycleStatus: archivedMetadata?.lifecycleStatus ?? ('archived' as const),
             archivedAt: archivedMetadata?.archivedAt ?? null,
@@ -687,31 +750,49 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
       const persistedEvidence = (
         evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? []
-      ).map((entry) => ({
-        id: entry._id,
-        title: entry.title,
-        description: entry.description ?? null,
-        evidenceType: entry.evidenceType,
-        url: entry.url ?? null,
-        storageId: entry.storageId ?? null,
-        fileName: entry.fileName ?? null,
-        mimeType: entry.mimeType ?? null,
-        sizeBytes: entry.sizeBytes ?? null,
-        sufficiency: entry.sufficiency,
-        lifecycleStatus: entry.lifecycleStatus ?? ('active' as const),
-        archivedAt: entry.archivedAt ?? null,
-        archivedByDisplay: getActorDisplayName(actorDisplayById, entry.archivedByUserId),
-        renewedFromEvidenceId: entry.renewedFromEvidenceId ?? null,
-        replacedByEvidenceId: entry.replacedByEvidenceId ?? null,
-        reviewStatus:
-          entry.reviewStatus ?? (entry.reviewedAt ? ('reviewed' as const) : ('pending' as const)),
-        reviewedAt: entry.reviewedAt ?? null,
-        reviewedByDisplay: getActorDisplayName(actorDisplayById, entry.reviewedByUserId),
-        createdAt: entry.createdAt,
-        uploadedByDisplay: getActorDisplayName(actorDisplayById, entry.uploadedByUserId),
-      }));
+      ).map((entry) => {
+        const reviewDueIntervalMonths = entry.reviewDueIntervalMonths ?? null;
+        const reviewedAt = entry.reviewedAt ?? null;
+        const reviewDueAt =
+          reviewedAt !== null && reviewDueIntervalMonths !== null
+            ? addMonths(reviewedAt, reviewDueIntervalMonths)
+            : null;
+
+        return {
+          id: entry._id,
+          title: entry.title,
+          description: entry.description ?? null,
+          evidenceType: entry.evidenceType,
+          url: entry.url ?? null,
+          storageId: entry.storageId ?? null,
+          fileName: entry.fileName ?? null,
+          mimeType: entry.mimeType ?? null,
+          sizeBytes: entry.sizeBytes ?? null,
+          evidenceDate: entry.evidenceDate ?? null,
+          reviewDueIntervalMonths,
+          reviewDueAt,
+          expiryStatus: deriveEvidenceExpiryStatus({
+            reviewDueAt,
+            reviewedAt,
+          }),
+          source: entry.source ?? null,
+          sufficiency: entry.sufficiency,
+          lifecycleStatus: entry.lifecycleStatus ?? ('active' as const),
+          archivedAt: entry.archivedAt ?? null,
+          archivedByDisplay: getActorDisplayName(actorDisplayById, entry.archivedByUserId),
+          renewedFromEvidenceId: entry.renewedFromEvidenceId ?? null,
+          replacedByEvidenceId: entry.replacedByEvidenceId ?? null,
+          reviewStatus:
+            entry.reviewStatus ?? (entry.reviewedAt ? ('reviewed' as const) : ('pending' as const)),
+          reviewedAt,
+          reviewedByDisplay: getActorDisplayName(actorDisplayById, entry.reviewedByUserId),
+          createdAt: entry.createdAt,
+          uploadedByDisplay: getActorDisplayName(actorDisplayById, entry.uploadedByUserId),
+        };
+      });
       const evidence = [...seededEvidence, ...persistedEvidence, ...archivedSeedEvidence];
       const derivedStatus = deriveChecklistItemStatus(evidence);
+      const itemHasExpiringSoonEvidence = hasExpiringSoonEvidence(evidence);
 
       return {
         itemId: item.itemId,
@@ -725,13 +806,16 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
         notes: state?.notes ?? item.seed.notes,
         completedAt:
           derivedStatus === 'done'
-            ? state?.completedAt ??
+            ? (state?.completedAt ??
               evidence
-                .filter((entry) => entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed')
+                .filter(
+                  (entry) =>
+                    entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
+                )
                 .reduce<number | null>((latest, entry) => {
                   const candidate = entry.reviewedAt ?? entry.createdAt;
                   return latest === null ? candidate : Math.max(latest, candidate);
-                }, null)
+                }, null))
             : null,
         lastReviewedAt:
           state?.lastReviewedAt ??
@@ -740,11 +824,15 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
             : null),
         evidence,
         evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
+        hasExpiringSoonEvidence: itemHasExpiringSoonEvidence,
       };
     });
 
     const platformImplementationStatus = derivePlatformImplementationStatus(platformChecklist);
     const evidenceReadiness = deriveEvidenceReadiness(platformChecklist);
+    const controlHasExpiringSoonEvidence = platformChecklist.some(
+      (item) => item.hasExpiringSoonEvidence,
+    );
     const lastReviewedAtCandidates = platformChecklist.flatMap((item) => [
       item.lastReviewedAt,
       item.completedAt,
@@ -773,10 +861,17 @@ async function listSecurityControlWorkspaceRecords(ctx: QueryCtx) {
       implementationSummary: control.implementationSummary,
       customerResponsibilityNotes: control.customerResponsibilityNotes,
       controlStatement: control.controlStatement,
-      mappings: control.mappings,
+      mappings: {
+        ...control.mappings,
+        hipaa: control.mappings.hipaa.map((mapping) => ({
+          ...mapping,
+          text: null,
+        })),
+      },
       coverage: platformImplementationStatus,
       platformImplementationStatus,
       evidenceReadiness,
+      hasExpiringSoonEvidence: controlHasExpiringSoonEvidence,
       lastReviewedAt,
       platformChecklist,
     };
@@ -826,28 +921,29 @@ export const getSecurityPostureSummary = query({
       totalScans,
       quarantinedScans,
       rejectedScans,
-    ] =
-      await Promise.all([
-        fetchAllBetterAuthUsers(ctx),
-        fetchAllBetterAuthPasskeys(ctx),
-        ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
-        ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
-        ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
-        ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
-        ctx.db
-          .query('auditLogs')
-          .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', 'audit_integrity_check_failed'))
-          .collect(),
-        ctx.db.query('documentScanEvents').collect(),
-        ctx.db
-          .query('documentScanEvents')
-          .filter((q) => q.eq(q.field('resultStatus'), 'quarantined'))
-          .collect(),
-        ctx.db
-          .query('documentScanEvents')
-          .filter((q) => q.eq(q.field('resultStatus'), 'rejected'))
-          .collect(),
-      ]);
+    ] = await Promise.all([
+      fetchAllBetterAuthUsers(ctx),
+      fetchAllBetterAuthPasskeys(ctx),
+      ctx.db.query('documentScanEvents').withIndex('by_created_at').order('desc').first(),
+      ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
+      ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
+      ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
+      ctx.db
+        .query('auditLogs')
+        .withIndex('by_eventType_and_createdAt', (q) =>
+          q.eq('eventType', 'audit_integrity_check_failed'),
+        )
+        .collect(),
+      ctx.db.query('documentScanEvents').collect(),
+      ctx.db
+        .query('documentScanEvents')
+        .filter((q) => q.eq(q.field('resultStatus'), 'quarantined'))
+        .collect(),
+      ctx.db
+        .query('documentScanEvents')
+        .filter((q) => q.eq(q.field('resultStatus'), 'rejected'))
+        .collect(),
+    ]);
 
     const totalUsers = authUsers.length;
     const usersWithPasskeys = new Set(
@@ -935,8 +1031,7 @@ export const listSecurityControlEvidenceActivity = query({
     const matchingLogs = auditLogs.filter((log) => {
       const metadata = parseStableJson(log.metadata);
       return (
-        metadata?.internalControlId === args.internalControlId &&
-        metadata?.itemId === args.itemId
+        metadata?.internalControlId === args.internalControlId && metadata?.itemId === args.itemId
       );
     });
 
@@ -953,67 +1048,73 @@ export const listSecurityControlEvidenceActivity = query({
           .query('userProfiles')
           .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
           .first();
-        return [
-          authUserId,
-          profile?.name?.trim() || profile?.email?.trim() || null,
-        ] as const;
+        return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
       }),
     );
     const actorDisplayById = new Map(actorProfiles);
 
     return matchingLogs
       .sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id))
-      .map((log): {
-        id: string;
-        eventType: 'security_control_evidence_created' | 'security_control_evidence_reviewed' | 'security_control_evidence_archived' | 'security_control_evidence_renewed';
-        actorDisplay: string | null;
-        createdAt: number;
-        evidenceId: string;
-        evidenceTitle: string;
-        internalControlId: string;
-        itemId: string;
-        lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
-        renewedFromEvidenceId: string | null;
-        replacedByEvidenceId: string | null;
-        reviewStatus: 'pending' | 'reviewed' | null;
-      } => {
-        const metadata = parseStableJson(log.metadata);
-        const lifecycleStatus =
-          metadata?.lifecycleStatus === 'active' ||
-          metadata?.lifecycleStatus === 'archived' ||
-          metadata?.lifecycleStatus === 'superseded'
-            ? metadata.lifecycleStatus
-            : null;
-        const reviewStatus =
-          metadata?.reviewStatus === 'pending'
-            ? 'pending'
-            : metadata?.reviewStatus === 'reviewed'
-              ? 'reviewed'
+      .map(
+        (
+          log,
+        ): {
+          id: string;
+          eventType:
+            | 'security_control_evidence_created'
+            | 'security_control_evidence_reviewed'
+            | 'security_control_evidence_archived'
+            | 'security_control_evidence_renewed';
+          actorDisplay: string | null;
+          createdAt: number;
+          evidenceId: string;
+          evidenceTitle: string;
+          internalControlId: string;
+          itemId: string;
+          lifecycleStatus: 'active' | 'archived' | 'superseded' | null;
+          renewedFromEvidenceId: string | null;
+          replacedByEvidenceId: string | null;
+          reviewStatus: 'pending' | 'reviewed' | null;
+        } => {
+          const metadata = parseStableJson(log.metadata);
+          const lifecycleStatus =
+            metadata?.lifecycleStatus === 'active' ||
+            metadata?.lifecycleStatus === 'archived' ||
+            metadata?.lifecycleStatus === 'superseded'
+              ? metadata.lifecycleStatus
               : null;
-        return {
-          id: log.id,
-          eventType: log.eventType as (typeof SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES)[number],
-          actorDisplay: getActorDisplayName(actorDisplayById, log.actorUserId),
-          createdAt: log.createdAt,
-          evidenceId: typeof log.resourceId === 'string' ? log.resourceId : '',
-          evidenceTitle: typeof log.resourceLabel === 'string' ? log.resourceLabel : 'Evidence',
-          internalControlId:
-            typeof metadata?.internalControlId === 'string'
-              ? metadata.internalControlId
-              : args.internalControlId,
-          itemId: typeof metadata?.itemId === 'string' ? metadata.itemId : args.itemId,
-          lifecycleStatus,
-          renewedFromEvidenceId:
-            typeof metadata?.renewedFromEvidenceId === 'string'
-              ? metadata.renewedFromEvidenceId
-              : null,
-          replacedByEvidenceId:
-            typeof metadata?.replacedByEvidenceId === 'string'
-              ? metadata.replacedByEvidenceId
-              : null,
-          reviewStatus,
-        };
-      });
+          const reviewStatus =
+            metadata?.reviewStatus === 'pending'
+              ? 'pending'
+              : metadata?.reviewStatus === 'reviewed'
+                ? 'reviewed'
+                : null;
+          return {
+            id: log.id,
+            eventType:
+              log.eventType as (typeof SECURITY_CONTROL_EVIDENCE_AUDIT_EVENT_TYPES)[number],
+            actorDisplay: getActorDisplayName(actorDisplayById, log.actorUserId),
+            createdAt: log.createdAt,
+            evidenceId: typeof log.resourceId === 'string' ? log.resourceId : '',
+            evidenceTitle: typeof log.resourceLabel === 'string' ? log.resourceLabel : 'Evidence',
+            internalControlId:
+              typeof metadata?.internalControlId === 'string'
+                ? metadata.internalControlId
+                : args.internalControlId,
+            itemId: typeof metadata?.itemId === 'string' ? metadata.itemId : args.itemId,
+            lifecycleStatus,
+            renewedFromEvidenceId:
+              typeof metadata?.renewedFromEvidenceId === 'string'
+                ? metadata.renewedFromEvidenceId
+                : null,
+            replacedByEvidenceId:
+              typeof metadata?.replacedByEvidenceId === 'string'
+                ? metadata.replacedByEvidenceId
+                : null,
+            reviewStatus,
+          };
+        },
+      );
   },
 });
 
@@ -1039,8 +1140,7 @@ export const updateSecurityControlChecklistItem = mutation({
       status: args.status,
       owner: args.owner?.trim() || undefined,
       notes: args.notes?.trim() || undefined,
-      completedAt:
-        args.status === 'done' || args.status === 'not_applicable' ? now : undefined,
+      completedAt: args.status === 'done' || args.status === 'not_applicable' ? now : undefined,
       completedByUserId:
         args.status === 'done' || args.status === 'not_applicable'
           ? currentUser.authUserId
@@ -1111,7 +1211,11 @@ export const updateSecurityControlReviewState = mutation({
   args: {
     internalControlId: v.string(),
     reviewNotes: v.optional(v.string()),
-    reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+    reviewStatus: v.union(
+      v.literal('pending'),
+      v.literal('reviewed'),
+      v.literal('needs_follow_up'),
+    ),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -1145,8 +1249,11 @@ export const updateSecurityControlReviewState = mutation({
 export const addSecurityControlEvidenceLink = mutation({
   args: {
     description: v.optional(v.string()),
+    evidenceDate: v.number(),
     internalControlId: v.string(),
     itemId: v.string(),
+    reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
+    source: evidenceSourceValidator,
     sufficiency: evidenceSufficiencyValidator,
     title: v.string(),
     url: v.string(),
@@ -1162,6 +1269,9 @@ export const addSecurityControlEvidenceLink = mutation({
       title: args.title.trim(),
       description: args.description?.trim() || undefined,
       url: args.url.trim(),
+      evidenceDate: args.evidenceDate,
+      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
+      source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
       reviewStatus: 'pending',
@@ -1188,8 +1298,11 @@ export const addSecurityControlEvidenceLink = mutation({
 export const addSecurityControlEvidenceNote = mutation({
   args: {
     description: v.string(),
+    evidenceDate: v.number(),
     internalControlId: v.string(),
     itemId: v.string(),
+    reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
+    source: evidenceSourceValidator,
     sufficiency: evidenceSufficiencyValidator,
     title: v.string(),
   },
@@ -1203,6 +1316,9 @@ export const addSecurityControlEvidenceNote = mutation({
       evidenceType: 'note',
       title: args.title.trim(),
       description: args.description.trim(),
+      evidenceDate: args.evidenceDate,
+      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
+      source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
       reviewStatus: 'pending',
@@ -1417,7 +1533,9 @@ export const renewSecurityControlEvidence = mutation({
         )
         .unique();
       const nextArchivedSeedEvidence = [
-        ...(existing?.archivedSeedEvidence ?? []).filter((entry) => entry.evidenceId !== args.evidenceId),
+        ...(existing?.archivedSeedEvidence ?? []).filter(
+          (entry) => entry.evidenceId !== args.evidenceId,
+        ),
         {
           evidenceId: args.evidenceId,
           lifecycleStatus: 'superseded' as const,
@@ -1499,6 +1617,9 @@ export const renewSecurityControlEvidence = mutation({
       fileName: evidence.fileName,
       mimeType: evidence.mimeType,
       sizeBytes: evidence.sizeBytes,
+      evidenceDate: evidence.evidenceDate,
+      reviewDueIntervalMonths: evidence.reviewDueIntervalMonths,
+      source: evidence.source,
       sufficiency: evidence.sufficiency,
       uploadedByUserId: currentUser.authUserId,
       reviewStatus: 'pending',
@@ -1581,9 +1702,9 @@ export const createSecurityControlEvidenceUploadTarget = action({
       backendMode:
         target.backend === 'convex'
           ? 'convex'
-          : (process.env.FILE_STORAGE_BACKEND_MODE === 's3-mirror'
-              ? 's3-mirror'
-              : 's3-primary'),
+          : process.env.FILE_STORAGE_BACKEND_MODE === 's3-mirror'
+            ? 's3-mirror'
+            : 's3-primary',
     };
   },
 });
@@ -1592,12 +1713,15 @@ export const finalizeSecurityControlEvidenceUpload = action({
   args: {
     backendMode: v.union(v.literal('convex'), v.literal('s3-primary'), v.literal('s3-mirror')),
     description: v.optional(v.string()),
+    evidenceDate: v.number(),
     fileName: v.string(),
     fileSize: v.number(),
     internalControlId: v.string(),
     itemId: v.string(),
     mimeType: v.string(),
+    reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
     storageId: v.string(),
+    source: evidenceSourceValidator,
     sufficiency: evidenceSufficiencyValidator,
     title: v.string(),
   },
@@ -1616,13 +1740,16 @@ export const finalizeSecurityControlEvidenceUpload = action({
 
     return await ctx.runMutation(internal.security.createSecurityControlEvidenceFileInternal, {
       description: args.description?.trim() || undefined,
+      evidenceDate: args.evidenceDate,
       fileName: args.fileName,
       fileSize: args.fileSize,
       internalControlId: args.internalControlId,
       itemId: args.itemId,
       mimeType: args.mimeType,
       organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
       storageId: args.storageId,
+      source: args.source,
       sufficiency: args.sufficiency,
       title: args.title.trim(),
       uploadedByUserId: currentUser.authUserId,
@@ -1681,13 +1808,16 @@ export const getSecurityControlEvidenceInternal = internalQuery({
 export const createSecurityControlEvidenceFileInternal = internalMutation({
   args: {
     description: v.optional(v.string()),
+    evidenceDate: v.number(),
     fileName: v.string(),
     fileSize: v.number(),
     internalControlId: v.string(),
     itemId: v.string(),
     mimeType: v.string(),
     organizationId: v.optional(v.string()),
+    reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
     storageId: v.string(),
+    source: evidenceSourceValidator,
     sufficiency: evidenceSufficiencyValidator,
     title: v.string(),
     uploadedByUserId: v.string(),
@@ -1705,6 +1835,9 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
       fileName: args.fileName,
       mimeType: args.mimeType,
       sizeBytes: args.fileSize,
+      evidenceDate: args.evidenceDate,
+      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
+      source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: args.uploadedByUserId,
       reviewStatus: 'pending',
@@ -1747,7 +1880,11 @@ export const listEvidenceReports = query({
   handler: async (ctx, args) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const limit = Math.max(1, Math.min(args.limit ?? 20, 100));
-    const reports = await ctx.db.query('evidenceReports').withIndex('by_created_at').order('desc').take(limit);
+    const reports = await ctx.db
+      .query('evidenceReports')
+      .withIndex('by_created_at')
+      .order('desc')
+      .take(limit);
     return reports.map((report) => ({
       id: report._id,
       createdAt: report.createdAt,
@@ -1943,43 +2080,43 @@ export const generateEvidenceReport = action({
     const vendorPosture = getVendorBoundarySnapshot();
     const createdAt = Date.now();
     const reportPayload = {
-        generatedAt: new Date(createdAt).toISOString(),
-        generatedByUserId: currentUser.authUserId,
-        baselineDefaults: {
-          organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
-        },
-        sessionPolicy: {
-          sessionExpiryHours: 24,
-          sessionRefreshHours: 4,
-          recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
-          temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
-        },
-        telemetryPosture: {
-          sentryApproved: vendorPosture.some(
-            (vendor) => vendor.vendor === 'sentry' && vendor.approved,
-          ),
-          sentryEnabled:
-            vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
-            Boolean(process.env.VITE_SENTRY_DSN),
-        },
-        vendorBoundary: vendorPosture,
-        verificationPosture: {
-          emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
-          mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
-        },
-        integrityCheck,
-        recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
-          createdAt: log.createdAt,
-          eventType: log.eventType,
-          outcome: log.outcome ?? null,
-          organizationId: log.organizationId ?? null,
-          resourceType: log.resourceType ?? null,
-          sourceSurface: log.sourceSurface ?? null,
-        })),
-        scopedOrganizationPolicies: currentOrganizationPolicies,
-        summary,
-        controls: controlWorkspace,
-      };
+      generatedAt: new Date(createdAt).toISOString(),
+      generatedByUserId: currentUser.authUserId,
+      baselineDefaults: {
+        organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+      },
+      sessionPolicy: {
+        sessionExpiryHours: 24,
+        sessionRefreshHours: 4,
+        recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
+        temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
+      },
+      telemetryPosture: {
+        sentryApproved: vendorPosture.some(
+          (vendor) => vendor.vendor === 'sentry' && vendor.approved,
+        ),
+        sentryEnabled:
+          vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
+          Boolean(process.env.VITE_SENTRY_DSN),
+      },
+      vendorBoundary: vendorPosture,
+      verificationPosture: {
+        emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
+        mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
+      },
+      integrityCheck,
+      recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
+        createdAt: log.createdAt,
+        eventType: log.eventType,
+        outcome: log.outcome ?? null,
+        organizationId: log.organizationId ?? null,
+        resourceType: log.resourceType ?? null,
+        sourceSurface: log.sourceSurface ?? null,
+      })),
+      scopedOrganizationPolicies: currentOrganizationPolicies,
+      summary,
+      controls: controlWorkspace,
+    };
     const report = stringifyStable(reportPayload);
     const contentHash = await hashContent(report);
 

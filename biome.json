@@ -35,6 +35,12 @@
     {
       "includes": ["src/styles/**"],
       "linter": { "enabled": false }
+    },
+    {
+      "includes": ["compliance/sources/**", "compliance/generated/**/*.json"],
+      "formatter": { "enabled": false },
+      "linter": { "enabled": false },
+      "assist": { "enabled": false }
     }
   ],
   "javascript": {

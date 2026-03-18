@@ -12,8 +12,8 @@ import {
   createSortableHeader,
   DataTable,
   TableFilter,
-  TableSearch,
   type TableFilterOption,
+  TableSearch,
 } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
 import {
@@ -27,6 +27,14 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { DeleteConfirmationDialog } from '~/components/ui/delete-confirmation-dialog';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '~/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -35,13 +43,12 @@ import {
 import { ExportButton } from '~/components/ui/export-button';
 import { Input } from '~/components/ui/input';
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '~/components/ui/dialog';
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import {
   Sheet,
   SheetContent,
@@ -71,23 +78,40 @@ const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
 ] as const;
 const CONTROL_EVIDENCE_FILTER_VALUES = ['all', 'ready', 'partial', 'missing'] as const;
 const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const EVIDENCE_REVIEW_DUE_OPTIONS = [3, 6, 12] as const;
+const EVIDENCE_SOURCE_OPTIONS = [
+  'manual_upload',
+  'internal_review',
+  'automated_system_check',
+  'external_report',
+  'vendor_attestation',
+] as const;
+
+type EvidenceReviewDueIntervalMonths = (typeof EVIDENCE_REVIEW_DUE_OPTIONS)[number];
+type EvidenceSource = (typeof EVIDENCE_SOURCE_OPTIONS)[number];
+type EvidenceExpiryStatus = 'current' | 'expiring_soon' | 'none';
 
 type SecurityChecklistEvidence = {
   archivedAt: number | null;
   archivedByDisplay: string | null;
   createdAt: number;
   description: string | null;
+  evidenceDate: number | null;
   evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+  expiryStatus: EvidenceExpiryStatus;
   fileName: string | null;
   id: string;
   lifecycleStatus: 'active' | 'archived' | 'superseded';
   mimeType: string | null;
   renewedFromEvidenceId: string | null;
   replacedByEvidenceId: string | null;
+  reviewDueAt: number | null;
+  reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths | null;
   reviewStatus: 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
   sizeBytes: number | null;
+  source: EvidenceSource | null;
   storageId: string | null;
   sufficiency: 'missing' | 'partial' | 'sufficient';
   title: string;
@@ -119,6 +143,7 @@ type SecurityChecklistItem = {
   description: string;
   evidence: SecurityChecklistEvidence[];
   evidenceSufficiency: 'missing' | 'partial' | 'sufficient';
+  hasExpiringSoonEvidence: boolean;
   itemId: string;
   label: string;
   lastReviewedAt: number | null;
@@ -135,12 +160,48 @@ type SecurityControlWorkspace = Omit<
   | 'coverage'
   | 'evidence'
   | 'lastReviewedAt'
+  | 'mappings'
   | 'platformChecklistItems'
   | 'reviewStatus'
   | 'seedReview'
 > & {
   evidenceReadiness: 'missing' | 'partial' | 'ready';
+  hasExpiringSoonEvidence: boolean;
   lastReviewedAt: number | null;
+  mappings: {
+    csf20: Array<{
+      label: string | null;
+      subcategoryId: string;
+    }>;
+    hipaa: Array<{
+      citation: string;
+      implementationSpecification: 'addressable' | 'required' | null;
+      text: string | null;
+      title: string | null;
+      type: 'implementation_specification' | 'section' | 'standard' | 'subsection' | null;
+    }>;
+    nist80066: Array<{
+      label: string | null;
+      mappingType: 'key-activity' | 'relationship' | 'sample-question' | null;
+      referenceId: string;
+    }>;
+    soc2: Array<{
+      criterionId: string;
+      group:
+        | 'availability'
+        | 'common-criteria'
+        | 'confidentiality'
+        | 'privacy'
+        | 'processing-integrity';
+      label: string | null;
+      trustServiceCategory:
+        | 'availability'
+        | 'confidentiality'
+        | 'privacy'
+        | 'processing-integrity'
+        | 'security';
+    }>;
+  };
   platformChecklist: SecurityChecklistItem[];
 };
 
@@ -244,7 +305,9 @@ function AdminSecurityRoute() {
   const addEvidenceLink = useMutation(api.security.addSecurityControlEvidenceLink);
   const addEvidenceNote = useMutation(api.security.addSecurityControlEvidenceNote);
   const archiveControlEvidence = useMutation(api.security.archiveSecurityControlEvidence);
-  const createEvidenceUploadTarget = useAction(api.security.createSecurityControlEvidenceUploadTarget);
+  const createEvidenceUploadTarget = useAction(
+    api.security.createSecurityControlEvidenceUploadTarget,
+  );
   const finalizeEvidenceUpload = useAction(api.security.finalizeSecurityControlEvidenceUpload);
   const renewControlEvidence = useMutation(api.security.renewSecurityControlEvidence);
   const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
@@ -328,10 +391,7 @@ function AdminSecurityRoute() {
   const filteredControls = useMemo(
     () =>
       controls.filter((control) => {
-        if (
-          responsibilityFilter !== 'all' &&
-          control.responsibility !== responsibilityFilter
-        ) {
+        if (responsibilityFilter !== 'all' && control.responsibility !== responsibilityFilter) {
           return false;
         }
 
@@ -426,9 +486,7 @@ function AdminSecurityRoute() {
   const selectedControl = useMemo(
     () =>
       selectedControlId
-        ? (controls.find(
-            (control) => control.internalControlId === selectedControlId,
-          ) ?? null)
+        ? (controls.find((control) => control.internalControlId === selectedControlId) ?? null)
         : null,
     [controls, selectedControlId],
   );
@@ -597,7 +655,8 @@ function AdminSecurityRoute() {
           checklistCompletion: `${control.platformChecklist.filter((item) => item.status === 'done').length}/${control.platformChecklist.length}`,
           evidenceCount: control.platformChecklist.reduce((count, item) => {
             return (
-              count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length
+              count +
+              item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length
             );
           }, 0),
           archivedEvidenceCount: control.platformChecklist.reduce((count, item) => {
@@ -606,13 +665,12 @@ function AdminSecurityRoute() {
               item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active').length
             );
           }, 0),
-          lastReviewedAt: control.lastReviewedAt ? new Date(control.lastReviewedAt).toISOString() : '',
+          lastReviewedAt: control.lastReviewedAt
+            ? new Date(control.lastReviewedAt).toISOString()
+            : '',
           customerResponsibilityNotes: control.customerResponsibilityNotes ?? '',
           hipaaMappings: control.mappings.hipaa
-            .map(
-              (mapping) =>
-                `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}${mapping.type ? ` · ${mapping.type}` : ''}${mapping.implementationSpecification ? ` · ${mapping.implementationSpecification}` : ''}`,
-            )
+            .map((mapping) => formatHipaaMapping(mapping))
             .join('; '),
           hipaaMappingsJson: JSON.stringify(control.mappings.hipaa),
           csfMappings: control.mappings.csf20
@@ -663,8 +721,11 @@ function AdminSecurityRoute() {
   const handleAddEvidenceLink = useCallback(
     async (args: {
       description?: string;
+      evidenceDate: number;
       internalControlId: string;
       itemId: string;
+      reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+      source: EvidenceSource;
       sufficiency: SecurityChecklistEvidence['sufficiency'];
       title: string;
       url: string;
@@ -674,7 +735,10 @@ function AdminSecurityRoute() {
         await addEvidenceLink(args);
         showToast('Evidence link attached.', 'success');
       } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Failed to attach evidence link', 'error');
+        showToast(
+          error instanceof Error ? error.message : 'Failed to attach evidence link',
+          'error',
+        );
       } finally {
         setBusyControlAction(null);
       }
@@ -685,8 +749,11 @@ function AdminSecurityRoute() {
   const handleAddEvidenceNote = useCallback(
     async (args: {
       description: string;
+      evidenceDate: number;
       internalControlId: string;
       itemId: string;
+      reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+      source: EvidenceSource;
       sufficiency: SecurityChecklistEvidence['sufficiency'];
       title: string;
     }) => {
@@ -695,7 +762,10 @@ function AdminSecurityRoute() {
         await addEvidenceNote(args);
         showToast('Evidence note attached.', 'success');
       } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Failed to attach evidence note', 'error');
+        showToast(
+          error instanceof Error ? error.message : 'Failed to attach evidence note',
+          'error',
+        );
       } finally {
         setBusyControlAction(null);
       }
@@ -706,9 +776,12 @@ function AdminSecurityRoute() {
   const handleUploadEvidenceFile = useCallback(
     async (args: {
       description?: string;
+      evidenceDate: number;
       file: File;
       internalControlId: string;
       itemId: string;
+      reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+      source: EvidenceSource;
       sufficiency: SecurityChecklistEvidence['sufficiency'];
       title: string;
     }) => {
@@ -725,18 +798,24 @@ function AdminSecurityRoute() {
         await finalizeEvidenceUpload({
           backendMode: target.backendMode,
           description: args.description,
+          evidenceDate: args.evidenceDate,
           fileName: args.file.name,
           fileSize: args.file.size,
           internalControlId: args.internalControlId,
           itemId: args.itemId,
           mimeType: args.file.type || 'application/octet-stream',
+          reviewDueIntervalMonths: args.reviewDueIntervalMonths,
           storageId: uploadedStorageId ?? target.storageId,
+          source: args.source,
           sufficiency: args.sufficiency,
           title: args.title,
         });
         showToast('Evidence file uploaded.', 'success');
       } catch (error) {
-        showToast(error instanceof Error ? error.message : 'Failed to upload evidence file', 'error');
+        showToast(
+          error instanceof Error ? error.message : 'Failed to upload evidence file',
+          'error',
+        );
       } finally {
         setBusyControlAction(null);
       }
@@ -755,7 +834,10 @@ function AdminSecurityRoute() {
           const resolved = await createSignedServeUrl({ storageId: evidence.storageId });
           window.open(resolved.url, '_blank', 'noopener,noreferrer');
         } catch (error) {
-          showToast(error instanceof Error ? error.message : 'Failed to open evidence file', 'error');
+          showToast(
+            error instanceof Error ? error.message : 'Failed to open evidence file',
+            'error',
+          );
         }
       }
     },
@@ -782,7 +864,10 @@ function AdminSecurityRoute() {
       setBusyControlAction(`${args.evidenceId}:renew`);
       try {
         await renewControlEvidence(args);
-        showToast('Evidence renewed. Review the new copy before it counts toward completion.', 'success');
+        showToast(
+          'Evidence renewed. Review the new copy before it counts toward completion.',
+          'success',
+        );
       } catch (error) {
         showToast(error instanceof Error ? error.message : 'Failed to renew evidence', 'error');
       } finally {
@@ -1279,6 +1364,11 @@ function ControlCell({ control }: { control: SecurityControlWorkspace }) {
               <p className="font-medium text-foreground">
                 {control.nist80053Id} {control.title}
               </p>
+              {control.hasExpiringSoonEvidence ? (
+                <div className="mt-2">
+                  <Badge variant="secondary">Expiring soon</Badge>
+                </div>
+              ) : null}
             </button>
           </TooltipTrigger>
           <TooltipContent side="top" align="start" className="max-w-md">
@@ -1345,6 +1435,7 @@ function EvidenceReadinessCell({ control }: { control: SecurityControlWorkspace 
       <Badge variant={getEvidenceReadinessBadgeVariant(control.evidenceReadiness)}>
         {formatEvidenceReadiness(control.evidenceReadiness)} {progress.label}
       </Badge>
+      {control.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
     </div>
   );
 }
@@ -1354,9 +1445,7 @@ function FrameworkSummaryCell({ control }: { control: SecurityControlWorkspace }
     {
       label: 'HIPAA',
       count: control.mappings.hipaa.length,
-      values: control.mappings.hipaa.map(
-        (mapping) => `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}`,
-      ),
+      values: control.mappings.hipaa.map((mapping) => formatHipaaMapping(mapping)),
     },
     {
       label: 'CSF',
@@ -1418,16 +1507,22 @@ function ControlDetailSheet(props: {
   control: SecurityControlWorkspace;
   onAddEvidenceLink: (args: {
     description?: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
     url: string;
   }) => Promise<void>;
   onAddEvidenceNote: (args: {
     description: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1445,9 +1540,12 @@ function ControlDetailSheet(props: {
   }) => Promise<void>;
   onUploadEvidenceFile: (args: {
     description?: string;
+    evidenceDate: number;
     file: File;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1461,6 +1559,7 @@ function ControlDetailSheet(props: {
           {control.nist80053Id} {control.title}
         </SheetTitle>
         <SheetDescription>{control.familyTitle}</SheetDescription>
+        {control.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
       </SheetHeader>
 
       <div className="space-y-6 p-4">
@@ -1504,7 +1603,8 @@ function ControlDetailSheet(props: {
 
         <DetailSection title="Customer responsibilities">
           <p className="text-sm leading-relaxed text-muted-foreground">
-            {control.customerResponsibilityNotes ?? 'No additional customer responsibilities recorded.'}
+            {control.customerResponsibilityNotes ??
+              'No additional customer responsibilities recorded.'}
           </p>
         </DetailSection>
 
@@ -1513,9 +1613,7 @@ function ControlDetailSheet(props: {
             <FrameworkAccordionItem
               title="HIPAA"
               value="hipaa"
-              values={control.mappings.hipaa.map(
-                (mapping) => `${mapping.citation}${mapping.title ? ` · ${mapping.title}` : ''}`,
-              )}
+              values={control.mappings.hipaa.map((mapping) => formatHipaaMapping(mapping))}
             />
             <FrameworkAccordionItem
               title="CSF 2.0"
@@ -1551,16 +1649,22 @@ function PlatformChecklistSection(props: {
   control: SecurityControlWorkspace;
   onAddEvidenceLink: (args: {
     description?: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
     url: string;
   }) => Promise<void>;
   onAddEvidenceNote: (args: {
     description: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1578,9 +1682,12 @@ function PlatformChecklistSection(props: {
   }) => Promise<void>;
   onUploadEvidenceFile: (args: {
     description?: string;
+    evidenceDate: number;
     file: File;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1612,16 +1719,22 @@ function ChecklistAccordionItem(props: {
   item: SecurityChecklistItem;
   onAddEvidenceLink: (args: {
     description?: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
     url: string;
   }) => Promise<void>;
   onAddEvidenceNote: (args: {
     description: string;
+    evidenceDate: number;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1639,9 +1752,12 @@ function ChecklistAccordionItem(props: {
   }) => Promise<void>;
   onUploadEvidenceFile: (args: {
     description?: string;
+    evidenceDate: number;
     file: File;
     internalControlId: string;
     itemId: string;
+    reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths;
+    source: EvidenceSource;
     sufficiency: SecurityChecklistEvidence['sufficiency'];
     title: string;
   }) => Promise<void>;
@@ -1659,6 +1775,10 @@ function ChecklistAccordionItem(props: {
   const [linkDescription, setLinkDescription] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [noteDescription, setNoteDescription] = useState('');
+  const [evidenceDateInput, setEvidenceDateInput] = useState(() => getTodayDateInputValue());
+  const [reviewDueIntervalMonths, setReviewDueIntervalMonths] =
+    useState<EvidenceReviewDueIntervalMonths>(12);
+  const [source, setSource] = useState<EvidenceSource | ''>('');
   const linkKey = `${control.internalControlId}:${item.itemId}:link`;
   const noteKey = `${control.internalControlId}:${item.itemId}:note`;
   const fileKey = `${control.internalControlId}:${item.itemId}:file`;
@@ -1673,6 +1793,19 @@ function ChecklistAccordionItem(props: {
         }
       : 'skip',
   );
+  const metadataIsComplete = evidenceDateInput.length > 0 && source !== '';
+
+  const resetEvidenceComposer = useCallback(() => {
+    setLinkTitle('');
+    setLinkUrl('');
+    setLinkDescription('');
+    setNoteTitle('');
+    setNoteDescription('');
+    setEvidenceDateInput(getTodayDateInputValue());
+    setReviewDueIntervalMonths(12);
+    setSource('');
+    setProofComposerTab('link');
+  }, []);
 
   return (
     <AccordionItem value={item.itemId} className="border-b last:border-b-0">
@@ -1681,6 +1814,7 @@ function ChecklistAccordionItem(props: {
           <span className="text-sm font-medium">{item.label}</span>
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!item.required ? <Badge variant="outline">Optional</Badge> : null}
+            {item.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
             <Badge variant={getChecklistStatusBadgeVariant(item.status)}>
               {formatChecklistStatus(item.status)}
             </Badge>
@@ -1700,6 +1834,9 @@ function ChecklistAccordionItem(props: {
                 <div className="flex items-center justify-between gap-3">
                   <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
                   <div className="flex items-center gap-2">
+                    {evidence.expiryStatus === 'expiring_soon' ? (
+                      <Badge variant="secondary">Expiring soon</Badge>
+                    ) : null}
                     <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
                       {formatEvidenceReviewStatus(evidence.reviewStatus)}
                     </Badge>
@@ -1753,6 +1890,24 @@ function ChecklistAccordionItem(props: {
                     <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
                   ) : null}
                   <div className="space-y-1 text-xs text-muted-foreground">
+                    {evidence.source ? (
+                      <p>
+                        <span className="font-medium text-foreground">Source:</span>{' '}
+                        {formatEvidenceSource(evidence.source)}
+                      </p>
+                    ) : null}
+                    {evidence.evidenceDate ? (
+                      <p>
+                        <span className="font-medium text-foreground">Evidence date:</span>{' '}
+                        {formatEvidenceDate(evidence.evidenceDate)}
+                      </p>
+                    ) : null}
+                    {evidence.reviewDueAt ? (
+                      <p>
+                        <span className="font-medium text-foreground">Review due:</span>{' '}
+                        {formatEvidenceDate(evidence.reviewDueAt)}
+                      </p>
+                    ) : null}
                     <p>
                       <span className="font-medium text-foreground">Added:</span>{' '}
                       {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
@@ -1780,10 +1935,20 @@ function ChecklistAccordionItem(props: {
               </div>
             ))}
             <div className="flex flex-wrap justify-start gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsAddingProof(true)}
+              >
                 Add evidence
               </Button>
-              <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsHistoryOpen(true)}
+              >
                 <History className="size-4" />
                 Evidence history
               </Button>
@@ -1791,10 +1956,20 @@ function ChecklistAccordionItem(props: {
           </div>
         ) : (
           <div className="flex flex-wrap justify-start gap-2">
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsAddingProof(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsAddingProof(true)}
+            >
               Add evidence
             </Button>
-            <Button type="button" variant="outline" size="sm" onClick={() => setIsHistoryOpen(true)}>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsHistoryOpen(true)}
+            >
               <History className="size-4" />
               Evidence history
             </Button>
@@ -1802,7 +1977,15 @@ function ChecklistAccordionItem(props: {
         )}
       </AccordionContent>
 
-      <Dialog open={isAddingProof} onOpenChange={setIsAddingProof}>
+      <Dialog
+        open={isAddingProof}
+        onOpenChange={(open) => {
+          setIsAddingProof(open);
+          if (!open) {
+            resetEvidenceComposer();
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Add evidence</DialogTitle>
@@ -1811,6 +1994,61 @@ function ChecklistAccordionItem(props: {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${item.itemId}-evidence-date`}>
+                  Evidence date
+                </label>
+                <Input
+                  id={`${item.itemId}-evidence-date`}
+                  type="date"
+                  value={evidenceDateInput}
+                  onChange={(event) => setEvidenceDateInput(event.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${item.itemId}-review-due`}>
+                  Review due
+                </label>
+                <Select
+                  value={String(reviewDueIntervalMonths)}
+                  onValueChange={(value) =>
+                    setReviewDueIntervalMonths(Number(value) as EvidenceReviewDueIntervalMonths)
+                  }
+                >
+                  <SelectTrigger id={`${item.itemId}-review-due`} className="w-full">
+                    <SelectValue placeholder="Select interval" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EVIDENCE_REVIEW_DUE_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>
+                        {formatEvidenceReviewDueInterval(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium" htmlFor={`${item.itemId}-source`}>
+                  Source
+                </label>
+                <Select
+                  value={source}
+                  onValueChange={(value) => setSource(value as EvidenceSource)}
+                >
+                  <SelectTrigger id={`${item.itemId}-source`} className="w-full">
+                    <SelectValue placeholder="Select source" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {EVIDENCE_SOURCE_OPTIONS.map((option) => (
+                      <SelectItem key={option} value={option}>
+                        {formatEvidenceSource(option)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
             <Tabs
               value={proofComposerTab}
               onValueChange={(value) => setProofComposerTab(value as 'link' | 'note' | 'file')}
@@ -1846,23 +2084,31 @@ function ChecklistAccordionItem(props: {
                     type="button"
                     disabled={
                       props.busyAction === linkKey ||
+                      !metadataIsComplete ||
                       linkTitle.trim().length === 0 ||
                       linkUrl.trim().length === 0
                     }
                     onClick={() => {
-                      void props.onAddEvidenceLink({
-                        internalControlId: control.internalControlId,
-                        itemId: item.itemId,
-                        title: linkTitle,
-                        url: linkUrl,
-                        description: linkDescription,
-                        sufficiency: 'sufficient',
-                      }).then(() => {
-                        setLinkTitle('');
-                        setLinkUrl('');
-                        setLinkDescription('');
-                        setIsAddingProof(false);
-                      });
+                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                      if (evidenceDate === null || source === '') {
+                        return;
+                      }
+                      void props
+                        .onAddEvidenceLink({
+                          evidenceDate,
+                          internalControlId: control.internalControlId,
+                          itemId: item.itemId,
+                          reviewDueIntervalMonths,
+                          source,
+                          title: linkTitle,
+                          url: linkUrl,
+                          description: linkDescription,
+                          sufficiency: 'sufficient',
+                        })
+                        .then(() => {
+                          setIsAddingProof(false);
+                          resetEvidenceComposer();
+                        });
                     }}
                   >
                     {props.busyAction === linkKey ? 'Attaching…' : 'Attach link'}
@@ -1889,21 +2135,30 @@ function ChecklistAccordionItem(props: {
                     type="button"
                     disabled={
                       props.busyAction === noteKey ||
+                      !metadataIsComplete ||
                       noteTitle.trim().length === 0 ||
                       noteDescription.trim().length === 0
                     }
                     onClick={() => {
-                      void props.onAddEvidenceNote({
-                        internalControlId: control.internalControlId,
-                        itemId: item.itemId,
-                        title: noteTitle,
-                        description: noteDescription,
-                        sufficiency: 'sufficient',
-                      }).then(() => {
-                        setNoteTitle('');
-                        setNoteDescription('');
-                        setIsAddingProof(false);
-                      });
+                      const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                      if (evidenceDate === null || source === '') {
+                        return;
+                      }
+                      void props
+                        .onAddEvidenceNote({
+                          evidenceDate,
+                          internalControlId: control.internalControlId,
+                          itemId: item.itemId,
+                          reviewDueIntervalMonths,
+                          source,
+                          title: noteTitle,
+                          description: noteDescription,
+                          sufficiency: 'sufficient',
+                        })
+                        .then(() => {
+                          setIsAddingProof(false);
+                          resetEvidenceComposer();
+                        });
                     }}
                   >
                     {props.busyAction === noteKey ? 'Saving…' : 'Attach note'}
@@ -1914,21 +2169,33 @@ function ChecklistAccordionItem(props: {
               <TabsContent value="file" className="space-y-2">
                 <Input
                   type="file"
+                  disabled={!metadataIsComplete}
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     if (!file) {
                       return;
                     }
-                    void props.onUploadEvidenceFile({
-                      file,
-                      internalControlId: control.internalControlId,
-                      itemId: item.itemId,
-                      title: file.name,
-                      sufficiency: 'sufficient',
-                    }).finally(() => {
+                    const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
+                    if (evidenceDate === null || source === '') {
                       event.target.value = '';
-                      setIsAddingProof(false);
-                    });
+                      return;
+                    }
+                    void props
+                      .onUploadEvidenceFile({
+                        evidenceDate,
+                        file,
+                        internalControlId: control.internalControlId,
+                        itemId: item.itemId,
+                        reviewDueIntervalMonths,
+                        source,
+                        title: file.name,
+                        sufficiency: 'sufficient',
+                      })
+                      .finally(() => {
+                        event.target.value = '';
+                        setIsAddingProof(false);
+                        resetEvidenceComposer();
+                      });
                   }}
                 />
                 {props.busyAction === fileKey ? (
@@ -1960,6 +2227,9 @@ function ChecklistAccordionItem(props: {
                     <div className="flex items-center justify-between gap-3">
                       <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
                       <div className="flex items-center gap-2">
+                        {evidence.expiryStatus === 'expiring_soon' ? (
+                          <Badge variant="secondary">Expiring soon</Badge>
+                        ) : null}
                         <Badge variant={getEvidenceLifecycleBadgeVariant(evidence.lifecycleStatus)}>
                           {formatEvidenceLifecycleStatus(evidence.lifecycleStatus)}
                         </Badge>
@@ -1975,6 +2245,24 @@ function ChecklistAccordionItem(props: {
                       <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
                     ) : null}
                     <div className="space-y-1 text-xs text-muted-foreground">
+                      {evidence.source ? (
+                        <p>
+                          <span className="font-medium text-foreground">Source:</span>{' '}
+                          {formatEvidenceSource(evidence.source)}
+                        </p>
+                      ) : null}
+                      {evidence.evidenceDate ? (
+                        <p>
+                          <span className="font-medium text-foreground">Evidence date:</span>{' '}
+                          {formatEvidenceDate(evidence.evidenceDate)}
+                        </p>
+                      ) : null}
+                      {evidence.reviewDueAt ? (
+                        <p>
+                          <span className="font-medium text-foreground">Review due:</span>{' '}
+                          {formatEvidenceDate(evidence.reviewDueAt)}
+                        </p>
+                      ) : null}
                       <p>
                         <span className="font-medium text-foreground">Added:</span>{' '}
                         {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
@@ -2021,7 +2309,9 @@ function ChecklistAccordionItem(props: {
                   {evidenceActivity.map((event: SecurityChecklistEvidenceActivity) => (
                     <div key={event.id} className="space-y-1 rounded-md border px-3 py-2">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium">{formatEvidenceActivityEvent(event.eventType)}</p>
+                        <p className="text-sm font-medium">
+                          {formatEvidenceActivityEvent(event.eventType)}
+                        </p>
                         <p className="text-xs text-muted-foreground">
                           {formatEvidenceTimestamp(event.createdAt)}
                         </p>
@@ -2089,9 +2379,7 @@ function ChecklistAccordionItem(props: {
         }
         deleteText="Renew evidence"
         isDeleting={
-          pendingRenewEvidence
-            ? props.busyAction === `${pendingRenewEvidence.id}:renew`
-            : false
+          pendingRenewEvidence ? props.busyAction === `${pendingRenewEvidence.id}:renew` : false
         }
         pendingText="Renewing..."
         onConfirm={() => {
@@ -2150,6 +2438,11 @@ function FrameworkAccordionItem(props: { title: string; value: string; values: s
       </AccordionContent>
     </AccordionItem>
   );
+}
+
+function formatHipaaMapping(mapping: SecurityControlWorkspace['mappings']['hipaa'][number]) {
+  const description = mapping.text ?? mapping.title;
+  return `${mapping.citation}${description ? ` · ${description}` : ''}`;
 }
 
 function formatControlResponsibility(responsibility: ControlResponsibility | null) {
@@ -2267,9 +2560,7 @@ function formatEvidenceReviewStatus(reviewStatus: SecurityChecklistEvidence['rev
   }
 }
 
-function formatEvidenceActivityEvent(
-  eventType: SecurityChecklistEvidenceActivity['eventType'],
-) {
+function formatEvidenceActivityEvent(eventType: SecurityChecklistEvidenceActivity['eventType']) {
   switch (eventType) {
     case 'security_control_evidence_created':
       return 'Added';
@@ -2292,6 +2583,51 @@ function formatEvidenceLifecycleStatus(
       return 'Archived';
     case 'superseded':
       return 'Superseded';
+  }
+}
+
+function getTodayDateInputValue() {
+  const date = new Date();
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function parseEvidenceDateInput(value: string) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = new Date(`${value}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+}
+
+function formatEvidenceDate(timestamp: number) {
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function formatEvidenceReviewDueInterval(interval: EvidenceReviewDueIntervalMonths) {
+  switch (interval) {
+    case 3:
+      return '3 months';
+    case 6:
+      return '6 months';
+    case 12:
+      return '1 year';
+  }
+}
+
+function formatEvidenceSource(source: EvidenceSource) {
+  switch (source) {
+    case 'manual_upload':
+      return 'Manual upload';
+    case 'internal_review':
+      return 'Internal review';
+    case 'automated_system_check':
+      return 'Automated system check';
+    case 'external_report':
+      return 'External report';
+    case 'vendor_attestation':
+      return 'Vendor attestation';
   }
 }
 
