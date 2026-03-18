@@ -4,9 +4,16 @@ import path from 'node:path';
 const require = createRequire(import.meta.url);
 const cdk = require('aws-cdk-lib');
 const { MalwareScanStack } = require(path.join('..', 'lib', 'malware-scan-stack.cts'));
+const { DrBackupStack } = require(path.join('..', 'lib', 'dr-backup-stack.cts'));
+const { DrEcsStack } = require(path.join('..', 'lib', 'dr-ecs-stack.cts'));
 
 function readEnv(name, stage) {
   return process.env[`${name}_${stage}`] || process.env[name] || '';
+}
+
+function readTrimmedEnv(name) {
+  const value = process.env[name];
+  return value ? value.trim() : '';
 }
 
 function createStageConfig(stage) {
@@ -23,7 +30,15 @@ function createStageConfig(stage) {
   };
 }
 
+function createAwsEnv() {
+  return {
+    account: process.env.CDK_DEFAULT_ACCOUNT,
+    region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-1',
+  };
+}
+
 const app = new cdk.App();
+const awsEnv = createAwsEnv();
 
 for (const stage of ['dev', 'prod']) {
   const config = createStageConfig(stage);
@@ -32,4 +47,31 @@ for (const stage of ['dev', 'prod']) {
   }
 
   new MalwareScanStack(app, `TanStackStartMalwareScan-${stage}`, config);
+}
+
+new DrBackupStack(app, 'TanStackStartDrBackupStack', {
+  bucketName: readTrimmedEnv('DR_BACKUP_S3_BUCKET') || undefined,
+  ciUserName: readTrimmedEnv('DR_BACKUP_CI_USER_NAME') || undefined,
+  description: 'TanStack Start Template DR backup bucket for Convex exports',
+  env: awsEnv,
+  projectSlug: readTrimmedEnv('DR_PROJECT_SLUG') || 'tanstack-start-template',
+});
+
+const drDomain = readTrimmedEnv('DR_DOMAIN');
+if (drDomain) {
+  new DrEcsStack(app, 'TanStackStartDrEcsStack', {
+    auroraMaxAcu: Number.parseFloat(readTrimmedEnv('DR_AURORA_MAX_ACU')) || undefined,
+    auroraMinAcu: Number.parseFloat(readTrimmedEnv('DR_AURORA_MIN_ACU')) || undefined,
+    backendSubdomain: readTrimmedEnv('DR_BACKEND_SUBDOMAIN') || 'dr-backend',
+    convexImage: readTrimmedEnv('DR_CONVEX_IMAGE') || undefined,
+    cpu: Number.parseInt(readTrimmedEnv('DR_ECS_CPU'), 10) || undefined,
+    description: 'TanStack Start Template DR stack for self-hosted Convex on ECS',
+    domain: drDomain,
+    env: awsEnv,
+    frontendSubdomain: readTrimmedEnv('DR_FRONTEND_SUBDOMAIN') || 'dr',
+    instanceSecretHex: readTrimmedEnv('DR_INSTANCE_SECRET') || undefined,
+    memoryMiB: Number.parseInt(readTrimmedEnv('DR_ECS_MEMORY_MIB'), 10) || undefined,
+    projectSlug: readTrimmedEnv('DR_PROJECT_SLUG') || 'tanstack-start-template',
+    siteSubdomain: readTrimmedEnv('DR_SITE_SUBDOMAIN') || 'dr-site',
+  });
 }

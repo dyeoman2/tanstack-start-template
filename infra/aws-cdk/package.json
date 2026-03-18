@@ -1,0 +1,13 @@
+{
+  "name": "tanstack-start-template-aws-cdk",
+  "private": true,
+  "version": "0.1.0",
+  "description": "AWS CDK stacks for TanStack Start Template storage and disaster recovery",
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "synth": "cdk synth --app 'node ./bin/app.mjs'",
+    "deploy": "cdk deploy --require-approval never --app 'node ./bin/app.mjs'",
+    "destroy": "cdk destroy --force --app 'node ./bin/app.mjs'"
+  }
+}

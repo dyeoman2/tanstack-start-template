@@ -12,6 +12,16 @@ This document captures the current architecture so other agents (human or AI) ca
 - **Server-only logic**: all data mutations and privileged reads happen inside Convex functions or server modules.
 - **Role-based access control (RBAC)**: capabilities enumerated once and enforced in server functions + client UX checks.
 
+## 1.1 Disaster Recovery Model
+
+- **Primary recovery path**: managed vendors self-recover first. Convex Cloud and Netlify remain the normal production architecture.
+- **Secondary backup path**: a weekly GitHub Actions workflow exports Convex production data to an AWS S3 bucket outside Convex and validates restore into self-hosted Convex.
+- **Vendor-exit path**: AWS ECS Fargate plus Aurora Serverless v2 can run the open-source Convex backend and restore from the latest S3 backup.
+- **Frontend failover**: a dedicated Netlify DR site is expected for failover, with Cloudflare DNS repointing the DR frontend, backend, and site hostnames.
+- **File-storage DR**:
+  - `s3-primary` / `s3-mirror` can preserve file access through the existing S3 serving path.
+  - `convex` storage mode does not provide full file DR because `convex export` excludes Convex blobs.
+
 ---
 
 ## 2. Routing Strategy

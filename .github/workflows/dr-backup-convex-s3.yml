@@ -1,0 +1,190 @@
+name: Weekly DR Backup (Convex -> S3)
+
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  convex_export_to_s3:
+    name: Export Convex -> S3
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.DR_BACKUP_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.DR_BACKUP_AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.DR_BACKUP_AWS_REGION || 'us-west-1' }}
+
+      - name: Export Convex production database
+        id: export
+        run: |
+          timestamp=$(date -u +"%Y-%m-%dT%H%M%SZ")
+          zip_file="convex-backup-${timestamp}.zip"
+
+          pnpm exec convex export --path "$zip_file"
+
+          file_size=$(stat -c%s "$zip_file")
+          file_size_mb=$(echo "scale=2; $file_size / 1048576" | bc)
+
+          echo "timestamp=${timestamp}" >> "$GITHUB_OUTPUT"
+          echo "zip_file=${zip_file}" >> "$GITHUB_OUTPUT"
+          echo "file_size_mb=${file_size_mb}" >> "$GITHUB_OUTPUT"
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Upload to S3
+        id: upload
+        run: |
+          s3_key="convex-backups/${ZIP_FILE}"
+
+          aws s3 cp \
+            "${ZIP_FILE}" \
+            "s3://${DR_BACKUP_S3_BUCKET}/${s3_key}" \
+            --sse AES256
+
+          echo "s3_key=${s3_key}" >> "$GITHUB_OUTPUT"
+        env:
+          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          ZIP_FILE: ${{ steps.export.outputs.zip_file }}
+
+      - name: Verify upload
+        run: |
+          result=$(aws s3api head-object \
+            --bucket "${DR_BACKUP_S3_BUCKET}" \
+            --key "${S3_KEY}" \
+            --query '{Size: ContentLength, ETag: ETag, SSE: ServerSideEncryption}' \
+            --output json)
+
+          echo "$result" | jq .
+
+          s3_size=$(echo "$result" | jq -r '.Size')
+          if [[ "$s3_size" -lt 100 ]]; then
+            echo "ERROR: Uploaded file is suspiciously small (${s3_size} bytes)"
+            exit 1
+          fi
+        env:
+          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          S3_KEY: ${{ steps.upload.outputs.s3_key }}
+
+      - name: Deploy test - push functions to local Convex
+        id: deploy_test
+        run: |
+          docker run -d --name convex-dr-test \
+            -p 3210:3210 \
+            -p 3211:3211 \
+            ghcr.io/get-convex/convex-backend:latest
+
+          for i in $(seq 1 30); do
+            docker exec convex-dr-test \
+              curl -sf http://localhost:3210/version > /dev/null 2>&1 && break
+            sleep 1
+          done
+
+          admin_key=$(docker exec convex-dr-test bash -c \
+            'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1')
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set APP_NAME "$DR_TEST_APP_NAME"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set APP_URL "$DR_TEST_APP_URL"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set BETTER_AUTH_URL "$DR_TEST_BETTER_AUTH_URL"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set BETTER_AUTH_SECRET "$DR_TEST_BETTER_AUTH_SECRET"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set CONVEX_SITE_URL "$DR_TEST_CONVEX_SITE_URL"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set JWKS "$DR_TEST_JWKS"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex deploy
+        env:
+          DR_TEST_APP_NAME: ${{ secrets.DR_TEST_APP_NAME || 'TanStack Start Template DR Test' }}
+          DR_TEST_APP_URL: ${{ secrets.DR_TEST_APP_URL || 'http://127.0.0.1:3000' }}
+          DR_TEST_BETTER_AUTH_SECRET: ${{ secrets.DR_TEST_BETTER_AUTH_SECRET || 'dr-test-only-better-auth-secret-0123456789abcdef' }}
+          DR_TEST_BETTER_AUTH_URL: ${{ secrets.DR_TEST_BETTER_AUTH_URL || 'http://127.0.0.1:3000' }}
+          DR_TEST_CONVEX_SITE_URL: ${{ secrets.DR_TEST_CONVEX_SITE_URL || 'http://127.0.0.1:3211' }}
+          DR_TEST_JWKS: ${{ secrets.DR_TEST_JWKS || '{"keys":[]}' }}
+
+      - name: Restore test - import into local Convex
+        id: restore_test
+        run: |
+          admin_key=$(docker exec convex-dr-test bash -c \
+            'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1')
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex import --replace-all -y "${ZIP_FILE}"
+        env:
+          ZIP_FILE: ${{ steps.export.outputs.zip_file }}
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker rm -f convex-dr-test 2>/dev/null || true
+          rm -rf ./convex-export-* ./convex-backup-*.zip
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## Weekly DR Backup - Convex -> S3"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Timestamp | \`${TIMESTAMP}\` |"
+            echo "| File | \`${ZIP_FILE}\` |"
+            echo "| Size | ${FILE_SIZE_MB} MB |"
+            echo "| S3 Key | \`${S3_KEY}\` |"
+            echo "| Bucket | \`${DR_BACKUP_S3_BUCKET}\` |"
+            echo ""
+            echo "Export status: **${{ steps.export.outcome }}**"
+            echo "Upload status: **${{ steps.upload.outcome }}**"
+            echo "Restore test: **${{ steps.restore_test.outcome }}**"
+            echo "Deploy test: **${{ steps.deploy_test.outcome }}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          DR_BACKUP_S3_BUCKET: ${{ secrets.DR_BACKUP_S3_BUCKET }}
+          FILE_SIZE_MB: ${{ steps.export.outputs.file_size_mb }}
+          S3_KEY: ${{ steps.upload.outputs.s3_key }}
+          TIMESTAMP: ${{ steps.export.outputs.timestamp }}
+          ZIP_FILE: ${{ steps.export.outputs.zip_file }}
