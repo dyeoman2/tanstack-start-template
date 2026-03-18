@@ -178,6 +178,198 @@ function seededChecklist(
   };
 }
 
+const CHECKLIST_LABEL_REWRITES = new Map<string, string>([
+  [
+    'Site admin security posture surfaces can support provider awareness walkthroughs',
+    'Site admin security posture can support provider security awareness reviews',
+  ],
+  [
+    'Provider-facing audit review surfaces exist',
+    'Authorized security administrators can review audit activity and related evidence',
+  ],
+  [
+    'Baseline posture can be reviewed in provider and tenant surfaces',
+    'Baseline posture can be reviewed in provider and tenant interfaces',
+  ],
+]);
+
+const CHECKLIST_DESCRIPTION_REWRITES = new Map<string, string>([
+  [
+    'The platform must provide supported surfaces for reviewing audit activity and related security evidence.',
+    'The platform provides authorized security administrators with a supported administrative interface for reviewing audit activity, control records, and related security evidence.',
+  ],
+]);
+
+const EVIDENCE_TITLE_REWRITES = new Map<string, string>([
+  ['Security admin audit review surface', 'Administrative security audit review route'],
+  ['Security admin review surface', 'Administrative security review route'],
+  ['Site admin security posture UI', 'Site admin security posture interface'],
+  ['Organization audit review surface', 'Organization audit review interface'],
+  ['Evidence report review storage', 'Evidence report review record structure'],
+  ['Evidence report review-state schema', 'Evidence report review record structure'],
+  ['Model catalog editing surface', 'Model catalog review interface'],
+  ['Vendor posture site admin UI', 'Site admin vendor posture interface'],
+]);
+
+function normalizeBuyerFacingText(text: string) {
+  return text
+    .replaceAll('repo-backed workspace', 'workspace')
+    .replaceAll('repo-backed control workspace', 'control workspace')
+    .replaceAll('repo-backed product artifacts', 'workspace artifacts')
+    .replaceAll('repo-backed register', 'register')
+    .replaceAll('repo-backed platform evidence', 'platform evidence')
+    .replaceAll('repo-backed membership lifecycle artifacts', 'membership lifecycle artifacts')
+    .replaceAll('site-admin', 'site admin')
+    .replaceAll('site admin security posture surfaces', 'site admin security posture summaries')
+    .replaceAll('site-admin review surfaces', 'site admin review interfaces')
+    .replaceAll('review surfaces', 'review interfaces')
+    .replaceAll('evidence review surfaces', 'evidence review interfaces')
+    .replaceAll('management surface', 'management interface')
+    .replaceAll('provider-facing surfaces', 'provider review interfaces')
+    .replaceAll('review-state artifacts', 'review records')
+    .replaceAll('file-ingest surfaces', 'file-ingest workflows')
+    .replaceAll('operator-run', 'provider-managed')
+    .replaceAll('operator backup configuration', 'provider backup configuration')
+    .replaceAll('operator change-management procedures', 'provider change-management procedures')
+    .replaceAll('operator processes', 'provider processes');
+}
+
+function normalizeChecklistLabel(label: string) {
+  return CHECKLIST_LABEL_REWRITES.get(label) ?? normalizeBuyerFacingText(label);
+}
+
+function normalizeChecklistDescription(description: string) {
+  return (
+    CHECKLIST_DESCRIPTION_REWRITES.get(description) ??
+    normalizeBuyerFacingText(description)
+      .replaceAll('supported surfaces', 'supported interfaces')
+      .replaceAll('support provider awareness or orientation material', 'support provider awareness and orientation material')
+      .replaceAll('surface the effective baseline posture', 'present the effective baseline posture')
+  );
+}
+
+function normalizeEvidenceTitle(title: string) {
+  return (
+    EVIDENCE_TITLE_REWRITES.get(title) ??
+    title
+      .replaceAll('site-admin', 'site admin')
+      .replace(/\bUI\b/g, 'interface')
+      .replace(/\bsurface\b/gi, 'interface')
+      .replace(/review storage/gi, 'review record structure')
+      .replace(/review-state schema/gi, 'review record structure')
+      .replace(/^Security admin\b/, 'Administrative security')
+  );
+}
+
+function stripEvidenceSourcePrefix(description: string) {
+  return description.replace(
+    /^(?:[a-zA-Z0-9_./-]+\.(?:ts|tsx|cts|mjs|md|json))(?: and [a-zA-Z0-9_./-]+\.(?:ts|tsx|cts|mjs|md|json))*\s+/,
+    '',
+  );
+}
+
+function normalizeEvidencePredicate(predicate: string) {
+  return predicate
+    .replace(/^documents\b/i, 'documenting')
+    .replace(/^explains\b/i, 'describing')
+    .replace(/^states\b/i, 'describing')
+    .replace(/^defines\b/i, 'describing')
+    .replace(/^includes\b/i, 'including')
+    .replace(/^stores\b/i, 'retaining')
+    .replace(/^records\b/i, 'recording')
+    .replace(/^aggregates\b/i, 'summarizing')
+    .replace(/^reports\b/i, 'summarizing')
+    .replace(/^renders\b/i, 'showing')
+    .replace(/^displays\b/i, 'showing')
+    .replace(/^presents\b/i, 'showing')
+    .replace(/^provides\b/i, 'providing')
+    .replace(/^exposes\b/i, 'providing')
+    .replace(/^implements\b/i, 'implementing')
+    .replace(/^enforces\b/i, 'enforcing')
+    .replace(/^rejects\b/i, 'rejecting')
+    .replace(/^requires\b/i, 'requiring')
+    .replace(/^validates\b/i, 'validating')
+    .replace(/^uses\b/i, 'applying')
+    .replace(/^applies\b/i, 'applying')
+    .replace(/^manages\b/i, 'managing')
+    .replace(/^manage\b/i, 'managing')
+    .replace(/^supports\b/i, 'supporting')
+    .replace(/^support\b/i, 'supporting')
+    .replace(/^allows reviewers to\b/i, 'allowing reviewers to')
+    .replace(/^allow reviewers to\b/i, 'allowing reviewers to')
+    .replace(/^allows\b/i, 'allowing')
+    .replace(/^allow\b/i, 'allowing')
+    .replace(/^enumerates\b/i, 'listing')
+    .replace(/^emits\b/i, 'recording')
+    .replace(/^creates and verifies\b/i, 'creating and verifying')
+    .replace(/^signs and verifies\b/i, 'signing and verifying')
+    .replace(/^generates and exports\b/i, 'supporting generation and export of')
+    .replace(/^generates and\b/i, 'supporting')
+    .replace(/^generates\b/i, 'supporting generation of')
+    .replace(/^exports\b/i, 'supporting export of')
+    .replace(/^creates\b/i, 'creating')
+    .replace(/^signs\b/i, 'signing')
+    .replace('mark evidence reports reviewed or needs follow-up', 'mark evidence reports as reviewed or requiring follow-up')
+    .replace('mark evidence reports reviewed or needing follow-up', 'mark evidence reports as reviewed or requiring follow-up')
+    .replace('review state', 'review status')
+    .replace('showing a Restore Drill summary card showing', 'showing the Restore Drill summary card with')
+    .replace('showing the control workspace and evidence review interfaces for security administrators', 'showing the control workspace and evidence review interface available to authorized security administrators');
+}
+
+function evidenceArtifactNoun(title: string) {
+  const normalizedTitle = normalizeEvidenceTitle(title).toLowerCase();
+
+  if (normalizedTitle.includes('route')) return 'Route';
+  if (normalizedTitle.includes('interface')) return 'Interface';
+  if (normalizedTitle.includes('workspace')) return 'Workspace';
+  if (normalizedTitle.includes('page')) return 'Page';
+  if (normalizedTitle.includes('summary')) return 'Summary';
+  if (normalizedTitle.includes('card')) return 'Card';
+  if (
+    normalizedTitle.includes('schema') ||
+    normalizedTitle.includes('structure') ||
+    normalizedTitle.includes('metadata') ||
+    normalizedTitle.includes('model')
+  ) {
+    return 'Schema';
+  }
+  if (
+    normalizedTitle.includes('workflow') ||
+    normalizedTitle.includes('flow') ||
+    normalizedTitle.includes('path') ||
+    normalizedTitle.includes('pipeline') ||
+    normalizedTitle.includes('action') ||
+    normalizedTitle.includes('mutation')
+  ) {
+    return 'Workflow';
+  }
+  if (
+    normalizedTitle.includes('guidance') ||
+    normalizedTitle.includes('note') ||
+    normalizedTitle.includes('matrix') ||
+    normalizedTitle.includes('procedure') ||
+    normalizedTitle.includes('documentation')
+  ) {
+    return 'Documentation';
+  }
+  if (normalizedTitle.includes('inventory')) return 'Inventory';
+  if (normalizedTitle.includes('event')) return 'Event inventory';
+
+  return normalizeEvidenceTitle(title);
+}
+
+function normalizeEvidenceDescription(title: string, description: string | null) {
+  if (!description) {
+    return description;
+  }
+
+  const predicate = normalizeEvidencePredicate(
+    stripEvidenceSourcePrefix(normalizeBuyerFacingText(description)),
+  ).replace(/\.$/, '');
+
+  return `${evidenceArtifactNoun(title)} ${predicate}.`;
+}
+
 const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
   csf20Ids?: string[];
   hipaaCitations: string[];
@@ -216,6 +408,168 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
   soc2CriterionIds?: string[];
   customerResponsibilityNotes: string;
 }> = [
+  {
+    nist80053Id: 'AT-2',
+    internalControlId: 'CTRL-AT-002',
+    implementationSummary:
+      'This control addresses provider security awareness and literacy training for use of the hosted service and its privileged security features. The repo-backed workspace currently provides training-supporting reference material through auth-security notes, control-matrix guidance, and site admin security posture surfaces, but it does not evidence a formal provider training program, completion records, or recurring update cadence.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Security Awareness and Training',
+    hipaaCitations: ['45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'security-awareness-reference-material-documented',
+        label: 'Provider security-awareness reference material is documented',
+        description:
+          'The provider should maintain reference material describing key security expectations for the hosted service and its privileged access paths.',
+        verificationMethod: 'Security guidance document review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo includes documented security expectations and control-boundary notes that can support provider awareness walkthroughs.',
+          [
+            seededEvidence(
+              'Auth security guidance',
+              'docs/AUTH_SECURITY.md documents privileged-access expectations such as MFA or passkey use, trusted-origin requirements, and deployer-owned security gaps.',
+            ),
+            seededEvidence(
+              'Control matrix guidance',
+              'docs/CONTROL_MATRIX.md explains which security safeguards are enforced in the hosted service and which security responsibilities remain deployer-owned.',
+            ),
+          ],
+          'Security Awareness and Training',
+        ),
+      },
+      {
+        itemId: 'site-admin-security-posture-supports-awareness-walkthroughs',
+        label: 'Site admin security posture surfaces can support provider awareness walkthroughs',
+        description:
+          'The hosted service should surface current security posture information that providers can reference during awareness or operational security walkthroughs.',
+        verificationMethod: 'Site admin security workspace walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace surfaces MFA posture, audit integrity, file inspection, retention, backup verification, and related security status that can support provider awareness or orientation material.',
+          [
+            seededEvidence(
+              'Security posture aggregation',
+              'convex/security.ts aggregates MFA coverage, audit integrity, file inspection, retention, backup verification, and vendor posture for the site admin security workspace.',
+            ),
+            seededEvidence(
+              'Site admin security posture UI',
+              'src/routes/app/admin/security.tsx renders posture summary cards and control evidence views that can support provider security walkthroughs.',
+            ),
+          ],
+          'Security Awareness and Training',
+        ),
+      },
+      {
+        itemId: 'provider-security-awareness-program-documented',
+        label: 'Provider security awareness training program and cadence are documented',
+        description:
+          'The provider should document who receives security awareness training, how often it is delivered, when it is updated, and how completion is recorded for personnel supporting the hosted service.',
+        verificationMethod: 'Training program review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a provider-owned security awareness training program, attendance evidence, or recurring update cadence.',
+          [],
+          'Security Awareness and Training',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for training their own workforce, administrators, and contractors on secure use of the hosted service, their internal policies, and any connected systems or workflows they operate outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'AT-3',
+    internalControlId: 'CTRL-AT-003',
+    implementationSummary:
+      'This control ensures privileged and support personnel can be trained on the specific security responsibilities tied to their hosted-service roles. The hosted service supports that objective through documented admin-only boundaries, privileged-authentication expectations, and site admin security posture views that can anchor role-based walkthroughs, but a formal provider role-based training program and completion records are not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Security Awareness and Training',
+    hipaaCitations: ['45 CFR 164.308(a)(5)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'privileged-role-security-expectations-are-documented',
+        label: 'Privileged-role security expectations are documented',
+        description:
+          'The provider should document the security expectations that apply to site admin and other privileged roles supporting the hosted service.',
+        verificationMethod: 'Role and security guidance review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The workspace includes documented privileged-role boundaries and stronger-authentication expectations that can anchor role-based security training.',
+          [
+            seededEvidence(
+              'Privileged authentication guidance',
+              'Security notes describe MFA or passkey expectations for site admin and other privileged access paths in regulated deployments.',
+            ),
+            seededEvidence(
+              'Admin-only capability map',
+              'Architecture documentation identifies admin-only routes, capabilities, and route-guard patterns that define the privileged service boundary.',
+            ),
+          ],
+          'Security Awareness and Training',
+        ),
+      },
+      {
+        itemId: 'site-admin-security-posture-supports-role-based-walkthroughs',
+        label: 'Site admin security posture can support privileged-role security walkthroughs',
+        description:
+          'Authorized site admins should be able to review current security posture information that can be used during role-based operational security walkthroughs.',
+        verificationMethod: 'Site admin security workspace walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin security workspace presents posture summaries and evidence views that can support role-based security reviews for privileged personnel.',
+          [
+            seededEvidence(
+              'Site admin security posture interface',
+              'The administrative security interface shows MFA posture, audit integrity, file inspection, retention, backup verification, and related control evidence for provider review.',
+            ),
+            seededEvidence(
+              'Operational control matrix guidance',
+              'The control matrix explains which safeguards ship with the hosted service and which operational gaps remain provider- or customer-managed.',
+            ),
+          ],
+          'Security Awareness and Training',
+        ),
+      },
+      {
+        itemId: 'provider-role-based-security-training-program-documented',
+        label: 'Provider role-based security training program is documented',
+        description:
+          'The provider should document how privileged and support personnel receive role-specific security training, how often that training is refreshed, and how completion is recorded.',
+        verificationMethod: 'Training program review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The workspace does not yet include a documented provider role-based security training program, completion records, or refresher cadence for privileged and support personnel.',
+          [],
+          'Security Awareness and Training',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for role-based security training for their own administrators, support personnel, and contractors who configure or operate customer-managed workflows outside the hosted service boundary.',
+  },
   {
     nist80053Id: 'AC-2',
     internalControlId: 'CTRL-AC-002',
@@ -710,6 +1064,220 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       'Customer organizations are responsible for defining allowed credential types, approving recovery workflows, and governing exceptions to standard authentication policy.',
   },
   {
+    nist80053Id: 'CP-2',
+    internalControlId: 'CTRL-CP-002',
+    implementationSummary:
+      'This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency plan, approval record, and recurring revision process are not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Infrastructure Operations',
+    hipaaCitations: ['45 CFR 164.308(a)(7)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'contingency-planning-context-is-documented',
+        label: 'Service architecture and recovery context are documented for contingency planning',
+        description:
+          'The provider should maintain architecture and operational context that can anchor contingency planning for the hosted service.',
+        verificationMethod: 'Architecture and planning artifact review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The workspace includes architecture and control-boundary documentation that can support provider contingency planning for the hosted service.',
+          [
+            seededEvidence(
+              'Architecture planning document',
+              'Architecture documentation describes the application structure, privileged boundaries, and major service dependencies that contingency planning would need to account for.',
+            ),
+            seededEvidence(
+              'Operational control boundary guidance',
+              'The control matrix identifies which safeguards and recovery-related operational gaps are part of the hosted service versus external provider or customer responsibilities.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'recovery-evidence-can-inform-contingency-planning',
+        label: 'Recovery evidence can inform contingency-planning updates',
+        description:
+          'The hosted service should retain recovery verification records that providers can use to review and update contingency-planning assumptions.',
+        verificationMethod: 'Backup verification record review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Backup verification records and restore-drill audit events are retained and can inform provider contingency-planning updates.',
+          [
+            seededEvidence(
+              'Backup verification record structure',
+              'Stored backup verification records capture drill type, verification method, target environment, restored item count, artifact hash, summary, and review timestamp.',
+            ),
+            seededEvidence(
+              'Restore drill audit trail',
+              'Security operations record restore-drill success and failure events when verification results are stored for later review.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'contingency-planning-artifacts-can-be-packaged-for-review',
+        label: 'Contingency-planning support artifacts can be packaged for provider review',
+        description:
+          'The hosted service should package recent recovery and readiness artifacts so providers can review them when maintaining contingency-planning materials.',
+        verificationMethod: 'Audit readiness export review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace packages recent recovery and readiness artifacts into generated reports that can support provider planning review.',
+          [
+            seededEvidence(
+              'Audit readiness report workflow',
+              'The administrative security workspace generates readiness reports that include backup verification and other recent operational evidence for provider review.',
+            ),
+            seededEvidence(
+              'Site admin readiness interface',
+              'The site admin security interface presents restore-drill and related operational evidence alongside the report-generation workflow.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'provider-contingency-plan-documented',
+        label: 'Provider contingency plan and revision workflow are documented',
+        description:
+          'The provider should document hosted-service contingency procedures, plan approval, revision triggers, and how recovery evidence updates the plan over time.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The workspace does not yet include a formal provider contingency plan, approval record, or revision workflow tied to hosted-service recovery evidence.',
+          [],
+          'Infrastructure Operations',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for their own business continuity and contingency plans for endpoints, downstream systems, local identity providers, and any operations they manage outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'CP-4',
+    internalControlId: 'CTRL-CP-004',
+    implementationSummary:
+      'This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through backup verification records, restore-drill audit events, and site-admin review surfaces for recent contingency evidence, but a formal provider contingency test plan, recurring cadence, and revision workflow are not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Infrastructure Operations',
+    hipaaCitations: ['45 CFR 164.308(a)(7)(ii)(D)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: ['RC.RP-03'],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'contingency-test-records-can-be-captured',
+        label: 'Contingency test records can be captured for restore drills',
+        description:
+          'The hosted service should retain structured records for restore drills or other provider-recorded contingency verification activities.',
+        verificationMethod: 'Backup verification record workflow review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The platform has a dedicated backup verification record path for restore verification and provider-recorded contingency drill evidence.',
+          [
+            seededEvidence(
+              'Backup verification report schema',
+              'convex/schema.ts defines backup verification reports with drill type, verification method, target environment, restored item count, artifact hash, summary, and checkedAt fields.',
+            ),
+            seededEvidence(
+              'Backup verification write path',
+              'convex/security.ts provides backup verification write handlers for persisting restore verification and operator-recorded drill evidence.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'restore-drill-results-are-auditable-and-reviewable',
+        label: 'Restore drill results are auditable and reviewable in the site admin workspace',
+        description:
+          'Provider restore-drill outcomes should be surfaced in provider review flows and linked to auditable events.',
+        verificationMethod: 'Site admin review surface walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Restore drill outcomes are reflected in audit events and surfaced in the site admin security workspace for provider review.',
+          [
+            seededEvidence(
+              'Restore drill audit events',
+              'convex/security.ts records backup restore drill completed and failed audit events when verification results are stored.',
+            ),
+            seededEvidence(
+              'Site admin restore drill summary',
+              'src/routes/app/admin/security.tsx renders a Restore Drill summary card showing the latest restore or operator-recorded backup verification evidence.',
+            ),
+            seededEvidence(
+              'Operational evidence note',
+              'docs/CONTROL_MATRIX.md states that backup verification records provide timestamped evidence that operators can link with deployment runbooks.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'contingency-test-artifacts-can-be-included-in-readiness-exports',
+        label: 'Contingency test artifacts can be included in site admin readiness exports',
+        description:
+          'The hosted service should package recent contingency-test evidence into provider review or readiness exports when those artifacts are available.',
+        verificationMethod: 'Audit readiness export review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace includes recent backup verification evidence in audit readiness review flows and generated exports.',
+          [
+            seededEvidence(
+              'Audit readiness report generation',
+              'src/routes/app/admin/security.tsx exposes Generate audit readiness report for current manifest, denial, metadata-gap, and restore-drill evidence.',
+            ),
+            seededEvidence(
+              'Operational evidence summary',
+              'docs/CONTROL_MATRIX.md states that the site admin security workspace exposes backup verification as part of internal operational evidence.',
+            ),
+          ],
+          'Infrastructure Operations',
+        ),
+      },
+      {
+        itemId: 'provider-contingency-test-plan-documented',
+        label: 'Provider contingency test plan and cadence are documented',
+        description:
+          'The provider should document contingency-test scope, success criteria, recurring cadence, and how test results drive revisions to hosted-service recovery procedures.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider contingency test plan, recurring schedule, or revision workflow for hosted-service recovery exercises.',
+          [],
+          'Infrastructure Operations',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for testing their own business continuity, downstream restore procedures, and connected-system recovery workflows outside the hosted service boundary, and for deciding whether the provider contingency-test evidence satisfies their internal requirements.',
+  },
+  {
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
     implementationSummary:
@@ -785,6 +1353,168 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       'Customer organizations are responsible for determining whether the hosted service backup and recovery posture satisfies their retention, recovery-time, and business continuity requirements, and for protecting any data they export or replicate outside the service.',
   },
   {
+    nist80053Id: 'IR-2',
+    internalControlId: 'CTRL-IR-002',
+    implementationSummary:
+      'This control ensures incident responders can be trained using current hosted-service investigation artifacts and response-supporting context. The hosted service supports that objective through generated evidence reports, audit-readiness exports, and retained integrity-linked investigation records, but a formal provider incident response training program and completion records are not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Security Incident Response',
+    hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'incident-training-support-artifacts-can-be-generated',
+        label: 'Incident response support artifacts can be generated for responder training',
+        description:
+          'The hosted service should generate evidence and readiness artifacts that providers can use during incident response orientation or refresher training.',
+        verificationMethod: 'Evidence and readiness generation walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can generate evidence reports and audit-readiness outputs that package investigation-supporting material for responder training and review.',
+          [
+            seededEvidence(
+              'Evidence report generation workflow',
+              'The administrative security workflow generates structured evidence reports containing posture, audit, and integrity-linked review information.',
+            ),
+            seededEvidence(
+              'Audit readiness export workflow',
+              'The site admin security workflow can generate readiness reports that package recent security and recovery evidence for provider review.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'incident-investigation-context-is-retained-for-training-review',
+        label: 'Incident investigation context is retained for training and follow-up review',
+        description:
+          'Investigation-supporting artifacts should retain integrity and review context so providers can reference realistic material during responder training or follow-up.',
+        verificationMethod: 'Evidence artifact retention review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Generated evidence and audit-readiness artifacts retain integrity-linked metadata and review context that can support responder training review.',
+          [
+            seededEvidence(
+              'Evidence report review record structure',
+              'Stored evidence reports retain content hashes, review status, reviewer attribution, notes, and export-integrity metadata for later provider review.',
+            ),
+            seededEvidence(
+              'Evidence report review interface',
+              'The administrative security interface allows authorized reviewers to inspect report status, review notes, and export metadata associated with incident-supporting artifacts.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'provider-incident-response-training-program-documented',
+        label: 'Provider incident response training program is documented',
+        description:
+          'The provider should document who receives incident response training, how training is refreshed, and how completion is recorded for personnel supporting the hosted service.',
+        verificationMethod: 'Training program review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The workspace does not yet include a provider incident response training program, completion records, or documented refresher cadence.',
+          [],
+          'Security Incident Response',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for incident response training for their own responders, escalation teams, and administrators who operate customer-managed systems or local procedures outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'IR-3',
+    internalControlId: 'CTRL-IR-003',
+    implementationSummary:
+      'This control ensures incident response procedures can be exercised using current hosted-service evidence and investigation workflows. The hosted service supports that objective through audit-readiness reports, investigation-supporting exports, and retained recovery evidence that can inform tabletop or walkthrough exercises, but a formal provider incident response exercise cadence, scenario library, and recorded results are not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Security Incident Response',
+    hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'incident-exercise-support-artifacts-can-be-generated',
+        label: 'Incident exercise support artifacts can be generated from the site admin workspace',
+        description:
+          'The hosted service should generate evidence packages that providers can use during tabletop exercises or incident-response walkthroughs.',
+        verificationMethod: 'Evidence and readiness generation walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can generate evidence and readiness artifacts that package current investigation-supporting material for incident exercises.',
+          [
+            seededEvidence(
+              'Site admin evidence and readiness actions',
+              'The administrative security interface exposes evidence-report and audit-readiness generation actions for current posture and review state.',
+            ),
+            seededEvidence(
+              'Generated investigation-supporting exports',
+              'Security workflows generate structured exports containing posture, audit, review, and integrity metadata that can be reused during exercises.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'recovery-and-investigation-evidence-can-support-incident-exercises',
+        label: 'Recovery and investigation evidence can support incident-response exercises',
+        description:
+          'Providers should be able to review recovery and investigation artifacts together when validating incident-response assumptions or exercise scenarios.',
+        verificationMethod: 'Readiness and restore evidence review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Restore-drill evidence and investigation-supporting reports are both retained in the site admin workspace and can support exercise review.',
+          [
+            seededEvidence(
+              'Restore drill evidence records',
+              'Stored backup verification and restore-drill records retain recent recovery outcomes that can inform incident-response exercises.',
+            ),
+            seededEvidence(
+              'Audit readiness evidence review',
+              'The site admin security workflow packages recent metadata gaps, denial events, and restore-drill evidence into readiness reports for provider review.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'provider-incident-response-exercise-program-documented',
+        label: 'Provider incident response exercise cadence and results are documented',
+        description:
+          'The provider should document exercise scenarios, recurring cadence, participant roles, and recorded results for hosted-service incident-response testing.',
+        verificationMethod: 'Exercise program review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The workspace does not yet include a provider incident response exercise schedule, scenario set, or recorded exercise results.',
+          [],
+          'Security Incident Response',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for testing their own incident response procedures, communication paths, and local recovery actions for systems and workflows they manage outside the hosted service boundary.',
+  },
+  {
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
@@ -856,6 +1586,107 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     ],
     customerResponsibilityNotes:
       'Customer organizations are responsible for incident detection, triage, escalation, containment, notification, and post-incident handling in their own environment; the platform evidence here provides investigation support only.',
+  },
+  {
+    nist80053Id: 'IR-8',
+    internalControlId: 'CTRL-IR-008',
+    implementationSummary:
+      'This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, and audit-readiness artifacts that can support provider or customer incident response planning, but a formal provider incident response plan, plan review cadence, and customer coordination procedure are not yet evidenced in this repo-backed workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Security Incident Response',
+    hipaaCitations: ['45 CFR 164.308(a)(6)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'incident-planning-artifacts-can-be-generated',
+        label: 'Incident-planning support artifacts can be generated from the site admin workspace',
+        description:
+          'The hosted service should generate exports and evidence packages that provider or customer responders can use during incident planning and coordination.',
+        verificationMethod: 'Evidence and audit-readiness generation walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can generate evidence reports and audit-readiness outputs that package investigation-supporting material for later response use.',
+          [
+            seededEvidence(
+              'Evidence report generation and export',
+              'convex/security.ts generates and exports evidence reports with structured posture, audit, and integrity data for review.',
+            ),
+            seededEvidence(
+              'Site admin evidence and readiness actions',
+              'src/routes/app/admin/security.tsx exposes Generate evidence report and Generate audit readiness report actions in the site admin workspace.',
+            ),
+            seededEvidence(
+              'Operational evidence note',
+              'docs/CONTROL_MATRIX.md states that audit log exports and related evidence are available, while incident response reporting remains a deployer task.',
+              { sufficiency: 'partial' },
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'incident-supporting-context-can-be-retained',
+        label: 'Incident-supporting evidence retains integrity and review context',
+        description:
+          'The hosted service should retain hashes, review state, and export metadata for investigation artifacts that may be referenced during incident response planning or execution.',
+        verificationMethod: 'Evidence artifact retention review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Generated evidence and audit-readiness artifacts retain integrity-linked metadata and review context that can support later incident response use.',
+          [
+            seededEvidence(
+              'Integrity-linked evidence report metadata',
+              'convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
+            ),
+            seededEvidence(
+              'Evidence report review-state schema',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields used to preserve incident-supporting context.',
+            ),
+          ],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'provider-incident-response-plan-documented',
+        label: 'Provider incident response plan is documented',
+        description:
+          'The provider should maintain a documented incident response plan covering roles, escalation paths, coordination expectations, and use of hosted-service investigation artifacts.',
+        verificationMethod: 'Plan review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a provider-owned incident response plan document.',
+          [],
+          'Security Incident Response',
+        ),
+      },
+      {
+        itemId: 'provider-incident-response-plan-review-cadence-documented',
+        label: 'Provider incident response plan review and update cadence is documented',
+        description:
+          'The provider should document how the incident response plan is reviewed, updated, and communicated when incident lessons or system changes require revision.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider review cadence or revision workflow for the incident response plan.',
+          [],
+          'Security Incident Response',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for maintaining their own incident response plans, internal escalation paths, notification obligations, and coordination procedures for customer-managed systems and workflows outside the hosted service boundary. The hosted-service artifacts tracked here are intended to support planning and coordination, not replace either party\'s incident response plan.',
   },
   {
     nist80053Id: 'RA-5',
@@ -985,6 +1816,192 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     ],
     customerResponsibilityNotes:
       'Customer organizations are responsible for requiring secure access to the service within their own networks, browsers, devices, and downstream integrations.',
+  },
+  {
+    nist80053Id: 'SC-12',
+    internalControlId: 'CTRL-SC-012',
+    implementationSummary:
+      'This control addresses cryptographic key and secret management for signing and verification paths used by the hosted service. The platform enforces required runtime secrets for authentication and signed file or webhook flows, and it uses those configured secrets for HMAC-based protection, but secret generation, secure custody, rotation, and KMS or HSM controls remain deployment-owned and are not fully evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Infrastructure and Platform Security',
+    hipaaCitations: ['45 CFR 164.312(a)(2)(iv)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'cryptographic-runtime-secrets-required',
+        label: 'Cryptographic runtime secrets are required for protected service paths',
+        description:
+          'The hosted service should require configured secrets for authentication and signing-sensitive runtime paths before those paths can operate.',
+        verificationMethod: 'Runtime configuration review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo fails closed when required auth and signing secrets are missing from protected runtime paths.',
+          [
+            seededEvidence(
+              'Better Auth secret validation',
+              'src/lib/server/env.server.ts requires BETTER_AUTH_SECRET outside tests and enforces minimum secret expectations before auth can start.',
+            ),
+            seededEvidence(
+              'Storage signing secret validation',
+              'src/lib/server/env.server.ts reads signing secrets while convex/fileServing.ts and convex/storageWebhook.ts throw when required signing secrets are not configured.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'configured-secrets-protect-signing-flows',
+        label: 'Configured secrets protect signed service flows',
+        description:
+          'The hosted service should use configured secrets in cryptographic signing and verification paths that protect controlled access flows.',
+        verificationMethod: 'Signing and verification path review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Configured secrets are used in HMAC-based file-serving and webhook-verification flows.',
+          [
+            seededEvidence(
+              'Signed file-serving flow',
+              'convex/fileServing.ts imports an HMAC key from the configured file-serving secret and signs or verifies protected file serve URLs.',
+            ),
+            seededEvidence(
+              'Webhook signature verification',
+              'convex/storageWebhook.ts signs and verifies GuardDuty webhook payloads with the configured shared secret, and infra/aws-cdk/lambda/guardduty-forwarder.mjs generates the forwarding signature.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'deployment-key-custody-and-rotation-documented',
+        label: 'Deployment key custody and rotation are documented',
+        description:
+          'The provider or deployment operator should document how cryptographic secrets are generated, stored, rotated, and retired for the hosted environment.',
+        verificationMethod: 'Key management procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo does not currently attach a documented secret-custody or rotation procedure for production cryptographic material.',
+          [],
+          'Infrastructure and Platform Security',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations and deployment operators are responsible for generating, storing, rotating, and retiring production cryptographic secrets in their own infrastructure, including any KMS, HSM, IAM, backup, and incident-response procedures tied to those secrets.',
+  },
+  {
+    nist80053Id: 'SC-13',
+    internalControlId: 'CTRL-SC-013',
+    implementationSummary:
+      'This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the repo-backed platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, managed encrypted file storage, and cryptographic signing or hashing for protected file access and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this repo-backed workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Infrastructure and Platform Security',
+    hipaaCitations: [
+      '45 CFR 164.312(a)(2)(iv)',
+      '45 CFR 164.312(e)(2)(i)',
+      '45 CFR 164.312(c)(1)',
+    ],
+    csf20Ids: ['PR.DS-01', 'PR.DS-02'],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'cryptographic-transport-and-session-protections',
+        label: 'Cryptographic protections are applied to hosted authentication and session flows',
+        description:
+          'Hosted authentication and session flows should require secure transport and use cryptographic protections appropriate to session handling.',
+        verificationMethod: 'Auth and session configuration review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The hosted auth stack requires HTTPS outside loopback development, uses secure cookies on HTTPS origins, and enables encrypted OAuth token handling.',
+          [
+            seededEvidence(
+              'HTTPS Better Auth configuration',
+              'src/lib/server/env.server.ts requires BETTER_AUTH_URL and trusted origins to use HTTPS unless they point to loopback development.',
+            ),
+            seededEvidence(
+              'Secure session and OAuth token settings',
+              'convex/betterAuth/sharedOptions.ts enables secure cookies for HTTPS origins and sets encryptOAuthTokens: true for linked account handling.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'cryptographic-storage-protections',
+        label: 'Cryptographic protections are applied to managed hosted storage',
+        description:
+          'Managed hosted storage for protected files should use configured cryptographic protection and secure transport controls.',
+        verificationMethod: 'Storage configuration review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The managed S3 storage stack uses server-side encryption and enforces SSL for hosted file storage.',
+          [
+            seededEvidence(
+              'Encrypted managed storage configuration',
+              'infra/aws-cdk/lib/malware-scan-stack.cts provisions the files bucket with S3-managed encryption, blocked public access, and enforceSSL.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'cryptographic-integrity-mechanisms',
+        label: 'Cryptographic signing and hashing protect integrity-sensitive service workflows',
+        description:
+          'Protected file access and evidence or audit workflows should use cryptographic signing or hashing where the platform relies on integrity-sensitive artifacts.',
+        verificationMethod: 'Integrity mechanism review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The platform uses HMAC-backed signed file access plus SHA-256-based hashing for audit and evidence integrity workflows.',
+          [
+            seededEvidence(
+              'Signed protected file access',
+              'convex/fileServing.ts creates and verifies HMAC-backed signatures for protected file-serving URLs.',
+            ),
+            seededEvidence(
+              'Evidence and audit hashing',
+              'convex/security.ts and convex/audit.ts compute content, export, and audit event hashes to preserve integrity-linked records.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'provider-cryptography-standard-selection-documented',
+        label: 'Provider cryptography standard selection is documented',
+        description:
+          'The provider should document which cryptographic uses are required in the hosted service and which approved cryptographic approaches or standards are expected for those uses.',
+        verificationMethod: 'Cryptography policy and standards review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo shows cryptographic mechanisms in use, but it does not attach a provider-owned cryptography standard-selection or approved-module policy to this workspace.',
+          [],
+          'Infrastructure and Platform Security',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for evaluating whether the hosted service cryptographic posture satisfies their own policy, procurement, and regulatory requirements, including any expectations for approved cryptographic modules, customer-managed keys, or encryption requirements in connected systems they operate outside the hosted service boundary.',
   },
   {
     nist80053Id: 'SC-28',
@@ -1481,6 +2498,113 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       'Customer organizations remain responsible for their own vendor due diligence, contract review, and deciding whether the platform vendor set satisfies their subprocessor and business-associate requirements.',
   },
   {
+    nist80053Id: 'SA-22',
+    internalControlId: 'CTRL-SA-022',
+    implementationSummary:
+      'This control addresses identification and handling of unsupported or deprecated managed components used by the hosted service. The platform currently supports that objective through code-health audit workflows, curated model inventory metadata with deprecation state, and site admin visibility into deprecated managed models, but a formal provider unsupported-component review cadence, replacement plan process, and exception workflow are not yet evidenced in this repo-backed workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Secure Engineering',
+    hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(B)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'deprecated-managed-components-can-be-identified',
+        label: 'Deprecated managed components can be identified in provider-managed inventories',
+        description:
+          'The provider should be able to identify deprecated or retired managed components used by the hosted service where those components are tracked in provider-managed inventories.',
+        verificationMethod: 'Managed component inventory review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo tracks deprecation state and optional retirement dates for curated managed models imported into the hosted service catalog.',
+          [
+            seededEvidence(
+              'Imported model deprecation metadata',
+              'convex/adminModelImports.ts marks imported models deprecated when expiration metadata is present and stores deprecation date information.',
+            ),
+            seededEvidence(
+              'Managed model schema support',
+              'convex/schema.ts includes deprecated and deprecationDate fields for provider-managed model catalog entries.',
+            ),
+          ],
+          'Secure Engineering',
+        ),
+      },
+      {
+        itemId: 'deprecated-component-status-is-visible-to-site-admin',
+        label: 'Site admin can review deprecated status for tracked managed components',
+        description:
+          'The hosted service should surface deprecated status for tracked managed components so site admins can review and act on those conditions.',
+        verificationMethod: 'Site admin managed-component review walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin model catalog UI displays deprecated state and deprecation dates for tracked managed models.',
+          [
+            seededEvidence(
+              'Model catalog deprecated badge',
+              'src/features/admin/components/ModelCatalogManager.tsx renders deprecated badges and deprecation date fields for provider-managed model entries.',
+            ),
+            seededEvidence(
+              'Model catalog editing surface',
+              'src/features/admin/components/ModelCatalogManager.tsx allows site admins to review and update deprecated state for curated managed models.',
+            ),
+          ],
+          'Secure Engineering',
+        ),
+      },
+      {
+        itemId: 'unsupported-component-risk-review-artifacts-exist',
+        label: 'Unsupported-component risk review artifacts exist for provider follow-up',
+        description:
+          'The provider should have reviewable artifacts that help identify unsupported or risky implementation patterns in the hosted service codebase.',
+        verificationMethod: 'Engineering audit workflow review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'in_progress',
+          'The repo includes automated code-health audit workflows and inventory outputs that support engineering review, but those workflows are not a full unsupported-component replacement program.',
+          [
+            seededEvidence(
+              'Code-health audit workflow',
+              'package.json defines audit:code-health and related check commands that run the code-health audit as part of provider engineering review.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Code-health audit script',
+              'scripts/code-health-audit.ts provides check and inventory modes for provider review of exported Convex functions and related implementation risk conditions.',
+              { sufficiency: 'partial' },
+            ),
+          ],
+          'Secure Engineering',
+        ),
+      },
+      {
+        itemId: 'provider-unsupported-component-replacement-workflow-documented',
+        label: 'Provider unsupported-component review and replacement workflow is documented',
+        description:
+          'The provider should document how unsupported or deprecated components are reviewed, approved for continued use or replacement, and retired from the hosted service.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider review cadence, exception workflow, or replacement plan process for unsupported components.',
+          [],
+          'Secure Engineering',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for tracking unsupported components in their own endpoints, identity providers, integrations, and downstream systems connected to the hosted service, and for evaluating whether any provider-managed deprecated components disclosed through the workspace satisfy their internal risk requirements.',
+  },
+  {
     nist80053Id: 'SC-7',
     internalControlId: 'CTRL-SC-007',
     implementationSummary:
@@ -1665,6 +2789,119 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       'Customer organizations are responsible for broader endpoint and email malware defenses outside the hosted file-ingest paths provided by the platform.',
   },
   {
+    nist80053Id: 'CM-2',
+    internalControlId: 'CTRL-CM-002',
+    implementationSummary:
+      'This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, and site-admin-visible baseline posture summaries, but a formal provider baseline review and approval procedure is not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Configuration Management',
+    hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(B)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: ['PR.IP-01'],
+    soc2CriterionIds: ['CC8.1'],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'baseline-defaults-defined',
+        label: 'Baseline security defaults are defined centrally',
+        description:
+          'The provider should define baseline security defaults for tenant-facing policy and core session posture in a single maintained source of truth.',
+        verificationMethod: 'Baseline constant and config source review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo defines a regulated baseline for retention, MFA, verified email, step-up, and related tenant-facing defaults in shared source modules.',
+          [
+            seededEvidence(
+              'Central regulated baseline defaults',
+              'src/lib/shared/security-baseline.ts defines always-on baseline requirements, retention defaults, and organization policy defaults for the hosted service baseline.',
+            ),
+            seededEvidence(
+              'Retention baseline config defaults',
+              'src/lib/server/security-config.server.ts derives retention and recent-step-up defaults from the shared regulated baseline configuration.',
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'baseline-materialized-under-configuration-control',
+        label: 'Baseline defaults are materialized and preserved in organization policy state',
+        description:
+          'The hosted service should apply baseline defaults consistently when organization policy state is created or updated.',
+        verificationMethod: 'Organization policy enforcement review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Organization policy state is normalized through the always-on regulated baseline so protected defaults remain enforced when policy values are read or updated.',
+          [
+            seededEvidence(
+              'Baseline application during policy reads',
+              'convex/organizationManagement.ts uses applyAlwaysOnRegulatedBaseline so organization policy state always reflects the enforced baseline.',
+            ),
+            seededEvidence(
+              'Baseline application during policy updates',
+              'convex/organizationManagement.ts applies applyAlwaysOnRegulatedBaseline before inserting or patching organization policy records.',
+            ),
+            seededEvidence(
+              'Server-side policy defaults',
+              'src/features/organizations/server/organization-management.ts uses regulated organization policy defaults in server-side policy handling.',
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'baseline-posture-can-be-reviewed',
+        label: 'Baseline posture can be reviewed in provider and tenant surfaces',
+        description:
+          'The hosted service should surface the effective baseline posture so site admins and organization administrators can review the enforced defaults.',
+        verificationMethod: 'UI and evidence export walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The app surfaces enforced baseline posture in organization settings and site-admin security evidence outputs.',
+          [
+            seededEvidence(
+              'Organization policy baseline surface',
+              'src/features/organizations/components/OrganizationPoliciesCard.tsx presents always-enforced regulated controls alongside editable access policies.',
+            ),
+            seededEvidence(
+              'Site admin baseline summary',
+              'convex/security.ts includes baseline defaults, session policy, and verification posture in generated site-admin evidence data for review.',
+            ),
+            seededEvidence(
+              'Site admin baseline UI summary',
+              'src/routes/app/admin/security.tsx renders session and security posture summary values derived from the site-admin security workspace.',
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'provider-baseline-review-procedure-documented',
+        label: 'Provider baseline review and update procedure is documented',
+        description:
+          'The provider should document how the hosted-service baseline configuration is reviewed, approved, and updated when components or requirements change.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider procedure for baseline review cadence, approval, or update triggers.',
+          [],
+          'Configuration Management',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for reviewing whether the hosted-service baseline aligns with their own local configuration standards and for governing any customer-managed integrations, endpoints, or downstream configurations outside the hosted service boundary.',
+  },
+  {
     nist80053Id: 'CM-6',
     internalControlId: 'CTRL-CM-006',
     implementationSummary:
@@ -1752,6 +2989,118 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       'Customer organizations are responsible for safe configuration of any customer-controlled integrations, identity providers, or downstream policies they connect to the platform.',
   },
   {
+    nist80053Id: 'CM-8',
+    internalControlId: 'CTRL-CM-008',
+    implementationSummary:
+      'This control ensures the hosted service maintains a partial inventory foundation for the components and managed services that make up the deployed system boundary. The platform currently documents architecture scope, approved external services, and selected security-relevant managed components, but a complete component inventory with formal review cadence and accountability records is not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Configuration Management',
+    hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(A)'],
+    csf20Ids: ['ID.AM-02'],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'architecture-and-service-boundary-components-documented',
+        label: 'Architecture and service-boundary components are documented',
+        description:
+          'The provider should document the major application, runtime, and service-boundary components that make up the hosted system.',
+        verificationMethod: 'Architecture artifact review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Architecture and control-matrix documentation identify the major hosted-service layers, runtime boundaries, and deployer-owned gaps.',
+          [
+            seededEvidence(
+              'Architecture overview',
+              'docs/ARCHITECTURE.md documents the application shell, server-function boundaries, Convex runtime, authentication stack, and high-level service architecture.',
+            ),
+            seededEvidence(
+              'Control matrix boundary narrative',
+              'docs/CONTROL_MATRIX.md describes which safeguards and managed components are in app scope versus which infrastructure and operational elements remain deployer-owned.',
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'approved-external-services-and-managed-components-inventoried',
+        label: 'Approved external services and selected managed components are inventoried',
+        description:
+          'The provider should maintain an inventory of approved external services and selected security-relevant managed components within the hosted system boundary.',
+        verificationMethod: 'Service and managed-component inventory review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'in_progress',
+          'The repo inventories approved external services and documents selected security-relevant managed components, but it is not yet a complete component inventory for the full hosted environment.',
+          [
+            seededEvidence(
+              'Vendor boundary registry',
+              'src/lib/shared/vendor-boundary.ts inventories approved external services, allowed data classes, allowed environments, and approval flags.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Vendor posture snapshot',
+              'src/lib/server/vendor-boundary.server.ts materializes current approval posture for configured external services.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Managed malware-scan stack definition',
+              'infra/aws-cdk/lib/malware-scan-stack.cts defines the files bucket, GuardDuty malware protection plan, EventBridge rule, and forwarding Lambda used for the hosted document-scanning path.',
+              { sufficiency: 'partial' },
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'component-posture-can-be-reviewed-in-site-admin',
+        label: 'Site admin can review current posture for inventoried external services',
+        description:
+          'The hosted service should expose current posture for inventoried external services so site admins can review configured approval state and allowed use.',
+        verificationMethod: 'Site admin posture walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace surfaces current approval posture and allowed data classes for configured external services.',
+          [
+            seededEvidence(
+              'Vendor posture query',
+              'convex/security.ts includes vendor posture from the vendor-boundary snapshot in the site-admin security workspace data.',
+            ),
+            seededEvidence(
+              'Vendor posture site admin UI',
+              'src/routes/app/admin/security.tsx renders vendor posture cards showing approval state, approval source, and allowed data classes for configured services.',
+            ),
+          ],
+          'Configuration Management',
+        ),
+      },
+      {
+        itemId: 'provider-component-inventory-review-procedure-documented',
+        label: 'Provider component inventory review procedure is documented',
+        description:
+          'The provider should document how the hosted-service component inventory is reviewed, updated, and kept current over time.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'No provider-owned review cadence or update procedure for a full system component inventory is attached in the repo-backed control workspace yet.',
+          [],
+          'Configuration Management',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for maintaining inventories of their own endpoints, integrations, identity providers, and any customer-managed infrastructure or downstream systems connected to the hosted service.',
+  },
+  {
     nist80053Id: 'SI-7',
     internalControlId: 'CTRL-SI-007',
     implementationSummary:
@@ -1837,6 +3186,228 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     ],
     customerResponsibilityNotes:
       'Customer organizations are responsible for validating the integrity of any exported material after it leaves the service and for protecting customer-managed downstream storage or transmission paths.',
+  },
+  {
+    nist80053Id: 'CA-2',
+    internalControlId: 'CTRL-CA-002',
+    implementationSummary:
+      'This control ensures the hosted service can generate and retain structured control assessment outputs for provider review. The platform supports that objective through evidence report generation, review-state retention, and exportable assessment artifacts in the site admin workspace, but a formal provider assessment plan, assessor assignment model, and approval workflow are not yet evidenced in this repo-backed workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Security Assurance',
+    hipaaCitations: ['45 CFR 164.308(a)(8)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'assessment-artifacts-generated',
+        label: 'Structured control assessment artifacts can be generated',
+        description:
+          'The hosted service should generate structured assessment outputs from current control and posture state for provider review.',
+        verificationMethod: 'Evidence report generation walkthrough',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can generate structured evidence reports from current posture, audit readiness, and control workspace state.',
+          [
+            seededEvidence(
+              'Evidence report generation action',
+              'convex/security.ts generates structured evidence reports from posture state, recent audit events, integrity checks, and control workspace data.',
+            ),
+            seededEvidence(
+              'Site admin report generation UI',
+              'src/routes/app/admin/security.tsx exposes Generate evidence report and Generate audit readiness report actions in the site admin workspace.',
+            ),
+            seededEvidence(
+              'Control matrix operational evidence note',
+              'docs/CONTROL_MATRIX.md documents that evidence report generation persists structured evidence snapshots for compliance-ready exports.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'assessment-results-reviewed-and-retained',
+        label: 'Assessment results can be reviewed and retained with reviewer attribution',
+        description:
+          'Assessment outputs should retain review status, reviewer identity, notes, and timestamps for later provider review.',
+        verificationMethod: 'Evidence report review workflow inspection',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Generated assessment artifacts retain review state, reviewer attribution, and notes in the site admin workspace.',
+          [
+            seededEvidence(
+              'Evidence report review metadata schema',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields on evidence reports.',
+            ),
+            seededEvidence(
+              'Evidence report review mutation',
+              'convex/security.ts records review status and reviewer attribution for persisted evidence reports.',
+            ),
+            seededEvidence(
+              'Site admin review workflow',
+              'src/routes/app/admin/security.tsx allows site admins to mark evidence reports reviewed or needing follow-up with reviewer notes.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'assessment-results-exportable',
+        label: 'Assessment results can be exported for designated reviewers',
+        description:
+          'The hosted service should export assessment artifacts with integrity metadata so provider reviewers can share results with designated recipients.',
+        verificationMethod: 'Evidence report export review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Evidence reports can be exported with manifest and integrity metadata from the site admin workspace.',
+          [
+            seededEvidence(
+              'Evidence report export action',
+              'convex/security.ts packages report content, manifest data, contentHash, exportHash, and exportIntegritySummary for evidence report export.',
+            ),
+            seededEvidence(
+              'Export artifact storage',
+              'convex/schema.ts defines export artifacts with manifestHash, payloadHash, sourceReportId, and exportedByUserId for evidence report exports.',
+            ),
+            seededEvidence(
+              'Site admin export UI',
+              'src/routes/app/admin/security.tsx exposes export actions and displays content and export hashes for evidence reports.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'provider-assessment-plan-documented',
+        label: 'Provider control assessment plan and approval workflow is documented',
+        description:
+          'The provider should document assessment scope, reviewer roles, approval expectations, and recurring assessment cadence for the hosted service.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider assessment plan, assessor assignment record, or approval workflow for recurring control assessments.',
+          [],
+          'Security Assurance',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for conducting their own assessments of customer-managed configurations, local integrations, and operational procedures outside the hosted service boundary. Any exported assessment artifacts should be reviewed according to the customer\'s internal governance process.',
+  },
+  {
+    nist80053Id: 'CA-5',
+    internalControlId: 'CTRL-CA-005',
+    implementationSummary:
+      'This control ensures the hosted service can surface, retain, and export follow-up items that support provider remediation tracking after control or readiness reviews. The platform supports that objective through audit-readiness findings, evidence-report follow-up state, retained reviewer notes, and evidence activity history in the site admin workspace, but a formal provider plan-of-action workflow with assigned milestones, target dates, and approval records is not yet evidenced in this workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Security Assurance',
+    hipaaCitations: ['45 CFR 164.308(a)(1)(ii)(B)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: ['GV.RM-01'],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'follow-up-findings-can-be-surfaced',
+        label: 'Provider follow-up findings can be surfaced from readiness and control reviews',
+        description:
+          'The hosted service should surface review findings that providers may need to investigate or remediate after control and audit-readiness review.',
+        verificationMethod: 'Site admin findings and readiness review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace surfaces metadata gaps, authorization denials, and generated review artifacts that can drive provider follow-up.',
+          [
+            seededEvidence(
+              'Audit readiness findings surface',
+              'src/routes/app/admin/security.tsx renders metadata gaps, authorization denials, manifest history, and backup drill evidence in the site admin audit-readiness view.',
+            ),
+            seededEvidence(
+              'Operational readiness note',
+              'docs/CONTROL_MATRIX.md documents that the site admin security workspace exposes internal operational evidence and deployer-owned gaps for review.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'follow-up-state-and-review-notes-retained',
+        label: 'Follow-up state and reviewer notes can be retained on assessment artifacts',
+        description:
+          'Assessment and review artifacts should retain follow-up state, reviewer attribution, and notes for later provider action.',
+        verificationMethod: 'Evidence report review workflow inspection',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Evidence reports retain pending, reviewed, or needs-follow-up state with reviewer notes and reviewer attribution.',
+          [
+            seededEvidence(
+              'Evidence report follow-up metadata schema',
+              'convex/schema.ts defines reviewStatus, reviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.',
+            ),
+            seededEvidence(
+              'Evidence report follow-up workflow',
+              'convex/security.ts persists reviewed or needs follow-up state with trimmed reviewer notes, and src/routes/app/admin/security.tsx exposes the review queue actions.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'follow-up-evidence-history-retained',
+        label: 'Evidence changes and review history can be retained for follow-up tracking',
+        description:
+          'The hosted service should retain evidence activity history so providers can review how supporting artifacts changed during follow-up work.',
+        verificationMethod: 'Evidence activity history review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Evidence creation, review, archival, and renewal activity is retained and surfaced in the site admin workspace for follow-up tracking.',
+          [
+            seededEvidence(
+              'Evidence activity storage and query path',
+              'convex/schema.ts defines security control evidence activity and convex/security.ts lists evidence activity history by control and checklist item.',
+            ),
+            seededEvidence(
+              'Evidence activity history UI',
+              'src/routes/app/admin/security.tsx renders evidence activity history showing review, archive, and renewal events in the evidence history dialog.',
+            ),
+          ],
+          'Security Assurance',
+        ),
+      },
+      {
+        itemId: 'provider-poam-workflow-documented',
+        label: 'Provider plan-of-action workflow with milestones is documented',
+        description:
+          'The provider should document how follow-up items are converted into assigned actions, target dates, milestone tracking, and closure decisions for the hosted service.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a formal provider plan-of-action workflow with assigned owners, target dates, milestones, or closure approval records.',
+          [],
+          'Security Assurance',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for maintaining their own remediation plans, milestones, and closure processes for customer-managed findings in connected systems, integrations, and operational procedures outside the hosted service boundary.',
   },
   {
     nist80053Id: 'CA-7',
@@ -2101,6 +3672,323 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     customerResponsibilityNotes:
       'Customer organizations are responsible for documenting their own connected environment, local data flows, user roles, and any customer-operated safeguards or procedures that sit outside the hosted service boundary.',
   },
+  {
+    nist80053Id: 'PS-3',
+    internalControlId: 'CTRL-PS-003',
+    implementationSummary:
+      'This control addresses provider personnel-screening documentation for workforce members who may administer or support the hosted service. The repo-backed workspace can retain, review, and export provider evidence artifacts related to workforce security controls, but the repo does not itself evidence a formal personnel-screening policy, completed screening records, or provider approval workflow for workforce access.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Workforce Security',
+    hipaaCitations: [],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'provider-personnel-screening-artifacts-can-be-retained',
+        label:
+          'Provider personnel-screening artifacts can be retained in the site admin workspace',
+        description:
+          'The hosted service should allow provider workforce-security artifacts to be attached and retained for later review.',
+        verificationMethod: 'Evidence workspace review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can retain uploaded evidence artifacts and associate them with provider controls for later review.',
+          [
+            seededEvidence(
+              'Security control evidence storage',
+              'convex/schema.ts defines securityControlEvidence and related review fields used to retain uploaded evidence artifacts for site admin controls.',
+            ),
+            seededEvidence(
+              'Site admin evidence upload and review flows',
+              'convex/security.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence for site admin controls.',
+            ),
+          ],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'provider-workforce-screening-follow-up-state-can-be-tracked',
+        label: 'Provider workforce-screening evidence can retain review and follow-up state',
+        description:
+          'Provider workforce-security evidence should retain review status, reviewer attribution, notes, and history for later follow-up.',
+        verificationMethod: 'Evidence review workflow inspection',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace retains review status, reviewer notes, and evidence activity history for attached control evidence.',
+          [
+            seededEvidence(
+              'Evidence review metadata schema',
+              'convex/schema.ts defines reviewStatus, reviewNotes, reviewedAt, reviewedByUserId, and evidence activity history for control evidence records.',
+            ),
+            seededEvidence(
+              'Evidence review and history UI',
+              'src/routes/app/admin/security.tsx renders evidence review actions and evidence history for control artifacts in the site admin workspace.',
+            ),
+          ],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'provider-personnel-screening-policy-documented',
+        label: 'Provider personnel-screening policy is documented',
+        description:
+          'The provider should maintain a documented personnel-screening policy covering which workforce roles require screening before receiving administrative or support access.',
+        verificationMethod: 'Policy review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a provider-owned personnel-screening policy artifact.',
+          [],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'provider-screening-records-and-approval-workflow-documented',
+        label: 'Provider screening records and approval workflow are documented',
+        description:
+          'The provider should retain screening records or approval artifacts showing that covered workforce members are screened before receiving relevant hosted-service access.',
+        verificationMethod: 'Record and procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include completed screening records or an approval workflow for provider workforce access.',
+          [],
+          'Workforce Security',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for screening, approving, and supervising their own workforce, contractors, and support personnel who access customer-managed systems or connected workflows outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'PS-4',
+    internalControlId: 'CTRL-PS-004',
+    implementationSummary:
+      'This control addresses personnel termination and related access removal for the hosted service and connected customer environment. The platform supports that objective through org-scoped member suspension and deactivation paths, SCIM deprovisioning semantics, session-context cleanup, and auditable membership lifecycle events, but formal provider and customer termination procedures remain outside this repo-backed workspace.',
+    coverage: 'partial' as const,
+    responsibility: 'shared-responsibility' as const,
+    priority: 'p1' as const,
+    owner: 'Workforce Access Governance',
+    hipaaCitations: ['45 CFR 164.308(a)(3)(ii)(C)', '45 CFR 164.316(b)(1)'],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'org-scoped-access-removal-paths-exist',
+        label: 'Org-scoped access removal paths exist for terminated or deprovisioned users',
+        description:
+          'The hosted service should support removing or deactivating organization access without destroying unrelated user records or other tenant memberships.',
+        verificationMethod: 'Membership lifecycle and deprovisioning flow review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo supports org-scoped membership suspension, deactivation, and SCIM-driven deprovisioning without global user deletion.',
+          [
+            seededEvidence(
+              'SCIM deprovisioning design',
+              'docs/SCIM_DEPROVISIONING.md defines org-scoped deprovisioning semantics that remove or deactivate membership in one organization while preserving the user record and other org memberships.',
+            ),
+            seededEvidence(
+              'Membership deprovisioning path',
+              'convex/auth.ts deletes or deactivates the organization membership during SCIM deprovisioning and preserves the underlying user record.',
+            ),
+            seededEvidence(
+              'Organization member status surface',
+              'src/features/organizations/components/OrganizationMembersTable.tsx renders member status including suspended and deactivated states for organization administrators.',
+            ),
+          ],
+          'Workforce Access Governance',
+        ),
+      },
+      {
+        itemId: 'terminated-access-is-cleared-from-session-context',
+        label: 'Removed organization access is cleared from active session context',
+        description:
+          'When organization access is terminated, the hosted service should prevent lingering session context from continuing to authorize that organization.',
+        verificationMethod: 'Session cleanup and deprovisioning path review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'SCIM deprovisioning clears organization access from active and enterprise session context after membership removal.',
+          [
+            seededEvidence(
+              'Session context cleanup during deprovisioning',
+              'convex/auth.ts syncs active organization session state and clears enterprise organization markers after SCIM deprovisioned membership removal.',
+            ),
+            seededEvidence(
+              'Deprovisioning requirements',
+              'docs/SCIM_DEPROVISIONING.md requires existing sessions to stop authorizing access to the removed organization immediately after org-scoped deprovisioning.',
+            ),
+          ],
+          'Workforce Access Governance',
+        ),
+      },
+      {
+        itemId: 'termination-and-deprovisioning-events-are-auditable',
+        label: 'Termination-related access changes are auditable',
+        description:
+          'Membership removal, suspension, deactivation, and SCIM deprovisioning events should emit reviewable audit records for provider or customer review.',
+        verificationMethod: 'Audit event inventory and review surface inspection',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Termination-related membership lifecycle changes are represented as audit events and reviewable through organization audit history.',
+          [
+            seededEvidence(
+              'Membership lifecycle audit event inventory',
+              'src/lib/shared/auth-audit.ts defines member removed, suspended, deactivated, reactivated, and SCIM deprovisioning lifecycle event types.',
+            ),
+            seededEvidence(
+              'Organization audit review surface',
+              'src/features/organizations/components/OrganizationAuditPage.tsx exposes reviewable membership and SCIM lifecycle audit history to authorized organization roles and site admins.',
+            ),
+            seededEvidence(
+              'Existing lifecycle-control blueprint evidence',
+              'scripts/compliance/generate-active-control-register.ts already seeds account lifecycle and membership audit evidence under AC-2 using the same repo-backed membership lifecycle artifacts.',
+              { sufficiency: 'partial' },
+            ),
+          ],
+          'Workforce Access Governance',
+        ),
+      },
+      {
+        itemId: 'provider-and-customer-termination-procedure-documented',
+        label: 'Provider and customer termination procedures are documented',
+        description:
+          'The provider and each customer should document how workforce termination triggers access removal, coordination steps, timing expectations, and exception handling for connected hosted-service access.',
+        verificationMethod: 'Procedure review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a documented provider or customer termination procedure tied to hosted-service access removal.',
+          [],
+          'Workforce Access Governance',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for maintaining workforce termination and offboarding procedures, triggering identity-provider or admin-led access removal when personnel leave, and ensuring downstream systems, devices, and local credentials are revoked outside the hosted service boundary.',
+  },
+  {
+    nist80053Id: 'PS-7',
+    internalControlId: 'CTRL-PS-007',
+    implementationSummary:
+      'This control addresses documentation and review of provider requirements for third-party personnel who may support or administer hosted-service components through approved external services. The repo-backed workspace can document approved vendor boundaries, retain and review provider evidence artifacts, and audit vendor-use paths, but it does not itself evidence a formal third-party personnel security policy, completed screening or training records, or provider approval workflow for third-party personnel access.',
+    coverage: 'partial' as const,
+    responsibility: 'platform' as const,
+    priority: 'p1' as const,
+    owner: 'Workforce Security',
+    hipaaCitations: [],
+    csf20Ids: [],
+    soc2CriterionIds: [],
+    nist80066: [],
+    platformChecklistItems: [
+      {
+        itemId: 'third-party-support-boundaries-are-documented',
+        label: 'Third-party service boundaries and allowed use are documented',
+        description:
+          'The provider should document which approved external services may support hosted-service operations and what data classes or environments they are permitted to handle.',
+        verificationMethod: 'Vendor boundary documentation review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The repo documents approved external service boundaries, allowed data classes, and environment restrictions that can anchor third-party personnel security expectations.',
+          [
+            seededEvidence(
+              'Vendor boundary registry',
+              'src/lib/shared/vendor-boundary.ts documents approved vendors, allowed data classes, allowed environments, and approval expectations for hosted-service external services.',
+            ),
+            seededEvidence(
+              'Vendor boundary posture materialization',
+              'src/lib/server/vendor-boundary.server.ts exposes current approval posture, allowed data classes, and environment restrictions for configured external services.',
+            ),
+          ],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'third-party-service-use-is-auditable',
+        label: 'Third-party service use and denials are auditable',
+        description:
+          'The hosted service should emit reviewable records when approved external services are used or denied so provider review can verify boundary enforcement.',
+        verificationMethod: 'Vendor audit event review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Vendor use and vendor denial conditions are represented as audit events and can be reviewed later in the site admin workspace.',
+          [
+            seededEvidence(
+              'Vendor access audit event inventory',
+              'src/lib/shared/auth-audit.ts defines outbound vendor access used and denied event types for review.',
+            ),
+            seededEvidence(
+              'Vendor use and denial event emission',
+              'convex/agentChatActions.ts emits outbound vendor access used and denied events during protected vendor-backed workflows.',
+            ),
+          ],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'third-party-personnel-security-artifacts-can-be-retained',
+        label: 'Provider third-party personnel security artifacts can be retained and reviewed',
+        description:
+          'The site admin workspace should allow provider artifacts related to third-party personnel security expectations to be attached, reviewed, and retained for later follow-up.',
+        verificationMethod: 'Evidence workspace review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'The site admin workspace can retain uploaded evidence artifacts, review state, and evidence history for provider controls, including third-party personnel security artifacts.',
+          [
+            seededEvidence(
+              'Security control evidence storage',
+              'convex/schema.ts defines securityControlEvidence and related review fields used to retain uploaded evidence artifacts for site admin controls.',
+            ),
+            seededEvidence(
+              'Evidence review and export flows',
+              'convex/security.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence artifacts for provider controls.',
+            ),
+          ],
+          'Workforce Security',
+        ),
+      },
+      {
+        itemId: 'provider-third-party-personnel-security-policy-documented',
+        label:
+          'Provider third-party personnel security policy and approval workflow are documented',
+        description:
+          'The provider should document which third-party personnel require screening, training, approval, and ongoing supervision before supporting hosted-service operations or related approved external services.',
+        verificationMethod: 'Policy review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'not_started',
+          'The repo-backed workspace does not yet include a provider-owned third-party personnel security policy, completed screening or training records, or approval workflow for third-party personnel access.',
+          [],
+          'Workforce Security',
+        ),
+      },
+    ],
+    customerResponsibilityNotes:
+      'Customer organizations are responsible for screening, approving, and supervising their own contractors, consultants, and third-party support personnel who access customer-managed systems, local identity providers, or connected workflows outside the hosted service boundary.',
+  },
 ];
 
 function flattenStatement(statement: string[]): string | null {
@@ -2236,21 +4124,38 @@ async function main() {
         throw new Error(`Missing NIST 800-53 moderate control: ${blueprint.nist80053Id}`);
       }
 
+      const platformChecklistItems = blueprint.platformChecklistItems.map((item) => ({
+        ...item,
+        label: normalizeChecklistLabel(item.label),
+        description: normalizeChecklistDescription(item.description),
+        seed: {
+          ...item.seed,
+          notes: normalizeBuyerFacingText(item.seed.notes),
+          evidence: item.seed.evidence.map((evidence) => ({
+            ...evidence,
+            title: normalizeEvidenceTitle(evidence.title),
+            description: normalizeEvidenceDescription(evidence.title, evidence.description),
+          })),
+        },
+      }));
+
       return {
         internalControlId: blueprint.internalControlId,
         nist80053Id: sourceControl.nist80053Id,
         title: sourceControl.title,
         familyId: sourceControl.familyId,
         familyTitle: sourceControl.familyTitle,
-        implementationSummary: blueprint.implementationSummary,
+        implementationSummary: normalizeBuyerFacingText(blueprint.implementationSummary),
         controlStatement:
           flattenStatement(sourceControl.statement) ??
           `${sourceControl.title} is tracked as an active control in the platform register.`,
         priority: blueprint.priority,
-        platformChecklistItems: blueprint.platformChecklistItems,
+        platformChecklistItems,
         owner: blueprint.owner,
         responsibility: blueprint.responsibility,
-        customerResponsibilityNotes: blueprint.customerResponsibilityNotes,
+        customerResponsibilityNotes: normalizeBuyerFacingText(
+          blueprint.customerResponsibilityNotes,
+        ),
         mappings: {
           hipaa: blueprint.hipaaCitations.map((citation) => {
             const record = hipaaMap.get(citation);
