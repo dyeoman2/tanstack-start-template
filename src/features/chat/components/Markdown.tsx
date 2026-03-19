@@ -110,10 +110,10 @@ function CodeBlock({
         return;
       }
 
-      setSyntaxHighlighter(() => highlighterModule.default as SyntaxHighlighterComponent);
+      setSyntaxHighlighter(() => highlighterModule.default);
       setThemes({
-        dark: oneDarkModule.default as SyntaxTheme,
-        light: oneLightModule.default as SyntaxTheme,
+        dark: oneDarkModule.default,
+        light: oneLightModule.default,
       });
     });
 
