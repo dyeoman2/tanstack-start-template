@@ -1,4 +1,22 @@
 echo "Running pre-push checks in parallel..."
-npx concurrently -g --kill-others-on-fail --success=all "pnpm test" "pnpm build" "pnpm audit:code-health" || exit 1
+pnpm exec concurrently \
+  -g \
+  --kill-others-on-fail \
+  --success=all \
+  --names "test,build,audit" \
+  --prefix "[{name}]" \
+  "pnpm test" \
+  "pnpm build" \
+  "pnpm audit:code-health"
+
+status=$?
+if [ "$status" -ne 0 ]; then
+  echo "Pre-push checks failed."
+  echo "Re-run locally for full output:"
+  echo "  pnpm test"
+  echo "  pnpm build"
+  echo "  pnpm audit:code-health"
+  exit "$status"
+fi
 
 echo "Pre-push checks passed!"

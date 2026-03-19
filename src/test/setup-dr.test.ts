@@ -63,9 +63,7 @@ describe('parseGitHubRepoFromRemote', () => {
   });
 
   it('parses ssh remotes', () => {
-    expect(parseGitHubRepoFromRemote('git@github.com:openai/example.git')).toBe(
-      'openai/example',
-    );
+    expect(parseGitHubRepoFromRemote('git@github.com:openai/example.git')).toBe('openai/example');
   });
 
   it('returns null for unsupported hosts', () => {
@@ -163,11 +161,11 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
 describe('buildDrSecretNames', () => {
   it('builds the expected secret names', () => {
     expect(buildDrSecretNames('demo')).toEqual({
-      cloudflareDnsToken: 'demo/dr-cloudflare-dns-token',
-      cloudflareZoneId: 'demo/dr-cloudflare-zone-id',
-      convexEnv: 'demo/dr-convex-env-vars',
-      netlifyBuildHook: 'demo/dr-netlify-build-hook',
-      netlifyFrontendCnameTarget: 'demo/dr-netlify-frontend-cname-target',
+      cloudflareDnsToken: 'demo-dr-cloudflare-dns-token-secret',
+      cloudflareZoneId: 'demo-dr-cloudflare-zone-id-secret',
+      convexEnv: 'demo-dr-convex-env-secret',
+      netlifyBuildHook: 'demo-dr-netlify-build-hook-secret',
+      netlifyFrontendCnameTarget: 'demo-dr-netlify-frontend-cname-target-secret',
     });
   });
 });
@@ -175,7 +173,7 @@ describe('buildDrSecretNames', () => {
 describe('buildDefaultBackupBucketName', () => {
   it('includes account and region when available', () => {
     expect(buildDefaultBackupBucketName('demo', '123456789012', 'us-west-1')).toBe(
-      'demo-dr-backups-123456789012-us-west-1',
+      'demo-dr-backup-bucket-123456789012-us-west-1',
     );
   });
 });

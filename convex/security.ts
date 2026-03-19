@@ -945,7 +945,18 @@ function hasExpiringSoonEvidence(
   );
 }
 
-async function countQueryResults(query: AsyncIterable<unknown>) {
+async function countQueryResults(
+  query:
+    | AsyncIterable<unknown>
+    | {
+        collect: () => Promise<ArrayLike<unknown>>;
+      },
+) {
+  if ('collect' in query) {
+    const entries = await query.collect();
+    return entries.length;
+  }
+
   let count = 0;
   for await (const _entry of query) {
     count += 1;
