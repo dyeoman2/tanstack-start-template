@@ -20,10 +20,6 @@ function buildDrEcsStackName(projectSlug) {
   return `${projectSlug}-dr-ecs-stack`;
 }
 
-function readEnv(name, stage) {
-  return process.env[`${name}_${stage}`] || process.env[name] || '';
-}
-
 function readTrimmedEnv(name) {
   const value = process.env[name];
   return value ? value.trim() : '';
