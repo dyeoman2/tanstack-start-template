@@ -154,7 +154,9 @@ async function chooseAwsProfile(currentProfile: string | null) {
   console.log('');
 
   const defaultProfile =
-    (currentProfile && profiles.includes(currentProfile) ? currentProfile : null) ?? profiles[0] ?? null;
+    (currentProfile && profiles.includes(currentProfile) ? currentProfile : null) ??
+    profiles[0] ??
+    null;
 
   const answer = await ask(
     `Select AWS profile by number or name${defaultProfile ? ` [${defaultProfile}]` : ''}: `,
@@ -173,7 +175,9 @@ async function chooseAwsProfile(currentProfile: string | null) {
     return answer;
   }
 
-  console.log(`Profile "${answer}" was not found in aws configure list-profiles. Keeping ${defaultProfile ?? 'current shell profile'}.`);
+  console.log(
+    `Profile "${answer}" was not found in aws configure list-profiles. Keeping ${defaultProfile ?? 'current shell profile'}.`,
+  );
   return defaultProfile;
 }
 
@@ -385,7 +389,9 @@ async function main() {
     awsRegion: awsRegion,
   });
   console.log(`Wrote repo-local direnv file: ${envrcPath}`);
-  console.log('If you use direnv, run `direnv allow` so plain `aws ...` commands in this repo use the same profile.');
+  console.log(
+    'If you use direnv, run `direnv allow` so plain `aws ...` commands in this repo use the same profile.',
+  );
   console.log('');
 
   const awsIdentity = getAwsIdentity(storageDeployEnv.AWS_REGION, storageDeployEnv.AWS_PROFILE);

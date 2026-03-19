@@ -180,7 +180,9 @@ async function chooseStorageMode(): Promise<StorageMode> {
 async function main() {
   console.log('🚀 Production storage setup\n');
   console.log('This flow configures production runtime env in Convex prod and Netlify.');
-  console.log('It also derives the production storage CDK env and can preview/deploy the prod storage stack.\n');
+  console.log(
+    'It also derives the production storage CDK env and can preview/deploy the prod storage stack.\n',
+  );
 
   const shouldContinue = await askYesNo('Continue?', true);
   if (!shouldContinue) {
@@ -189,7 +191,10 @@ async function main() {
   }
 
   const storageMode = await chooseStorageMode();
-  const awsRegion = await askWithDefault('AWS region', process.env.AWS_REGION?.trim() || 'us-west-1');
+  const awsRegion = await askWithDefault(
+    'AWS region',
+    process.env.AWS_REGION?.trim() || 'us-west-1',
+  );
   const awsProfile = await chooseAwsProfile(process.env.AWS_PROFILE?.trim() || null);
 
   const runtimeEnvVars: Record<string, string> = {
@@ -330,7 +335,9 @@ async function main() {
     }
   } else {
     console.log('Next steps for AWS-backed modes:');
-    console.log('   1. Export the production runtime storage env vars in your shell or CI environment');
+    console.log(
+      '   1. Export the production runtime storage env vars in your shell or CI environment',
+    );
     console.log('   2. Run: pnpm storage:preview:prod');
     console.log('   3. Run: pnpm storage:deploy:prod');
     console.log('   4. Or rerun pnpm run storage:setup:prod when you want the guided flow again');

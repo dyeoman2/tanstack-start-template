@@ -193,12 +193,12 @@
     "vite": "8.0.1",
     "vitest": "^4.1.0"
   },
-  "engines": {
-    "node": ">=24"
-  },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,cts,mts}": [
       "node scripts/run-ox-tools-on-staged.mjs"
     ]
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

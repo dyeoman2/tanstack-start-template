@@ -135,9 +135,10 @@ In both modes:
 - a separate Netlify DR site exists for failover and mirrors the primary site's repo/build configuration
 
 In `custom-domain` mode, Cloudflare can repoint:
-  - `dr-backend.<domain>`
-  - `dr-site.<domain>`
-  - `dr.<domain>`
+
+- `dr-backend.<domain>`
+- `dr-site.<domain>`
+- `dr.<domain>`
 
 The DR site should be configured ahead of time with:
 

@@ -1,7 +1,7 @@
 {
   "name": "tanstack-start-template-aws-cdk",
-  "private": true,
   "version": "0.1.0",
+  "private": true,
   "description": "AWS CDK stacks for TanStack Start Template storage and disaster recovery",
   "type": "commonjs",
   "scripts": {
