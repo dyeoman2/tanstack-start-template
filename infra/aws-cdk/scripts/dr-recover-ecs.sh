@@ -89,6 +89,7 @@ export CONVEX_DEPLOYMENT=""
 
 PROJECT_SLUG="${AWS_DR_PROJECT_SLUG:-tanstack-start-template}"
 STACK_NAME="${AWS_DR_STACK_NAME:-${PROJECT_SLUG}-dr-ecs-stack}"
+HOSTNAME_STRATEGY="${AWS_DR_HOSTNAME_STRATEGY:-custom-domain}"
 BACKEND_SUBDOMAIN="${AWS_DR_BACKEND_SUBDOMAIN:-dr-backend}"
 SITE_SUBDOMAIN="${AWS_DR_SITE_SUBDOMAIN:-dr-site}"
 FRONTEND_SUBDOMAIN="${AWS_DR_FRONTEND_SUBDOMAIN:-dr}"
@@ -99,7 +100,12 @@ AWS_DR_NETLIFY_HOOK_SECRET_NAME="${AWS_DR_NETLIFY_HOOK_SECRET_NAME:-${PROJECT_SL
 AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME="${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME:-${PROJECT_SLUG}-dr-netlify-frontend-cname-target-secret}"
 TOTAL_STEPS=10
 
-[[ -z "${AWS_DR_DOMAIN:-}" ]] && fail "AWS_DR_DOMAIN is required"
+if [[ "${HOSTNAME_STRATEGY}" != "custom-domain" && "${HOSTNAME_STRATEGY}" != "provider-hostnames" ]]; then
+  fail "AWS_DR_HOSTNAME_STRATEGY must be custom-domain or provider-hostnames"
+fi
+if [[ "${HOSTNAME_STRATEGY}" == "custom-domain" && -z "${AWS_DR_DOMAIN:-}" ]]; then
+  fail "AWS_DR_DOMAIN is required for custom-domain recovery"
+fi
 [[ -z "${AWS_DR_BACKUP_S3_BUCKET:-}" ]] && fail "AWS_DR_BACKUP_S3_BUCKET is required"
 
 command -v aws >/dev/null || fail "AWS CLI not found"
@@ -111,17 +117,28 @@ command -v docker >/dev/null || warn "Docker not found; recovery will use ECS Ex
 aws sts get-caller-identity >/dev/null 2>&1 || fail "AWS credentials are not configured"
 ok "AWS credentials verified"
 
-BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
-SITE_FQDN="${SITE_SUBDOMAIN}.${AWS_DR_DOMAIN}"
-FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
-BACKEND_URL="https://${BACKEND_FQDN}"
-SITE_URL="https://${SITE_FQDN}"
-FRONTEND_URL="https://${FRONTEND_FQDN}"
 CDK_CMD=(pnpm exec cdk deploy "${STACK_NAME}" --require-approval never --app "node ./infra/aws-cdk/bin/app.mjs")
 
-log "Backend FQDN: ${BACKEND_FQDN}"
-log "Site FQDN:    ${SITE_FQDN}"
-log "Frontend FQDN:${FRONTEND_FQDN}"
+BACKEND_FQDN=""
+SITE_FQDN=""
+FRONTEND_FQDN=""
+BACKEND_URL=""
+SITE_URL=""
+FRONTEND_URL=""
+
+if [[ "${HOSTNAME_STRATEGY}" == "custom-domain" ]]; then
+  BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
+  SITE_FQDN="${SITE_SUBDOMAIN}.${AWS_DR_DOMAIN}"
+  FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
+  BACKEND_URL="https://${BACKEND_FQDN}"
+  SITE_URL="https://${SITE_FQDN}"
+  FRONTEND_URL="https://${FRONTEND_FQDN}"
+  log "Backend FQDN: ${BACKEND_FQDN}"
+  log "Site FQDN:    ${SITE_FQDN}"
+  log "Frontend FQDN:${FRONTEND_FQDN}"
+else
+  log "Using provider-hostnames recovery mode"
+fi
 
 if [[ "${SKIP_CDK_DEPLOY:-}" == "true" ]]; then
   warn "Skipping CDK deploy"
@@ -141,6 +158,7 @@ ECS_CLUSTER=$(get_output "EcsClusterName")
 ECS_SERVICE=$(get_output "EcsServiceName")
 ALB_DNS=$(get_output "AlbDnsName")
 INSTANCE_SECRET_ARN=$(get_output "InstanceSecretArn")
+STACK_BACKEND_URL=$(get_output "ConvexBackendUrl")
 STACK_SITE_URL=$(get_output "ConvexSiteUrl")
 
 [[ -z "${ECS_CLUSTER}" ]] && fail "Missing EcsClusterName output"
@@ -158,6 +176,25 @@ INSTANCE_SECRET_VALUE=$(aws secretsmanager get-secret-value \
 ALB_URL="http://${ALB_DNS}"
 export CONVEX_SELF_HOSTED_URL="${ALB_URL}"
 ok "Using ALB URL ${ALB_URL} for self-hosted Convex CLI operations"
+
+if [[ -n "${STACK_BACKEND_URL}" && "${STACK_BACKEND_URL}" != "None" ]]; then
+  BACKEND_URL="${STACK_BACKEND_URL}"
+fi
+if [[ -n "${STACK_SITE_URL}" && "${STACK_SITE_URL}" != "None" ]]; then
+  SITE_URL="${STACK_SITE_URL}"
+fi
+
+NETLIFY_FRONTEND_CNAME_TARGET_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id "${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME}" \
+  --query 'SecretString' \
+  --output text 2>/dev/null) || NETLIFY_FRONTEND_CNAME_TARGET_SECRET=""
+
+if [[ "${HOSTNAME_STRATEGY}" == "provider-hostnames" ]]; then
+  frontend_host="${AWS_DR_FRONTEND_CNAME_TARGET:-${NETLIFY_FRONTEND_CNAME_TARGET_SECRET:-}}"
+  if [[ -n "${frontend_host}" ]]; then
+    FRONTEND_URL="https://${frontend_host}"
+  fi
+fi
 
 log "Step 3/${TOTAL_STEPS}: Waiting for ECS task health"
 for i in $(seq 1 60); do
@@ -303,8 +340,10 @@ else
   set_fallback_shell_envs
 fi
 
-pnpm exec convex env set APP_URL "${FRONTEND_URL}" >/dev/null
-pnpm exec convex env set BETTER_AUTH_URL "${FRONTEND_URL}" >/dev/null
+if [[ -n "${FRONTEND_URL}" ]]; then
+  pnpm exec convex env set APP_URL "${FRONTEND_URL}" >/dev/null
+  pnpm exec convex env set BETTER_AUTH_URL "${FRONTEND_URL}" >/dev/null
+fi
 pnpm exec convex env set CONVEX_SITE_URL "${STACK_SITE_URL:-${SITE_URL}}" >/dev/null
 if [[ -n "${file_storage_backend}" ]]; then
   pnpm exec convex env set FILE_STORAGE_BACKEND "${file_storage_backend}" >/dev/null
@@ -334,12 +373,8 @@ NETLIFY_HOOK=$(aws secretsmanager get-secret-value \
   --secret-id "${AWS_DR_NETLIFY_HOOK_SECRET_NAME}" \
   --query 'SecretString' \
   --output text 2>/dev/null) || NETLIFY_HOOK=""
-NETLIFY_FRONTEND_CNAME_TARGET_SECRET=$(aws secretsmanager get-secret-value \
-  --secret-id "${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME}" \
-  --query 'SecretString' \
-  --output text 2>/dev/null) || NETLIFY_FRONTEND_CNAME_TARGET_SECRET=""
 
-if [[ -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
+if [[ "${HOSTNAME_STRATEGY}" == "custom-domain" && -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
   cf_api="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records"
   cf_auth="Authorization: Bearer ${CF_API_TOKEN}"
   for subdomain in "${BACKEND_SUBDOMAIN}" "${SITE_SUBDOMAIN}" "${FRONTEND_SUBDOMAIN}"; do
@@ -377,6 +412,8 @@ if [[ -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
     fi
   done
   ok "Cloudflare DNS records updated"
+elif [[ "${HOSTNAME_STRATEGY}" == "provider-hostnames" ]]; then
+  ok "Skipping Cloudflare DNS updates in provider-hostnames mode"
 else
   warn "Cloudflare credentials not available; update DNS records manually"
 fi
@@ -392,7 +429,7 @@ log "Step 10/${TOTAL_STEPS}: Final verification"
 curl -sf "${ALB_URL}/version" >/dev/null || fail "ALB health check failed"
 ok "ALB backend health verified"
 
-if [[ -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
+if [[ "${HOSTNAME_STRATEGY}" == "custom-domain" && -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
   for endpoint in "${BACKEND_URL}/version" "${SITE_URL}"; do
     if curl -sf "${endpoint}" >/dev/null 2>&1; then
       ok "Verified ${endpoint}"

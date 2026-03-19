@@ -11,6 +11,7 @@ import {
   buildDefaultBackupBucketName,
   buildDrSecretNames,
   buildRequiredNetlifyDrEnvVars,
+  type DrHostnameStrategy,
   extractJsonText,
   extractHostnameFromUrl,
   getRequiredRecoveryEnvKeys,
@@ -56,6 +57,7 @@ type SetupContext = {
   ecsCpu: string;
   ecsMemoryMiB: string;
   frontendSubdomain: string;
+  hostnameStrategy: DrHostnameStrategy;
   githubRepo?: string;
   netlifySiteInput?: string;
   projectSlug: string;
@@ -107,6 +109,8 @@ function printUsage() {
   console.log('');
   console.log('Options:');
   console.log('  --yes                 Run non-interactively with discovered/default values.');
+  console.log('  --hostname-strategy <provider-hostnames|custom-domain>');
+  console.log('                        Choose provider-native URLs or your own DR domain.');
   console.log('  --domain <value>      DR base domain, for example example.com.');
   console.log('  --project-slug <id>   Override the DR resource slug.');
   console.log('  --github-repo <repo>  Target GitHub repo as owner/name.');
@@ -154,6 +158,37 @@ async function askYesNo(question: string, fallback = false) {
   return answer === 'y' || answer === 'yes';
 }
 
+async function chooseHostnameStrategy(
+  fallback: DrHostnameStrategy,
+  yes: boolean,
+): Promise<DrHostnameStrategy> {
+  if (yes) {
+    return fallback;
+  }
+
+  console.log('DR hostname strategy options:');
+  console.log(
+    '   1. provider-hostnames - default, use Netlify/AWS-generated hostnames and skip Cloudflare',
+  );
+  console.log('   2. custom-domain      - use your own domain and derived dr.* hostnames');
+  console.log('');
+
+  while (true) {
+    const defaultChoice = fallback === 'custom-domain' ? '2' : '1';
+    const answer = (await ask(`Choose DR hostname strategy [${defaultChoice}]: `)).toLowerCase();
+    const value = answer || defaultChoice;
+
+    if (value === '1' || value === 'provider-hostnames') {
+      return 'provider-hostnames';
+    }
+    if (value === '2' || value === 'custom-domain') {
+      return 'custom-domain';
+    }
+
+    console.log('Please choose 1 or 2.');
+  }
+}
+
 function quoteShell(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -187,9 +222,7 @@ function runCommand(
 
 function ensureOk(result: CommandResult, message: string) {
   if (!result.ok) {
-    const details = [result.stdout, result.stderr]
-      .join('\n')
-      .trim();
+    const details = [result.stdout, result.stderr].join('\n').trim();
     throw new Error(details ? `${message}\n${details}` : message);
   }
 }
@@ -229,6 +262,23 @@ function readNetlifyLinkedSiteId() {
   } catch {
     return null;
   }
+}
+
+function formatNetlifySiteSummary(site: NetlifySite | null) {
+  if (!site) {
+    return null;
+  }
+
+  const primaryUrl = site.sslUrl || site.url;
+  const details = [
+    site.id ? `id: ${site.id}` : null,
+    primaryUrl ? `url: ${primaryUrl}` : null,
+  ].filter(Boolean);
+  if (details.length === 0) {
+    return site.name;
+  }
+
+  return `${site.name} (${details.join(', ')})`;
 }
 
 function getAwsRegion() {
@@ -304,12 +354,24 @@ function secretExists(secretId: string, region: string) {
   ).ok;
 }
 
-function upsertAwsSecret(secretId: string, secretValue: string, region: string, description?: string) {
+function upsertAwsSecret(
+  secretId: string,
+  secretValue: string,
+  region: string,
+  description?: string,
+) {
   if (secretExists(secretId, region)) {
     ensureOk(
       runCommand(
         'aws',
-        ['secretsmanager', 'put-secret-value', '--secret-id', secretId, '--secret-string', secretValue],
+        [
+          'secretsmanager',
+          'put-secret-value',
+          '--secret-id',
+          secretId,
+          '--secret-string',
+          secretValue,
+        ],
         {
           env: { AWS_REGION: region },
         },
@@ -319,7 +381,14 @@ function upsertAwsSecret(secretId: string, secretValue: string, region: string, 
     return 'updated';
   }
 
-  const args = ['secretsmanager', 'create-secret', '--name', secretId, '--secret-string', secretValue];
+  const args = [
+    'secretsmanager',
+    'create-secret',
+    '--name',
+    secretId,
+    '--secret-string',
+    secretValue,
+  ];
   if (description) {
     args.push('--description', description);
   }
@@ -336,15 +405,20 @@ function upsertAwsSecret(secretId: string, secretValue: string, region: string, 
 function createDrCommandEnv(context: SetupContext, identity: AwsIdentity): NodeJS.ProcessEnv {
   return {
     AWS_DR_BACKUP_S3_BUCKET: context.backupBucketName,
-    AWS_DR_BACKEND_SUBDOMAIN: context.backendSubdomain,
-    AWS_DR_DOMAIN: context.domain,
     AWS_DR_ECS_CPU: context.ecsCpu,
     AWS_DR_ECS_MEMORY_MIB: context.ecsMemoryMiB,
-    AWS_DR_FRONTEND_SUBDOMAIN: context.frontendSubdomain,
+    AWS_DR_HOSTNAME_STRATEGY: context.hostnameStrategy,
     AWS_DR_PROJECT_SLUG: context.projectSlug,
-    AWS_DR_SITE_SUBDOMAIN: context.siteSubdomain,
     AWS_REGION: identity.region,
     CDK_DEFAULT_REGION: identity.region,
+    ...(context.domain ? { AWS_DR_DOMAIN: context.domain } : {}),
+    ...(context.hostnameStrategy === 'custom-domain'
+      ? {
+          AWS_DR_BACKEND_SUBDOMAIN: context.backendSubdomain,
+          AWS_DR_FRONTEND_SUBDOMAIN: context.frontendSubdomain,
+          AWS_DR_SITE_SUBDOMAIN: context.siteSubdomain,
+        }
+      : {}),
   };
 }
 
@@ -364,7 +438,16 @@ function runInteractive(command: string, args: string[], env?: NodeJS.ProcessEnv
 }
 
 function getGitHubSecretNames(repo: string) {
-  const result = runCommand('gh', ['secret', 'list', '--repo', repo, '--app', 'actions', '--json', 'name']);
+  const result = runCommand('gh', [
+    'secret',
+    'list',
+    '--repo',
+    repo,
+    '--app',
+    'actions',
+    '--json',
+    'name',
+  ]);
   if (!result.ok) {
     return new Set<string>();
   }
@@ -403,9 +486,9 @@ function listNetlifySites() {
   }
 
   const parsed =
-    parseJsonOutput<Array<{ account_slug?: string; id?: string; name?: string; ssl_url?: string; url?: string }>>(
-      result,
-    ) ?? [];
+    parseJsonOutput<
+      Array<{ account_slug?: string; id?: string; name?: string; ssl_url?: string; url?: string }>
+    >(result) ?? [];
 
   return parsed.flatMap((site) =>
     site.id && site.name
@@ -445,13 +528,9 @@ function setNetlifySiteEnvVar(siteId: string, key: string, value: string) {
   const tempDir = buildNetlifySiteTempDir(siteId);
   try {
     ensureOk(
-      runCommand(
-        'netlify',
-        ['env:set', key, value, '--context', 'production', '--force'],
-        {
-          cwd: tempDir,
-        },
-      ),
+      runCommand('netlify', ['env:set', key, value, '--context', 'production', '--force'], {
+        cwd: tempDir,
+      }),
       `Failed to set Netlify env var ${key}`,
     );
   } finally {
@@ -460,8 +539,16 @@ function setNetlifySiteEnvVar(siteId: string, key: string, value: string) {
 }
 
 function listNetlifySiteHooks(siteId: string) {
-  const getViaApi = runCommand('netlify', ['api', 'listSiteBuildHooks', '--data', JSON.stringify({ site_id: siteId })]);
-  const parsed = parseJsonOutput<Array<{ branch?: string; id?: string; title?: string; url?: string }>>(getViaApi);
+  const getViaApi = runCommand('netlify', [
+    'api',
+    'listSiteBuildHooks',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]);
+  const parsed =
+    parseJsonOutput<Array<{ branch?: string; id?: string; title?: string; url?: string }>>(
+      getViaApi,
+    );
   if (parsed) {
     return parsed;
   }
@@ -553,13 +640,9 @@ function createIamAccessKey(userName: string, region: string) {
   const createdKey = parseJsonOutput<{
     AccessKey?: { AccessKeyId?: string; SecretAccessKey?: string };
   }>(
-    runCommand(
-      'aws',
-      ['iam', 'create-access-key', '--user-name', userName, '--output', 'json'],
-      {
-        env: { AWS_REGION: region },
-      },
-    ),
+    runCommand('aws', ['iam', 'create-access-key', '--user-name', userName, '--output', 'json'], {
+      env: { AWS_REGION: region },
+    }),
   );
 
   return {
@@ -623,11 +706,51 @@ function printSummary(summary: SetupSummary, json: boolean) {
   }
 }
 
-function buildRecoveryCommand(domain: string, backupBucketName: string) {
-  return `AWS_DR_DOMAIN=${quoteShell(domain)} AWS_DR_BACKUP_S3_BUCKET=${quoteShell(backupBucketName)} ./infra/aws-cdk/scripts/dr-recover-ecs.sh`;
+function buildRecoveryCommandForContext(context: SetupContext, backupBucketName: string) {
+  const parts = [
+    `AWS_DR_HOSTNAME_STRATEGY=${quoteShell(context.hostnameStrategy)}`,
+    `AWS_DR_BACKUP_S3_BUCKET=${quoteShell(backupBucketName)}`,
+  ];
+
+  if (context.domain) {
+    parts.push(`AWS_DR_DOMAIN=${quoteShell(context.domain)}`);
+  }
+
+  return `${parts.join(' ')} ./infra/aws-cdk/scripts/dr-recover-ecs.sh`;
 }
 
-async function requireInputOrPrompt(label: string, providedValue: string | undefined, yes: boolean) {
+function buildDrOrigins(
+  context: SetupContext,
+  ecsOutputs?: StackOutputs | null,
+  netlifySite?: NetlifySite | null,
+) {
+  if (context.hostnameStrategy === 'custom-domain' && context.domain) {
+    return {
+      backendOrigin: `https://${context.backendSubdomain}.${context.domain}`,
+      frontendOrigin: `https://${context.frontendSubdomain}.${context.domain}`,
+      siteOrigin: `https://${context.siteSubdomain}.${context.domain}`,
+    };
+  }
+
+  const frontendOrigin = netlifySite?.sslUrl ?? netlifySite?.url;
+  const backendOrigin = ecsOutputs?.ConvexBackendUrl;
+  const siteOrigin = ecsOutputs?.ConvexSiteUrl;
+  if (!frontendOrigin || !backendOrigin || !siteOrigin) {
+    return null;
+  }
+
+  return {
+    backendOrigin,
+    frontendOrigin,
+    siteOrigin,
+  };
+}
+
+async function requireInputOrPrompt(
+  label: string,
+  providedValue: string | undefined,
+  yes: boolean,
+) {
   if (providedValue?.trim()) {
     return providedValue.trim();
   }
@@ -649,7 +772,9 @@ async function main() {
   console.log('🛟 Guided disaster recovery setup');
   console.log('');
   console.log('This flow discovers your current state, asks for the missing DR inputs once,');
-  console.log('and then automates the backup, backend failover, GitHub workflow, and Netlify setup');
+  console.log(
+    'and then automates the backup, backend failover, GitHub workflow, and Netlify setup',
+  );
   console.log('where the required CLIs and auth are already available.');
 
   const summary: SetupSummary = {
@@ -702,6 +827,7 @@ async function main() {
   const gitRemote = runCommand('git', ['config', '--get', 'remote.origin.url']).stdout.trim();
   const discoveredRepo = flags.githubRepo ?? parseGitHubRepoFromRemote(gitRemote) ?? undefined;
   const linkedNetlifySiteId = readNetlifyLinkedSiteId();
+  const linkedNetlifySite = linkedNetlifySiteId ? resolveNetlifySite(linkedNetlifySiteId) : null;
   const defaultBranch = getDefaultBranch(discoveredRepo);
   const storageCoverageWarning = convexProdEnv ? getStorageCoverageWarning(convexProdEnv) : null;
   if (storageCoverageWarning) {
@@ -711,18 +837,21 @@ async function main() {
   printSection('Step 2: Discovery');
   console.log(`- Git remote: ${gitRemote || 'not configured'}`);
   console.log(`- GitHub repo: ${discoveredRepo ?? 'not detected'}`);
-  console.log(`- Linked Netlify site: ${linkedNetlifySiteId ?? 'not linked'}`);
-  console.log(`- Production storage mode: ${convexProdEnv?.FILE_STORAGE_BACKEND ?? 'convex (default or unknown)'}`);
+  console.log(
+    `- Linked Netlify site: ${formatNetlifySiteSummary(linkedNetlifySite) ?? linkedNetlifySiteId ?? 'not linked'}`,
+  );
+  if (linkedNetlifySite || linkedNetlifySiteId) {
+    console.log('  This is the currently linked app site, not the dedicated DR frontend site.');
+  }
+  console.log(
+    `- Production storage mode: ${convexProdEnv?.FILE_STORAGE_BACKEND ?? 'convex (default or unknown)'}`,
+  );
   console.log(`- Default branch: ${defaultBranch}`);
 
   const backupStackOutputs =
-    awsAuth && identity.region
-      ? getStackOutputs(getDrBackupStackName(), identity.region)
-      : null;
+    awsAuth && identity.region ? getStackOutputs(getDrBackupStackName(), identity.region) : null;
   const ecsStackOutputs =
-    awsAuth && identity.region
-      ? getStackOutputs(getDrEcsStackName(), identity.region)
-      : null;
+    awsAuth && identity.region ? getStackOutputs(getDrEcsStackName(), identity.region) : null;
 
   if (backupStackOutputs?.DrBackupBucketName) {
     console.log(`- Existing DR backup bucket: ${backupStackOutputs.DrBackupBucketName}`);
@@ -732,42 +861,75 @@ async function main() {
   }
 
   printSection('Step 3: Collect configuration');
+  console.log('The DR frontend Netlify site can be created automatically later in this flow.');
   const defaultProjectSlug =
-    flags.projectSlug ??
-    discoveredRepo?.split('/')[1] ??
-    'tanstack-start-template';
+    flags.projectSlug ?? discoveredRepo?.split('/')[1] ?? 'tanstack-start-template';
   const projectSlug = flags.yes
     ? defaultProjectSlug
     : await askWithDefault('Project slug for DR resources', defaultProjectSlug);
+  const hostnameStrategy = await chooseHostnameStrategy(
+    flags.hostnameStrategy ?? 'provider-hostnames',
+    flags.yes,
+  );
+  const needsCustomDomain =
+    hostnameStrategy === 'custom-domain' && !(flags.skipEcs && flags.skipNetlify);
+  if (hostnameStrategy === 'custom-domain') {
+    console.log('Custom-domain mode will derive DR hostnames such as:');
+    console.log('  - dr.example.com');
+    console.log('  - dr-backend.example.com');
+    console.log('  - dr-site.example.com');
+  } else {
+    console.log('Provider-hostnames mode will use Netlify and AWS-generated URLs directly.');
+    console.log('No custom DNS or Cloudflare setup is required in this mode.');
+  }
   const defaultDomain = flags.domain ?? process.env.AWS_DR_DOMAIN ?? '';
-  const domain =
-    flags.skipEcs && flags.skipNetlify
-      ? undefined
-      : await requireInputOrPrompt('Primary domain for DR failover (example.com)', defaultDomain, flags.yes);
+  const domain = needsCustomDomain
+    ? await requireInputOrPrompt(
+        'Base domain for DR hostnames (example.com)',
+        defaultDomain,
+        flags.yes,
+      )
+    : undefined;
   const defaultBucketName =
     backupStackOutputs?.DrBackupBucketName ??
     buildDefaultBackupBucketName(projectSlug, identity.accountId, identity.region);
   const backupBucketName = flags.yes
     ? defaultBucketName
     : await askWithDefault('S3 bucket for Convex DR exports', defaultBucketName);
-  const backendSubdomain = flags.yes
-    ? 'dr-backend'
-    : await askWithDefault('DR backend subdomain', 'dr-backend');
-  const siteSubdomain = flags.yes ? 'dr-site' : await askWithDefault('DR Convex site subdomain', 'dr-site');
-  const frontendSubdomain = flags.yes ? 'dr' : await askWithDefault('DR frontend subdomain', 'dr');
+  const backendSubdomain =
+    hostnameStrategy === 'custom-domain'
+      ? flags.yes
+        ? 'dr-backend'
+        : await askWithDefault('DR backend subdomain', 'dr-backend')
+      : 'dr-backend';
+  const siteSubdomain =
+    hostnameStrategy === 'custom-domain'
+      ? flags.yes
+        ? 'dr-site'
+        : await askWithDefault('DR Convex site subdomain', 'dr-site')
+      : 'dr-site';
+  const frontendSubdomain =
+    hostnameStrategy === 'custom-domain'
+      ? flags.yes
+        ? 'dr'
+        : await askWithDefault('DR frontend subdomain', 'dr')
+      : 'dr';
   const githubRepo = flags.skipGithub
     ? undefined
     : await requireInputOrPrompt('GitHub repository (owner/name)', discoveredRepo, flags.yes);
-  const setupCloudflareNow = flags.skipCloudflare
-    ? false
-    : flags.yes
+  const setupCloudflareNow =
+    hostnameStrategy !== 'custom-domain'
       ? false
-      : await askYesNo('Configure Cloudflare DNS automation secrets now?', false);
+      : flags.skipCloudflare
+        ? false
+        : flags.yes
+          ? false
+          : await askYesNo('Configure Cloudflare DNS automation secrets now?', false);
   const setupNetlifyNow = flags.skipNetlify
     ? false
     : flags.yes
       ? true
-      : await askYesNo('Create or validate a dedicated Netlify DR site now?', true);
+      : await askYesNo('Create or validate a dedicated Netlify DR frontend site now?', true);
   const runWorkflowTest = flags.skipGithub
     ? false
     : flags.yes
@@ -788,6 +950,7 @@ async function main() {
     ecsCpu,
     ecsMemoryMiB,
     frontendSubdomain,
+    hostnameStrategy,
     githubRepo,
     netlifySiteInput: flags.netlifySite,
     projectSlug,
@@ -803,6 +966,9 @@ async function main() {
   console.log(`- Netlify DR site setup${setupNetlifyNow ? '' : ' (deferred)'}`);
   console.log(`- DR ECS stack deploy${flags.skipEcs ? ' (skipped)' : ''}`);
   console.log('- Secrets Manager secret sync/update');
+  if (hostnameStrategy === 'custom-domain') {
+    console.log(`- Cloudflare DNS automation${setupCloudflareNow ? '' : ' (deferred)'}`);
+  }
 
   if (!flags.yes) {
     const shouldContinue = await askYesNo('Proceed with DR setup?', true);
@@ -820,7 +986,9 @@ async function main() {
     summary.needsAttention.push('AWS auth is not ready, so the DR backup stack was not deployed.');
   } else {
     runInteractive('pnpm', ['run', 'dr:backup:preview'], drEnv);
-    const deployBackup = flags.yes ? true : await askYesNo('Deploy or update the DR backup stack now?', true);
+    const deployBackup = flags.yes
+      ? true
+      : await askYesNo('Deploy or update the DR backup stack now?', true);
     if (deployBackup) {
       runInteractive('pnpm', ['run', 'dr:backup:deploy'], drEnv);
       summary.completed.push('Deployed the DR backup stack.');
@@ -831,25 +999,36 @@ async function main() {
   }
 
   const freshBackupOutputs =
-    awsAuth && identity.region
-      ? getStackOutputs(getDrBackupStackName(), identity.region)
-      : null;
+    awsAuth && identity.region ? getStackOutputs(getDrBackupStackName(), identity.region) : null;
 
   printSection('Step 6: Configure GitHub workflow readiness');
   if (flags.skipGithub) {
     summary.warnings.push('GitHub workflow setup was skipped with --skip-github.');
   } else if (!ghAuth || !githubRepo) {
-    summary.needsAttention.push('GitHub auth or repository discovery is missing, so Actions secrets were not configured.');
+    summary.needsAttention.push(
+      'GitHub auth or repository discovery is missing, so Actions secrets were not configured.',
+    );
   } else {
     const secretNamesInRepo = getGitHubSecretNames(githubRepo);
 
     if (!freshBackupOutputs?.DrBackupCiUserName) {
-      summary.needsAttention.push('The DR backup stack did not expose the CI IAM user name needed for GitHub secrets.');
+      summary.needsAttention.push(
+        'The DR backup stack did not expose the CI IAM user name needed for GitHub secrets.',
+      );
     } else if (awsAuth && identity.region) {
       const userName = freshBackupOutputs.DrBackupCiUserName;
       const listedKeys = runCommand(
         'aws',
-        ['iam', 'list-access-keys', '--user-name', userName, '--query', 'AccessKeyMetadata[].AccessKeyId', '--output', 'json'],
+        [
+          'iam',
+          'list-access-keys',
+          '--user-name',
+          userName,
+          '--query',
+          'AccessKeyMetadata[].AccessKeyId',
+          '--output',
+          'json',
+        ],
         {
           env: { AWS_REGION: identity.region },
         },
@@ -896,24 +1075,25 @@ async function main() {
               }
             }
 
-            const refreshedKeys = parseJsonOutput<string[]>(
-              runCommand(
-                'aws',
-                [
-                  'iam',
-                  'list-access-keys',
-                  '--user-name',
-                  userName,
-                  '--query',
-                  'AccessKeyMetadata[].AccessKeyId',
-                  '--output',
-                  'json',
-                ],
-                {
-                  env: { AWS_REGION: identity.region },
-                },
-              ),
-            ) ?? [];
+            const refreshedKeys =
+              parseJsonOutput<string[]>(
+                runCommand(
+                  'aws',
+                  [
+                    'iam',
+                    'list-access-keys',
+                    '--user-name',
+                    userName,
+                    '--query',
+                    'AccessKeyMetadata[].AccessKeyId',
+                    '--output',
+                    'json',
+                  ],
+                  {
+                    env: { AWS_REGION: identity.region },
+                  },
+                ),
+              ) ?? [];
 
             if (refreshedKeys.length < 2) {
               const createdKey = createIamAccessKey(userName, identity.region);
@@ -941,7 +1121,11 @@ async function main() {
         setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_ACCESS_KEY_ID', accessKeyId);
         setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_SECRET_ACCESS_KEY', secretAccessKey);
         setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_REGION', identity.region);
-        setGitHubSecret(githubRepo, 'AWS_DR_BACKUP_S3_BUCKET', freshBackupOutputs?.DrBackupBucketName ?? backupBucketName);
+        setGitHubSecret(
+          githubRepo,
+          'AWS_DR_BACKUP_S3_BUCKET',
+          freshBackupOutputs?.DrBackupBucketName ?? backupBucketName,
+        );
         summary.completed.push('Configured AWS DR backup secrets in GitHub Actions.');
       } else if (
         !secretNamesInRepo.has('AWS_DR_BACKUP_ACCESS_KEY_ID') ||
@@ -955,18 +1139,32 @@ async function main() {
 
     if (!secretNamesInRepo.has('CONVEX_DEPLOY_KEY')) {
       if (flags.yes) {
-        summary.needsAttention.push('CONVEX_DEPLOY_KEY is missing in GitHub Actions and cannot be auto-generated from this script.');
+        summary.needsAttention.push(
+          'CONVEX_DEPLOY_KEY is missing in GitHub Actions and cannot be auto-generated from this script.',
+        );
       } else {
-        const deployKey = await ask('Convex production deploy key for GitHub Actions (leave empty to keep manual): ');
+        const deployKey = await ask(
+          'Convex production deploy key for GitHub Actions (leave empty to keep manual): ',
+        );
         if (deployKey) {
           if (!isLikelyConvexDeployKey(deployKey)) {
-            summary.needsAttention.push('The provided CONVEX_DEPLOY_KEY does not look like a production deploy key.');
+            summary.needsAttention.push(
+              'The provided CONVEX_DEPLOY_KEY does not look like a production deploy key.',
+            );
           }
           setGitHubSecret(githubRepo, 'CONVEX_DEPLOY_KEY', deployKey);
           context.convexDeployKey = deployKey;
-          setGitHubSecret(githubRepo, 'DR_TEST_APP_NAME', `${convexProdEnv?.APP_NAME ?? 'TanStack Start Template'} DR Test`);
+          setGitHubSecret(
+            githubRepo,
+            'DR_TEST_APP_NAME',
+            `${convexProdEnv?.APP_NAME ?? 'TanStack Start Template'} DR Test`,
+          );
           setGitHubSecret(githubRepo, 'DR_TEST_APP_URL', 'http://127.0.0.1:3000');
-          setGitHubSecret(githubRepo, 'DR_TEST_BETTER_AUTH_SECRET', randomBytes(32).toString('hex'));
+          setGitHubSecret(
+            githubRepo,
+            'DR_TEST_BETTER_AUTH_SECRET',
+            randomBytes(32).toString('hex'),
+          );
           setGitHubSecret(githubRepo, 'DR_TEST_BETTER_AUTH_URL', 'http://127.0.0.1:3000');
           setGitHubSecret(githubRepo, 'DR_TEST_CONVEX_SITE_URL', 'http://127.0.0.1:3211');
           setGitHubSecret(githubRepo, 'DR_TEST_JWKS', convexProdEnv?.JWKS ?? '{"keys":[]}');
@@ -978,20 +1176,38 @@ async function main() {
     }
 
     if (context.runWorkflowTest) {
-      const workflowRun = runCommand('gh', ['workflow', 'run', 'dr-backup-convex-s3.yml', '--repo', githubRepo]);
+      const workflowRun = runCommand('gh', [
+        'workflow',
+        'run',
+        'dr-backup-convex-s3.yml',
+        '--repo',
+        githubRepo,
+      ]);
       if (workflowRun.ok) {
         summary.completed.push('Triggered the weekly DR backup workflow once.');
-        const latestRun = runCommand(
-          'gh',
-          ['run', 'list', '--repo', githubRepo, '--workflow', 'dr-backup-convex-s3.yml', '--event', 'workflow_dispatch', '--limit', '1', '--json', 'url,status'],
-        );
+        const latestRun = runCommand('gh', [
+          'run',
+          'list',
+          '--repo',
+          githubRepo,
+          '--workflow',
+          'dr-backup-convex-s3.yml',
+          '--event',
+          'workflow_dispatch',
+          '--limit',
+          '1',
+          '--json',
+          'url,status',
+        ]);
         const latestParsed = parseJsonOutput<Array<{ status?: string; url?: string }>>(latestRun);
         if (latestParsed?.[0]?.url) {
           summary.completed.push(`Latest workflow run: ${latestParsed[0].url}`);
         }
         summary.workflowTested = true;
       } else {
-        summary.needsAttention.push('The backup workflow trigger failed. Verify GitHub auth and workflow permissions.');
+        summary.needsAttention.push(
+          'The backup workflow trigger failed. Verify GitHub auth and workflow permissions.',
+        );
       }
     }
 
@@ -1009,7 +1225,9 @@ async function main() {
     summary.warnings.push('Netlify DR setup was skipped with --skip-netlify.');
   } else if (!netlifyAuth) {
     summary.frontendLane = 'blocked';
-    summary.needsAttention.push('Netlify auth is not ready, so the DR frontend was not configured.');
+    summary.needsAttention.push(
+      'Netlify auth is not ready, so the DR frontend was not configured.',
+    );
   } else if (!context.setupNetlifyNow) {
     summary.frontendLane = 'partial';
     summary.warnings.push('Dedicated Netlify DR site setup was deferred.');
@@ -1020,7 +1238,7 @@ async function main() {
 
     if (!drNetlifySite && !flags.yes) {
       const existingInput = await ask(
-        'Existing Netlify DR site id or name (leave empty to create a dedicated site automatically): ',
+        'Existing Netlify DR site id or name (leave empty and the script will create a dedicated DR site automatically): ',
       );
       if (existingInput) {
         drNetlifySite = resolveNetlifySite(existingInput);
@@ -1041,111 +1259,93 @@ async function main() {
         'Could not create or resolve the dedicated Netlify DR site automatically. Provide --netlify-site on the next run or configure it manually.',
       );
     } else {
-      const frontendOrigin = domain ? `https://${frontendSubdomain}.${domain}` : undefined;
-      const backendOrigin = domain ? `https://${backendSubdomain}.${domain}` : undefined;
-      const siteOrigin = domain ? `https://${siteSubdomain}.${domain}` : undefined;
-
-      if (frontendOrigin && backendOrigin && siteOrigin) {
-        const envEntries = Object.entries(
-          buildRequiredNetlifyDrEnvVars(convexProdEnv ?? {}, {
-            backendOrigin,
-            frontendOrigin,
-            siteOrigin,
-          }),
+      let deployKeyForNetlify = context.convexDeployKey ?? '';
+      if (!deployKeyForNetlify) {
+        const existingNetlifyDeployKey = getNetlifySiteEnvValue(
+          drNetlifySite.id,
+          'CONVEX_DEPLOY_KEY',
         );
-        netlifyRequiredEnvConfigured = true;
+        if (existingNetlifyDeployKey && isLikelyConvexDeployKey(existingNetlifyDeployKey)) {
+          netlifyConvexDeployKeyReady = true;
+        } else if (!flags.yes) {
+          deployKeyForNetlify = await ask(
+            'Convex deploy key for the Netlify DR site (leave empty to keep frontend DR partial): ',
+          );
+        }
+      }
 
-        for (const [key, value] of envEntries) {
+      if (deployKeyForNetlify) {
+        if (!isLikelyConvexDeployKey(deployKeyForNetlify)) {
+          summary.needsAttention.push(
+            'The provided Netlify CONVEX_DEPLOY_KEY does not look like a production deploy key.',
+          );
+        } else {
           try {
-            setNetlifySiteEnvVar(drNetlifySite.id, key, value);
-          } catch (error) {
-            netlifyRequiredEnvConfigured = false;
-            summary.needsAttention.push(
-              `Failed to set Netlify env ${key} automatically: ${(error as Error).message}`,
-            );
-          }
-        }
-
-        let deployKeyForNetlify = context.convexDeployKey ?? '';
-        if (!deployKeyForNetlify) {
-          const existingNetlifyDeployKey = getNetlifySiteEnvValue(drNetlifySite.id, 'CONVEX_DEPLOY_KEY');
-          if (existingNetlifyDeployKey && isLikelyConvexDeployKey(existingNetlifyDeployKey)) {
+            setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKeyForNetlify);
             netlifyConvexDeployKeyReady = true;
-          } else if (!flags.yes) {
-            deployKeyForNetlify = await ask(
-              'Convex deploy key for the Netlify DR site (leave empty to keep frontend DR partial): ',
-            );
-          }
-        }
-
-        if (deployKeyForNetlify) {
-          if (!isLikelyConvexDeployKey(deployKeyForNetlify)) {
+            context.convexDeployKey = deployKeyForNetlify;
+          } catch (error) {
             summary.needsAttention.push(
-              'The provided Netlify CONVEX_DEPLOY_KEY does not look like a production deploy key.',
+              `Failed to set Netlify CONVEX_DEPLOY_KEY automatically: ${(error as Error).message}`,
             );
-          } else {
-            try {
-              setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKeyForNetlify);
-              netlifyConvexDeployKeyReady = true;
-              context.convexDeployKey = deployKeyForNetlify;
-            } catch (error) {
-              summary.needsAttention.push(
-                `Failed to set Netlify CONVEX_DEPLOY_KEY automatically: ${(error as Error).message}`,
-              );
-            }
           }
         }
+      }
 
-        if (!netlifyConvexDeployKeyReady) {
-          summary.needsAttention.push(
-            'Netlify DR is still missing a validated CONVEX_DEPLOY_KEY, so the frontend build is not fully ready.',
-          );
-        }
-
-        let buildHookUrl = listNetlifySiteHooks(drNetlifySite.id).find((hook) => hook.url)?.url ?? null;
-        if (!buildHookUrl) {
-          buildHookUrl = createNetlifyBuildHook(drNetlifySite.id, 'DR Recovery', defaultBranch);
-        }
-
-        if (buildHookUrl && awsAuth && identity.region) {
-          upsertAwsSecret(
-            secretNames.netlifyBuildHook,
-            buildHookUrl,
-            identity.region,
-            'Netlify DR build hook used by dr-recover-ecs.sh',
-          );
-          summary.completed.push('Configured the Netlify DR build hook secret in AWS Secrets Manager.');
-        } else {
-          summary.frontendLane = 'partial';
-          summary.needsAttention.push(
-            'Could not capture a Netlify build hook automatically. Add the hook URL to AWS Secrets Manager manually.',
-          );
-        }
-
-        const frontendCnameTarget = extractHostnameFromUrl(
-          drNetlifySite.sslUrl ?? drNetlifySite.url ?? '',
+      if (!netlifyConvexDeployKeyReady) {
+        summary.needsAttention.push(
+          'Netlify DR is still missing a validated CONVEX_DEPLOY_KEY, so the frontend build is not fully ready.',
         );
-        if (frontendCnameTarget && awsAuth && identity.region) {
-          context.frontendCnameTarget = frontendCnameTarget;
-          upsertAwsSecret(
-            secretNames.netlifyFrontendCnameTarget,
-            frontendCnameTarget,
-            identity.region,
-            'Netlify DR frontend CNAME target used for Cloudflare cutover automation',
-          );
-          summary.completed.push(`Captured the Netlify DR frontend CNAME target (${frontendCnameTarget}).`);
-        } else {
-          summary.frontendLane = 'partial';
-          summary.needsAttention.push(
-            'Could not determine the Netlify DR frontend hostname automatically. Cloudflare frontend DNS automation may still need AWS_DR_FRONTEND_CNAME_TARGET.',
-          );
-        }
+      }
 
-        if (drNetlifySite.sslUrl || drNetlifySite.url) {
-          summary.completed.push(
-            `Netlify DR site URL: ${drNetlifySite.sslUrl ?? drNetlifySite.url ?? drNetlifySite.name}`,
-          );
-        }
+      let buildHookUrl =
+        listNetlifySiteHooks(drNetlifySite.id).find((hook) => hook.url)?.url ?? null;
+      if (!buildHookUrl) {
+        buildHookUrl = createNetlifyBuildHook(drNetlifySite.id, 'DR Recovery', defaultBranch);
+      }
+
+      if (buildHookUrl && awsAuth && identity.region) {
+        upsertAwsSecret(
+          secretNames.netlifyBuildHook,
+          buildHookUrl,
+          identity.region,
+          'Netlify DR build hook used by dr-recover-ecs.sh',
+        );
+        summary.completed.push(
+          'Configured the Netlify DR build hook secret in AWS Secrets Manager.',
+        );
+      } else {
+        summary.frontendLane = 'partial';
+        summary.needsAttention.push(
+          'Could not capture a Netlify build hook automatically. Add the hook URL to AWS Secrets Manager manually.',
+        );
+      }
+
+      const frontendCnameTarget = extractHostnameFromUrl(
+        drNetlifySite.sslUrl ?? drNetlifySite.url ?? '',
+      );
+      if (frontendCnameTarget && awsAuth && identity.region) {
+        context.frontendCnameTarget = frontendCnameTarget;
+        upsertAwsSecret(
+          secretNames.netlifyFrontendCnameTarget,
+          frontendCnameTarget,
+          identity.region,
+          'Netlify DR frontend hostname used during recovery',
+        );
+        summary.completed.push(
+          `Captured the Netlify DR frontend hostname (${frontendCnameTarget}).`,
+        );
+      } else {
+        summary.frontendLane = 'partial';
+        summary.needsAttention.push(
+          'Could not determine the Netlify DR frontend hostname automatically.',
+        );
+      }
+
+      if (drNetlifySite.sslUrl || drNetlifySite.url) {
+        summary.completed.push(
+          `Netlify DR site URL: ${drNetlifySite.sslUrl ?? drNetlifySite.url ?? drNetlifySite.name}`,
+        );
       }
     }
   }
@@ -1155,12 +1355,22 @@ async function main() {
   if (!ecsShouldRun) {
     summary.backendLane = 'partial';
     summary.warnings.push('DR ECS deployment was skipped with --skip-ecs.');
-  } else if (!awsAuth || !identity.region || !context.domain) {
+  } else if (
+    !awsAuth ||
+    !identity.region ||
+    (context.hostnameStrategy === 'custom-domain' && !context.domain)
+  ) {
     summary.backendLane = 'blocked';
-    summary.needsAttention.push('AWS auth or the DR domain is missing, so the DR ECS stack was not deployed.');
+    summary.needsAttention.push(
+      context.hostnameStrategy === 'custom-domain'
+        ? 'AWS auth or the DR domain is missing, so the DR ECS stack was not deployed.'
+        : 'AWS auth is missing, so the DR ECS stack was not deployed.',
+    );
   } else {
     runInteractive('pnpm', ['run', 'dr:ecs:preview'], drEnv);
-    const deployEcs = flags.yes ? true : await askYesNo('Deploy or update the DR ECS stack now?', true);
+    const deployEcs = flags.yes
+      ? true
+      : await askYesNo('Deploy or update the DR ECS stack now?', true);
     if (deployEcs) {
       runInteractive('pnpm', ['run', 'dr:ecs:deploy'], drEnv);
       summary.completed.push('Deployed the DR ECS stack.');
@@ -1170,14 +1380,53 @@ async function main() {
     }
   }
 
+  const postDeployEcsOutputs =
+    awsAuth && identity.region ? getStackOutputs(getDrEcsStackName(), identity.region) : null;
+
+  if (drNetlifySite) {
+    const drOrigins = buildDrOrigins(context, postDeployEcsOutputs, drNetlifySite);
+    if (!drOrigins) {
+      summary.frontendLane = 'partial';
+      summary.needsAttention.push(
+        'The DR backend/site URLs are not available yet, so Netlify DR env vars could not be fully configured.',
+      );
+    } else {
+      const envEntries = Object.entries(
+        buildRequiredNetlifyDrEnvVars(convexProdEnv ?? {}, drOrigins),
+      );
+      netlifyRequiredEnvConfigured = true;
+
+      for (const [key, value] of envEntries) {
+        try {
+          setNetlifySiteEnvVar(drNetlifySite.id, key, value);
+        } catch (error) {
+          netlifyRequiredEnvConfigured = false;
+          summary.needsAttention.push(
+            `Failed to set Netlify env ${key} automatically: ${(error as Error).message}`,
+          );
+        }
+      }
+
+      if (netlifyRequiredEnvConfigured) {
+        summary.completed.push('Configured the required Netlify DR runtime env vars.');
+      }
+    }
+  }
+
   printSection('Step 9: Sync the DR runtime secret');
   if (!awsAuth || !identity.region) {
-    summary.needsAttention.push('AWS auth is not ready, so the DR runtime secret was not synchronized.');
+    summary.needsAttention.push(
+      'AWS auth is not ready, so the DR runtime secret was not synchronized.',
+    );
   } else if (!convexProdEnv) {
-    summary.needsAttention.push('Convex production env access is not ready, so the DR runtime secret could not be synchronized.');
+    summary.needsAttention.push(
+      'Convex production env access is not ready, so the DR runtime secret could not be synchronized.',
+    );
   } else {
     const requiredRecoveryKeys = getRequiredRecoveryEnvKeys(convexProdEnv);
-    const missingRecoveryKeys = requiredRecoveryKeys.filter((key) => !(convexProdEnv[key] ?? '').trim());
+    const missingRecoveryKeys = requiredRecoveryKeys.filter(
+      (key) => !(convexProdEnv[key] ?? '').trim(),
+    );
     if (missingRecoveryKeys.length > 0) {
       summary.needsAttention.push(
         `The Convex production env is missing recovery-critical keys: ${missingRecoveryKeys.join(', ')}.`,
@@ -1215,28 +1464,31 @@ async function main() {
           );
           summary.completed.push('Configured the Cloudflare DNS automation secrets.');
         } else {
-          summary.needsAttention.push('Cloudflare DNS automation was requested, but the token or zone id was left blank.');
+          summary.needsAttention.push(
+            'Cloudflare DNS automation was requested, but the token or zone id was left blank.',
+          );
         }
       }
     } else {
-      summary.warnings.push(
-        `Cloudflare automation is still optional. Add ${secretNames.cloudflareDnsToken} and ${secretNames.cloudflareZoneId} later if you want automated DNS cutover.`,
-      );
+      if (context.hostnameStrategy === 'custom-domain') {
+        summary.warnings.push(
+          `Cloudflare automation is still optional. Add ${secretNames.cloudflareDnsToken} and ${secretNames.cloudflareZoneId} later if you want automated DNS cutover.`,
+        );
+      }
     }
   }
 
   printSection('Step 10: Final readiness validation');
   const finalBackupOutputs =
-    awsAuth && identity.region
-      ? getStackOutputs(getDrBackupStackName(), identity.region)
-      : null;
+    awsAuth && identity.region ? getStackOutputs(getDrBackupStackName(), identity.region) : null;
   const finalEcsOutputs =
-    awsAuth && identity.region
-      ? getStackOutputs(getDrEcsStackName(), identity.region)
-      : null;
-  const hasDrEnvSecret = awsAuth && identity.region ? secretExists(secretNames.convexEnv, identity.region) : false;
+    awsAuth && identity.region ? getStackOutputs(getDrEcsStackName(), identity.region) : null;
+  const hasDrEnvSecret =
+    awsAuth && identity.region ? secretExists(secretNames.convexEnv, identity.region) : false;
   const hasBuildHookSecret =
-    awsAuth && identity.region ? secretExists(secretNames.netlifyBuildHook, identity.region) : false;
+    awsAuth && identity.region
+      ? secretExists(secretNames.netlifyBuildHook, identity.region)
+      : false;
   const hasFrontendCnameTargetSecret =
     awsAuth && identity.region
       ? secretExists(secretNames.netlifyFrontendCnameTarget, identity.region)
@@ -1265,10 +1517,14 @@ async function main() {
   }
 
   if (!hasDrEnvSecret) {
-    summary.needsAttention.push(`Secrets Manager secret ${secretNames.convexEnv} is still missing.`);
+    summary.needsAttention.push(
+      `Secrets Manager secret ${secretNames.convexEnv} is still missing.`,
+    );
   }
   if (!hasBuildHookSecret && !flags.skipNetlify) {
-    summary.needsAttention.push(`Secrets Manager secret ${secretNames.netlifyBuildHook} is still missing.`);
+    summary.needsAttention.push(
+      `Secrets Manager secret ${secretNames.netlifyBuildHook} is still missing.`,
+    );
   }
   if (!hasFrontendCnameTargetSecret && !flags.skipNetlify) {
     summary.needsAttention.push(
@@ -1281,19 +1537,15 @@ async function main() {
       ? `gh workflow run dr-backup-convex-s3.yml --repo ${githubRepo}`
       : 'gh workflow run dr-backup-convex-s3.yml --repo <owner/repo>',
   );
-  const recoveryCommand =
-    context.domain && (finalBackupOutputs?.DrBackupBucketName ?? backupBucketName)
-      ? buildRecoveryCommand(
-          context.domain,
-          finalBackupOutputs?.DrBackupBucketName ?? backupBucketName,
-        )
-      : './infra/aws-cdk/scripts/dr-recover-ecs.sh';
+  const recoveryCommand = buildRecoveryCommandForContext(
+    context,
+    finalBackupOutputs?.DrBackupBucketName ?? backupBucketName,
+  );
   summary.nextCommands.push(recoveryCommand);
 
   if (
     !flags.json &&
     !flags.yes &&
-    context.domain &&
     summary.backendLane === 'ready' &&
     summary.backupLane !== 'blocked'
   ) {

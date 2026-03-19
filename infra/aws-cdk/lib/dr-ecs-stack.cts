@@ -15,9 +15,10 @@ const secretsmanager = require('aws-cdk-lib/aws-secretsmanager');
  *   backendSubdomain?: string;
  *   convexImage?: string;
  *   cpu?: number;
- *   domain: string;
+ *   domain?: string;
  *   env?: import('aws-cdk-lib').Environment;
  *   frontendSubdomain?: string;
+ *   hostnameStrategy?: 'custom-domain' | 'provider-hostnames';
  *   instanceSecretHex?: string;
  *   memoryMiB?: number;
  *   projectSlug?: string;
@@ -36,12 +37,13 @@ class DrEcsStack extends cdk.Stack {
 
     const projectSlug = props.projectSlug ?? 'tanstack-start-template';
     const resourcePrefix = `${projectSlug}-dr`;
+    const hostnameStrategy = props.hostnameStrategy ?? 'custom-domain';
     const backendSubdomain = props.backendSubdomain ?? 'dr-backend';
     const siteSubdomain = props.siteSubdomain ?? 'dr-site';
     const frontendSubdomain = props.frontendSubdomain ?? 'dr';
-    const backendFqdn = `${backendSubdomain}.${props.domain}`;
-    const siteFqdn = `${siteSubdomain}.${props.domain}`;
-    const frontendFqdn = `${frontendSubdomain}.${props.domain}`;
+    const backendFqdn = props.domain ? `${backendSubdomain}.${props.domain}` : '';
+    const siteFqdn = props.domain ? `${siteSubdomain}.${props.domain}` : '';
+    const frontendFqdn = props.domain ? `${frontendSubdomain}.${props.domain}` : '';
     const convexImage = props.convexImage ?? 'ghcr.io/get-convex/convex-backend:latest';
     const instanceName = 'postgres';
 
@@ -137,8 +139,9 @@ class DrEcsStack extends cdk.Stack {
         ].join(' && '),
       ],
       environment: {
-        CONVEX_CLOUD_ORIGIN: `https://${backendFqdn}`,
-        CONVEX_SITE_ORIGIN: `https://${siteFqdn}`,
+        CONVEX_CLOUD_ORIGIN:
+          hostnameStrategy === 'provider-hostnames' ? '' : `https://${backendFqdn}`,
+        CONVEX_SITE_ORIGIN: hostnameStrategy === 'provider-hostnames' ? '' : `https://${siteFqdn}`,
         INSTANCE_NAME: instanceName,
         INSTANCE_SECRET: instanceSecret.secretValue.unsafeUnwrap(),
         PG_CA_FILE: caFilePath,
@@ -169,6 +172,14 @@ class DrEcsStack extends cdk.Stack {
       protocol: elbv2.ApplicationProtocol.HTTP,
     });
 
+    const siteListener =
+      hostnameStrategy === 'provider-hostnames'
+        ? alb.addListener('SiteHttp', {
+            port: 3211,
+            protocol: elbv2.ApplicationProtocol.HTTP,
+          })
+        : null;
+
     const service = new ecs.FargateService(this, 'ConvexService', {
       cluster,
       taskDefinition: taskDef,
@@ -197,25 +208,60 @@ class DrEcsStack extends cdk.Stack {
       },
     });
 
-    httpListener.addTargets('ConvexSite', {
-      port: 3211,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targets: [
-        service.loadBalancerTarget({
-          containerName: container.containerName,
-          containerPort: 3211,
-        }),
-      ],
-      conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
-      priority: 10,
-      healthCheck: {
-        path: '/',
-        interval: cdk.Duration.seconds(30),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 5,
-        healthyHttpCodes: '200-499',
-      },
-    });
+    if (hostnameStrategy === 'custom-domain') {
+      httpListener.addTargets('ConvexSite', {
+        port: 3211,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targets: [
+          service.loadBalancerTarget({
+            containerName: container.containerName,
+            containerPort: 3211,
+          }),
+        ],
+        conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
+        priority: 10,
+        healthCheck: {
+          path: '/',
+          interval: cdk.Duration.seconds(30),
+          healthyThresholdCount: 2,
+          unhealthyThresholdCount: 5,
+          healthyHttpCodes: '200-499',
+        },
+      });
+    } else if (siteListener) {
+      siteListener.addTargets('ConvexSiteProviderHostnames', {
+        port: 3211,
+        protocol: elbv2.ApplicationProtocol.HTTP,
+        targets: [
+          service.loadBalancerTarget({
+            containerName: container.containerName,
+            containerPort: 3211,
+          }),
+        ],
+        healthCheck: {
+          path: '/',
+          interval: cdk.Duration.seconds(30),
+          healthyThresholdCount: 2,
+          unhealthyThresholdCount: 5,
+          healthyHttpCodes: '200-499',
+        },
+      });
+    }
+
+    const backendUrl =
+      hostnameStrategy === 'provider-hostnames'
+        ? `http://${alb.loadBalancerDnsName}`
+        : `https://${backendFqdn}`;
+    const siteUrl =
+      hostnameStrategy === 'provider-hostnames'
+        ? `http://${alb.loadBalancerDnsName}:3211`
+        : `https://${siteFqdn}`;
+    const frontendUrl = hostnameStrategy === 'provider-hostnames' ? '' : `https://${frontendFqdn}`;
+
+    if (hostnameStrategy === 'provider-hostnames') {
+      container.addEnvironment('CONVEX_CLOUD_ORIGIN', backendUrl);
+      container.addEnvironment('CONVEX_SITE_ORIGIN', siteUrl);
+    }
 
     new cdk.CfnOutput(this, 'AuroraEndpoint', {
       value: dbCluster.clusterEndpoint.hostname,
@@ -227,13 +273,13 @@ class DrEcsStack extends cdk.Stack {
       value: instanceSecret.secretArn,
     });
     new cdk.CfnOutput(this, 'ConvexBackendUrl', {
-      value: `https://${backendFqdn}`,
+      value: backendUrl,
     });
     new cdk.CfnOutput(this, 'ConvexSiteUrl', {
-      value: `https://${siteFqdn}`,
+      value: siteUrl,
     });
     new cdk.CfnOutput(this, 'DrFrontendUrl', {
-      value: `https://${frontendFqdn}`,
+      value: frontendUrl,
     });
     new cdk.CfnOutput(this, 'AlbDnsName', {
       value: alb.loadBalancerDnsName,

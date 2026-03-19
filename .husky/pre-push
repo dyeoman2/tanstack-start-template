@@ -1,0 +1,4 @@
+echo "Running pre-push checks in parallel..."
+npx concurrently -g --kill-others-on-fail --success=all "pnpm test" "pnpm build" "pnpm audit:code-health" || exit 1
+
+echo "Pre-push checks passed!"

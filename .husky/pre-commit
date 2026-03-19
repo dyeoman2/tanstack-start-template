@@ -1,0 +1,12 @@
+echo "Running pre-commit checks..."
+
+echo "Linting staged files..."
+if ! pnpm lint-staged; then
+  echo "lint-staged backup failed, retrying without stash..."
+  pnpm lint-staged -- --no-stash || exit 1
+fi
+
+echo "Running typecheck..."
+pnpm typecheck || exit 1
+
+echo "All checks passed!"

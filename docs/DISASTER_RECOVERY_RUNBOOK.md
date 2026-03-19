@@ -18,6 +18,17 @@ pnpm run dr:setup
 
 The guided script discovers the current environment, configures the DR stacks, syncs the runtime secret from Convex production env vars, updates GitHub Actions secrets, and attempts to create or validate the dedicated Netlify DR site and build hook before falling back to manual remediation steps.
 
+`dr:setup` now supports two DR hostname strategies:
+
+- `provider-hostnames`
+  - default path
+  - uses the Netlify DR site URL and AWS-generated DR backend/site URLs
+  - does not require Cloudflare or a custom domain
+- `custom-domain`
+  - advanced path
+  - derives `dr.*`, `dr-backend.*`, and `dr-site.*` from your domain
+  - supports Cloudflare DNS cutover automation
+
 ## Required AWS Secrets Manager Secrets
 
 - `<project-slug>/dr-convex-env-vars`
@@ -49,7 +60,7 @@ Outputs:
 
 ## Deploy DR ECS Infrastructure
 
-Set at minimum:
+For `custom-domain` mode, set at minimum:
 
 ```bash
 export AWS_DR_DOMAIN=example.com
@@ -67,7 +78,10 @@ Deploy:
 pnpm run dr:ecs:deploy
 ```
 
-The DR ECS stack is only synthesized when `AWS_DR_DOMAIN` is set.
+The DR ECS stack is synthesized when either:
+
+- `AWS_DR_HOSTNAME_STRATEGY=provider-hostnames`, or
+- `AWS_DR_HOSTNAME_STRATEGY=custom-domain` and `AWS_DR_DOMAIN` is set
 
 ## Refresh the DR Runtime Env Secret
 
@@ -103,10 +117,18 @@ The workflow should not be considered successful unless export, upload, deploy-t
 
 ## Run Full Recovery
 
-Set required env vars:
+For `custom-domain` recovery, set:
 
 ```bash
+export AWS_DR_HOSTNAME_STRATEGY=custom-domain
 export AWS_DR_DOMAIN=example.com
+export AWS_DR_BACKUP_S3_BUCKET=your-dr-backup-bucket
+```
+
+For `provider-hostnames` recovery, set:
+
+```bash
+export AWS_DR_HOSTNAME_STRATEGY=provider-hostnames
 export AWS_DR_BACKUP_S3_BUCKET=your-dr-backup-bucket
 ```
 
@@ -134,15 +156,15 @@ Run recovery:
 5. Sets minimum env vars and runs `pnpm exec convex deploy`
 6. Downloads the newest S3 backup and imports it
 7. Replays runtime env vars from Secrets Manager and applies DR overrides
-8. Updates Cloudflare CNAMEs for backend, site, and frontend
+8. Updates Cloudflare CNAMEs for backend, site, and frontend in `custom-domain` mode
 9. Triggers the dedicated Netlify DR build hook
 10. Verifies backend health directly and, when possible, through DR DNS
 
 ## Post-Recovery Checks
 
 - Confirm `${AWS_DR_BACKUP_S3_BUCKET}` contains recent `convex-backups/` objects
-- Confirm the backend responds at `https://dr-backend.<domain>/version`
-- Confirm the Convex site host responds at `https://dr-site.<domain>`
+- Confirm the backend responds at the recovered `ConvexBackendUrl`
+- Confirm the Convex site host responds at the recovered `ConvexSiteUrl`
 - Confirm the Netlify DR site builds successfully
 - Confirm login and basic data access from the DR frontend
 - Confirm file access behavior matches the active storage mode
@@ -150,6 +172,5 @@ Run recovery:
 ## Known Limitations
 
 - If production uses `FILE_STORAGE_BACKEND=convex`, uploaded Convex blobs are not covered by `convex export`
-- The script assumes Cloudflare for automated DNS updates; without those secrets, DNS repointing is manual
-- The script can trigger a Netlify DR build, but the DR site must already exist and be preconfigured
+- Cloudflare automation only applies in `custom-domain` mode
 - Return-to-primary reconciliation is operationally separate and is not automated in this repo

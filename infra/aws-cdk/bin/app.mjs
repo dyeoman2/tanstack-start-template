@@ -54,6 +54,7 @@ const app = new cdk.App();
 const awsEnv = createAwsEnv();
 const projectSlug = readTrimmedEnv('AWS_DR_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
 const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackName(projectSlug);
+const drHostnameStrategy = readTrimmedEnv('AWS_DR_HOSTNAME_STRATEGY') || 'custom-domain';
 const storageStage = readTrimmedEnv('STORAGE_STAGE');
 if (storageStage === 'dev' || storageStage === 'prod') {
   const config = createStageConfig(storageStage);
@@ -75,7 +76,7 @@ new DrBackupStack(app, buildDrBackupStackName(projectSlug), {
 });
 
 const drDomain = readTrimmedEnv('AWS_DR_DOMAIN');
-if (drDomain) {
+if (drDomain || drHostnameStrategy === 'provider-hostnames') {
   new DrEcsStack(app, drEcsStackName, {
     auroraMaxAcu: Number.parseFloat(readTrimmedEnv('AWS_DR_AURORA_MAX_ACU')) || undefined,
     auroraMinAcu: Number.parseFloat(readTrimmedEnv('AWS_DR_AURORA_MIN_ACU')) || undefined,
@@ -83,9 +84,10 @@ if (drDomain) {
     convexImage: readTrimmedEnv('AWS_DR_CONVEX_IMAGE') || undefined,
     cpu: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_CPU'), 10) || undefined,
     description: 'TanStack Start Template DR stack for self-hosted Convex on ECS',
-    domain: drDomain,
+    domain: drDomain || undefined,
     env: awsEnv,
     frontendSubdomain: readTrimmedEnv('AWS_DR_FRONTEND_SUBDOMAIN') || 'dr',
+    hostnameStrategy: drHostnameStrategy,
     instanceSecretHex: readTrimmedEnv('AWS_DR_INSTANCE_SECRET') || undefined,
     memoryMiB: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_MEMORY_MIB'), 10) || undefined,
     projectSlug,

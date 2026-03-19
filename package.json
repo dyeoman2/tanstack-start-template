@@ -42,6 +42,7 @@
     "typecheck": "./oxlint-typecheck.sh",
     "lint": "pnpm exec oxlint --fix .",
     "lint:check": "pnpm exec oxlint .",
+    "lint-staged": "lint-staged",
     "check": "pnpm exec oxfmt --check . && pnpm run lint:check && pnpm run typecheck && pnpm audit:code-health",
     "audit:code-health": "node --import tsx scripts/code-health-audit.ts check",
     "audit:inventory": "tsx scripts/code-health-audit.ts inventory",
@@ -67,6 +68,7 @@
     "make-admin": "tsx scripts/make-admin.ts",
     "format": "pnpm exec oxfmt .",
     "format:check": "pnpm exec oxfmt --check .",
+    "prepare": "husky",
     "precommit": "pnpm run format && pnpm run lint",
     "updates": "npx npm-check-updates",
     "analyze": "pnpm build && npx vite-bundle-analyzer dist/client/assets/*.js",
@@ -149,7 +151,6 @@
   },
   "devDependencies": {
     "@better-auth/cli": "1.4.21",
-    "@convex-dev/eslint-plugin": "^1.2.1",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/vite": "^4.2.2",
     "@tanstack/router-plugin": "^1.166.14",
@@ -168,6 +169,7 @@
     "constructs": "^10.5.1",
     "jsdom": "^29.0.0",
     "knip": "^5.88.0",
+    "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
     "oxlint-tsgolint": "^0.17.0",
@@ -175,9 +177,15 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "8.0.1",
-    "vitest": "^4.1.0"
+    "vitest": "^4.1.0",
+    "husky": "^9.1.7"
   },
   "engines": {
     "node": ">=24"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs,cts,mts}": [
+      "node scripts/run-ox-tools-on-staged.mjs"
+    ]
   }
 }

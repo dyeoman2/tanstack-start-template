@@ -45,7 +45,7 @@ The recovery runbook and script then:
 - download and import the latest S3 backup
 - deploy app code to the self-hosted backend
 - apply runtime env vars and DR-specific overrides
-- update Cloudflare DNS
+- optionally update Cloudflare DNS
 - trigger a dedicated Netlify DR frontend deploy
 
 ## File Storage Coverage
@@ -119,11 +119,22 @@ This script is designed to be non-interactive by default. It supports:
 
 ## Dedicated DR Frontend
 
-This implementation assumes:
+This implementation supports two hostname strategies:
+
+- `provider-hostnames`
+  - default path
+  - uses the dedicated Netlify DR site URL plus AWS-generated DR backend/site URLs
+  - no Cloudflare dependency
+- `custom-domain`
+  - uses your own domain and derived `dr.*` hostnames
+  - optional Cloudflare DNS automation
+
+In both modes:
 
 - the main frontend remains on Netlify
 - a separate Netlify DR site exists for failover
-- Cloudflare owns the production DNS zone and can repoint:
+
+In `custom-domain` mode, Cloudflare can repoint:
   - `dr-backend.<domain>`
   - `dr-site.<domain>`
   - `dr.<domain>`

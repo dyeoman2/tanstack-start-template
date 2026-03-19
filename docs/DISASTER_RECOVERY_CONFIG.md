@@ -60,6 +60,7 @@ Those commands derive storage CDK inputs from the runtime storage env for the se
 
 ### DR ECS stack
 
+- `AWS_DR_HOSTNAME_STRATEGY`
 - `AWS_DR_DOMAIN`
 - `AWS_DR_STACK_NAME`
 - `AWS_DR_BACKEND_SUBDOMAIN`
@@ -73,6 +74,9 @@ Those commands derive storage CDK inputs from the runtime storage env for the se
 - `AWS_DR_ECS_MEMORY_MIB`
 - `AWS_DR_AURORA_MIN_ACU`
 - `AWS_DR_AURORA_MAX_ACU`
+
+`AWS_DR_DOMAIN` and the `*_SUBDOMAIN` values are only required for `AWS_DR_HOSTNAME_STRATEGY=custom-domain`.
+For `provider-hostnames`, the DR ECS stack uses AWS-generated backend/site URLs and the dedicated Netlify DR site URL directly.
 
 ## AWS Secrets Manager Secrets
 

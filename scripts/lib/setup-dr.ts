@@ -1,7 +1,10 @@
+export type DrHostnameStrategy = 'custom-domain' | 'provider-hostnames';
+
 export type DrSetupFlags = {
   domain?: string;
   githubRepo?: string;
   help: boolean;
+  hostnameStrategy?: DrHostnameStrategy;
   json: boolean;
   netlifySite?: string;
   projectSlug?: string;
@@ -61,6 +64,15 @@ export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
         flags.domain = readFlagValue(argv, index, arg);
         index += 1;
         break;
+      case '--hostname-strategy': {
+        const value = readFlagValue(argv, index, arg);
+        if (value !== 'custom-domain' && value !== 'provider-hostnames') {
+          throw new Error(`Invalid hostname strategy: ${value}`);
+        }
+        flags.hostnameStrategy = value;
+        index += 1;
+        break;
+      }
       case '--project-slug':
         flags.projectSlug = readFlagValue(argv, index, arg);
         index += 1;
@@ -97,9 +109,7 @@ export function parseGitHubRepoFromRemote(remoteUrl: string): string | null {
     return sshMatch[1] ?? null;
   }
 
-  const sshProtocolMatch = trimmed.match(
-    /^ssh:\/\/git@github\.com\/([^/]+\/[^/.]+?)(?:\.git)?$/i,
-  );
+  const sshProtocolMatch = trimmed.match(/^ssh:\/\/git@github\.com\/([^/]+\/[^/.]+?)(?:\.git)?$/i);
   if (sshProtocolMatch) {
     return sshProtocolMatch[1] ?? null;
   }
@@ -236,9 +246,11 @@ export function buildDrSecretNames(projectSlug: string) {
   };
 }
 
-export function buildDefaultBackupBucketName(projectSlug: string, accountId?: string, region?: string) {
+export function buildDefaultBackupBucketName(
+  projectSlug: string,
+  accountId?: string,
+  region?: string,
+) {
   const suffix = [accountId, region].filter(Boolean).join('-');
-  return suffix
-    ? `${projectSlug}-dr-backup-bucket-${suffix}`
-    : `${projectSlug}-dr-backup-bucket`;
+  return suffix ? `${projectSlug}-dr-backup-bucket-${suffix}` : `${projectSlug}-dr-backup-bucket`;
 }

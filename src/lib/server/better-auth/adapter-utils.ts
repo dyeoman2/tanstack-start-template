@@ -1,5 +1,4 @@
 import type { User } from 'better-auth';
-import type { PaginationResult } from 'convex/server';
 
 type GenericConvexDocument = {
   _id: string;
@@ -16,18 +15,6 @@ export type BetterAuthAdapterUserDoc = GenericConvexDocument &
     createdAt?: Date | string | number;
     updatedAt?: Date | string | number;
   };
-
-export type AdapterResultVariant<T extends GenericConvexDocument> =
-  | PaginationResult<T>
-  | {
-      page?: T[];
-      data?: T[];
-      results?: T[];
-      items?: T[];
-      continueCursor?: string | null;
-      isDone?: boolean;
-    }
-  | T[];
 
 export type NormalizedAdapterResult<T extends GenericConvexDocument> = {
   page: T[];

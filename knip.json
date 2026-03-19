@@ -14,7 +14,11 @@
     "convex/**/*.{ts,tsx,js}",
     "infra/**/*.{ts,tsx,js,mjs,cts}"
   ],
-  "ignore": ["src/components/ui/**/*", "src/router.tsx"],
+  "ignore": [
+    "src/components/ui/**/*",
+    "src/router.tsx",
+    "infra/aws-cdk/cdk.out/**/*"
+  ],
   "rules": {
     "files": "error",
     "dependencies": "warn",
@@ -36,7 +40,7 @@
     "tailwindcss",
     "tailwindcss-animate"
   ],
-  "ignoreBinaries": ["vite-bundle-analyzer"],
+  "ignoreBinaries": ["vite-bundle-analyzer", "build"],
   "ignoreExportsUsedInFile": {
     "interface": true,
     "type": true
