@@ -209,6 +209,15 @@ function assertFreshSessionForChangeEmail(
   });
 }
 
+function getStringField(value: unknown, key: string): string | undefined {
+  if (!value || typeof value !== 'object') {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  return typeof record[key] === 'string' ? record[key] : undefined;
+}
+
 function resolveSessionAuthMethod(
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ): SessionAuthMethodResolution {
@@ -354,8 +363,7 @@ export function createSharedBetterAuthOptions(
           callbacks.shouldBlockPasswordAuth &&
           (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email')
         ) {
-          const email =
-            typeof ctx.body?.email === 'string' ? ctx.body.email.trim().toLowerCase() : null;
+          const email = getStringField(ctx.body, 'email')?.trim().toLowerCase() ?? null;
           if (email) {
             const message = await callbacks.shouldBlockPasswordAuth({
               email,
@@ -380,13 +388,8 @@ export function createSharedBetterAuthOptions(
             ctx.path === '/scim/delete-provider-connection')
         ) {
           const providerId =
-            typeof ctx.body?.providerId === 'string'
-              ? ctx.body.providerId
-              : typeof ctx.query?.providerId === 'string'
-                ? ctx.query.providerId
-                : undefined;
-          const organizationId =
-            typeof ctx.body?.organizationId === 'string' ? ctx.body.organizationId : undefined;
+            getStringField(ctx.body, 'providerId') ?? getStringField(ctx.query, 'providerId');
+          const organizationId = getStringField(ctx.body, 'organizationId');
 
           await callbacks.assertSCIMManagementAccess({
             organizationId,

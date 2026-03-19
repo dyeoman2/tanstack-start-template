@@ -100,6 +100,7 @@ export const checkEmailServiceConfigured = query({
   args: {},
   returns: emailServiceConfiguredValidator,
   handler: async () => {
+    /* security-lint-ok: public-query reason: the login and reset UI needs a public capability check before the user is authenticated. */
     const resendApiKey = process.env.RESEND_API_KEY;
     return {
       isConfigured: !!resendApiKey,

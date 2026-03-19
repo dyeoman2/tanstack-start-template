@@ -1003,7 +1003,7 @@ export async function requireOrganizationPermissionFromActionOrThrow(
         decision: OrganizationPermissionDecision;
       };
 
-  if (!result.allowed) {
+  if (result.allowed === false) {
     const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
     await recordAuthorizationDenied(ctx, {
       organizationId: result.organizationId ?? input.organizationId,

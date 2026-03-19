@@ -1,0 +1,176 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  prepare:
+    name: Resolve Target
+    runs-on: ubuntu-22.04
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        (
+          github.event.workflow_run.head_branch == 'main' ||
+          github.event.workflow_run.head_branch == 'staging'
+        )
+      )
+    steps:
+      - name: Resolve deploy target
+        id: target
+        run: |
+          branch_name="${GITHUB_REF_NAME}"
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_run" ]]; then
+            branch_name="${{ github.event.workflow_run.head_branch }}"
+          fi
+
+          if [[ "${branch_name}" == "main" ]]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "label=Production" >> "$GITHUB_OUTPUT"
+          elif [[ "${branch_name}" == "staging" ]]; then
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+            echo "label=Staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported deploy branch: ${branch_name}"
+            exit 1
+          fi
+    outputs:
+      environment: ${{ steps.target.outputs.environment }}
+      label: ${{ steps.target.outputs.label }}
+
+  sign_source_bundle:
+    name: Sign Source Bundle
+    runs-on: ubuntu-22.04
+    needs: prepare
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Build and sign source bundle
+        env:
+          DEPLOY_LABEL: ${{ needs.prepare.outputs.label }}
+        run: |
+          artifact_name="source-bundle-${GITHUB_SHA}.tar.gz"
+          signature_path="${artifact_name}.sig"
+          certificate_path="${artifact_name}.crt"
+
+          git archive --format=tar.gz --output "${artifact_name}" "${GITHUB_SHA}"
+          sha256sum "${artifact_name}" | tee source-bundle.sha256
+
+          cosign sign-blob \
+            --yes \
+            --output-signature "${signature_path}" \
+            --output-certificate "${certificate_path}" \
+            "${artifact_name}"
+
+          cosign verify-blob \
+            --certificate "${certificate_path}" \
+            --signature "${signature_path}" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${artifact_name}"
+
+          {
+            echo "${DEPLOY_LABEL} signed source bundle:"
+            cat source-bundle.sha256
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - sign_source_bundle
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify frontend release build
+        run: pnpm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Deploy Convex functions
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [[ -z "${CONVEX_DEPLOY_KEY}" ]]; then
+            echo "CONVEX_DEPLOY_KEY is not configured."
+            exit 1
+          fi
+
+          pnpm exec convex deploy
+
+      - name: Trigger Netlify build hook
+        id: trigger_netlify
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+        run: |
+          if [[ -z "${NETLIFY_BUILD_HOOK_URL}" ]]; then
+            echo "NETLIFY_BUILD_HOOK_URL is not configured."
+            exit 1
+          fi
+
+          echo "created_after=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+
+          curl --fail --show-error --silent \
+            -X POST \
+            "${NETLIFY_BUILD_HOOK_URL}"
+
+      - name: Wait for Netlify deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_DEPLOY_CREATED_AFTER: ${{ steps.trigger_netlify.outputs.created_after }}
+        run: node ./scripts/wait-for-netlify-deploy.mjs
+
+      - name: Run post-deploy smoke checks
+        env:
+          DEPLOY_SMOKE_BASE_URL: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
+        run: node ./scripts/post-deploy-smoke.mjs
+
+      - name: Post deploy summary
+        env:
+          DEPLOY_LABEL: ${{ needs.prepare.outputs.label }}
+        run: |
+          echo "${DEPLOY_LABEL} deploy completed after GitHub build verification, Convex deploy, Netlify deploy, and post-deploy smoke checks." >> "$GITHUB_STEP_SUMMARY"

@@ -200,15 +200,52 @@ function normalizeNist80066Mappings(
   }>,
 ): ActiveControlRecord['mappings']['nist80066'] {
   return value.map((mapping) => ({
-    ...mapping,
-    mappingType:
-      mapping.mappingType === 'key-activity' ||
-      mapping.mappingType === 'relationship' ||
-      mapping.mappingType === 'sample-question' ||
-      mapping.mappingType === null
-        ? mapping.mappingType
-        : null,
+    label: mapping.label,
+    referenceId: mapping.referenceId,
+    mappingType: normalizeNist80066MappingType(mapping.mappingType),
   }));
+}
+
+function normalizeNist80066MappingType(
+  value: string | null,
+): ActiveControlRecord['mappings']['nist80066'][number]['mappingType'] {
+  switch (value) {
+    case 'key-activity':
+    case 'relationship':
+    case 'sample-question':
+    case null:
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeHipaaMappingType(
+  value: string | null,
+): ActiveControlRecord['mappings']['hipaa'][number]['type'] {
+  switch (value) {
+    case 'implementation_specification':
+    case 'section':
+    case 'standard':
+    case 'subsection':
+    case null:
+      return value;
+    default:
+      return null;
+  }
+}
+
+function normalizeHipaaImplementationSpecification(
+  value: string | null,
+): ActiveControlRecord['mappings']['hipaa'][number]['implementationSpecification'] {
+  switch (value) {
+    case 'addressable':
+    case 'required':
+    case null:
+      return value;
+    default:
+      return null;
+  }
 }
 
 function normalizeChecklistEvidenceTypes(value: string[]): ControlChecklistEvidenceType[] {
@@ -237,21 +274,12 @@ function normalizeActiveControlRegister(value: ActiveControlRegisterInput): Acti
       responsibility: normalizeControlResponsibility(control.responsibility),
       mappings: {
         hipaa: control.mappings.hipaa.map((mapping) => ({
-          ...mapping,
-          type:
-            mapping.type === 'implementation_specification' ||
-            mapping.type === 'section' ||
-            mapping.type === 'standard' ||
-            mapping.type === 'subsection' ||
-            mapping.type === null
-              ? mapping.type
-              : null,
-          implementationSpecification:
-            mapping.implementationSpecification === 'addressable' ||
-            mapping.implementationSpecification === 'required' ||
-            mapping.implementationSpecification === null
-              ? mapping.implementationSpecification
-              : null,
+          citation: mapping.citation,
+          title: mapping.title,
+          type: normalizeHipaaMappingType(mapping.type),
+          implementationSpecification: normalizeHipaaImplementationSpecification(
+            mapping.implementationSpecification,
+          ),
         })),
         csf20: control.mappings.csf20.map((mapping) => ({
           ...mapping,

@@ -2745,9 +2745,12 @@ export const cleanupExpiredAttachments = internalAction({
   returns: v.null(),
   handler: async (ctx) => {
     const now = Date.now();
-    const expiredAttachments = await ctx.runQuery(anyApi.security.listExpiredAttachmentsInternal, {
-      now,
-    });
+    const expiredAttachments = await ctx.runQuery(
+      internal.security.listExpiredAttachmentsInternal,
+      {
+        now,
+      },
+    );
 
     let processedCount = 0;
 
@@ -2756,17 +2759,17 @@ export const cleanupExpiredAttachments = internalAction({
         await ctx.storage.delete(attachment.extractedTextStorageId);
       }
 
-      await ctx.runAction(anyApi.storagePlatform.deleteStoredFileInternal, {
+      await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
         storageId: attachment.storageId,
       });
 
-      await ctx.runMutation(anyApi.agentChat.deleteAttachmentStorageInternal, {
+      await ctx.runMutation(internal.agentChat.deleteAttachmentStorageInternal, {
         attachmentId: attachment._id,
       });
       processedCount += 1;
     }
 
-    await ctx.runMutation(anyApi.security.recordRetentionJob, {
+    await ctx.runMutation(internal.security.recordRetentionJob, {
       details: processedCount > 0 ? `Purged ${processedCount} expired attachments` : undefined,
       jobKind: 'attachment_purge',
       processedCount,
@@ -2802,7 +2805,7 @@ export const listExpiredAttachmentsInternal = internalQuery({
   },
 });
 
-export const reseedSecurityControlWorkspaceForDevelopment = mutation({
+export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
   args: {
     secret: v.string(),
   },

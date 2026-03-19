@@ -51,6 +51,7 @@ import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
 import type * as security from "../security.js";
+import type * as seed_index from "../seed/index.js";
 import type * as storageCleanup from "../storageCleanup.js";
 import type * as storageCleanupData from "../storageCleanupData.js";
 import type * as storageLifecycle from "../storageLifecycle.js";
@@ -111,6 +112,7 @@ declare const fullApi: ApiFromModules<{
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
   security: typeof security;
+  "seed/index": typeof seed_index;
   storageCleanup: typeof storageCleanup;
   storageCleanupData: typeof storageCleanupData;
   storageLifecycle: typeof storageLifecycle;

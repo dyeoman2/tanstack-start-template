@@ -93,6 +93,21 @@ function normalizeEmailUser(user: { email: string; id: string; name?: string | n
   };
 }
 
+function requireEmailUser(
+  user: { email?: string; id: string; name?: string | null },
+  message: string,
+) {
+  if (!user.email) {
+    throw new Error(message);
+  }
+
+  return normalizeEmailUser({
+    email: user.email,
+    id: user.id,
+    name: user.name,
+  });
+}
+
 export function createSendInvitationEmailHandler(
   ctx: GenericCtx<DataModel>,
 ): SharedSendInvitationEmail {
@@ -153,7 +168,7 @@ export function createSendResetPasswordHandler(ctx: GenericCtx<DataModel>): Send
 
     const scheduler = requireScheduler(ctx, 'Cannot send email: scheduler not available');
     await scheduler.runAfter(0, internal.emails.sendPasswordResetEmailMutation, {
-      user: normalizeEmailUser(user),
+      user: requireEmailUser(user, 'Cannot send password reset email without a user email'),
       url: resolveAuthEmailUrl(url, request),
       token,
     });
@@ -174,7 +189,7 @@ export function createSendChangeEmailConfirmationHandler(
       'Cannot send change email confirmation: scheduler not available',
     );
     await scheduler.runAfter(0, internal.emails.sendChangeEmailConfirmationMutation, {
-      user: normalizeEmailUser(user),
+      user: requireEmailUser(user, 'Cannot send change email confirmation without a user email'),
       newEmail,
       token,
       url: resolveAuthEmailUrl(url, request),
@@ -196,7 +211,7 @@ export function createSendVerificationEmailHandler(
       'Cannot send verification email: scheduler not available',
     );
     await scheduler.runAfter(0, internal.emails.sendVerificationEmailMutation, {
-      user: normalizeEmailUser(user),
+      user: requireEmailUser(user, 'Cannot send verification email without a user email'),
       url: resolveAuthEmailUrl(url, request),
       token,
     });

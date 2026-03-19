@@ -161,7 +161,7 @@ export function resolveChatModelId(args: {
       args.availableModels,
       args.isSiteAdmin,
     );
-    if (!authorized.ok) {
+    if (authorized.ok === false) {
       throw new ConvexError(
         authorized.reason === 'forbidden'
           ? 'This chat model is only available to site admins.'
@@ -178,7 +178,7 @@ export function resolveChatModelId(args: {
       args.availableModels,
       args.isSiteAdmin,
     );
-    if (authorized.ok) {
+    if (authorized.ok === true) {
       return authorized.model;
     }
   }

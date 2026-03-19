@@ -30,6 +30,7 @@
     "build": "vite build",
     "start": "node --import ./instrument.server.mjs ./scripts/start-server.mjs",
     "test": "vitest run",
+    "test:ssr-smoke": "pnpm run build && node ./scripts/smoke-ssr-runtime.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
@@ -41,6 +42,9 @@
     "playwright:inspect": "tsx scripts/playwright-inspect.ts",
     "typecheck": "./oxlint-typecheck.sh",
     "lint": "pnpm exec oxlint --fix .",
+    "lint:convex": "pnpm exec oxlint -c .oxlintrc-convex.json convex --ignore-pattern 'convex/_generated/**' --ignore-pattern 'convex/betterAuth/_generated/**' --ignore-pattern 'convex/**/*.test.ts' --ignore-pattern 'convex/**/__tests__/**'",
+    "lint:security": "pnpm exec oxlint -c .oxlintrc-security.json convex --ignore-pattern 'convex/_generated/**' --ignore-pattern 'convex/betterAuth/_generated/**' --ignore-pattern 'convex/**/*.test.ts' --ignore-pattern 'convex/**/__tests__/**'",
+    "check:admin-audit-guardrails": "node ./scripts/check-admin-audit-guardrails.mjs",
     "lint:check": "pnpm exec oxlint .",
     "lint-staged": "lint-staged",
     "check": "pnpm exec oxfmt --check . && pnpm run lint:check && pnpm run typecheck && pnpm audit:code-health",
@@ -53,9 +57,12 @@
     "compliance:extract:soc2": "node scripts/compliance/extract-soc2-tsc.ts",
     "compliance:generate:active-control-register": "node scripts/compliance/generate-active-control-register.ts",
     "compliance:refresh": "pnpm run compliance:extract:nist-80053-moderate && pnpm run compliance:extract:hipaa-security-rule && pnpm run compliance:extract:csf-2.0 && pnpm run compliance:extract:nist-80066 && pnpm run compliance:extract:soc2 && pnpm run compliance:generate:active-control-register",
+    "seed": "tsx scripts/seed.ts",
+    "seed:dry-run": "tsx scripts/seed.ts --dry-run",
     "knip": "knip",
     "knip:prod": "knip --production",
     "setup:env": "tsx scripts/setup-env.ts",
+    "setup:github-deploy": "tsx scripts/setup-github-deploy.ts",
     "storage:setup": "tsx scripts/setup-storage.ts",
     "storage:setup:prod": "tsx scripts/setup-storage-prod.ts",
     "setup:e2e": "tsx scripts/setup-e2e.ts",
@@ -173,6 +180,7 @@
     "aws-cdk-lib": "^2.243.0",
     "concurrently": "^9.2.1",
     "constructs": "^10.5.1",
+    "husky": "^9.1.7",
     "jsdom": "^29.0.0",
     "knip": "^5.88.0",
     "lint-staged": "^16.4.0",
@@ -183,8 +191,7 @@
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
     "vite": "8.0.1",
-    "vitest": "^4.1.0",
-    "husky": "^9.1.7"
+    "vitest": "^4.1.0"
   },
   "engines": {
     "node": ">=24"

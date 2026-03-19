@@ -1,0 +1,16 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "unicorn"],
+  "jsPlugins": [
+    {
+      "name": "repo-security",
+      "specifier": "./eslint-rules/repo-security-plugin.js"
+    }
+  ],
+  "rules": {
+    "repo-security/no-public-function-refs-in-background": "error",
+    "repo-security/no-public-run-in-internal-handler": "error",
+    "repo-security/require-convex-validators": "error",
+    "repo-security/require-http-route-guards": "error"
+  }
+}

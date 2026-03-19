@@ -40,7 +40,7 @@ If the AWS DR stacks already exist and you only need to finish or repair the fro
 pnpm run dr:netlify:setup
 ```
 
-That focused command reuses the saved DR defaults from `.dr.env.local`, creates or resolves the dedicated DR Netlify site, sets the required Netlify runtime env, and updates the Netlify build-hook and frontend-hostname secrets in AWS Secrets Manager without rerunning the full backup or ECS setup flow.
+That focused command reuses the saved DR defaults from `.dr.env.local`, creates or resolves the dedicated DR Netlify site, mirrors the primary Netlify site's repo/build configuration, sets the required Netlify runtime env, and updates the Netlify build-hook and frontend-hostname secrets in AWS Secrets Manager without rerunning the full backup or ECS setup flow.
 
 ## Destroy and Reset
 

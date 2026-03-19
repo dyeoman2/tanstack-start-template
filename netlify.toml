@@ -1,5 +1,5 @@
 [build]
-command = "echo '🏗️ Starting build process...' && echo '🚀 Deploying Convex functions and building application...' && npx convex deploy --cmd 'pnpm build' && echo '🎉 Build completed successfully'"
+command = "echo '🏗️ Starting build process...' && pnpm build && echo '🎉 Build completed successfully'"
 publish = "dist/client"
 
 [build.environment]

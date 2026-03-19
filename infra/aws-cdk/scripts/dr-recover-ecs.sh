@@ -20,6 +20,32 @@ ok()   { echo -e "${GREEN}[OK]${NC} $*"; }
 warn() { echo -e "${YELLOW}[!!]${NC} $*"; }
 fail() { echo -e "${RED}[FAIL]${NC} $*"; exit 1; }
 
+is_likely_convex_admin_auth_token() {
+  local value="${1:-}"
+  [[ -z "${value}" ]] && return 1
+  if [[ "${value}" == prod:* && ${#value} -gt 5 ]]; then
+    return 0
+  fi
+  [[ "${value}" =~ ^[A-Za-z0-9._~-]{24,}$ || "${value}" =~ ^[A-Za-z0-9._~-]+\|[A-Za-z0-9._~-]{24,}$ ]]
+}
+
+extract_admin_key_from_output() {
+  local output="${1:-}"
+  while IFS= read -r line; do
+    line="$(printf '%s' "${line}" | tr -d '\r')"
+    if is_likely_convex_admin_auth_token "${line}"; then
+      printf '%s' "${line}"
+      return 0
+    fi
+  done <<< "${output}"
+
+  return 1
+}
+
+docker_ready() {
+  command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
+}
+
 generate_hex_secret() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 32
@@ -116,6 +142,14 @@ command -v pnpm >/dev/null || fail "pnpm not found"
 command -v jq >/dev/null || fail "jq not found"
 command -v curl >/dev/null || fail "curl not found"
 command -v docker >/dev/null || warn "Docker not found; recovery will use ECS Exec fallback for admin key generation"
+if command -v docker >/dev/null 2>&1 && ! docker_ready; then
+  warn "Docker is installed but the Docker daemon is not reachable; recovery will use ECS Exec fallback for admin key generation"
+fi
+command -v session-manager-plugin >/dev/null 2>&1 || warn "session-manager-plugin not found; ECS Exec fallback may fail for admin key generation"
+
+if ! docker_ready && ! command -v session-manager-plugin >/dev/null 2>&1; then
+  fail "Neither a reachable Docker daemon nor session-manager-plugin is available. Start Docker Desktop or install session-manager-plugin before running DR recovery."
+fi
 
 aws sts get-caller-identity >/dev/null 2>&1 || fail "AWS credentials are not configured"
 ok "AWS credentials verified"
@@ -229,26 +263,46 @@ done
 
 log "Step 4/${TOTAL_STEPS}: Generating admin key"
 admin_key=""
+docker_admin_key_error=""
+ecs_exec_admin_key_error=""
 
-if command -v docker >/dev/null 2>&1; then
-  admin_key=$(docker run --rm --entrypoint bash \
+if docker_ready; then
+  docker_admin_key_output=$(docker run --rm --entrypoint bash \
     -e INSTANCE_NAME="postgres" \
     -e INSTANCE_SECRET="${INSTANCE_SECRET_VALUE}" \
     ghcr.io/get-convex/convex-backend:latest \
-    -c 'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1' 2>/dev/null) || true
+    -c 'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1' 2>&1) || docker_admin_key_error="${docker_admin_key_output:-docker command failed}"
+  admin_key="$(extract_admin_key_from_output "${docker_admin_key_output:-}" || true)"
+  if ! is_likely_convex_admin_auth_token "${admin_key}"; then
+    [[ -n "${docker_admin_key_output:-}" ]] && docker_admin_key_error="${docker_admin_key_output}"
+    admin_key=""
+  fi
 fi
 
 if [[ -z "${admin_key}" || "${admin_key}" == "None" ]]; then
-  admin_key=$(aws ecs execute-command \
-    --cluster "${ECS_CLUSTER}" \
-    --task "${TASK_ARN}" \
-    --container "convex-backend" \
-    --interactive \
-    --command "bash -c 'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1'" \
-    --output text 2>/dev/null | tail -1) || true
+  if ! command -v session-manager-plugin >/dev/null 2>&1; then
+    ecs_exec_admin_key_error="session-manager-plugin is not installed"
+  else
+    ecs_exec_admin_key_output=$(aws ecs execute-command \
+      --cluster "${ECS_CLUSTER}" \
+      --task "${TASK_ARN}" \
+      --container "convex-backend" \
+      --interactive \
+      --command "bash -c 'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1'" \
+      --output text 2>&1) || ecs_exec_admin_key_error="${ecs_exec_admin_key_output:-aws ecs execute-command failed}"
+    admin_key="$(extract_admin_key_from_output "${ecs_exec_admin_key_output:-}" || true)"
+    if ! is_likely_convex_admin_auth_token "${admin_key}"; then
+      [[ -n "${ecs_exec_admin_key_output:-}" ]] && ecs_exec_admin_key_error="${ecs_exec_admin_key_output}"
+      admin_key=""
+    fi
+  fi
 fi
 
-[[ -z "${admin_key}" || "${admin_key}" == "None" ]] && fail "Unable to generate self-hosted Convex admin key"
+if [[ -z "${admin_key}" || "${admin_key}" == "None" ]]; then
+  [[ -n "${docker_admin_key_error}" ]] && warn "Docker admin-key generation failed: ${docker_admin_key_error}"
+  [[ -n "${ecs_exec_admin_key_error}" ]] && warn "ECS Exec admin-key generation failed: ${ecs_exec_admin_key_error}"
+  fail "Unable to generate self-hosted Convex admin key"
+fi
 export CONVEX_SELF_HOSTED_ADMIN_KEY="${admin_key}"
 upsert_secret_string \
   "${AWS_DR_CONVEX_ADMIN_KEY_SECRET_NAME}" \
@@ -269,8 +323,6 @@ predeploy_jwks="$(get_json_value 'JWKS')"
 set_convex_env_if_present "APP_NAME" "${predeploy_app_name:-${APP_NAME:-TanStack Start Template DR}}"
 set_convex_env_if_present "APP_URL" "${FRONTEND_URL}"
 set_convex_env_if_present "BETTER_AUTH_URL" "${FRONTEND_URL}"
-set_convex_env_if_present "CONVEX_SITE_URL" "${STACK_SITE_URL:-${SITE_URL}}"
-
 if [[ -n "${predeploy_better_auth_secret}" ]]; then
   set_convex_env_if_present "BETTER_AUTH_SECRET" "${predeploy_better_auth_secret}"
 else
@@ -321,7 +373,6 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
     case "${key}" in
       APP_URL) value="${FRONTEND_URL}" ;;
       BETTER_AUTH_URL) value="${FRONTEND_URL}" ;;
-      CONVEX_SITE_URL) value="${STACK_SITE_URL:-${SITE_URL}}" ;;
       VITE_CONVEX_SITE_URL) value="${STACK_SITE_URL:-${SITE_URL}}" ;;
       FILE_STORAGE_BACKEND)
         if [[ -z "${value}" ]]; then
@@ -345,7 +396,6 @@ if [[ -n "${FRONTEND_URL}" ]]; then
   pnpm exec convex env set APP_URL "${FRONTEND_URL}" >/dev/null
   pnpm exec convex env set BETTER_AUTH_URL "${FRONTEND_URL}" >/dev/null
 fi
-pnpm exec convex env set CONVEX_SITE_URL "${STACK_SITE_URL:-${SITE_URL}}" >/dev/null
 if [[ -n "${file_storage_backend}" ]]; then
   pnpm exec convex env set FILE_STORAGE_BACKEND "${file_storage_backend}" >/dev/null
 fi

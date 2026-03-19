@@ -798,7 +798,13 @@ async function createSiteAdminInvitation(
         name: organization.name,
       },
     } as never);
-    if (response?.data) {
+    if (
+      response &&
+      typeof response === 'object' &&
+      'data' in response &&
+      response.data &&
+      typeof response.data === 'object'
+    ) {
       invitationData = {
         ...invitationData,
         ...response.data,
@@ -1670,15 +1676,22 @@ export const createAuth = (
     },
     afterSCIMTokenGenerated: async ({ organizationId, providerId, userId }) => {
       await recordAuditEvent({
+        actorUserId: userId,
         createdAt: Date.now(),
         eventType: 'enterprise_scim_token_generated',
         identifier: providerId,
         metadata: JSON.stringify({
           organizationId,
           providerId,
+          providerKey: providerId.split(':').pop() ?? providerId,
           userId,
         }),
         organizationId: organizationId ?? undefined,
+        outcome: 'success',
+        resourceId: providerId,
+        resourceType: 'enterprise_scim_token',
+        severity: 'info',
+        sourceSurface: 'admin.organization.scim',
         userId,
       });
     },
@@ -2290,6 +2303,8 @@ export const resolvePasswordResetEmail = action({
     }),
   ),
   handler: async (ctx, args) => {
+    /* security-lint-ok: public reason: password reset lookup is token-gated and returns no account details beyond existence. */
+    /* security-lint-ok: no-rate-limit-needed reason: abuse is bounded by the signed reset token and this path does not issue one. */
     const verification = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
       model: 'verification',
       where: [
@@ -2794,6 +2809,7 @@ export const deleteOrganizationScimProviderServer = action({
       if (result.ok) {
         const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
         await ctx.runMutation(anyApi.audit.insertAuditLog, {
+          actorUserId: currentUser.id,
           createdAt: Date.now(),
           eventType: 'enterprise_scim_token_deleted',
           identifier: providerId,
@@ -2802,6 +2818,11 @@ export const deleteOrganizationScimProviderServer = action({
             providerKey: args.providerKey,
           }),
           organizationId: args.organizationId,
+          outcome: 'success',
+          resourceId: providerId,
+          resourceType: 'enterprise_scim_token',
+          severity: 'info',
+          sourceSurface: 'admin.organization.scim',
           userId: currentUser.id,
         });
       }

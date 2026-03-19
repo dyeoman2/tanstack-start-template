@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "oxc", "unicorn"],
+  "jsPlugins": [
+    {
+      "name": "repo-security",
+      "specifier": "./eslint-rules/repo-security-plugin.js"
+    }
+  ],
+  "rules": {
+    "repo-security/require-auth-gate-in-public-handler": "error",
+    "repo-security/require-rate-limit-in-sensitive-action": "error",
+    "repo-security/require-site-admin-guard-in-security-module": "error",
+    "repo-security/require-security-suppression-reason": "error",
+    "repo-security/require-strong-guards-in-sensitive-queries": "error"
+  }
+}

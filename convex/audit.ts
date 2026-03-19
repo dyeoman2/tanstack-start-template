@@ -8,6 +8,7 @@ import {
 } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import type { Doc } from './_generated/dataModel';
+import { internal } from './_generated/api';
 import {
   action,
   internalAction,
@@ -108,6 +109,30 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   [
     'evidence_report_reviewed',
     ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'enterprise_scim_token_generated',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'enterprise_scim_token_deleted',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
   ],
   [
     'authorization_denied',
@@ -263,6 +288,13 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
     case 'evidence_report_reviewed': {
       const parsed = requireMetadataObject(record.eventType, metadata);
       requireMetadataKey(record.eventType, parsed, 'reviewStatus', 'string');
+      return;
+    }
+    case 'enterprise_scim_token_generated':
+    case 'enterprise_scim_token_deleted': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'organizationId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'providerKey', 'string');
       return;
     }
     case 'authorization_denied': {
@@ -691,7 +723,7 @@ export const recordClientAuditEvent = internalAction({
       });
     }
 
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.insertAuditLog, {
       eventType: args.eventType,
       userId: user.authUserId,
       actorUserId: user.authUserId,
@@ -914,12 +946,17 @@ export const verifyAuditIntegrityInternal = internalAction({
     ok: v.boolean(),
     failureEventId: v.union(v.string(), v.null()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{ checked: number; ok: boolean; failureEventId: string | null }> => {
     const limit = Math.max(1, Math.min(args.limit ?? 500, 2_000));
-    const logs = await ctx.runQuery(anyApi.audit.getRecentAuditLogsInternal, {
+    const logs: AuditLogDoc[] = await ctx.runQuery(internal.audit.getRecentAuditLogsInternal, {
       limit,
     });
-    const orderedLogs = [...logs].sort((left, right) => left.createdAt - right.createdAt);
+    const orderedLogs: AuditLogDoc[] = [...logs].sort(
+      (left, right) => left.createdAt - right.createdAt,
+    );
     let previousEventHash: string | undefined;
 
     for (const log of orderedLogs) {
@@ -950,7 +987,7 @@ export const verifyAuditIntegrityInternal = internalAction({
 
       if (log.previousEventHash !== previousEventHash || log.eventHash !== recomputedHash) {
         const failureEventId = crypto.randomUUID();
-        await ctx.runMutation(anyApi.audit.insertAuditLog, {
+        await ctx.runMutation(internal.audit.insertAuditLog, {
           eventType: 'audit_integrity_check_failed',
           userId: undefined,
           actorUserId: undefined,

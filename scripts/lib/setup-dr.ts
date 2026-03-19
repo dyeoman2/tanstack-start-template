@@ -235,7 +235,8 @@ export function isLikelyConvexAdminAuthToken(value: string): boolean {
   const trimmed = value.trim();
   return (
     (trimmed.startsWith('prod:') && trimmed.length > 'prod:'.length) ||
-    /^[A-Za-z0-9._~-]{24,}$/u.test(trimmed)
+    /^[A-Za-z0-9._~-]{24,}$/u.test(trimmed) ||
+    /^[A-Za-z0-9._~-]+\|[A-Za-z0-9._~-]{24,}$/u.test(trimmed)
   );
 }
 

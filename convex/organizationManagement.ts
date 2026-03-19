@@ -1444,61 +1444,64 @@ export const getOrganizationCreationEligibility = query({
   },
 });
 
+async function getOrganizationSettingsHandler(
+  ctx: QueryCtx,
+  args: {
+    slug: string;
+  },
+) {
+  try {
+    await requireOrganizationPermission(ctx, {
+      organizationSlug: args.slug,
+      permission: 'viewOrganization',
+      sourceSurface: 'organization.settings',
+    });
+  } catch {
+    return null;
+  }
+  const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+  if (!context || !context.access.view) {
+    return null;
+  }
+
+  const organizationId = context.organization._id ?? context.organization.id;
+  const ownerCount =
+    organizationId && context.viewerMembership
+      ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
+      : 0;
+  const policies = await getOrganizationPolicies(ctx, organizationId);
+  const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(ctx, organizationId, policies);
+  const capabilities = buildOrganizationCapabilities({
+    ownerCount,
+    policies,
+    viewerMembership: context.viewerMembership,
+    viewerRole: context.viewerRole,
+  });
+
+  return {
+    organization: {
+      id: context.organization._id ?? context.organization.id ?? '',
+      slug: context.organization.slug,
+      name: context.organization.name,
+      logo: context.organization.logo ?? null,
+    },
+    policies,
+    enterpriseAuth,
+    availableEnterpriseProviders: getAvailableEnterpriseProviders(),
+    access: context.access,
+    capabilities,
+    isMember: context.viewerMembership !== null,
+    viewerRole: context.viewerRole,
+    canManage: capabilities.canManageMembers || capabilities.canUpdateSettings,
+  };
+}
+
 export const getOrganizationSettings = query({
   args: {
     slug: v.string(),
   },
   returns: v.union(organizationSettingsValidator, v.null()),
-  handler: async (ctx, args) => {
-    try {
-      await requireOrganizationPermission(ctx, {
-        organizationSlug: args.slug,
-        permission: 'viewOrganization',
-        sourceSurface: 'organization.settings',
-      });
-    } catch {
-      return null;
-    }
-    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-    if (!context || !context.access.view) {
-      return null;
-    }
-
-    const organizationId = context.organization._id ?? context.organization.id;
-    const ownerCount =
-      organizationId && context.viewerMembership
-        ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
-        : 0;
-    const policies = await getOrganizationPolicies(ctx, organizationId);
-    const enterpriseAuth = await getOrganizationEnterpriseAuthSummary(
-      ctx,
-      organizationId,
-      policies,
-    );
-    const capabilities = buildOrganizationCapabilities({
-      ownerCount,
-      policies,
-      viewerMembership: context.viewerMembership,
-      viewerRole: context.viewerRole,
-    });
-
-    return {
-      organization: {
-        id: context.organization._id ?? context.organization.id ?? '',
-        slug: context.organization.slug,
-        name: context.organization.name,
-        logo: context.organization.logo ?? null,
-      },
-      policies,
-      enterpriseAuth,
-      availableEnterpriseProviders: getAvailableEnterpriseProviders(),
-      access: context.access,
-      capabilities,
-      isMember: context.viewerMembership !== null,
-      viewerRole: context.viewerRole,
-      canManage: capabilities.canManageMembers || capabilities.canUpdateSettings,
-    };
-  },
+  handler: getOrganizationSettingsHandler,
 });
 
 export const getOrganizationEnterpriseAuthSettings = query({
@@ -1506,9 +1509,7 @@ export const getOrganizationEnterpriseAuthSettings = query({
     slug: v.string(),
   },
   returns: v.union(organizationSettingsValidator, v.null()),
-  handler: async (ctx, args) => {
-    return await ctx.runQuery(anyApi.organizationManagement.getOrganizationSettings, args);
-  },
+  handler: getOrganizationSettingsHandler,
 });
 
 export const getOrganizationEnterpriseAccess = query({
@@ -1531,6 +1532,7 @@ export const resolveOrganizationEnterpriseAuthByEmail = query({
   },
   returns: organizationEnterpriseAuthResolutionResultValidator,
   handler: async (ctx, args) => {
+    /* security-lint-ok: public-query reason: enterprise sign-in discovery must work before the user has an authenticated session. */
     const emailDomain = normalizeEmailDomain(args.email);
     if (!emailDomain) {
       return null;

@@ -39,10 +39,39 @@ type StackOutputs = Record<string, string>;
 
 type NetlifySite = {
   accountSlug?: string;
+  buildSettings?: NetlifySiteBuildSettings | null;
   id: string;
   name: string;
   sslUrl?: string;
   url?: string;
+};
+
+type NetlifySiteBuildSettings = {
+  allowed_branches?: string[] | null;
+  base?: string | null;
+  cmd?: string | null;
+  dir?: string | null;
+  functions_dir?: string | null;
+  installation_id?: number | null;
+  private_logs?: boolean | null;
+  provider?: string | null;
+  public_repo?: boolean | null;
+  repo_branch?: string | null;
+  repo_path?: string | null;
+  repo_url?: string | null;
+  stop_builds?: boolean | null;
+};
+
+type NetlifySiteDetails = NetlifySite & {
+  buildImage?: string | null;
+  deployId?: string | null;
+  functionsRegion?: string | null;
+  processingSettings?: {
+    html?: {
+      pretty_urls?: boolean;
+    };
+    ignore_html_forms?: boolean;
+  } | null;
 };
 
 type SetupContext = {
@@ -716,6 +745,7 @@ function listNetlifySites() {
       ? [
           {
             accountSlug: site.account_slug,
+            buildSettings: null,
             id: site.id,
             name: site.name,
             sslUrl: site.ssl_url,
@@ -731,18 +761,129 @@ function resolveNetlifySite(siteInput: string) {
   return sites.find((site) => site.id === siteInput || site.name === siteInput) ?? null;
 }
 
-function createNetlifySite(name: string, accountSlug?: string) {
-  const args = ['sites:create', '--disable-linking', '--name', name];
-  if (accountSlug) {
-    args.push('--account-slug', accountSlug);
-  }
-
-  const result = runCommand('netlify', args);
-  if (!result.ok) {
+function getNetlifySiteDetails(siteId: string) {
+  const result = runCommand('netlify', [
+    'api',
+    'getSite',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]);
+  const parsed =
+    parseJsonOutput<{
+      account_slug?: string;
+      build_image?: string;
+      build_settings?: NetlifySiteBuildSettings;
+      deploy_id?: string;
+      functions_region?: string;
+      id?: string;
+      name?: string;
+      processing_settings?: NetlifySiteDetails['processingSettings'];
+      ssl_url?: string;
+      url?: string;
+    }>(result) ?? null;
+  if (!parsed?.id || !parsed.name) {
     return null;
   }
 
-  return resolveNetlifySite(name);
+  return {
+    accountSlug: parsed.account_slug,
+    buildImage: parsed.build_image ?? null,
+    buildSettings: parsed.build_settings ?? null,
+    deployId: parsed.deploy_id ?? null,
+    functionsRegion: parsed.functions_region ?? null,
+    id: parsed.id,
+    name: parsed.name,
+    processingSettings: parsed.processing_settings ?? null,
+    sslUrl: parsed.ssl_url,
+    url: parsed.url,
+  } satisfies NetlifySiteDetails;
+}
+
+function buildRepoBackedNetlifySitePayload(input: {
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const buildSettings = input.primarySite.buildSettings ?? {};
+  const mirroredRepoInfo = {
+    allowed_branches: buildSettings.allowed_branches ?? undefined,
+    base: buildSettings.base ?? undefined,
+    cmd: buildSettings.cmd ?? undefined,
+    dir: buildSettings.dir ?? undefined,
+    functions_dir: buildSettings.functions_dir ?? undefined,
+    installation_id: buildSettings.installation_id ?? undefined,
+    private_logs: buildSettings.private_logs ?? undefined,
+    provider: buildSettings.provider ?? undefined,
+    public_repo: buildSettings.public_repo ?? undefined,
+    repo_branch: buildSettings.repo_branch ?? undefined,
+    repo_path: buildSettings.repo_path ?? undefined,
+    repo_url: buildSettings.repo_url ?? undefined,
+    stop_builds: buildSettings.stop_builds ?? undefined,
+  };
+
+  return {
+    build_image: input.primarySite.buildImage ?? undefined,
+    build_settings: mirroredRepoInfo,
+    functions_region: input.primarySite.functionsRegion ?? undefined,
+    name: input.desiredName,
+    processing_settings: input.primarySite.processingSettings ?? undefined,
+    repo: mirroredRepoInfo,
+  };
+}
+
+function createRepoBackedNetlifySite(input: {
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const accountSlug = input.primarySite.accountSlug?.trim();
+  const apiMethod = accountSlug ? 'createSiteInTeam' : 'createSite';
+  const payload = buildRepoBackedNetlifySitePayload(input);
+  const args = ['api', apiMethod, '--data'];
+  if (apiMethod === 'createSiteInTeam' && accountSlug) {
+    args.push(JSON.stringify({ account_slug: accountSlug, ...payload }));
+  } else {
+    args.push(JSON.stringify(payload));
+  }
+
+  const result = runCommand('netlify', args);
+  const created = parseJsonOutput<{ id?: string; name?: string }>(result) ?? null;
+  if (!created?.id) {
+    return null;
+  }
+
+  return getNetlifySiteDetails(created.id) ?? resolveNetlifySite(input.desiredName);
+}
+
+function configureNetlifySiteRepository(input: {
+  siteId: string;
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const payload = buildRepoBackedNetlifySitePayload({
+    desiredName: input.desiredName,
+    primarySite: input.primarySite,
+  });
+  const result = runCommand('netlify', [
+    'api',
+    'updateSite',
+    '--data',
+    JSON.stringify({
+      site_id: input.siteId,
+      ...payload,
+    }),
+  ]);
+  return {
+    error: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
+    ok: result.ok,
+  };
+}
+
+function triggerNetlifySiteBuild(siteId: string) {
+  return runCommand('netlify', [
+    'api',
+    'createSiteBuild',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]).ok;
 }
 
 function setNetlifySiteEnvVar(siteId: string, key: string, value: string) {
@@ -1095,6 +1236,9 @@ async function main() {
   const discoveredRepo = flags.githubRepo ?? parseGitHubRepoFromRemote(gitRemote) ?? undefined;
   const linkedNetlifySiteId = readNetlifyLinkedSiteId();
   const linkedNetlifySite = linkedNetlifySiteId ? resolveNetlifySite(linkedNetlifySiteId) : null;
+  const linkedNetlifySiteDetails = linkedNetlifySiteId
+    ? getNetlifySiteDetails(linkedNetlifySiteId)
+    : null;
   const defaultBranch = getDefaultBranch(discoveredRepo);
   const storageCoverageWarning = convexProdEnv ? getStorageCoverageWarning(convexProdEnv) : null;
   if (storageCoverageWarning) {
@@ -1511,6 +1655,7 @@ async function main() {
   let drNetlifySite: NetlifySite | null = null;
   let netlifyRequiredEnvConfigured = false;
   let netlifyConvexDeployKeyReady = false;
+  let netlifyDeployKeyDeferredUntilRecovery = false;
   if (flags.skipNetlify) {
     summary.frontendLane = 'partial';
     summary.warnings.push('Netlify DR setup was skipped with --skip-netlify.');
@@ -1538,7 +1683,15 @@ async function main() {
 
     if (!drNetlifySite) {
       const desiredSiteName = `${projectSlug}-dr`;
-      drNetlifySite = createNetlifySite(desiredSiteName, linkedNetlifySite?.accountSlug);
+      if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
+        drNetlifySite = createRepoBackedNetlifySite({
+          desiredName: desiredSiteName,
+          primarySite: linkedNetlifySiteDetails,
+        });
+      }
+      if (!drNetlifySite && linkedNetlifySiteDetails) {
+        drNetlifySite = resolveNetlifySite(desiredSiteName);
+      }
       if (drNetlifySite) {
         summary.completed.push(`Created or resolved Netlify DR site ${drNetlifySite.name}.`);
         console.log(
@@ -1557,16 +1710,25 @@ async function main() {
       );
     } else {
       let deployKeyForNetlify = '';
+      let awsSecretDeployKeyForNetlify = '';
       if (awsAuth && identity.region) {
-        deployKeyForNetlify = getAwsSecretValue(secretNames.convexAdminKey, identity.region) ?? '';
+        awsSecretDeployKeyForNetlify =
+          getAwsSecretValue(secretNames.convexAdminKey, identity.region)?.trim() ?? '';
+        deployKeyForNetlify = awsSecretDeployKeyForNetlify;
       }
       if (!deployKeyForNetlify) {
         const existingNetlifyDeployKey = getNetlifySiteEnvValue(
           drNetlifySite.id,
           'CONVEX_DEPLOY_KEY',
         );
-        if (existingNetlifyDeployKey && isLikelyConvexDeployKey(existingNetlifyDeployKey)) {
+        if (existingNetlifyDeployKey?.trim()) {
           netlifyConvexDeployKeyReady = true;
+          deployKeyForNetlify = existingNetlifyDeployKey.trim();
+        } else if (awsAuth && identity.region) {
+          netlifyDeployKeyDeferredUntilRecovery = true;
+          summary.warnings.push(
+            'The DR Netlify site does not have a self-hosted Convex admin token yet. That token is generated during recovery, so this part of the frontend setup is deferred until after the first recovery drill.',
+          );
         } else if (!flags.yes) {
           deployKeyForNetlify = await ask(
             'Convex admin/deploy auth token for the DR Netlify site (leave empty to keep frontend DR partial): ',
@@ -1576,9 +1738,15 @@ async function main() {
 
       if (deployKeyForNetlify) {
         if (!isLikelyConvexDeployKey(deployKeyForNetlify)) {
-          summary.needsAttention.push(
-            'The provided Netlify CONVEX_DEPLOY_KEY does not look like a valid Convex admin/deploy auth token.',
-          );
+          if (awsSecretDeployKeyForNetlify) {
+            summary.needsAttention.push(
+              `Secrets Manager secret ${secretNames.convexAdminKey} does not contain a valid Convex admin/deploy auth token. Rerun ./infra/aws-cdk/scripts/dr-recover-ecs.sh after fixing admin-key generation.`,
+            );
+          } else {
+            summary.needsAttention.push(
+              'The provided Netlify CONVEX_DEPLOY_KEY does not look like a valid Convex admin/deploy auth token.',
+            );
+          }
         } else {
           try {
             setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKeyForNetlify);
@@ -1591,9 +1759,30 @@ async function main() {
         }
       }
 
-      if (!netlifyConvexDeployKeyReady) {
+      if (!netlifyConvexDeployKeyReady && !netlifyDeployKeyDeferredUntilRecovery) {
         summary.needsAttention.push(
           'Netlify DR is still missing a validated CONVEX_DEPLOY_KEY, so the frontend build is not fully ready.',
+        );
+      }
+
+      if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
+        const repoConfigured = configureNetlifySiteRepository({
+          siteId: drNetlifySite.id,
+          desiredName: drNetlifySite.name,
+          primarySite: linkedNetlifySiteDetails,
+        });
+        if (repoConfigured.ok) {
+          summary.completed.push(
+            'Mirrored the primary Netlify repo/build configuration onto the DR site.',
+          );
+        } else {
+          summary.needsAttention.push(
+            `Could not mirror the primary Netlify repo/build configuration onto the DR site automatically.${repoConfigured.error ? ` ${repoConfigured.error}` : ''}`,
+          );
+        }
+      } else {
+        summary.needsAttention.push(
+          'The linked primary Netlify site is missing repo/build metadata, so the DR site could not be configured as a repo-backed build automatically.',
         );
       }
 
@@ -1644,6 +1833,14 @@ async function main() {
       if (drNetlifySite.sslUrl || drNetlifySite.url) {
         summary.completed.push(
           `Netlify DR site URL: ${drNetlifySite.sslUrl ?? drNetlifySite.url ?? drNetlifySite.name}`,
+        );
+      }
+
+      if (triggerNetlifySiteBuild(drNetlifySite.id)) {
+        summary.completed.push('Triggered an initial Netlify DR site build.');
+      } else {
+        summary.warnings.push(
+          'The DR Netlify site was configured, but the initial Netlify build could not be triggered automatically.',
         );
       }
     }
@@ -1714,10 +1911,12 @@ async function main() {
 
   printSection('Step 9: Sync the DR runtime secret');
   if (!awsAuth || !identity.region) {
+    console.log('- AWS auth: missing');
     summary.needsAttention.push(
       'AWS auth is not ready, so the DR runtime secret was not synchronized.',
     );
   } else if (!convexProdEnv) {
+    console.log('- Convex prod env access: missing');
     summary.needsAttention.push(
       'Convex production env access is not ready, so the DR runtime secret could not be synchronized.',
     );
@@ -1727,9 +1926,14 @@ async function main() {
       (key) => !(convexProdEnv[key] ?? '').trim(),
     );
     if (missingRecoveryKeys.length > 0) {
+      console.log(
+        `- Recovery-critical keys missing from Convex prod: ${missingRecoveryKeys.join(', ')}`,
+      );
       summary.needsAttention.push(
         `The Convex production env is missing recovery-critical keys: ${missingRecoveryKeys.join(', ')}.`,
       );
+    } else {
+      console.log('- Recovery-critical keys present in Convex prod env');
     }
 
     upsertAwsSecret(
@@ -1738,10 +1942,12 @@ async function main() {
       identity.region,
       'Convex production env vars replayed during DR recovery',
     );
+    console.log(`- Synced ${secretNames.convexEnv}`);
     summary.completed.push(`Synchronized ${secretNames.convexEnv} from Convex production env.`);
 
     if (context.setupCloudflareNow) {
       if (flags.yes) {
+        console.log('- Cloudflare DNS automation: requested but deferred in --yes mode');
         summary.needsAttention.push(
           `Cloudflare automation was requested, but the token and zone id must be supplied interactively when not already present. Update ${secretNames.cloudflareDnsToken} and ${secretNames.cloudflareZoneId} manually or rerun without --yes.`,
         );
@@ -1761,14 +1967,17 @@ async function main() {
             identity.region,
             'Cloudflare zone id used for DR DNS cutover automation',
           );
+          console.log('- Synced Cloudflare DNS automation secrets');
           summary.completed.push('Configured the Cloudflare DNS automation secrets.');
         } else {
+          console.log('- Cloudflare DNS automation: incomplete input');
           summary.needsAttention.push(
             'Cloudflare DNS automation was requested, but the token or zone id was left blank.',
           );
         }
       }
     } else {
+      console.log('- Cloudflare DNS automation: not requested');
       if (context.hostnameStrategy === 'custom-domain') {
         summary.warnings.push(
           `Cloudflare automation is still optional. Add ${secretNames.cloudflareDnsToken} and ${secretNames.cloudflareZoneId} later if you want automated DNS cutover.`,
@@ -1792,6 +2001,17 @@ async function main() {
     awsAuth && identity.region
       ? secretExists(secretNames.netlifyFrontendCnameTarget, identity.region)
       : false;
+
+  console.log(`- Backup lane: ${summary.backupLane}`);
+  console.log(`- Backend lane: ${summary.backendLane}`);
+  console.log(`- Frontend lane: ${summary.frontendLane}`);
+  console.log(`- DR env secret: ${hasDrEnvSecret ? 'present' : 'missing'}`);
+  if (!flags.skipNetlify) {
+    console.log(`- Netlify build hook secret: ${hasBuildHookSecret ? 'present' : 'missing'}`);
+    console.log(
+      `- Netlify frontend hostname secret: ${hasFrontendCnameTargetSecret ? 'present' : 'missing'}`,
+    );
+  }
 
   if (finalBackupOutputs?.DrBackupBucketName && summary.backupLane !== 'blocked') {
     summary.backupLane = summary.workflowTested ? 'ready' : 'partial';
@@ -1841,6 +2061,10 @@ async function main() {
     );
   }
 
+  console.log(`- Final backup lane: ${summary.backupLane}`);
+  console.log(`- Final backend lane: ${summary.backendLane}`);
+  console.log(`- Final frontend lane: ${summary.frontendLane}`);
+
   summary.nextCommands.push(
     githubRepo
       ? `gh workflow run dr-backup-convex-s3.yml --repo ${githubRepo}`
@@ -1868,6 +2092,23 @@ async function main() {
         AWS_REGION: identity.region,
       });
       summary.completed.push('Ran the DR recovery script from the guided setup flow.');
+
+      if (drNetlifySite && netlifyDeployKeyDeferredUntilRecovery) {
+        try {
+          runInteractive('pnpm', ['run', 'dr:netlify:setup'], {
+            AWS_REGION: identity.region,
+          });
+          netlifyConvexDeployKeyReady = true;
+          summary.frontendLane = netlifyRequiredEnvConfigured ? 'ready' : summary.frontendLane;
+          summary.completed.push(
+            'Refreshed the DR Netlify site after recovery so it picked up the generated self-hosted Convex admin token.',
+          );
+        } catch (error) {
+          summary.needsAttention.push(
+            `Recovery succeeded, but the post-recovery Netlify refresh failed: ${(error as Error).message}`,
+          );
+        }
+      }
     }
   }
 

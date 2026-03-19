@@ -132,7 +132,7 @@ This implementation supports two hostname strategies:
 In both modes:
 
 - the main frontend remains on Netlify
-- a separate Netlify DR site exists for failover
+- a separate Netlify DR site exists for failover and mirrors the primary site's repo/build configuration
 
 In `custom-domain` mode, Cloudflare can repoint:
   - `dr-backend.<domain>`

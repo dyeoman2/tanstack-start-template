@@ -1,16 +1,16 @@
 #!/usr/bin/env tsx
 
-import { execSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import {
-  isLikelyConvexAdminAuthToken,
   buildDrSecretNames,
   buildRequiredNetlifyDrEnvVars,
   extractHostnameFromUrl,
+  isLikelyConvexAdminAuthToken,
   parseConvexEnvList,
 } from './lib/setup-dr';
 
@@ -23,10 +23,39 @@ type CommandResult = {
 
 type NetlifySite = {
   accountSlug?: string;
+  buildSettings?: NetlifySiteBuildSettings | null;
   id: string;
   name: string;
   sslUrl?: string;
   url?: string;
+};
+
+type NetlifySiteBuildSettings = {
+  allowed_branches?: string[] | null;
+  base?: string | null;
+  cmd?: string | null;
+  dir?: string | null;
+  functions_dir?: string | null;
+  installation_id?: number | null;
+  private_logs?: boolean | null;
+  provider?: string | null;
+  public_repo?: boolean | null;
+  repo_branch?: string | null;
+  repo_path?: string | null;
+  repo_url?: string | null;
+  stop_builds?: boolean | null;
+};
+
+type NetlifySiteDetails = NetlifySite & {
+  buildImage?: string | null;
+  deployId?: string | null;
+  functionsRegion?: string | null;
+  processingSettings?: {
+    html?: {
+      pretty_urls?: boolean;
+    };
+    ignore_html_forms?: boolean;
+  } | null;
 };
 
 type StackOutputs = Record<string, string>;
@@ -52,16 +81,6 @@ async function ask(question: string, initialValue?: string) {
       rl.write(initialValue);
     }
   });
-}
-
-async function askYesNo(question: string, fallback = false) {
-  const suffix = fallback ? 'Y/n' : 'y/N';
-  const answer = (await ask(`${question} (${suffix}): `)).toLowerCase();
-  if (!answer) {
-    return fallback;
-  }
-
-  return answer === 'y' || answer === 'yes';
 }
 
 function readEnvFile(envPath: string) {
@@ -173,7 +192,13 @@ function listNetlifySites() {
 
   const parsed =
     parseJsonOutput<
-      Array<{ account_slug?: string; id?: string; name?: string; ssl_url?: string; url?: string }>
+      Array<{
+        account_slug?: string;
+        id?: string;
+        name?: string;
+        ssl_url?: string;
+        url?: string;
+      }>
     >(result) ?? [];
 
   return parsed.flatMap((site) =>
@@ -181,6 +206,7 @@ function listNetlifySites() {
       ? [
           {
             accountSlug: site.account_slug,
+            buildSettings: null,
             id: site.id,
             name: site.name,
             sslUrl: site.ssl_url,
@@ -196,18 +222,162 @@ function resolveNetlifySite(siteInput: string) {
   return sites.find((site) => site.id === siteInput || site.name === siteInput) ?? null;
 }
 
-function createNetlifySite(name: string, accountSlug?: string) {
-  const args = ['sites:create', '--disable-linking', '--name', name];
-  if (accountSlug) {
-    args.push('--account-slug', accountSlug);
-  }
-
-  const result = runCommand('netlify', args);
-  if (!result.ok) {
+function getNetlifySiteDetails(siteId: string) {
+  const result = runCommand('netlify', [
+    'api',
+    'getSite',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]);
+  const parsed =
+    parseJsonOutput<{
+      account_slug?: string;
+      build_image?: string;
+      build_settings?: NetlifySiteBuildSettings;
+      deploy_id?: string;
+      functions_region?: string;
+      id?: string;
+      name?: string;
+      processing_settings?: NetlifySiteDetails['processingSettings'];
+      ssl_url?: string;
+      url?: string;
+    }>(result) ?? null;
+  if (!parsed?.id || !parsed.name) {
     return null;
   }
 
-  return resolveNetlifySite(name);
+  return {
+    accountSlug: parsed.account_slug,
+    buildImage: parsed.build_image ?? null,
+    buildSettings: parsed.build_settings ?? null,
+    deployId: parsed.deploy_id ?? null,
+    functionsRegion: parsed.functions_region ?? null,
+    id: parsed.id,
+    name: parsed.name,
+    processingSettings: parsed.processing_settings ?? null,
+    sslUrl: parsed.ssl_url,
+    url: parsed.url,
+  } satisfies NetlifySiteDetails;
+}
+
+function buildRepoBackedNetlifySitePayload(input: {
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const buildSettings = input.primarySite.buildSettings ?? {};
+  const mirroredRepoInfo = {
+    allowed_branches: buildSettings.allowed_branches ?? undefined,
+    base: buildSettings.base ?? undefined,
+    cmd: buildSettings.cmd ?? undefined,
+    dir: buildSettings.dir ?? undefined,
+    functions_dir: buildSettings.functions_dir ?? undefined,
+    installation_id: buildSettings.installation_id ?? undefined,
+    private_logs: buildSettings.private_logs ?? undefined,
+    provider: buildSettings.provider ?? undefined,
+    public_repo: buildSettings.public_repo ?? undefined,
+    repo_branch: buildSettings.repo_branch ?? undefined,
+    repo_path: buildSettings.repo_path ?? undefined,
+    repo_url: buildSettings.repo_url ?? undefined,
+    stop_builds: buildSettings.stop_builds ?? undefined,
+  };
+
+  return {
+    build_image: input.primarySite.buildImage ?? undefined,
+    build_settings: mirroredRepoInfo,
+    functions_region: input.primarySite.functionsRegion ?? undefined,
+    name: input.desiredName,
+    processing_settings: input.primarySite.processingSettings ?? undefined,
+    repo: mirroredRepoInfo,
+  };
+}
+
+function createRepoBackedNetlifySite(input: {
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const accountSlug = input.primarySite.accountSlug?.trim();
+  const apiMethod = accountSlug ? 'createSiteInTeam' : 'createSite';
+  const payload = buildRepoBackedNetlifySitePayload(input);
+  const args = ['api', apiMethod, '--data'];
+  if (apiMethod === 'createSiteInTeam' && accountSlug) {
+    args.push(JSON.stringify({ account_slug: accountSlug, ...payload }));
+  } else {
+    args.push(JSON.stringify(payload));
+  }
+
+  const result = runCommand('netlify', args);
+  const created = parseJsonOutput<{ id?: string; name?: string }>(result) ?? null;
+  if (!created?.id) {
+    return null;
+  }
+
+  return getNetlifySiteDetails(created.id) ?? resolveNetlifySite(input.desiredName);
+}
+
+function configureNetlifySiteRepository(input: {
+  siteId: string;
+  desiredName: string;
+  primarySite: NetlifySiteDetails;
+}) {
+  const payload = buildRepoBackedNetlifySitePayload({
+    desiredName: input.desiredName,
+    primarySite: input.primarySite,
+  });
+  const result = runCommand('netlify', [
+    'api',
+    'updateSite',
+    '--data',
+    JSON.stringify({
+      site_id: input.siteId,
+      ...payload,
+    }),
+  ]);
+  return {
+    error: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
+    ok: result.ok,
+  };
+}
+
+function triggerNetlifySiteBuild(siteId: string, buildHookUrl?: string | null) {
+  const apiResult = runCommand('netlify', [
+    'api',
+    'createSiteBuild',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]);
+  if (apiResult.ok) {
+    return {
+      error: '',
+      ok: true,
+      triggeredVia: 'api' as const,
+    };
+  }
+
+  if (buildHookUrl?.trim()) {
+    const hookResult = runCommand('curl', ['-sf', '-X', 'POST', buildHookUrl.trim()]);
+    if (hookResult.ok) {
+      return {
+        error: '',
+        ok: true,
+        triggeredVia: 'build-hook' as const,
+      };
+    }
+
+    return {
+      error: [apiResult.stdout, apiResult.stderr, hookResult.stdout, hookResult.stderr]
+        .filter(Boolean)
+        .join('\n')
+        .trim(),
+      ok: false,
+      triggeredVia: 'build-hook' as const,
+    };
+  }
+
+  return {
+    error: [apiResult.stdout, apiResult.stderr].filter(Boolean).join('\n').trim(),
+    ok: false,
+    triggeredVia: 'api' as const,
+  };
 }
 
 function setNetlifySiteEnvVar(siteId: string, key: string, value: string) {
@@ -386,7 +556,9 @@ function readNetlifyLinkedSiteId() {
   }
 
   try {
-    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as { siteId?: string };
+    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as {
+      siteId?: string;
+    };
     return parsed.siteId ?? null;
   } catch {
     return null;
@@ -462,6 +634,9 @@ async function main() {
 
   const linkedNetlifySiteId = readNetlifyLinkedSiteId();
   const linkedNetlifySite = linkedNetlifySiteId ? resolveNetlifySite(linkedNetlifySiteId) : null;
+  const linkedNetlifySiteDetails = linkedNetlifySiteId
+    ? getNetlifySiteDetails(linkedNetlifySiteId)
+    : null;
   const ecsOutputs = getStackOutputs(ecsStackName, awsRegion);
   if (!ecsOutputs?.ConvexBackendUrl || !ecsOutputs.ConvexSiteUrl) {
     throw new Error(`Missing DR ECS outputs for ${ecsStackName}. Deploy the DR ECS stack first.`);
@@ -478,7 +653,7 @@ async function main() {
 
   printSection('Netlify site');
   const desiredSiteName = `${projectSlug}-dr`;
-  let drNetlifySite = resolveNetlifySite(desiredSiteName);
+  let drNetlifySite: NetlifySite | NetlifySiteDetails | null = resolveNetlifySite(desiredSiteName);
   if (!drNetlifySite) {
     const provided = await ask(
       'Existing Netlify DR site id or name (leave empty to create a dedicated DR site automatically): ',
@@ -488,7 +663,12 @@ async function main() {
     }
   }
   if (!drNetlifySite) {
-    drNetlifySite = createNetlifySite(desiredSiteName, linkedNetlifySite?.accountSlug);
+    if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
+      drNetlifySite = createRepoBackedNetlifySite({
+        desiredName: desiredSiteName,
+        primarySite: linkedNetlifySiteDetails,
+      });
+    }
   }
   if (!drNetlifySite) {
     throw new Error(
@@ -497,18 +677,40 @@ async function main() {
   }
   console.log(`- DR Netlify site: ${formatNetlifySiteSummary(drNetlifySite)}`);
 
-  const secretNames = buildDrSecretNames(projectSlug);
-  let deployKey = getAwsSecretValue(secretNames.convexAdminKey, awsRegion) ?? '';
-  if (!isLikelyConvexAdminAuthToken(deployKey)) {
-    deployKey = getNetlifySiteEnvValue(drNetlifySite.id, 'CONVEX_DEPLOY_KEY') ?? '';
+  if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
+    const repoConfigResult = configureNetlifySiteRepository({
+      siteId: drNetlifySite.id,
+      desiredName: drNetlifySite.name,
+      primarySite: linkedNetlifySiteDetails,
+    });
+    if (repoConfigResult.ok) {
+      console.log('- Mirrored primary site repo/build settings onto the DR site');
+    } else {
+      console.log('- Could not mirror primary site repo/build settings automatically');
+      if (repoConfigResult.error) {
+        console.log(repoConfigResult.error);
+      }
+    }
   }
-  if (!isLikelyConvexAdminAuthToken(deployKey)) {
+
+  const secretNames = buildDrSecretNames(projectSlug);
+  const awsSecretDeployKey = getAwsSecretValue(secretNames.convexAdminKey, awsRegion)?.trim() ?? '';
+  let deployKey = awsSecretDeployKey;
+  if (!deployKey) {
+    deployKey = getNetlifySiteEnvValue(drNetlifySite.id, 'CONVEX_DEPLOY_KEY')?.trim() ?? '';
+  }
+  if (!deployKey) {
     deployKey = await ask(
       'Convex admin/deploy auth token for the DR Netlify site (required if not already set): ',
       deployKey,
     );
   }
   if (!isLikelyConvexAdminAuthToken(deployKey)) {
+    if (awsSecretDeployKey) {
+      throw new Error(
+        `Secrets Manager secret ${secretNames.convexAdminKey} does not contain a valid Convex admin/deploy auth token. Rerun ./infra/aws-cdk/scripts/dr-recover-ecs.sh after fixing admin-key generation.`,
+      );
+    }
     throw new Error('A valid Convex admin/deploy auth token is required for the DR Netlify site.');
   }
   setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKey);
@@ -571,6 +773,17 @@ async function main() {
     'Netlify DR frontend hostname used during recovery',
   );
   console.log(`- Updated ${secretNames.netlifyFrontendCnameTarget}`);
+
+  const initialBuildResult = triggerNetlifySiteBuild(drNetlifySite.id, buildHookUrl);
+  if (initialBuildResult.ok) {
+    const detail = initialBuildResult.triggeredVia === 'build-hook' ? ' via build hook' : '';
+    console.log(`- Triggered initial Netlify DR site build${detail}`);
+  } else {
+    console.log('- Could not trigger the initial Netlify DR site build automatically');
+    if (initialBuildResult.error) {
+      console.log(initialBuildResult.error);
+    }
+  }
 
   printSection('Done');
   console.log(`- DR Netlify site: ${frontendOrigin}`);
