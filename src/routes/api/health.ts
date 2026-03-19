@@ -9,8 +9,8 @@ export const Route = createFileRoute('/api/health')({
   server: {
     handlers: {
       GET: async () => {
-        // Forward to Convex HTTP endpoint
-        const convexUrl = import.meta.env.VITE_CONVEX_URL;
+        // Read the Convex deployment URL from the server runtime environment.
+        const convexUrl = process.env.VITE_CONVEX_URL?.trim();
         if (!convexUrl) {
           return new Response(
             JSON.stringify({

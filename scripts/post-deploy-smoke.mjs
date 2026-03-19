@@ -62,7 +62,22 @@ async function expectJson(baseUrl, pathname, predicate, description) {
   });
 
   if (!response.ok) {
-    throw new Error(`${pathname} returned ${response.status}`);
+    let payloadPreview = '';
+    try {
+      const payload = await response.json();
+      payloadPreview = `. Received: ${formatPayloadPreview(payload)}`;
+    } catch {
+      try {
+        const text = await response.text();
+        if (text) {
+          payloadPreview = `. Received: ${text.length > 300 ? `${text.slice(0, 300)}...` : text}`;
+        }
+      } catch {
+        // Ignore body parsing failures and fall back to the status-only error.
+      }
+    }
+
+    throw new Error(`${pathname} returned ${response.status}${payloadPreview}`);
   }
 
   const payload = await response.json();
