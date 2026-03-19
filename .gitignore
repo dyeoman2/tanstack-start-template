@@ -32,6 +32,8 @@ server.log
 # Build outputs
 dist/
 .netlify/
+cdk.out/
+cdk.context.json
 
 # Additional build artifacts
 .output/

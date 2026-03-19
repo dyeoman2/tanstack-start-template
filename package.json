@@ -61,6 +61,7 @@
     "setup:convex": "tsx scripts/setup-convex.ts",
     "setup:dev": "tsx scripts/setup-dev.ts",
     "setup:prod": "tsx scripts/setup-prod.ts",
+    "setup:dr": "tsx scripts/setup-dr.ts",
     "better-auth:generate-schema": "pnpm exec better-auth generate --config better-auth.cli.ts --output /tmp/better-auth-generated-schema.ts -y",
     "verify:better-auth": "node scripts/verify-better-auth.mjs",
     "make-admin": "tsx scripts/make-admin.ts",
@@ -76,7 +77,8 @@
     "infra:dr:ecs:deploy": "tsx infra/dr.ts --stack TanStackStartDrEcsStack",
     "infra:dr:ecs:preview": "tsx infra/dr.ts --preview --stack TanStackStartDrEcsStack",
     "infra:dr:deploy": "tsx infra/dr.ts --all",
-    "infra:dr:preview": "tsx infra/dr.ts --preview --all"
+    "infra:dr:preview": "tsx infra/dr.ts --preview --all",
+    "infra:dr:sync-env": "bash ./scripts/sync-dr-env-to-secrets-manager.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1011.0",

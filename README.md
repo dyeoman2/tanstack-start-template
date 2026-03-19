@@ -261,6 +261,15 @@ In order to send password reset and transactional emails, you need to set up Res
 The template now includes an AWS-backed storage path for file-backed features, with `convex` remaining the zero-config default and S3 available for malware-scanned storage deployments:
 
 - [AWS S3 Storage Setup](infra/README.md) - CDK infrastructure and runtime environment contract for `s3-primary` and `s3-mirror`
+- [Disaster Recovery Overview](docs/DISASTER_RECOVERY.md) - weekly Convex-to-S3 backups, self-hosted Convex failover, and file-storage DR limits
+- [Disaster Recovery Runbook](docs/DISASTER_RECOVERY_RUNBOOK.md) - operator workflow for backup infra, DR infra, and failover execution
+- [Disaster Recovery Configuration](docs/DISASTER_RECOVERY_CONFIG.md) - GitHub secrets, Secrets Manager inputs, and DR env vars
+
+For guided DR setup across AWS, GitHub, Convex, and Netlify, run:
+
+```bash
+pnpm run setup:dr
+```
 
 For guided local setup, run:
 
@@ -272,6 +281,15 @@ For guided production runtime env setup across Convex prod and Netlify, run:
 
 ```bash
 pnpm run setup:storage:prod
+```
+
+For DR infrastructure previews and deploys, use:
+
+```bash
+pnpm run infra:dr:backup:preview
+pnpm run infra:dr:backup:deploy
+pnpm run infra:dr:ecs:preview
+pnpm run infra:dr:ecs:deploy
 ```
 
 ## 📄 License
