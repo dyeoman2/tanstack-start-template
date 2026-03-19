@@ -11,6 +11,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateSecret } from '../src/lib/server/crypto.server';
+import { DEFAULT_APP_NAME } from './lib/setup-defaults';
 
 async function main() {
   console.log('🔧 Setting up local development environment...\n');
@@ -62,8 +63,8 @@ NODE_ENV=development
 # Better Auth base URL. Use 127.0.0.1 so local browser automation shares one origin.
 BETTER_AUTH_URL=http://127.0.0.1:3000
 
-# Application name for email templates
-APP_NAME="TanStack Start Template"
+# Application name (passkeys, Convex sync via setup:convex)
+APP_NAME="${DEFAULT_APP_NAME}"
 
 # ==========================================
 # OPENROUTER AI SETUP (Optional but recommended for chat)

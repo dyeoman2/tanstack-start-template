@@ -2,8 +2,8 @@
 
 /**
  * Set up Convex URLs after Convex project initialization.
- * - VITE_CONVEX_URL: Convex deployment URL (from npx convex dev)
- * - VITE_CONVEX_SITE_URL: Site URL with .site instead of .cloud
+ * Syncs from `.env.local` into Convex (dev): BETTER_AUTH_SECRET, optional BETTER_AUTH_URL,
+ * APP_NAME, optional Resend / OpenRouter / Google OAuth / RESEND_API_KEY.
  * Run: pnpm run setup:convex
  */
 
@@ -11,6 +11,7 @@ import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { DEFAULT_APP_NAME } from './lib/setup-defaults';
 
 function readOptionalEnvValue(envContent: string, name: string) {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -36,7 +37,7 @@ function readOptionalEnvValue(envContent: string, name: string) {
 }
 
 function runConvexEnvSet(name: string, value: string) {
-  execSync(`npx convex env set ${name} "${value}"`, {
+  execSync(`npx convex env set ${name} ${JSON.stringify(value)}`, {
     stdio: 'pipe',
     cwd: process.cwd(),
   });
@@ -141,32 +142,20 @@ async function main() {
     console.log(`   VITE_CONVEX_SITE_URL: ${siteUrl}`);
     console.log('────────────────────────────────────────────────');
   } else {
-    // Extract existing URLs for display
-    console.log('🔍 Debug: Checking for Convex URLs in .env.local...');
-
     const convexUrlMatch = envContent.match(/VITE_CONVEX_URL=(.*)/);
     const siteUrlMatch = envContent.match(/VITE_CONVEX_SITE_URL=(.*)/);
     const convexDeploymentMatch = envContent.match(/CONVEX_DEPLOYMENT=(.*)/);
 
-    console.log(
-      `   CONVEX_DEPLOYMENT match: "${convexDeploymentMatch ? convexDeploymentMatch[1] : 'null'}"`,
-    );
-    console.log(`   VITE_CONVEX_URL match: "${convexUrlMatch ? convexUrlMatch[1] : 'null'}"`);
-    console.log(`   VITE_CONVEX_SITE_URL match: "${siteUrlMatch ? siteUrlMatch[1] : 'null'}"`);
-
-    if (convexUrlMatch?.[1].trim()) {
+    if (convexUrlMatch?.[1]?.trim()) {
       convexUrl = convexUrlMatch[1].trim();
-      console.log(`   ✓ Using VITE_CONVEX_URL: ${convexUrl}`);
-    } else if (convexDeploymentMatch?.[1].trim()) {
-      // Construct URL from deployment name (e.g., dev:quick-elk-245 -> https://quick-elk-245.convex.cloud)
+    } else if (convexDeploymentMatch?.[1]?.trim()) {
       const deploymentName = convexDeploymentMatch[1].trim().replace('dev:', '');
       convexUrl = `https://${deploymentName}.convex.cloud`;
-      console.log(`   ✓ Constructed URL from deployment: ${convexUrl}`);
-    } else {
-      console.log('   ❌ No valid Convex URL found');
     }
 
-    if (siteUrlMatch) siteUrl = siteUrlMatch[1];
+    if (siteUrlMatch?.[1]) {
+      siteUrl = siteUrlMatch[1].trim();
+    }
 
     // Check if VITE_CONVEX_SITE_URL needs to be set (empty or placeholder)
     if (
@@ -209,13 +198,20 @@ async function main() {
     }
   }
 
-  // Read the BETTER_AUTH_SECRET from .env.local
-  const betterAuthSecret = envContent.match(/BETTER_AUTH_SECRET=(.+)/)?.[1];
+  const betterAuthSecret = readOptionalEnvValue(envContent, 'BETTER_AUTH_SECRET');
   const betterAuthUrl = readOptionalEnvValue(envContent, 'BETTER_AUTH_URL');
+  const appName = readOptionalEnvValue(envContent, 'APP_NAME') ?? DEFAULT_APP_NAME;
+  const resendApiKey = readOptionalEnvValue(envContent, 'RESEND_API_KEY');
   const resendEmailSender = readOptionalEnvValue(envContent, 'RESEND_EMAIL_SENDER');
   const openRouterApiKey = readOptionalEnvValue(envContent, 'OPENROUTER_API_KEY');
   const openRouterSiteUrl = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_URL');
   const openRouterSiteName = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_NAME');
+  const googleClientId =
+    readOptionalEnvValue(envContent, 'GOOGLE_CLIENT_ID') ??
+    readOptionalEnvValue(envContent, 'BETTER_AUTH_GOOGLE_CLIENT_ID');
+  const googleClientSecret =
+    readOptionalEnvValue(envContent, 'GOOGLE_CLIENT_SECRET') ??
+    readOptionalEnvValue(envContent, 'BETTER_AUTH_GOOGLE_CLIENT_SECRET');
 
   if (!betterAuthSecret) {
     console.log('❌ Could not find BETTER_AUTH_SECRET in .env.local');
@@ -232,15 +228,21 @@ async function main() {
     console.log('────────────────────────────────────────────────');
   }
 
-  // Set required environment variables in Convex
   const envVars = [
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
     ...(betterAuthUrl ? [{ name: 'BETTER_AUTH_URL', value: betterAuthUrl }] : []),
-    { name: 'APP_NAME', value: 'TanStack Start Template' },
+    { name: 'APP_NAME', value: appName },
+    ...(resendApiKey ? [{ name: 'RESEND_API_KEY', value: resendApiKey }] : []),
     ...(resendEmailSender ? [{ name: 'RESEND_EMAIL_SENDER', value: resendEmailSender }] : []),
     ...(openRouterApiKey ? [{ name: 'OPENROUTER_API_KEY', value: openRouterApiKey }] : []),
     ...(openRouterSiteUrl ? [{ name: 'OPENROUTER_SITE_URL', value: openRouterSiteUrl }] : []),
     ...(openRouterSiteName ? [{ name: 'OPENROUTER_SITE_NAME', value: openRouterSiteName }] : []),
+    ...(googleClientId && googleClientSecret
+      ? [
+          { name: 'GOOGLE_CLIENT_ID', value: googleClientId },
+          { name: 'GOOGLE_CLIENT_SECRET', value: googleClientSecret },
+        ]
+      : []),
   ];
 
   for (const { name, value } of envVars) {
@@ -254,6 +256,18 @@ async function main() {
 
   console.log('✅ Convex environment variables configured!');
   console.log('────────────────────────────────────────────────');
+
+  if (!resendApiKey) {
+    console.log(
+      'ℹ️  RESEND_API_KEY not in .env.local — add it there and rerun, or `npx convex env set RESEND_API_KEY ...`.',
+    );
+  }
+
+  if ((googleClientId && !googleClientSecret) || (!googleClientId && googleClientSecret)) {
+    console.log(
+      '⚠️  Google OAuth: both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET (or BETTER_AUTH_GOOGLE_*) are required — Convex not updated for Google.',
+    );
+  }
 
   if (!openRouterApiKey) {
     console.log('ℹ️  OPENROUTER_API_KEY not found in .env.local. Skipping AI model seed.');

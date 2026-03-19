@@ -15,6 +15,7 @@ import {
   normalizeUrl,
   promptForProductionConvexDeployKey,
 } from './lib/github-deploy-setup';
+import { DEFAULT_APP_NAME, DEFAULT_PROD_RESEND_SENDER } from './lib/setup-defaults';
 
 async function setupConvexProduction(): Promise<{
   betterAuthSecret: string;
@@ -31,8 +32,8 @@ async function setupConvexProduction(): Promise<{
 
   const prodEnvVars = [
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
-    { name: 'APP_NAME', value: 'TanStack Start Template' },
-    { name: 'RESEND_EMAIL_SENDER', value: 'onboarding@resend.dev' },
+    { name: 'APP_NAME', value: DEFAULT_APP_NAME },
+    { name: 'RESEND_EMAIL_SENDER', value: DEFAULT_PROD_RESEND_SENDER },
   ];
 
   for (const { name, value } of prodEnvVars) {
