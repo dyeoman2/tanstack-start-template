@@ -5,7 +5,9 @@ import { configureGitHubDeployEnvironments } from './lib/github-deploy-setup';
 
 async function main() {
   console.log('GitHub deploy environment setup');
-  console.log('This configures the staging and production GitHub environments used by deploy.yml.');
+  console.log(
+    'This configures the staging and production GitHub environments used by release.yml.',
+  );
   console.log(
     'It also writes the repo-level CONVEX_DEPLOY_KEY required by existing compatibility workflows.',
   );

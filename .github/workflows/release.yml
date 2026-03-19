@@ -1,0 +1,575 @@
+name: deploy.yml
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - staging
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: 🪨 Linting
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Check formatting
+        run: pnpm run format:check
+
+      - name: Lint
+        run: pnpm run lint:check
+
+  typecheck:
+    name: ts TypeScript
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm run typecheck
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  security:
+    name: 🔒 Security Audit
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit production dependencies
+        run: pnpm audit --audit-level critical --prod
+
+      - name: Check admin audit guardrails
+        run: pnpm run check:admin-audit-guardrails
+
+      - name: Lint Convex boundaries
+        run: pnpm run lint:convex
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Lint security policy boundaries
+        run: pnpm run lint:security
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Generate SBOM
+        run: pnpm dlx @cyclonedx/cdxgen -o sbom.json --format json --type js
+
+      - name: Verify SBOM output
+        run: |
+          test -s sbom.json
+          sha256sum sbom.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: sbom.json
+          retention-days: 30
+
+  test:
+    name: ⚡ Vitest
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run unit tests
+        run: pnpm test
+
+  sast:
+    name: 🔍 SAST (Semgrep)
+    runs-on: ubuntu-22.04
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run Semgrep SAST scan
+        run: semgrep scan --config auto --error --severity ERROR
+
+  ssr_smoke:
+    name: 🫧 SSR Smoke Test
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build and import SSR bundle
+        run: pnpm run test:ssr-smoke
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+  osv_scan:
+    name: 🕵 OSV Vulnerability Scan
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run OSV-Scanner
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+        with:
+          scan-args: |-
+            --recursive
+            --format table
+            ./
+
+  prepare:
+    name: 🎯 Resolve Target
+    runs-on: ubuntu-22.04
+    needs:
+      - lint
+      - typecheck
+      - security
+      - test
+      - sast
+      - ssr_smoke
+      - osv_scan
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'push' &&
+        (
+          github.ref_name == 'main' ||
+          github.ref_name == 'staging'
+        )
+      )
+    steps:
+      - name: Resolve deploy target
+        id: target
+        run: |
+          branch_name="${GITHUB_REF_NAME}"
+
+          if [[ "${branch_name}" == "main" ]]; then
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+            echo "label=Production" >> "$GITHUB_OUTPUT"
+          elif [[ "${branch_name}" == "staging" ]]; then
+            echo "environment=staging" >> "$GITHUB_OUTPUT"
+            echo "label=Staging" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported deploy branch: ${branch_name}"
+            exit 1
+          fi
+    outputs:
+      environment: ${{ steps.target.outputs.environment }}
+      label: ${{ steps.target.outputs.label }}
+
+  sign_source_bundle:
+    name: 📝 Sign Source Bundle
+    runs-on: ubuntu-22.04
+    needs: prepare
+    environment: ${{ needs.prepare.outputs.environment }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Build and sign source bundle
+        id: sign_bundle
+        env:
+          DEPLOY_LABEL: ${{ needs.prepare.outputs.label }}
+        run: |
+          artifact_name="source-bundle-${GITHUB_SHA}.tar.gz"
+          signature_path="${artifact_name}.sig"
+          certificate_path="${artifact_name}.crt"
+
+          git archive --format=tar.gz --output "${artifact_name}" "${GITHUB_SHA}"
+          sha256sum "${artifact_name}" | tee source-bundle.sha256
+          bundle_sha="$(awk '{print $1}' source-bundle.sha256)"
+          echo "bundle_sha=${bundle_sha}" >> "$GITHUB_OUTPUT"
+
+          cosign sign-blob \
+            --yes \
+            --output-signature "${signature_path}" \
+            --output-certificate "${certificate_path}" \
+            "${artifact_name}"
+
+          cosign verify-blob \
+            --certificate "${certificate_path}" \
+            --signature "${signature_path}" \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*$" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "${artifact_name}"
+
+          {
+            echo "${DEPLOY_LABEL} signed source bundle:"
+            cat source-bundle.sha256
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload signed source bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-source-bundle-${{ github.sha }}
+          path: |
+            source-bundle-${{ github.sha }}.tar.gz
+            source-bundle-${{ github.sha }}.tar.gz.sig
+            source-bundle-${{ github.sha }}.tar.gz.crt
+            source-bundle.sha256
+          retention-days: 30
+    outputs:
+      bundle_sha: ${{ steps.sign_bundle.outputs.bundle_sha }}
+
+  deploy_netlify:
+    name: 🚀 Deploy to Netlify
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - sign_source_bundle
+    if: needs.prepare.outputs.environment == 'production'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify frontend release build
+        run: pnpm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Deploy Convex functions
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [[ -z "${CONVEX_DEPLOY_KEY}" ]]; then
+            echo "CONVEX_DEPLOY_KEY is not configured."
+            exit 1
+          fi
+
+          pnpm exec convex deploy
+
+      - name: Trigger Netlify build hook
+        id: trigger_netlify
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+        run: |
+          if [[ -z "${NETLIFY_BUILD_HOOK_URL}" ]]; then
+            echo "NETLIFY_BUILD_HOOK_URL is not configured."
+            exit 1
+          fi
+
+          echo "created_after=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+
+          curl --fail --show-error --silent \
+            -X POST \
+            "${NETLIFY_BUILD_HOOK_URL}"
+
+      - name: Wait for Netlify deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_DEPLOY_CREATED_AFTER: ${{ steps.trigger_netlify.outputs.created_after }}
+        run: node ./scripts/wait-for-netlify-deploy.mjs
+
+      - name: Run post-deploy smoke checks
+        env:
+          DEPLOY_SMOKE_BASE_URL: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
+        run: node ./scripts/post-deploy-smoke.mjs
+
+  deploy_staging:
+    name: 🚀 Deploy to Staging
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - sign_source_bundle
+    if: needs.prepare.outputs.environment == 'staging'
+    environment: staging
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify frontend release build
+        run: pnpm run build
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+
+      - name: Deploy Convex functions
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [[ -z "${CONVEX_DEPLOY_KEY}" ]]; then
+            echo "CONVEX_DEPLOY_KEY is not configured."
+            exit 1
+          fi
+
+          pnpm exec convex deploy
+
+      - name: Trigger Netlify build hook
+        id: trigger_netlify
+        env:
+          NETLIFY_BUILD_HOOK_URL: ${{ secrets.NETLIFY_BUILD_HOOK_URL }}
+        run: |
+          if [[ -z "${NETLIFY_BUILD_HOOK_URL}" ]]; then
+            echo "NETLIFY_BUILD_HOOK_URL is not configured."
+            exit 1
+          fi
+
+          echo "created_after=$(date +%s%3N)" >> "$GITHUB_OUTPUT"
+
+          curl --fail --show-error --silent \
+            -X POST \
+            "${NETLIFY_BUILD_HOOK_URL}"
+
+      - name: Wait for Netlify deploy
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+          NETLIFY_DEPLOY_CREATED_AFTER: ${{ steps.trigger_netlify.outputs.created_after }}
+        run: node ./scripts/wait-for-netlify-deploy.mjs
+
+      - name: Run post-deploy smoke checks
+        env:
+          DEPLOY_SMOKE_BASE_URL: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
+        run: node ./scripts/post-deploy-smoke.mjs
+
+  dast:
+    name: 🕷 DAST (OWASP ZAP)
+    runs-on: ubuntu-22.04
+    needs: deploy_netlify
+    if: needs.deploy_netlify.result == 'success'
+    environment: production
+    steps:
+      - name: Run OWASP ZAP baseline
+        uses: zaproxy/action-baseline@v0.14.0
+        with:
+          allow_issue_writing: false
+          cmd_options: >-
+            -a
+          fail_action: true
+          target: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
+
+  record_release_evidence:
+    name: 🧾 Record Release Evidence
+    runs-on: ubuntu-22.04
+    needs:
+      - prepare
+      - sign_source_bundle
+      - deploy_netlify
+      - deploy_staging
+      - dast
+    if: >
+      always() &&
+      needs.prepare.result == 'success' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        github.event_name == 'push'
+      )
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Record compliance and provenance evidence
+        id: workspace_report
+        env:
+          BUNDLE_SHA: ${{ needs.sign_source_bundle.outputs.bundle_sha }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          DAST_RESULT: ${{ needs.dast.result }}
+          DEPLOY_LABEL: ${{ needs.prepare.outputs.label }}
+          DEPLOY_NETLIFY_RESULT: ${{ needs.deploy_netlify.result }}
+          DEPLOY_STAGING_RESULT: ${{ needs.deploy_staging.result }}
+          TARGET_ENVIRONMENT: ${{ needs.prepare.outputs.environment }}
+        run: |
+          deploy_result="${DEPLOY_NETLIFY_RESULT}"
+          if [[ "${TARGET_ENVIRONMENT}" == "staging" ]]; then
+            deploy_result="${DEPLOY_STAGING_RESULT}"
+          fi
+
+          failure_reason=$(jq -rn \
+            --arg sign_outcome "${{ needs.sign_source_bundle.result }}" \
+            --arg deploy_outcome "${deploy_result}" \
+            --arg dast_outcome "${DAST_RESULT}" \
+            --arg target_environment "${TARGET_ENVIRONMENT}" \
+            '[
+              ["sign", $sign_outcome],
+              ["deploy", $deploy_outcome]
+            ]
+            + (if $target_environment == "production" then [["dast", $dast_outcome]] else [] end)
+            | map(select(.[1] != "success" and .[1] != "skipped") | "\(.[0]):\(.[1])")
+            | if length == 0 then "" else join(", ") end')
+
+          if [[ -n "${failure_reason}" ]]; then
+            sufficiency="partial"
+          else
+            sufficiency="sufficient"
+          fi
+
+          description=$(jq -rn \
+            --arg bundle_sha "${BUNDLE_SHA}" \
+            --arg dast_outcome "${DAST_RESULT}" \
+            --arg deploy_label "${DEPLOY_LABEL}" \
+            --arg deploy_outcome "${deploy_result}" \
+            --arg event_name "${GITHUB_EVENT_NAME}" \
+            --arg failure_reason "${failure_reason}" \
+            --arg ref_name "${GITHUB_REF_NAME}" \
+            --arg run_number "${GITHUB_RUN_NUMBER}" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg sign_outcome "${{ needs.sign_source_bundle.result }}" \
+            --arg target_environment "${TARGET_ENVIRONMENT}" \
+            '[
+              "Release workflow run: \($run_url)",
+              "Deployment label: \($deploy_label)",
+              "Target environment: \($target_environment)",
+              "Event: \($event_name)",
+              "Branch: \($ref_name)",
+              "Commit: \($sha)",
+              "Run number: \($run_number)",
+              "Signed source bundle SHA-256: \($bundle_sha)",
+              "Step outcomes: sign=\($sign_outcome), deploy=\($deploy_outcome)"
+            ]
+            + (if $target_environment == "production" then ["DAST outcome: \($dast_outcome)"] else [] end)
+            + (if $failure_reason == "" then [] else ["Failures: \($failure_reason)"] end)
+            | join("\n")')
+
+          convex_args=$(jq -n \
+            --arg description "${description}" \
+            --arg review_due_interval_months "12" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg sufficiency "${sufficiency}" \
+            --arg target_environment "${TARGET_ENVIRONMENT}" \
+            --arg title "${DEPLOY_LABEL} release provenance run ${GITHUB_RUN_NUMBER}" \
+            '{
+              description: $description,
+              evidenceDate: (now * 1000 | floor),
+              internalControlId: "CTRL-CM-003",
+              itemId: "controlled-change-path",
+              reviewDueIntervalMonths: ($review_due_interval_months | tonumber),
+              source: "automated_system_check",
+              sufficiency: $sufficiency,
+              title: $title,
+              uploadedByUserId: "system:github-actions",
+              url: $run_url
+            }')
+
+          pnpm exec convex run security:createSecurityControlEvidenceLinkInternal "${convex_args}" --typecheck disable
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+      - name: Set workspace report summary
+        if: always()
+        run: |
+          echo "Compliance record: **${{ steps.workspace_report.outputs.status || 'skipped' }}**" >> "$GITHUB_STEP_SUMMARY"

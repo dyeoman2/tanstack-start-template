@@ -133,6 +133,19 @@ function setEnvironmentVariable(
   run('gh', ['variable', 'set', name, '--repo', repo, '--env', environment, '--body', value]);
 }
 
+export function setGitHubActionsArtifactRetentionDays(repo: string, days: number) {
+  run('gh', [
+    'api',
+    '--method',
+    'PUT',
+    `repos/${repo}/actions/permissions/artifact-and-log-retention`,
+    '-H',
+    'Accept: application/vnd.github+json',
+    '-F',
+    `days=${days}`,
+  ]);
+}
+
 export function discoverRepo() {
   try {
     const remote = runCapture('git', ['config', '--get', 'remote.origin.url']);
@@ -412,6 +425,7 @@ export async function configureGitHubDeployEnvironments(input: {
   await applyEnvironmentConfig(repo, 'production', production);
   await applyEnvironmentConfig(repo, 'staging', staging);
   setRepositorySecret(repo, 'CONVEX_DEPLOY_KEY', production.convexDeployKey);
+  setGitHubActionsArtifactRetentionDays(repo, 30);
 
   return { production, repo, staging };
 }
