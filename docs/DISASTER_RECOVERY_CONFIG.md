@@ -3,7 +3,7 @@
 For the guided end-to-end setup flow, run:
 
 ```bash
-pnpm run setup:dr
+pnpm run dr:setup
 ```
 
 ## GitHub Actions Secrets
@@ -37,12 +37,20 @@ If the recommended test secrets are omitted, the workflow falls back to local de
 
 ### Existing malware scan stacks
 
-- `CONVEX_GUARDDUTY_WEBHOOK_URL_DEV`
-- `CONVEX_GUARDDUTY_WEBHOOK_URL_PROD`
-- `MALWARE_WEBHOOK_SHARED_SECRET_DEV`
-- `MALWARE_WEBHOOK_SHARED_SECRET_PROD`
-- `S3_FILES_BUCKET_NAME_DEV`
-- `S3_FILES_BUCKET_NAME_PROD`
+The storage deploy commands are now stage-specific:
+
+- `pnpm run storage:preview:dev`
+- `pnpm run storage:deploy:dev`
+- `pnpm run storage:preview:prod`
+- `pnpm run storage:deploy:prod`
+
+Those commands derive storage CDK inputs from the runtime storage env for the selected target:
+
+- `AWS_REGION`
+- `CONVEX_SITE_URL`
+- `AWS_S3_FILES_BUCKET`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- optional `AWS_PROFILE`
 
 ### DR backup stack
 
@@ -89,7 +97,7 @@ Optional override env vars for non-default secret names:
 The Convex runtime env secret can be refreshed with:
 
 ```bash
-pnpm run infra:dr:sync-env
+pnpm run dr:sync-env
 ```
 
 ## Runtime Variables Replayed During Recovery
@@ -120,4 +128,4 @@ The Netlify DR site should be configured ahead of time with:
 - frontend env vars that point to the DR Convex backend and site hosts
 - a DNS target value exposed to the recovery script via `AWS_DR_FRONTEND_CNAME_TARGET` or the persisted Netlify frontend CNAME target secret
 
-This repo automates the build hook trigger and Cloudflare DNS repointing. The guided `pnpm run setup:dr` flow also attempts to create or validate the dedicated Netlify DR site when the Netlify CLI is authenticated, and falls back to manual instructions when that is not possible.
+This repo automates the build hook trigger and Cloudflare DNS repointing. The guided `pnpm run dr:setup` flow also attempts to create or validate the dedicated Netlify DR site when the Netlify CLI is authenticated, and falls back to manual instructions when that is not possible.

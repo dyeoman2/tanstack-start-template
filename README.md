@@ -268,28 +268,57 @@ The template now includes an AWS-backed storage path for file-backed features, w
 For guided DR setup across AWS, GitHub, Convex, and Netlify, run:
 
 ```bash
-pnpm run setup:dr
+pnpm run dr:setup
 ```
 
 For guided local setup, run:
 
 ```bash
-pnpm run setup:storage
+pnpm run storage:setup
 ```
+
+That flow now:
+
+- writes the local runtime storage env vars into `.env.local`
+- syncs the required runtime storage vars into Convex when requested
+- derives the storage CDK deploy-time env from those runtime vars
+- can preview and deploy the dev storage stack directly
+
+The dev storage commands derive these deploy-time values at runtime:
+
+- `AWS_CONVEX_GUARDDUTY_WEBHOOK_URL`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_S3_FILES_BUCKET_NAME`
 
 For guided production runtime env setup across Convex prod and Netlify, run:
 
 ```bash
-pnpm run setup:storage:prod
+pnpm run storage:setup:prod
+```
+
+That flow now follows the same storage setup model as local/dev, but writes runtime env to production targets instead:
+
+- sets runtime storage env in Convex prod
+- sets runtime storage env in Netlify
+- derives the production storage CDK deploy-time env from the collected runtime values
+- can preview and deploy the prod storage stack directly
+
+The stage-specific storage infrastructure commands are:
+
+```bash
+pnpm run storage:preview:dev
+pnpm run storage:deploy:dev
+pnpm run storage:preview:prod
+pnpm run storage:deploy:prod
 ```
 
 For DR infrastructure previews and deploys, use:
 
 ```bash
-pnpm run infra:dr:backup:preview
-pnpm run infra:dr:backup:deploy
-pnpm run infra:dr:ecs:preview
-pnpm run infra:dr:ecs:deploy
+pnpm run dr:backup:preview
+pnpm run dr:backup:deploy
+pnpm run dr:ecs:preview
+pnpm run dr:ecs:deploy
 ```
 
 ## 📄 License

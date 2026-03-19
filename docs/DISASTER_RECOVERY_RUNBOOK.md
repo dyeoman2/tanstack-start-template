@@ -13,7 +13,7 @@
 For the smoothest first-time setup, run:
 
 ```bash
-pnpm run setup:dr
+pnpm run dr:setup
 ```
 
 The guided script discovers the current environment, configures the DR stacks, syncs the runtime secret from Convex production env vars, updates GitHub Actions secrets, and attempts to create or validate the dedicated Netlify DR site and build hook before falling back to manual remediation steps.
@@ -33,13 +33,13 @@ The guided script discovers the current environment, configures the DR stacks, s
 Preview:
 
 ```bash
-pnpm run infra:dr:backup:preview
+pnpm run dr:backup:preview
 ```
 
 Deploy:
 
 ```bash
-pnpm run infra:dr:backup:deploy
+pnpm run dr:backup:deploy
 ```
 
 Outputs:
@@ -58,13 +58,13 @@ export AWS_DR_DOMAIN=example.com
 Preview:
 
 ```bash
-pnpm run infra:dr:ecs:preview
+pnpm run dr:ecs:preview
 ```
 
 Deploy:
 
 ```bash
-pnpm run infra:dr:ecs:deploy
+pnpm run dr:ecs:deploy
 ```
 
 The DR ECS stack is only synthesized when `AWS_DR_DOMAIN` is set.
@@ -74,14 +74,14 @@ The DR ECS stack is only synthesized when `AWS_DR_DOMAIN` is set.
 Keep the DR env secret synchronized with production Convex env vars:
 
 ```bash
-pnpm run infra:dr:sync-env
+pnpm run dr:sync-env
 ```
 
 Optional overrides:
 
 ```bash
-AWS_DR_PROJECT_SLUG=your-project pnpm run infra:dr:sync-env
-AWS_DR_ENV_SECRET_NAME=custom/dr-convex-env-vars pnpm run infra:dr:sync-env
+AWS_DR_PROJECT_SLUG=your-project pnpm run dr:sync-env
+AWS_DR_ENV_SECRET_NAME=custom/dr-convex-env-vars pnpm run dr:sync-env
 bash ./scripts/sync-dr-env-to-secrets-manager.sh --preview-name your-preview
 ```
 
@@ -117,7 +117,7 @@ export BETTER_AUTH_SECRET=your-production-better-auth-secret
 export JWKS='{"keys":[...]}'
 ```
 
-`AWS_DR_FRONTEND_CNAME_TARGET` remains available as an override, but `pnpm run setup:dr` now persists the Netlify frontend hostname in Secrets Manager so manual export is usually unnecessary.
+`AWS_DR_FRONTEND_CNAME_TARGET` remains available as an override, but `pnpm run dr:setup` now persists the Netlify frontend hostname in Secrets Manager so manual export is usually unnecessary.
 
 Run recovery:
 

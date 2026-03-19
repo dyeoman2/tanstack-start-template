@@ -88,7 +88,7 @@ RESEND_EMAIL_SENDER=onboarding@resend.dev
 # ==========================================
 
 # Storage defaults to FILE_STORAGE_BACKEND=convex.
-# Run pnpm run setup:storage if you want guided setup for:
+# Run pnpm run storage:setup if you want guided setup for:
 #   - convex
 #   - s3-primary
 #   - s3-mirror

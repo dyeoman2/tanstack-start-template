@@ -228,15 +228,17 @@ export function isLikelyConvexDeployKey(value: string): boolean {
 
 export function buildDrSecretNames(projectSlug: string) {
   return {
-    cloudflareDnsToken: `${projectSlug}/dr-cloudflare-dns-token`,
-    cloudflareZoneId: `${projectSlug}/dr-cloudflare-zone-id`,
-    convexEnv: `${projectSlug}/dr-convex-env-vars`,
-    netlifyBuildHook: `${projectSlug}/dr-netlify-build-hook`,
-    netlifyFrontendCnameTarget: `${projectSlug}/dr-netlify-frontend-cname-target`,
+    cloudflareDnsToken: `${projectSlug}-dr-cloudflare-dns-token-secret`,
+    cloudflareZoneId: `${projectSlug}-dr-cloudflare-zone-id-secret`,
+    convexEnv: `${projectSlug}-dr-convex-env-secret`,
+    netlifyBuildHook: `${projectSlug}-dr-netlify-build-hook-secret`,
+    netlifyFrontendCnameTarget: `${projectSlug}-dr-netlify-frontend-cname-target-secret`,
   };
 }
 
 export function buildDefaultBackupBucketName(projectSlug: string, accountId?: string, region?: string) {
   const suffix = [accountId, region].filter(Boolean).join('-');
-  return suffix ? `${projectSlug}-dr-backups-${suffix}` : `${projectSlug}-dr-backups`;
+  return suffix
+    ? `${projectSlug}-dr-backup-bucket-${suffix}`
+    : `${projectSlug}-dr-backup-bucket`;
 }

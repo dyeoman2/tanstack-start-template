@@ -52,7 +52,7 @@ class DrBackupStack extends cdk.Stack {
     });
 
     const ciUser = new iam.User(this, 'DrBackupCiUser', {
-      userName: props.ciUserName ?? `${projectSlug}-dr-backup-ci`,
+      userName: props.ciUserName ?? `${projectSlug}-dr-backup-ci-user`,
     });
 
     ciUser.addToPolicy(

@@ -136,7 +136,7 @@ The DR site should be configured ahead of time with:
 
 ## Supporting Docs
 
-- Guided setup command: `pnpm run setup:dr`
+- Guided setup command: `pnpm run dr:setup`
 - [Disaster Recovery Runbook](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_RUNBOOK.md)
 - [Disaster Recovery Configuration](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_CONFIG.md)
 - [AWS Infra README](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/README.md)

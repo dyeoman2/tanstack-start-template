@@ -6,6 +6,19 @@ const cdk = require('aws-cdk-lib');
 const { MalwareScanStack } = require(path.join('..', 'lib', 'malware-scan-stack.cts'));
 const { DrBackupStack } = require(path.join('..', 'lib', 'dr-backup-stack.cts'));
 const { DrEcsStack } = require(path.join('..', 'lib', 'dr-ecs-stack.cts'));
+const DEFAULT_PROJECT_SLUG = 'tanstack-start-template';
+
+function buildStorageStackName(projectSlug, stage) {
+  return `${projectSlug}-${stage}-guardduty-stack`;
+}
+
+function buildDrBackupStackName(projectSlug) {
+  return `${projectSlug}-dr-backup-stack`;
+}
+
+function buildDrEcsStackName(projectSlug) {
+  return `${projectSlug}-dr-ecs-stack`;
+}
 
 function readEnv(name, stage) {
   return process.env[`${name}_${stage}`] || process.env[name] || '';
@@ -17,16 +30,16 @@ function readTrimmedEnv(name) {
 }
 
 function createStageConfig(stage) {
-  const upperStage = stage.toUpperCase();
   return {
-    bucketName: readEnv('S3_FILES_BUCKET_NAME', upperStage),
+    bucketName: readTrimmedEnv('AWS_S3_FILES_BUCKET_NAME'),
     env: {
       account: process.env.CDK_DEFAULT_ACCOUNT,
       region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-1',
     },
-    malwareWebhookSharedSecret: readEnv('MALWARE_WEBHOOK_SHARED_SECRET', upperStage),
+    malwareWebhookSharedSecret: readTrimmedEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
+    projectSlug,
     stage,
-    webhookUrl: readEnv('CONVEX_GUARDDUTY_WEBHOOK_URL', upperStage),
+    webhookUrl: readTrimmedEnv('AWS_CONVEX_GUARDDUTY_WEBHOOK_URL'),
   };
 }
 
@@ -39,23 +52,26 @@ function createAwsEnv() {
 
 const app = new cdk.App();
 const awsEnv = createAwsEnv();
-const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || 'TanStackStartDrEcsStack';
-
-for (const stage of ['dev', 'prod']) {
-  const config = createStageConfig(stage);
+const projectSlug = readTrimmedEnv('AWS_DR_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
+const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackName(projectSlug);
+const storageStage = readTrimmedEnv('STORAGE_STAGE');
+if (storageStage === 'dev' || storageStage === 'prod') {
+  const config = createStageConfig(storageStage);
   if (!config.bucketName || !config.webhookUrl || !config.malwareWebhookSharedSecret) {
-    continue;
+    throw new Error(
+      'AWS_S3_FILES_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, and AWS_MALWARE_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
+    );
   }
 
-  new MalwareScanStack(app, `TanStackStartMalwareScan-${stage}`, config);
+  new MalwareScanStack(app, buildStorageStackName(projectSlug, storageStage), config);
 }
 
-new DrBackupStack(app, 'TanStackStartDrBackupStack', {
+new DrBackupStack(app, buildDrBackupStackName(projectSlug), {
   bucketName: readTrimmedEnv('AWS_DR_BACKUP_S3_BUCKET') || undefined,
   ciUserName: readTrimmedEnv('AWS_DR_BACKUP_CI_USER_NAME') || undefined,
   description: 'TanStack Start Template DR backup bucket for Convex exports',
   env: awsEnv,
-  projectSlug: readTrimmedEnv('AWS_DR_PROJECT_SLUG') || 'tanstack-start-template',
+  projectSlug,
 });
 
 const drDomain = readTrimmedEnv('AWS_DR_DOMAIN');
@@ -72,7 +88,7 @@ if (drDomain) {
     frontendSubdomain: readTrimmedEnv('AWS_DR_FRONTEND_SUBDOMAIN') || 'dr',
     instanceSecretHex: readTrimmedEnv('AWS_DR_INSTANCE_SECRET') || undefined,
     memoryMiB: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_MEMORY_MIB'), 10) || undefined,
-    projectSlug: readTrimmedEnv('AWS_DR_PROJECT_SLUG') || 'tanstack-start-template',
+    projectSlug,
     siteSubdomain: readTrimmedEnv('AWS_DR_SITE_SUBDOMAIN') || 'dr-site',
   });
 }

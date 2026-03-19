@@ -79,19 +79,31 @@ type SetupSummary = {
   workflowTested: boolean;
 };
 
-const DEFAULT_DR_BACKUP_STACK_NAME = 'TanStackStartDrBackupStack';
-const DEFAULT_DR_ECS_STACK_NAME = 'TanStackStartDrEcsStack';
+const DEFAULT_PROJECT_SLUG = 'tanstack-start-template';
+
+const loadEnvFile = process.loadEnvFile?.bind(process);
+if (loadEnvFile) {
+  for (const fileName of ['.env', '.env.local']) {
+    const filePath = path.join(process.cwd(), fileName);
+    if (existsSync(filePath)) {
+      loadEnvFile(filePath);
+    }
+  }
+}
 
 function getDrBackupStackName() {
-  return DEFAULT_DR_BACKUP_STACK_NAME;
+  return `${process.env.AWS_DR_PROJECT_SLUG?.trim() || DEFAULT_PROJECT_SLUG}-dr-backup-stack`;
 }
 
 function getDrEcsStackName() {
-  return process.env.AWS_DR_STACK_NAME?.trim() || DEFAULT_DR_ECS_STACK_NAME;
+  return (
+    process.env.AWS_DR_STACK_NAME?.trim() ||
+    `${process.env.AWS_DR_PROJECT_SLUG?.trim() || DEFAULT_PROJECT_SLUG}-dr-ecs-stack`
+  );
 }
 
 function printUsage() {
-  console.log('Usage: pnpm run setup:dr -- [options]');
+  console.log('Usage: pnpm run dr:setup -- [options]');
   console.log('');
   console.log('Options:');
   console.log('  --yes                 Run non-interactively with discovered/default values.');
@@ -114,18 +126,21 @@ function createPrompt() {
   });
 }
 
-async function ask(question: string) {
+async function ask(question: string, initialValue?: string) {
   const rl = createPrompt();
   return await new Promise<string>((resolve) => {
     rl.question(question, (answer) => {
       rl.close();
       resolve(answer.trim());
     });
+    if (initialValue) {
+      rl.write(initialValue);
+    }
   });
 }
 
 async function askWithDefault(question: string, fallback: string) {
-  const answer = await ask(`${question} [${fallback}]: `);
+  const answer = await ask(`${question}: `, fallback);
   return answer || fallback;
 }
 
@@ -804,10 +819,10 @@ async function main() {
   if (!awsAuth || !identity.region) {
     summary.needsAttention.push('AWS auth is not ready, so the DR backup stack was not deployed.');
   } else {
-    runInteractive('pnpm', ['run', 'infra:dr:backup:preview'], drEnv);
+    runInteractive('pnpm', ['run', 'dr:backup:preview'], drEnv);
     const deployBackup = flags.yes ? true : await askYesNo('Deploy or update the DR backup stack now?', true);
     if (deployBackup) {
-      runInteractive('pnpm', ['run', 'infra:dr:backup:deploy'], drEnv);
+      runInteractive('pnpm', ['run', 'dr:backup:deploy'], drEnv);
       summary.completed.push('Deployed the DR backup stack.');
       summary.backupLane = 'partial';
     } else {
@@ -933,7 +948,7 @@ async function main() {
         !secretNamesInRepo.has('AWS_DR_BACKUP_SECRET_ACCESS_KEY')
       ) {
         summary.needsAttention.push(
-          'GitHub Actions still needs AWS DR backup credentials. Rerun setup:dr and provide the key pair, or add the secrets manually.',
+          'GitHub Actions still needs AWS DR backup credentials. Rerun dr:setup and provide the key pair, or add the secrets manually.',
         );
       }
     }
@@ -1144,10 +1159,10 @@ async function main() {
     summary.backendLane = 'blocked';
     summary.needsAttention.push('AWS auth or the DR domain is missing, so the DR ECS stack was not deployed.');
   } else {
-    runInteractive('pnpm', ['run', 'infra:dr:ecs:preview'], drEnv);
+    runInteractive('pnpm', ['run', 'dr:ecs:preview'], drEnv);
     const deployEcs = flags.yes ? true : await askYesNo('Deploy or update the DR ECS stack now?', true);
     if (deployEcs) {
-      runInteractive('pnpm', ['run', 'infra:dr:ecs:deploy'], drEnv);
+      runInteractive('pnpm', ['run', 'dr:ecs:deploy'], drEnv);
       summary.completed.push('Deployed the DR ECS stack.');
       summary.backendLane = 'partial';
     } else {

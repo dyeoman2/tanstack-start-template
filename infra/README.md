@@ -56,7 +56,7 @@ This stack is intended for disaster recovery events, not day-to-day production u
 For guided DR setup across AWS, GitHub, Convex, and Netlify:
 
 ```bash
-pnpm run setup:dr
+pnpm run dr:setup
 ```
 
 ### Storage / malware scan
@@ -64,13 +64,15 @@ pnpm run setup:dr
 Preview:
 
 ```bash
-pnpm infra:preview
+pnpm run storage:preview:dev
+pnpm run storage:preview:prod
 ```
 
 Deploy:
 
 ```bash
-pnpm infra:deploy
+pnpm run storage:deploy:dev
+pnpm run storage:deploy:prod
 ```
 
 ### DR backup
@@ -78,13 +80,13 @@ pnpm infra:deploy
 Preview:
 
 ```bash
-pnpm run infra:dr:backup:preview
+pnpm run dr:backup:preview
 ```
 
 Deploy:
 
 ```bash
-pnpm run infra:dr:backup:deploy
+pnpm run dr:backup:deploy
 ```
 
 ### DR ECS
@@ -94,13 +96,13 @@ Set `AWS_DR_DOMAIN` first.
 Preview:
 
 ```bash
-pnpm run infra:dr:ecs:preview
+pnpm run dr:ecs:preview
 ```
 
 Deploy:
 
 ```bash
-pnpm run infra:dr:ecs:deploy
+pnpm run dr:ecs:deploy
 ```
 
 ### All DR stacks
@@ -108,28 +110,33 @@ pnpm run infra:dr:ecs:deploy
 Preview:
 
 ```bash
-pnpm run infra:dr:preview
+pnpm run dr:preview
 ```
 
 Deploy:
 
 ```bash
-pnpm run infra:dr:deploy
+pnpm run dr:deploy
 ```
 
 ## Deploy-Time Environment Variables
 
 ### Storage / malware scan
 
-The storage stack reads stage-specific values with `_DEV` / `_PROD` suffixes and falls back to the unsuffixed name.
+The storage wrapper takes an explicit stage via `--stage dev|prod`, then derives the storage stack inputs from the runtime env already configured for that target.
 
 - `AWS_REGION`
-- `CONVEX_GUARDDUTY_WEBHOOK_URL_DEV`
-- `CONVEX_GUARDDUTY_WEBHOOK_URL_PROD`
-- `MALWARE_WEBHOOK_SHARED_SECRET_DEV`
-- `MALWARE_WEBHOOK_SHARED_SECRET_PROD`
-- `S3_FILES_BUCKET_NAME_DEV`
-- `S3_FILES_BUCKET_NAME_PROD`
+- `CONVEX_SITE_URL`
+- `AWS_S3_FILES_BUCKET`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- optional `AWS_PROFILE`
+
+Those are transformed into the CDK app inputs:
+
+- `AWS_CONVEX_GUARDDUTY_WEBHOOK_URL`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_S3_FILES_BUCKET_NAME`
+- `STORAGE_STAGE`
 
 ### DR backup stack
 

@@ -35,6 +35,7 @@ class DrEcsStack extends cdk.Stack {
     super(scope, id, props);
 
     const projectSlug = props.projectSlug ?? 'tanstack-start-template';
+    const resourcePrefix = `${projectSlug}-dr`;
     const backendSubdomain = props.backendSubdomain ?? 'dr-backend';
     const siteSubdomain = props.siteSubdomain ?? 'dr-site';
     const frontendSubdomain = props.frontendSubdomain ?? 'dr';
@@ -62,7 +63,7 @@ class DrEcsStack extends cdk.Stack {
     dbSecurityGroup.addIngressRule(serviceSg, ec2.Port.tcp(5432), 'Allow Fargate to Aurora');
 
     const dbCredentials = new secretsmanager.Secret(this, 'DbCredentials', {
-      secretName: `${projectSlug}/dr/aurora-credentials`,
+      secretName: `${resourcePrefix}-aurora-credentials-secret`,
       generateSecretString: {
         secretStringTemplate: JSON.stringify({ username: 'convex_admin' }),
         generateStringKey: 'password',
@@ -73,7 +74,7 @@ class DrEcsStack extends cdk.Stack {
 
     const instanceSecretHex = props.instanceSecretHex ?? randomBytes(32).toString('hex');
     const instanceSecret = new secretsmanager.Secret(this, 'InstanceSecret', {
-      secretName: `${projectSlug}/dr/convex-instance-secret`,
+      secretName: `${resourcePrefix}-convex-instance-secret`,
       secretStringValue: cdk.SecretValue.unsafePlainText(instanceSecretHex),
     });
 

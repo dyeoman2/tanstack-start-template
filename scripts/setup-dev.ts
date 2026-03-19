@@ -74,14 +74,14 @@ async function main() {
 
   if (shouldSetupStorage) {
     try {
-      execSync('pnpm run setup:storage', { stdio: 'inherit', cwd });
+      execSync('pnpm run storage:setup', { stdio: 'inherit', cwd });
       console.log('✅ Storage setup complete!\n');
     } catch {
       console.log('❌ Storage setup failed. Please check the output and try again.');
       process.exit(1);
     }
   } else {
-    console.log('ℹ️  Skipping storage setup. Run `pnpm run setup:storage` any time.\n');
+    console.log('ℹ️  Skipping storage setup. Run `pnpm run storage:setup` any time.\n');
   }
 
   // Step 5: Optionally configure authenticated E2E helpers

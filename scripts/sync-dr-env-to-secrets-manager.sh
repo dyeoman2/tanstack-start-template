@@ -3,7 +3,7 @@
 set -euo pipefail
 
 PROJECT_SLUG="${AWS_DR_PROJECT_SLUG:-tanstack-start-template}"
-SECRET_NAME="${AWS_DR_ENV_SECRET_NAME:-${PROJECT_SLUG}/dr-convex-env-vars}"
+SECRET_NAME="${AWS_DR_ENV_SECRET_NAME:-${PROJECT_SLUG}-dr-convex-env-secret}"
 DEPLOYMENT_FLAG="${1:-"--prod"}"
 
 if [[ "${DEPLOYMENT_FLAG}" == "--preview-name" || "${DEPLOYMENT_FLAG}" == "--deployment-name" ]]; then
