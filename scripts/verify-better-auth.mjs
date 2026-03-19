@@ -59,6 +59,10 @@ function assertIncludes(source, pattern, description) {
   }
 }
 
+function isAuthOkPayload(payload) {
+  return payload?.status === 'ok' || payload?.ok === true;
+}
+
 export async function verifyPluginParity() {
   const [serverOptions, clientOptions, schema] = await Promise.all([
     readText('convex/betterAuth/sharedOptions.ts'),
@@ -104,8 +108,8 @@ export async function verifyAuthOk() {
     }
 
     const payload = await response.json();
-    if (!payload || payload.status !== 'ok') {
-      throw new Error('GET /api/auth/ok did not return { status: "ok" }');
+    if (!isAuthOkPayload(payload)) {
+      throw new Error('GET /api/auth/ok did not return { status: "ok" } or { ok: true }');
     }
   } finally {
     clearTimeout(timeout);

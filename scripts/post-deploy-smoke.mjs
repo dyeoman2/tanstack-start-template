@@ -49,6 +49,10 @@ function formatPayloadPreview(payload) {
   }
 }
 
+function isAuthOkPayload(payload) {
+  return payload?.status === 'ok' || payload?.ok === true;
+}
+
 async function expectJson(baseUrl, pathname, predicate, description) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'GET',
@@ -127,8 +131,8 @@ export async function runPostDeploySmokeChecks(config = getConfigFromEnv()) {
       expectJson(
         baseUrl,
         '/api/auth/ok',
-        (payload) => payload?.status === 'ok',
-        'expected { status: "ok" }',
+        isAuthOkPayload,
+        'expected { status: "ok" } or { ok: true }',
       ),
     timeoutMs,
     pollIntervalMs,

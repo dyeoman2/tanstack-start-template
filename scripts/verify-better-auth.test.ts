@@ -16,7 +16,7 @@ describe('verifyAuthOk', () => {
     process.env.BETTER_AUTH_VERIFY_URL = 'https://app.example.com';
     const fetchMock = vi.fn(
       async () =>
-        new Response(JSON.stringify({ status: 'ok' }), {
+        new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: {
             'content-type': 'application/json',
@@ -52,7 +52,7 @@ describe('verifyAuthOk', () => {
     const { verifyAuthOk } = await import('./verify-better-auth.mjs');
 
     await expect(verifyAuthOk()).rejects.toThrow(
-      'GET /api/auth/ok did not return { status: "ok" }',
+      'GET /api/auth/ok did not return { status: "ok" } or { ok: true }',
     );
   });
 });

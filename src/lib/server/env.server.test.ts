@@ -79,8 +79,7 @@ describe('Better Auth env helpers', () => {
     expect(getBetterAuthAllowedHosts()).toEqual(['127.0.0.1:3000', 'localhost:*', '127.0.0.1:*']);
     expect(getBetterAuthTrustedOrigins(new Request('http://localhost:4173/app'))).toEqual([
       'http://127.0.0.1:3000',
-      'http://localhost:*',
-      'http://127.0.0.1:*',
+      'http://localhost:3000',
       'http://localhost:4173',
     ]);
   });

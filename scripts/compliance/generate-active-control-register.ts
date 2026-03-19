@@ -301,6 +301,10 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
     'Workflow for waiting on the target deployment, running post-deploy smoke checks, and running an OWASP ZAP baseline before final release evidence is recorded.',
   ],
   [
+    'Release security validation workflow',
+    'Workflow for running production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.',
+  ],
+  [
     'Operational evidence note',
     'Control matrix documentation describing retained operational evidence available for provider review.',
   ],
@@ -2195,7 +2199,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'RA-5',
     internalControlId: 'CTRL-RA-005',
     implementationSummary:
-      'This control addresses vulnerability and security finding identification. The app ships automated inspection and malware-finding hooks for file-ingest surfaces, but hosted-service vulnerability scanning cadence, remediation tracking, and formal risk treatment still require operator processes outside this repo-backed workspace.',
+      'This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, and production deployment verification, but hosted-service remediation tracking and formal risk treatment still require provider processes outside this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -2209,13 +2213,13 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         itemId: 'scanner-program',
         label: 'Automated security scanning hooks exist',
         description:
-          'The platform should implement automated inspection or malware-finding hooks for security-relevant ingest paths.',
+          'The platform should implement automated scanning or inspection paths for security-relevant application, dependency, deployment, or ingest surfaces.',
         verificationMethod: 'Scanner implementation review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The platform has built-in file inspection and GuardDuty webhook integration for file-ingest surfaces, but that is not full hosted-service vulnerability-management evidence.',
+          'The platform has built-in file inspection plus release-time dependency, static-analysis, SBOM, and deployment-verification checks, but that is not a full hosted-service vulnerability-management program.',
           [
             seededEvidence(
               'Built-in file inspection',
@@ -2225,6 +2229,16 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'GuardDuty malware finding pipeline',
               'infra/aws-cdk/lib/malware-scan-stack.cts provisions S3 malware scanning and convex/storageWebhook.ts verifies signed findings before quarantining affected files.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Release security validation workflow',
+              'runs production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Release verification workflow',
+              'Release workflow waits for the target deployment, runs post-deploy smoke checks, and runs an OWASP ZAP baseline against the production environment.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -2255,7 +2269,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'Security findings and scan outcomes retain severity and status context in audit and monitoring records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.',
+          'Security findings and scan outcomes retain severity and status context in audit, monitoring, and release evidence records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.',
           [
             seededEvidence(
               'Organization audit severity records',
@@ -2265,6 +2279,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Security monitoring summary',
               'Administrative security posture summaries show scan status, rejection counts, quarantine counts, and related finding totals for provider review.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Release provenance record workflow',
+              'Release workflow records deployment outcome and production DAST result as retained release evidence that providers can review alongside other security findings.',
               { sufficiency: 'partial' },
             ),
           ],

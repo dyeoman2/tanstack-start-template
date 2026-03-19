@@ -71,10 +71,6 @@ function getLoopbackHostPatterns(): string[] {
   return ['localhost:*', '127.0.0.1:*'];
 }
 
-function getLoopbackOriginPatterns(): string[] {
-  return ['http://localhost:*', 'http://127.0.0.1:*'];
-}
-
 function escapeRegex(value: string): string {
   return value.replace(/[|\\{}()[\]^$+?.]/g, '\\$&');
 }
@@ -249,8 +245,13 @@ function buildBetterAuthRuntimeConfig(siteUrl: string): BetterAuthRuntimeConfig 
     for (const loopbackHostPattern of getLoopbackHostPatterns()) {
       allowedHosts.add(loopbackHostPattern);
     }
-    for (const loopbackOriginPattern of getLoopbackOriginPatterns()) {
-      configuredOrigins.add(loopbackOriginPattern);
+    // Better Auth matches Origins against this list by string equality — wildcards are invalid
+    // URLs and never match. Mirror localhost ↔ 127.0.0.1 so either dev URL works.
+    const mirror = new URL(parsedSiteUrl.href);
+    const loopHost = mirror.hostname.toLowerCase();
+    if (loopHost === '127.0.0.1' || loopHost === 'localhost') {
+      mirror.hostname = loopHost === '127.0.0.1' ? 'localhost' : '127.0.0.1';
+      configuredOrigins.add(mirror.origin);
     }
   }
 

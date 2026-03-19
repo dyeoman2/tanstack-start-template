@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-19T22:32:40.249Z",
+  "generatedAt": "2026-03-19T22:39:09.818Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -2193,14 +2193,14 @@
       "title": "Vulnerability Monitoring and Scanning",
       "familyId": "RA",
       "familyTitle": "Risk Assessment",
-      "implementationSummary": "This control addresses vulnerability and security finding identification. The app ships automated inspection and malware-finding hooks for file-ingest workflows, but hosted-service vulnerability scanning cadence, remediation tracking, and formal risk treatment still require provider processes outside this workspace.",
+      "implementationSummary": "This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, and production deployment verification, but hosted-service remediation tracking and formal risk treatment still require provider processes outside this workspace.",
       "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
       "priority": "p0",
       "platformChecklistItems": [
         {
           "itemId": "scanner-program",
           "label": "Automated security scanning hooks exist",
-          "description": "The platform should implement automated inspection or malware-finding hooks for security-relevant ingest paths.",
+          "description": "The platform should implement automated scanning or inspection paths for security-relevant application, dependency, deployment, or ingest surfaces.",
           "verificationMethod": "Scanner implementation review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2211,7 +2211,7 @@
           "seed": {
             "status": "in_progress",
             "owner": "Security Engineering",
-            "notes": "The platform has built-in file inspection and GuardDuty webhook integration for file-ingest workflows, but that is not full hosted-service vulnerability-management evidence.",
+            "notes": "The platform has built-in file inspection plus release-time dependency, static-analysis, SBOM, and deployment-verification checks, but that is not a full hosted-service vulnerability-management program.",
             "evidence": [
               {
                 "title": "Built-in file inspection",
@@ -2223,6 +2223,20 @@
               {
                 "title": "GuardDuty malware finding pipeline",
                 "description": "Malware-finding workflow showing S3 malware scanning, signed finding verification, and quarantine actions for affected files.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Release security validation workflow",
+                "description": "Workflow for running production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Release verification workflow",
+                "description": "Workflow for waiting on the target deployment, running post-deploy smoke checks, and running an OWASP ZAP baseline before final release evidence is recorded.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -2262,7 +2276,7 @@
           "seed": {
             "status": "in_progress",
             "owner": "Security Engineering",
-            "notes": "Security findings and scan outcomes retain severity and status context in audit and monitoring records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.",
+            "notes": "Security findings and scan outcomes retain severity and status context in audit, monitoring, and release evidence records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.",
             "evidence": [
               {
                 "title": "Organization audit severity records",
@@ -2274,6 +2288,13 @@
               {
                 "title": "Security monitoring summary",
                 "description": "Summary Administrative security posture summaries show scan status, rejection counts, quarantine counts, and related finding totals for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Release provenance record workflow",
+                "description": "Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -3946,7 +3967,7 @@
             "evidence": [
               {
                 "title": "Release security validation workflow",
-                "description": "Workflow including production dependency audit, admin audit guardrail checks, Convex boundary linting, security policy linting, Semgrep, and OSV vulnerability scanning before release preparation.",
+                "description": "Workflow for running production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

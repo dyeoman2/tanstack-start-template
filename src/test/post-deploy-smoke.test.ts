@@ -32,7 +32,7 @@ describe('runPostDeploySmokeChecks', () => {
         }),
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ status: 'ok' }), {
+        new Response(JSON.stringify({ ok: true }), {
           status: 200,
           headers: {
             'content-type': 'application/json',
@@ -134,7 +134,7 @@ describe('runPostDeploySmokeChecks', () => {
         pollIntervalMs: 1,
       }),
     ).rejects.toThrow(
-      'GET /api/auth/ok did not become ready within 20ms. Last error: /api/auth/ok failed validation: expected { status: "ok" }. Received: {"status":"warming","detail":"adapter not ready"}',
+      'GET /api/auth/ok did not become ready within 20ms. Last error: /api/auth/ok failed validation: expected { status: "ok" } or { ok: true }. Received: {"status":"warming","detail":"adapter not ready"}',
     );
   });
 });
