@@ -1594,7 +1594,6 @@ async function main() {
             'DR_TEST_APP_NAME',
             `${convexProdEnv?.APP_NAME ?? 'TanStack Start Template'} DR Test`,
           );
-          setGitHubSecret(githubRepo, 'DR_TEST_APP_URL', 'http://127.0.0.1:3000');
           setGitHubSecret(
             githubRepo,
             'DR_TEST_BETTER_AUTH_SECRET',

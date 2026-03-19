@@ -59,8 +59,8 @@ BETTER_AUTH_SECRET=${authSecret}
 # Set development environment
 NODE_ENV=development
 
-# Better Auth base URL. Loopback host allowlisting keeps alternate local ports working.
-BETTER_AUTH_URL=http://localhost:3000
+# Better Auth base URL. Use 127.0.0.1 so local browser automation shares one origin.
+BETTER_AUTH_URL=http://127.0.0.1:3000
 
 # Application name for email templates
 APP_NAME="TanStack Start Template"
@@ -73,7 +73,7 @@ APP_NAME="TanStack Start Template"
 # OPENROUTER_API_KEY=<your-openrouter-api-key>
 
 # Optional attribution headers
-# OPENROUTER_SITE_URL=http://localhost:3000
+# OPENROUTER_SITE_URL=http://127.0.0.1:3000
 # OPENROUTER_SITE_NAME="TanStack Start Template"
 
 # ==========================================
@@ -81,7 +81,7 @@ APP_NAME="TanStack Start Template"
 # ==========================================
 #
 # RESEND_API_KEY=<your-resend-api-key>          # Optional: for email functionality
-RESEND_EMAIL_SENDER=onboarding@resend.dev
+# RESEND_EMAIL_SENDER=onboarding@resend.dev     # Optional: sender shown in email flows
 
 # ==========================================
 # STORAGE

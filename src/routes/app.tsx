@@ -5,6 +5,7 @@ import { NotFound } from '~/components/NotFound';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Spinner } from '~/components/ui/spinner';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 
 export const Route = createFileRoute('/app')({
   pendingMs: 150,
@@ -21,19 +22,21 @@ function AppLayout() {
   const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup, user } =
     useAuth();
   const redirectRef = useRef(false);
-  const redirectTarget = location.href ?? '/app';
-  const isProfileRoute = location.pathname === '/app/profile';
+  const redirectTarget = normalizeAppRedirectTarget(location.pathname);
 
   useEffect(() => {
     if (isPending || redirectRef.current) {
       return;
     }
 
-    if (isAuthenticated && requiresEmailVerification && user?.email) {
+    if (isAuthenticated && (requiresEmailVerification || requiresMfaSetup)) {
       redirectRef.current = true;
       void navigate({
-        to: '/verify-email-pending',
-        search: { email: user.email, redirectTo: redirectTarget },
+        to: '/account-setup',
+        search: {
+          ...(user?.email ? { email: user.email } : {}),
+          ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+        },
         replace: true,
       }).catch(() => {
         redirectRef.current = false;
@@ -42,19 +45,7 @@ function AppLayout() {
     }
 
     if (isAuthenticated) {
-      if (requiresMfaSetup && !isProfileRoute) {
-        redirectRef.current = true;
-        void navigate({
-          to: '/app/profile',
-          search: { security: 'mfa-required' },
-          replace: true,
-        }).catch(() => {
-          redirectRef.current = false;
-        });
-        return;
-      }
-
-      if (!requiresEmailVerification && (!requiresMfaSetup || isProfileRoute)) {
+      if (!requiresEmailVerification && !requiresMfaSetup) {
         redirectRef.current = false;
       }
       return;
@@ -75,16 +66,10 @@ function AppLayout() {
     redirectTarget,
     requiresEmailVerification,
     requiresMfaSetup,
-    isProfileRoute,
     user?.email,
   ]);
 
-  if (
-    isPending ||
-    !isAuthenticated ||
-    requiresEmailVerification ||
-    (requiresMfaSetup && !isProfileRoute)
-  ) {
+  if (isPending || !isAuthenticated || requiresEmailVerification || requiresMfaSetup) {
     return <AppLayoutSkeleton />;
   }
 

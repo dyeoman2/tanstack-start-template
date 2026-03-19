@@ -18,6 +18,7 @@ import { Route as RecoverAccountRouteImport } from './routes/recover-account'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as AppRouteImport } from './routes/app'
+import { Route as AccountSetupRouteImport } from './routes/account-setup'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
@@ -92,6 +93,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/app',
   path: '/app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountSetupRoute = AccountSetupRouteImport.update({
+  id: '/account-setup',
+  path: '/account-setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -254,6 +260,7 @@ const AppOrganizationsSlugAuditRoute =
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/account-setup': typeof AccountSetupRoute
   '/app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -295,6 +302,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/account-setup': typeof AccountSetupRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
   '/recover-account': typeof RecoverAccountRoute
@@ -334,6 +342,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/account-setup': typeof AccountSetupRoute
   '/app': typeof AppRouteWithChildren
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
@@ -377,6 +386,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/account-setup'
     | '/app'
     | '/forgot-password'
     | '/login'
@@ -418,6 +428,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/account-setup'
     | '/forgot-password'
     | '/login'
     | '/recover-account'
@@ -456,6 +467,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/account-setup'
     | '/app'
     | '/forgot-password'
     | '/login'
@@ -498,6 +510,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AccountSetupRoute: typeof AccountSetupRoute
   AppRoute: typeof AppRouteWithChildren
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
@@ -581,6 +594,13 @@ declare module '@tanstack/react-router' {
       path: '/app'
       fullPath: '/app'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account-setup': {
+      id: '/account-setup'
+      path: '/account-setup'
+      fullPath: '/account-setup'
+      preLoaderRoute: typeof AccountSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -846,6 +866,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AccountSetupRoute: AccountSetupRoute,
   AppRoute: AppRouteWithChildren,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,

@@ -212,7 +212,6 @@ export function buildRequiredNetlifyDrEnvVars(
 ): Record<string, string> {
   const result: Record<string, string> = {
     APP_NAME: envVars.APP_NAME?.trim() || 'TanStack Start Template DR',
-    APP_URL: origins.frontendOrigin,
     BETTER_AUTH_SECRET: envVars.BETTER_AUTH_SECRET?.trim() || '',
     BETTER_AUTH_URL: origins.frontendOrigin,
     CONVEX_SITE_URL: origins.siteOrigin,

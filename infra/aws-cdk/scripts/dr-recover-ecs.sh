@@ -321,7 +321,6 @@ predeploy_better_auth_secret="$(get_json_value 'BETTER_AUTH_SECRET')"
 predeploy_jwks="$(get_json_value 'JWKS')"
 
 set_convex_env_if_present "APP_NAME" "${predeploy_app_name:-${APP_NAME:-TanStack Start Template DR}}"
-set_convex_env_if_present "APP_URL" "${FRONTEND_URL}"
 set_convex_env_if_present "BETTER_AUTH_URL" "${FRONTEND_URL}"
 if [[ -n "${predeploy_better_auth_secret}" ]]; then
   set_convex_env_if_present "BETTER_AUTH_SECRET" "${predeploy_better_auth_secret}"
@@ -371,7 +370,6 @@ fi
 if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
   echo "${env_json}" | jq -r 'to_entries[] | "\(.key)\t\(.value)"' | while IFS=$'\t' read -r key value; do
     case "${key}" in
-      APP_URL) value="${FRONTEND_URL}" ;;
       BETTER_AUTH_URL) value="${FRONTEND_URL}" ;;
       VITE_CONVEX_SITE_URL) value="${STACK_SITE_URL:-${SITE_URL}}" ;;
       FILE_STORAGE_BACKEND)
@@ -393,7 +391,6 @@ else
 fi
 
 if [[ -n "${FRONTEND_URL}" ]]; then
-  pnpm exec convex env set APP_URL "${FRONTEND_URL}" >/dev/null
   pnpm exec convex env set BETTER_AUTH_URL "${FRONTEND_URL}" >/dev/null
 fi
 if [[ -n "${file_storage_backend}" ]]; then

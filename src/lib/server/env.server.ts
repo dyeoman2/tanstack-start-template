@@ -33,7 +33,6 @@ function getSiteUrl(): string {
     [process.env.SITE_URL, 'SITE_URL'],
     [process.env.PUBLIC_SITE_URL, 'PUBLIC_SITE_URL'],
     [process.env.NEXT_PUBLIC_SITE_URL, 'NEXT_PUBLIC_SITE_URL'],
-    [process.env.APP_URL, 'APP_URL'],
     [process.env.URL, 'URL'],
     [process.env.DEPLOY_URL, 'DEPLOY_URL'],
     [process.env.DEPLOY_PRIME_URL, 'DEPLOY_PRIME_URL'],

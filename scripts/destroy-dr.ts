@@ -549,7 +549,6 @@ async function main() {
         'AWS_DR_BACKUP_REGION',
         'AWS_DR_BACKUP_S3_BUCKET',
         'DR_TEST_APP_NAME',
-        'DR_TEST_APP_URL',
         'DR_TEST_BETTER_AUTH_SECRET',
         'DR_TEST_BETTER_AUTH_URL',
         'DR_TEST_CONVEX_SITE_URL',

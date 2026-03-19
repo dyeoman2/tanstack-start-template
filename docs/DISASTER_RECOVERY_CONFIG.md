@@ -42,7 +42,6 @@ Required for [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-s
 Recommended for local self-hosted deploy validation inside the workflow:
 
 - `DR_TEST_APP_NAME`
-- `DR_TEST_APP_URL`
 - `DR_TEST_BETTER_AUTH_SECRET`
 - `DR_TEST_BETTER_AUTH_URL`
 - `DR_TEST_CONVEX_SITE_URL`
@@ -140,7 +139,6 @@ The recovery script replays production Convex env vars from the DR env secret, t
 At minimum, operators should expect the DR path to set or override:
 
 - `APP_NAME`
-- `APP_URL`
 - `BETTER_AUTH_URL`
 - `BETTER_AUTH_SECRET`
 - `JWKS`

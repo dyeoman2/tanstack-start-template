@@ -17,13 +17,14 @@ import {
   userRole,
 } from '~/lib/shared/better-auth-access';
 import type { getOptions } from '../../../convex/betterAuth/options';
+import { normalizeAppRedirectTarget } from './lib/account-setup-routing';
 
 export function getTwoFactorRedirectHref(currentHref: string): string {
   const currentUrl = new URL(currentHref);
   const nextUrl = new URL('/two-factor', currentUrl.origin);
-  const redirectTo = currentUrl.searchParams.get('redirectTo');
+  const redirectTo = normalizeAppRedirectTarget(currentUrl.searchParams.get('redirectTo'));
 
-  if (redirectTo) {
+  if (redirectTo !== '/app') {
     nextUrl.searchParams.set('redirectTo', redirectTo);
   }
 

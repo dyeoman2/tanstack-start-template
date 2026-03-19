@@ -143,7 +143,6 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       ),
     ).toMatchObject({
       APP_NAME: 'Demo',
-      APP_URL: 'https://dr.example.com',
       BETTER_AUTH_SECRET: 'secret',
       BETTER_AUTH_URL: 'https://dr.example.com',
       CONVEX_SITE_URL: 'https://dr-site.example.com',

@@ -11,6 +11,7 @@ import {
 import type { UserId } from '~/lib/shared/user-id';
 import { normalizeUserId } from '~/lib/shared/user-id';
 import type { UserRole } from '../types';
+import { normalizeAppRedirectTarget } from '../lib/account-setup-routing';
 import { convexAuthReactStart } from './convex-better-auth-react-start';
 
 export interface AuthenticatedUser {
@@ -38,6 +39,14 @@ function getCurrentRequest(): Request | undefined {
   }
 
   return getRequest();
+}
+
+function getNormalizedSetupRedirectTarget(request: Request | undefined) {
+  if (!request) {
+    return '/app';
+  }
+
+  return normalizeAppRedirectTarget(new URL(request.url).pathname);
 }
 
 /**
@@ -102,22 +111,20 @@ function mapProfileToAuthenticatedUser(
  * Require authentication
  */
 export async function requireAuth(): Promise<AuthResult> {
+  const request = getCurrentRequest();
   const profile = await getCurrentProfile();
   if (!profile) {
     throw redirect({ to: '/login' });
   }
 
-  if (
-    profile?.requiresEmailVerification &&
-    !profile.emailVerified &&
-    typeof profile.email === 'string' &&
-    profile.email.length > 0
-  ) {
+  if ((profile?.requiresEmailVerification && !profile.emailVerified) || profile?.requiresMfaSetup) {
     throw redirect({
-      to: '/verify-email-pending',
+      to: '/account-setup',
       search: {
-        email: profile.email,
-        redirectTo: '/app',
+        ...(typeof profile.email === 'string' && profile.email.length > 0
+          ? { email: profile.email }
+          : {}),
+        redirectTo: getNormalizedSetupRedirectTarget(request),
       },
     });
   }
@@ -134,13 +141,6 @@ export async function requireAdmin(): Promise<AuthResult> {
   const result = await requireAuth();
   if (!result.user.isSiteAdmin) {
     throw redirect({ to: '/login' });
-  }
-
-  if (result.user.requiresMfaSetup) {
-    throw redirect({
-      to: '/app/profile',
-      search: { security: 'mfa-required' },
-    });
   }
 
   return result;

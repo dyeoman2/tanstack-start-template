@@ -20,6 +20,7 @@ import { Separator } from '~/components/ui/separator';
 import { authClient } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
@@ -41,32 +42,11 @@ export const Route = createFileRoute('/login')({
   }),
 });
 
-const REDIRECT_TARGETS = [
-  '/app',
-  '/app/profile',
-  '/app/admin',
-  '/app/admin/users',
-  '/app/admin/stats',
-] as const;
-
-type RedirectTarget = (typeof REDIRECT_TARGETS)[number];
-
 const emailSchema = z
   .string()
   .trim()
   .min(1, 'Email is required')
   .email('Please enter a valid email address');
-
-function resolveRedirectTarget(value?: string | null): RedirectTarget {
-  if (!value) {
-    return '/app';
-  }
-
-  const [path] = value.split('?');
-  const match = REDIRECT_TARGETS.find((route) => route === path);
-
-  return (match ?? '/app') as RedirectTarget;
-}
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
@@ -108,9 +88,9 @@ function getGoogleSignInError(
 
 function LoginPage() {
   const { email, redirectTo, reset, verified } = Route.useSearch();
-  const { isAuthenticated, isPending } = useAuth({ fetchRole: false });
+  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup } = useAuth();
   const router = useRouter();
-  const redirectTarget = resolveRedirectTarget(redirectTo);
+  const redirectTarget = normalizeAppRedirectTarget(redirectTo);
   const [showResetSuccess] = useState(reset === 'success');
   const [showVerifySuccess] = useState(verified === 'success');
   const [emailInput, setEmailInput] = useState(email ?? '');
@@ -154,6 +134,19 @@ function LoginPage() {
   }
 
   if (isAuthenticated) {
+    if (requiresEmailVerification || requiresMfaSetup) {
+      return (
+        <Navigate
+          to="/account-setup"
+          search={{
+            ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+            ...(verified === 'success' ? { verified: 'success' } : {}),
+          }}
+          replace
+        />
+      );
+    }
+
     return <Navigate to={redirectTarget} replace />;
   }
 
@@ -196,10 +189,10 @@ function LoginPage() {
 
       if (message.toLowerCase().includes('email not verified')) {
         await router.navigate({
-          to: '/verify-email-pending',
+          to: '/account-setup',
           search: {
             email: normalizeEmail(validatedEmail.data),
-            redirectTo: redirectTarget,
+            ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
           },
           replace: true,
         });

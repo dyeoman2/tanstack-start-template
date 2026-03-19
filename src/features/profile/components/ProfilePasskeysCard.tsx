@@ -69,9 +69,14 @@ export function ProfilePasskeysCard() {
     setError(null);
 
     try {
-      await authClient.passkey.addPasskey({
+      const response = await authClient.passkey.addPasskey({
         fetchOptions: { throw: true },
       });
+
+      if (response?.error) {
+        throw response.error;
+      }
+
       await refetch?.();
       showToast('Passkey added.', 'success');
     } catch (error) {

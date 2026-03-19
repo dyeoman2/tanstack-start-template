@@ -212,6 +212,7 @@ async function main() {
   // Read the BETTER_AUTH_SECRET from .env.local
   const betterAuthSecret = envContent.match(/BETTER_AUTH_SECRET=(.+)/)?.[1];
   const betterAuthUrl = readOptionalEnvValue(envContent, 'BETTER_AUTH_URL');
+  const resendEmailSender = readOptionalEnvValue(envContent, 'RESEND_EMAIL_SENDER');
   const openRouterApiKey = readOptionalEnvValue(envContent, 'OPENROUTER_API_KEY');
   const openRouterSiteUrl = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_URL');
   const openRouterSiteName = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_NAME');
@@ -235,8 +236,8 @@ async function main() {
   const envVars = [
     { name: 'BETTER_AUTH_SECRET', value: betterAuthSecret },
     ...(betterAuthUrl ? [{ name: 'BETTER_AUTH_URL', value: betterAuthUrl }] : []),
-    { name: 'RESEND_EMAIL_SENDER', value: 'onboarding@resend.dev' },
     { name: 'APP_NAME', value: 'TanStack Start Template' },
+    ...(resendEmailSender ? [{ name: 'RESEND_EMAIL_SENDER', value: resendEmailSender }] : []),
     ...(openRouterApiKey ? [{ name: 'OPENROUTER_API_KEY', value: openRouterApiKey }] : []),
     ...(openRouterSiteUrl ? [{ name: 'OPENROUTER_SITE_URL', value: openRouterSiteUrl }] : []),
     ...(openRouterSiteName ? [{ name: 'OPENROUTER_SITE_NAME', value: openRouterSiteName }] : []),

@@ -10,6 +10,10 @@ import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import {
+  getAccountSetupCallbackUrl,
+  getAccountSetupHref,
+} from '~/features/auth/lib/account-setup-routing';
 import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
 
 export const Route = createFileRoute('/register')({
@@ -98,7 +102,7 @@ function RegisterPage() {
         const callbackURL =
           typeof window === 'undefined'
             ? undefined
-            : new URL('/login?verified=success', window.location.origin).toString();
+            : getAccountSetupCallbackUrl(window.location.origin, { redirectTo });
 
         await authClient.signUp.email({
           email,
@@ -110,18 +114,36 @@ function RegisterPage() {
           },
         });
 
-        const bootstrapResult = await bootstrapSignedUpUserServerFn();
+        try {
+          const bootstrapResult = await bootstrapSignedUpUserServerFn();
 
-        setSuccessMessage(bootstrapResult.message);
-        setTimeout(() => {
-          void navigate({
-            to: '/verify-email-pending',
-            search: {
-              email,
-              redirectTo: redirectTo ?? '/app',
-            },
-          });
-        }, 1200);
+          setSuccessMessage(bootstrapResult.message);
+          setTimeout(() => {
+            if (typeof window === 'undefined') {
+              return;
+            }
+
+            window.location.assign(
+              getAccountSetupHref({
+                email,
+                redirectTo,
+              }),
+            );
+          }, 1200);
+        } catch {
+          setError(
+            'Your account may have been created, but setup did not finish cleanly. Sign in with this email to resume account setup.',
+          );
+          setTimeout(() => {
+            void navigate({
+              to: '/login',
+              search: {
+                email,
+                ...(redirectTo ? { redirectTo } : {}),
+              },
+            });
+          }, 1600);
+        }
       } catch (error: unknown) {
         if (
           (error instanceof Error && error.message.toLowerCase().includes('rate limit')) ||
@@ -169,6 +191,10 @@ function RegisterPage() {
           <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
             Create your account
           </h2>
+          <p className="mt-2 text-center text-sm text-muted-foreground">
+            After signup, you&apos;ll verify your email and add a passkey or authenticator before
+            entering the app.
+          </p>
         </div>
         <ClientOnly
           fallback={

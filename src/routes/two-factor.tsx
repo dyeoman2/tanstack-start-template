@@ -13,6 +13,7 @@ import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 
 export const Route = createFileRoute('/two-factor')({
   staticData: true,
@@ -76,6 +77,7 @@ function TwoFactorPage() {
   const [qrCodeFailed, setQrCodeFailed] = useState(false);
   const [showManualSetupKey, setShowManualSetupKey] = useState(false);
   const [inlineError, setInlineError] = useState<string | null>(null);
+  const redirectTarget = normalizeAppRedirectTarget(redirectTo);
 
   const setupKey = useMemo(() => getManualEntryCode(totpURI), [totpURI]);
   const formattedSetupKey = useMemo(() => (setupKey ? formatSetupKey(setupKey) : null), [setupKey]);
@@ -143,7 +145,16 @@ function TwoFactorPage() {
       showToast(totpURI ? 'Two-factor authentication enabled.' : 'Code verified.', 'success');
       await router.invalidate();
       window.setTimeout(() => {
-        void router.navigate({ to: redirectTo || '/app', replace: true });
+        if (totpURI) {
+          void router.navigate({
+            to: '/account-setup',
+            search: redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {},
+            replace: true,
+          });
+          return;
+        }
+
+        void router.navigate({ to: redirectTarget, replace: true });
       }, 900);
     } catch (error) {
       const message = getBetterAuthUserFacingMessage(error, {
@@ -260,7 +271,7 @@ function TwoFactorPage() {
                 <Link
                   to="/recover-account"
                   search={{
-                    ...(redirectTo ? { redirectTo } : {}),
+                    ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
                     ...(totpURI ? { totpURI } : {}),
                   }}
                   className="text-sm font-medium text-muted-foreground underline underline-offset-4 hover:text-foreground"
@@ -312,10 +323,11 @@ function TwoFactorPage() {
 
           <div className="text-center">
             <Link
-              to="/app/profile"
+              to={totpURI ? '/account-setup' : '/app/profile'}
+              search={totpURI && redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}}
               className="text-sm font-medium underline underline-offset-4 hover:text-muted-foreground"
             >
-              Back to profile
+              {totpURI ? 'Back to account setup' : 'Back to profile'}
             </Link>
           </div>
         </CardContent>

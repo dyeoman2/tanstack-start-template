@@ -93,7 +93,7 @@ describe('auth-guards', () => {
     expect(redirectMock).toHaveBeenCalledWith({ to: '/login' });
   });
 
-  it('redirects site admins without MFA to the profile security screen', async () => {
+  it('redirects site admins without MFA to account setup', async () => {
     fetchAuthQueryMock.mockResolvedValue({
       id: 'user_123',
       email: 'admin@example.com',
@@ -104,14 +104,15 @@ describe('auth-guards', () => {
 
     await expect(requireAdmin()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({
-      to: '/app/profile',
+      to: '/account-setup',
       search: {
-        security: 'mfa-required',
+        email: 'admin@example.com',
+        redirectTo: '/app',
       },
     });
   });
 
-  it('redirects newly unverified users to the verification pending route', async () => {
+  it('redirects newly unverified users to account setup', async () => {
     fetchAuthQueryMock.mockResolvedValue({
       id: 'user_123',
       email: 'user@example.com',
@@ -122,7 +123,7 @@ describe('auth-guards', () => {
 
     await expect(requireAuth()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({
-      to: '/verify-email-pending',
+      to: '/account-setup',
       search: {
         email: 'user@example.com',
         redirectTo: '/app',

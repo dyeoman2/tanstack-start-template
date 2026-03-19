@@ -114,7 +114,7 @@ function ResetPasswordPage() {
 
           if (message.includes('email not verified') || message.includes('verify your email')) {
             await router.navigate({
-              to: '/verify-email-pending',
+              to: '/account-setup',
               search: {
                 email: resetEmail.email,
                 redirectTo: '/app',
