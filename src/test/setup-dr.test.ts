@@ -161,6 +161,7 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
 describe('buildDrSecretNames', () => {
   it('builds the expected secret names', () => {
     expect(buildDrSecretNames('demo')).toEqual({
+      convexAdminKey: 'demo-dr-convex-admin-key-secret',
       cloudflareDnsToken: 'demo-dr-cloudflare-dns-token-secret',
       cloudflareZoneId: 'demo-dr-cloudflare-zone-id-secret',
       convexEnv: 'demo-dr-convex-env-secret',
