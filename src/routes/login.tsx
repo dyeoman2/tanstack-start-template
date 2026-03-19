@@ -19,6 +19,7 @@ import { Input } from '~/components/ui/input';
 import { Separator } from '~/components/ui/separator';
 import { authClient } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
@@ -69,26 +70,6 @@ function resolveRedirectTarget(value?: string | null): RedirectTarget {
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
-}
-
-function getErrorMessage(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'error' in error &&
-    typeof error.error === 'object' &&
-    error.error !== null &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Unable to sign in. Please try again.';
 }
 
 function getPasswordSignInError(message: string) {
@@ -207,7 +188,11 @@ function LoginPage() {
       await router.invalidate();
       await router.navigate({ to: redirectTarget, replace: true });
     } catch (signInError) {
-      const message = getErrorMessage(signInError);
+      const message = getBetterAuthUserFacingMessage(signInError, {
+        fallback: 'Unable to sign in. Please try again.',
+        // OWASP-style: do not reveal whether the email exists vs password was wrong.
+        invalidPasswordSignInCopy: 'Incorrect email or password.',
+      });
 
       if (message.toLowerCase().includes('email not verified')) {
         await router.navigate({
@@ -250,7 +235,11 @@ function LoginPage() {
         provider: 'google',
       });
     } catch (googleError) {
-      setError(getErrorMessage(googleError));
+      setError(
+        getBetterAuthUserFacingMessage(googleError, {
+          fallback: 'Unable to start Google sign-in. Please try again.',
+        }),
+      );
     } finally {
       setIsSubmittingGoogle(false);
     }
@@ -268,7 +257,11 @@ function LoginPage() {
       await router.invalidate();
       await router.navigate({ to: redirectTarget, replace: true });
     } catch (passkeyError) {
-      setError(getErrorMessage(passkeyError));
+      setError(
+        getBetterAuthUserFacingMessage(passkeyError, {
+          fallback: 'Unable to sign in with a passkey. Please try again.',
+        }),
+      );
     } finally {
       setIsSubmittingPasskey(false);
     }

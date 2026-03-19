@@ -85,7 +85,7 @@ describe('Better Auth env helpers', () => {
     ]);
   });
 
-  it('requires BETTER_AUTH_URL for Better Auth configuration', () => {
+  it('requires BETTER_AUTH_URL for strict helpers but infers trusted origins like tooling URL', () => {
     process.env.NODE_ENV = 'production';
     delete process.env.VITEST;
     delete process.env.BETTER_AUTH_URL;
@@ -97,6 +97,8 @@ describe('Better Auth env helpers', () => {
     expect(() => getBetterAuthAllowedHosts()).toThrow(
       'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
     );
+    // Convex / Better Auth trustedOrigins must not throw: same fallback chain as getBetterAuthUrlForTooling.
+    expect(getBetterAuthTrustedOrigins()).toEqual(['https://site.example.com']);
   });
 
   it('falls back to the inferred site url for Better Auth tooling', () => {

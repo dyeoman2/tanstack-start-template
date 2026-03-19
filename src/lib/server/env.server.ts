@@ -134,11 +134,31 @@ function normalizeAllowedHost(value: string): string | null {
   return trimmed.toLowerCase();
 }
 
+/**
+ * When BETTER_AUTH_URL is set, full runtime config (preview hosts, extra origins) applies only
+ * if the resolved site URL matches that canonical origin. Otherwise build from the given URL only
+ * — avoids calling getRequiredBetterAuthUrl() (which throws) when comparing against a tooling fallback.
+ */
+function shouldUseEnvBackedBetterAuthRuntimeConfig(siteUrl: string): boolean {
+  const envUrl = process.env.BETTER_AUTH_URL?.trim();
+  if (!envUrl) {
+    return false;
+  }
+
+  try {
+    return (
+      parseBetterAuthUrl(envUrl, 'BETTER_AUTH_URL').origin ===
+      parseBetterAuthUrl(siteUrl, 'BETTER_AUTH_URL').origin
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function getBetterAuthAllowedHosts(siteUrl = getRequiredBetterAuthUrl()): string[] {
-  const runtimeConfig =
-    siteUrl === getRequiredBetterAuthUrl()
-      ? getBetterAuthRuntimeConfig()
-      : buildBetterAuthRuntimeConfig(siteUrl);
+  const runtimeConfig = shouldUseEnvBackedBetterAuthRuntimeConfig(siteUrl)
+    ? getBetterAuthRuntimeConfig()
+    : buildBetterAuthRuntimeConfig(siteUrl);
   return runtimeConfig.allowedHosts;
 }
 
@@ -177,17 +197,17 @@ export function isTrustedBetterAuthOrigin(
   return configuredOrigins.some((configuredOrigin) => configuredOrigin === origin.origin);
 }
 
-function getConfiguredBetterAuthOrigins(siteUrl = getRequiredBetterAuthUrl()): string[] {
-  const runtimeConfig =
-    siteUrl === getRequiredBetterAuthUrl()
-      ? getBetterAuthRuntimeConfig()
-      : buildBetterAuthRuntimeConfig(siteUrl);
+function getConfiguredBetterAuthOrigins(siteUrl: string): string[] {
+  const runtimeConfig = shouldUseEnvBackedBetterAuthRuntimeConfig(siteUrl)
+    ? getBetterAuthRuntimeConfig()
+    : buildBetterAuthRuntimeConfig(siteUrl);
   return runtimeConfig.configuredOrigins;
 }
 
 export function getBetterAuthTrustedOrigins(
   request?: Request,
-  siteUrl = getRequiredBetterAuthUrl(),
+  /** Align with {@link getBetterAuthUrlForTooling} so Convex/dev works before BETTER_AUTH_URL is set on the deployment. */
+  siteUrl = getBetterAuthUrlForTooling(),
 ): string[] {
   const trustedOrigins = new Set<string>(getConfiguredBetterAuthOrigins(siteUrl));
 

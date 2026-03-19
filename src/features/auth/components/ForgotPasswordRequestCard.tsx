@@ -6,6 +6,7 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
 import { Input } from '~/components/ui/input';
 import { authClient } from '~/features/auth/auth-client';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 
 function normalizeEmail(value: string) {
   return value.trim().toLowerCase();
@@ -24,26 +25,6 @@ function validateEmail(value: string) {
   }
 
   return null;
-}
-
-function getErrorMessage(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'error' in error &&
-    typeof error.error === 'object' &&
-    error.error !== null &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message;
-  }
-
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return 'Unable to request a password reset. Please try again.';
 }
 
 export function ForgotPasswordRequestCard({
@@ -78,12 +59,16 @@ export function ForgotPasswordRequestCard({
     try {
       await authClient.requestPasswordReset({
         email: normalizeEmail(emailValue),
-        ...(redirectTo ? { redirectTo } : {}),
+        redirectTo: '/reset-password',
         fetchOptions: { throw: true },
       });
       setRequestedEmail(emailValue);
     } catch (error) {
-      setError(getErrorMessage(error));
+      setError(
+        getBetterAuthUserFacingMessage(error, {
+          fallback: 'Unable to request a password reset. Please try again.',
+        }),
+      );
     } finally {
       setIsSubmitting(false);
     }

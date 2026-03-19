@@ -1,10 +1,8 @@
 import { Check, Copy } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { Children, type HTMLAttributes, memo, useCallback } from 'react';
+import { Children, type HTMLAttributes, memo, useCallback, useEffect, useState } from 'react';
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import rehypeKatex from 'rehype-katex';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeOptions } from 'rehype-sanitize';
@@ -55,6 +53,16 @@ const CODE_BLOCK_STYLE: React.CSSProperties = {
   background: 'transparent',
 };
 
+type SyntaxTheme = Record<string, React.CSSProperties>;
+
+type SyntaxHighlighterComponent = React.ComponentType<{
+  children?: React.ReactNode;
+  customStyle?: React.CSSProperties;
+  language?: string;
+  PreTag?: keyof React.JSX.IntrinsicElements | React.ComponentType<{ children?: React.ReactNode }>;
+  style?: SyntaxTheme;
+}>;
+
 const MARKDOWN_BLOCK_PATTERN = /(^|\n)(#{1,6}\s|[-*+]\s|\d+\.\s|>\s|```|~~~|\|.+\||\[[^\]]+\]:\s)/m;
 
 function normalizeParagraphBreaks(text: string) {
@@ -72,6 +80,10 @@ function CodeBlock({
 }: HTMLAttributes<HTMLElement> & { children?: React.ReactNode }) {
   const match = /language-(\w+)/.exec(className || '');
   const { resolvedTheme } = useTheme();
+  const [syntaxHighlighter, setSyntaxHighlighter] = useState<SyntaxHighlighterComponent | null>(
+    null,
+  );
+  const [themes, setThemes] = useState<{ dark: SyntaxTheme; light: SyntaxTheme } | null>(null);
   const code = Children.toArray(children)
     .map((child) => (typeof child === 'string' ? child : ''))
     .join('')
@@ -81,6 +93,34 @@ function CodeBlock({
   const handleCopy = useCallback(() => {
     void copy(code);
   }, [code, copy]);
+
+  useEffect(() => {
+    if (!match) {
+      return;
+    }
+
+    let isActive = true;
+
+    void Promise.all([
+      import('react-syntax-highlighter/dist/esm/prism.js'),
+      import('react-syntax-highlighter/dist/esm/styles/prism/one-dark.js'),
+      import('react-syntax-highlighter/dist/esm/styles/prism/one-light.js'),
+    ]).then(([highlighterModule, oneDarkModule, oneLightModule]) => {
+      if (!isActive) {
+        return;
+      }
+
+      setSyntaxHighlighter(() => highlighterModule.default as SyntaxHighlighterComponent);
+      setThemes({
+        dark: oneDarkModule.default as SyntaxTheme,
+        light: oneLightModule.default as SyntaxTheme,
+      });
+    });
+
+    return () => {
+      isActive = false;
+    };
+  }, [match]);
 
   if (!match) {
     return (
@@ -96,6 +136,23 @@ function CodeBlock({
     );
   }
 
+  const SyntaxHighlighter = syntaxHighlighter;
+  const highlightedCode =
+    SyntaxHighlighter && themes ? (
+      <SyntaxHighlighter
+        style={resolvedTheme === 'dark' ? themes.dark : themes.light}
+        language={match[1]}
+        PreTag="div"
+        customStyle={CODE_BLOCK_STYLE}
+      >
+        {code}
+      </SyntaxHighlighter>
+    ) : (
+      <pre className="m-0 overflow-x-auto p-4">
+        <code className="font-mono text-sm">{code}</code>
+      </pre>
+    );
+
   return (
     <div className="border-border relative overflow-hidden rounded-xl border">
       <Button
@@ -107,14 +164,7 @@ function CodeBlock({
       >
         {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
       </Button>
-      <SyntaxHighlighter
-        style={resolvedTheme === 'dark' ? oneDark : oneLight}
-        language={match[1]}
-        PreTag="div"
-        customStyle={CODE_BLOCK_STYLE}
-      >
-        {code}
-      </SyntaxHighlighter>
+      {highlightedCode}
     </div>
   );
 }

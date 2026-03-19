@@ -1,19 +1,42 @@
-const baseUrl = (
-  process.env.DEPLOY_SMOKE_BASE_URL ||
-  process.env.PRODUCTION_BASE_URL ||
-  process.env.BETTER_AUTH_VERIFY_URL ||
-  ''
-)
-  .trim()
-  .replace(/\/$/, '');
+import { pathToFileURL } from 'node:url';
 
-if (!baseUrl) {
-  throw new Error(
-    'DEPLOY_SMOKE_BASE_URL or PRODUCTION_BASE_URL must be set for post-deploy smoke checks.',
-  );
+function getBaseUrlFromEnv(env = process.env) {
+  return (env.DEPLOY_SMOKE_BASE_URL || env.PRODUCTION_BASE_URL || env.BETTER_AUTH_VERIFY_URL || '')
+    .trim()
+    .replace(/\/$/, '');
 }
 
-async function expectJson(pathname, predicate, description) {
+function getConfigFromEnv(env = process.env) {
+  const baseUrl = getBaseUrlFromEnv(env);
+  const timeoutMs = Number.parseInt(env.DEPLOY_SMOKE_TIMEOUT_MS ?? '120000', 10);
+  const pollIntervalMs = Number.parseInt(env.DEPLOY_SMOKE_POLL_INTERVAL_MS ?? '5000', 10);
+
+  if (!baseUrl) {
+    throw new Error(
+      'DEPLOY_SMOKE_BASE_URL or PRODUCTION_BASE_URL must be set for post-deploy smoke checks.',
+    );
+  }
+
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error('DEPLOY_SMOKE_TIMEOUT_MS must be a positive integer');
+  }
+
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    throw new Error('DEPLOY_SMOKE_POLL_INTERVAL_MS must be a positive integer');
+  }
+
+  return {
+    baseUrl,
+    timeoutMs,
+    pollIntervalMs,
+  };
+}
+
+async function sleep(ms) {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function expectJson(baseUrl, pathname, predicate, description) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'GET',
     headers: {
@@ -31,7 +54,7 @@ async function expectJson(pathname, predicate, description) {
   }
 }
 
-async function expectHtml(pathname) {
+async function expectHtml(baseUrl, pathname) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'GET',
     headers: {
@@ -49,19 +72,68 @@ async function expectHtml(pathname) {
   }
 }
 
-async function main() {
-  await expectHtml('/');
-  await expectJson(
-    '/api/auth/ok',
-    (payload) => payload?.status === 'ok',
-    'expected { status: "ok" }',
+async function waitForCheck(label, check, timeoutMs, pollIntervalMs) {
+  const startedAt = Date.now();
+  let lastError = null;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      await check();
+      console.log(`${label} passed`);
+      return;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+      const elapsedMs = Date.now() - startedAt;
+      const remainingMs = Math.max(timeoutMs - elapsedMs, 0);
+      console.log(
+        `${label} not ready yet: ${lastError.message} (${Math.ceil(remainingMs / 1000)}s remaining)`,
+      );
+
+      if (remainingMs <= 0) {
+        break;
+      }
+
+      await sleep(Math.min(pollIntervalMs, remainingMs));
+    }
+  }
+
+  throw new Error(
+    `${label} did not become ready within ${timeoutMs}ms. Last error: ${lastError?.message ?? 'Unknown error'}`,
   );
-  await expectJson(
-    '/api/health',
-    (payload) => payload?.status === 'healthy',
-    'expected { status: "healthy" }',
+}
+
+export async function runPostDeploySmokeChecks(config = getConfigFromEnv()) {
+  const { baseUrl, timeoutMs, pollIntervalMs } = config;
+
+  await waitForCheck('GET /', () => expectHtml(baseUrl, '/'), timeoutMs, pollIntervalMs);
+  await waitForCheck(
+    'GET /api/auth/ok',
+    () =>
+      expectJson(
+        baseUrl,
+        '/api/auth/ok',
+        (payload) => payload?.status === 'ok',
+        'expected { status: "ok" }',
+      ),
+    timeoutMs,
+    pollIntervalMs,
   );
+  await waitForCheck(
+    'GET /api/health',
+    () =>
+      expectJson(
+        baseUrl,
+        '/api/health',
+        (payload) => payload?.status === 'healthy',
+        'expected { status: "healthy" }',
+      ),
+    timeoutMs,
+    pollIntervalMs,
+  );
+
   console.log(`Post-deploy smoke checks passed for ${baseUrl}`);
 }
 
-await main();
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  await runPostDeploySmokeChecks();
+}

@@ -312,7 +312,8 @@ export function createSharedBetterAuthOptions(
     database: convexAdapter({} as never, {} as never),
     ...(includeRuntimeEnvConfig
       ? {
-          trustedOrigins: (request?: Request) => getBetterAuthTrustedOrigins(request),
+          trustedOrigins: (request?: Request) =>
+            getBetterAuthTrustedOrigins(request, betterAuthUrl),
           rateLimit: {
             enabled: !disableRateLimit,
             window: DEFAULT_RATE_LIMIT_WINDOW_SECONDS,

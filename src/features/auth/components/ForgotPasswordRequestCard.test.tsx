@@ -23,15 +23,10 @@ describe('ForgotPasswordRequestCard', () => {
     requestPasswordResetMock.mockResolvedValue({ success: true });
   });
 
-  it('submits a password reset request with the prefilled email and redirect target', async () => {
+  it('submits a password reset with /reset-password callback regardless of post-login redirect prop', async () => {
     const user = userEvent.setup();
 
-    render(
-      <ForgotPasswordRequestCard
-        email="doctor@example.com"
-        redirectTo="/reset-password?from=forgot-password"
-      />,
-    );
+    render(<ForgotPasswordRequestCard email="doctor@example.com" redirectTo="/app" />);
 
     expect(screen.getByLabelText('Email')).toHaveValue('doctor@example.com');
 
@@ -40,7 +35,7 @@ describe('ForgotPasswordRequestCard', () => {
     await waitFor(() => {
       expect(requestPasswordResetMock).toHaveBeenCalledWith({
         email: 'doctor@example.com',
-        redirectTo: '/reset-password?from=forgot-password',
+        redirectTo: '/reset-password',
         fetchOptions: { throw: true },
       });
     });

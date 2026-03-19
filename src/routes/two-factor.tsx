@@ -12,6 +12,7 @@ import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 
 export const Route = createFileRoute('/two-factor')({
   staticData: true,
@@ -23,26 +24,6 @@ export const Route = createFileRoute('/two-factor')({
     totpURI: z.string().optional(),
   }),
 });
-
-function getErrorMessage(error: unknown) {
-  if (
-    typeof error === 'object' &&
-    error !== null &&
-    'error' in error &&
-    typeof error.error === 'object' &&
-    error.error !== null &&
-    'message' in error.error &&
-    typeof error.error.message === 'string'
-  ) {
-    return error.error.message;
-  }
-
-  if (error instanceof Error) {
-    return error.message;
-  }
-
-  return 'Unable to verify code. Please try again.';
-}
 
 function getManualEntryCode(totpUri?: string) {
   if (!totpUri) {
@@ -165,7 +146,10 @@ function TwoFactorPage() {
         void router.navigate({ to: redirectTo || '/app', replace: true });
       }, 900);
     } catch (error) {
-      const message = getErrorMessage(error);
+      const message = getBetterAuthUserFacingMessage(error, {
+        fallback: 'Unable to verify code. Please try again.',
+        invalidOtpCopy: 'That code is not valid. Try again.',
+      });
       setInlineError(message);
       showToast(message, 'error');
       setCode('');
