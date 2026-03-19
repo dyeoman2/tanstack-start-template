@@ -75,6 +75,13 @@ pnpm run storage:deploy:dev
 pnpm run storage:deploy:prod
 ```
 
+Destroy:
+
+```bash
+pnpm run storage:destroy:dev
+pnpm run storage:destroy:prod
+```
+
 ### DR backup
 
 Preview:
@@ -87,6 +94,12 @@ Deploy:
 
 ```bash
 pnpm run dr:backup:deploy
+```
+
+Destroy:
+
+```bash
+pnpm run dr:backup:destroy
 ```
 
 ### DR ECS
@@ -105,6 +118,12 @@ Deploy:
 pnpm run dr:ecs:deploy
 ```
 
+Destroy:
+
+```bash
+pnpm run dr:ecs:destroy
+```
+
 ### All DR stacks
 
 Preview:
@@ -117,6 +136,12 @@ Deploy:
 
 ```bash
 pnpm run dr:deploy
+```
+
+Destroy:
+
+```bash
+pnpm run dr:destroy
 ```
 
 ## Deploy-Time Environment Variables
@@ -190,11 +215,12 @@ Optional runtime tuning:
 
 The recovery script expects these AWS Secrets Manager entries by default:
 
-- `tanstack-start-template/dr-convex-env-vars`
-- `tanstack-start-template/dr-cloudflare-dns-token`
-- `tanstack-start-template/dr-cloudflare-zone-id`
-- `tanstack-start-template/dr-netlify-build-hook`
-- `tanstack-start-template/dr-netlify-frontend-cname-target`
+- `tanstack-start-template-dr-convex-admin-key-secret`
+- `tanstack-start-template-dr-convex-env-secret`
+- `tanstack-start-template-dr-cloudflare-dns-token-secret`
+- `tanstack-start-template-dr-cloudflare-zone-id-secret`
+- `tanstack-start-template-dr-netlify-build-hook-secret`
+- `tanstack-start-template-dr-netlify-frontend-cname-target-secret`
 
 See the DR docs for the full operator flow:
 

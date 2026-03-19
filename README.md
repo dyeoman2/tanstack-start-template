@@ -269,6 +269,7 @@ For guided DR setup across AWS, GitHub, Convex, and Netlify, run:
 
 ```bash
 pnpm run dr:setup
+pnpm run dr:netlify:setup
 ```
 
 For guided local setup, run:
@@ -310,6 +311,8 @@ pnpm run storage:preview:dev
 pnpm run storage:deploy:dev
 pnpm run storage:preview:prod
 pnpm run storage:deploy:prod
+pnpm run storage:destroy:dev
+pnpm run storage:destroy:prod
 ```
 
 For DR infrastructure previews and deploys, use:
@@ -317,9 +320,19 @@ For DR infrastructure previews and deploys, use:
 ```bash
 pnpm run dr:backup:preview
 pnpm run dr:backup:deploy
+pnpm run dr:backup:destroy
 pnpm run dr:ecs:preview
 pnpm run dr:ecs:deploy
+pnpm run dr:ecs:destroy
+pnpm run dr:destroy
 ```
+
+The destroy commands are intended to get you back to a clean rerunnable state:
+
+- `storage:destroy:*` deletes the storage stack and also removes the retained S3 bucket and Lambda log group
+- `dr:backup:destroy` deletes the backup stack after clearing the backup bucket and backup IAM access keys
+- `dr:ecs:destroy` deletes the DR ECS stack and then deletes any manual Aurora snapshots left behind by the snapshot removal policy
+- `dr:destroy` performs the full DR cleanup, including the DR Netlify site, DR-specific GitHub Actions secrets, DR-specific Secrets Manager secrets, and `.dr.env.local`
 
 ## 📄 License
 

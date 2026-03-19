@@ -163,6 +163,127 @@ jobs:
           docker rm -f convex-dr-test 2>/dev/null || true
           rm -rf ./convex-export-* ./convex-backup-*.zip
 
+      - name: Report backup verification to control workspace
+        id: workspace_report
+        if: always()
+        continue-on-error: true
+        run: |
+          artifact_payload=$(jq -n \
+            --arg bucket "${AWS_DR_BACKUP_S3_BUCKET}" \
+            --arg deploy_test_outcome "${{ steps.deploy_test.outcome }}" \
+            --arg event_name "${GITHUB_EVENT_NAME}" \
+            --arg export_outcome "${{ steps.export.outcome }}" \
+            --arg file_size_mb "${{ steps.export.outputs.file_size_mb }}" \
+            --arg job "convex_export_to_s3" \
+            --arg ref_name "${GITHUB_REF_NAME}" \
+            --arg restore_test_outcome "${{ steps.restore_test.outcome }}" \
+            --arg run_attempt "${GITHUB_RUN_ATTEMPT}" \
+            --arg run_id "${GITHUB_RUN_ID}" \
+            --arg run_number "${GITHUB_RUN_NUMBER}" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg s3_key "${{ steps.upload.outputs.s3_key }}" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg upload_outcome "${{ steps.upload.outcome }}" \
+            --arg zip_file "${{ steps.export.outputs.zip_file }}" \
+            '{
+              workflow: {
+                eventName: $event_name,
+                job: $job,
+                refName: $ref_name,
+                runAttempt: $run_attempt,
+                runId: $run_id,
+                runNumber: $run_number,
+                runUrl: $run_url,
+                sha: $sha
+              },
+              backup: {
+                bucket: if $bucket == "" then null else $bucket end,
+                fileSizeMb: if $file_size_mb == "" then null else $file_size_mb end,
+                s3Key: if $s3_key == "" then null else $s3_key end,
+                zipFile: if $zip_file == "" then null else $zip_file end
+              },
+              results: {
+                deployTest: $deploy_test_outcome,
+                export: $export_outcome,
+                restoreTest: $restore_test_outcome,
+                upload: $upload_outcome
+              }
+            }')
+
+          failure_reason=$(jq -rn \
+            --arg deploy_test_outcome "${{ steps.deploy_test.outcome }}" \
+            --arg export_outcome "${{ steps.export.outcome }}" \
+            --arg restore_test_outcome "${{ steps.restore_test.outcome }}" \
+            --arg upload_outcome "${{ steps.upload.outcome }}" \
+            '[
+              ["export", $export_outcome],
+              ["upload", $upload_outcome],
+              ["deployTest", $deploy_test_outcome],
+              ["restoreTest", $restore_test_outcome]
+            ]
+            | map(select(.[1] != "success") | "\(.[0]):\(.[1])")
+            | if length == 0 then "" else join(", ") end')
+
+          if [[ -n "${failure_reason}" ]]; then
+            status="failure"
+            summary="GitHub Actions backup verification failed for run ${GITHUB_RUN_NUMBER}: ${failure_reason}."
+          else
+            status="success"
+            summary="GitHub Actions backup and restore verification succeeded for run ${GITHUB_RUN_NUMBER}."
+          fi
+
+          evidence_summary=$(jq -rn \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg event_name "${GITHUB_EVENT_NAME}" \
+            --arg s3_key "${{ steps.upload.outputs.s3_key }}" \
+            --arg file_size_mb "${{ steps.export.outputs.file_size_mb }}" \
+            --arg export_outcome "${{ steps.export.outcome }}" \
+            --arg upload_outcome "${{ steps.upload.outcome }}" \
+            --arg deploy_test_outcome "${{ steps.deploy_test.outcome }}" \
+            --arg restore_test_outcome "${{ steps.restore_test.outcome }}" \
+            '[
+              "GitHub Actions run: \($run_url)",
+              "Event: \($event_name)",
+              "Backup object: \(if $s3_key == \"\" then \"not_uploaded\" else $s3_key end)",
+              "Archive size: \(if $file_size_mb == \"\" then \"unknown\" else ($file_size_mb + \" MB\") end)",
+              "Step outcomes: export=\($export_outcome), upload=\($upload_outcome), deployTest=\($deploy_test_outcome), restoreTest=\($restore_test_outcome)"
+            ] | join("\n")')
+
+          drill_id="github-actions-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          convex_args=$(jq -n \
+            --arg artifact_content_json "${artifact_payload}" \
+            --arg checked_at "$(date +%s%3N)" \
+            --arg drill_id "${drill_id}" \
+            --arg evidence_summary "${evidence_summary}" \
+            --arg failure_reason "${failure_reason}" \
+            --arg s3_key "${{ steps.upload.outputs.s3_key }}" \
+            --arg zip_file "${{ steps.export.outputs.zip_file }}" \
+            --arg status "${status}" \
+            --arg summary "${summary}" \
+            '{
+              artifactContentJson: $artifact_content_json,
+              checkedAt: ($checked_at | tonumber),
+              drillId: $drill_id,
+              drillType: "restore_verification",
+              evidenceSummary: $evidence_summary,
+              failureReason: if $failure_reason == "" then null else $failure_reason end,
+              initiatedByKind: "system",
+              initiatedByUserId: null,
+              restoredItemCount: 0,
+              sourceDataset: if $s3_key != "" then $s3_key else if $zip_file != "" then $zip_file else ("github-actions-run-" + $drill_id) end end,
+              status: $status,
+              summary: $summary,
+              targetEnvironment: "test",
+              verificationMethod: "github-actions-convex-export-restore"
+            }')
+
+          pnpm exec convex run security:recordBackupVerification "${convex_args}" --typecheck disable
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        env:
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
       - name: Write job summary
         if: always()
         run: |
@@ -181,6 +302,7 @@ jobs:
             echo "Upload status: **${{ steps.upload.outcome }}**"
             echo "Restore test: **${{ steps.restore_test.outcome }}**"
             echo "Deploy test: **${{ steps.deploy_test.outcome }}**"
+            echo "Workspace report: **${{ steps.workspace_report.outputs.status || 'skipped' }}**"
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}

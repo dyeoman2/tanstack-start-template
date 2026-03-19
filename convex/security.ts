@@ -660,6 +660,9 @@ function getActorDisplayName(
   if (!authUserId) {
     return null;
   }
+  if (authUserId.startsWith('system:')) {
+    return 'System automation';
+  }
   return actorDisplayById.get(authUserId) ?? 'Unknown';
 }
 
@@ -1763,6 +1766,56 @@ export const addSecurityControlEvidenceLink = mutation({
       itemId: args.itemId,
       lifecycleStatus: 'active',
       organizationId: currentUser.activeOrganizationId ?? undefined,
+      reviewStatus: 'pending',
+    });
+    return evidenceId;
+  },
+});
+
+export const createSecurityControlEvidenceLinkInternal = internalMutation({
+  args: {
+    description: v.optional(v.string()),
+    evidenceDate: v.number(),
+    internalControlId: v.string(),
+    itemId: v.string(),
+    organizationId: v.optional(v.string()),
+    reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
+    source: evidenceSourceValidator,
+    sufficiency: evidenceSufficiencyValidator,
+    title: v.string(),
+    uploadedByUserId: v.string(),
+    url: v.string(),
+  },
+  returns: v.id('securityControlEvidence'),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const evidenceId = await ctx.db.insert('securityControlEvidence', {
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      evidenceType: 'link',
+      title: args.title.trim(),
+      description: args.description?.trim() || undefined,
+      url: args.url.trim(),
+      evidenceDate: args.evidenceDate,
+      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
+      source: args.source,
+      sufficiency: args.sufficiency,
+      uploadedByUserId: args.uploadedByUserId,
+      reviewStatus: 'pending',
+      lifecycleStatus: 'active',
+      createdAt: now,
+      updatedAt: now,
+    });
+    await recordSecurityControlEvidenceAuditEvent(ctx, {
+      actorUserId: args.uploadedByUserId,
+      eventType: 'security_control_evidence_created',
+      evidenceId,
+      evidenceTitle: args.title.trim(),
+      evidenceType: 'link',
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+      lifecycleStatus: 'active',
+      organizationId: args.organizationId,
       reviewStatus: 'pending',
     });
     return evidenceId;

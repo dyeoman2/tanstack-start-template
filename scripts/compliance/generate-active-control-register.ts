@@ -562,8 +562,14 @@ function normalizeChecklistDescription(description: string) {
     CHECKLIST_DESCRIPTION_REWRITES.get(description) ??
     normalizeBuyerFacingText(description)
       .replaceAll('supported surfaces', 'supported interfaces')
-      .replaceAll('support provider awareness or orientation material', 'support provider awareness and orientation material')
-      .replaceAll('surface the effective baseline posture', 'present the effective baseline posture')
+      .replaceAll(
+        'support provider awareness or orientation material',
+        'support provider awareness and orientation material',
+      )
+      .replaceAll(
+        'surface the effective baseline posture',
+        'present the effective baseline posture',
+      )
   );
 }
 
@@ -628,11 +634,23 @@ function normalizeEvidencePredicate(predicate: string) {
     .replace(/^exports\b/i, 'supporting export of')
     .replace(/^creates\b/i, 'creating')
     .replace(/^signs\b/i, 'signing')
-    .replace('mark evidence reports reviewed or needs follow-up', 'mark evidence reports as reviewed or requiring follow-up')
-    .replace('mark evidence reports reviewed or needing follow-up', 'mark evidence reports as reviewed or requiring follow-up')
+    .replace(
+      'mark evidence reports reviewed or needs follow-up',
+      'mark evidence reports as reviewed or requiring follow-up',
+    )
+    .replace(
+      'mark evidence reports reviewed or needing follow-up',
+      'mark evidence reports as reviewed or requiring follow-up',
+    )
     .replace('review state', 'review status')
-    .replace('showing a Restore Drill summary card showing', 'showing the Restore Drill summary card with')
-    .replace('showing the control workspace and evidence review interfaces for security administrators', 'showing the control workspace and evidence review interface available to authorized security administrators');
+    .replace(
+      'showing a Restore Drill summary card showing',
+      'showing the Restore Drill summary card with',
+    )
+    .replace(
+      'showing the control workspace and evidence review interfaces for security administrators',
+      'showing the control workspace and evidence review interface available to authorized security administrators',
+    );
 }
 
 function evidenceArtifactNoun(title: string) {
@@ -1532,9 +1550,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The workspace does not yet include a formal provider contingency plan, approval record, or revision workflow tied to hosted-service recovery evidence.',
-          [],
+          'in_progress',
+          'The workspace includes provider disaster recovery documentation and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.',
+          [
+            seededEvidence(
+              'Disaster recovery overview',
+              'Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Disaster recovery runbook',
+              'Runbook describing prerequisites, backup infrastructure, recovery steps, post-recovery checks, and known limitations for provider disaster recovery operations.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Infrastructure Operations',
         ),
       },
@@ -1641,9 +1670,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider contingency test plan, recurring schedule, or revision workflow for hosted-service recovery exercises.',
-          [],
+          'in_progress',
+          'The repo-backed workspace includes a recurring backup-and-restore test workflow and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.',
+          [
+            seededEvidence(
+              'Weekly DR backup workflow',
+              'Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Disaster recovery runbook test criteria',
+              'Runbook guidance stating that the backup workflow is only successful when export, upload, deploy-test, and restore-test all pass.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Infrastructure Operations',
         ),
       },
@@ -1655,7 +1695,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
     implementationSummary:
-      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. For the hosted service, that means operator-run backup and restore capability for the production environment; this workspace currently evidences backup-verification recordkeeping, but operator backup configuration and restore-test evidence are not yet fully attached here.',
+      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated backup workflow configuration, retained backup-verification records, retained restore-test results, and retained weekly workflow run metadata showing the production export path is configured and active.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
@@ -1674,9 +1714,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['system', 'file', 'link'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The control register does not yet include provider backup configuration evidence for the hosted production environment.',
-          [],
+          'done',
+          'The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment.',
+          [
+            seededEvidence(
+              'Weekly DR backup workflow',
+              'Scheduled workflow that exports production Convex data, uploads the archive to the DR S3 bucket, verifies the uploaded artifact, and records the run results for provider review.',
+            ),
+            seededEvidence(
+              'Disaster recovery configuration guide',
+              'Configuration guide listing the GitHub Actions secrets and deployment inputs required for the provider backup workflow.',
+            ),
+            seededEvidence(
+              'Retained backup workflow run record',
+              'Stored backup verification records retain GitHub Actions run metadata, backup artifact location, step outcomes, and related evidence showing the hosted production export path is active.',
+            ),
+          ],
           'Infrastructure Operations',
         ),
       },
@@ -1689,13 +1742,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The platform includes a dedicated backup verification record path, but this workspace does not yet contain retained hosted-environment verification entries.',
+          'done',
+          'The platform retains hosted-environment backup verification entries generated by the weekly DR workflow and presents those records for provider review.',
           [
             seededEvidence(
-              'Backup verification record path',
-              'convex/schema.ts defines backupVerificationReports and convex/security.ts exposes recordBackupVerification for storing backup and restore verification outcomes.',
-              { sufficiency: 'partial' },
+              'Retained backup verification record structure',
+              'Schema and stored metadata for retained backup verification records, including drill type, verification method, target environment, restored item count, artifact content, and verification timestamp.',
+            ),
+            seededEvidence(
+              'Weekly backup verification workflow',
+              'Scheduled workflow that records backup verification results in the control workspace after export, upload, and verification steps complete.',
+            ),
+            seededEvidence(
+              'Administrative backup drill review interface',
+              'Administrative security route showing the latest backup drill status and related verification details available for provider review.',
             ),
           ],
           'Infrastructure Operations',
@@ -1710,13 +1770,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The platform has a restore-verification record shape and audit events, but hosted-environment restore drill results are not attached in this workspace yet.',
+          'done',
+          'The platform retains restore-test outcomes from the weekly DR workflow and records matching audit events for provider review.',
           [
             seededEvidence(
-              'Restore verification data model',
-              'convex/schema.ts stores restore_verification drill records and convex/security.ts records backup_restore_drill_completed and backup_restore_drill_failed audit events.',
-              { sufficiency: 'partial' },
+              'Retained restore-test records',
+              'Retained records showing restore verification outcomes, summary details, target environment, and supporting artifact content from backup recovery exercises.',
+            ),
+            seededEvidence(
+              'Restore drill audit events',
+              'Audit event inventory listing restore-drill completion and failure events recorded when recovery verification results are stored.',
+            ),
+            seededEvidence(
+              'Weekly restore verification workflow',
+              'Scheduled workflow that performs a restore test against a self-hosted Convex environment and records the outcome for provider review.',
             ),
           ],
           'Infrastructure Operations',
@@ -2110,7 +2177,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
     ],
     customerResponsibilityNotes:
-      'Customer organizations are responsible for maintaining their own incident response plans, internal escalation paths, notification obligations, and coordination procedures for customer-managed systems and workflows outside the hosted service boundary. The hosted-service artifacts tracked here are intended to support planning and coordination, not replace either party\'s incident response plan.',
+      "Customer organizations are responsible for maintaining their own incident response plans, internal escalation paths, notification obligations, and coordination procedures for customer-managed systems and workflows outside the hosted service boundary. The hosted-service artifacts tracked here are intended to support planning and coordination, not replace either party's incident response plan.",
   },
   {
     nist80053Id: 'RA-5',
@@ -2357,11 +2424,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     responsibility: 'platform' as const,
     priority: 'p1' as const,
     owner: 'Infrastructure and Platform Security',
-    hipaaCitations: [
-      '45 CFR 164.312(a)(2)(iv)',
-      '45 CFR 164.312(e)(2)(i)',
-      '45 CFR 164.312(c)(1)',
-    ],
+    hipaaCitations: ['45 CFR 164.312(a)(2)(iv)', '45 CFR 164.312(e)(2)(i)', '45 CFR 164.312(c)(1)'],
     csf20Ids: ['PR.DS-01', 'PR.DS-02'],
     soc2CriterionIds: [],
     nist80066: [],
@@ -3445,15 +3508,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments.',
+          'The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments, and the verification workflow can retain reviewable records of those checks in the control workspace.',
           [
             seededEvidence(
               'Fail-closed Better Auth env validation',
-              'src/lib/server/env.server.ts rejects invalid BETTER_AUTH_URL, preview host, and trusted-origin configuration at startup.',
+              'Runtime validation rules describing how invalid Better Auth origins, preview hosts, and trusted-origin settings are rejected before protected authentication paths start.',
             ),
             seededEvidence(
               'Explicit secure session settings',
-              'convex/betterAuth/sharedOptions.ts sets session expiry, refresh, freshness, database-backed sessions, and disables cookie cache for security-sensitive revocation behavior.',
+              'Authentication configuration describing explicit session expiry, refresh, freshness, database-backed session storage, and cookie-cache behavior for security-sensitive revocation flows.',
+            ),
+            seededEvidence(
+              'Retained Better Auth verification workflow record',
+              'Workflow record that can be retained in the control workspace for a manual Better Auth verification run, including the GitHub Actions run reference and step outcomes for build, startup, health, and verification checks.',
             ),
           ],
           'Secure Configuration',
@@ -3582,7 +3649,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'inventory-records-include-environment-and-lifecycle-context',
-        label: 'Inventory records include environment, approval, and lifecycle context where tracked',
+        label:
+          'Inventory records include environment, approval, and lifecycle context where tracked',
         description:
           'Provider inventory records should include the environment, approval context, and lifecycle state of tracked components or services where that information is available.',
         verificationMethod: 'Inventory record review',
@@ -3827,7 +3895,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
     ],
     customerResponsibilityNotes:
-      'Customer organizations are responsible for conducting their own assessments of customer-managed configurations, local integrations, and operational procedures outside the hosted service boundary. Any exported assessment artifacts should be reviewed according to the customer\'s internal governance process.',
+      "Customer organizations are responsible for conducting their own assessments of customer-managed configurations, local integrations, and operational procedures outside the hosted service boundary. Any exported assessment artifacts should be reviewed according to the customer's internal governance process.",
   },
   {
     nist80053Id: 'CA-5',
@@ -3917,7 +3985,8 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'follow-up-owners-dates-and-milestones-can-be-recorded',
-        label: 'Follow-up owners, dates, and milestone expectations can be retained with action artifacts',
+        label:
+          'Follow-up owners, dates, and milestone expectations can be retained with action artifacts',
         description:
           'The workspace should retain provider notes or attached artifacts that document ownership, target dates, and milestone expectations for follow-up actions.',
         verificationMethod: 'Evidence review and attachment workflow inspection',
@@ -4254,8 +4323,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     platformChecklistItems: [
       {
         itemId: 'provider-personnel-screening-artifacts-can-be-retained',
-        label:
-          'Provider personnel-screening artifacts can be retained in the site admin workspace',
+        label: 'Provider personnel-screening artifacts can be retained in the site admin workspace',
         description:
           'The hosted service should allow provider workforce-security artifacts to be attached and retained for later review.',
         verificationMethod: 'Evidence workspace review',

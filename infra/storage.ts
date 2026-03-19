@@ -63,7 +63,7 @@ if (stage !== 'dev' && stage !== 'prod') {
 }
 
 const isPreview = process.argv.includes('--preview');
-const projectSlug = process.env.AWS_DR_PROJECT_SLUG?.trim() || 'tanstack-start-template';
+const projectSlug = 'tanstack-start-template';
 const bucket = requireEnv('AWS_S3_FILES_BUCKET');
 const malwareWebhookSharedSecret = requireEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET');
 const convexSiteUrl = requireEnv('CONVEX_SITE_URL');
@@ -82,6 +82,7 @@ const result = spawnSync('pnpm', cdkArgs, {
   env: {
     ...process.env,
     AWS_REGION: awsRegion,
+    AWS_STORAGE_PROJECT_SLUG: projectSlug,
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || awsRegion,
     AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/guardduty-malware`,
     AWS_MALWARE_WEBHOOK_SHARED_SECRET: malwareWebhookSharedSecret,

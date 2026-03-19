@@ -40,7 +40,7 @@ function loadRepoEnvFile(filePath: string) {
   }
 }
 
-for (const fileName of ['.env', '.env.local']) {
+for (const fileName of ['.env', '.env.local', '.dr.env.local']) {
   loadRepoEnvFile(path.join(process.cwd(), fileName));
 }
 

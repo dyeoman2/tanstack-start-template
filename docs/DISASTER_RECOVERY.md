@@ -148,6 +148,10 @@ The DR site should be configured ahead of time with:
 ## Supporting Docs
 
 - Guided setup command: `pnpm run dr:setup`
+- Focused frontend-only command: `pnpm run dr:netlify:setup`
+- Full cleanup commands: `pnpm run dr:backup:destroy`, `pnpm run dr:ecs:destroy`, and `pnpm run dr:destroy`
+- `dr:setup` now persists the selected non-secret DR defaults into `.dr.env.local` so later `pnpm run dr:*` commands reuse the same bucket, hostname strategy, slug, and sizing without mixing them into `.env.local`.
+- `dr:setup` also verifies CDK bootstrap health up front and stops early if the `CDKToolkit` bootstrap bucket is missing or drifted.
 - [Disaster Recovery Runbook](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_RUNBOOK.md)
 - [Disaster Recovery Configuration](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_CONFIG.md)
 - [AWS Infra README](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/README.md)

@@ -40,12 +40,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build app
+        id: build_app
         env:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
         run: pnpm build
 
       - name: Start app server
+        id: start_app_server
         env:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
@@ -54,6 +56,7 @@ jobs:
           echo $! > /tmp/better-auth-app.pid
 
       - name: Wait for app server
+        id: wait_for_app_server
         run: |
           for i in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:3000/api/auth/ok >/dev/null; then
@@ -65,11 +68,88 @@ jobs:
           exit 1
 
       - name: Run Better Auth verification
+        id: run_better_auth_verification
         env:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
           BETTER_AUTH_VERIFY_URL: http://127.0.0.1:3000
         run: pnpm verify:better-auth
+
+      - name: Record Better Auth verification evidence
+        id: workspace_report
+        if: ${{ always() && github.event_name == 'workflow_dispatch' && github.ref_name == 'main' }}
+        continue-on-error: true
+        run: |
+          failure_reason=$(jq -rn \
+            --arg build_outcome "${{ steps.build_app.outcome || 'success' }}" \
+            --arg start_outcome "${{ steps.start_app_server.outcome || 'success' }}" \
+            --arg wait_outcome "${{ steps.wait_for_app_server.outcome || 'success' }}" \
+            --arg verify_outcome "${{ steps.run_better_auth_verification.outcome || 'success' }}" \
+            '[
+              ["build", $build_outcome],
+              ["start", $start_outcome],
+              ["wait", $wait_outcome],
+              ["verify", $verify_outcome]
+            ]
+            | map(select(.[1] != "success") | "\(.[0]):\(.[1])")
+            | if length == 0 then "" else join(", ") end')
+
+          if [[ -n "${failure_reason}" ]]; then
+            sufficiency="partial"
+          else
+            sufficiency="sufficient"
+          fi
+
+          description=$(jq -rn \
+            --arg build_outcome "${{ steps.build_app.outcome || 'success' }}" \
+            --arg event_name "${GITHUB_EVENT_NAME}" \
+            --arg failure_reason "${failure_reason}" \
+            --arg ref_name "${GITHUB_REF_NAME}" \
+            --arg run_number "${GITHUB_RUN_NUMBER}" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg sha "${GITHUB_SHA}" \
+            --arg start_outcome "${{ steps.start_app_server.outcome || 'success' }}" \
+            --arg verify_outcome "${{ steps.run_better_auth_verification.outcome || 'success' }}" \
+            --arg wait_outcome "${{ steps.wait_for_app_server.outcome || 'success' }}" \
+            '[
+              "Manual Better Auth verification workflow run: \($run_url)",
+              "Event: \($event_name)",
+              "Branch: \($ref_name)",
+              "Commit: \($sha)",
+              "Run number: \($run_number)",
+              "Step outcomes: build=\($build_outcome), start=\($start_outcome), wait=\($wait_outcome), verify=\($verify_outcome)"
+            ]
+            + (if $failure_reason == "" then [] else ["Failures: \($failure_reason)"] end)
+            | join("\n")')
+
+          convex_args=$(jq -n \
+            --arg description "${description}" \
+            --arg review_due_interval_months "12" \
+            --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            --arg sufficiency "${sufficiency}" \
+            --arg title "Better Auth verification workflow run ${GITHUB_RUN_NUMBER}" \
+            '{
+              description: $description,
+              evidenceDate: (now * 1000 | floor),
+              internalControlId: "CTRL-CM-006",
+              itemId: "fail-closed-auth-config",
+              reviewDueIntervalMonths: ($review_due_interval_months | tonumber),
+              source: "automated_system_check",
+              sufficiency: $sufficiency,
+              title: $title,
+              uploadedByUserId: "system:github-actions",
+              url: $run_url
+            }')
+
+          pnpm exec convex run security:createSecurityControlEvidenceLinkInternal "${convex_args}" --typecheck disable
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+
+      - name: Set workspace report summary
+        if: always()
+        run: |
+          echo "Workspace report: **${{ steps.workspace_report.outputs.status || 'skipped' }}**" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Print app log on failure
         if: failure()

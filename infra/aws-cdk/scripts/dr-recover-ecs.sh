@@ -2,6 +2,13 @@
 
 set -euo pipefail
 
+if [[ -f ".dr.env.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".dr.env.local"
+  set +a
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -46,34 +53,6 @@ set_convex_env_if_present() {
   fi
 }
 
-set_fallback_shell_envs() {
-  local fallback_env_vars=(
-    APP_NAME
-    APP_URL
-    BETTER_AUTH_SECRET
-    BETTER_AUTH_URL
-    CONVEX_SITE_URL
-    FILE_STORAGE_BACKEND
-    AWS_S3_FILES_BUCKET
-    AWS_FILE_SERVE_SIGNING_SECRET
-    AWS_MALWARE_WEBHOOK_SHARED_SECRET
-    OPENROUTER_API_KEY
-    OPENROUTER_SITE_NAME
-    OPENROUTER_SITE_URL
-    RESEND_API_KEY
-    RESEND_EMAIL_SENDER
-    JWKS
-    VITE_SENTRY_DSN
-  )
-
-  for key in "${fallback_env_vars[@]}"; do
-    if [[ -n "${!key:-}" ]]; then
-      pnpm exec convex env set "${key}" "${!key}" >/dev/null
-      ok "${key} set from shell env"
-    fi
-  done
-}
-
 persist_dr_env_secret() {
   if [[ -z "${env_json}" || "${env_json}" == "None" ]]; then
     return 0
@@ -82,6 +61,29 @@ persist_dr_env_secret() {
   aws secretsmanager put-secret-value \
     --secret-id "${AWS_DR_ENV_SECRET_NAME}" \
     --secret-string "${env_json}" >/dev/null
+}
+
+upsert_secret_string() {
+  local secret_id="$1"
+  local secret_value="$2"
+  local description="${3:-}"
+
+  if aws secretsmanager describe-secret --secret-id "${secret_id}" >/dev/null 2>&1; then
+    aws secretsmanager put-secret-value \
+      --secret-id "${secret_id}" \
+      --secret-string "${secret_value}" >/dev/null
+  else
+    if [[ -n "${description}" ]]; then
+      aws secretsmanager create-secret \
+        --name "${secret_id}" \
+        --description "${description}" \
+        --secret-string "${secret_value}" >/dev/null
+    else
+      aws secretsmanager create-secret \
+        --name "${secret_id}" \
+        --secret-string "${secret_value}" >/dev/null
+    fi
+  fi
 }
 
 unset CONVEX_DEPLOYMENT 2>/dev/null || true
@@ -94,6 +96,7 @@ BACKEND_SUBDOMAIN="${AWS_DR_BACKEND_SUBDOMAIN:-dr-backend}"
 SITE_SUBDOMAIN="${AWS_DR_SITE_SUBDOMAIN:-dr-site}"
 FRONTEND_SUBDOMAIN="${AWS_DR_FRONTEND_SUBDOMAIN:-dr}"
 AWS_DR_ENV_SECRET_NAME="${AWS_DR_ENV_SECRET_NAME:-${PROJECT_SLUG}-dr-convex-env-secret}"
+AWS_DR_CONVEX_ADMIN_KEY_SECRET_NAME="${AWS_DR_CONVEX_ADMIN_KEY_SECRET_NAME:-${PROJECT_SLUG}-dr-convex-admin-key-secret}"
 AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME="${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME:-${PROJECT_SLUG}-dr-cloudflare-dns-token-secret}"
 AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME="${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME:-${PROJECT_SLUG}-dr-cloudflare-zone-id-secret}"
 AWS_DR_NETLIFY_HOOK_SECRET_NAME="${AWS_DR_NETLIFY_HOOK_SECRET_NAME:-${PROJECT_SLUG}-dr-netlify-build-hook-secret}"
@@ -247,6 +250,10 @@ fi
 
 [[ -z "${admin_key}" || "${admin_key}" == "None" ]] && fail "Unable to generate self-hosted Convex admin key"
 export CONVEX_SELF_HOSTED_ADMIN_KEY="${admin_key}"
+upsert_secret_string \
+  "${AWS_DR_CONVEX_ADMIN_KEY_SECRET_NAME}" \
+  "${admin_key}" \
+  "Self-hosted Convex admin key for the DR ECS instance"
 ok "Admin key generated"
 
 log "Step 5/${TOTAL_STEPS}: Applying minimum pre-deploy env and deploying Convex functions"
@@ -266,23 +273,18 @@ set_convex_env_if_present "CONVEX_SITE_URL" "${STACK_SITE_URL:-${SITE_URL}}"
 
 if [[ -n "${predeploy_better_auth_secret}" ]]; then
   set_convex_env_if_present "BETTER_AUTH_SECRET" "${predeploy_better_auth_secret}"
-elif [[ -n "${BETTER_AUTH_SECRET:-}" ]]; then
-  set_convex_env_if_present "BETTER_AUTH_SECRET" "${BETTER_AUTH_SECRET}"
 else
-  warn "BETTER_AUTH_SECRET not found in ${AWS_DR_ENV_SECRET_NAME} or shell env"
+  warn "BETTER_AUTH_SECRET not found in ${AWS_DR_ENV_SECRET_NAME}"
 fi
 
 if [[ -n "${predeploy_jwks}" ]]; then
   set_convex_env_if_present "JWKS" "${predeploy_jwks}"
-elif [[ -n "${JWKS:-}" ]]; then
-  set_convex_env_if_present "JWKS" "${JWKS}"
 else
-  warn "JWKS not found in ${AWS_DR_ENV_SECRET_NAME} or shell env"
+  warn "JWKS not found in ${AWS_DR_ENV_SECRET_NAME}"
 fi
 
 if [[ -z "${env_json}" || "${env_json}" == "None" ]]; then
-  warn "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found before deploy; falling back to shell envs"
-  set_fallback_shell_envs
+  fail "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found before deploy. Run pnpm run dr:sync-env first."
 fi
 
 pnpm exec convex deploy
@@ -336,8 +338,7 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
   done
   ok "Runtime env vars applied from ${AWS_DR_ENV_SECRET_NAME}"
 else
-  warn "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found; applying shell-env fallback set"
-  set_fallback_shell_envs
+  fail "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found during runtime env apply. Run pnpm run dr:sync-env first."
 fi
 
 if [[ -n "${FRONTEND_URL}" ]]; then
@@ -448,6 +449,7 @@ Frontend URL: ${FRONTEND_URL}
 
 Secrets Manager inputs:
   - ${AWS_DR_ENV_SECRET_NAME}
+  - ${AWS_DR_CONVEX_ADMIN_KEY_SECRET_NAME}
   - ${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME}
   - ${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME}
   - ${AWS_DR_NETLIFY_HOOK_SECRET_NAME}

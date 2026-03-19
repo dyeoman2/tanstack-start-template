@@ -48,8 +48,9 @@ function createAwsEnv() {
 
 const app = new cdk.App();
 const awsEnv = createAwsEnv();
-const projectSlug = readTrimmedEnv('AWS_DR_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
-const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackName(projectSlug);
+const storageProjectSlug = readTrimmedEnv('AWS_STORAGE_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
+const drProjectSlug = readTrimmedEnv('AWS_DR_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
+const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackName(drProjectSlug);
 const drHostnameStrategy = readTrimmedEnv('AWS_DR_HOSTNAME_STRATEGY') || 'custom-domain';
 const storageStage = readTrimmedEnv('STORAGE_STAGE');
 if (storageStage === 'dev' || storageStage === 'prod') {
@@ -60,15 +61,16 @@ if (storageStage === 'dev' || storageStage === 'prod') {
     );
   }
 
-  new MalwareScanStack(app, buildStorageStackName(projectSlug, storageStage), config);
+  config.projectSlug = storageProjectSlug;
+  new MalwareScanStack(app, buildStorageStackName(storageProjectSlug, storageStage), config);
 }
 
-new DrBackupStack(app, buildDrBackupStackName(projectSlug), {
+new DrBackupStack(app, buildDrBackupStackName(drProjectSlug), {
   bucketName: readTrimmedEnv('AWS_DR_BACKUP_S3_BUCKET') || undefined,
   ciUserName: readTrimmedEnv('AWS_DR_BACKUP_CI_USER_NAME') || undefined,
   description: 'TanStack Start Template DR backup bucket for Convex exports',
   env: awsEnv,
-  projectSlug,
+  projectSlug: drProjectSlug,
 });
 
 const drDomain = readTrimmedEnv('AWS_DR_DOMAIN');
@@ -86,7 +88,7 @@ if (drDomain || drHostnameStrategy === 'provider-hostnames') {
     hostnameStrategy: drHostnameStrategy,
     instanceSecretHex: readTrimmedEnv('AWS_DR_INSTANCE_SECRET') || undefined,
     memoryMiB: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_MEMORY_MIB'), 10) || undefined,
-    projectSlug,
+    projectSlug: drProjectSlug,
     siteSubdomain: readTrimmedEnv('AWS_DR_SITE_SUBDOMAIN') || 'dr-site',
   });
 }

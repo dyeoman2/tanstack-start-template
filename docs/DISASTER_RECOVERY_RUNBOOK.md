@@ -18,6 +18,11 @@ pnpm run dr:setup
 
 The guided script discovers the current environment, configures the DR stacks, syncs the runtime secret from Convex production env vars, updates GitHub Actions secrets, and attempts to create or validate the dedicated Netlify DR site and build hook before falling back to manual remediation steps.
 
+It also:
+
+- persists the chosen non-secret DR defaults into `.dr.env.local` so later `pnpm run dr:*` commands reuse the same project slug, bucket, hostname strategy, and ECS sizing
+- verifies CDK bootstrap health up front and stops early if the `CDKToolkit` bootstrap bucket is missing or drifted
+
 `dr:setup` now supports two DR hostname strategies:
 
 - `provider-hostnames`
@@ -29,13 +34,38 @@ The guided script discovers the current environment, configures the DR stacks, s
   - derives `dr.*`, `dr-backend.*`, and `dr-site.*` from your domain
   - supports Cloudflare DNS cutover automation
 
+If the AWS DR stacks already exist and you only need to finish or repair the frontend failover lane, run:
+
+```bash
+pnpm run dr:netlify:setup
+```
+
+That focused command reuses the saved DR defaults from `.dr.env.local`, creates or resolves the dedicated DR Netlify site, sets the required Netlify runtime env, and updates the Netlify build-hook and frontend-hostname secrets in AWS Secrets Manager without rerunning the full backup or ECS setup flow.
+
+## Destroy and Reset
+
+To fully clean up DR and get back to a rerunnable-from-scratch state, use:
+
+```bash
+pnpm run dr:backup:destroy
+pnpm run dr:ecs:destroy
+pnpm run dr:destroy
+```
+
+Those commands remove more than the CloudFormation stacks:
+
+- `dr:backup:destroy` deletes backup IAM access keys and clears the backup bucket before deleting the backup stack
+- `dr:ecs:destroy` deletes the ECS stack and then removes manual Aurora snapshots left by the snapshot removal policy
+- `dr:destroy` also deletes the DR Netlify site, DR-specific GitHub Actions secrets, DR-specific Secrets Manager secrets, and `.dr.env.local`
+
 ## Required AWS Secrets Manager Secrets
 
-- `<project-slug>/dr-convex-env-vars`
-- `<project-slug>/dr-cloudflare-dns-token`
-- `<project-slug>/dr-cloudflare-zone-id`
-- `<project-slug>/dr-netlify-build-hook`
-- `<project-slug>/dr-netlify-frontend-cname-target`
+- `<project-slug>-dr-convex-admin-key-secret`
+- `<project-slug>-dr-convex-env-secret`
+- `<project-slug>-dr-cloudflare-dns-token-secret`
+- `<project-slug>-dr-cloudflare-zone-id-secret`
+- `<project-slug>-dr-netlify-build-hook-secret`
+- `<project-slug>-dr-netlify-frontend-cname-target-secret`
 
 `<project-slug>` defaults to `tanstack-start-template`.
 
@@ -152,7 +182,7 @@ Run recovery:
 1. Deploys the ECS DR stack unless `SKIP_CDK_DEPLOY=true`
 2. Reads CloudFormation outputs and the self-hosted instance secret
 3. Waits for ECS and ALB health
-4. Generates a self-hosted Convex admin key
+4. Generates a self-hosted Convex admin key and persists it in AWS Secrets Manager for later DR frontend wiring
 5. Sets minimum env vars and runs `pnpm exec convex deploy`
 6. Downloads the newest S3 backup and imports it
 7. Replays runtime env vars from Secrets Manager and applies DR overrides

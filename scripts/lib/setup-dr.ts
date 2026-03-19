@@ -231,13 +231,19 @@ export function buildRequiredNetlifyDrEnvVars(
   return result;
 }
 
-export function isLikelyConvexDeployKey(value: string): boolean {
+export function isLikelyConvexAdminAuthToken(value: string): boolean {
   const trimmed = value.trim();
-  return trimmed.startsWith('prod:') && trimmed.length > 'prod:'.length;
+  return (
+    (trimmed.startsWith('prod:') && trimmed.length > 'prod:'.length) ||
+    /^[A-Za-z0-9._~-]{24,}$/u.test(trimmed)
+  );
 }
+
+export const isLikelyConvexDeployKey = isLikelyConvexAdminAuthToken;
 
 export function buildDrSecretNames(projectSlug: string) {
   return {
+    convexAdminKey: `${projectSlug}-dr-convex-admin-key-secret`,
     cloudflareDnsToken: `${projectSlug}-dr-cloudflare-dns-token-secret`,
     cloudflareZoneId: `${projectSlug}-dr-cloudflare-zone-id-secret`,
     convexEnv: `${projectSlug}-dr-convex-env-secret`,

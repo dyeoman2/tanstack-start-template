@@ -45,3 +45,6 @@ src/routeTree.gen.ts
 # Convex generated files
 # convex/_generated/  # Allow generated files to be committed for CI/CD
 .vendor/
+
+
+.dr.env.local

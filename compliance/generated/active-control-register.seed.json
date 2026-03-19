@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-18T22:34:51.479Z",
+  "generatedAt": "2026-03-19T18:04:06.001Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -880,7 +880,7 @@
           "seed": {
             "status": "done",
             "owner": "Secure Configuration",
-            "notes": "The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments.",
+            "notes": "The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments, and the verification workflow can retain reviewable records of those checks in the control workspace.",
             "evidence": [
               {
                 "title": "Fail-closed Better Auth env validation",
@@ -892,6 +892,13 @@
               {
                 "title": "Explicit secure session settings",
                 "description": "Secure session settings showing session expiry, refresh cadence, freshness window, database-backed session handling, and cookie-cache protections.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Retained Better Auth verification workflow record",
+                "description": "Workflow Workflow record that can be retained in the control workspace for a manual Better Auth verification run, including the GitHub Actions run reference and step outcomes for build, startup, health, and verification checks.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1839,7 +1846,7 @@
       "title": "System Backup",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. For the hosted service, that means provider-managed backup and restore capability for the production environment; this workspace currently evidences backup-verification recordkeeping, but provider backup configuration and restore-test evidence are not yet fully attached here.",
+      "implementationSummary": "This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated backup workflow configuration, retained backup-verification records, retained restore-test results, and retained weekly workflow run metadata showing the production export path is configured and active.",
       "controlStatement": "Conduct backups of user-level information contained in {{ insert: param, cp-09_odp.01 }} {{ insert: param, cp-09_odp.02 }}; Conduct backups of system-level information contained in the system {{ insert: param, cp-09_odp.03 }}; Conduct backups of system documentation, including security- and privacy-related documentation {{ insert: param, cp-09_odp.04 }} ; and Protect the confidentiality, integrity, and availability of backup information.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1855,10 +1862,32 @@
             "link"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The control register does not yet include provider backup configuration evidence for the hosted production environment.",
-            "evidence": []
+            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment.",
+            "evidence": [
+              {
+                "title": "Weekly DR backup workflow",
+                "description": "Workflow Scheduled workflow that exports production Convex data, uploads the archive to the DR S3 bucket, verifies the uploaded artifact, and records the run results for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery configuration guide",
+                "description": "Disaster recovery configuration guide Configuration guide listing the GitHub Actions secrets and deployment inputs required for the provider backup workflow.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Retained backup workflow run record",
+                "description": "Workflow Stored backup verification records retain GitHub Actions run metadata, backup artifact location, step outcomes, and related evidence showing the hosted production export path is active.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         },
         {
@@ -1874,15 +1903,29 @@
             "system"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The platform includes a dedicated backup verification record path, but this workspace does not yet contain retained hosted-environment verification entries.",
+            "notes": "The platform retains hosted-environment backup verification entries generated by the weekly DR workflow and presents those records for provider review.",
             "evidence": [
               {
-                "title": "Backup verification record path",
-                "description": "Backup verification record workflow storing backup and restore verification outcomes for later provider review.",
+                "title": "Retained backup verification record structure",
+                "description": "Schema Schema and stored metadata for retained backup verification records, including drill type, verification method, target environment, restored item count, artifact content, and verification timestamp.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Weekly backup verification workflow",
+                "description": "Workflow Scheduled workflow that records backup verification results in the control workspace after export, upload, and verification steps complete.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Administrative backup drill review interface",
+                "description": "Interface Administrative security route showing the latest backup drill status and related verification details available for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -1900,15 +1943,29 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The platform has a restore-verification record shape and audit events, but hosted-environment restore drill results are not attached in this workspace yet.",
+            "notes": "The platform retains restore-test outcomes from the weekly DR workflow and records matching audit events for provider review.",
             "evidence": [
               {
-                "title": "Restore verification data model",
-                "description": "Restore-verification schema and related audit events retained for backup drill and recovery review.",
+                "title": "Retained restore-test records",
+                "description": "Retained restore-test records Retained records showing restore verification outcomes, summary details, target environment, and supporting artifact content from backup recovery exercises.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Restore drill audit events",
+                "description": "Audit event inventory listing restore-drill completion and failure events recorded when verification results are stored.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Weekly restore verification workflow",
+                "description": "Workflow Scheduled workflow that performs a restore test against a self-hosted Convex environment and records the outcome for provider review.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4259,10 +4316,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace does not yet include a formal provider contingency plan, approval record, or revision workflow tied to hosted-service recovery evidence.",
-            "evidence": []
+            "notes": "The workspace includes provider disaster recovery documentation and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.",
+            "evidence": [
+              {
+                "title": "Disaster recovery overview",
+                "description": "Disaster recovery overview Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery runbook",
+                "description": "Disaster recovery runbook Runbook describing prerequisites, backup infrastructure, recovery steps, post-recovery checks, and known limitations for provider disaster recovery operations.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -4419,10 +4491,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace does not yet include a formal provider contingency test plan, recurring schedule, or revision workflow for hosted-service recovery exercises.",
-            "evidence": []
+            "notes": "The workspace includes a recurring backup-and-restore test workflow and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.",
+            "evidence": [
+              {
+                "title": "Weekly DR backup workflow",
+                "description": "Workflow Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery runbook test criteria",
+                "description": "Disaster recovery runbook test criteria Runbook guidance stating that the backup workflow is only successful when export, upload, deploy-test, and restore-test all pass.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
