@@ -37,6 +37,8 @@ const ROOT = process.cwd();
 const CONVEX_DIR = path.join(ROOT, 'convex');
 const FUNCTION_PATTERN =
   /export const (\w+) =\s*(query|mutation|action|internalQuery|internalMutation|internalAction|httpAction|\w+)\s*\(/g;
+const NAMED_HANDLER_PATTERN = /\bhandler\s*:\s*([A-Za-z_$][\w$]*)\b/;
+const FUNCTION_DECLARATION_PATTERN = /\b(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(/g;
 
 const PUBLIC_FUNCTION_KINDS = new Set<ConvexFunctionKind>(['query', 'mutation', 'action']);
 const INTERNAL_FUNCTION_KINDS = new Set<ConvexFunctionKind>([
@@ -174,9 +176,250 @@ export function scanConvexFunctionsFromSource(
   });
 }
 
-function scanConvexFunctions(filePath: string): ConvexFunctionRecord[] {
-  const source = fs.readFileSync(filePath, 'utf8');
-  return scanConvexFunctionsFromSource(source, path.relative(ROOT, filePath));
+function extractBraceBlock(source: string, openBraceIndex: number) {
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplateString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escapeNext = false;
+
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      }
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      }
+      continue;
+    }
+
+    if (inTemplateString) {
+      if (char === '`') {
+        inTemplateString = false;
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === '`') {
+      inTemplateString = true;
+      continue;
+    }
+
+    if (char === '{') {
+      depth += 1;
+      continue;
+    }
+
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openBraceIndex, index + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
+function findNamedFunctionBlock(source: string, functionName: string) {
+  const declarations = [...source.matchAll(FUNCTION_DECLARATION_PATTERN)];
+  for (const declaration of declarations) {
+    if ((declaration[1] ?? '') !== functionName) {
+      continue;
+    }
+
+    const declarationText = declaration[0] ?? '';
+    const declarationIndex = declaration.index ?? 0;
+    const openBraceIndex = findFunctionBodyStart(source, declarationIndex + declarationText.length);
+    if (openBraceIndex === -1) {
+      continue;
+    }
+
+    const body = extractBraceBlock(source, openBraceIndex);
+    if (!body) {
+      continue;
+    }
+
+    return source.slice(declarationIndex, openBraceIndex) + body;
+  }
+
+  return null;
+}
+
+function findFunctionBodyStart(source: string, startIndex: number) {
+  let parenDepth = 1;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplateString = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escapeNext = false;
+
+  for (let index = startIndex; index < source.length; index += 1) {
+    const char = source[index];
+    const next = source[index + 1];
+
+    if (inLineComment) {
+      if (char === '\n') {
+        inLineComment = false;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === '*' && next === '/') {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+
+    if (char === '\\') {
+      escapeNext = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'") {
+        inSingleQuote = false;
+      }
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') {
+        inDoubleQuote = false;
+      }
+      continue;
+    }
+
+    if (inTemplateString) {
+      if (char === '`') {
+        inTemplateString = false;
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === '/' && next === '*') {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === '`') {
+      inTemplateString = true;
+      continue;
+    }
+
+    if (char === '(') {
+      parenDepth += 1;
+      continue;
+    }
+
+    if (char === ')') {
+      parenDepth -= 1;
+      continue;
+    }
+
+    if (char === '{' && parenDepth === 0) {
+      return index;
+    }
+  }
+
+  return -1;
+}
+
+function appendNamedHandlerBlock(source: string, block: string) {
+  const handlerMatch = block.match(NAMED_HANDLER_PATTERN);
+  const handlerName = handlerMatch?.[1];
+  if (!handlerName) {
+    return block;
+  }
+
+  const handlerBlock = findNamedFunctionBlock(source, handlerName);
+  if (!handlerBlock) {
+    return block;
+  }
+
+  return `${block}\n${handlerBlock}`;
 }
 
 export function classifyConvexFunction(record: ConvexFunctionRecord): ClassifiedRecord {
@@ -233,7 +476,16 @@ export function classifyConvexFunction(record: ConvexFunctionRecord): Classified
 }
 
 function collectInventory() {
-  return listConvexFiles().sort().flatMap(scanConvexFunctions);
+  return listConvexFiles()
+    .sort()
+    .flatMap((filePath) => {
+      const source = fs.readFileSync(filePath, 'utf8');
+      const relativeFilePath = path.relative(ROOT, filePath);
+      return scanConvexFunctionsFromSource(source, relativeFilePath).map((record) => ({
+        ...record,
+        block: appendNamedHandlerBlock(source, record.block),
+      }));
+    });
 }
 
 function printInventory(records: ClassifiedRecord[]) {
