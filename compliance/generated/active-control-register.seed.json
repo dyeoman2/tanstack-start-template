@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-19T18:04:06.001Z",
+  "generatedAt": "2026-03-19T22:32:40.249Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -1563,7 +1563,7 @@
       "title": "Software, Firmware, and Information Integrity",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures important service data and content flows retain integrity signals that help detect mismatches, tampering, or unsafe alteration. The platform supports that objective through file signature validation, hash-linked audit records, and integrity-linked evidence and signed file-serving flows.",
+      "implementationSummary": "This control ensures important service data and content flows retain integrity signals that help detect mismatches, tampering, or unsafe alteration. The platform supports that objective through file signature validation, hash-linked audit records, signed release artifacts, and integrity-linked evidence and signed file-serving flows.",
       "controlStatement": "Employ integrity verification tools to detect unauthorized changes to the following software, firmware, and information: {{ insert: param, si-7_prm_1 }} ; and Take the following actions when unauthorized changes to the software, firmware, and information are detected: {{ insert: param, si-7_prm_2 }}.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1637,11 +1637,18 @@
           "seed": {
             "status": "done",
             "owner": "Integrity Assurance",
-            "notes": "Evidence exports preserve content and export hashes, and signed file-serving paths protect storage access flows.",
+            "notes": "Evidence exports preserve content and export hashes, signed release bundles are verified before upload, and signed file-serving paths protect storage access flows.",
             "evidence": [
               {
                 "title": "Evidence export integrity metadata",
                 "description": "Schema computes contentHash and exportHash values and stores exportIntegritySummary for evidence report exports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Signed release bundle workflow",
+                "description": "Workflow for creating and verifying a signed source bundle artifact set for later review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1704,7 +1711,7 @@
       "title": "Protection of Audit Information",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, and integrity-linked evidence report exports, while immutable retention controls beyond the application layer are not yet fully evidenced here.",
+      "implementationSummary": "This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, integrity-linked evidence report exports, and retained release provenance records with signed-artifact hashes, while immutable retention controls beyond the application layer are not yet fully evidenced here.",
       "controlStatement": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion; and Alert {{ insert: param, au-09_odp }} upon detection of unauthorized access, modification, or deletion of audit information.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1786,7 +1793,7 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification.",
+            "notes": "Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification, and release provenance records retain signed bundle hashes and deployment outcome details.",
             "evidence": [
               {
                 "title": "Evidence report integrity fields",
@@ -1800,6 +1807,13 @@
                 "description": "Export workflow generating bundles with content hashes and export hashes displayed for reviewer verification.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Release provenance record workflow",
+                "description": "Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
                 "url": null
               }
             ]
@@ -2616,7 +2630,7 @@
       "title": "Continuous Monitoring",
       "familyId": "CA",
       "familyTitle": "Assessment, Authorization, and Monitoring",
-      "implementationSummary": "This control ensures security-relevant posture signals are collected, summarized, and made available for recurring internal review. The platform supports that objective through a posture summary query, retained scan and retention records, audit-integrity telemetry, and evidence report generation from current monitoring state.",
+      "implementationSummary": "This control ensures security-relevant posture signals are collected, summarized, and made available for recurring internal review. The platform supports that objective through a posture summary query, retained scan and retention records, audit-integrity telemetry, release verification signals, and evidence report generation from current monitoring state.",
       "controlStatement": "Establishing the following system-level metrics to be monitored: {{ insert: param, ca-07_odp.01 }}; Establishing {{ insert: param, ca-07_odp.02 }} for monitoring and {{ insert: param, ca-07_odp.03 }} for assessment of control effectiveness; Ongoing control assessments in accordance with the continuous monitoring strategy; Ongoing monitoring of system and organization-defined metrics in accordance with the continuous monitoring strategy; Correlation and analysis of information generated by control assessments and monitoring; Response actions to address results of the analysis of control assessment and monitoring information; and Reporting the security and privacy status of the system to {{ insert: param, ca-7_prm_4 }} {{ insert: param, ca-7_prm_5 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -2665,7 +2679,7 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring outputs include audit integrity failures, document scan records, retention jobs, and backup verification records.",
+            "notes": "Monitoring outputs include audit integrity failures, document scan records, retention jobs, backup verification records, and release-verification results from the deployment workflow.",
             "evidence": [
               {
                 "title": "Monitoring evidence tables",
@@ -2677,6 +2691,13 @@
               {
                 "title": "Audit integrity monitoring signal",
                 "description": "Audit integrity monitoring signal counts audit_integrity_check_failed events and includes the result in the posture summary.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Release verification workflow",
+                "description": "Workflow for waiting on the target deployment, running post-deploy smoke checks, and running an OWASP ZAP baseline before final release evidence is recorded.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3855,7 +3876,7 @@
       "title": "Configuration Change Control",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through automated guardrail checks on Convex functions and reproducible compliance generation workflows, while formal approval records and provider change-management procedures are not yet fully evidenced in the register.",
+      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, and reproducible compliance generation workflows, while formal approval records and provider change-management procedures are not yet fully evidenced in this workspace.",
       "controlStatement": "Determine and document the types of changes to the system that are configuration-controlled; Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses; Document configuration change decisions associated with the system; Implement approved configuration-controlled changes to the system; Retain records of configuration-controlled changes to the system for {{ insert: param, cm-03_odp.01 }}; Monitor and review activities associated with configuration-controlled changes to the system; and Coordinate and provide oversight for configuration change control activities through {{ insert: param, cm-03_odp.02 }} that convenes {{ insert: param, cm-03_odp.03 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3870,13 +3891,20 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Change Management",
-            "notes": "The repo shows reproducible generation and validation workflows, but formal approval or change-review records are not attached in the control workspace yet.",
+            "notes": "Release workflow jobs gate deployable branches, sign source artifacts, verify deployments, and attach release provenance records to the control workspace.",
             "evidence": [
               {
-                "title": "Reproducible compliance refresh workflow",
-                "description": "Compliance refresh workflow showing regeneration of compliance artifacts from source instead of manual edits.",
+                "title": "Release workflow definition",
+                "description": "Workflow describing lint, typecheck, security, test, SAST, SBOM generation, signed source bundle, deployment, and post-deploy verification steps before release completion.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Release provenance evidence recording workflow",
+                "description": "Workflow recording release run metadata, signed source bundle hash, deployment outcome, and DAST status against the change-control item in the security workspace.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -3903,8 +3931,8 @@
         },
         {
           "itemId": "automated-guardrail-checks",
-          "label": "Automated checks validate auth guardrails, function safety, and typed contracts",
-          "description": "Automated checks should validate authorization guardrails and type-level expectations for protected backend functions.",
+          "label": "Automated checks validate code quality, dependency risk, and protected backend guardrails",
+          "description": "Automated checks should validate security-sensitive code paths, dependency risk, and required backend guardrails before deployment proceeds.",
           "verificationMethod": "Automated code-health audit review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -3914,8 +3942,15 @@
           "seed": {
             "status": "done",
             "owner": "Change Management",
-            "notes": "Automated checks scan exported Convex functions for approved auth wrappers and required return validators.",
+            "notes": "Automated release checks cover code-health guardrails, dependency risk review, static analysis, and required validation before deployment jobs can proceed.",
             "evidence": [
+              {
+                "title": "Release security validation workflow",
+                "description": "Workflow including production dependency audit, admin audit guardrail checks, Convex boundary linting, security policy linting, Semgrep, and OSV vulnerability scanning before release preparation.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
               {
                 "title": "Convex function code-health audit",
                 "description": "Convex function code-health audit classifies exported Convex functions, flags unprotected public functions, and fails when return validators are missing.",

@@ -101,4 +101,40 @@ describe('runPostDeploySmokeChecks', () => {
       }),
     ).rejects.toThrow('GET / did not become ready within 20ms. Last error: / did not return HTML');
   });
+
+  it('includes the last JSON payload when validation fails', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response('<html></html>', {
+          status: 200,
+          headers: {
+            'content-type': 'text/html; charset=utf-8',
+          },
+        }),
+      )
+      .mockImplementation(
+        async () =>
+          new Response(JSON.stringify({ status: 'warming', detail: 'adapter not ready' }), {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+            },
+          }),
+      );
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { runPostDeploySmokeChecks } = await import('../../scripts/post-deploy-smoke.mjs');
+
+    await expect(
+      runPostDeploySmokeChecks({
+        baseUrl: 'https://app.example.com',
+        timeoutMs: 20,
+        pollIntervalMs: 1,
+      }),
+    ).rejects.toThrow(
+      'GET /api/auth/ok did not become ready within 20ms. Last error: /api/auth/ok failed validation: expected { status: "ok" }. Received: {"status":"warming","detail":"adapter not ready"}',
+    );
+  });
 });

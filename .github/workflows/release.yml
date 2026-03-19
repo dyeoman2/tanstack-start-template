@@ -355,6 +355,8 @@ jobs:
       - name: Wait for Netlify deploy
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_EXPECTED_BRANCH: ${{ github.ref_name }}
+          NETLIFY_EXPECTED_GIT_SHA: ${{ github.sha }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
           NETLIFY_DEPLOY_CREATED_AFTER: ${{ steps.trigger_netlify.outputs.created_after }}
         run: node ./scripts/wait-for-netlify-deploy.mjs
@@ -424,6 +426,8 @@ jobs:
       - name: Wait for Netlify deploy
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_EXPECTED_BRANCH: ${{ github.ref_name }}
+          NETLIFY_EXPECTED_GIT_SHA: ${{ github.sha }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
           NETLIFY_DEPLOY_CREATED_AFTER: ${{ steps.trigger_netlify.outputs.created_after }}
         run: node ./scripts/wait-for-netlify-deploy.mjs

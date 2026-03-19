@@ -1,5 +1,6 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ComponentProps } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '~/components/ui/toast';
 import { TooltipProvider } from '~/components/ui/tooltip';
@@ -10,6 +11,30 @@ const useChatRateLimitMock = vi.fn();
 vi.mock('~/features/chat/hooks/useChatRateLimit', () => ({
   useChatRateLimit: (...args: unknown[]) => useChatRateLimitMock(...args),
 }));
+
+function renderChatComposer(props: Partial<ComponentProps<typeof ChatComposer>> = {}) {
+  return render(
+    <ToastProvider>
+      <TooltipProvider>
+        <ChatComposer
+          isSending={false}
+          modelOptions={[
+            {
+              id: 'openai/gpt-4o-mini',
+              label: 'GPT-4o Mini',
+              description: 'Default model',
+              access: 'public',
+              selectable: true,
+            },
+          ]}
+          onUploadAttachment={vi.fn().mockResolvedValue(null)}
+          onSend={vi.fn().mockResolvedValue(undefined)}
+          {...props}
+        />
+      </TooltipProvider>
+    </ToastProvider>,
+  );
+}
 
 describe('ChatComposer', () => {
   beforeEach(() => {
@@ -23,34 +48,25 @@ describe('ChatComposer', () => {
   it('renders searchable models in the model picker', async () => {
     const user = userEvent.setup();
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-              {
-                id: 'openai/gpt-4o-search-preview',
-                label: 'GPT-4o Search',
-                description: 'Search-enabled model',
-                access: 'public',
-                selectable: true,
-                supportsWebSearch: true,
-              },
-            ]}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      modelOptions: [
+        {
+          id: 'openai/gpt-4o-mini',
+          label: 'GPT-4o Mini',
+          description: 'Default model',
+          access: 'public',
+          selectable: true,
+        },
+        {
+          id: 'openai/gpt-4o-search-preview',
+          label: 'GPT-4o Search',
+          description: 'Search-enabled model',
+          access: 'public',
+          selectable: true,
+          supportsWebSearch: true,
+        },
+      ],
+    });
 
     await user.click(screen.getByLabelText('Choose model: GPT-4o Mini'));
 
@@ -58,27 +74,9 @@ describe('ChatComposer', () => {
   });
 
   it('renders a globe toggle for explicit web search', () => {
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-            ]}
-            onToggleWebSearch={vi.fn()}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      onToggleWebSearch: vi.fn(),
+    });
 
     expect(screen.getByLabelText('Enable web search')).toBeInTheDocument();
   });
@@ -86,37 +84,28 @@ describe('ChatComposer', () => {
   it('disables web search for models that do not support it and explains why', async () => {
     const user = userEvent.setup();
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            selectedModelId="anthropic/claude-3.5-sonnet"
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-                supportsWebSearch: true,
-              },
-              {
-                id: 'anthropic/claude-3.5-sonnet',
-                label: 'Claude 3.5 Sonnet',
-                description: 'Reasoning model',
-                access: 'public',
-                selectable: true,
-                supportsWebSearch: false,
-              },
-            ]}
-            onToggleWebSearch={vi.fn()}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      selectedModelId: 'anthropic/claude-3.5-sonnet',
+      modelOptions: [
+        {
+          id: 'openai/gpt-4o-mini',
+          label: 'GPT-4o Mini',
+          description: 'Default model',
+          access: 'public',
+          selectable: true,
+          supportsWebSearch: true,
+        },
+        {
+          id: 'anthropic/claude-3.5-sonnet',
+          label: 'Claude 3.5 Sonnet',
+          description: 'Reasoning model',
+          access: 'public',
+          selectable: true,
+          supportsWebSearch: false,
+        },
+      ],
+      onToggleWebSearch: vi.fn(),
+    });
 
     const button = screen.getByLabelText('Web search unavailable for selected model');
     expect(button).toBeDisabled();
@@ -129,27 +118,9 @@ describe('ChatComposer', () => {
   });
 
   it('focuses the message input when focusOnMount is enabled', () => {
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            focusOnMount
-            isSending={false}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-            ]}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      focusOnMount: true,
+    });
 
     expect(screen.getByLabelText('Message')).toHaveFocus();
   });
@@ -158,36 +129,19 @@ describe('ChatComposer', () => {
     const user = userEvent.setup();
     const onSubmitEdit = vi.fn().mockResolvedValue(undefined);
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-            ]}
-            editingMessage={{ messageId: 'message-1', text: 'tell me more' }}
-            onCancelEdit={vi.fn()}
-            onSubmitEdit={onSubmitEdit}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      editingMessage: { messageId: 'message-1', text: 'tell me more' },
+      onCancelEdit: vi.fn(),
+      onSubmitEdit,
+    });
 
     expect(screen.getByText('Edit')).toBeInTheDocument();
     expect(screen.getByDisplayValue('tell me more')).toBeInTheDocument();
     expect(screen.getByLabelText('Cancel edit')).toBeInTheDocument();
 
-    await user.clear(screen.getByDisplayValue('tell me more'));
-    await user.type(screen.getByLabelText('Message'), 'tell me even more');
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'tell me even more' },
+    });
     await user.click(screen.getByLabelText('Save edit'));
 
     expect(onSubmitEdit).toHaveBeenCalledWith({
@@ -201,28 +155,10 @@ describe('ChatComposer', () => {
     const user = userEvent.setup();
     const onStop = vi.fn();
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            canStop
-            onStop={onStop}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-            ]}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={vi.fn().mockResolvedValue(undefined)}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      canStop: true,
+      onStop,
+    });
 
     const stopButton = screen.getByLabelText('Stop generating');
     expect(stopButton).toBeInTheDocument();
@@ -233,8 +169,7 @@ describe('ChatComposer', () => {
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 
-  it('disables send and shows proactive rate-limit feedback before submit', async () => {
-    const user = userEvent.setup();
+  it('disables send and shows proactive rate-limit feedback before submit', () => {
     const onSend = vi.fn().mockResolvedValue(undefined);
 
     useChatRateLimitMock.mockReturnValue({
@@ -243,28 +178,13 @@ describe('ChatComposer', () => {
       estimatedInputTokens: 120,
     });
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatComposer
-            isSending={false}
-            modelOptions={[
-              {
-                id: 'openai/gpt-4o-mini',
-                label: 'GPT-4o Mini',
-                description: 'Default model',
-                access: 'public',
-                selectable: true,
-              },
-            ]}
-            onUploadAttachment={vi.fn().mockResolvedValue(null)}
-            onSend={onSend}
-          />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatComposer({
+      onSend,
+    });
 
-    await user.type(screen.getByLabelText('Message'), 'blocked prompt');
+    fireEvent.change(screen.getByLabelText('Message'), {
+      target: { value: 'blocked prompt' },
+    });
 
     expect(screen.getByText('Rate limit exceeded. Try again in 5 seconds.')).toBeInTheDocument();
     expect(screen.getByLabelText('Send message')).toBeDisabled();

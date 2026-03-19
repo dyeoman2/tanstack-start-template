@@ -289,6 +289,18 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
     'Operational evidence summary showing backup verification as part of the site admin security workspace evidence set.',
   ],
   [
+    'Signed release bundle workflow',
+    'Workflow for creating and verifying a signed source bundle artifact set for later review.',
+  ],
+  [
+    'Release provenance record workflow',
+    'Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.',
+  ],
+  [
+    'Release verification workflow',
+    'Workflow for waiting on the target deployment, running post-deploy smoke checks, and running an OWASP ZAP baseline before final release evidence is recorded.',
+  ],
+  [
     'Operational evidence note',
     'Control matrix documentation describing retained operational evidence available for provider review.',
   ],
@@ -2769,7 +2781,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AU-9',
     internalControlId: 'CTRL-AU-009',
     implementationSummary:
-      'This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, and integrity-linked evidence report exports, while immutable retention controls beyond the application layer are not yet fully evidenced here.',
+      'This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, integrity-linked evidence report exports, and retained release provenance records with signed-artifact hashes, while immutable retention controls beyond the application layer are not yet fully evidenced here.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -2839,7 +2851,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification.',
+          'Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification, and release provenance records retain signed bundle hashes and deployment outcome details.',
           [
             seededEvidence(
               'Evidence report integrity fields',
@@ -2848,6 +2860,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Integrity-linked export workflow',
               'convex/security.ts generates export bundles with content and export hashes, and src/routes/app/admin/security.tsx surfaces those values to reviewers.',
+            ),
+            seededEvidence(
+              'Release provenance record workflow',
+              'Release workflow records run URL, commit, signed source bundle hash, deployment result, and production DAST result as retained evidence linked to the change-control workflow.',
+              { sufficiency: 'partial' },
             ),
           ],
           'Audit and Logging',
@@ -3697,7 +3714,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SI-7',
     internalControlId: 'CTRL-SI-007',
     implementationSummary:
-      'This control ensures important service data and content flows retain integrity signals that help detect mismatches, tampering, or unsafe alteration. The platform supports that objective through file signature validation, hash-linked audit records, and integrity-linked evidence and signed file-serving flows.',
+      'This control ensures important service data and content flows retain integrity signals that help detect mismatches, tampering, or unsafe alteration. The platform supports that objective through file signature validation, hash-linked audit records, signed release artifacts, and integrity-linked evidence and signed file-serving flows.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -3762,11 +3779,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Evidence exports preserve content and export hashes, and signed file-serving paths protect storage access flows.',
+          'Evidence exports preserve content and export hashes, signed release bundles are verified before upload, and signed file-serving paths protect storage access flows.',
           [
             seededEvidence(
               'Evidence export integrity metadata',
               'convex/security.ts computes contentHash and exportHash values and stores exportIntegritySummary for evidence report exports.',
+            ),
+            seededEvidence(
+              'Signed release bundle workflow',
+              'Creates and verifies a signed source bundle artifact set for later review.',
             ),
             seededEvidence(
               'Signed file serve URLs',
@@ -4033,7 +4054,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CA-7',
     internalControlId: 'CTRL-CA-007',
     implementationSummary:
-      'This control ensures security-relevant posture signals are collected, summarized, and made available for recurring internal review. The platform supports that objective through a posture summary query, retained scan and retention records, audit-integrity telemetry, and evidence report generation from current monitoring state.',
+      'This control ensures security-relevant posture signals are collected, summarized, and made available for recurring internal review. The platform supports that objective through a posture summary query, retained scan and retention records, audit-integrity telemetry, release verification signals, and evidence report generation from current monitoring state.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4078,7 +4099,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Monitoring outputs include audit integrity failures, document scan records, retention jobs, and backup verification records.',
+          'Monitoring outputs include audit integrity failures, document scan records, retention jobs, backup verification records, and release-verification results from the deployment workflow.',
           [
             seededEvidence(
               'Monitoring evidence tables',
@@ -4087,6 +4108,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Audit integrity monitoring signal',
               'convex/security.ts counts audit_integrity_check_failed events and includes the result in the posture summary.',
+            ),
+            seededEvidence(
+              'Release verification workflow',
+              'waits for the target Netlify release, runs post-deploy smoke checks, and runs an OWASP ZAP baseline against the production deployment before final release evidence is recorded.',
             ),
           ],
           'Security Monitoring',
@@ -4124,7 +4149,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-3',
     internalControlId: 'CTRL-CM-003',
     implementationSummary:
-      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through automated guardrail checks on Convex functions and reproducible compliance generation workflows, while formal approval records and operator change-management procedures are not yet fully evidenced in the repo-backed register.',
+      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, and reproducible compliance generation workflows, while formal approval records and provider change-management procedures are not yet fully evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4143,12 +4168,16 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The repo shows reproducible generation and validation workflows, but formal approval or change-review records are not attached in the control workspace yet.',
+          'done',
+          'Release workflow jobs gate deployable branches, sign source artifacts, verify deployments, and attach release provenance records to the control workspace.',
           [
             seededEvidence(
-              'Reproducible compliance refresh workflow',
-              'package.json defines compliance:refresh to regenerate the compliance artifacts from source rather than hand-editing outputs.',
+              'Release workflow definition',
+              'Defines lint, typecheck, security, test, SAST, SBOM generation, signed source bundle, deployment, and post-deploy verification steps before release completion.',
+            ),
+            seededEvidence(
+              'Release provenance evidence recording workflow',
+              'Records release run metadata, signed source bundle hash, deployment outcome, and DAST status against the change-control item in the security workspace.',
               { sufficiency: 'partial' },
             ),
           ],
@@ -4172,16 +4201,21 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'automated-guardrail-checks',
-        label: 'Automated checks validate auth guardrails, function safety, and typed contracts',
+        label:
+          'Automated checks validate code quality, dependency risk, and protected backend guardrails',
         description:
-          'Automated checks should validate authorization guardrails and type-level expectations for protected backend functions.',
+          'Automated checks should validate security-sensitive code paths, dependency risk, and required backend guardrails before deployment proceeds.',
         verificationMethod: 'Automated code-health audit review',
         required: true,
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Automated checks scan exported Convex functions for approved auth wrappers and required return validators.',
+          'Automated release checks cover code-health guardrails, dependency risk review, static analysis, and required validation before deployment jobs can proceed.',
           [
+            seededEvidence(
+              'Release security validation workflow',
+              'Includes production dependency audit, admin audit guardrail checks, Convex boundary linting, security policy linting, Semgrep, and OSV vulnerability scanning before release preparation.',
+            ),
             seededEvidence(
               'Convex function code-health audit',
               'scripts/code-health-audit.ts classifies exported Convex functions, flags unprotected public functions, and fails when return validators are missing.',

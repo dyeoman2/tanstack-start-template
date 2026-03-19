@@ -1,6 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { OrganizationAuditSearchParams } from '~/features/organizations/lib/organization-management';
 import { OrganizationAuditPage } from './OrganizationAuditPage';
 
 type AuditEvent = {
@@ -77,13 +78,13 @@ function buildAuditResponse(events: AuditEvent[]) {
   };
 }
 
-const DEFAULT_SEARCH_PARAMS = {
+const DEFAULT_SEARCH_PARAMS: OrganizationAuditSearchParams = {
   page: 1,
   pageSize: 10,
-  sortBy: 'createdAt' as const,
-  sortOrder: 'desc' as const,
-  preset: 'all' as const,
-  eventType: 'all' as const,
+  sortBy: 'createdAt',
+  sortOrder: 'desc',
+  preset: 'all',
+  eventType: 'all',
   search: '',
   startDate: '',
   endDate: '',
@@ -219,6 +220,12 @@ function mockAuditQueries(
   });
 }
 
+function renderOrganizationAuditPage(
+  searchParams: OrganizationAuditSearchParams = DEFAULT_SEARCH_PARAMS,
+) {
+  return render(<OrganizationAuditPage slug="cottage-hospital" searchParams={searchParams} />);
+}
+
 describe('OrganizationAuditPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -244,14 +251,11 @@ describe('OrganizationAuditPage', () => {
   });
 
   it('navigates audit search changes through route search params', async () => {
-    const user = userEvent.setup();
+    renderOrganizationAuditPage();
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
-
-    await user.type(
-      screen.getByRole('textbox', { name: /search organization audit events/i }),
-      'invitee',
-    );
+    fireEvent.change(screen.getByRole('textbox', { name: /search organization audit events/i }), {
+      target: { value: 'invitee' },
+    });
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -281,16 +285,11 @@ describe('OrganizationAuditPage', () => {
       return element;
     }) as typeof document.createElement);
 
-    render(
-      <OrganizationAuditPage
-        slug="cottage-hospital"
-        searchParams={{
-          ...DEFAULT_SEARCH_PARAMS,
-          eventType: 'member_invited',
-          search: 'invitee',
-        }}
-      />,
-    );
+    renderOrganizationAuditPage({
+      ...DEFAULT_SEARCH_PARAMS,
+      eventType: 'member_invited',
+      search: 'invitee',
+    });
 
     await user.click(screen.getByRole('button', { name: /export csv/i }));
 
@@ -339,7 +338,7 @@ describe('OrganizationAuditPage', () => {
       },
     });
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
     expect(screen.getByText('Loading audit history...')).toBeInTheDocument();
@@ -377,9 +376,7 @@ describe('OrganizationAuditPage', () => {
       return undefined;
     });
 
-    const { rerender } = render(
-      <OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />,
-    );
+    const { rerender } = renderOrganizationAuditPage();
 
     expect(screen.getByRole('heading', { name: 'Cottage Hospital' })).toBeInTheDocument();
 
@@ -392,7 +389,7 @@ describe('OrganizationAuditPage', () => {
   });
 
   it('renders the current organization posture summary in summary view', () => {
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getByText('Domain verification')).toBeInTheDocument();
     expect(screen.getByText('Verified')).toBeInTheDocument();
@@ -428,16 +425,11 @@ describe('OrganizationAuditPage', () => {
       },
     );
 
-    render(
-      <OrganizationAuditPage
-        slug="cottage-hospital"
-        searchParams={{
-          ...DEFAULT_SEARCH_PARAMS,
-          page: 2,
-          search: 'enterprise',
-        }}
-      />,
-    );
+    renderOrganizationAuditPage({
+      ...DEFAULT_SEARCH_PARAMS,
+      page: 2,
+      search: 'enterprise',
+    });
 
     await user.click(screen.getByRole('button', { name: /enterprise auth mode/i }));
 
@@ -456,9 +448,11 @@ describe('OrganizationAuditPage', () => {
   it('applies investigation filters through route search params', async () => {
     const user = userEvent.setup();
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
-    await user.type(screen.getByLabelText(/filter audit events from date/i), '2026-03-10');
+    fireEvent.change(screen.getByLabelText(/filter audit events from date/i), {
+      target: { value: '2026-03-10' },
+    });
 
     await waitFor(() => {
       expect(navigateMock).toHaveBeenCalledWith({
@@ -532,7 +526,7 @@ describe('OrganizationAuditPage', () => {
       ],
     );
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getByRole('button', { name: 'Summary view' })).toBeInTheDocument();
     expect(screen.getAllByText('Domain verified').length).toBeGreaterThan(0);
@@ -592,7 +586,7 @@ describe('OrganizationAuditPage', () => {
       ],
     );
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getAllByText('SCIM token created').length).toBeGreaterThan(0);
     expect(screen.getAllByText('SCIM token').length).toBeGreaterThan(0);
@@ -624,7 +618,7 @@ describe('OrganizationAuditPage', () => {
       },
     ]);
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getAllByText('Invitation sent').length).toBeGreaterThan(0);
     expect(screen.getByText('owner@example.com')).toBeInTheDocument();
@@ -665,7 +659,7 @@ describe('OrganizationAuditPage', () => {
       },
     ]);
 
-    render(<OrganizationAuditPage slug="cottage-hospital" searchParams={DEFAULT_SEARCH_PARAMS} />);
+    renderOrganizationAuditPage();
 
     expect(screen.getByText('Changed: Enterprise provider, Protocol')).toBeInTheDocument();
     expect(screen.getByText('Changed from Optional to Required.')).toBeInTheDocument();

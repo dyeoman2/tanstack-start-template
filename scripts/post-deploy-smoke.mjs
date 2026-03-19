@@ -36,6 +36,19 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function formatPayloadPreview(payload) {
+  try {
+    const serialized = JSON.stringify(payload);
+    if (typeof serialized !== 'string') {
+      return String(payload);
+    }
+
+    return serialized.length > 300 ? `${serialized.slice(0, 300)}...` : serialized;
+  } catch {
+    return String(payload);
+  }
+}
+
 async function expectJson(baseUrl, pathname, predicate, description) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'GET',
@@ -50,7 +63,9 @@ async function expectJson(baseUrl, pathname, predicate, description) {
 
   const payload = await response.json();
   if (!predicate(payload)) {
-    throw new Error(`${pathname} failed validation: ${description}`);
+    throw new Error(
+      `${pathname} failed validation: ${description}. Received: ${formatPayloadPreview(payload)}`,
+    );
   }
 }
 

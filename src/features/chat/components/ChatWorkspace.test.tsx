@@ -1,5 +1,5 @@
 import { api } from '@convex/_generated/api';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -73,6 +73,22 @@ function createMutationMock(fn: ReturnType<typeof vi.fn>) {
   };
   mutation.withOptimisticUpdate = vi.fn(() => fn);
   return mutation;
+}
+
+function renderChatWorkspace(threadId?: string) {
+  return render(
+    <ToastProvider>
+      <TooltipProvider>
+        <ChatWorkspace threadId={threadId} />
+      </TooltipProvider>
+    </ToastProvider>,
+  );
+}
+
+function setMessageValue(value: string) {
+  fireEvent.change(screen.getByLabelText('Message'), {
+    target: { value },
+  });
 }
 
 describe('ChatWorkspace', () => {
@@ -187,15 +203,9 @@ describe('ChatWorkspace', () => {
   it('precreates a thread, navigates, and then sends the first message through the mutation path', async () => {
     const user = userEvent.setup();
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace();
 
-    await user.type(screen.getByLabelText('Message'), 'Start a new conversation');
+    setMessageValue('Start a new conversation');
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
@@ -245,16 +255,12 @@ describe('ChatWorkspace', () => {
 
     const user = userEvent.setup();
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace();
 
     const messageInput = screen.getByLabelText('Message');
-    await user.type(messageInput, 'Hold draft until route change');
+    fireEvent.change(messageInput, {
+      target: { value: 'Hold draft until route change' },
+    });
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
@@ -296,13 +302,7 @@ describe('ChatWorkspace', () => {
     });
     retryableRunIdsQueryResult = { 'assistant-123': 'run-123' };
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     await waitFor(() => {
       const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
@@ -341,13 +341,7 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     await waitFor(() => {
       const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
@@ -395,13 +389,7 @@ describe('ChatWorkspace', () => {
       ],
     });
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     await waitFor(() => {
       const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
@@ -459,13 +447,7 @@ describe('ChatWorkspace', () => {
       ],
     });
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     await waitFor(() => {
       const props = messageListPropsMock.mock.calls.at(-1)?.[0] as {
@@ -498,15 +480,9 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    const view = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    const view = renderChatWorkspace('thread-123');
 
-    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    setMessageValue('Follow-up question');
     await user.click(screen.getByLabelText('Send message'));
 
     const sendArgs = await waitFor(() => {
@@ -581,15 +557,9 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    const view = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    const view = renderChatWorkspace('thread-123');
 
-    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    setMessageValue('Follow-up question');
     await user.click(screen.getByLabelText('Send message'));
 
     await waitFor(() => {
@@ -652,15 +622,9 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    const view = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    const view = renderChatWorkspace('thread-123');
 
-    await user.type(screen.getByLabelText('Message'), 'Follow-up question');
+    setMessageValue('Follow-up question');
     await user.click(screen.getByLabelText('Send message'));
 
     const sendArgs = await waitFor(() => {
@@ -766,15 +730,9 @@ describe('ChatWorkspace', () => {
       new Error('AI capacity is temporarily full. Try again in 30 seconds.'),
     );
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
-    await user.type(screen.getByLabelText('Message'), 'Need a response');
+    setMessageValue('Need a response');
     await user.click(screen.getByLabelText('Send message'));
 
     expect(
@@ -803,13 +761,7 @@ describe('ChatWorkspace', () => {
       },
     ];
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace();
 
     await user.click(screen.getByLabelText('Enable web search'));
     expect(screen.getByLabelText('Disable web search')).toHaveAttribute('aria-pressed', 'true');
@@ -832,13 +784,7 @@ describe('ChatWorkspace', () => {
       canStop: true,
     };
 
-    const view = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    const view = renderChatWorkspace('thread-123');
 
     await user.click(await screen.findByLabelText('Stop generating'));
 
@@ -869,13 +815,7 @@ describe('ChatWorkspace', () => {
       canStop: false,
     };
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     expect(screen.getByLabelText('Send message')).toBeDisabled();
     expect(screen.queryByLabelText('Stop generating')).not.toBeInTheDocument();
@@ -908,13 +848,7 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    renderChatWorkspace('thread-123');
 
     expect(
       screen.getByText('No compatible private endpoint is available for this model.'),
@@ -957,13 +891,7 @@ describe('ChatWorkspace', () => {
       loadMore: vi.fn(),
     });
 
-    const view = render(
-      <ToastProvider>
-        <TooltipProvider>
-          <ChatWorkspace threadId="thread-123" />
-        </TooltipProvider>
-      </ToastProvider>,
-    );
+    const view = renderChatWorkspace('thread-123');
 
     await user.click(screen.getByRole('button', { name: 'Dismiss' }));
 
