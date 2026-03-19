@@ -38,9 +38,9 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6
         with:
-          aws-access-key-id: ${{ secrets.AWS_DR_BACKUP_ACCESS_KEY_ID || secrets.DR_BACKUP_AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_DR_BACKUP_SECRET_ACCESS_KEY || secrets.DR_BACKUP_AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_DR_BACKUP_REGION || secrets.DR_BACKUP_AWS_REGION || 'us-west-1' }}
+          aws-access-key-id: ${{ secrets.AWS_DR_BACKUP_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_DR_BACKUP_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DR_BACKUP_REGION || 'us-west-1' }}
 
       - name: Export Convex production database
         id: export
@@ -71,7 +71,7 @@ jobs:
 
           echo "s3_key=${s3_key}" >> "$GITHUB_OUTPUT"
         env:
-          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
           ZIP_FILE: ${{ steps.export.outputs.zip_file }}
 
       - name: Verify upload
@@ -90,7 +90,7 @@ jobs:
             exit 1
           fi
         env:
-          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
           S3_KEY: ${{ steps.upload.outputs.s3_key }}
 
       - name: Deploy test - push functions to local Convex
@@ -99,7 +99,7 @@ jobs:
           docker run -d --name convex-dr-test \
             -p 3210:3210 \
             -p 3211:3211 \
-            ghcr.io/get-convex/convex-backend:latest
+            ghcr.io/get-convex/convex-backend:latest@sha256:a4a0c06c76b78ed6342730d326b79c0427ec1681d7723514602eb41b37ff2d56
 
           for i in $(seq 1 30); do
             docker exec convex-dr-test \
@@ -183,7 +183,7 @@ jobs:
             echo "Deploy test: **${{ steps.deploy_test.outcome }}**"
           } >> "$GITHUB_STEP_SUMMARY"
         env:
-          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET || secrets.DR_BACKUP_S3_BUCKET }}
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
           FILE_SIZE_MB: ${{ steps.export.outputs.file_size_mb }}
           S3_KEY: ${{ steps.upload.outputs.s3_key }}
           TIMESTAMP: ${{ steps.export.outputs.timestamp }}

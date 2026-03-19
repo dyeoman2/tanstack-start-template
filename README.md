@@ -265,6 +265,12 @@ The template now includes an AWS-backed storage path for file-backed features, w
 - [Disaster Recovery Runbook](docs/DISASTER_RECOVERY_RUNBOOK.md) - operator workflow for backup infra, DR infra, and failover execution
 - [Disaster Recovery Configuration](docs/DISASTER_RECOVERY_CONFIG.md) - GitHub secrets, Secrets Manager inputs, and DR env vars
 
+For guided DR setup across AWS, GitHub, Convex, and Netlify, run:
+
+```bash
+pnpm run setup:dr
+```
+
 For guided local setup, run:
 
 ```bash

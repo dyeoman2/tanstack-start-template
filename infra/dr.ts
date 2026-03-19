@@ -8,7 +8,11 @@ const appPath = 'node ./infra/aws-cdk/bin/app.mjs';
 const isPreview = process.argv.includes('--preview');
 const deployAll = process.argv.includes('--all');
 const stackIndex = process.argv.indexOf('--stack');
-const stackName = stackIndex >= 0 ? process.argv[stackIndex + 1] : undefined;
+const requestedStackName = stackIndex >= 0 ? process.argv[stackIndex + 1] : undefined;
+const stackName =
+  requestedStackName === 'TanStackStartDrEcsStack'
+    ? process.env.AWS_DR_STACK_NAME?.trim() || requestedStackName
+    : requestedStackName;
 
 if (!deployAll && !stackName) {
   throw new Error('Pass --all or --stack <StackName>.');

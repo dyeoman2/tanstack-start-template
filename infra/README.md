@@ -53,6 +53,12 @@ This stack is intended for disaster recovery events, not day-to-day production u
 
 ## Commands
 
+For guided DR setup across AWS, GitHub, Convex, and Netlify:
+
+```bash
+pnpm run setup:dr
+```
+
 ### Storage / malware scan
 
 Preview:
@@ -181,6 +187,7 @@ The recovery script expects these AWS Secrets Manager entries by default:
 - `tanstack-start-template/dr-cloudflare-dns-token`
 - `tanstack-start-template/dr-cloudflare-zone-id`
 - `tanstack-start-template/dr-netlify-build-hook`
+- `tanstack-start-template/dr-netlify-frontend-cname-target`
 
 See the DR docs for the full operator flow:
 

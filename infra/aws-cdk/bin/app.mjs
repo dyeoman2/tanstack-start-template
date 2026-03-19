@@ -16,16 +16,6 @@ function readTrimmedEnv(name) {
   return value ? value.trim() : '';
 }
 
-function readFirstTrimmedEnv(...names) {
-  for (const name of names) {
-    const value = readTrimmedEnv(name);
-    if (value) {
-      return value;
-    }
-  }
-  return '';
-}
-
 function createStageConfig(stage) {
   const upperStage = stage.toUpperCase();
   return {
@@ -49,6 +39,7 @@ function createAwsEnv() {
 
 const app = new cdk.App();
 const awsEnv = createAwsEnv();
+const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || 'TanStackStartDrEcsStack';
 
 for (const stage of ['dev', 'prod']) {
   const config = createStageConfig(stage);
@@ -60,44 +51,28 @@ for (const stage of ['dev', 'prod']) {
 }
 
 new DrBackupStack(app, 'TanStackStartDrBackupStack', {
-  bucketName: readFirstTrimmedEnv('AWS_DR_BACKUP_S3_BUCKET', 'DR_BACKUP_S3_BUCKET') || undefined,
-  ciUserName:
-    readFirstTrimmedEnv('AWS_DR_BACKUP_CI_USER_NAME', 'DR_BACKUP_CI_USER_NAME') || undefined,
+  bucketName: readTrimmedEnv('AWS_DR_BACKUP_S3_BUCKET') || undefined,
+  ciUserName: readTrimmedEnv('AWS_DR_BACKUP_CI_USER_NAME') || undefined,
   description: 'TanStack Start Template DR backup bucket for Convex exports',
   env: awsEnv,
-  projectSlug:
-    readFirstTrimmedEnv('AWS_DR_PROJECT_SLUG', 'DR_PROJECT_SLUG') || 'tanstack-start-template',
+  projectSlug: readTrimmedEnv('AWS_DR_PROJECT_SLUG') || 'tanstack-start-template',
 });
 
-const drDomain = readFirstTrimmedEnv('AWS_DR_DOMAIN', 'DR_DOMAIN');
+const drDomain = readTrimmedEnv('AWS_DR_DOMAIN');
 if (drDomain) {
-  new DrEcsStack(app, 'TanStackStartDrEcsStack', {
-    auroraMaxAcu:
-      Number.parseFloat(readFirstTrimmedEnv('AWS_DR_AURORA_MAX_ACU', 'DR_AURORA_MAX_ACU')) ||
-      undefined,
-    auroraMinAcu:
-      Number.parseFloat(readFirstTrimmedEnv('AWS_DR_AURORA_MIN_ACU', 'DR_AURORA_MIN_ACU')) ||
-      undefined,
-    backendSubdomain:
-      readFirstTrimmedEnv('AWS_DR_BACKEND_SUBDOMAIN', 'DR_BACKEND_SUBDOMAIN') || 'dr-backend',
-    convexImage: readFirstTrimmedEnv('AWS_DR_CONVEX_IMAGE', 'DR_CONVEX_IMAGE') || undefined,
-    cpu:
-      Number.parseInt(readFirstTrimmedEnv('AWS_DR_ECS_CPU', 'DR_ECS_CPU'), 10) || undefined,
+  new DrEcsStack(app, drEcsStackName, {
+    auroraMaxAcu: Number.parseFloat(readTrimmedEnv('AWS_DR_AURORA_MAX_ACU')) || undefined,
+    auroraMinAcu: Number.parseFloat(readTrimmedEnv('AWS_DR_AURORA_MIN_ACU')) || undefined,
+    backendSubdomain: readTrimmedEnv('AWS_DR_BACKEND_SUBDOMAIN') || 'dr-backend',
+    convexImage: readTrimmedEnv('AWS_DR_CONVEX_IMAGE') || undefined,
+    cpu: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_CPU'), 10) || undefined,
     description: 'TanStack Start Template DR stack for self-hosted Convex on ECS',
     domain: drDomain,
     env: awsEnv,
-    frontendSubdomain:
-      readFirstTrimmedEnv('AWS_DR_FRONTEND_SUBDOMAIN', 'DR_FRONTEND_SUBDOMAIN') || 'dr',
-    instanceSecretHex:
-      readFirstTrimmedEnv('AWS_DR_INSTANCE_SECRET', 'DR_INSTANCE_SECRET') || undefined,
-    memoryMiB:
-      Number.parseInt(
-        readFirstTrimmedEnv('AWS_DR_ECS_MEMORY_MIB', 'DR_ECS_MEMORY_MIB'),
-        10,
-      ) || undefined,
-    projectSlug:
-      readFirstTrimmedEnv('AWS_DR_PROJECT_SLUG', 'DR_PROJECT_SLUG') || 'tanstack-start-template',
-    siteSubdomain:
-      readFirstTrimmedEnv('AWS_DR_SITE_SUBDOMAIN', 'DR_SITE_SUBDOMAIN') || 'dr-site',
+    frontendSubdomain: readTrimmedEnv('AWS_DR_FRONTEND_SUBDOMAIN') || 'dr',
+    instanceSecretHex: readTrimmedEnv('AWS_DR_INSTANCE_SECRET') || undefined,
+    memoryMiB: Number.parseInt(readTrimmedEnv('AWS_DR_ECS_MEMORY_MIB'), 10) || undefined,
+    projectSlug: readTrimmedEnv('AWS_DR_PROJECT_SLUG') || 'tanstack-start-template',
+    siteSubdomain: readTrimmedEnv('AWS_DR_SITE_SUBDOMAIN') || 'dr-site',
   });
 }

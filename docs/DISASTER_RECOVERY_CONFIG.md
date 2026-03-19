@@ -1,5 +1,11 @@
 # Disaster Recovery Configuration
 
+For the guided end-to-end setup flow, run:
+
+```bash
+pnpm run setup:dr
+```
+
 ## GitHub Actions Secrets
 
 Required for [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-backup-convex-s3.yml):
@@ -68,6 +74,7 @@ Expected by [dr-recover-ecs.sh](/Users/yeoman/Desktop/tanstack/tanstack-start-te
 - `tanstack-start-template/dr-cloudflare-dns-token`
 - `tanstack-start-template/dr-cloudflare-zone-id`
 - `tanstack-start-template/dr-netlify-build-hook`
+- `tanstack-start-template/dr-netlify-frontend-cname-target`
 
 If `AWS_DR_PROJECT_SLUG` is changed, the secret names change to match that slug.
 
@@ -77,6 +84,13 @@ Optional override env vars for non-default secret names:
 - `AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME`
 - `AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME`
 - `AWS_DR_NETLIFY_HOOK_SECRET_NAME`
+- `AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME`
+
+The Convex runtime env secret can be refreshed with:
+
+```bash
+pnpm run infra:dr:sync-env
+```
 
 ## Runtime Variables Replayed During Recovery
 
@@ -104,6 +118,6 @@ The Netlify DR site should be configured ahead of time with:
 - the same repository
 - a dedicated build hook URL stored in Secrets Manager
 - frontend env vars that point to the DR Convex backend and site hosts
-- a DNS target value exposed to the recovery script via `AWS_DR_FRONTEND_CNAME_TARGET`
+- a DNS target value exposed to the recovery script via `AWS_DR_FRONTEND_CNAME_TARGET` or the persisted Netlify frontend CNAME target secret
 
-This repo automates the build hook trigger and Cloudflare DNS repointing, but it does not create the Netlify site for you.
+This repo automates the build hook trigger and Cloudflare DNS repointing. The guided `pnpm run setup:dr` flow also attempts to create or validate the dedicated Netlify DR site when the Netlify CLI is authenticated, and falls back to manual instructions when that is not possible.

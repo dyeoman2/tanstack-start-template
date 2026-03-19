@@ -32,35 +32,75 @@ get_output() {
   echo "${STACK_OUTPUTS}" | jq -r ".[] | select(.OutputKey==\"${key}\") | .OutputValue"
 }
 
-first_nonempty() {
-  for value in "$@"; do
-    if [[ -n "${value}" ]]; then
-      printf '%s' "${value}"
-      return 0
+get_json_value() {
+  local key="$1"
+  echo "${env_json}" | jq -r --arg key "${key}" '.[$key] // empty' 2>/dev/null || true
+}
+
+set_convex_env_if_present() {
+  local key="$1"
+  local value="$2"
+  if [[ -n "${value}" ]]; then
+    pnpm exec convex env set "${key}" "${value}" >/dev/null
+    ok "${key} set"
+  fi
+}
+
+set_fallback_shell_envs() {
+  local fallback_env_vars=(
+    APP_NAME
+    APP_URL
+    BETTER_AUTH_SECRET
+    BETTER_AUTH_URL
+    CONVEX_SITE_URL
+    FILE_STORAGE_BACKEND
+    AWS_S3_FILES_BUCKET
+    AWS_FILE_SERVE_SIGNING_SECRET
+    AWS_MALWARE_WEBHOOK_SHARED_SECRET
+    OPENROUTER_API_KEY
+    OPENROUTER_SITE_NAME
+    OPENROUTER_SITE_URL
+    RESEND_API_KEY
+    RESEND_EMAIL_SENDER
+    JWKS
+    VITE_SENTRY_DSN
+  )
+
+  for key in "${fallback_env_vars[@]}"; do
+    if [[ -n "${!key:-}" ]]; then
+      pnpm exec convex env set "${key}" "${!key}" >/dev/null
+      ok "${key} set from shell env"
     fi
   done
-  return 0
+}
+
+persist_dr_env_secret() {
+  if [[ -z "${env_json}" || "${env_json}" == "None" ]]; then
+    return 0
+  fi
+
+  aws secretsmanager put-secret-value \
+    --secret-id "${AWS_DR_ENV_SECRET_NAME}" \
+    --secret-string "${env_json}" >/dev/null
 }
 
 unset CONVEX_DEPLOYMENT 2>/dev/null || true
 export CONVEX_DEPLOYMENT=""
 
-PROJECT_SLUG="$(first_nonempty "${AWS_DR_PROJECT_SLUG:-}" "${DR_PROJECT_SLUG:-}" "tanstack-start-template")"
-STACK_NAME="$(first_nonempty "${AWS_DR_STACK_NAME:-}" "${DR_STACK_NAME:-}" "TanStackStartDrEcsStack")"
-BACKEND_SUBDOMAIN="$(first_nonempty "${AWS_DR_BACKEND_SUBDOMAIN:-}" "${DR_BACKEND_SUBDOMAIN:-}" "dr-backend")"
-SITE_SUBDOMAIN="$(first_nonempty "${AWS_DR_SITE_SUBDOMAIN:-}" "${DR_SITE_SUBDOMAIN:-}" "dr-site")"
-FRONTEND_SUBDOMAIN="$(first_nonempty "${AWS_DR_FRONTEND_SUBDOMAIN:-}" "${DR_FRONTEND_SUBDOMAIN:-}" "dr")"
-DR_ENV_SECRET_NAME="$(first_nonempty "${AWS_DR_ENV_SECRET_NAME:-}" "${DR_ENV_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-convex-env-vars")"
-CLOUDFLARE_TOKEN_SECRET_NAME="$(first_nonempty "${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME:-}" "${DR_CLOUDFLARE_TOKEN_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-cloudflare-dns-token")"
-CLOUDFLARE_ZONE_SECRET_NAME="$(first_nonempty "${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME:-}" "${DR_CLOUDFLARE_ZONE_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-cloudflare-zone-id")"
-NETLIFY_HOOK_SECRET_NAME="$(first_nonempty "${AWS_DR_NETLIFY_HOOK_SECRET_NAME:-}" "${DR_NETLIFY_HOOK_SECRET_NAME:-}" "${PROJECT_SLUG}/dr-netlify-build-hook")"
+PROJECT_SLUG="${AWS_DR_PROJECT_SLUG:-tanstack-start-template}"
+STACK_NAME="${AWS_DR_STACK_NAME:-TanStackStartDrEcsStack}"
+BACKEND_SUBDOMAIN="${AWS_DR_BACKEND_SUBDOMAIN:-dr-backend}"
+SITE_SUBDOMAIN="${AWS_DR_SITE_SUBDOMAIN:-dr-site}"
+FRONTEND_SUBDOMAIN="${AWS_DR_FRONTEND_SUBDOMAIN:-dr}"
+AWS_DR_ENV_SECRET_NAME="${AWS_DR_ENV_SECRET_NAME:-${PROJECT_SLUG}/dr-convex-env-vars}"
+AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME="${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME:-${PROJECT_SLUG}/dr-cloudflare-dns-token}"
+AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME="${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME:-${PROJECT_SLUG}/dr-cloudflare-zone-id}"
+AWS_DR_NETLIFY_HOOK_SECRET_NAME="${AWS_DR_NETLIFY_HOOK_SECRET_NAME:-${PROJECT_SLUG}/dr-netlify-build-hook}"
+AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME="${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME:-${PROJECT_SLUG}/dr-netlify-frontend-cname-target}"
 TOTAL_STEPS=10
 
-AWS_DR_DOMAIN_RESOLVED="$(first_nonempty "${AWS_DR_DOMAIN:-}" "${DR_DOMAIN:-}")"
-AWS_DR_BACKUP_S3_BUCKET_RESOLVED="$(first_nonempty "${AWS_DR_BACKUP_S3_BUCKET:-}" "${DR_BACKUP_S3_BUCKET:-}")"
-
-[[ -z "${AWS_DR_DOMAIN_RESOLVED}" ]] && fail "AWS_DR_DOMAIN is required"
-[[ -z "${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}" ]] && fail "AWS_DR_BACKUP_S3_BUCKET is required"
+[[ -z "${AWS_DR_DOMAIN:-}" ]] && fail "AWS_DR_DOMAIN is required"
+[[ -z "${AWS_DR_BACKUP_S3_BUCKET:-}" ]] && fail "AWS_DR_BACKUP_S3_BUCKET is required"
 
 command -v aws >/dev/null || fail "AWS CLI not found"
 command -v pnpm >/dev/null || fail "pnpm not found"
@@ -71,9 +111,9 @@ command -v docker >/dev/null || warn "Docker not found; recovery will use ECS Ex
 aws sts get-caller-identity >/dev/null 2>&1 || fail "AWS credentials are not configured"
 ok "AWS credentials verified"
 
-BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
-SITE_FQDN="${SITE_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
-FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${AWS_DR_DOMAIN_RESOLVED}"
+BACKEND_FQDN="${BACKEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
+SITE_FQDN="${SITE_SUBDOMAIN}.${AWS_DR_DOMAIN}"
+FRONTEND_FQDN="${FRONTEND_SUBDOMAIN}.${AWS_DR_DOMAIN}"
 BACKEND_URL="https://${BACKEND_FQDN}"
 SITE_URL="https://${SITE_FQDN}"
 FRONTEND_URL="https://${FRONTEND_FQDN}"
@@ -172,45 +212,55 @@ fi
 export CONVEX_SELF_HOSTED_ADMIN_KEY="${admin_key}"
 ok "Admin key generated"
 
-log "Step 5/${TOTAL_STEPS}: Deploying Convex functions"
-export APP_NAME="${DR_APP_NAME:-TanStack Start Template DR}"
-export APP_URL="${APP_URL:-${FRONTEND_URL}}"
-export BETTER_AUTH_URL="${BETTER_AUTH_URL:-${FRONTEND_URL}}"
-export CONVEX_SITE_URL="${CONVEX_SITE_URL:-${STACK_SITE_URL:-${SITE_URL}}}"
-export BETTER_AUTH_SECRET="${BETTER_AUTH_SECRET:-}"
-export JWKS="${JWKS:-}"
+log "Step 5/${TOTAL_STEPS}: Applying minimum pre-deploy env and deploying Convex functions"
+env_json=$(aws secretsmanager get-secret-value \
+  --secret-id "${AWS_DR_ENV_SECRET_NAME}" \
+  --query 'SecretString' \
+  --output text 2>/dev/null) || env_json=""
 
-if [[ -n "${BETTER_AUTH_SECRET}" ]]; then
-  pnpm exec convex env set BETTER_AUTH_SECRET "${BETTER_AUTH_SECRET}" >/dev/null
-  ok "BETTER_AUTH_SECRET set"
+predeploy_app_name="$(get_json_value 'APP_NAME')"
+predeploy_better_auth_secret="$(get_json_value 'BETTER_AUTH_SECRET')"
+predeploy_jwks="$(get_json_value 'JWKS')"
+
+set_convex_env_if_present "APP_NAME" "${predeploy_app_name:-${APP_NAME:-TanStack Start Template DR}}"
+set_convex_env_if_present "APP_URL" "${FRONTEND_URL}"
+set_convex_env_if_present "BETTER_AUTH_URL" "${FRONTEND_URL}"
+set_convex_env_if_present "CONVEX_SITE_URL" "${STACK_SITE_URL:-${SITE_URL}}"
+
+if [[ -n "${predeploy_better_auth_secret}" ]]; then
+  set_convex_env_if_present "BETTER_AUTH_SECRET" "${predeploy_better_auth_secret}"
+elif [[ -n "${BETTER_AUTH_SECRET:-}" ]]; then
+  set_convex_env_if_present "BETTER_AUTH_SECRET" "${BETTER_AUTH_SECRET}"
 else
-  warn "BETTER_AUTH_SECRET not provided before deploy; ensure it is stored in ${DR_ENV_SECRET_NAME}"
+  warn "BETTER_AUTH_SECRET not found in ${AWS_DR_ENV_SECRET_NAME} or shell env"
 fi
 
-if [[ -n "${JWKS}" ]]; then
-  pnpm exec convex env set JWKS "${JWKS}" >/dev/null
-  ok "JWKS set"
+if [[ -n "${predeploy_jwks}" ]]; then
+  set_convex_env_if_present "JWKS" "${predeploy_jwks}"
+elif [[ -n "${JWKS:-}" ]]; then
+  set_convex_env_if_present "JWKS" "${JWKS}"
 else
-  warn "JWKS not provided before deploy; ensure it is stored in ${DR_ENV_SECRET_NAME}"
+  warn "JWKS not found in ${AWS_DR_ENV_SECRET_NAME} or shell env"
 fi
 
-pnpm exec convex env set APP_NAME "${APP_NAME}" >/dev/null
-pnpm exec convex env set APP_URL "${APP_URL}" >/dev/null
-pnpm exec convex env set BETTER_AUTH_URL "${BETTER_AUTH_URL}" >/dev/null
-pnpm exec convex env set CONVEX_SITE_URL "${CONVEX_SITE_URL}" >/dev/null
+if [[ -z "${env_json}" || "${env_json}" == "None" ]]; then
+  warn "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found before deploy; falling back to shell envs"
+  set_fallback_shell_envs
+fi
+
 pnpm exec convex deploy
 ok "Convex functions deployed"
 
 log "Step 6/${TOTAL_STEPS}: Downloading latest S3 backup"
 latest_key=$(aws s3api list-objects-v2 \
-  --bucket "${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}" \
+  --bucket "${AWS_DR_BACKUP_S3_BUCKET}" \
   --prefix "convex-backups/" \
   --query 'sort_by(Contents, &LastModified)[-1].Key' \
   --output text)
 
-[[ -z "${latest_key}" || "${latest_key}" == "None" ]] && fail "No backups found in s3://${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}/convex-backups/"
+[[ -z "${latest_key}" || "${latest_key}" == "None" ]] && fail "No backups found in s3://${AWS_DR_BACKUP_S3_BUCKET}/convex-backups/"
 backup_file="./dr-backup-$(date -u +%Y%m%dT%H%M%S).zip"
-aws s3 cp "s3://${AWS_DR_BACKUP_S3_BUCKET_RESOLVED}/${latest_key}" "${backup_file}"
+aws s3 cp "s3://${AWS_DR_BACKUP_S3_BUCKET}/${latest_key}" "${backup_file}"
 ok "Downloaded latest backup ${latest_key}"
 
 log "Step 7/${TOTAL_STEPS}: Importing backup into self-hosted Convex"
@@ -219,15 +269,12 @@ rm -f "${backup_file}"
 ok "Backup imported"
 
 log "Step 8/${TOTAL_STEPS}: Applying runtime env vars and DR overrides"
-env_json=$(aws secretsmanager get-secret-value \
-  --secret-id "${DR_ENV_SECRET_NAME}" \
-  --query 'SecretString' \
-  --output text 2>/dev/null) || env_json=""
-
 file_storage_backend=$(echo "${env_json}" | jq -r '.FILE_STORAGE_BACKEND // empty' 2>/dev/null || true)
 file_serve_secret=$(echo "${env_json}" | jq -r '.AWS_FILE_SERVE_SIGNING_SECRET // .FILE_SERVE_SIGNING_SECRET // empty' 2>/dev/null || true)
+should_persist_file_serve_secret="false"
 if [[ -z "${file_serve_secret}" && "${file_storage_backend}" != "convex" ]]; then
   file_serve_secret=$(generate_hex_secret) || fail "Failed to generate AWS_FILE_SERVE_SIGNING_SECRET"
+  should_persist_file_serve_secret="true"
 fi
 
 if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
@@ -250,9 +297,10 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
     esac
     pnpm exec convex env set "${key}" "${value}" >/dev/null
   done
-  ok "Runtime env vars applied from ${DR_ENV_SECRET_NAME}"
+  ok "Runtime env vars applied from ${AWS_DR_ENV_SECRET_NAME}"
 else
-  warn "Secrets Manager secret ${DR_ENV_SECRET_NAME} not found; only DR overrides were applied"
+  warn "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found; applying shell-env fallback set"
+  set_fallback_shell_envs
 fi
 
 pnpm exec convex env set APP_URL "${FRONTEND_URL}" >/dev/null
@@ -264,36 +312,47 @@ fi
 if [[ -n "${file_serve_secret}" ]]; then
   pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET "${file_serve_secret}" >/dev/null
 fi
+
+if [[ "${should_persist_file_serve_secret}" == "true" && -n "${env_json}" && "${env_json}" != "None" ]]; then
+  env_json=$(echo "${env_json}" | jq --arg value "${file_serve_secret}" '. + {AWS_FILE_SERVE_SIGNING_SECRET: $value}')
+  persist_dr_env_secret
+  ok "Persisted AWS_FILE_SERVE_SIGNING_SECRET to ${AWS_DR_ENV_SECRET_NAME}"
+fi
+
 ok "DR env overrides enforced"
 
 log "Step 9/${TOTAL_STEPS}: Updating Cloudflare DNS and triggering Netlify DR deploy"
 CF_API_TOKEN=$(aws secretsmanager get-secret-value \
-  --secret-id "${CLOUDFLARE_TOKEN_SECRET_NAME}" \
+  --secret-id "${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME}" \
   --query 'SecretString' \
   --output text 2>/dev/null) || CF_API_TOKEN=""
 CF_ZONE_ID=$(aws secretsmanager get-secret-value \
-  --secret-id "${CLOUDFLARE_ZONE_SECRET_NAME}" \
+  --secret-id "${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME}" \
   --query 'SecretString' \
   --output text 2>/dev/null) || CF_ZONE_ID=""
 NETLIFY_HOOK=$(aws secretsmanager get-secret-value \
-  --secret-id "${NETLIFY_HOOK_SECRET_NAME}" \
+  --secret-id "${AWS_DR_NETLIFY_HOOK_SECRET_NAME}" \
   --query 'SecretString' \
   --output text 2>/dev/null) || NETLIFY_HOOK=""
+NETLIFY_FRONTEND_CNAME_TARGET_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id "${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME}" \
+  --query 'SecretString' \
+  --output text 2>/dev/null) || NETLIFY_FRONTEND_CNAME_TARGET_SECRET=""
 
 if [[ -n "${CF_API_TOKEN}" && -n "${CF_ZONE_ID}" ]]; then
   cf_api="https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records"
   cf_auth="Authorization: Bearer ${CF_API_TOKEN}"
   for subdomain in "${BACKEND_SUBDOMAIN}" "${SITE_SUBDOMAIN}" "${FRONTEND_SUBDOMAIN}"; do
-    fqdn="${subdomain}.${AWS_DR_DOMAIN_RESOLVED}"
+    fqdn="${subdomain}.${AWS_DR_DOMAIN}"
     content="${ALB_DNS}"
     proxied=true
     if [[ "${subdomain}" == "${FRONTEND_SUBDOMAIN}" ]]; then
-      content="$(first_nonempty "${AWS_DR_FRONTEND_CNAME_TARGET:-}" "${DR_FRONTEND_CNAME_TARGET:-}")"
+      content="${AWS_DR_FRONTEND_CNAME_TARGET:-${NETLIFY_FRONTEND_CNAME_TARGET_SECRET:-}}"
       proxied=false
     fi
 
     if [[ -z "${content}" ]]; then
-      warn "Skipping ${fqdn}; AWS_DR_FRONTEND_CNAME_TARGET is required for frontend DNS automation"
+      warn "Skipping ${fqdn}; AWS_DR_FRONTEND_CNAME_TARGET or ${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME} is required for frontend DNS automation"
       continue
     fi
 
@@ -326,7 +385,7 @@ if [[ -n "${NETLIFY_HOOK}" ]]; then
   curl -sf -X POST "${NETLIFY_HOOK}" >/dev/null
   ok "Netlify DR build hook triggered"
 else
-  warn "Netlify DR build hook secret ${NETLIFY_HOOK_SECRET_NAME} not found"
+  warn "Netlify DR build hook secret ${AWS_DR_NETLIFY_HOOK_SECRET_NAME} not found"
 fi
 
 log "Step 10/${TOTAL_STEPS}: Final verification"
@@ -351,8 +410,9 @@ Site URL:     ${SITE_URL}
 Frontend URL: ${FRONTEND_URL}
 
 Secrets Manager inputs:
-  - ${DR_ENV_SECRET_NAME}
-  - ${CLOUDFLARE_TOKEN_SECRET_NAME}
-  - ${CLOUDFLARE_ZONE_SECRET_NAME}
-  - ${NETLIFY_HOOK_SECRET_NAME}
+  - ${AWS_DR_ENV_SECRET_NAME}
+  - ${AWS_DR_CLOUDFLARE_TOKEN_SECRET_NAME}
+  - ${AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME}
+  - ${AWS_DR_NETLIFY_HOOK_SECRET_NAME}
+  - ${AWS_DR_NETLIFY_FRONTEND_CNAME_TARGET_SECRET_NAME}
 EOF
