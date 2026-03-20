@@ -30,7 +30,6 @@ import {
 import { loadProjectEnvFiles } from './lib/load-project-env-files';
 import { convexEnvList } from './lib/convex-cli';
 import {
-  configureNetlifySiteRepository,
   createNetlifyBuildHook,
   createRepoBackedNetlifySite,
   formatNetlifySiteSummary,
@@ -39,6 +38,7 @@ import {
   isNetlifySiteRepoBacked,
   listNetlifySiteHooks,
   readNetlifyLinkedSiteIdFromDisk,
+  reinitializeNetlifySiteContinuousDeployment,
   resolveNetlifySite,
   setNetlifySiteEnvVar,
   triggerNetlifySiteBuild,
@@ -99,6 +99,7 @@ type SetupSummary = {
 
 const DEFAULT_PROJECT_SLUG = 'tanstack-start-template';
 const DR_ENV_FILE_NAME = '.dr.env.local';
+const GIT_REMOTE_NAME = 'origin';
 
 loadProjectEnvFiles({ extraFilenames: [DR_ENV_FILE_NAME] });
 
@@ -1592,21 +1593,24 @@ async function main() {
       }
 
       if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
-        const repoConfigured = configureNetlifySiteRepository({
+        console.log(
+          '- Reinitializing the DR site continuous deployment with `netlify init --forceReinitialize`',
+        );
+        const repoConfigured = reinitializeNetlifySiteContinuousDeployment({
+          authToken: process.env.NETLIFY_AUTH_TOKEN,
+          gitRemoteName: GIT_REMOTE_NAME,
           siteId: drNetlifySite.id,
-          desiredName: drNetlifySite.name,
-          primarySite: linkedNetlifySiteDetails,
         });
         if (repoConfigured.ok) {
           drNetlifySite = repoConfigured.site ?? drNetlifySite;
-          console.log('- Mirrored primary site repo/build settings onto the DR site');
+          console.log('- Connected the DR site to the repo via the official Netlify CLI flow');
           summary.completed.push(
-            'Mirrored the primary Netlify repo/build configuration onto the DR site.',
+            'Connected the DR Netlify site to the repo using the official Netlify CLI continuous deployment flow.',
           );
         } else {
-          console.log('- Could not mirror primary site repo/build settings automatically');
+          console.log('- Could not connect the DR site to the repo automatically');
           summary.needsAttention.push(
-            `Could not mirror the primary Netlify repo/build configuration onto the DR site automatically.${repoConfigured.error ? ` ${repoConfigured.error}` : ''}`,
+            `Could not connect the DR Netlify site to the repo automatically with \`netlify init --forceReinitialize\`. Complete the repository link in Netlify manually.${repoConfigured.error ? ` ${repoConfigured.error}` : ''}`,
           );
         }
       } else {

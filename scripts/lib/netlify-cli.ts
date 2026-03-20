@@ -296,6 +296,94 @@ export function configureNetlifySiteRepository(input: {
   };
 }
 
+export function reinitializeNetlifySiteContinuousDeployment(input: {
+  authToken?: string;
+  gitRemoteName?: string;
+  siteId: string;
+}) {
+  const tempDir = mkdtempSync(path.join(tmpdir(), 'netlify-init-'));
+  const worktreeAdd = spawnSync('git', ['worktree', 'add', '--detach', tempDir, 'HEAD'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  if (worktreeAdd.status !== 0) {
+    rmSync(tempDir, { force: true, recursive: true });
+    return {
+      error: [worktreeAdd.stdout, worktreeAdd.stderr].filter(Boolean).join('\n').trim(),
+      ok: false,
+      site: null as NetlifySiteDetails | null,
+    };
+  }
+
+  try {
+    const linkArgs = ['link', '--id', input.siteId];
+    if (input.gitRemoteName?.trim()) {
+      linkArgs.push('--git-remote-name', input.gitRemoteName.trim());
+    }
+    if (input.authToken?.trim()) {
+      linkArgs.push('--auth', input.authToken.trim());
+    }
+
+    const linked = runNetlify(linkArgs, { cwd: tempDir });
+    if (!linked.ok) {
+      return {
+        error: [linked.stdout, linked.stderr].filter(Boolean).join('\n').trim(),
+        ok: false,
+        site: null as NetlifySiteDetails | null,
+      };
+    }
+
+    const initArgs = ['init', '--forceReinitialize'];
+    if (input.gitRemoteName?.trim()) {
+      initArgs.push('--git-remote-name', input.gitRemoteName.trim());
+    }
+    if (input.authToken?.trim()) {
+      initArgs.push('--auth', input.authToken.trim());
+    }
+
+    const initialized = spawnSync('netlify', initArgs, {
+      cwd: tempDir,
+      encoding: 'utf8',
+      stdio: 'inherit',
+      env: {
+        ...process.env,
+        ...(input.authToken?.trim() ? { NETLIFY_AUTH_TOKEN: input.authToken.trim() } : {}),
+      },
+    });
+
+    if (initialized.status !== 0) {
+      return {
+        error: initialized.error?.message ?? 'netlify init --forceReinitialize failed',
+        ok: false,
+        site: null as NetlifySiteDetails | null,
+      };
+    }
+
+    const updatedSite = getNetlifySiteDetails(input.siteId);
+    if (!isNetlifySiteRepoBacked(updatedSite)) {
+      return {
+        error:
+          'Netlify init completed, but the DR site still has no repo/build metadata afterward.',
+        ok: false,
+        site: updatedSite,
+      };
+    }
+
+    return {
+      error: '',
+      ok: true,
+      site: updatedSite,
+    };
+  } finally {
+    spawnSync('git', ['worktree', 'remove', '--force', tempDir], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+    });
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+}
+
 export type NetlifyTriggerBuildResult = {
   error: string;
   ok: boolean;
