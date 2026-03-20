@@ -77,14 +77,20 @@ export function convexRun(functionRef: string, argsJson: string) {
   convexExecStdout(['run', functionRef, argsJson]);
 }
 
-/** `convex deploy --yes` with inherited stdin/stderr for live output. */
+/** `convex deploy --yes` with output captured for parsers and replayed to the terminal. */
 export function convexDeployYes(): ConvexDeployResult {
   const r = spawnSync(PNPM, ['exec', 'convex', 'deploy', '--yes'], {
     cwd: process.cwd(),
     encoding: 'utf8',
     maxBuffer: 20 * 1024 * 1024,
-    stdio: ['inherit', 'pipe', 'inherit'],
+    stdio: ['inherit', 'pipe', 'pipe'],
   });
+  if (r.stdout) {
+    process.stdout.write(r.stdout);
+  }
+  if (r.stderr) {
+    process.stderr.write(r.stderr);
+  }
   return {
     status: r.status,
     stderr: r.stderr ?? '',

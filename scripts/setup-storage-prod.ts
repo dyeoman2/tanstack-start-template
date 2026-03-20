@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { execSync, spawnSync } from 'node:child_process';
+import { deriveConvexSiteUrl } from '../src/lib/convex-url';
 import {
   CLI_INSTALL_HINT,
   commandOnPath,
@@ -73,6 +74,20 @@ function run(command: string, env?: NodeJS.ProcessEnv) {
   });
 }
 
+function getDefaultConvexSiteUrl() {
+  const explicit = process.env.CONVEX_SITE_URL?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const convexUrl = process.env.VITE_CONVEX_URL?.trim();
+  if (convexUrl) {
+    return deriveConvexSiteUrl(convexUrl);
+  }
+
+  return 'https://your-deployment.convex.site';
+}
+
 function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, '');
 }
@@ -91,6 +106,8 @@ function buildStorageDeployEnv(input: {
   return {
     AWS_REGION: input.awsRegion,
     ...(input.awsProfile ? { AWS_PROFILE: input.awsProfile } : {}),
+    AWS_S3_FILES_BUCKET: input.bucket,
+    CONVEX_SITE_URL: input.convexSiteUrl,
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
     AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: buildGuardDutyWebhookUrl(input.convexSiteUrl),
     AWS_MALWARE_WEBHOOK_SHARED_SECRET: input.webhookSecret,
@@ -317,10 +334,7 @@ async function main() {
       'AWS S3 files bucket',
       'tanstack-start-template-prod-files-bucket',
     );
-    const convexSiteUrl = await askWithDefault(
-      'Convex site URL',
-      'https://your-deployment.convex.site',
-    );
+    const convexSiteUrl = await askWithDefault('Convex site URL', getDefaultConvexSiteUrl());
     const webhookSecret = await askWithDefault(
       'AWS malware webhook shared secret',
       await generateSecret(32),
@@ -384,7 +398,7 @@ async function main() {
     try {
       console.log('\n🌐 Setting Netlify env vars...');
       for (const [name, value] of Object.entries(runtimeEnvVars)) {
-        run(`pnpm exec netlify env:set ${name} "${value}"`);
+        run(`pnpm exec netlify env:set ${name} "${value}" --context production --force`);
       }
       console.log('✅ Netlify env updated.');
       changedRemotely.push('Updated Netlify production storage env vars');

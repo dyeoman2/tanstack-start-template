@@ -231,7 +231,7 @@ async function setupConvexProduction(options?: {
     throw new Error('Convex deployment failed');
   }
 
-  console.log('✅ Convex production deployment complete!\n', deployOutput);
+  console.log('✅ Convex production deployment complete!\n');
 
   if (!verifyConvexJwksConfigured('prod')) {
     console.log('🔑 JWKS missing — fetching from Better Auth and pushing to Convex production...');
@@ -245,23 +245,19 @@ async function setupConvexProduction(options?: {
     }
   }
 
-  const urlIndex = deployOutput.indexOf('https://');
-  if (urlIndex !== -1) {
-    const urlStart = deployOutput.slice(urlIndex);
-    const urlEnd = urlStart.indexOf('\n') !== -1 ? urlStart.indexOf('\n') : urlStart.length;
-    const url = urlStart.slice(0, urlEnd).trim();
-    const deploymentMatch = url.match(/https:\/\/([a-z0-9-]+)\.convex\.cloud/);
-    if (deploymentMatch?.[1]) {
-      const deploymentName = deploymentMatch[1];
-      const convexUrl = `https://${deploymentName}.convex.cloud`;
-      return {
-        betterAuthSecret,
-        convexSiteUrl: `${convexUrl.replace('.convex.cloud', '.convex.site')}`,
-        convexUrl,
-        deploymentName,
-        deployOutput,
-      };
-    }
+  const deploymentMatches = Array.from(
+    deployOutput.matchAll(/https:\/\/([a-z0-9-]+)\.convex\.cloud\b/g),
+  );
+  const deploymentName = deploymentMatches.at(-1)?.[1];
+  if (deploymentName) {
+    const convexUrl = `https://${deploymentName}.convex.cloud`;
+    return {
+      betterAuthSecret,
+      convexSiteUrl: `${convexUrl.replace('.convex.cloud', '.convex.site')}`,
+      convexUrl,
+      deploymentName,
+      deployOutput,
+    };
   }
 
   return null;
@@ -292,9 +288,13 @@ function getExistingProdBetterAuthUrl() {
   return getConvexDeploymentEnvValue('BETTER_AUTH_URL', 'prod') ?? '';
 }
 
-function runInteractiveCommand(command: string) {
+function runInteractiveCommand(command: string, env?: NodeJS.ProcessEnv) {
   execSync(command, {
     cwd: process.cwd(),
+    env: {
+      ...process.env,
+      ...env,
+    },
     stdio: 'inherit',
   });
 }
@@ -812,40 +812,25 @@ async function main() {
       );
     }
 
-    console.log('\n📦 Optional production extras');
-    if (opts.yes) {
-      console.log('ℹ️  Skipping optional production extras in non-interactive mode.');
-      console.log('   Run `pnpm run storage:setup:prod` if you need production storage wiring.');
-      console.log('   Run `pnpm run dr:setup` if you need disaster recovery wiring.');
-    } else {
-      const shouldSetupStorageProd = await askYesNo(
-        'Configure production storage setup now? (y/N): ',
-        false,
+    console.log('\n📦 Production storage setup');
+    try {
+      runInteractiveCommand('pnpm run storage:setup:prod', {
+        ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
+        ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
+      });
+      changedRemotely.push('Ran guided production storage setup');
+      readiness.storage = 'configured in follow-up flow';
+    } catch {
+      console.log(
+        '⚠️  Production storage setup did not complete. You can rerun `pnpm run storage:setup:prod` later.',
       );
+      readiness.storage = 'needs attention';
+      warnings.push('Production storage setup was started but did not complete.');
+    }
 
-      if (shouldSetupStorageProd) {
-        try {
-          runInteractiveCommand('pnpm run storage:setup:prod');
-          changedRemotely.push('Ran guided production storage setup');
-          readiness.storage = 'configured in follow-up flow';
-        } catch {
-          console.log(
-            '⚠️  Production storage setup did not complete. You can rerun `pnpm run storage:setup:prod` later.',
-          );
-          readiness.storage = 'needs attention';
-          warnings.push('Production storage setup was started but did not complete.');
-        }
-      } else {
-        console.log(
-          'ℹ️  Skipping production storage setup. Run `pnpm run storage:setup:prod` any time.',
-        );
-        readiness.storage = 'skipped';
-        warnings.push(
-          'S3-backed production storage is not configured unless you run `pnpm run storage:setup:prod`.',
-        );
-      }
-
-      const shouldSetupDr = await askYesNo('Configure disaster recovery setup now? (y/N): ', false);
+    console.log('\n📦 Optional production extras');
+    if (!opts.yes) {
+      const shouldSetupDr = await askYesNo('Configure disaster recovery setup now?', false);
 
       if (shouldSetupDr) {
         try {
@@ -864,9 +849,11 @@ async function main() {
         readiness.dr = 'skipped';
         warnings.push('Disaster recovery remains unconfigured until `pnpm run dr:setup` runs.');
       }
+    } else {
+      console.log('ℹ️  Skipping optional disaster recovery setup in non-interactive mode.');
+      console.log('   Run `pnpm run dr:setup` if you need disaster recovery wiring.');
     }
     if (opts.yes) {
-      warnings.push('Production storage setup was skipped in non-interactive mode.');
       warnings.push('Disaster recovery setup was skipped in non-interactive mode.');
     }
 

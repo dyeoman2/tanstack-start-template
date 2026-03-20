@@ -40,10 +40,6 @@ function loadRepoEnvFile(filePath: string) {
   }
 }
 
-for (const fileName of ['.env', '.env.local']) {
-  loadRepoEnvFile(path.join(process.cwd(), fileName));
-}
-
 function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, '');
 }
@@ -60,6 +56,10 @@ const stageIndex = process.argv.indexOf('--stage');
 const stage = stageIndex >= 0 ? process.argv[stageIndex + 1] : undefined;
 if (stage !== 'dev' && stage !== 'prod') {
   throw new Error('Pass --stage dev or --stage prod.');
+}
+
+for (const fileName of stage === 'dev' ? ['.env', '.env.local'] : ['.env']) {
+  loadRepoEnvFile(path.join(process.cwd(), fileName));
 }
 
 const isPreview = process.argv.includes('--preview');
