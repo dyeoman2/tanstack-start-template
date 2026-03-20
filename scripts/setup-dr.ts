@@ -42,6 +42,7 @@ import {
   resolveNetlifySite,
   setNetlifySiteEnvVar,
   triggerNetlifySiteBuild,
+  waitForNetlifyDeployResult,
   type NetlifySite,
 } from './lib/netlify-cli';
 import { emitStructuredOutput, printStatusSummary } from './lib/script-ux';
@@ -755,6 +756,23 @@ function deleteIamAccessKey(userName: string, accessKeyId: string, region: strin
   );
 }
 
+function getStaticAwsCredentialsFromEnv() {
+  const accessKeyId = process.env.AWS_ACCESS_KEY_ID?.trim() ?? '';
+  const secretAccessKey = process.env.AWS_SECRET_ACCESS_KEY?.trim() ?? '';
+  const sessionToken = process.env.AWS_SESSION_TOKEN?.trim() ?? '';
+  const region = process.env.AWS_REGION?.trim() ?? process.env.AWS_DEFAULT_REGION?.trim() ?? '';
+
+  if (!accessKeyId || !secretAccessKey || sessionToken) {
+    return null;
+  }
+
+  return {
+    accessKeyId,
+    region,
+    secretAccessKey,
+  };
+}
+
 function printSummary(summary: SetupSummary, json: boolean) {
   if (json) {
     emitStructuredOutput({
@@ -1399,6 +1417,77 @@ async function main() {
       }
     }
 
+    let recoveryAccessKeyId = '';
+    let recoverySecretAccessKey = '';
+    let recoveryRegion = identity.region ?? '';
+    const hasRecoverySecrets =
+      secretNamesInRepo.has('AWS_DR_RECOVERY_ACCESS_KEY_ID') &&
+      secretNamesInRepo.has('AWS_DR_RECOVERY_SECRET_ACCESS_KEY');
+
+    if (!hasRecoverySecrets) {
+      const envRecoveryCreds = getStaticAwsCredentialsFromEnv();
+      if (envRecoveryCreds) {
+        recoveryAccessKeyId = envRecoveryCreds.accessKeyId;
+        recoverySecretAccessKey = envRecoveryCreds.secretAccessKey;
+        recoveryRegion = envRecoveryCreds.region || recoveryRegion;
+        summary.completed.push(
+          'Detected static AWS credentials in the current shell that can be stored for the DR recovery workflow.',
+        );
+      } else if (context.createdAwsAccessKey) {
+        if (flags.yes) {
+          summary.warnings.push(
+            'Reusing the newly created DR backup IAM key for the DR recovery workflow because no dedicated recovery key was provided. This is functional but broader separation is recommended.',
+          );
+          recoveryAccessKeyId = context.createdAwsAccessKey.accessKeyId;
+          recoverySecretAccessKey = context.createdAwsAccessKey.secretAccessKey;
+        } else {
+          const reuseBackupForRecovery = await askYesNo(
+            'Reuse the newly created DR backup IAM key for the DR recovery workflow? This works, but separate recovery credentials are recommended.',
+            false,
+          );
+          if (reuseBackupForRecovery) {
+            recoveryAccessKeyId = context.createdAwsAccessKey.accessKeyId;
+            recoverySecretAccessKey = context.createdAwsAccessKey.secretAccessKey;
+            summary.warnings.push(
+              'Configured the DR recovery workflow to reuse the DR backup IAM key. Consider replacing it later with a dedicated recovery principal.',
+            );
+          }
+        }
+      }
+
+      if (!recoveryAccessKeyId && !flags.yes) {
+        console.log(
+          'The DR recovery GitHub Action needs broader AWS credentials than the backup-only workflow.',
+        );
+        console.log(
+          'Provide a long-lived access key pair for the AWS principal you want GitHub Actions to use during DR recovery.',
+        );
+        recoveryAccessKeyId = await ask(
+          'AWS access key id for the DR recovery workflow (leave empty to skip): ',
+        );
+        if (recoveryAccessKeyId) {
+          recoverySecretAccessKey = await ask(
+            'AWS secret access key for the DR recovery workflow: ',
+          );
+          recoveryRegion = await askWithDefault(
+            'AWS region for the DR recovery workflow',
+            recoveryRegion || 'us-west-1',
+          );
+        }
+      }
+
+      if (recoveryAccessKeyId && recoverySecretAccessKey) {
+        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_ACCESS_KEY_ID', recoveryAccessKeyId);
+        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_SECRET_ACCESS_KEY', recoverySecretAccessKey);
+        setGitHubSecret(githubRepo, 'AWS_DR_RECOVERY_REGION', recoveryRegion || 'us-west-1');
+        summary.completed.push('Configured AWS DR recovery secrets in GitHub Actions.');
+      } else {
+        summary.needsAttention.push(
+          'GitHub Actions still needs AWS DR recovery credentials. Add AWS_DR_RECOVERY_ACCESS_KEY_ID, AWS_DR_RECOVERY_SECRET_ACCESS_KEY, and AWS_DR_RECOVERY_REGION manually or rerun dr:setup with static AWS credentials in the shell.',
+        );
+      }
+    }
+
     if (!secretNamesInRepo.has('CONVEX_DEPLOY_KEY')) {
       if (flags.yes) {
         summary.needsAttention.push(
@@ -1440,7 +1529,7 @@ async function main() {
       const workflowRun = runCommand('gh', [
         'workflow',
         'run',
-        'dr-backup-convex-s3.yml',
+        'db-backup.yml',
         '--repo',
         githubRepo,
       ]);
@@ -1452,7 +1541,7 @@ async function main() {
           '--repo',
           githubRepo,
           '--workflow',
-          'dr-backup-convex-s3.yml',
+          'db-backup.yml',
           '--event',
           'workflow_dispatch',
           '--limit',
@@ -1682,8 +1771,27 @@ async function main() {
         );
       }
 
-      if (triggerNetlifySiteBuild(drNetlifySite.id).ok) {
+      const initialBuildResult = triggerNetlifySiteBuild(drNetlifySite.id, buildHookUrl);
+      if (initialBuildResult.ok) {
         summary.completed.push('Triggered an initial Netlify DR site build.');
+        console.log('- Waiting for the initial DR Netlify build to finish...');
+        const deployResult = waitForNetlifyDeployResult({
+          deployId: initialBuildResult.deployId,
+          siteId: drNetlifySite.id,
+        });
+        if (deployResult.ok) {
+          summary.completed.push('Verified that the DR Netlify site completed a successful build.');
+        } else if (deployResult.timedOut) {
+          summary.frontendLane = 'partial';
+          summary.warnings.push(
+            'The DR Netlify build was triggered, but setup timed out before confirming it completed successfully.',
+          );
+        } else {
+          summary.frontendLane = 'partial';
+          summary.needsAttention.push(
+            `The DR Netlify build was triggered, but the latest deploy did not complete successfully.${deployResult.deploy?.errorMessage ? ` ${deployResult.deploy.errorMessage}` : ''}`,
+          );
+        }
       } else {
         summary.warnings.push(
           'The DR Netlify site was configured, but the initial Netlify build could not be triggered automatically.',
@@ -1913,8 +2021,8 @@ async function main() {
 
   summary.nextCommands.push(
     githubRepo
-      ? `gh workflow run dr-backup-convex-s3.yml --repo ${githubRepo}`
-      : 'gh workflow run dr-backup-convex-s3.yml --repo <owner/repo>',
+      ? `gh workflow run db-backup.yml --repo ${githubRepo}`
+      : 'gh workflow run db-backup.yml --repo <owner/repo>',
   );
   const recoveryCommand = buildRecoveryCommandForContext(
     context,

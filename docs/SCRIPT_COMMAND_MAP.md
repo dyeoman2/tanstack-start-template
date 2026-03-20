@@ -57,4 +57,5 @@ Automation-focused JSON/plan usage lives in [SCRIPT_AUTOMATION.md](./SCRIPT_AUTO
 - Destroy DR backup stack: `pnpm run dr:backup:destroy`
 - Destroy DR ECS stack: `pnpm run dr:ecs:destroy`
 - Destroy all DR resources: `pnpm run dr:destroy -- --stack all`
+- Destroy all DR resources but keep DR AWS Secrets Manager secrets: `pnpm run dr:destroy -- --stack all --keep-secrets`
 - Destroy all DR resources via alias: `pnpm run dr:all:destroy`

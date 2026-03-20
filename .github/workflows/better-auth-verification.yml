@@ -1,4 +1,4 @@
-name: Better Auth Verification
+name: 🔐 Better Auth Verification
 
 on:
   pull_request:

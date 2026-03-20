@@ -1,4 +1,4 @@
-name: deploy.yml
+name: 🚀 Deploy
 
 on:
   pull_request:
@@ -273,7 +273,7 @@ jobs:
           cosign verify-blob \
             --certificate "${certificate_path}" \
             --signature "${signature_path}" \
-            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@.*$" \
+            --certificate-identity-regexp "^https://github.com/${GITHUB_REPOSITORY}/.github/workflows/deploy.yml@.*$" \
             --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
             "${artifact_name}"
 

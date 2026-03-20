@@ -1,4 +1,4 @@
-name: Weekly DR Backup (Convex -> S3)
+name: 🗄️ Database Backup to S3 (Weekly)
 
 on:
   schedule:

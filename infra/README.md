@@ -230,6 +230,6 @@ See the DR docs for the full operator flow:
 
 ## Notes
 
-- The weekly DR backup workflow lives at [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-backup-convex-s3.yml).
+- The weekly DR backup workflow lives at [db-backup.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/db-backup.yml).
 - The backup workflow validates that exported data is restorable; it is not just an artifact upload job.
 - Bucket lifecycle expiration is intentionally not configured for canonical file retention in the storage path; application lifecycle deletion remains the source of truth there.

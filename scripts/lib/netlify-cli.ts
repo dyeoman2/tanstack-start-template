@@ -48,6 +48,17 @@ export type NetlifySiteDetails = NetlifySite & {
   } | null;
 };
 
+export type NetlifyDeploy = {
+  adminUrl?: string | null;
+  createdAt?: string | null;
+  errorMessage?: string | null;
+  id: string;
+  name?: string | null;
+  sslUrl?: string | null;
+  state?: string | null;
+  url?: string | null;
+};
+
 export function isNetlifySiteRepoBacked(site: Pick<NetlifySiteDetails, 'buildSettings'> | null) {
   const buildSettings = site?.buildSettings;
   if (!buildSettings) {
@@ -385,10 +396,130 @@ export function reinitializeNetlifySiteContinuousDeployment(input: {
 }
 
 export type NetlifyTriggerBuildResult = {
+  deployId?: string | null;
   error: string;
   ok: boolean;
   triggeredVia?: 'api' | 'build-hook';
 };
+
+function normalizeNetlifyDeploy(input: {
+  admin_url?: string;
+  created_at?: string;
+  error_message?: string;
+  id?: string;
+  name?: string;
+  ssl_url?: string;
+  state?: string;
+  url?: string;
+}): NetlifyDeploy | null {
+  if (!input.id) {
+    return null;
+  }
+
+  return {
+    adminUrl: input.admin_url ?? null,
+    createdAt: input.created_at ?? null,
+    errorMessage: input.error_message ?? null,
+    id: input.id,
+    name: input.name ?? null,
+    sslUrl: input.ssl_url ?? null,
+    state: input.state ?? null,
+    url: input.url ?? null,
+  };
+}
+
+export function getNetlifyDeploy(deployId: string): NetlifyDeploy | null {
+  const result = runNetlify([
+    'api',
+    'getDeploy',
+    '--data',
+    JSON.stringify({ deploy_id: deployId }),
+  ]);
+  const parsed =
+    parseNetlifyJsonOutput<{
+      admin_url?: string;
+      created_at?: string;
+      error_message?: string;
+      id?: string;
+      name?: string;
+      ssl_url?: string;
+      state?: string;
+      url?: string;
+    }>(result) ?? null;
+
+  return parsed ? normalizeNetlifyDeploy(parsed) : null;
+}
+
+export function listNetlifySiteDeploys(siteId: string) {
+  const result = runNetlify([
+    'api',
+    'listSiteDeploys',
+    '--data',
+    JSON.stringify({ site_id: siteId }),
+  ]);
+  const parsed =
+    parseNetlifyJsonOutput<
+      Array<{
+        admin_url?: string;
+        created_at?: string;
+        error_message?: string;
+        id?: string;
+        name?: string;
+        ssl_url?: string;
+        state?: string;
+        url?: string;
+      }>
+    >(result) ?? [];
+
+  return parsed
+    .map((deploy) => normalizeNetlifyDeploy(deploy))
+    .filter((deploy): deploy is NetlifyDeploy => Boolean(deploy))
+    .sort((left, right) => {
+      const leftTime = left.createdAt ? Date.parse(left.createdAt) : 0;
+      const rightTime = right.createdAt ? Date.parse(right.createdAt) : 0;
+      return rightTime - leftTime;
+    });
+}
+
+export function waitForNetlifyDeployResult(input: {
+  deployId?: string | null;
+  pollIntervalMs?: number;
+  siteId: string;
+  timeoutMs?: number;
+}) {
+  const timeoutMs = input.timeoutMs ?? 5 * 60 * 1000;
+  const pollIntervalMs = input.pollIntervalMs ?? 10 * 1000;
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const deploy =
+      (input.deployId ? getNetlifyDeploy(input.deployId) : null) ??
+      listNetlifySiteDeploys(input.siteId)[0] ??
+      null;
+
+    if (deploy) {
+      const normalizedState = deploy.state?.trim().toLowerCase() ?? '';
+      if (['ready', 'current'].includes(normalizedState)) {
+        return { deploy, ok: true, timedOut: false };
+      }
+
+      if (['error', 'failed'].includes(normalizedState)) {
+        return { deploy, ok: false, timedOut: false };
+      }
+    }
+
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, pollIntervalMs);
+  }
+
+  return {
+    deploy:
+      (input.deployId ? getNetlifyDeploy(input.deployId) : null) ??
+      listNetlifySiteDeploys(input.siteId)[0] ??
+      null,
+    ok: false,
+    timedOut: true,
+  };
+}
 
 export function triggerNetlifySiteBuild(
   siteId: string,
@@ -400,8 +531,13 @@ export function triggerNetlifySiteBuild(
     '--data',
     JSON.stringify({ site_id: siteId }),
   ]);
+  const apiDeploy =
+    parseNetlifyJsonOutput<{
+      id?: string;
+    }>(apiResult) ?? null;
   if (apiResult.ok) {
     return {
+      deployId: apiDeploy?.id ?? null,
       error: '',
       ok: true,
       triggeredVia: 'api',
@@ -414,6 +550,7 @@ export function triggerNetlifySiteBuild(
     });
     if (hookResult.status === 0) {
       return {
+        deployId: null,
         error: '',
         ok: true,
         triggeredVia: 'build-hook',
@@ -431,6 +568,7 @@ export function triggerNetlifySiteBuild(
   }
 
   return {
+    deployId: null,
     error: [apiResult.stdout, apiResult.stderr].filter(Boolean).join('\n').trim(),
     ok: false,
     triggeredVia: 'api',

@@ -37,7 +37,7 @@ const DR_ENV_FILE_NAME = '.dr.env.local';
 loadProjectEnvFiles({ extraFilenames: [DR_ENV_FILE_NAME] });
 
 function printUsage() {
-  console.log('Usage: pnpm run dr:destroy -- --stack <backup|ecs|all> [--yes]');
+  console.log('Usage: pnpm run dr:destroy -- --stack <backup|ecs|all> [--yes] [--keep-secrets]');
   console.log('');
   console.log(
     'What this does: destroy DR AWS stacks and related DR artifacts based on the selected target.',
@@ -46,6 +46,7 @@ function printUsage() {
   console.log('Examples:');
   console.log('- pnpm run dr:destroy -- --stack backup');
   console.log('- pnpm run dr:destroy -- --stack all');
+  console.log('- pnpm run dr:destroy -- --stack all --keep-secrets');
   console.log('');
   console.log('Safe to rerun: no; this is destructive.');
 }
@@ -434,6 +435,7 @@ async function main() {
   const stackIndex = process.argv.indexOf('--stack');
   const target = stackIndex >= 0 ? process.argv[stackIndex + 1] : undefined;
   const yes = process.argv.includes('--yes');
+  const keepSecrets = process.argv.includes('--keep-secrets');
   if (target !== 'backup' && target !== 'ecs' && target !== 'all') {
     throw new Error('Pass --stack backup, --stack ecs, or --stack all.');
   }
@@ -501,7 +503,11 @@ async function main() {
     if (githubRepo) {
       console.log(`GitHub Actions secret cleanup: ${githubRepo}`);
     }
-    console.log(`DR secret cleanup: ${Object.values(secretNames).join(', ')}`);
+    console.log(
+      keepSecrets
+        ? `DR secret cleanup: skipped (--keep-secrets)`
+        : `DR secret cleanup: ${Object.values(secretNames).join(', ')}`,
+    );
     console.log(`Repo-local DR defaults cleanup: ${DR_ENV_FILE_NAME}`);
   }
 
@@ -568,16 +574,20 @@ async function main() {
   }
 
   if (target === 'all') {
-    const secretsToDelete = [
-      ...Object.values(secretNames),
-      `${projectSlug}-dr-aurora-credentials-secret`,
-      `${projectSlug}-dr-convex-instance-secret`,
-    ] as string[];
+    if (!keepSecrets) {
+      const secretsToDelete = [
+        ...Object.values(secretNames),
+        `${projectSlug}-dr-aurora-credentials-secret`,
+        `${projectSlug}-dr-convex-instance-secret`,
+      ] as string[];
 
-    for (const secretId of secretsToDelete) {
-      if (deleteSecret(secretId, region)) {
-        console.log(`Deleted secret ${secretId}.`);
+      for (const secretId of secretsToDelete) {
+        if (deleteSecret(secretId, region)) {
+          console.log(`Deleted secret ${secretId}.`);
+        }
       }
+    } else {
+      console.log('Kept DR AWS Secrets Manager secrets (--keep-secrets).');
     }
 
     const netlifySite = findNetlifySiteByName(netlifySiteName);

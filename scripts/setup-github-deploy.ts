@@ -27,7 +27,7 @@ function printUsage() {
   console.log('Usage: pnpm run setup:github-deploy');
   console.log('');
   console.log(
-    'What this does: configure release.yml GitHub environments for staging and production.',
+    'What this does: configure deploy.yml GitHub environments for staging and production.',
   );
   console.log('');
   console.log('Prereqs:');
@@ -60,9 +60,7 @@ async function main() {
   console.log('');
   requireCommands([{ cmd: 'git' }, { cmd: 'gh' }]);
   console.log('GitHub deploy environment setup');
-  console.log(
-    'This configures the staging and production GitHub environments used by release.yml.',
-  );
+  console.log('This configures the staging and production GitHub environments used by deploy.yml.');
   console.log(
     'It also writes the repo-level CONVEX_DEPLOY_KEY required by existing compatibility workflows.',
   );

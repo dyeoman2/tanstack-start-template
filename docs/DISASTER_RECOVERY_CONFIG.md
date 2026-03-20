@@ -29,9 +29,15 @@ pnpm run dr:destroy
 - DR-specific AWS Secrets Manager secrets
 - `.dr.env.local`
 
+To tear down the DR stacks and external DR artifacts but keep the DR AWS Secrets Manager secrets as the retained recovery source of truth, use:
+
+```bash
+pnpm run dr:destroy -- --stack all --keep-secrets
+```
+
 ## GitHub Actions Secrets
 
-Required for [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-backup-convex-s3.yml):
+Required for [db-backup.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/db-backup.yml):
 
 - `CONVEX_DEPLOY_KEY`
 - `AWS_DR_BACKUP_ACCESS_KEY_ID`
@@ -50,6 +56,46 @@ Recommended for local self-hosted deploy validation inside the workflow:
 If the recommended test secrets are omitted, the workflow falls back to local development-style defaults where possible.
 
 The weekly DR workflow can also retain backup verification in the control workspace by calling `security:recordBackupVerification` with the existing `CONVEX_DEPLOY_KEY`, so no separate callback URL or shared-secret env var is required.
+
+Required for the manual recovery workflow [dr-recover-deploy.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-recover-deploy.yml):
+
+- `AWS_DR_RECOVERY_ACCESS_KEY_ID`
+- `AWS_DR_RECOVERY_SECRET_ACCESS_KEY`
+- `AWS_DR_RECOVERY_REGION`
+- `AWS_DR_BACKUP_S3_BUCKET`
+
+Required when running the recovery workflow with `hostname_strategy=custom-domain`:
+
+- `AWS_DR_DOMAIN`
+
+The recovery workflow uses the existing DR AWS Secrets Manager entries for:
+
+- the replayed Convex runtime env secret
+- the generated self-hosted Convex admin key
+- the Netlify DR build hook
+- the Netlify DR frontend hostname target
+- optional Cloudflare DNS automation
+
+`pnpm run dr:setup` can now configure the recovery GitHub secrets when you provide suitable long-lived AWS recovery credentials or choose to reuse the freshly created DR backup key as a fallback.
+
+## Manual GitHub Recovery Workflow
+
+The repo includes a manual DR recovery workflow:
+
+```text
+.github/workflows/dr-recover-deploy.yml
+```
+
+It runs [dr-recover-ecs.sh](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/scripts/dr-recover-ecs.sh) from GitHub Actions and supports these workflow inputs:
+
+- `hostname_strategy`
+  - `provider-hostnames`
+  - `custom-domain`
+- `skip_cdk_deploy`
+  - `true` when the DR ECS stack is already up and you only want to rerun recovery
+  - `false` to let the workflow redeploy or reconcile the DR ECS stack first
+
+Use this workflow when you want a GitHub-driven recovery run with job logs and summary output, rather than running the shell script manually from a workstation.
 
 ## CDK Deploy-Time Environment Variables
 

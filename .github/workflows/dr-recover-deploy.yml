@@ -1,0 +1,102 @@
+name: 🛟 Disaster Recovery Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      hostname_strategy:
+        description: 'Recovery hostname strategy'
+        required: true
+        default: provider-hostnames
+        type: choice
+        options:
+          - provider-hostnames
+          - custom-domain
+      skip_cdk_deploy:
+        description: 'Skip CDK deploy when the DR ECS stack is already up'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  dr_recover:
+    name: Recover DR ECS environment
+    runs-on: ubuntu-22.04
+    timeout-minutes: 75
+    environment: production
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v6
+
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.32.0 --activate
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          aws-access-key-id: ${{ secrets.AWS_DR_RECOVERY_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_DR_RECOVERY_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_DR_RECOVERY_REGION || 'us-west-1' }}
+
+      - name: Run DR recovery script
+        id: recover
+        run: ./infra/aws-cdk/scripts/dr-recover-ecs.sh
+        env:
+          AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
+          AWS_DR_DOMAIN: ${{ secrets.AWS_DR_DOMAIN }}
+          AWS_DR_HOSTNAME_STRATEGY: ${{ inputs.hostname_strategy }}
+          SKIP_CDK_DEPLOY: ${{ inputs.skip_cdk_deploy }}
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo "## DR Recovery (ECS)"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Hostname strategy | \`${HOSTNAME_STRATEGY}\` |"
+            echo "| Skip CDK deploy | \`${SKIP_CDK_DEPLOY}\` |"
+            echo "| Recovery status | **${{ steps.recover.outcome }}** |"
+            echo ""
+            if [[ "${{ steps.recover.outcome }}" == "success" ]]; then
+              echo "### Recovery complete"
+              echo ""
+              echo "Verify:"
+              echo "1. Open the DR frontend and sign in."
+              echo "2. Confirm expected production data is present."
+              echo "3. Confirm a mutation succeeds."
+              if [[ "${HOSTNAME_STRATEGY}" == "custom-domain" && -n "${AWS_DR_DOMAIN}" ]]; then
+                echo ""
+                echo "Expected custom-domain endpoints:"
+                echo "- Frontend: \`https://dr.${AWS_DR_DOMAIN}\`"
+                echo "- Backend: \`https://dr-backend.${AWS_DR_DOMAIN}\`"
+                echo "- Site: \`https://dr-site.${AWS_DR_DOMAIN}\`"
+              fi
+            else
+              echo "### Recovery failed"
+              echo ""
+              echo "Check the workflow logs above for the failing recovery step."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          AWS_DR_DOMAIN: ${{ secrets.AWS_DR_DOMAIN }}
+          HOSTNAME_STRATEGY: ${{ inputs.hostname_strategy }}
+          SKIP_CDK_DEPLOY: ${{ inputs.skip_cdk_deploy }}

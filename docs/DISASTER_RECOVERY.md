@@ -18,7 +18,7 @@ This remains the default incident response path:
 
 ### Secondary vendor-independent backup
 
-The weekly workflow at [dr-backup-convex-s3.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-backup-convex-s3.yml) does all of the following:
+The weekly workflow at [db-backup.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/db-backup.yml) does all of the following:
 
 - exports Convex production data with `pnpm exec convex export`
 - uploads the archive to `s3://<bucket>/convex-backups/...`
