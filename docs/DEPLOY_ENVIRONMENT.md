@@ -117,14 +117,14 @@ Exit code `1` means a configured local key is missing on Convex dev, or a compar
 
 ### Where configuration lives (avoid mixing secrets)
 
-| Layer | Role |
-| --- | --- |
-| **`.env`** | Optional shared defaults (often committed as a template only if your team uses it). |
-| **`.env.local`** | Primary **local dev secrets** and app URLs; gitignored. `setup:convex` reads this and pushes selected keys to **Convex dev**. |
-| **`.dr.env.local`** | **DR-only** inputs; loaded **after** `.env.local` by `dr:setup` / `destroy-dr` so DR vars can override without polluting normal dev. |
-| **Convex** | Dev vs prod deployment env (dashboard / `pnpm exec convex env …`). |
-| **Netlify** | Build + SSR env per context (`production`, `deploy-preview`, …). |
-| **`--env-file` (setup:prod)** | Explicit file for CI/automation; not merged into `.env.local`. |
+| Layer                         | Role                                                                                                                                 |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **`.env`**                    | Optional shared defaults (often committed as a template only if your team uses it).                                                  |
+| **`.env.local`**              | Primary **local dev secrets** and app URLs; gitignored. `setup:convex` reads this and pushes selected keys to **Convex dev**.        |
+| **`.dr.env.local`**           | **DR-only** inputs; loaded **after** `.env.local` by `dr:setup` / `destroy-dr` so DR vars can override without polluting normal dev. |
+| **Convex**                    | Dev vs prod deployment env (dashboard / `pnpm exec convex env …`).                                                                   |
+| **Netlify**                   | Build + SSR env per context (`production`, `deploy-preview`, …).                                                                     |
+| **`--env-file` (setup:prod)** | Explicit file for CI/automation; not merged into `.env.local`.                                                                       |
 
 **`setup-prod.ts` / `setup:dr`** also set **`process.env`** (e.g. `AWS_REGION`, `AWS_PROFILE`, `AWS_DR_*`) for the lifetime of that Node process so child CLIs see the same region/profile. That does not write your shell’s environment after the script exits.
 

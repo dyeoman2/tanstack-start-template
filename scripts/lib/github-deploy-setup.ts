@@ -291,6 +291,14 @@ export function validateProductionConvexDeployKey(value: string) {
 }
 
 export async function promptForProductionConvexDeployKey(initialValue?: string | null) {
+  if (!initialValue) {
+    console.log('How to get it:');
+    console.log('1. Open Convex Dashboard for your production deployment.');
+    console.log('2. Go to Settings -> Deploy Keys.');
+    console.log('3. Click "Generate Production Deploy Key".');
+    console.log('4. Copy the generated key and paste it here.');
+    console.log('');
+  }
   while (true) {
     const value = await chooseOrPromptSecret(
       'production CONVEX_DEPLOY_KEY',
@@ -302,7 +310,7 @@ export async function promptForProductionConvexDeployKey(initialValue?: string |
     }
 
     console.log(
-      'A production-scoped Convex deploy key is required. Generate one in Convex Dashboard -> Settings -> Deploy Keys.',
+      'A production-scoped Convex deploy key is required. In Convex Dashboard, open Settings -> Deploy Keys and click "Generate Production Deploy Key".',
     );
     initialValue = undefined;
   }

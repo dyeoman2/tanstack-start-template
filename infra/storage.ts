@@ -58,7 +58,7 @@ if (stage !== 'dev' && stage !== 'prod') {
   throw new Error('Pass --stage dev or --stage prod.');
 }
 
-for (const fileName of stage === 'dev' ? ['.env', '.env.local'] : ['.env']) {
+for (const fileName of stage === 'dev' ? ['.env', '.env.local'] : ['.env', '.env.prod']) {
   loadRepoEnvFile(path.join(process.cwd(), fileName));
 }
 

@@ -48,6 +48,19 @@ export type NetlifySiteDetails = NetlifySite & {
   } | null;
 };
 
+export function isNetlifySiteRepoBacked(site: Pick<NetlifySiteDetails, 'buildSettings'> | null) {
+  const buildSettings = site?.buildSettings;
+  if (!buildSettings) {
+    return false;
+  }
+
+  return Boolean(
+    buildSettings.repo_url?.trim() ||
+    buildSettings.installation_id ||
+    buildSettings.provider?.trim(),
+  );
+}
+
 export function runNetlify(
   args: string[],
   options?: { cwd?: string; env?: NodeJS.ProcessEnv },
@@ -230,7 +243,12 @@ export function createRepoBackedNetlifySite(input: {
     return null;
   }
 
-  return getNetlifySiteDetails(created.id) ?? resolveNetlifySite(input.desiredName);
+  const siteDetails = getNetlifySiteDetails(created.id);
+  if (siteDetails) {
+    return siteDetails;
+  }
+
+  return resolveNetlifySite(input.desiredName);
 }
 
 export function configureNetlifySiteRepository(input: {
@@ -251,9 +269,30 @@ export function configureNetlifySiteRepository(input: {
       ...payload,
     }),
   ]);
+  const error = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+  if (!result.ok) {
+    return {
+      error,
+      ok: false,
+      site: null as NetlifySiteDetails | null,
+    };
+  }
+
+  const updatedSite = getNetlifySiteDetails(input.siteId);
+  if (!isNetlifySiteRepoBacked(updatedSite)) {
+    return {
+      error:
+        error ||
+        'Netlify accepted the repository update request, but the site still has no repo/build metadata afterward.',
+      ok: false,
+      site: updatedSite,
+    };
+  }
+
   return {
-    error: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
-    ok: result.ok,
+    error,
+    ok: true,
+    site: updatedSite,
   };
 }
 

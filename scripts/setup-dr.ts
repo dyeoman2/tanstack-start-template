@@ -36,6 +36,7 @@ import {
   formatNetlifySiteSummary,
   getNetlifySiteDetails,
   getNetlifySiteEnvValue,
+  isNetlifySiteRepoBacked,
   listNetlifySiteHooks,
   readNetlifyLinkedSiteIdFromDisk,
   resolveNetlifySite,
@@ -1521,6 +1522,7 @@ async function main() {
         console.log(
           `- Netlify DR site: ${formatNetlifySiteSummary(drNetlifySite) ?? drNetlifySite.name}`,
         );
+        console.log('- Next: mirror the primary site repo/build settings onto the DR site.');
       }
     }
 
@@ -1596,18 +1598,34 @@ async function main() {
           primarySite: linkedNetlifySiteDetails,
         });
         if (repoConfigured.ok) {
+          drNetlifySite = repoConfigured.site ?? drNetlifySite;
+          console.log('- Mirrored primary site repo/build settings onto the DR site');
           summary.completed.push(
             'Mirrored the primary Netlify repo/build configuration onto the DR site.',
           );
         } else {
+          console.log('- Could not mirror primary site repo/build settings automatically');
           summary.needsAttention.push(
             `Could not mirror the primary Netlify repo/build configuration onto the DR site automatically.${repoConfigured.error ? ` ${repoConfigured.error}` : ''}`,
           );
         }
       } else {
+        console.log(
+          '- Primary site repo/build metadata was missing, so repo-backed DR setup could not be mirrored automatically',
+        );
         summary.needsAttention.push(
           'The linked primary Netlify site is missing repo/build metadata, so the DR site could not be configured as a repo-backed build automatically.',
         );
+      }
+
+      const drNetlifySiteDetails = getNetlifySiteDetails(drNetlifySite.id);
+      if (!isNetlifySiteRepoBacked(drNetlifySiteDetails)) {
+        summary.frontendLane = 'partial';
+        summary.needsAttention.push(
+          'The dedicated Netlify DR site exists, but it is still not connected to the repo/build settings. Open Netlify and connect the DR site to the same repository before relying on frontend failover.',
+        );
+      } else if (drNetlifySiteDetails) {
+        drNetlifySite = drNetlifySiteDetails;
       }
 
       let buildHookUrl =

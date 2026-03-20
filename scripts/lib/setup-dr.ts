@@ -182,7 +182,6 @@ export function getRequiredStorageDrEnvKeys(envVars: Record<string, string>): st
       'FILE_STORAGE_BACKEND',
       'AWS_REGION',
       'AWS_S3_FILES_BUCKET',
-      'CONVEX_SITE_URL',
       'AWS_FILE_SERVE_SIGNING_SECRET',
       'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ];
@@ -192,7 +191,12 @@ export function getRequiredStorageDrEnvKeys(envVars: Record<string, string>): st
 }
 
 export function getRequiredRecoveryEnvKeys(envVars: Record<string, string>): string[] {
-  return ['BETTER_AUTH_SECRET', 'JWKS', ...getRequiredStorageDrEnvKeys(envVars)];
+  return [
+    'BETTER_AUTH_SECRET',
+    'JWKS',
+    'OPENROUTER_API_KEY',
+    ...getRequiredStorageDrEnvKeys(envVars),
+  ];
 }
 
 export function extractHostnameFromUrl(value: string): string | null {

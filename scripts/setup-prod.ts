@@ -830,6 +830,10 @@ async function main() {
 
     console.log('\n📦 Optional production extras');
     if (!opts.yes) {
+      console.log('Disaster recovery setup is optional.');
+      console.log(
+        'It provisions the separate DR backup/backend/frontend resources and related GitHub/Netlify wiring.',
+      );
       const shouldSetupDr = await askYesNo('Configure disaster recovery setup now?', false);
 
       if (shouldSetupDr) {

@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { ensureNetlifyOk, runNetlify } from './netlify-cli';
 
 export type NetlifyEnvSyncInput = {
   authToken: string;
@@ -27,24 +27,15 @@ export function netlifyEnvSet(
     args.push('--force');
   }
 
-  try {
-    execFileSync('netlify', args, {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-      env: {
-        ...process.env,
-        NETLIFY_AUTH_TOKEN: input.authToken,
-        NETLIFY_SITE_ID: input.siteId,
-      },
-    });
-  } catch (error) {
-    const err = error as { stderr?: Buffer; stdout?: Buffer; message?: string };
-    const detail = [err.stderr?.toString(), err.stdout?.toString(), err.message]
-      .filter(Boolean)
-      .join('\n')
-      .trim();
-    throw new Error(detail || 'Netlify env:set failed');
-  }
+  const result = runNetlify(args, {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NETLIFY_AUTH_TOKEN: input.authToken,
+      NETLIFY_SITE_ID: input.siteId,
+    },
+  });
+  ensureNetlifyOk(result, 'Netlify env:set failed');
 }
 
 const DEFAULT_CONTEXTS: Array<'production'> = ['production'];

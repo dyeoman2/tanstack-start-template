@@ -22,6 +22,7 @@ yarn.lock
 /playwright/.auth/
 .tanstack
 .env.local
+.env.prod
 
 127.0.0.1-key.pem
 127.0.0.1.pem

@@ -74,7 +74,7 @@ set_convex_env_if_present() {
   local key="$1"
   local value="$2"
   if [[ -n "${value}" ]]; then
-    pnpm exec convex env set "${key}" "${value}" >/dev/null
+    printf '%s' "${value}" | pnpm exec convex env set "${key}" >/dev/null
     ok "${key} set"
   fi
 }
@@ -319,6 +319,14 @@ env_json=$(aws secretsmanager get-secret-value \
 predeploy_app_name="$(get_json_value 'APP_NAME')"
 predeploy_better_auth_secret="$(get_json_value 'BETTER_AUTH_SECRET')"
 predeploy_jwks="$(get_json_value 'JWKS')"
+predeploy_openrouter_api_key="$(get_json_value 'OPENROUTER_API_KEY')"
+predeploy_resend_api_key="$(get_json_value 'RESEND_API_KEY')"
+predeploy_resend_email_sender="$(get_json_value 'RESEND_EMAIL_SENDER')"
+predeploy_file_storage_backend="$(get_json_value 'FILE_STORAGE_BACKEND')"
+predeploy_aws_region="$(get_json_value 'AWS_REGION')"
+predeploy_aws_s3_files_bucket="$(get_json_value 'AWS_S3_FILES_BUCKET')"
+predeploy_aws_malware_webhook_shared_secret="$(get_json_value 'AWS_MALWARE_WEBHOOK_SHARED_SECRET')"
+predeploy_aws_file_serve_signing_secret="$(get_json_value 'AWS_FILE_SERVE_SIGNING_SECRET')"
 
 set_convex_env_if_present "APP_NAME" "${predeploy_app_name:-${APP_NAME:-TanStack Start Template DR}}"
 set_convex_env_if_present "BETTER_AUTH_URL" "${FRONTEND_URL}"
@@ -333,6 +341,14 @@ if [[ -n "${predeploy_jwks}" ]]; then
 else
   warn "JWKS not found in ${AWS_DR_ENV_SECRET_NAME}"
 fi
+set_convex_env_if_present "OPENROUTER_API_KEY" "${predeploy_openrouter_api_key}"
+set_convex_env_if_present "RESEND_API_KEY" "${predeploy_resend_api_key}"
+set_convex_env_if_present "RESEND_EMAIL_SENDER" "${predeploy_resend_email_sender}"
+set_convex_env_if_present "FILE_STORAGE_BACKEND" "${predeploy_file_storage_backend}"
+set_convex_env_if_present "AWS_REGION" "${predeploy_aws_region}"
+set_convex_env_if_present "AWS_S3_FILES_BUCKET" "${predeploy_aws_s3_files_bucket}"
+set_convex_env_if_present "AWS_MALWARE_WEBHOOK_SHARED_SECRET" "${predeploy_aws_malware_webhook_shared_secret}"
+set_convex_env_if_present "AWS_FILE_SERVE_SIGNING_SECRET" "${predeploy_aws_file_serve_signing_secret}"
 
 if [[ -z "${env_json}" || "${env_json}" == "None" ]]; then
   fail "Secrets Manager secret ${AWS_DR_ENV_SECRET_NAME} not found before deploy. Run pnpm run dr:sync-env first."
@@ -371,6 +387,7 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
   echo "${env_json}" | jq -r 'to_entries[] | "\(.key)\t\(.value)"' | while IFS=$'\t' read -r key value; do
     case "${key}" in
       BETTER_AUTH_URL) value="${FRONTEND_URL}" ;;
+      CONVEX_SITE_URL) continue ;;
       FILE_STORAGE_BACKEND)
         if [[ -z "${value}" ]]; then
           value="convex"
@@ -382,7 +399,7 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
         fi
         ;;
     esac
-    pnpm exec convex env set "${key}" "${value}" >/dev/null
+    printf '%s' "${value}" | pnpm exec convex env set "${key}" >/dev/null
   done
   ok "Runtime env vars applied from ${AWS_DR_ENV_SECRET_NAME}"
 else
@@ -390,13 +407,13 @@ else
 fi
 
 if [[ -n "${FRONTEND_URL}" ]]; then
-  pnpm exec convex env set BETTER_AUTH_URL "${FRONTEND_URL}" >/dev/null
+  printf '%s' "${FRONTEND_URL}" | pnpm exec convex env set BETTER_AUTH_URL >/dev/null
 fi
 if [[ -n "${file_storage_backend}" ]]; then
-  pnpm exec convex env set FILE_STORAGE_BACKEND "${file_storage_backend}" >/dev/null
+  printf '%s' "${file_storage_backend}" | pnpm exec convex env set FILE_STORAGE_BACKEND >/dev/null
 fi
 if [[ -n "${file_serve_secret}" ]]; then
-  pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET "${file_serve_secret}" >/dev/null
+  printf '%s' "${file_serve_secret}" | pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET >/dev/null
 fi
 
 if [[ "${should_persist_file_serve_secret}" == "true" && -n "${env_json}" && "${env_json}" != "None" ]]; then

@@ -106,7 +106,6 @@ describe('storage helpers', () => {
       'FILE_STORAGE_BACKEND',
       'AWS_REGION',
       'AWS_S3_FILES_BUCKET',
-      'CONVEX_SITE_URL',
       'AWS_FILE_SERVE_SIGNING_SECRET',
       'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ]);
@@ -116,6 +115,7 @@ describe('storage helpers', () => {
     expect(getRequiredRecoveryEnvKeys({ FILE_STORAGE_BACKEND: 'convex' })).toEqual([
       'BETTER_AUTH_SECRET',
       'JWKS',
+      'OPENROUTER_API_KEY',
     ]);
   });
 });
