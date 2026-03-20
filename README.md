@@ -95,7 +95,18 @@ This automated script will guide you through local development setup, including:
 - Interactive Convex project creation
 - Development environment configuration (URLs and environment variables)
 - Optional authenticated Playwright E2E setup via `pnpm run setup:e2e`
-- Automatic startup of both development servers simultaneously in the current terminal!
+
+Then start the app with either:
+
+```bash
+pnpm dev
+```
+
+Or, if you need the Docker-backed local runtime path:
+
+```bash
+pnpm run dev:docker
+```
 
 ### 🚀 Quick Start (Production)
 
@@ -110,11 +121,16 @@ pnpm run setup:prod
 
 - ✅ Checks for git remote repository
 - ✅ Deploys Convex functions to production
-- ✅ Provides step-by-step Netlify deployment instructions
-- ✅ Pre-fills environment variables for easy copying
-- ✅ Guides you through connecting your existing repository
+- ✅ Prompts for optional `RESEND_API_KEY` on Convex production
+- ✅ Verifies `JWKS` on Convex production after deploy and tries `pnpm run convex:jwks:sync` when missing
+- ✅ Optionally sets `BETTER_AUTH_SECRET` and `VITE_CONVEX_URL` on Netlify (production context)
+- ✅ Guides GitHub Actions deploy environments and Netlify hooks
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
+
+**Ongoing hygiene:** See [docs/DEPLOY_ENVIRONMENT.md](./docs/DEPLOY_ENVIRONMENT.md) for Convex cruft removal (`pnpm run convex:env:hygiene`), `.env.local` drift checks (`pnpm run convex:env:verify`), and Resend/JWKS notes.
+
+**Command map:** See [docs/SCRIPT_COMMAND_MAP.md](./docs/SCRIPT_COMMAND_MAP.md) for the quickest “intent → command” lookup.
 
 ## 🧪 Testing
 
@@ -248,7 +264,6 @@ npx netlify link
 In order to send password reset and transactional emails, you need to set up Resend. In order to monitor errors and performance, you need to set up Sentry. For chat functionality, you need to set up OpenRouter. These are optional, but recommended for production.
 
 - Add `OPENROUTER_API_KEY` to your local `.env.local` and production environment.
-- Optional: set `OPENROUTER_SITE_URL` and `OPENROUTER_SITE_NAME` if you want custom attribution headers sent to OpenRouter.
 - Manage the allowed chat models from the admin dashboard instead of syncing a provider catalog.
 
 - [Resend Setup Guide](docs/RESEND_SETUP.md) - Password reset and transactional email configuration

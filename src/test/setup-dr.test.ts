@@ -36,6 +36,7 @@ describe('parseSetupDrArgs', () => {
       help: false,
       json: true,
       netlifySite: 'site-123',
+      plan: false,
       projectSlug: 'demo',
       skipCloudflare: true,
       skipEcs: false,
@@ -52,6 +53,13 @@ describe('parseSetupDrArgs', () => {
   it('supports help aliases', () => {
     expect(parseSetupDrArgs(['--help']).help).toBe(true);
     expect(parseSetupDrArgs(['-h']).help).toBe(true);
+  });
+
+  it('treats non-interactive as yes and parses plan', () => {
+    expect(parseSetupDrArgs(['--non-interactive', '--plan'])).toMatchObject({
+      yes: true,
+      plan: true,
+    });
   });
 });
 
@@ -146,7 +154,6 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       BETTER_AUTH_SECRET: 'secret',
       BETTER_AUTH_URL: 'https://dr.example.com',
       CONVEX_SITE_URL: 'https://dr-site.example.com',
-      VITE_CONVEX_SITE_URL: 'https://dr-site.example.com',
       VITE_CONVEX_URL: 'https://dr-backend.example.com',
       FILE_STORAGE_BACKEND: 's3-primary',
       AWS_REGION: 'us-west-1',

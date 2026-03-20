@@ -371,7 +371,6 @@ if [[ -n "${env_json}" && "${env_json}" != "None" ]]; then
   echo "${env_json}" | jq -r 'to_entries[] | "\(.key)\t\(.value)"' | while IFS=$'\t' read -r key value; do
     case "${key}" in
       BETTER_AUTH_URL) value="${FRONTEND_URL}" ;;
-      VITE_CONVEX_SITE_URL) value="${STACK_SITE_URL:-${SITE_URL}}" ;;
       FILE_STORAGE_BACKEND)
         if [[ -z "${value}" ]]; then
           value="convex"

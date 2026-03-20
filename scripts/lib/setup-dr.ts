@@ -7,6 +7,7 @@ export type DrSetupFlags = {
   hostnameStrategy?: DrHostnameStrategy;
   json: boolean;
   netlifySite?: string;
+  plan: boolean;
   projectSlug?: string;
   skipCloudflare: boolean;
   skipEcs: boolean;
@@ -28,6 +29,7 @@ export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
   const flags: DrSetupFlags = {
     help: false,
     json: false,
+    plan: false,
     skipCloudflare: false,
     skipEcs: false,
     skipGithub: false,
@@ -39,6 +41,7 @@ export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
     const arg = argv[index];
     switch (arg) {
       case '--yes':
+      case '--non-interactive':
         flags.yes = true;
         break;
       case '--help':
@@ -47,6 +50,9 @@ export function parseSetupDrArgs(argv: readonly string[]): DrSetupFlags {
         break;
       case '--json':
         flags.json = true;
+        break;
+      case '--plan':
+        flags.plan = true;
         break;
       case '--skip-netlify':
         flags.skipNetlify = true;
@@ -215,7 +221,6 @@ export function buildRequiredNetlifyDrEnvVars(
     BETTER_AUTH_SECRET: envVars.BETTER_AUTH_SECRET?.trim() || '',
     BETTER_AUTH_URL: origins.frontendOrigin,
     CONVEX_SITE_URL: origins.siteOrigin,
-    VITE_CONVEX_SITE_URL: origins.siteOrigin,
     VITE_CONVEX_URL: origins.backendOrigin,
   };
 

@@ -1,11 +1,12 @@
 import { convexBetterAuthReactStart } from '@convex-dev/better-auth/react-start';
 import type { FunctionReference, FunctionReturnType, OptionalRestArgs } from 'convex/server';
+import { deriveConvexSiteUrl } from '~/lib/convex-url';
 
 type ConvexAuthReactStart = ReturnType<typeof convexBetterAuthReactStart>;
 
 let cachedConvexAuthReactStart: ConvexAuthReactStart | null = null;
 
-function getRequiredClientEnv(name: 'VITE_CONVEX_URL' | 'VITE_CONVEX_SITE_URL'): string {
+function getRequiredClientEnv(name: 'VITE_CONVEX_URL'): string {
   const value = import.meta.env[name];
   if (!value) {
     throw new Error(`${name} environment variable is required`);
@@ -21,7 +22,7 @@ export function getConvexAuthReactStart(): ConvexAuthReactStart {
 
   cachedConvexAuthReactStart = convexBetterAuthReactStart({
     convexUrl: getRequiredClientEnv('VITE_CONVEX_URL'),
-    convexSiteUrl: getRequiredClientEnv('VITE_CONVEX_SITE_URL'),
+    convexSiteUrl: deriveConvexSiteUrl(getRequiredClientEnv('VITE_CONVEX_URL')),
   });
 
   return cachedConvexAuthReactStart;

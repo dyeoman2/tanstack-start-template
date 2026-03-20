@@ -656,7 +656,7 @@ function DashboardComponent() {
 
 ```ts
 // src/lib/convexClient.ts
-const convexUrl = import.meta.env.VITE_CONVEX_URL || import.meta.env.VITE_CONVEX_SITE_URL;
+const convexUrl = import.meta.env.VITE_CONVEX_URL;
 export const convexClient = new ConvexReactClient(convexUrl, { expectAuth: true });
 ```
 

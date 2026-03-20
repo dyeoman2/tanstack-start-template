@@ -1,25 +1,14 @@
 #!/usr/bin/env tsx
 
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 const HOST = '127.0.0.1';
 const PORT = '3000';
 const BASE_URL = `http://${HOST}:${PORT}`;
 
 function loadLocalEnv() {
-  const loadEnvFile = process.loadEnvFile?.bind(process);
-  if (!loadEnvFile) {
-    return;
-  }
-
-  for (const fileName of ['.env', '.env.local']) {
-    const filePath = resolve(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
+  loadProjectEnvFiles();
 }
 
 function assertRequiredEnv(name: string) {
@@ -47,7 +36,6 @@ async function main() {
 
   const requiredEnv = [
     'BETTER_AUTH_SECRET',
-    'VITE_CONVEX_SITE_URL',
     'VITE_CONVEX_URL',
     'ENABLE_E2E_TEST_AUTH',
     'E2E_TEST_SECRET',

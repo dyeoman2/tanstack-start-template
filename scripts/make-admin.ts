@@ -1,22 +1,11 @@
 #!/usr/bin/env tsx
 
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { internal } from '../convex/_generated/api';
 import { createConvexAdminClient } from '../src/lib/server/convex-admin.server';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 function loadLocalEnv() {
-  const loadEnvFile = process.loadEnvFile?.bind(process);
-  if (!loadEnvFile) {
-    return;
-  }
-
-  for (const fileName of ['.env', '.env.local']) {
-    const filePath = resolve(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
+  loadProjectEnvFiles();
 }
 
 function getRequiredEnv(name: 'VITE_CONVEX_URL') {
@@ -37,10 +26,32 @@ function getEmailArg() {
   return email;
 }
 
+function printUsage() {
+  console.log('Usage: pnpm make-admin <email>');
+  console.log('');
+  console.log(
+    'What this does: promote an existing user to Better Auth admin in the current Convex deployment.',
+  );
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm make-admin admin@example.com');
+  console.log('');
+  console.log('Safe to rerun: yes; promoting an already-admin user is harmless.');
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   loadLocalEnv();
 
   const email = getEmailArg();
+  console.log('👤 Make admin');
+  console.log('What this does: promote one user by email in the current deployment.');
+  console.log('Prereqs: VITE_CONVEX_URL and server-side admin access available locally.');
+  console.log('Safe to rerun: yes.\n');
   getRequiredEnv('VITE_CONVEX_URL');
   const client = createConvexAdminClient();
   const result = await client.action(internal.admin.promoteUserByEmail, {

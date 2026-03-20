@@ -23,13 +23,13 @@ Email functionality runs entirely in Convex, so you need to set environment vari
 Set the Resend API key in Convex for development:
 
 ```bash
-npx convex env set RESEND_API_KEY your-resend-api-key-here
+pnpm exec convex env set RESEND_API_KEY your-resend-api-key-here
 ```
 
 Optionally set a custom sender email (defaults to `onboarding@resend.dev`):
 
 ```bash
-npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
+pnpm exec convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
 ```
 
 #### Production Environment
@@ -37,13 +37,13 @@ npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
 Set the Resend API key in Convex for production:
 
 ```bash
-npx convex env set RESEND_API_KEY your-resend-api-key-here --prod
+pnpm exec convex env set RESEND_API_KEY your-resend-api-key-here --prod
 ```
 
 Optionally set a custom sender email (defaults to `onboarding@resend.dev`):
 
 ```bash
-npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
+pnpm exec convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
 ```
 
 #### Using the Convex Dashboard
@@ -132,9 +132,9 @@ You can also test the full password reset flow:
 
 #### "RESEND_API_KEY environment variable is required"
 
-- **Development**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key`
-- **Production**: Ensure the API key is set in Convex with `npx convex env set RESEND_API_KEY your-key --prod`
-- **Verification**: Check your Convex environment variables with `npx convex env ls` (or `npx convex env ls --prod` for production)
+- **Development**: Ensure the API key is set in Convex with `pnpm exec convex env set RESEND_API_KEY your-key`
+- **Production**: Ensure the API key is set in Convex with `pnpm exec convex env set RESEND_API_KEY your-key --prod`
+- **Verification**: Check your Convex environment variables with `pnpm exec convex env list` (or `pnpm exec convex env list --prod` for production)
 
 #### "Failed to send password reset email"
 
@@ -189,13 +189,13 @@ Set the `RESEND_EMAIL_SENDER` environment variable in Convex:
 **Development:**
 
 ```bash
-npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
+pnpm exec convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com
 ```
 
 **Production:**
 
 ```bash
-npx convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
+pnpm exec convex env set RESEND_EMAIL_SENDER your-custom-email@yourdomain.com --prod
 ```
 
 The application will automatically use this email address for all outgoing emails. If not set, it defaults to `onboarding@resend.dev`.

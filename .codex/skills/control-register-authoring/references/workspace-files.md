@@ -69,7 +69,7 @@ rg -n "reseedSecurityControlWorkspaceForDevelopment|ACTIVE_CONTROL_REGISTER" con
 
 ```bash
 pnpm run compliance:generate:active-control-register
-npx convex run --typecheck=disable --push security:reseedSecurityControlWorkspaceForDevelopment '{"secret":"..."}'
+pnpm exec convex run --typecheck=disable --push security:reseedSecurityControlWorkspaceForDevelopment '{"secret":"..."}'
 ```
 
 Read `E2E_TEST_SECRET` from `.env.local` before the reseed command.

@@ -2,15 +2,15 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { getOpenRouterConfig } from './openrouter';
 
 const originalOpenRouterApiKey = process.env.OPENROUTER_API_KEY;
-const originalOpenRouterSiteUrl = process.env.OPENROUTER_SITE_URL;
-const originalOpenRouterSiteName = process.env.OPENROUTER_SITE_NAME;
+const originalBetterAuthUrl = process.env.BETTER_AUTH_URL;
+const originalAppName = process.env.APP_NAME;
 const originalOpenRouterPrivacyMode = process.env.OPENROUTER_PRIVACY_MODE;
 
 describe('getOpenRouterConfig', () => {
   afterEach(() => {
     restoreEnv('OPENROUTER_API_KEY', originalOpenRouterApiKey);
-    restoreEnv('OPENROUTER_SITE_URL', originalOpenRouterSiteUrl);
-    restoreEnv('OPENROUTER_SITE_NAME', originalOpenRouterSiteName);
+    restoreEnv('BETTER_AUTH_URL', originalBetterAuthUrl);
+    restoreEnv('APP_NAME', originalAppName);
     restoreEnv('OPENROUTER_PRIVACY_MODE', originalOpenRouterPrivacyMode);
   });
 
@@ -24,8 +24,8 @@ describe('getOpenRouterConfig', () => {
 
   it('builds the provider config with OpenRouter headers', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
-    process.env.OPENROUTER_SITE_URL = 'https://example.com';
-    process.env.OPENROUTER_SITE_NAME = 'Example App';
+    process.env.BETTER_AUTH_URL = 'https://example.com';
+    process.env.APP_NAME = 'Example App';
 
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',
@@ -40,8 +40,8 @@ describe('getOpenRouterConfig', () => {
 
   it('omits attribution headers when they are not configured', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
-    delete process.env.OPENROUTER_SITE_URL;
-    delete process.env.OPENROUTER_SITE_NAME;
+    delete process.env.BETTER_AUTH_URL;
+    delete process.env.APP_NAME;
 
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',

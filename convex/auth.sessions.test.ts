@@ -8,7 +8,6 @@ describe('current session helpers', () => {
       ...ORIGINAL_ENV,
       BETTER_AUTH_SECRET: 'test-secret-test-secret-test-secret',
       BETTER_AUTH_URL: 'http://127.0.0.1:3000',
-      VITE_CONVEX_SITE_URL: 'http://127.0.0.1:3000',
     };
   });
 

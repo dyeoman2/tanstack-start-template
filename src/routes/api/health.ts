@@ -1,4 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { deriveConvexSiteUrl, normalizeUrlOrigin } from '~/lib/convex-url';
+
+/**
+ * Convex HTTP actions (including `/health`) are served from the deployment's
+ * `.convex.site` origin. `VITE_CONVEX_URL` points at `.convex.cloud` for the
+ * query/mutation API and does not expose HTTP routes — probing it yields 404.
+ */
+function resolveConvexHttpOrigin(): string | undefined {
+  const cloudUrl = process.env.VITE_CONVEX_URL?.trim().replace(/\/$/, '');
+  if (!cloudUrl) {
+    return undefined;
+  }
+
+  return cloudUrl.includes('://') ? deriveConvexSiteUrl(cloudUrl) : normalizeUrlOrigin(cloudUrl);
+}
 
 /**
  * Health check endpoint - proxies to Convex HTTP endpoint
@@ -9,13 +24,12 @@ export const Route = createFileRoute('/api/health')({
   server: {
     handlers: {
       GET: async () => {
-        // Read the Convex deployment URL from the server runtime environment.
-        const convexUrl = process.env.VITE_CONVEX_URL?.trim();
-        if (!convexUrl) {
+        const convexHttpOrigin = resolveConvexHttpOrigin();
+        if (!convexHttpOrigin) {
           return new Response(
             JSON.stringify({
               status: 'unhealthy',
-              error: 'VITE_CONVEX_URL not configured',
+              error: 'Convex HTTP origin not configured (set VITE_CONVEX_URL)',
             }),
             {
               status: 503,
@@ -28,7 +42,7 @@ export const Route = createFileRoute('/api/health')({
 
         try {
           // Call Convex HTTP endpoint
-          const response = await fetch(`${convexUrl}/health`, {
+          const response = await fetch(`${convexHttpOrigin}/health`, {
             method: 'GET',
             headers: {
               'Content-Type': 'application/json',

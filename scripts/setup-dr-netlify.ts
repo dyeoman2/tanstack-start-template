@@ -1,11 +1,33 @@
 #!/usr/bin/env tsx
 
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
+import {
+  CLI_INSTALL_HINT,
+  commandOnPath,
+  findMissingCommands,
+  requireCommands,
+  requirePnpmAndConvexCli,
+} from './lib/cli-preflight';
+import { convexEnvList } from './lib/convex-cli';
+import {
+  configureNetlifySiteRepository,
+  createNetlifyBuildHook,
+  createRepoBackedNetlifySite,
+  formatNetlifySiteSummary,
+  getNetlifySiteDetails,
+  getNetlifySiteEnvValue,
+  listNetlifySiteHooks,
+  readNetlifyLinkedSiteIdFromDisk,
+  resolveNetlifySite,
+  setNetlifySiteEnvVar,
+  triggerNetlifySiteBuild,
+  type NetlifySite,
+  type NetlifySiteDetails,
+} from './lib/netlify-cli';
 import {
   buildDrSecretNames,
   buildRequiredNetlifyDrEnvVars,
@@ -13,6 +35,15 @@ import {
   isLikelyConvexAdminAuthToken,
   parseConvexEnvList,
 } from './lib/setup-dr';
+import {
+  emitStructuredOutput,
+  hasFlag,
+  hasHelpFlag,
+  printFinalChangeSummary,
+  printScriptIntro,
+  printTargetSummary,
+  routeLogsToStderrWhenJson,
+} from './lib/script-ux';
 
 type CommandResult = {
   exitCode: number | null;
@@ -21,47 +52,26 @@ type CommandResult = {
   stdout: string;
 };
 
-type NetlifySite = {
-  accountSlug?: string;
-  buildSettings?: NetlifySiteBuildSettings | null;
-  id: string;
-  name: string;
-  sslUrl?: string;
-  url?: string;
-};
-
-type NetlifySiteBuildSettings = {
-  allowed_branches?: string[] | null;
-  base?: string | null;
-  cmd?: string | null;
-  dir?: string | null;
-  functions_dir?: string | null;
-  installation_id?: number | null;
-  private_logs?: boolean | null;
-  provider?: string | null;
-  public_repo?: boolean | null;
-  repo_branch?: string | null;
-  repo_path?: string | null;
-  repo_url?: string | null;
-  stop_builds?: boolean | null;
-};
-
-type NetlifySiteDetails = NetlifySite & {
-  buildImage?: string | null;
-  deployId?: string | null;
-  functionsRegion?: string | null;
-  processingSettings?: {
-    html?: {
-      pretty_urls?: boolean;
-    };
-    ignore_html_forms?: boolean;
-  } | null;
-};
-
 type StackOutputs = Record<string, string>;
 
 type DrHostnameStrategy = 'custom-domain' | 'provider-hostnames';
 const DR_ENV_FILE_NAME = '.dr.env.local';
+
+function printUsage() {
+  console.log('Usage: pnpm run dr:netlify:setup [--json]');
+  console.log('');
+  console.log(
+    'What this does: create or reconcile the DR Netlify frontend site, write required env vars, store recovery secrets in AWS, and trigger an initial build.',
+  );
+  console.log('Use this instead of dr:setup when you only need the DR frontend/Netlify path.');
+  console.log('Docs: docs/DISASTER_RECOVERY_CONFIG.md');
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run dr:netlify:setup');
+  console.log('- pnpm run dr:netlify:setup -- --json');
+  console.log('');
+  console.log('Safe to rerun: yes; it refreshes the DR frontend configuration.');
+}
 
 function createPrompt() {
   return createInterface({
@@ -126,10 +136,6 @@ function ensureOk(result: CommandResult, message: string) {
   }
 }
 
-function commandExists(command: string) {
-  return runCommand('sh', ['-lc', `command -v ${command}`]).ok;
-}
-
 function extractJsonText(raw: string) {
   const lines = raw.split(/\r?\n/u);
   for (let index = 0; index < lines.length; index += 1) {
@@ -160,6 +166,20 @@ function printSection(title: string) {
   console.log('─'.repeat(title.length));
 }
 
+function printMissingCliSummary(
+  title: string,
+  missing: ReadonlyArray<{ cmd: string; hint: string }>,
+) {
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.log(`\n${title}`);
+  for (const item of missing) {
+    console.log(`- ${item.cmd}: ${item.hint}`);
+  }
+}
+
 function getAwsRegion() {
   return (
     process.env.AWS_REGION?.trim() ||
@@ -170,279 +190,11 @@ function getAwsRegion() {
 }
 
 function getConvexProdEnv() {
-  const result = runCommand('npx', ['convex', 'env', 'list', '--prod']);
-  if (!result.ok) {
-    return null;
-  }
-  return parseConvexEnvList(result.stdout);
-}
-
-function buildNetlifySiteTempDir(siteId: string) {
-  const tempDir = mkdtempSync(path.join(tmpdir(), 'setup-dr-netlify-'));
-  mkdirSync(path.join(tempDir, '.netlify'), { recursive: true });
-  writeFileSync(path.join(tempDir, '.netlify', 'state.json'), JSON.stringify({ siteId }, null, 2));
-  return tempDir;
-}
-
-function listNetlifySites() {
-  const result = runCommand('netlify', ['sites:list', '--json']);
-  if (!result.ok) {
-    return [];
-  }
-
-  const parsed =
-    parseJsonOutput<
-      Array<{
-        account_slug?: string;
-        id?: string;
-        name?: string;
-        ssl_url?: string;
-        url?: string;
-      }>
-    >(result) ?? [];
-
-  return parsed.flatMap((site) =>
-    site.id && site.name
-      ? [
-          {
-            accountSlug: site.account_slug,
-            buildSettings: null,
-            id: site.id,
-            name: site.name,
-            sslUrl: site.ssl_url,
-            url: site.url,
-          } satisfies NetlifySite,
-        ]
-      : [],
-  );
-}
-
-function resolveNetlifySite(siteInput: string) {
-  const sites = listNetlifySites();
-  return sites.find((site) => site.id === siteInput || site.name === siteInput) ?? null;
-}
-
-function getNetlifySiteDetails(siteId: string) {
-  const result = runCommand('netlify', [
-    'api',
-    'getSite',
-    '--data',
-    JSON.stringify({ site_id: siteId }),
-  ]);
-  const parsed =
-    parseJsonOutput<{
-      account_slug?: string;
-      build_image?: string;
-      build_settings?: NetlifySiteBuildSettings;
-      deploy_id?: string;
-      functions_region?: string;
-      id?: string;
-      name?: string;
-      processing_settings?: NetlifySiteDetails['processingSettings'];
-      ssl_url?: string;
-      url?: string;
-    }>(result) ?? null;
-  if (!parsed?.id || !parsed.name) {
-    return null;
-  }
-
-  return {
-    accountSlug: parsed.account_slug,
-    buildImage: parsed.build_image ?? null,
-    buildSettings: parsed.build_settings ?? null,
-    deployId: parsed.deploy_id ?? null,
-    functionsRegion: parsed.functions_region ?? null,
-    id: parsed.id,
-    name: parsed.name,
-    processingSettings: parsed.processing_settings ?? null,
-    sslUrl: parsed.ssl_url,
-    url: parsed.url,
-  } satisfies NetlifySiteDetails;
-}
-
-function buildRepoBackedNetlifySitePayload(input: {
-  desiredName: string;
-  primarySite: NetlifySiteDetails;
-}) {
-  const buildSettings = input.primarySite.buildSettings ?? {};
-  const mirroredRepoInfo = {
-    allowed_branches: buildSettings.allowed_branches ?? undefined,
-    base: buildSettings.base ?? undefined,
-    cmd: buildSettings.cmd ?? undefined,
-    dir: buildSettings.dir ?? undefined,
-    functions_dir: buildSettings.functions_dir ?? undefined,
-    installation_id: buildSettings.installation_id ?? undefined,
-    private_logs: buildSettings.private_logs ?? undefined,
-    provider: buildSettings.provider ?? undefined,
-    public_repo: buildSettings.public_repo ?? undefined,
-    repo_branch: buildSettings.repo_branch ?? undefined,
-    repo_path: buildSettings.repo_path ?? undefined,
-    repo_url: buildSettings.repo_url ?? undefined,
-    stop_builds: buildSettings.stop_builds ?? undefined,
-  };
-
-  return {
-    build_image: input.primarySite.buildImage ?? undefined,
-    build_settings: mirroredRepoInfo,
-    functions_region: input.primarySite.functionsRegion ?? undefined,
-    name: input.desiredName,
-    processing_settings: input.primarySite.processingSettings ?? undefined,
-    repo: mirroredRepoInfo,
-  };
-}
-
-function createRepoBackedNetlifySite(input: {
-  desiredName: string;
-  primarySite: NetlifySiteDetails;
-}) {
-  const accountSlug = input.primarySite.accountSlug?.trim();
-  const apiMethod = accountSlug ? 'createSiteInTeam' : 'createSite';
-  const payload = buildRepoBackedNetlifySitePayload(input);
-  const args = ['api', apiMethod, '--data'];
-  if (apiMethod === 'createSiteInTeam' && accountSlug) {
-    args.push(JSON.stringify({ account_slug: accountSlug, ...payload }));
-  } else {
-    args.push(JSON.stringify(payload));
-  }
-
-  const result = runCommand('netlify', args);
-  const created = parseJsonOutput<{ id?: string; name?: string }>(result) ?? null;
-  if (!created?.id) {
-    return null;
-  }
-
-  return getNetlifySiteDetails(created.id) ?? resolveNetlifySite(input.desiredName);
-}
-
-function configureNetlifySiteRepository(input: {
-  siteId: string;
-  desiredName: string;
-  primarySite: NetlifySiteDetails;
-}) {
-  const payload = buildRepoBackedNetlifySitePayload({
-    desiredName: input.desiredName,
-    primarySite: input.primarySite,
-  });
-  const result = runCommand('netlify', [
-    'api',
-    'updateSite',
-    '--data',
-    JSON.stringify({
-      site_id: input.siteId,
-      ...payload,
-    }),
-  ]);
-  return {
-    error: [result.stdout, result.stderr].filter(Boolean).join('\n').trim(),
-    ok: result.ok,
-  };
-}
-
-function triggerNetlifySiteBuild(siteId: string, buildHookUrl?: string | null) {
-  const apiResult = runCommand('netlify', [
-    'api',
-    'createSiteBuild',
-    '--data',
-    JSON.stringify({ site_id: siteId }),
-  ]);
-  if (apiResult.ok) {
-    return {
-      error: '',
-      ok: true,
-      triggeredVia: 'api' as const,
-    };
-  }
-
-  if (buildHookUrl?.trim()) {
-    const hookResult = runCommand('curl', ['-sf', '-X', 'POST', buildHookUrl.trim()]);
-    if (hookResult.ok) {
-      return {
-        error: '',
-        ok: true,
-        triggeredVia: 'build-hook' as const,
-      };
-    }
-
-    return {
-      error: [apiResult.stdout, apiResult.stderr, hookResult.stdout, hookResult.stderr]
-        .filter(Boolean)
-        .join('\n')
-        .trim(),
-      ok: false,
-      triggeredVia: 'build-hook' as const,
-    };
-  }
-
-  return {
-    error: [apiResult.stdout, apiResult.stderr].filter(Boolean).join('\n').trim(),
-    ok: false,
-    triggeredVia: 'api' as const,
-  };
-}
-
-function setNetlifySiteEnvVar(siteId: string, key: string, value: string) {
-  const tempDir = buildNetlifySiteTempDir(siteId);
   try {
-    ensureOk(
-      runCommand('netlify', ['env:set', key, value, '--context', 'production', '--force'], {
-        cwd: tempDir,
-      }),
-      `Failed to set Netlify env var ${key}`,
-    );
-  } finally {
-    rmSync(tempDir, { force: true, recursive: true });
+    return parseConvexEnvList(convexEnvList(true));
+  } catch {
+    return null;
   }
-}
-
-function getNetlifySiteEnvValue(siteId: string, key: string) {
-  const tempDir = buildNetlifySiteTempDir(siteId);
-  try {
-    const result = runCommand('netlify', ['env:get', key, '--context', 'production'], {
-      cwd: tempDir,
-    });
-    if (!result.ok) {
-      return null;
-    }
-
-    const value = result.stdout.trim() || result.stderr.trim();
-    if (
-      !value ||
-      /^No value set in the production context for environment variable\b/u.test(value)
-    ) {
-      return null;
-    }
-
-    return value;
-  } finally {
-    rmSync(tempDir, { force: true, recursive: true });
-  }
-}
-
-function listNetlifySiteHooks(siteId: string) {
-  const result = runCommand('netlify', [
-    'api',
-    'listSiteBuildHooks',
-    '--data',
-    JSON.stringify({ site_id: siteId }),
-  ]);
-  return parseJsonOutput<Array<{ title?: string; url?: string }>>(result) ?? [];
-}
-
-function createNetlifyBuildHook(siteId: string, title: string, branch: string) {
-  const result = runCommand('netlify', [
-    'api',
-    'createSiteBuildHook',
-    '--data',
-    JSON.stringify({
-      body: {
-        branch,
-        title,
-      },
-      site_id: siteId,
-    }),
-  ]);
-
-  return parseJsonOutput<{ url?: string }>(result)?.url ?? null;
 }
 
 function upsertAwsSecret(
@@ -549,30 +301,6 @@ function getStackOutputs(stackName: string, region: string): StackOutputs | null
   return outputs;
 }
 
-function readNetlifyLinkedSiteId() {
-  const statePath = path.join(process.cwd(), '.netlify', 'state.json');
-  if (!existsSync(statePath)) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as {
-      siteId?: string;
-    };
-    return parsed.siteId ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function formatNetlifySiteSummary(site: NetlifySite | null) {
-  if (!site) {
-    return null;
-  }
-  const primaryUrl = site.sslUrl || site.url;
-  return `${site.name} (id: ${site.id}${primaryUrl ? `, url: ${primaryUrl}` : ''})`;
-}
-
 function getDefaultBranch() {
   const remoteHead = runCommand('git', ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
   if (remoteHead.ok) {
@@ -585,16 +313,46 @@ function getDefaultBranch() {
 }
 
 async function main() {
-  console.log('🌐 DR Netlify frontend setup');
+  if (hasHelpFlag()) {
+    printUsage();
+    return;
+  }
+  const json = hasFlag('--json');
+  routeLogsToStderrWhenJson(json);
+  const changedLocally: string[] = [];
+  const changedRemotely: string[] = [];
+  const nextCommands: string[] = [];
+
+  printScriptIntro({
+    title: '🌐 DR Netlify frontend setup',
+    what: 'create or reconcile the DR Netlify site, write its env, update related AWS recovery secrets, and trigger a first build.',
+    prereqs: 'pnpm, aws, netlify, and Convex access; Netlify and AWS auth must already be ready.',
+    modifies:
+      'Netlify site settings/env, AWS Secrets Manager entries, and an initial Netlify build trigger.',
+    safeToRerun: 'yes',
+  });
 
   printSection('Preflight');
-  for (const [binary, ok] of [
-    ['aws', commandExists('aws')],
-    ['netlify', commandExists('netlify')],
-    ['npx', commandExists('npx')],
-  ] as const) {
-    console.log(`- ${binary}: ${ok ? 'found' : 'missing'}`);
+  const requiredMissing = findMissingCommands([
+    { cmd: 'pnpm' },
+    { cmd: 'aws' },
+    { cmd: 'netlify' },
+  ]);
+  if (requiredMissing.length > 0) {
+    printMissingCliSummary('Missing required CLIs', requiredMissing);
+    process.exit(1);
   }
+  requireCommands([{ cmd: 'pnpm' }, { cmd: 'aws' }, { cmd: 'netlify' }]);
+  requirePnpmAndConvexCli();
+  console.log('Required CLIs: pnpm, aws, netlify, convex (pnpm exec) — OK\n');
+  console.log('Provider auth:');
+  console.log('- AWS: run `aws sts get-caller-identity` or `aws configure` if auth is not ready');
+  if (commandOnPath('netlify')) {
+    console.log('- Netlify: run `netlify login` if auth is not ready');
+  } else {
+    console.log(`- Netlify: ${CLI_INSTALL_HINT.netlify}`);
+  }
+  console.log('');
 
   const envPath = path.join(process.cwd(), '.env.local');
   const drEnvPath = path.join(process.cwd(), DR_ENV_FILE_NAME);
@@ -632,7 +390,7 @@ async function main() {
     throw new Error('Convex prod access is not ready.');
   }
 
-  const linkedNetlifySiteId = readNetlifyLinkedSiteId();
+  const linkedNetlifySiteId = readNetlifyLinkedSiteIdFromDisk();
   const linkedNetlifySite = linkedNetlifySiteId ? resolveNetlifySite(linkedNetlifySiteId) : null;
   const linkedNetlifySiteDetails = linkedNetlifySiteId
     ? getNetlifySiteDetails(linkedNetlifySiteId)
@@ -650,6 +408,13 @@ async function main() {
   console.log(`- DR ECS stack: ${ecsStackName}`);
   console.log(`- DR backend URL: ${ecsOutputs.ConvexBackendUrl}`);
   console.log(`- DR site URL: ${ecsOutputs.ConvexSiteUrl}`);
+  console.log('- Safe to rerun: yes; this updates the existing DR frontend state when present');
+  printTargetSummary('Provider target summary', [
+    `AWS region: ${awsRegion}`,
+    `DR ECS stack: ${ecsStackName}`,
+    `Linked app site: ${formatNetlifySiteSummary(linkedNetlifySite) ?? 'not linked'}`,
+    `Desired DR site name: ${projectSlug}-dr`,
+  ]);
 
   printSection('Netlify site');
   const desiredSiteName = `${projectSlug}-dr`;
@@ -676,6 +441,7 @@ async function main() {
     );
   }
   console.log(`- DR Netlify site: ${formatNetlifySiteSummary(drNetlifySite)}`);
+  changedRemotely.push(`Reconciled DR Netlify site ${formatNetlifySiteSummary(drNetlifySite)}`);
 
   if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
     const repoConfigResult = configureNetlifySiteRepository({
@@ -714,6 +480,7 @@ async function main() {
     throw new Error('A valid Convex admin/deploy auth token is required for the DR Netlify site.');
   }
   setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKey);
+  changedRemotely.push('Updated DR Netlify env CONVEX_DEPLOY_KEY');
 
   const frontendOrigin =
     hostnameStrategy === 'custom-domain' && domain
@@ -742,6 +509,9 @@ async function main() {
     setNetlifySiteEnvVar(drNetlifySite.id, key, value);
     console.log(`- Set ${key}`);
   }
+  changedRemotely.push(
+    `Updated DR Netlify env vars (${envEntries.map(([key]) => key).join(', ')})`,
+  );
 
   printSection('AWS secrets');
   const hooks = listNetlifySiteHooks(drNetlifySite.id);
@@ -759,6 +529,7 @@ async function main() {
     'Netlify DR build hook used by dr-recover-ecs.sh',
   );
   console.log(`- Updated ${secretNames.netlifyBuildHook}`);
+  changedRemotely.push(`Updated AWS secret ${secretNames.netlifyBuildHook}`);
 
   const frontendHostname = extractHostnameFromUrl(
     drNetlifySite.sslUrl ?? drNetlifySite.url ?? frontendOrigin,
@@ -773,11 +544,13 @@ async function main() {
     'Netlify DR frontend hostname used during recovery',
   );
   console.log(`- Updated ${secretNames.netlifyFrontendCnameTarget}`);
+  changedRemotely.push(`Updated AWS secret ${secretNames.netlifyFrontendCnameTarget}`);
 
   const initialBuildResult = triggerNetlifySiteBuild(drNetlifySite.id, buildHookUrl);
   if (initialBuildResult.ok) {
     const detail = initialBuildResult.triggeredVia === 'build-hook' ? ' via build hook' : '';
     console.log(`- Triggered initial Netlify DR site build${detail}`);
+    changedRemotely.push(`Triggered DR Netlify build${detail}`);
   } else {
     console.log('- Could not trigger the initial Netlify DR site build automatically');
     if (initialBuildResult.error) {
@@ -790,6 +563,14 @@ async function main() {
   console.log(`- Build hook secret: ${secretNames.netlifyBuildHook}`);
   console.log(`- Frontend hostname secret: ${secretNames.netlifyFrontendCnameTarget}`);
   console.log('- You can now run the DR recovery script.');
+  nextCommands.push('pnpm run dr:setup');
+  nextCommands.push('pnpm run dr:destroy');
+  const finalSummary = { changedLocally, changedRemotely, nextCommands };
+  if (json) {
+    emitStructuredOutput(finalSummary);
+  } else {
+    printFinalChangeSummary(finalSummary);
+  }
 }
 
 main().catch((error) => {

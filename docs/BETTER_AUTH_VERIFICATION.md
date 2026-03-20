@@ -7,7 +7,7 @@ This repository uses the Convex Better Auth adapter, so the verification flow is
 1. Run the official Better Auth CLI step for this adapter shape:
    `pnpm exec better-auth generate --config better-auth.cli.ts --output /tmp/better-auth-generated-schema.ts -y`
 2. Validate server/client plugin parity for `twoFactor` and `passkey`
-3. Validate the local Better Auth schema via `npx convex codegen`
+3. Validate the local Better Auth schema via `pnpm exec convex codegen`
 4. Run `pnpm typecheck`
 5. Verify `GET /api/auth/ok`
 

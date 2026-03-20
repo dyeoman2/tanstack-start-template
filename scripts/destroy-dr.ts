@@ -5,6 +5,7 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 import { buildDrSecretNames, parseGitHubRepoFromRemote } from './lib/setup-dr';
 
 type CommandResult = {
@@ -33,14 +34,20 @@ type DbClusterSnapshot = {
 const DEFAULT_PROJECT_SLUG = 'tanstack-start-template';
 const DR_ENV_FILE_NAME = '.dr.env.local';
 
-const loadEnvFile = process.loadEnvFile?.bind(process);
-if (loadEnvFile) {
-  for (const fileName of ['.env', '.env.local', DR_ENV_FILE_NAME]) {
-    const filePath = path.join(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
+loadProjectEnvFiles({ extraFilenames: [DR_ENV_FILE_NAME] });
+
+function printUsage() {
+  console.log('Usage: pnpm run dr:destroy -- --stack <backup|ecs|all> [--yes]');
+  console.log('');
+  console.log(
+    'What this does: destroy DR AWS stacks and related DR artifacts based on the selected target.',
+  );
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run dr:destroy -- --stack backup');
+  console.log('- pnpm run dr:destroy -- --stack all');
+  console.log('');
+  console.log('Safe to rerun: no; this is destructive.');
 }
 
 function runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): CommandResult {
@@ -113,6 +120,16 @@ async function askYesNo(question: string, fallback = false) {
         return;
       }
       resolve(normalized === 'y' || normalized === 'yes');
+    });
+  });
+}
+
+async function askToType(expected: string, question: string) {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return await new Promise<boolean>((resolve) => {
+    rl.question(`${question}: `, (answer) => {
+      rl.close();
+      resolve(answer.trim() === expected);
     });
   });
 }
@@ -409,6 +426,11 @@ function cleanupLegacyDrVarsInEnvLocal() {
 }
 
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   const stackIndex = process.argv.indexOf('--stack');
   const target = stackIndex >= 0 ? process.argv[stackIndex + 1] : undefined;
   const yes = process.argv.includes('--yes');
@@ -452,6 +474,10 @@ async function main() {
       ?.PhysicalResourceId ?? null;
 
   console.log(`DR destroy target: ${target}`);
+  console.log(
+    'What this does: delete the requested DR stack(s) and clean up linked DR artifacts where available.',
+  );
+  console.log('Safe to rerun: no; review the target summary carefully.\n');
   console.log(`AWS region: ${region}`);
   if (profile) {
     console.log(`AWS profile: ${profile}`);
@@ -480,6 +506,15 @@ async function main() {
   }
 
   if (!yes) {
+    console.log('');
+    console.log('Destructive target summary:');
+    console.log(`- target: ${target}`);
+    console.log(`- aws region: ${region}`);
+    if (profile) {
+      console.log(`- aws profile: ${profile}`);
+    }
+    console.log(`- project slug: ${projectSlug}`);
+    console.log('');
     const confirmed = await askYesNo(
       'Fully destroy these DR resources and external DR artifacts?',
       false,
@@ -487,6 +522,16 @@ async function main() {
     if (!confirmed) {
       console.log('Cancelled.');
       return;
+    }
+    if (target === 'all') {
+      const typed = await askToType(
+        'destroy all dr',
+        'Type `destroy all dr` to confirm full DR teardown',
+      );
+      if (!typed) {
+        console.log('Typed confirmation did not match. Cancelled.');
+        return;
+      }
     }
   }
 

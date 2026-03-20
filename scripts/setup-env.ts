@@ -11,10 +11,35 @@ import { execSync } from 'node:child_process';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { generateSecret } from '../src/lib/server/crypto.server';
+import { requireCommands } from './lib/cli-preflight';
 import { DEFAULT_APP_NAME } from './lib/setup-defaults';
 
+function printUsage() {
+  console.log('Usage: pnpm run setup:env');
+  console.log('');
+  console.log('What this does:');
+  console.log('- Installs pnpm dependencies');
+  console.log('- Creates .env.local when missing');
+  console.log('- Generates a BETTER_AUTH_SECRET for local development');
+  console.log('');
+  console.log('Safe to rerun: yes');
+  console.log(
+    '- Existing .env.local is preserved; the script prints the generated secret instead.',
+  );
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   console.log('🔧 Setting up local development environment...\n');
+  console.log('What this does: install dependencies and create local defaults in .env.local.');
+  console.log('Prereqs: pnpm on PATH.');
+  console.log('Modifies: pnpm lockfile/node_modules via install, plus .env.local if missing.');
+  console.log('Safe to rerun: yes; existing .env.local is not overwritten.\n');
+  requireCommands([{ cmd: 'pnpm' }]);
 
   // Install project dependencies
   console.log('📦 Installing project dependencies...');
@@ -73,9 +98,7 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # Required for chat functionality
 # OPENROUTER_API_KEY=<your-openrouter-api-key>
 
-# Optional attribution headers
-# OPENROUTER_SITE_URL=http://127.0.0.1:3000
-# OPENROUTER_SITE_NAME="TanStack Start Template"
+# OpenRouter attribution uses BETTER_AUTH_URL and APP_NAME automatically
 
 # ==========================================
 # RESEND EMAIL SETUP
@@ -91,8 +114,15 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # Storage defaults to FILE_STORAGE_BACKEND=convex.
 # Run pnpm run storage:setup if you want guided setup for:
 #   - convex
-#   - s3-primary
-#   - s3-mirror
+#   - s3
+#   - mirror
+# FILE_STORAGE_BACKEND=convex
+# AWS_REGION=us-west-1
+# AWS_PROFILE=default
+# AWS_S3_FILES_BUCKET=your-dev-bucket
+# AWS_MALWARE_WEBHOOK_SHARED_SECRET=<generated-secret>
+# AWS_FILE_SERVE_SIGNING_SECRET=<generated-secret>
+# CONVEX_SITE_URL=https://your-project.convex.site
 
 # ==========================================
 # SENTRY ERROR MONITORING (Optional)
@@ -107,8 +137,12 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # CONVEX DATABASE (Auto-configured)
 # ==========================================
 
-# Convex URLs will be automatically set after running: npx convex dev
-# VITE_CONVEX_SITE_URL= set after running: pnpm run setup:convex
+# Convex URLs will be automatically set after running: pnpm exec convex dev
+# VITE_CONVEX_URL=https://your-project.convex.cloud
+#
+# After editing synced keys: pnpm run setup:convex
+# Drift check (local vs Convex dev): pnpm run convex:env:verify
+# Drop unused Convex env vars: pnpm run convex:env:hygiene
 
 # ==========================================
 # PLAYWRIGHT E2E AUTH (Optional)
@@ -136,14 +170,14 @@ APP_NAME="${DEFAULT_APP_NAME}"
   console.log('────────────────────────────────────────────────\n');
   console.log('🚀 Next steps:');
   console.log('   1. 📋 Review the generated .env.local file');
-  console.log('   2. ☁️  Run: npx convex dev --once (initialize Convex project)');
+  console.log('   2. ☁️  Run: pnpm exec convex dev --once (initialize Convex project)');
   console.log('   3. ⚙️  Run: pnpm run setup:convex (configure URLs & env vars)');
-  console.log('   4. 🔄 Terminal 1: npx convex dev (start Convex backend)');
+  console.log('   4. 🔄 Terminal 1: pnpm exec convex dev (start Convex backend)');
   console.log('   5. 🎯 Terminal 2: pnpm dev (start frontend development)');
   console.log('');
   console.log("💡 Tip: After step 5, you'll never need to run setup again!");
   console.log(
-    '   Future development: run "npx convex dev" in one terminal and "pnpm dev" in another',
+    '   Future development: run "pnpm exec convex dev" in one terminal and "pnpm dev" in another',
   );
   console.log('\n📌 Security Notes:');
   console.log('   • Never commit .env.local to version control');

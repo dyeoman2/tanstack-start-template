@@ -1,8 +1,24 @@
 #!/usr/bin/env tsx
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
+import {
+  CLI_INSTALL_HINT,
+  commandOnPath,
+  findMissingCommands,
+  requireCommands,
+  requirePnpmAndConvexCli,
+} from './lib/cli-preflight';
+import { runNetlify } from './lib/netlify-cli';
+import { convexEnvSet } from './lib/convex-cli';
 import { createInterface } from 'node:readline';
 import { generateSecret } from '../src/lib/server/crypto.server';
+import {
+  emitStructuredOutput,
+  printFinalChangeSummary,
+  printStatusSummary,
+  printTargetSummary,
+  routeLogsToStderrWhenJson,
+} from './lib/script-ux';
 
 type StorageMode = 'convex' | 's3-primary' | 's3-mirror';
 type AwsIdentity = {
@@ -163,26 +179,111 @@ function getAwsIdentity(region: string, awsProfile?: string): AwsIdentity | null
 
 async function chooseStorageMode(): Promise<StorageMode> {
   console.log('🗂️  Production storage mode options:');
-  console.log('   1. convex      - default, no AWS required');
-  console.log('   2. s3-primary  - direct-to-S3, GuardDuty on canonical object');
-  console.log('   3. s3-mirror   - upload to Convex first, then mirror to S3');
+  console.log('   1. convex      - default, convex only, no AWS required');
+  console.log('   2. s3          - s3 only with GuardDuty malware scanning');
+  console.log(
+    '   3. mirror      - upload to Convex first, then mirror to S3 with GuardDuty malware scanning',
+  );
   console.log('');
 
   while (true) {
     const answer = (await ask('Choose production storage mode [1]: ')) || '1';
     if (answer === '1' || answer === 'convex') return 'convex';
-    if (answer === '2' || answer === 's3-primary') return 's3-primary';
-    if (answer === '3' || answer === 's3-mirror') return 's3-mirror';
+    if (answer === '2' || answer === 's3' || answer === 's3-primary') return 's3-primary';
+    if (answer === '3' || answer === 'mirror' || answer === 's3-mirror') return 's3-mirror';
     console.log('Please choose 1, 2, or 3.');
   }
 }
 
+function printUsage() {
+  console.log('Usage: pnpm run storage:setup:prod [--json]');
+  console.log('');
+  console.log(
+    'What this does: configure production storage runtime vars in Convex/Netlify and optionally preview/deploy production AWS storage infra.',
+  );
+  console.log('Use this instead of storage:setup for production runtime/env wiring.');
+  console.log('Docs: docs/SCRIPT_COMMAND_MAP.md');
+  console.log('');
+  console.log('Modes: convex, s3, mirror');
+  console.log('Safe to rerun: yes; runtime envs can be refreshed and infra deploys remain opt-in.');
+}
+
+function printMissingCliSummary(
+  title: string,
+  missing: ReadonlyArray<{ cmd: string; hint: string }>,
+) {
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.log(`\n${title}`);
+  for (const item of missing) {
+    console.log(`- ${item.cmd}: ${item.hint}`);
+  }
+}
+
+function getAwsAuthStatus(region: string) {
+  if (!commandOnPath('aws')) {
+    return 'cli missing';
+  }
+  return spawnSync('aws', ['sts', 'get-caller-identity', '--output', 'json'], {
+    stdio: 'ignore',
+    env: {
+      ...process.env,
+      AWS_REGION: region,
+    },
+  }).status === 0
+    ? 'ready'
+    : 'run `aws configure` or export AWS credentials';
+}
+
+function getNetlifyAuthStatus() {
+  if (!commandOnPath('netlify')) {
+    return 'cli missing';
+  }
+  return runNetlify(['status', '--json']).ok ? 'ready' : 'run `netlify login`';
+}
+
 async function main() {
+  const json = process.argv.includes('--json');
+  routeLogsToStderrWhenJson(json);
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+  const changedLocally: string[] = [];
+  const changedRemotely: string[] = [];
+  const nextCommands: string[] = [];
+
   console.log('🚀 Production storage setup\n');
   console.log('This flow configures production runtime env in Convex prod and Netlify.');
   console.log(
     'It also derives the production storage CDK env and can preview/deploy the prod storage stack.\n',
   );
+  console.log(
+    'Prereqs: Convex prod access; Netlify CLI/site link if you want Netlify env sync; AWS CLI for S3-backed modes.',
+  );
+  console.log('Modifies: Convex prod env, Netlify env, and optional AWS infra when confirmed.');
+  console.log('Safe to rerun: yes; deploy actions remain opt-in.\n');
+  const requiredMissing = findMissingCommands([{ cmd: 'pnpm' }]);
+  if (requiredMissing.length > 0) {
+    printMissingCliSummary('Missing required CLIs', requiredMissing);
+    process.exit(1);
+  }
+  const optionalMissing = findMissingCommands([{ cmd: 'aws' }, { cmd: 'netlify' }]);
+  printMissingCliSummary(
+    'Optional CLIs you may want before S3 or Netlify-related steps',
+    optionalMissing,
+  );
+  const preflightRegion =
+    process.env.AWS_REGION?.trim() || process.env.AWS_DEFAULT_REGION?.trim() || 'us-west-1';
+  printStatusSummary('Provider auth status', [
+    { label: 'AWS', value: getAwsAuthStatus(preflightRegion) },
+    {
+      label: 'Netlify',
+      value: !commandOnPath('netlify') ? CLI_INSTALL_HINT.netlify : getNetlifyAuthStatus(),
+    },
+  ]);
 
   const shouldContinue = await askYesNo('Continue?', true);
   if (!shouldContinue) {
@@ -190,7 +291,12 @@ async function main() {
     return;
   }
 
+  requirePnpmAndConvexCli();
+
   const storageMode = await chooseStorageMode();
+  if (storageMode !== 'convex') {
+    requireCommands([{ cmd: 'aws' }]);
+  }
   const awsRegion = await askWithDefault(
     'AWS region',
     process.env.AWS_REGION?.trim() || 'us-west-1',
@@ -243,6 +349,13 @@ async function main() {
       webhookSecret,
     });
   }
+  printTargetSummary('Provider target summary', [
+    `Storage mode: ${storageMode}`,
+    `AWS region: ${awsRegion}`,
+    `AWS profile: ${awsProfile ?? 'current shell/default'}`,
+    `Bucket: ${runtimeEnvVars.AWS_S3_FILES_BUCKET ?? 'n/a'}`,
+    `Netlify env sync: linked site required if enabled`,
+  ]);
 
   console.log('\nProduction runtime env values:');
   for (const [name, value] of Object.entries(runtimeEnvVars)) {
@@ -255,32 +368,44 @@ async function main() {
     try {
       console.log('\n☁️  Setting Convex production env vars...');
       for (const [name, value] of Object.entries(convexProdEnvVars)) {
-        run(`npx convex env set ${name} "${value}" --prod`);
+        convexEnvSet(name, value, true);
       }
       console.log('✅ Convex production env updated.');
+      changedRemotely.push('Updated Convex production storage env vars');
     } catch {
       console.log('⚠️  Failed while setting Convex production env vars.');
-      console.log('   You can retry manually with `npx convex env set ... --prod`.');
+      console.log('   You can retry manually with `pnpm exec convex env set ... --prod`.');
     }
   }
 
   const setNetlify = await askYesNo('\nSet these in Netlify now?', true);
   if (setNetlify) {
+    requireCommands([{ cmd: 'netlify' }]);
     try {
       console.log('\n🌐 Setting Netlify env vars...');
       for (const [name, value] of Object.entries(runtimeEnvVars)) {
-        run(`npx netlify env:set ${name} "${value}"`);
+        run(`pnpm exec netlify env:set ${name} "${value}"`);
       }
       console.log('✅ Netlify env updated.');
+      changedRemotely.push('Updated Netlify production storage env vars');
     } catch {
       console.log('⚠️  Failed while setting Netlify env vars.');
-      console.log('   Make sure the site is linked, then retry with `npx netlify env:set ...`.');
+      console.log(
+        '   Make sure the site is linked, then retry with `pnpm exec netlify env:set ...`.',
+      );
     }
   }
 
   if (!storageDeployEnv) {
     console.log('\nDone.');
     console.log('No AWS storage infrastructure deployment is required for convex mode.');
+    nextCommands.push('pnpm run deploy:doctor -- --prod');
+    const finalSummary = { changedLocally, changedRemotely, nextCommands };
+    if (json) {
+      emitStructuredOutput(finalSummary);
+    } else {
+      printFinalChangeSummary(finalSummary);
+    }
     return;
   }
 
@@ -318,6 +443,7 @@ async function main() {
     try {
       run('pnpm storage:preview:prod', storageDeployEnv);
       console.log('✅ CDK preview completed.');
+      changedRemotely.push('Ran AWS storage preview (prod)');
     } catch {
       console.log('⚠️  CDK preview failed.');
       console.log('   Check your AWS credentials/bootstrap and retry.');
@@ -329,6 +455,7 @@ async function main() {
     try {
       run('pnpm storage:deploy:prod', storageDeployEnv);
       console.log('✅ AWS storage infrastructure deployed.');
+      changedRemotely.push('Deployed AWS storage infrastructure (prod)');
     } catch {
       console.log('⚠️  CDK deploy failed.');
       console.log('   Check your AWS credentials/bootstrap and retry.');
@@ -341,6 +468,14 @@ async function main() {
     console.log('   2. Run: pnpm storage:preview:prod');
     console.log('   3. Run: pnpm storage:deploy:prod');
     console.log('   4. Or rerun pnpm run storage:setup:prod when you want the guided flow again');
+    nextCommands.push('pnpm storage:preview:prod');
+    nextCommands.push('pnpm storage:deploy:prod');
+  }
+  const finalSummary = { changedLocally, changedRemotely, nextCommands };
+  if (json) {
+    emitStructuredOutput(finalSummary);
+  } else {
+    printFinalChangeSummary(finalSummary);
   }
 }
 

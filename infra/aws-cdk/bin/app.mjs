@@ -25,7 +25,7 @@ function readTrimmedEnv(name) {
   return value ? value.trim() : '';
 }
 
-function createStageConfig(stage) {
+function createStageConfig(projectSlug, stage) {
   return {
     bucketName: readTrimmedEnv('AWS_S3_FILES_BUCKET_NAME'),
     env: {
@@ -54,14 +54,13 @@ const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackNam
 const drHostnameStrategy = readTrimmedEnv('AWS_DR_HOSTNAME_STRATEGY') || 'custom-domain';
 const storageStage = readTrimmedEnv('STORAGE_STAGE');
 if (storageStage === 'dev' || storageStage === 'prod') {
-  const config = createStageConfig(storageStage);
+  const config = createStageConfig(storageProjectSlug, storageStage);
   if (!config.bucketName || !config.webhookUrl || !config.malwareWebhookSharedSecret) {
     throw new Error(
       'AWS_S3_FILES_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, and AWS_MALWARE_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
     );
   }
 
-  config.projectSlug = storageProjectSlug;
   new MalwareScanStack(app, buildStorageStackName(storageProjectSlug, storageStage), config);
 }
 

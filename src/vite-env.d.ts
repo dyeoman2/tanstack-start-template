@@ -7,7 +7,6 @@ interface ImportMetaEnv {
   readonly MODE: string;
   // Remove APP_NAME (only used server-side)
   readonly VITE_CONVEX_URL?: string;
-  readonly VITE_CONVEX_SITE_URL?: string;
   readonly VITE_SENTRY_DSN?: string;
   readonly VITE_DEBUG?: string;
 }

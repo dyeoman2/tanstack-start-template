@@ -125,7 +125,7 @@ export async function main() {
   console.log(
     '[better-auth] Convex adapter detected; validating local Better Auth schema via codegen',
   );
-  await run('npx', ['convex', 'codegen']);
+  await run('pnpm', ['exec', 'convex', 'codegen']);
 
   console.log('[better-auth] Running TypeScript check');
   await run('pnpm', ['typecheck']);

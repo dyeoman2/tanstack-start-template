@@ -5,7 +5,7 @@ import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/u
 import { getOpenRouterAttributionHeaders } from '../src/lib/server/openrouter';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
-import { action } from './_generated/server';
+import { action, internalAction } from './_generated/server';
 import { authComponent } from './auth';
 import { throwConvexError } from './auth/errors';
 import { importedModelsResultValidator } from './lib/returnValidators';
@@ -38,12 +38,10 @@ function getRequiredEnv(name: string) {
 function getOpenRouterClient() {
   return new OpenRouter({
     apiKey: getRequiredEnv('OPENROUTER_API_KEY'),
-    ...(process.env.OPENROUTER_SITE_URL?.trim()
-      ? { httpReferer: process.env.OPENROUTER_SITE_URL.trim() }
+    ...(process.env.BETTER_AUTH_URL?.trim()
+      ? { httpReferer: process.env.BETTER_AUTH_URL.trim() }
       : {}),
-    ...(process.env.OPENROUTER_SITE_NAME?.trim()
-      ? { xTitle: process.env.OPENROUTER_SITE_NAME.trim() }
-      : {}),
+    ...(process.env.APP_NAME?.trim() ? { xTitle: process.env.APP_NAME.trim() } : {}),
   });
 }
 
@@ -147,23 +145,88 @@ async function requireSiteAdmin(ctx: ActionCtx) {
   }
 }
 
-export const importTopFreeModels = action({
-  args: {},
-  returns: importedModelsResultValidator,
-  handler: async (ctx): Promise<{ success: boolean; message: string }> => {
-    await requireSiteAdmin(ctx);
+async function importTopFreeModelsInternal(
+  ctx: ActionCtx,
+): Promise<{ success: boolean; message: string }> {
+  const response = await listZdrModelsForCurrentUser();
+  const models = response.data.filter((model) =>
+    TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]),
+  );
 
-    const response = await listZdrModelsForCurrentUser();
-    const models = response.data.filter((model) =>
-      TOP_FREE_MODEL_IDS.includes(model.id as (typeof TOP_FREE_MODEL_IDS)[number]),
-    );
+  if (models.length === 0) {
+    throw new Error('OpenRouter did not return any of the configured top free models.');
+  }
 
-    if (models.length === 0) {
-      throw new Error('OpenRouter did not return any of the configured top free models.');
-    }
+  const refreshedAt = Date.now();
+  const entries = models.map((model) => {
+    const promptPrice = toPerMillionPrice(parsePrice(model.pricing.prompt));
+    const completionPrice = toPerMillionPrice(parsePrice(model.pricing.completion));
 
-    const refreshedAt = Date.now();
-    const entries = models.map((model) => {
+    return {
+      modelId: model.id,
+      label: formatImportedLabel(model.name),
+      description:
+        model.description?.trim() ||
+        'Top free OpenRouter model imported from the current rankings.',
+      task: 'Text Generation',
+      access: 'public' as const,
+      supportsWebSearch: true,
+      priceLabel: formatPriceLabel(promptPrice, completionPrice),
+      prices:
+        promptPrice !== undefined || completionPrice !== undefined
+          ? [
+              ...(promptPrice !== undefined
+                ? [{ unit: 'per M input tokens', price: promptPrice, currency: 'USD' }]
+                : []),
+              ...(completionPrice !== undefined
+                ? [{ unit: 'per M output tokens', price: completionPrice, currency: 'USD' }]
+                : []),
+            ]
+          : undefined,
+      contextWindow: model.contextLength ?? undefined,
+      source: 'openrouter',
+      isActive: true,
+      refreshedAt,
+      deprecated: model.expirationDate !== undefined && model.expirationDate !== null,
+      deprecationDate: model.expirationDate ?? undefined,
+    };
+  });
+
+  const result: { modelCount: number } = await ctx.runMutation(
+    internal.admin.upsertImportedChatModels,
+    {
+      entries,
+      refreshedAt,
+    },
+  );
+
+  return {
+    success: true,
+    message: `Imported ${result.modelCount} top free OpenRouter models.`,
+  };
+}
+
+async function importTopPaidModelsInternal(
+  ctx: ActionCtx,
+): Promise<{ success: boolean; message: string }> {
+  const response = await listZdrModelsForCurrentUser();
+
+  const rankedModels = dedupeByModelId(
+    TOP_PAID_MODEL_NAME_RANKING.flatMap((name) => {
+      const directMatch = response.data.find(
+        (model) => model.name.trim().toLowerCase() === name.toLowerCase(),
+      );
+
+      if (directMatch) {
+        return [directMatch];
+      }
+
+      const containsMatch = response.data.find((model) =>
+        model.name.trim().toLowerCase().includes(name.toLowerCase()),
+      );
+
+      return containsMatch ? [containsMatch] : [];
+    }).map((model) => {
       const promptPrice = toPerMillionPrice(parsePrice(model.pricing.prompt));
       const completionPrice = toPerMillionPrice(parsePrice(model.pricing.completion));
 
@@ -172,9 +235,9 @@ export const importTopFreeModels = action({
         label: formatImportedLabel(model.name),
         description:
           model.description?.trim() ||
-          'Top free OpenRouter model imported from the current rankings.',
+          'Top paid OpenRouter model imported from the current rankings.',
         task: 'Text Generation',
-        access: 'public' as const,
+        access: 'admin' as const,
         supportsWebSearch: true,
         priceLabel: formatPriceLabel(promptPrice, completionPrice),
         prices:
@@ -191,24 +254,51 @@ export const importTopFreeModels = action({
         contextWindow: model.contextLength ?? undefined,
         source: 'openrouter',
         isActive: true,
-        refreshedAt,
+        refreshedAt: Date.now(),
         deprecated: model.expirationDate !== undefined && model.expirationDate !== null,
         deprecationDate: model.expirationDate ?? undefined,
       };
-    });
+    }),
+  );
 
-    const result: { modelCount: number } = await ctx.runMutation(
-      internal.admin.upsertImportedChatModels,
-      {
-        entries,
-        refreshedAt,
-      },
-    );
+  if (rankedModels.length === 0) {
+    throw new Error('OpenRouter did not return any of the configured top paid models.');
+  }
 
-    return {
-      success: true,
-      message: `Imported ${result.modelCount} top free OpenRouter models.`,
-    };
+  const refreshedAt = Date.now();
+  const entries = rankedModels.map((entry) => ({
+    ...entry,
+    refreshedAt,
+  }));
+
+  const result: { modelCount: number } = await ctx.runMutation(
+    internal.admin.upsertImportedChatModels,
+    {
+      entries,
+      refreshedAt,
+    },
+  );
+
+  return {
+    success: true,
+    message: `Imported ${result.modelCount} top paid OpenRouter models.`,
+  };
+}
+
+export const importTopFreeModels = action({
+  args: {},
+  returns: importedModelsResultValidator,
+  handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+    await requireSiteAdmin(ctx);
+    return await importTopFreeModelsInternal(ctx);
+  },
+});
+
+export const importTopFreeModelsForSetup = internalAction({
+  args: {},
+  returns: importedModelsResultValidator,
+  handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+    return await importTopFreeModelsInternal(ctx);
   },
 });
 
@@ -217,80 +307,14 @@ export const importTopPaidModels = action({
   returns: importedModelsResultValidator,
   handler: async (ctx): Promise<{ success: boolean; message: string }> => {
     await requireSiteAdmin(ctx);
+    return await importTopPaidModelsInternal(ctx);
+  },
+});
 
-    const response = await listZdrModelsForCurrentUser();
-
-    const rankedModels = dedupeByModelId(
-      TOP_PAID_MODEL_NAME_RANKING.flatMap((name) => {
-        const directMatch = response.data.find(
-          (model) => model.name.trim().toLowerCase() === name.toLowerCase(),
-        );
-
-        if (directMatch) {
-          return [directMatch];
-        }
-
-        const containsMatch = response.data.find((model) =>
-          model.name.trim().toLowerCase().includes(name.toLowerCase()),
-        );
-
-        return containsMatch ? [containsMatch] : [];
-      }).map((model) => {
-        const promptPrice = toPerMillionPrice(parsePrice(model.pricing.prompt));
-        const completionPrice = toPerMillionPrice(parsePrice(model.pricing.completion));
-
-        return {
-          modelId: model.id,
-          label: formatImportedLabel(model.name),
-          description:
-            model.description?.trim() ||
-            'Top paid OpenRouter model imported from the current rankings.',
-          task: 'Text Generation',
-          access: 'admin' as const,
-          supportsWebSearch: true,
-          priceLabel: formatPriceLabel(promptPrice, completionPrice),
-          prices:
-            promptPrice !== undefined || completionPrice !== undefined
-              ? [
-                  ...(promptPrice !== undefined
-                    ? [{ unit: 'per M input tokens', price: promptPrice, currency: 'USD' }]
-                    : []),
-                  ...(completionPrice !== undefined
-                    ? [{ unit: 'per M output tokens', price: completionPrice, currency: 'USD' }]
-                    : []),
-                ]
-              : undefined,
-          contextWindow: model.contextLength ?? undefined,
-          source: 'openrouter',
-          isActive: true,
-          refreshedAt: Date.now(),
-          deprecated: model.expirationDate !== undefined && model.expirationDate !== null,
-          deprecationDate: model.expirationDate ?? undefined,
-        };
-      }),
-    );
-
-    if (rankedModels.length === 0) {
-      throw new Error('OpenRouter did not return any of the configured top paid models.');
-    }
-
-    const refreshedAt = Date.now();
-    const entries = rankedModels.map((entry) => ({
-      ...entry,
-      refreshedAt,
-    }));
-
-    const result: { modelCount: number } = await ctx.runMutation(
-      internal.admin.upsertImportedChatModels,
-      {
-        entries,
-        refreshedAt,
-      },
-    );
-
-    return {
-      success: true,
-      message: `Imported ${result.modelCount} top paid OpenRouter models.`,
-    };
+export const importTopPaidModelsForSetup = internalAction({
+  args: {},
+  returns: importedModelsResultValidator,
+  handler: async (ctx): Promise<{ success: boolean; message: string }> => {
+    return await importTopPaidModelsInternal(ctx);
   },
 });

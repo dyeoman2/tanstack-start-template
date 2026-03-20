@@ -304,7 +304,7 @@ python3 /Users/yeoman/.codex/skills/.system/skill-creator/scripts/quick_validate
 If the change should appear in the live site admin workspace, reseed with the local test secret from `.env.local`:
 
 ```bash
-npx convex run --typecheck=disable --push security:reseedSecurityControlWorkspaceForDevelopment '{"secret":"..."}'
+pnpm exec convex run --typecheck=disable --push security:reseedSecurityControlWorkspaceForDevelopment '{"secret":"..."}'
 ```
 
 ## Resources

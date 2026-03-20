@@ -7,11 +7,33 @@
  * Run: pnpm run setup:convex
  */
 
-import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import { deriveConvexSiteUrl } from '../src/lib/convex-url';
+import { requirePnpmAndConvexCli } from './lib/cli-preflight';
+import { convexEnvSet, convexRun } from './lib/convex-cli';
+import { removeStructuredEnvValue, upsertStructuredEnvValue } from './lib/env-file';
+import {
+  printJwksRemediation,
+  syncConvexJwksFromBetterAuth,
+  verifyConvexJwksConfigured,
+} from './lib/deploy-env-helpers';
 import { DEFAULT_APP_NAME } from './lib/setup-defaults';
+import { emitStructuredOutput, routeLogsToStderrWhenJson } from './lib/script-ux';
+
+function printUsage() {
+  console.log('Usage: pnpm run setup:convex [--json]');
+  console.log('');
+  console.log('What this does:');
+  console.log('- Ensures local Convex URLs are present in .env.local');
+  console.log('- Syncs app/auth/provider env vars from .env.local to Convex dev');
+  console.log('- Seeds OpenRouter model catalogs when configured');
+  console.log('- Verifies or refreshes JWKS in Convex dev');
+  console.log('');
+  console.log('Docs: docs/SCRIPT_AUTOMATION.md');
+  console.log('Safe to rerun: yes; this refreshes Convex dev configuration.');
+}
 
 function readOptionalEnvValue(envContent: string, name: string) {
   const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -37,21 +59,39 @@ function readOptionalEnvValue(envContent: string, name: string) {
 }
 
 function runConvexEnvSet(name: string, value: string) {
-  execSync(`npx convex env set ${name} ${JSON.stringify(value)}`, {
-    stdio: 'pipe',
-    cwd: process.cwd(),
-  });
+  convexEnvSet(name, value, false);
 }
 
 function runOpenRouterSeed(actionName: 'importTopFreeModels' | 'importTopPaidModels') {
-  execSync(`npx convex run adminModelImports:${actionName} '{}'`, {
-    stdio: 'pipe',
-    cwd: process.cwd(),
-  });
+  const setupActionName =
+    actionName === 'importTopFreeModels'
+      ? 'importTopFreeModelsForSetup'
+      : 'importTopPaidModelsForSetup';
+  convexRun(`adminModelImports:${setupActionName}`, '{}');
 }
 
 async function main() {
+  const json = process.argv.includes('--json');
+  routeLogsToStderrWhenJson(json);
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+  const updatedConvexKeys: string[] = [];
+  let updatedEnvFile = false;
+  let seededOpenRouter = false;
+  let jwksSynced = false;
+
   console.log('🔧 Setting up Convex URLs...\n');
+  console.log(
+    'What this does: update local Convex URLs if needed and sync dev env from .env.local into Convex.',
+  );
+  console.log('Prereqs: .env.local exists and the repo is linked to a Convex dev deployment.');
+  console.log(
+    'Modifies: .env.local when URL placeholders remain or obsolete Convex URL keys exist, plus Convex dev env vars and optional model seeds.',
+  );
+  console.log('Safe to rerun: yes.\n');
+  requirePnpmAndConvexCli();
 
   const envPath = join(process.cwd(), '.env.local');
 
@@ -61,7 +101,7 @@ async function main() {
     console.log('');
     console.log('📋 Setup Steps (run in order):');
     console.log('   1. pnpm run setup:env    # Create .env.local with secrets');
-    console.log('   2. npx convex dev        # Initialize Convex project');
+    console.log('   2. pnpm exec convex dev        # Initialize Convex project');
     console.log('   3. pnpm run setup:convex # Configure URLs & environment variables');
     console.log('');
     console.log('💡 Start with: pnpm run setup:env');
@@ -86,10 +126,10 @@ async function main() {
     console.log('');
     console.log('📋 Complete setup steps:');
     console.log("   ✅ pnpm run setup:env    # You've done this");
-    console.log('   🔄 npx convex dev        # Do this next (interactively)');
+    console.log('   🔄 pnpm exec convex dev        # Do this next (interactively)');
     console.log("   ⏳ pnpm run setup:convex # You're here now");
     console.log('');
-    console.log('🚀 Run: npx convex dev');
+    console.log('🚀 Run: pnpm exec convex dev');
     console.log('   Then come back and run this command again.');
     console.log('');
 
@@ -108,7 +148,7 @@ async function main() {
     });
 
     if (!convexUrl) {
-      console.log('👋 Exiting. Run "npx convex dev" first, then try again.');
+      console.log('👋 Exiting. Run "pnpm exec convex dev" first, then try again.');
       process.exit(0);
     }
 
@@ -118,32 +158,30 @@ async function main() {
       console.log('   Expected: https://your-project.convex.cloud');
       console.log(`   Got: ${convexUrl}`);
       console.log('');
-      console.log('💡 Make sure you copied the URL from "npx convex dev" output.');
+      console.log('💡 Make sure you copied the URL from "pnpm exec convex dev" output.');
       process.exit(1);
     }
 
-    // Generate site URL by replacing .cloud with .site
-    siteUrl = convexUrl.replace('.convex.cloud', '.convex.site');
+    siteUrl = deriveConvexSiteUrl(convexUrl);
 
-    // Add Convex URLs to .env.local - replace just the site URL placeholder
-    const updatedEnvContent = envContent.replace(
-      '# VITE_CONVEX_SITE_URL=Derived from VITE_CONVEX_URL (replace .cloud with .site)',
-      `VITE_CONVEX_SITE_URL=${siteUrl}`,
-    );
+    let updatedEnvContent = upsertStructuredEnvValue(envContent, 'VITE_CONVEX_URL', convexUrl, {
+      sectionMarker: '# CONVEX DATABASE',
+    });
+    updatedEnvContent = removeStructuredEnvValue(updatedEnvContent, 'VITE_CONVEX_SITE_URL');
 
     writeFileSync(envPath, updatedEnvContent, 'utf8');
     envContent = updatedEnvContent; // Update for later use
+    updatedEnvFile = true;
 
     console.log('✅ Convex URLs configured!');
     console.log(`   📁 Updated: ${envPath}`);
     console.log('────────────────────────────────────────────────');
     console.log('🔗 Added URLs:');
     console.log(`   VITE_CONVEX_URL: ${convexUrl}`);
-    console.log(`   VITE_CONVEX_SITE_URL: ${siteUrl}`);
+    console.log(`   Derived Convex site URL: ${siteUrl}`);
     console.log('────────────────────────────────────────────────');
   } else {
     const convexUrlMatch = envContent.match(/VITE_CONVEX_URL=(.*)/);
-    const siteUrlMatch = envContent.match(/VITE_CONVEX_SITE_URL=(.*)/);
     const convexDeploymentMatch = envContent.match(/CONVEX_DEPLOYMENT=(.*)/);
 
     if (convexUrlMatch?.[1]?.trim()) {
@@ -153,47 +191,30 @@ async function main() {
       convexUrl = `https://${deploymentName}.convex.cloud`;
     }
 
-    if (siteUrlMatch?.[1]) {
-      siteUrl = siteUrlMatch[1].trim();
+    if (!convexUrl) {
+      console.log('❌ Could not determine Convex URL from .env.local');
+      console.log('');
+      console.log('🔍 Expected to find: VITE_CONVEX_URL=https://your-project.convex.cloud');
+      console.log('');
+      console.log('💡 This usually means:');
+      console.log('   • You haven\'t run "pnpm exec convex dev" yet, or');
+      console.log("   • Convex setup didn't complete successfully");
+      console.log('');
+      console.log('🚀 Solution: Run "pnpm exec convex dev" and follow the prompts.');
+      console.log('   Then run this command again.');
+      process.exit(1);
     }
 
-    // Check if VITE_CONVEX_SITE_URL needs to be set (empty or placeholder)
-    if (
-      !siteUrl ||
-      siteUrl.trim() === '' ||
-      siteUrl.includes('Derived from VITE_CONVEX_URL') ||
-      siteUrl.includes('set after running')
-    ) {
-      if (!convexUrl) {
-        console.log('❌ Could not determine Convex URL from .env.local');
-        console.log('');
-        console.log('🔍 Expected to find: VITE_CONVEX_URL=https://your-project.convex.cloud');
-        console.log('');
-        console.log('💡 This usually means:');
-        console.log('   • You haven\'t run "npx convex dev" yet, or');
-        console.log("   • Convex setup didn't complete successfully");
-        console.log('');
-        console.log('🚀 Solution: Run "npx convex dev" and follow the prompts.');
-        console.log('   Then run this command again.');
-        process.exit(1);
-      }
-
-      console.log('ℹ️  VITE_CONVEX_SITE_URL needs to be set, updating...');
-      const actualSiteUrl = convexUrl.replace('.convex.cloud', '.convex.site');
-
-      // Replace any VITE_CONVEX_SITE_URL line that contains placeholder text
-      const updatedEnvContent = envContent.replace(
-        /^.*VITE_CONVEX_SITE_URL=.*(?:Derived from|set after running|replace \.cloud).*$/gm,
-        `VITE_CONVEX_SITE_URL=${actualSiteUrl}`,
-      );
-      writeFileSync(envPath, updatedEnvContent, 'utf8');
-      envContent = updatedEnvContent;
-      siteUrl = actualSiteUrl;
-
-      console.log('✅ VITE_CONVEX_SITE_URL updated!');
+    siteUrl = deriveConvexSiteUrl(convexUrl);
+    const cleanedEnvContent = removeStructuredEnvValue(envContent, 'VITE_CONVEX_SITE_URL');
+    if (cleanedEnvContent !== envContent) {
+      writeFileSync(envPath, cleanedEnvContent, 'utf8');
+      envContent = cleanedEnvContent;
+      updatedEnvFile = true;
+      console.log('✅ Removed obsolete VITE_CONVEX_SITE_URL from .env.local.');
       console.log('────────────────────────────────────────────────');
-      console.log('🔗 Updated URL:');
-      console.log(`   VITE_CONVEX_SITE_URL: ${siteUrl}`);
+      console.log('🔗 Derived Convex site URL:');
+      console.log(`   ${siteUrl}`);
       console.log('────────────────────────────────────────────────');
     }
   }
@@ -204,8 +225,6 @@ async function main() {
   const resendApiKey = readOptionalEnvValue(envContent, 'RESEND_API_KEY');
   const resendEmailSender = readOptionalEnvValue(envContent, 'RESEND_EMAIL_SENDER');
   const openRouterApiKey = readOptionalEnvValue(envContent, 'OPENROUTER_API_KEY');
-  const openRouterSiteUrl = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_URL');
-  const openRouterSiteName = readOptionalEnvValue(envContent, 'OPENROUTER_SITE_NAME');
   const googleClientId =
     readOptionalEnvValue(envContent, 'GOOGLE_CLIENT_ID') ??
     readOptionalEnvValue(envContent, 'BETTER_AUTH_GOOGLE_CLIENT_ID');
@@ -224,7 +243,7 @@ async function main() {
   if (urlsConfigured) {
     console.log('ℹ️  Using existing Convex URLs:');
     console.log(`   VITE_CONVEX_URL: ${convexUrl}`);
-    console.log(`   VITE_CONVEX_SITE_URL: ${siteUrl}`);
+    console.log(`   Derived Convex site URL: ${siteUrl}`);
     console.log('────────────────────────────────────────────────');
   }
 
@@ -235,8 +254,6 @@ async function main() {
     ...(resendApiKey ? [{ name: 'RESEND_API_KEY', value: resendApiKey }] : []),
     ...(resendEmailSender ? [{ name: 'RESEND_EMAIL_SENDER', value: resendEmailSender }] : []),
     ...(openRouterApiKey ? [{ name: 'OPENROUTER_API_KEY', value: openRouterApiKey }] : []),
-    ...(openRouterSiteUrl ? [{ name: 'OPENROUTER_SITE_URL', value: openRouterSiteUrl }] : []),
-    ...(openRouterSiteName ? [{ name: 'OPENROUTER_SITE_NAME', value: openRouterSiteName }] : []),
     ...(googleClientId && googleClientSecret
       ? [
           { name: 'GOOGLE_CLIENT_ID', value: googleClientId },
@@ -249,6 +266,7 @@ async function main() {
     try {
       console.log(`   Setting ${name}...`);
       runConvexEnvSet(name, value);
+      updatedConvexKeys.push(name);
     } catch {
       console.log(`   ⚠️  Failed to set ${name} (may already be set)`);
     }
@@ -259,7 +277,7 @@ async function main() {
 
   if (!resendApiKey) {
     console.log(
-      'ℹ️  RESEND_API_KEY not in .env.local — add it there and rerun, or `npx convex env set RESEND_API_KEY ...`.',
+      'ℹ️  RESEND_API_KEY not in .env.local — add it there and rerun, or `pnpm exec convex env set RESEND_API_KEY ...`.',
     );
   }
 
@@ -271,22 +289,44 @@ async function main() {
 
   if (!openRouterApiKey) {
     console.log('ℹ️  OPENROUTER_API_KEY not found in .env.local. Skipping AI model seed.');
-    return;
+  } else {
+    console.log('🌱 Seeding OpenRouter model catalogs...');
+
+    for (const actionName of ['importTopFreeModels', 'importTopPaidModels'] as const) {
+      try {
+        console.log(`   Running ${actionName}...`);
+        runOpenRouterSeed(actionName);
+        seededOpenRouter = true;
+      } catch {
+        console.log(`   ⚠️  Failed to run ${actionName}. You can retry later from /app/admin.`);
+      }
+    }
+
+    console.log('✅ OpenRouter model seeding complete!');
+    console.log('────────────────────────────────────────────────');
   }
 
-  console.log('🌱 Seeding OpenRouter model catalogs...');
-
-  for (const actionName of ['importTopFreeModels', 'importTopPaidModels'] as const) {
+  if (!verifyConvexJwksConfigured('dev')) {
+    console.log('🔑 JWKS missing — fetching from Better Auth and pushing to Convex...');
     try {
-      console.log(`   Running ${actionName}...`);
-      runOpenRouterSeed(actionName);
+      syncConvexJwksFromBetterAuth('dev');
+      jwksSynced = true;
     } catch {
-      console.log(`   ⚠️  Failed to run ${actionName}. You can retry later from /app/admin.`);
+      printJwksRemediation('dev');
+    }
+    if (!verifyConvexJwksConfigured('dev')) {
+      printJwksRemediation('dev');
     }
   }
-
-  console.log('✅ OpenRouter model seeding complete!');
-  console.log('────────────────────────────────────────────────');
+  if (json) {
+    emitStructuredOutput({
+      localEnvPath: envPath,
+      updatedEnvFile,
+      updatedConvexKeys,
+      seededOpenRouter,
+      jwksSynced,
+    });
+  }
 }
 
 main().catch((error) => {

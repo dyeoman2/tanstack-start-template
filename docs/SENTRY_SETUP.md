@@ -189,7 +189,7 @@ Your application uses Convex for data management. Set the Sentry DSN in Convex:
 
 ```bash
 # Set environment variable in Convex
-npx convex env set VITE_SENTRY_DSN https://your-project-dsn.ingest.sentry.io/project-id --prod
+pnpm exec convex env set VITE_SENTRY_DSN https://your-project-dsn.ingest.sentry.io/project-id --prod
 
 ```
 

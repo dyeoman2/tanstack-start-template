@@ -6,8 +6,7 @@ import { Providers } from '~/components/Providers';
 import { seo } from '~/lib/seo';
 import appCss from '~/styles/app.css?url';
 
-const convexPreconnect =
-  import.meta.env.VITE_CONVEX_URL || import.meta.env.VITE_CONVEX_SITE_URL || undefined;
+const convexPreconnect = import.meta.env.VITE_CONVEX_URL || undefined;
 
 export const Route = createRootRoute({
   head: () => ({

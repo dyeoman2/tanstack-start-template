@@ -33,8 +33,8 @@ export function getOpenRouterConfig(): OpenRouterConfig {
     throw new Error('OPENROUTER_API_KEY environment variable is required');
   }
 
-  const siteUrl = process.env.OPENROUTER_SITE_URL?.trim();
-  const siteName = process.env.OPENROUTER_SITE_NAME?.trim();
+  const siteUrl = process.env.BETTER_AUTH_URL?.trim();
+  const siteName = process.env.APP_NAME?.trim();
   const headers =
     siteUrl || siteName
       ? {
@@ -52,8 +52,8 @@ export function getOpenRouterConfig(): OpenRouterConfig {
 }
 
 export function getOpenRouterAttributionHeaders() {
-  const siteUrl = process.env.OPENROUTER_SITE_URL?.trim();
-  const siteName = process.env.OPENROUTER_SITE_NAME?.trim();
+  const siteUrl = process.env.BETTER_AUTH_URL?.trim();
+  const siteName = process.env.APP_NAME?.trim();
 
   return siteUrl || siteName
     ? {

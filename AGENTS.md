@@ -209,9 +209,9 @@ pnpm build           # Build + typecheck
 pnpm typecheck       # Oxc type-aware analysis
 pnpm lint            # Lint with Oxlint
 pnpm format          # Format with Oxfmt
-npx convex dev       # Start Convex development server
-npx convex deploy    # Deploy Convex functions to production
-npx convex dashboard # Open Convex dashboard
+pnpm exec convex dev       # Start Convex development server
+pnpm exec convex deploy    # Deploy Convex functions to production
+pnpm exec convex dashboard # Open Convex dashboard
 ```
 
 ### Development

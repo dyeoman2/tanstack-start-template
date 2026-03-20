@@ -101,9 +101,9 @@ function ResendSetupCard() {
                 Set the environment variable in Convex:
                 <div className="mt-2 ml-4 space-y-1 rounded border bg-white p-2 font-mono text-xs">
                   <div className="mb-1">Development:</div>
-                  <div>npx convex env set RESEND_API_KEY your_api_key_here</div>
+                  <div>pnpm exec convex env set RESEND_API_KEY your_api_key_here</div>
                   <div className="mt-2 mb-1">Production:</div>
-                  <div>npx convex env set RESEND_API_KEY your_api_key_here --prod</div>
+                  <div>pnpm exec convex env set RESEND_API_KEY your_api_key_here --prod</div>
                 </div>
               </li>
               <li>Or use the Convex Dashboard: Settings → Environment Variables</li>

@@ -1,10 +1,27 @@
 #!/usr/bin/env tsx
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
+import {
+  CLI_INSTALL_HINT,
+  commandOnPath,
+  findMissingCommands,
+  requireCommands,
+  requirePnpmAndConvexCli,
+} from './lib/cli-preflight';
+import { convexEnvSet } from './lib/convex-cli';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
 import { generateSecret } from '../src/lib/server/crypto.server';
+import {
+  emitStructuredOutput,
+  printFinalChangeSummary,
+  printStatusSummary,
+  printTargetSummary,
+  routeLogsToStderrWhenJson,
+} from './lib/script-ux';
+import { deriveConvexSiteUrl } from '../src/lib/convex-url';
+import { upsertStructuredEnvValue } from './lib/env-file';
 
 type StorageMode = 'convex' | 's3-primary' | 's3-mirror';
 type AwsIdentity = {
@@ -58,27 +75,12 @@ function readEnvValue(envContent: string, name: string) {
   return match?.[1]?.trim()?.replace(/^"(.*)"$/, '$1') || null;
 }
 
-function upsertEnvValue(envContent: string, name: string, value: string) {
-  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const line = `${name}=${value}`;
-
-  if (new RegExp(`^${escapedName}=`, 'm').test(envContent)) {
-    return envContent.replace(new RegExp(`^${escapedName}=.*$`, 'm'), line);
-  }
-
-  const separator = envContent.endsWith('\n') || envContent.length === 0 ? '' : '\n';
-  return `${envContent}${separator}${line}\n`;
-}
-
 function maybeQuote(value: string) {
   return /\s/.test(value) ? `"${value}"` : value;
 }
 
 function trySetConvexEnv(name: string, value: string) {
-  execSync(`npx convex env set ${name} "${value}"`, {
-    cwd: process.cwd(),
-    stdio: 'inherit',
-  });
+  convexEnvSet(name, value, false);
 }
 
 const CONVEX_SYNC_STORAGE_ENV_NAMES = [
@@ -220,22 +222,109 @@ function writeDirenvFile(input: { awsProfile?: string; awsRegion: string }) {
 
 async function chooseStorageMode(): Promise<StorageMode> {
   console.log('🗂️  Storage mode options:');
-  console.log('   1. convex      - default, no AWS required');
-  console.log('   2. s3-primary  - direct-to-S3, GuardDuty on canonical object');
-  console.log('   3. s3-mirror   - upload to Convex first, then mirror to S3');
+  console.log('   1. convex      - default, convex only, no AWS required');
+  console.log('   2. s3          - s3 only with GuardDuty malware scanning');
+  console.log(
+    '   3. mirror      - upload to Convex first, then mirror to S3 with GuardDuty malware scanning',
+  );
   console.log('');
 
   while (true) {
     const answer = (await ask('Choose storage mode [1]: ')) || '1';
     if (answer === '1' || answer === 'convex') return 'convex';
-    if (answer === '2' || answer === 's3-primary') return 's3-primary';
-    if (answer === '3' || answer === 's3-mirror') return 's3-mirror';
+    if (answer === '2' || answer === 's3' || answer === 's3-primary') return 's3-primary';
+    if (answer === '3' || answer === 'mirror' || answer === 's3-mirror') return 's3-mirror';
     console.log('Please choose 1, 2, or 3.');
   }
 }
 
+function printUsage() {
+  console.log('Usage: pnpm run storage:setup [--json]');
+  console.log('');
+  console.log(
+    'What this does: configure local storage mode, optionally sync storage envs to Convex dev, and optionally preview/deploy AWS storage infra.',
+  );
+  console.log('Use this instead of storage:setup:prod for local/dev storage configuration.');
+  console.log('Docs: docs/SCRIPT_COMMAND_MAP.md');
+  console.log('');
+  console.log('Modes: convex, s3, mirror');
+  console.log(
+    'Safe to rerun: yes; it updates local/Convex settings and only deploys AWS infra when you confirm.',
+  );
+}
+
+function printMissingCliSummary(
+  title: string,
+  missing: ReadonlyArray<{ cmd: string; hint: string }>,
+) {
+  if (missing.length === 0) {
+    return;
+  }
+
+  console.log(`\n${title}`);
+  for (const item of missing) {
+    console.log(`- ${item.cmd}: ${item.hint}`);
+  }
+}
+
+function getAwsAuthStatus() {
+  if (!commandOnPath('aws')) {
+    return 'cli missing';
+  }
+  return spawnSync('aws', ['sts', 'get-caller-identity', '--output', 'json'], {
+    stdio: 'ignore',
+  }).status === 0
+    ? 'ready'
+    : 'run `aws configure` or export AWS credentials';
+}
+
+function getNetlifyAuthStatus() {
+  if (!commandOnPath('netlify')) {
+    return 'cli missing';
+  }
+  return process.env.NETLIFY_AUTH_TOKEN?.trim()
+    ? 'token available'
+    : 'run `netlify login` if you want Netlify-related automation';
+}
+
 async function main() {
+  const json = process.argv.includes('--json');
+  routeLogsToStderrWhenJson(json);
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+  const changedLocally: string[] = [];
+  const changedRemotely: string[] = [];
+  const nextCommands: string[] = [];
+
   console.log('🔧 Storage setup\n');
+  console.log(
+    'What this does: choose a storage mode, update .env.local, optionally sync Convex dev env, and optionally preview/deploy AWS infra.',
+  );
+  console.log('Prereqs: .env.local; Convex CLI access. AWS CLI only needed for S3-backed modes.');
+  console.log(
+    'Modifies: .env.local, optional Convex dev env, optional .envrc, optional AWS stacks when confirmed.',
+  );
+  console.log('Safe to rerun: yes; infrastructure deploys remain opt-in.\n');
+  const requiredMissing = findMissingCommands([{ cmd: 'pnpm' }]);
+  if (requiredMissing.length > 0) {
+    printMissingCliSummary('Missing required CLIs', requiredMissing);
+    process.exit(1);
+  }
+  const optionalMissing = findMissingCommands([{ cmd: 'aws' }, { cmd: 'netlify' }]);
+  printMissingCliSummary(
+    'Optional CLIs you may want before S3 or Netlify-related steps',
+    optionalMissing,
+  );
+  printStatusSummary('Provider auth status', [
+    { label: 'AWS', value: getAwsAuthStatus() },
+    {
+      label: 'Netlify',
+      value: !commandOnPath('netlify') ? CLI_INSTALL_HINT.netlify : getNetlifyAuthStatus(),
+    },
+  ]);
+  requirePnpmAndConvexCli();
 
   const cwd = process.cwd();
   const envPath = join(cwd, '.env.local');
@@ -247,15 +336,20 @@ async function main() {
 
   let envContent = readEnvFile(envPath);
   const storageMode = await chooseStorageMode();
-  envContent = upsertEnvValue(envContent, 'FILE_STORAGE_BACKEND', storageMode);
+  envContent = upsertStructuredEnvValue(envContent, 'FILE_STORAGE_BACKEND', storageMode, {
+    sectionMarker: '# STORAGE',
+  });
 
   const convexSiteUrlFallback =
     readEnvValue(envContent, 'CONVEX_SITE_URL') ??
-    readEnvValue(envContent, 'VITE_CONVEX_SITE_URL') ??
+    (readEnvValue(envContent, 'VITE_CONVEX_URL')
+      ? deriveConvexSiteUrl(readEnvValue(envContent, 'VITE_CONVEX_URL') as string)
+      : null) ??
     'http://127.0.0.1:3210';
 
   if (storageMode === 'convex') {
     writeFileSync(envPath, envContent, 'utf8');
+    changedLocally.push(`Updated ${envPath} with FILE_STORAGE_BACKEND=convex`);
     console.log('\n✅ Storage configured for convex mode.');
     console.log(`   Updated: ${envPath}`);
     console.log('');
@@ -271,13 +365,22 @@ async function main() {
     if (syncConvex) {
       try {
         trySetConvexEnv('FILE_STORAGE_BACKEND', 'convex');
+        changedRemotely.push('Set Convex dev env FILE_STORAGE_BACKEND=convex');
       } catch {
         console.log('⚠️  Failed to sync Convex env automatically. Set it manually if needed.');
       }
     }
+    nextCommands.push('pnpm dev');
+    const finalSummary = { changedLocally, changedRemotely, nextCommands };
+    if (json) {
+      emitStructuredOutput(finalSummary);
+    } else {
+      printFinalChangeSummary(finalSummary);
+    }
     return;
   }
 
+  requireCommands([{ cmd: 'aws' }]);
   const awsRegion = await askWithDefault(
     'AWS region',
     readEnvValue(envContent, 'AWS_REGION') ?? 'us-west-1',
@@ -299,20 +402,39 @@ async function main() {
     readEnvValue(envContent, 'AWS_FILE_SERVE_SIGNING_SECRET') ?? (await generateSecret(32)),
   );
 
-  envContent = upsertEnvValue(envContent, 'AWS_REGION', awsRegion);
+  envContent = upsertStructuredEnvValue(envContent, 'AWS_REGION', awsRegion, {
+    sectionMarker: '# STORAGE',
+  });
   if (awsProfile) {
-    envContent = upsertEnvValue(envContent, 'AWS_PROFILE', awsProfile);
+    envContent = upsertStructuredEnvValue(envContent, 'AWS_PROFILE', awsProfile, {
+      sectionMarker: '# STORAGE',
+    });
   }
-  envContent = upsertEnvValue(envContent, 'AWS_S3_FILES_BUCKET', bucket);
-  envContent = upsertEnvValue(
+  envContent = upsertStructuredEnvValue(envContent, 'AWS_S3_FILES_BUCKET', bucket, {
+    sectionMarker: '# STORAGE',
+  });
+  envContent = upsertStructuredEnvValue(
     envContent,
     'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     maybeQuote(webhookSecret),
+    {
+      sectionMarker: '# STORAGE',
+    },
   );
-  envContent = upsertEnvValue(envContent, 'AWS_FILE_SERVE_SIGNING_SECRET', maybeQuote(serveSecret));
-  envContent = upsertEnvValue(envContent, 'CONVEX_SITE_URL', convexSiteUrl);
+  envContent = upsertStructuredEnvValue(
+    envContent,
+    'AWS_FILE_SERVE_SIGNING_SECRET',
+    maybeQuote(serveSecret),
+    {
+      sectionMarker: '# STORAGE',
+    },
+  );
+  envContent = upsertStructuredEnvValue(envContent, 'CONVEX_SITE_URL', convexSiteUrl, {
+    sectionMarker: '# STORAGE',
+  });
 
   writeFileSync(envPath, envContent, 'utf8');
+  changedLocally.push(`Updated ${envPath} with storage runtime vars for ${storageMode}`);
 
   console.log(`\n✅ Storage configured for ${storageMode}.`);
   console.log(`   Updated: ${envPath}`);
@@ -331,16 +453,22 @@ async function main() {
   console.log(
     'Syncing to Convex will set the storage vars there; CONVEX_SITE_URL remains local because Convex provides it as a built-in env var.',
   );
+  printTargetSummary('Provider target summary', [
+    `AWS region: ${awsRegion}`,
+    `AWS profile: ${awsProfile ?? 'current shell/default'}`,
+    `S3 bucket: ${bucket}`,
+    `Convex site URL: ${convexSiteUrl}`,
+  ]);
 
   const syncConvex = await askYesNo('Sync these storage env vars into Convex now?', true);
   if (!syncConvex) {
     console.log('');
     console.log('Set these manually in Convex when ready:');
-    console.log(`   npx convex env set FILE_STORAGE_BACKEND "${storageMode}"`);
-    console.log(`   npx convex env set AWS_REGION "${awsRegion}"`);
-    console.log(`   npx convex env set AWS_S3_FILES_BUCKET "${bucket}"`);
-    console.log('   npx convex env set AWS_MALWARE_WEBHOOK_SHARED_SECRET "<secret>"');
-    console.log('   npx convex env set AWS_FILE_SERVE_SIGNING_SECRET "<secret>"');
+    console.log(`   pnpm exec convex env set FILE_STORAGE_BACKEND "${storageMode}"`);
+    console.log(`   pnpm exec convex env set AWS_REGION "${awsRegion}"`);
+    console.log(`   pnpm exec convex env set AWS_S3_FILES_BUCKET "${bucket}"`);
+    console.log('   pnpm exec convex env set AWS_MALWARE_WEBHOOK_SHARED_SECRET "<secret>"');
+    console.log('   pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET "<secret>"');
   } else {
     try {
       const convexEnvValues = {
@@ -355,6 +483,7 @@ async function main() {
         trySetConvexEnv(name, convexEnvValues[name]);
       }
       console.log('\n✅ Convex env synced.');
+      changedRemotely.push('Updated Convex dev env for storage backend/AWS settings');
     } catch {
       console.log('\n⚠️  Automatic Convex env sync failed.');
       console.log(
@@ -413,6 +542,7 @@ async function main() {
     try {
       run('pnpm storage:preview:dev', storageDeployEnv);
       console.log('✅ CDK preview completed.');
+      changedRemotely.push('Ran AWS storage preview (dev)');
     } catch {
       console.log('⚠️  CDK preview failed.');
       console.log('   Check your AWS credentials/bootstrap and retry.');
@@ -424,6 +554,7 @@ async function main() {
     try {
       run('pnpm storage:deploy:dev', storageDeployEnv);
       console.log('✅ AWS storage infrastructure deployed.');
+      changedRemotely.push('Deployed AWS storage infrastructure (dev)');
     } catch {
       console.log('⚠️  CDK deploy failed.');
       console.log('   Check your AWS credentials/bootstrap and retry.');
@@ -433,6 +564,14 @@ async function main() {
     console.log('   1. Your local runtime storage env is already saved in .env.local');
     console.log('   2. Run: pnpm storage:preview:dev');
     console.log('   3. Run: pnpm storage:deploy:dev');
+    nextCommands.push('pnpm storage:preview:dev');
+    nextCommands.push('pnpm storage:deploy:dev');
+  }
+  const finalSummary = { changedLocally, changedRemotely, nextCommands };
+  if (json) {
+    emitStructuredOutput(finalSummary);
+  } else {
+    printFinalChangeSummary(finalSummary);
   }
 }
 

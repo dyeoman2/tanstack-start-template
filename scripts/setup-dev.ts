@@ -7,8 +7,33 @@
  * Run: pnpm run setup:dev
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execSync } from 'node:child_process';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { createInterface } from 'node:readline';
+import {
+  commandOnPath,
+  pnpmExecConvexWorks,
+  requireCommands,
+  requirePnpmAndConvexCli,
+} from './lib/cli-preflight';
+import { upsertStructuredEnvValue } from './lib/env-file';
+
+function printUsage() {
+  console.log('Usage: pnpm run setup:dev');
+  console.log('');
+  console.log('What this does:');
+  console.log('- Runs setup:env');
+  console.log('- Runs convex project bootstrap');
+  console.log('- Runs setup:convex');
+  console.log('- Optionally runs storage:setup and setup:e2e');
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run setup:dev');
+  console.log('');
+  console.log('Safe to rerun: mostly yes');
+  console.log('- Setup steps are rerunnable and do not start long-running dev processes.');
+}
 
 async function askYesNo(question: string): Promise<boolean> {
   const rl = createInterface({
@@ -24,23 +49,182 @@ async function askYesNo(question: string): Promise<boolean> {
   });
 }
 
+async function askInput(question: string, initialValue?: string): Promise<string> {
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+
+  return await new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+    if (initialValue) {
+      rl.write(initialValue);
+    }
+  });
+}
+
+function readEnvFile(envPath: string) {
+  return existsSync(envPath) ? readFileSync(envPath, 'utf8') : '';
+}
+
+function readEnvValue(envContent: string, name: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = envContent.match(new RegExp(`^${escapedName}=(.*)$`, 'm'));
+  return match?.[1]?.trim()?.replace(/^"(.*)"$/, '$1') || null;
+}
+
+function maybeQuote(value: string) {
+  return /\s/.test(value) ? JSON.stringify(value) : value;
+}
+
+async function guideOptionalVendors(envPath: string) {
+  let envContent = readEnvFile(envPath);
+  let updated = false;
+
+  console.log('🔌 Step 2: Optional vendor setup');
+  console.log(
+    'These providers are optional. The template works without them, but specific features depend on them.',
+  );
+  console.log('- Resend powers password reset and transactional email delivery.');
+  console.log('- OpenRouter powers the chat/AI model features.');
+  console.log('');
+
+  const shouldConfigureResend =
+    !readEnvValue(envContent, 'RESEND_API_KEY') &&
+    (await askYesNo('Configure Resend email now? (y/N): '));
+  if (shouldConfigureResend) {
+    console.log('\nResend setup');
+    console.log('- Needed if you want password reset and other email flows to work.');
+    if (commandOnPath('resend')) {
+      console.log(
+        '- Resend CLI detected, but this template does not automate API key creation through it yet.',
+      );
+    } else {
+      console.log('- No supported Resend CLI automation detected here.');
+      console.log(
+        '- Create an account at https://resend.com, create an API key, then paste it below.',
+      );
+    }
+
+    const resendApiKey = await askInput('Resend API key (press Enter to skip): ');
+    if (resendApiKey) {
+      console.log(
+        'Press Enter to use onboarding@resend.dev. That works for testing with the email address you signed up for Resend with.',
+      );
+      console.log(
+        'To send from other email addresses, authenticate your domain in Resend first and then use a sender on that domain.',
+      );
+      const resendSender =
+        (await askInput('Sender email [onboarding@resend.dev]: ')) || 'onboarding@resend.dev';
+      envContent = upsertStructuredEnvValue(envContent, 'RESEND_API_KEY', resendApiKey, {
+        sectionMarker: '# RESEND EMAIL SETUP',
+      });
+      envContent = upsertStructuredEnvValue(
+        envContent,
+        'RESEND_EMAIL_SENDER',
+        maybeQuote(resendSender),
+        {
+          sectionMarker: '# RESEND EMAIL SETUP',
+        },
+      );
+      updated = true;
+      console.log('✅ Stored Resend settings in .env.local');
+    } else {
+      console.log('ℹ️  Skipping Resend for now. Email flows will remain unconfigured.');
+    }
+    console.log('');
+  }
+
+  const shouldConfigureOpenRouter =
+    !readEnvValue(envContent, 'OPENROUTER_API_KEY') &&
+    (await askYesNo('Configure OpenRouter for chat/AI now? (y/N): '));
+  if (shouldConfigureOpenRouter) {
+    console.log('\nOpenRouter setup');
+    console.log('- Needed if you want chat and model-driven AI features to work.');
+    if (commandOnPath('openrouter')) {
+      console.log(
+        '- OpenRouter CLI detected, but this template does not automate API key creation through it yet.',
+      );
+    } else {
+      console.log('- No supported OpenRouter CLI automation detected here.');
+      console.log('- Create an account/key at https://openrouter.ai/keys, then paste it below.');
+    }
+
+    const openRouterApiKey = await askInput('OpenRouter API key (press Enter to skip): ');
+    if (openRouterApiKey) {
+      envContent = upsertStructuredEnvValue(envContent, 'OPENROUTER_API_KEY', openRouterApiKey, {
+        sectionMarker: '# OPENROUTER AI SETUP',
+      });
+      updated = true;
+      console.log('✅ Stored OpenRouter settings in .env.local');
+    } else {
+      console.log('ℹ️  Skipping OpenRouter for now. Chat/AI features will stay unconfigured.');
+    }
+    console.log('');
+  }
+
+  if (updated) {
+    writeFileSync(envPath, envContent, 'utf8');
+    console.log(`📝 Updated ${envPath} with optional vendor settings.\n`);
+  }
+}
+
+function run(command: string, cwd: string) {
+  execSync(command, { stdio: 'inherit', cwd });
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   console.log('🚀 Starting complete project setup...\n');
+  console.log('What this does: guided local bootstrap plus optional storage/E2E setup.');
+  console.log('Prereqs: pnpm on PATH; Convex CLI available through pnpm after install.');
+  console.log('Modifies: .env.local, Convex dev env, and optional storage/E2E settings.');
+  console.log('Safe to rerun: yes; this script is now configuration-only.\n');
 
   const cwd = process.cwd();
+  requireCommands([{ cmd: 'pnpm' }]);
+
+  if (!pnpmExecConvexWorks(cwd)) {
+    console.log('📦 Project dependencies are not installed yet.');
+    const shouldInstall = await askYesNo('Run `pnpm install` now? (Y/n): ');
+    if (!shouldInstall) {
+      console.log('❌ Dependencies are required before local setup can continue.');
+      console.log('   Run `pnpm install`, then rerun `pnpm run setup:dev`.');
+      process.exit(1);
+    }
+
+    try {
+      run('pnpm install', cwd);
+      console.log('✅ Dependencies installed.\n');
+    } catch {
+      console.log('❌ `pnpm install` failed. Please fix the install issue and rerun setup.');
+      process.exit(1);
+    }
+  }
+
+  const envPath = join(cwd, '.env.local');
 
   // Step 1: Run initial setup
   console.log('📦 Step 1: Setting up local environment...');
   try {
-    execSync('pnpm run setup:env', { stdio: 'inherit', cwd });
+    run('pnpm run setup:env', cwd);
     console.log('✅ Environment setup complete!\n');
   } catch {
     console.log('❌ Environment setup failed. Please fix any issues and try again.');
     process.exit(1);
   }
 
-  // Step 2: Run Convex project creation
-  console.log('☁️  Step 2: Setting up Convex project');
+  await guideOptionalVendors(envPath);
+
+  // Step 3: Run Convex project creation
+  console.log('☁️  Step 3: Setting up Convex project');
   console.log('');
   console.log('This will require your input to:');
   console.log('  • Login/create your Convex account');
@@ -49,50 +233,50 @@ async function main() {
   console.log('Starting Convex setup...');
   console.log('');
 
+  requirePnpmAndConvexCli(cwd);
   try {
-    execSync('npx convex dev --once', { stdio: 'inherit', cwd });
+    run('pnpm exec convex dev --once', cwd);
     console.log('✅ Convex project setup complete!\n');
   } catch {
     console.log('ℹ️  Convex setup completed.\n');
   }
 
-  // Step 3: Run Convex configuration
-  console.log('⚙️  Step 3: Configuring development URLs and environment variables...');
+  // Step 4: Run Convex configuration
+  console.log('⚙️  Step 4: Configuring development URLs and environment variables...');
   try {
-    execSync('pnpm run setup:convex', { stdio: 'inherit', cwd });
+    run('pnpm run setup:convex', cwd);
     console.log('✅ Convex configuration complete!\n');
   } catch {
     console.log('❌ Convex configuration failed. Please check your setup and try again.');
     process.exit(1);
   }
 
-  // Step 4: Optionally configure authenticated E2E helpers
-  console.log('🗂️  Step 4: Optional storage backend setup');
-  const shouldSetupStorage = await askYesNo(
-    'Configure storage backend env now? Use this for s3-primary or s3-mirror. (y/N): ',
-  );
+  console.log('');
+  console.log('📌 After you change secrets or URLs in .env.local:');
+  console.log('   pnpm run setup:convex      # push dev Convex env from .env.local');
+  console.log('   pnpm run convex:env:verify # drift check (names + non-secret values)');
+  console.log('   pnpm run convex:jwks:sync  # keep JWKS aligned with Better Auth');
+  console.log('');
 
-  if (shouldSetupStorage) {
-    try {
-      execSync('pnpm run storage:setup', { stdio: 'inherit', cwd });
-      console.log('✅ Storage setup complete!\n');
-    } catch {
-      console.log('❌ Storage setup failed. Please check the output and try again.');
-      process.exit(1);
-    }
-  } else {
-    console.log('ℹ️  Skipping storage setup. Run `pnpm run storage:setup` any time.\n');
+  // Step 5: Configure storage
+  console.log('🗂️  Step 5: 🔧 Storage setup');
+  try {
+    run('pnpm run storage:setup', cwd);
+    console.log('✅ Storage setup complete!\n');
+  } catch {
+    console.log('❌ Storage setup failed. Please check the output and try again.');
+    process.exit(1);
   }
 
-  // Step 5: Optionally configure authenticated E2E helpers
-  console.log('🧪 Step 5: Optional Playwright E2E setup');
+  // Step 6: Optionally configure authenticated E2E helpers
+  console.log('🧪 Step 6: Optional Playwright E2E setup');
   const shouldSetupE2E = await askYesNo(
     'Configure authenticated Playwright E2E env and sync the Convex gate now? (y/N): ',
   );
 
   if (shouldSetupE2E) {
     try {
-      execSync('pnpm run setup:e2e', { stdio: 'inherit', cwd });
+      run('pnpm run setup:e2e', cwd);
       console.log('✅ Playwright E2E setup complete!\n');
     } catch {
       console.log('❌ Playwright E2E setup failed. Please check the output and try again.');
@@ -102,85 +286,22 @@ async function main() {
     console.log('ℹ️  Skipping Playwright E2E setup. Run `pnpm run setup:e2e` any time.\n');
   }
 
-  // Step 6: Start development servers in current IDE terminal
-  console.log('🎯 Step 6: Starting your development servers');
+  console.log('🎉 Local development setup is complete!');
   console.log('');
-  console.log('📋 Starting both servers in your current terminal...');
+  console.log('Run this next:');
+  console.log('  pnpm dev');
   console.log('');
-
-  // Start both servers - Convex in background, frontend in foreground
-  console.log('🚀 Starting both development servers...');
-  console.log('');
-
-  console.log('📋 Server startup:');
-  console.log('  • Convex backend will run in the background');
-  console.log('  • Frontend dev server will run in the foreground');
-  console.log('  • Both servers will be accessible while this terminal is open');
-  console.log('');
-
-  console.log('⚠️  To stop both servers: Press Ctrl+C twice');
-  console.log('');
-
-  // Use concurrently or similar approach to run both servers
-  // For now, let's run convex in background and frontend in foreground
-  console.log('🎯 Starting Convex backend (background)...');
-
-  try {
-    // Start convex in background
-    const convexProcess = spawn('npx', ['convex', 'dev'], {
-      stdio: ['inherit', 'inherit', 'inherit'],
-      detached: false,
-      cwd: process.cwd(),
-    });
-
-    // Give convex a moment to start
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-
-    console.log('✅ Convex backend started successfully');
-    console.log('');
-
-    console.log('🎨 Starting frontend development server...');
-    console.log('📱 Your app will be available at: http://localhost:3000');
-    console.log('');
-
-    // Now start the frontend dev server in foreground
-    const frontendProcess = spawn('pnpm', ['dev'], {
-      stdio: 'inherit',
-      cwd: process.cwd(),
-    });
-
-    // Wait for frontend to finish (or be interrupted)
-    await new Promise((resolve, reject) => {
-      frontendProcess.on('close', (code) => {
-        if (convexProcess) {
-          convexProcess.kill();
-        }
-        resolve(code);
-      });
-      frontendProcess.on('error', reject);
-
-      // Handle Ctrl+C to kill both processes
-      process.on('SIGINT', () => {
-        console.log('\n🛑 Stopping both servers...');
-        if (convexProcess) convexProcess.kill();
-        if (frontendProcess) frontendProcess.kill();
-        process.exit(0);
-      });
-    });
-  } catch (error) {
-    console.log('❌ Failed to start servers:', error);
-    console.log('');
-    console.log('💡 Alternative: Run these commands manually in separate terminals:');
-    console.log('  Terminal 1: npx convex dev');
-    console.log('  Terminal 2: pnpm dev');
-  }
-
-  console.log('\n🎉 Both development servers are now running!');
-  console.log('📱 Your app is available at: http://localhost:3000');
-  console.log('');
-  console.log('💡 For future development sessions:');
-  console.log('  pnpm run setup:dev    # Starts both development servers automatically');
-  console.log('  pnpm run setup:prod   # Sets up production deployment');
+  console.log('Optional follow-ups:');
+  console.log('  • If you need the Docker-backed local storage path: pnpm run dev:docker');
+  console.log('  • If you need admin access: pnpm make-admin <email>');
+  console.log('  • If you want an authenticated browser-agent session:');
+  console.log(
+    '    pnpm run agent:auth -- --session-name local-app --principal user --redirect-to /app',
+  );
+  console.log(
+    '  • If you later edit .env.local and want to verify Convex sync: pnpm run convex:env:verify',
+  );
+  console.log('  • When you are ready for production wiring: pnpm run setup:prod');
 }
 
 main().catch((error) => {

@@ -67,8 +67,29 @@ function runCommand(command: string, args: string[]) {
   }
 }
 
+function printUsage() {
+  console.log(
+    'Usage: pnpm run agent:inspect -- --session-name <name> [--principal user|admin] [--redirect-to /app] [--base-url http://127.0.0.1:3000]',
+  );
+  console.log('');
+  console.log(
+    'What this does: authenticate a named agent-browser session, wait for network idle, and snapshot the page.',
+  );
+  console.log('Safe to rerun: yes.');
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   const options = parseArgs(process.argv.slice(2));
+  console.log('📸 Agent browser inspect');
+  console.log(
+    'What this does: authenticate a named browser session and capture a fresh snapshot for AI-driven inspection.',
+  );
+  console.log('Safe to rerun: yes.\n');
   const authArgs = [
     'run',
     'agent:auth',

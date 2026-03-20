@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
+import { readNetlifyLinkedSiteIdFromDisk } from './netlify-cli';
 import { isLikelyConvexDeployKey, parseGitHubRepoFromRemote } from './setup-dr';
 
 export type DeployEnvironmentName = 'staging' | 'production';
@@ -155,18 +156,8 @@ export function discoverRepo() {
   }
 }
 
-function readNetlifyLinkedSiteId() {
-  const statePath = path.join(process.cwd(), '.netlify', 'state.json');
-  if (!existsSync(statePath)) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(readFileSync(statePath, 'utf8')) as { siteId?: string };
-    return parsed.siteId?.trim() || null;
-  } catch {
-    return null;
-  }
+export function discoverLinkedNetlifySiteId() {
+  return readNetlifyLinkedSiteIdFromDisk();
 }
 
 function readNetlifyCliToken() {
@@ -332,7 +323,7 @@ export async function collectEnvironmentConfig(
   fallback?: Partial<EnvironmentConfig>,
 ) {
   const defaultBranch = environment === 'production' ? 'main' : 'staging';
-  const linkedSiteId = readNetlifyLinkedSiteId();
+  const linkedSiteId = discoverLinkedNetlifySiteId();
   const defaultSiteInput =
     fallback?.netlifySiteId ??
     (environment === 'production' ? (linkedSiteId ?? undefined) : undefined);

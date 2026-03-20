@@ -1,9 +1,9 @@
 #!/usr/bin/env tsx
 
-import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { chromium, request } from '@playwright/test';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 type Principal = 'user' | 'admin';
 
@@ -31,17 +31,7 @@ type AuthRoutePayload = {
 };
 
 function loadLocalEnv() {
-  const loadEnvFile = process.loadEnvFile?.bind(process);
-  if (!loadEnvFile) {
-    return;
-  }
-
-  for (const fileName of ['.env', '.env.local']) {
-    const filePath = resolve(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
+  loadProjectEnvFiles();
 }
 
 function requireEnv(name: string): string {
@@ -99,8 +89,36 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
+function printUsage() {
+  console.log(
+    'Usage: pnpm run playwright:inspect -- [--base-url http://127.0.0.1:3000] [--path /app] [--principal user|admin] [--headed] [--screenshot output/playwright/inspect.png]',
+  );
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run playwright:inspect -- --principal user --path /app');
+  console.log(
+    '- pnpm run playwright:inspect -- --principal admin --path /app/admin --screenshot output/playwright/admin.png',
+  );
+  console.log('');
+  console.log(
+    'What this does: authenticate with the repo auth route, open a page, and print a JSON summary.',
+  );
+  console.log('Safe to rerun: yes.');
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   loadLocalEnv();
+  console.log('🎭 Playwright inspect');
+  console.log(
+    'What this does: authenticate against /api/test/e2e-auth, load a page, optionally capture a screenshot, and print a compact JSON summary.',
+  );
+  console.log('Prereqs: local app reachable, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set.');
+  console.log('Safe to rerun: yes.\n');
 
   if (process.env.ENABLE_E2E_TEST_AUTH !== 'true') {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true');

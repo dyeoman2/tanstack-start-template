@@ -2,6 +2,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { hasHelpFlag, printScriptIntro } from './lib/script-ux';
 
 function log(message: string) {
   console.log(`⚙️  ${message}`);
@@ -70,13 +71,31 @@ async function startViteDevServer() {
 }
 
 async function main() {
+  if (hasHelpFlag()) {
+    console.log('Usage: pnpm run dev:docker');
+    console.log('');
+    console.log(
+      'What this does: launch Docker if needed, start MinIO, then start the Vite dev server.',
+    );
+    console.log('Prereqs: Docker Desktop and either docker-compose or docker compose.');
+    console.log('Safe to rerun: yes; this is a runtime convenience command.');
+    return;
+  }
+
+  printScriptIntro({
+    title: '🚀 Docker-backed development runtime',
+    what: 'launch Docker-backed local services and then start the Vite development server.',
+    prereqs: 'Docker Desktop plus docker-compose or docker compose.',
+    modifies: 'local runtime state only; this command starts long-running processes.',
+    safeToRerun: 'yes',
+  });
   await ensureDockerIsRunning();
   await startMinio();
   await startViteDevServer();
 }
 
 main().catch((error) => {
-  console.error('❌ Failed to start full development environment:');
+  console.error('❌ Failed to start Docker-backed development environment:');
   console.error(error instanceof Error ? error.message : error);
   process.exit(1);
 });

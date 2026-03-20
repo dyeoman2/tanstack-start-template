@@ -3183,3 +3183,25 @@ export const rotateKeys = internalAction({
     );
   },
 });
+
+/**
+ * JWKS material for the Convex `JWKS` env var (static JWKS — see Convex + Better Auth docs).
+ * Run: `pnpm run convex:jwks:sync` or pipe: `pnpm exec convex run auth:getLatestJwks | pnpm exec convex env set JWKS`
+ */
+export const getLatestJwks = internalAction({
+  args: {},
+  returns: v.string(),
+  handler: async (ctx, args) => {
+    void args;
+    const auth = createAuth(ctx);
+    const raw = await (
+      auth.api as unknown as {
+        getLatestJwks: () => Promise<unknown>;
+      }
+    ).getLatestJwks();
+    if (typeof raw === 'string') {
+      return raw;
+    }
+    return JSON.stringify(raw);
+  },
+});

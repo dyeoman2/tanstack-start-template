@@ -1,9 +1,14 @@
 #!/usr/bin/env tsx
 
 import { execSync } from 'node:child_process';
+import { requirePnpmAndConvexCli } from './lib/cli-preflight';
+import { convexEnvSet } from './lib/convex-cli';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 import { generateSecret } from '../src/lib/server/crypto.server';
+import { emitStructuredOutput, routeLogsToStderrWhenJson } from './lib/script-ux';
+import { upsertStructuredEnvValue } from './lib/env-file';
 
 const envPath = join(process.cwd(), '.env.local');
 
@@ -18,37 +23,7 @@ const DEFAULT_E2E_VALUES = {
 } as const;
 
 function loadLocalEnv() {
-  const loadEnvFile = process.loadEnvFile?.bind(process);
-  if (!loadEnvFile) {
-    return;
-  }
-
-  for (const fileName of ['.env', '.env.local']) {
-    const filePath = join(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
-}
-
-function formatEnvValue(value: string) {
-  if (/^[A-Za-z0-9._:/@-]+$/.test(value)) {
-    return value;
-  }
-
-  return JSON.stringify(value);
-}
-
-function upsertEnvValue(envContent: string, name: string, value: string) {
-  const nextLine = `${name}=${formatEnvValue(value)}`;
-  const pattern = new RegExp(`^${name}=.*$`, 'm');
-
-  if (pattern.test(envContent)) {
-    return envContent.replace(pattern, nextLine);
-  }
-
-  const trimmed = envContent.trimEnd();
-  return `${trimmed}\n${trimmed.length > 0 ? '\n' : ''}${nextLine}\n`;
+  loadProjectEnvFiles();
 }
 
 function ensureLocalEnvFile() {
@@ -63,8 +38,36 @@ function ensureLocalEnvFile() {
   });
 }
 
+function printUsage() {
+  console.log('Usage: pnpm run setup:e2e [-- --prod] [--json]');
+  console.log('');
+  console.log('What this does:');
+  console.log('- Ensures .env.local exists');
+  console.log('- Writes authenticated E2E defaults locally');
+  console.log('- Syncs ENABLE_E2E_TEST_AUTH and E2E_TEST_SECRET to Convex');
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run setup:e2e');
+  console.log('- pnpm run setup:e2e -- --prod');
+  console.log('');
+  console.log('Docs: docs/SCRIPT_AUTOMATION.md');
+  console.log('Safe to rerun: yes');
+}
+
 async function main() {
+  const json = process.argv.includes('--json');
+  routeLogsToStderrWhenJson(json);
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   console.log('🔐 Setting up authenticated Playwright E2E env...\n');
+  console.log('What this does: writes local E2E auth defaults and syncs the Convex gate vars.');
+  console.log('Prereqs: .env.local or setup:env, plus Convex CLI access to the target deployment.');
+  console.log('Modifies: .env.local and Convex env vars ENABLE_E2E_TEST_AUTH/E2E_TEST_SECRET.');
+  console.log('Safe to rerun: yes; existing values are reused where present.\n');
+  requirePnpmAndConvexCli();
 
   ensureLocalEnvFile();
   loadLocalEnv();
@@ -83,12 +86,14 @@ async function main() {
 
   let envContent = readFileSync(envPath, 'utf8');
   for (const [name, value] of Object.entries(localValues)) {
-    envContent = upsertEnvValue(envContent, name, value);
+    envContent = upsertStructuredEnvValue(envContent, name, value, {
+      sectionMarker: '# PLAYWRIGHT E2E AUTH',
+    });
   }
   writeFileSync(envPath, envContent, 'utf8');
 
-  const convexArgs = process.argv.includes('--prod') ? '--prod' : '';
-  const convexTarget = convexArgs ? 'production' : 'current development';
+  const prod = process.argv.includes('--prod');
+  const convexTarget = prod ? 'production' : 'current development';
 
   console.log(`✅ Updated local E2E values in ${envPath}`);
   console.log(`🔧 Syncing required E2E gate vars to the ${convexTarget} Convex deployment...`);
@@ -100,10 +105,7 @@ async function main() {
 
   for (const [name, value] of convexEnvVars) {
     console.log(`   Setting ${name}...`);
-    execSync(`npx convex env set ${name} ${JSON.stringify(value)} ${convexArgs}`.trim(), {
-      cwd: process.cwd(),
-      stdio: 'inherit',
-    });
+    convexEnvSet(name, value, prod);
   }
 
   console.log('\n✅ Authenticated Playwright E2E setup complete!');
@@ -114,6 +116,15 @@ async function main() {
   console.log(`E2E_ADMIN_EMAIL=${localValues.E2E_ADMIN_EMAIL}`);
   console.log('────────────────────────────────────────────────');
   console.log('Run `pnpm test:e2e` to execute the authenticated Playwright suite.');
+  if (json) {
+    emitStructuredOutput({
+      target: prod ? 'production' : 'development',
+      localEnvPath: envPath,
+      syncedConvexKeys: convexEnvVars.map(([name]) => name),
+      e2eUserEmail: localValues.E2E_USER_EMAIL,
+      e2eAdminEmail: localValues.E2E_ADMIN_EMAIL,
+    });
+  }
 }
 
 main().catch((error) => {

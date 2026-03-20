@@ -1,9 +1,8 @@
 #!/usr/bin/env tsx
 
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { findReachableLocalBaseUrls } from './lib/local-base-url';
+import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 type Principal = 'user' | 'admin';
 
@@ -15,17 +14,7 @@ type Options = {
 };
 
 function loadLocalEnv() {
-  const loadEnvFile = process.loadEnvFile?.bind(process);
-  if (!loadEnvFile) {
-    return;
-  }
-
-  for (const fileName of ['.env', '.env.local']) {
-    const filePath = resolve(process.cwd(), fileName);
-    if (existsSync(filePath)) {
-      loadEnvFile(filePath);
-    }
-  }
+  loadProjectEnvFiles();
 }
 
 function requireEnv(name: string): string {
@@ -120,8 +109,38 @@ function buildAuthScript(secret: string, principal: Principal, redirectTo: strin
 `;
 }
 
+function printUsage() {
+  console.log(
+    'Usage: pnpm run agent:auth -- --session-name <name> [--principal user|admin] [--redirect-to /app] [--base-url http://127.0.0.1:3000]',
+  );
+  console.log('');
+  console.log('Examples:');
+  console.log('- pnpm run agent:auth -- --session-name local-app');
+  console.log(
+    '- pnpm run agent:auth -- --session-name admin-check --principal admin --redirect-to /app/admin',
+  );
+  console.log('');
+  console.log(
+    'What this does: authenticate a named agent-browser session through /api/test/agent-auth.',
+  );
+  console.log('Safe to rerun: yes; it refreshes the named browser session.');
+}
+
 async function main() {
+  if (process.argv.includes('--help') || process.argv.includes('-h')) {
+    printUsage();
+    return;
+  }
+
   loadLocalEnv();
+  console.log('🌐 Agent browser auth');
+  console.log(
+    'What this does: opens a local app session and authenticates it for automated browser work.',
+  );
+  console.log(
+    'Prereqs: local app reachable, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set, agent-browser installed.',
+  );
+  console.log('Safe to rerun: yes; the named session can be reauthenticated.\n');
 
   if (process.env.ENABLE_E2E_TEST_AUTH !== 'true') {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true');
