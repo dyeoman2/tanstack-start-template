@@ -1475,7 +1475,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-2',
     internalControlId: 'CTRL-CP-002',
     implementationSummary:
-      'This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency plan, approval record, and recurring revision process are not yet evidenced in this workspace.',
+      'This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency-plan approval record and recurring revision workflow are not yet evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -1567,11 +1567,16 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The workspace includes provider disaster recovery documentation and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.',
+          'The workspace includes provider disaster recovery overview, configuration guidance, and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.',
           [
             seededEvidence(
               'Disaster recovery overview',
               'Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Disaster recovery configuration guide',
+              'Configuration guide describing required provider secrets, DR infrastructure inputs, frontend failover prerequisites, and recovery-time environment overrides for the hosted service.',
               { sufficiency: 'partial' },
             ),
             seededEvidence(
@@ -1591,7 +1596,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-4',
     internalControlId: 'CTRL-CP-004',
     implementationSummary:
-      'This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through backup verification records, restore-drill audit events, and site-admin review surfaces for recent contingency evidence, but a formal provider contingency test plan, recurring cadence, and revision workflow are not yet evidenced in this workspace.',
+      'This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, and site-admin review surfaces for recent contingency evidence, but a formal provider corrective-action and revision workflow is not yet evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -1687,11 +1692,16 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'in_progress',
-          'The repo-backed workspace includes a recurring backup-and-restore test workflow and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.',
+          'The repo-backed workspace includes a recurring backup-and-restore verification workflow, guided DR setup material, and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.',
           [
             seededEvidence(
               'Weekly DR backup workflow',
               'Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Guided disaster recovery setup workflow',
+              'Guided setup flow and configuration guide describing how the provider provisions DR backup, backend failover, frontend failover, and recovery prerequisites before running recovery verification.',
               { sufficiency: 'partial' },
             ),
             seededEvidence(
@@ -1711,7 +1721,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-9',
     internalControlId: 'CTRL-CP-009',
     implementationSummary:
-      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated backup workflow configuration, retained backup-verification records, retained restore-test results, and retained weekly workflow run metadata showing the production export path is configured and active.',
+      'This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated weekly backup workflow configuration, guided disaster recovery provisioning for backup and failover infrastructure, retained backup-verification records, retained restore-test results, and retained workflow metadata showing the production export path is configured and active.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
@@ -1731,7 +1741,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file', 'link'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment.',
+          'The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational.',
           [
             seededEvidence(
               'Weekly DR backup workflow',
@@ -1740,6 +1750,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Disaster recovery configuration guide',
               'Configuration guide listing the GitHub Actions secrets and deployment inputs required for the provider backup workflow.',
+            ),
+            seededEvidence(
+              'Guided disaster recovery setup workflow',
+              'Guided setup flow describing how the provider provisions DR backup infrastructure, ECS recovery infrastructure, frontend failover, and related recovery secrets for the hosted service.',
             ),
             seededEvidence(
               'Retained backup workflow run record',
@@ -4327,11 +4341,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The repo documents security requirements and external dependencies through linked security notes, control-matrix scope, and vendor-boundary definitions.',
+          'The repo documents security requirements and external dependencies through linked security notes, deployment-environment guidance, disaster-recovery configuration guidance, and vendor-boundary definitions.',
           [
             seededEvidence(
               'Auth security baseline notes',
               'docs/AUTH_SECURITY.md documents strict auth defaults, session protections, origin validation, and deployer-owned security gaps.',
+            ),
+            seededEvidence(
+              'Deployment and recovery environment guidance',
+              'Deployment guidance describing required production, storage, Netlify, GitHub, and disaster-recovery environment inputs for the hosted service.',
             ),
             seededEvidence(
               'Vendor dependency boundary definitions',

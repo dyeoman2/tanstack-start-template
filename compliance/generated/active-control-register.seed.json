@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-19T22:39:09.818Z",
+  "generatedAt": "2026-03-20T21:59:26.540Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -1860,7 +1860,7 @@
       "title": "System Backup",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated backup workflow configuration, retained backup-verification records, retained restore-test results, and retained weekly workflow run metadata showing the production export path is configured and active.",
+      "implementationSummary": "This control ensures service data and required system information are backed up, protected, and recoverable after disruption or loss. The hosted service supports that objective through provider-operated weekly backup workflow configuration, guided disaster recovery provisioning for backup and failover infrastructure, retained backup-verification records, retained restore-test results, and retained workflow metadata showing the production export path is configured and active.",
       "controlStatement": "Conduct backups of user-level information contained in {{ insert: param, cp-09_odp.01 }} {{ insert: param, cp-09_odp.02 }}; Conduct backups of system-level information contained in the system {{ insert: param, cp-09_odp.03 }}; Conduct backups of system documentation, including security- and privacy-related documentation {{ insert: param, cp-09_odp.04 }} ; and Protect the confidentiality, integrity, and availability of backup information.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1878,7 +1878,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment.",
+            "notes": "The platform retains weekly backup workflow records showing the production export path, backup artifact upload, and related run metadata for the hosted environment, and it documents the DR backup and recovery inputs needed to keep that path operational.",
             "evidence": [
               {
                 "title": "Weekly DR backup workflow",
@@ -1890,6 +1890,13 @@
               {
                 "title": "Disaster recovery configuration guide",
                 "description": "Disaster recovery configuration guide Configuration guide listing the GitHub Actions secrets and deployment inputs required for the provider backup workflow.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Guided disaster recovery setup workflow",
+                "description": "Workflow Guided setup flow describing how the provider provisions DR backup infrastructure, ECS recovery infrastructure, frontend failover, and related recovery secrets for the hosted service.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4261,7 +4268,7 @@
       "title": "Contingency Plan",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency plan, approval record, and recurring revision process are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency-plan approval record and recurring revision workflow are not yet evidenced in this workspace.",
       "controlStatement": "Develop a contingency plan for the system that: Identifies essential mission and business functions and associated contingency requirements; Provides recovery objectives, restoration priorities, and metrics; Addresses contingency roles, responsibilities, assigned individuals with contact information; Addresses maintaining essential mission and business functions despite a system disruption, compromise, or failure; Addresses eventual, full system restoration without deterioration of the controls originally planned and implemented; Addresses the sharing of contingency information; and Is reviewed and approved by {{ insert: param, cp-2_prm_1 }}; Distribute copies of the contingency plan to {{ insert: param, cp-2_prm_2 }}; Coordinate contingency planning activities with incident handling activities; Review the contingency plan for the system {{ insert: param, cp-02_odp.05 }}; Update the contingency plan to address changes to the organization, system, or environment of operation and problems encountered during contingency plan implementation, execution, or testing; Communicate contingency plan changes to {{ insert: param, cp-2_prm_4 }}; Incorporate lessons learned from contingency plan testing, training, or actual contingency activities into contingency testing and training; and Protect the contingency plan from unauthorized disclosure and modification.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4374,11 +4381,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace includes provider disaster recovery documentation and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.",
+            "notes": "The workspace includes provider disaster recovery overview, configuration guidance, and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.",
             "evidence": [
               {
                 "title": "Disaster recovery overview",
                 "description": "Disaster recovery overview Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery configuration guide",
+                "description": "Disaster recovery configuration guide Configuration guide describing required provider secrets, DR infrastructure inputs, frontend failover prerequisites, and recovery-time environment overrides for the hosted service.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -4429,7 +4443,7 @@
       "title": "Contingency Plan Testing",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through backup verification records, restore-drill audit events, and site admin review interfaces for recent contingency evidence, but a formal provider contingency test plan, recurring cadence, and revision workflow are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, and site admin review interfaces for recent contingency evidence, but a formal provider corrective-action and revision workflow is not yet evidenced in this workspace.",
       "controlStatement": "Test the contingency plan for the system {{ insert: param, cp-04_odp.01 }} using the following tests to determine the effectiveness of the plan and the readiness to execute the plan: {{ insert: param, cp-4_prm_2 }}. Review the contingency plan test results; and Initiate corrective actions, if needed.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4549,11 +4563,18 @@
           "seed": {
             "status": "in_progress",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace includes a recurring backup-and-restore test workflow and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.",
+            "notes": "The workspace includes a recurring backup-and-restore verification workflow, guided DR setup material, and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.",
             "evidence": [
               {
                 "title": "Weekly DR backup workflow",
                 "description": "Workflow Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Guided disaster recovery setup workflow",
+                "description": "Workflow Guided setup flow and configuration guide describing how the provider provisions DR backup, backend failover, frontend failover, and recovery prerequisites before running recovery verification.",
                 "evidenceType": "note",
                 "sufficiency": "partial",
                 "url": null
@@ -5078,11 +5099,18 @@
           "seed": {
             "status": "done",
             "owner": "Security Planning",
-            "notes": "The repo documents security requirements and external dependencies through linked security notes, control-matrix scope, and vendor-boundary definitions.",
+            "notes": "The repo documents security requirements and external dependencies through linked security notes, deployment-environment guidance, disaster-recovery configuration guidance, and vendor-boundary definitions.",
             "evidence": [
               {
                 "title": "Auth security baseline notes",
                 "description": "Auth security documentation describing strict authentication defaults, session protections, origin validation, and deployer-owned security gaps.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Deployment and recovery environment guidance",
+                "description": "Documentation Deployment guidance describing required production, storage, Netlify, GitHub, and disaster-recovery environment inputs for the hosted service.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
