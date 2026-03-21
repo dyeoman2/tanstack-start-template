@@ -318,9 +318,11 @@ describe('auth audit handlers', () => {
     expect(result.success).toBe(false);
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
+      actorUserId: 'anonymous:user@example.com',
       eventType: 'authorization_denied',
       identifier: 'user@example.com',
       outcome: 'failure',
+      resourceId: '/sign-in/email',
       resourceLabel: 'Sign-in denied',
       resourceType: 'session',
       severity: 'warning',
@@ -329,6 +331,8 @@ describe('auth audit handlers', () => {
     expect(parseMetadata(result.events[0].metadata)).toMatchObject({
       attemptedIdentifier: 'user@example.com',
       path: '/sign-in/email',
+      permission: 'auth_endpoint_access',
+      reason: 'INVALID_CREDENTIALS',
       responseErrorCode: 'INVALID_CREDENTIALS',
       responseErrorMessage: 'Invalid email or password',
       responseStatus: 401,
@@ -356,7 +360,9 @@ describe('auth audit handlers', () => {
     expect(result.success).toBe(false);
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
+      actorUserId: 'anonymous:reset@example.com',
       eventType: 'authorization_denied',
+      resourceId: '/reset-password',
       identifier: 'reset@example.com',
       resourceLabel: 'Password reset denied',
       resourceType: 'verification_token',
@@ -384,7 +390,9 @@ describe('auth audit handlers', () => {
     expect(result.success).toBe(false);
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
+      actorUserId: 'anonymous',
       eventType: 'authorization_denied',
+      resourceId: '/verify-email',
       resourceLabel: 'Email verification denied',
       resourceType: 'verification_token',
       sourceSurface: 'auth.endpoint.email_verification',
@@ -445,12 +453,16 @@ describe('auth audit handlers', () => {
     expect(result.success).toBe(false);
     expect(result.events).toHaveLength(1);
     expect(result.events[0]).toMatchObject({
+      actorUserId: 'anonymous:blocked@example.com',
       eventType: 'authorization_denied',
       identifier: 'blocked@example.com',
+      resourceId: '/sign-in/email',
       resourceLabel: 'Sign-in denied',
       sourceSurface: 'auth.endpoint.sign_in',
     });
     expect(parseMetadata(result.events[0].metadata)).toMatchObject({
+      permission: 'auth_endpoint_access',
+      reason: 'FORBIDDEN',
       responseErrorCode: 'FORBIDDEN',
       responseErrorMessage: 'Password sign-in is disabled for this account',
       responseStatus: 403,

@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { Lock, Mail, ShieldCheck, User } from 'lucide-react';
@@ -8,7 +9,7 @@ import { ClientOnly } from '~/components/ClientOnly';
 import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
-import { authClient } from '~/features/auth/auth-client';
+import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import {
@@ -39,6 +40,7 @@ function RegisterPage() {
   const passwordId = `${uid}-password`;
   const { isAuthenticated, isPending } = useAuthState();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -114,6 +116,7 @@ function RegisterPage() {
             throw: true,
           },
         });
+        await refreshAuthClientSession(queryClient);
 
         try {
           const bootstrapResult = await bootstrapSignedUpUserServerFn({

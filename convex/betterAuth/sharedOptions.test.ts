@@ -66,6 +66,19 @@ describe('createSharedBetterAuthOptions', () => {
     expect(passkeyPlugin?.options?.rpName).toBe('TanStack Start Template');
   });
 
+  it('normalizes loopback passkey relying-party metadata to localhost for local dev', () => {
+    process.env.BETTER_AUTH_URL = 'http://127.0.0.1:3000';
+
+    const options = createOptions();
+    const passkeyPlugin = (options.plugins ?? []).find(
+      (plugin) => 'id' in plugin && plugin.id === 'passkey',
+    ) as { options?: { origin?: string; rpID?: string; rpName?: string } } | undefined;
+
+    expect(passkeyPlugin?.options?.origin).toBe('http://localhost:3000');
+    expect(passkeyPlugin?.options?.rpID).toBe('localhost');
+    expect(passkeyPlugin?.options?.rpName).toBe('TanStack Start Template');
+  });
+
   it('enables secure Better Auth cookies for https deployments', () => {
     process.env.BETTER_AUTH_URL = 'https://app.example.com';
 

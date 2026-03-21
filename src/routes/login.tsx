@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@convex/_generated/api';
 import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
@@ -17,7 +18,7 @@ import {
 import { Field, FieldLabel } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
 import { Separator } from '~/components/ui/separator';
-import { authClient } from '~/features/auth/auth-client';
+import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
@@ -90,6 +91,7 @@ function LoginPage() {
   const { email, redirectTo, reset, verified } = Route.useSearch();
   const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup } = useAuth();
   const router = useRouter();
+  const queryClient = useQueryClient();
   const redirectTarget = normalizeAppRedirectTarget(redirectTo);
   const [showResetSuccess] = useState(reset === 'success');
   const [showVerifySuccess] = useState(verified === 'success');
@@ -173,6 +175,7 @@ function LoginPage() {
         password,
         fetchOptions: { throw: true },
       });
+      await refreshAuthClientSession(queryClient);
 
       if (typeof window !== 'undefined' && window.location.pathname.startsWith('/two-factor')) {
         return;

@@ -1,4 +1,10 @@
-import { type AnyUseQueryOptions, type QueryKey, skipToken, useQuery } from '@tanstack/react-query';
+import {
+  type AnyUseQueryOptions,
+  type QueryClient,
+  type QueryKey,
+  skipToken,
+  useQuery,
+} from '@tanstack/react-query';
 import type { BetterFetchOption, BetterFetchResponse } from 'better-auth/react';
 import { useSyncExternalStore } from 'react';
 import { rawAuthClient } from './auth-client-internal';
@@ -174,4 +180,18 @@ export async function signOut(...args: Parameters<typeof authClient.signOut>) {
     setSigningOut(false);
     throw error;
   }
+}
+
+export async function refreshAuthClientSession(
+  queryClient: Pick<QueryClient, 'invalidateQueries' | 'setQueryData'>,
+) {
+  const session = await authClient.getSession({
+    fetchOptions: { throw: true },
+  });
+
+  authClient.$store.notify('$sessionSignal');
+  queryClient.setQueryData(['session'], session);
+  await queryClient.invalidateQueries({ queryKey: ['session'] });
+
+  return session;
 }

@@ -64,6 +64,7 @@ describe('useAuth', () => {
 
     expect(result.current.isImpersonating).toBe(true);
     expect(result.current.impersonatedByUserId).toBe('admin-1');
+    expect(result.current.hasSession).toBe(true);
     expect(result.current.user?.email).toBe('person@example.com');
     expect(result.current.isSiteAdmin).toBe(false);
   });
@@ -99,5 +100,38 @@ describe('useAuth', () => {
 
     expect(result.current.user?.role).toBe('admin');
     expect(result.current.isSiteAdmin).toBe(true);
+  });
+
+  it('exposes Better Auth session presence even before Convex auth is ready', async () => {
+    useAuthStateMock.mockReturnValue({
+      isAuthenticated: true,
+      isPending: false,
+      error: null,
+      userId: 'user-1',
+    });
+    useSessionMock.mockReturnValue({
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          name: 'Person Example',
+        },
+        session: {},
+      },
+      isPending: false,
+      error: null,
+    });
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+    });
+    useQueryMock.mockReturnValue('skip');
+
+    const { useAuth } = await import('./useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.hasSession).toBe(true);
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.isPending).toBe(false);
   });
 });

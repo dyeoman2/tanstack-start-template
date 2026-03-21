@@ -1,3 +1,5 @@
+import { normalizeAuditIdentifier } from '../../src/lib/shared/auth-audit';
+
 type AuditRecorder = (event: {
   createdAt?: number;
   eventType: string;
@@ -32,6 +34,36 @@ export type AuthorizationDeniedAuditInput = {
 
 function normalizeOptionalString(value: unknown) {
   return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function getActorUserId(input: AuthorizationDeniedAuditInput) {
+  const actorUserId = normalizeOptionalString(input.actorUserId);
+  if (actorUserId) {
+    return actorUserId;
+  }
+
+  const identifier = normalizeAuditIdentifier(normalizeOptionalString(input.email));
+  if (identifier) {
+    return `anonymous:${identifier}`;
+  }
+
+  return 'anonymous';
+}
+
+function getResourceId(input: AuthorizationDeniedAuditInput) {
+  return (
+    normalizeOptionalString(input.resourceId ?? input.invitationId) ??
+    normalizeOptionalString(input.path) ??
+    'authorization'
+  );
+}
+
+function getReason(input: AuthorizationDeniedAuditInput) {
+  return (
+    normalizeOptionalString(input.errorCode) ??
+    normalizeOptionalString(input.message) ??
+    'authorization_denied'
+  );
 }
 
 function getResourceType(path: string) {
@@ -127,7 +159,7 @@ export function buildAuthorizationDeniedAuditEvent(input: AuthorizationDeniedAud
   return {
     createdAt: Date.now(),
     eventType: 'authorization_denied' as const,
-    ...(input.actorUserId ? { actorUserId: input.actorUserId } : {}),
+    actorUserId: getActorUserId(input),
     ...(normalizeOptionalString(input.organizationId)
       ? { organizationId: normalizeOptionalString(input.organizationId) }
       : {}),
@@ -138,9 +170,7 @@ export function buildAuthorizationDeniedAuditEvent(input: AuthorizationDeniedAud
       ? { ipAddress: normalizeOptionalString(input.ipAddress) }
       : {}),
     outcome: 'failure' as const,
-    ...(normalizeOptionalString(input.resourceId ?? input.invitationId)
-      ? { resourceId: normalizeOptionalString(input.resourceId ?? input.invitationId) }
-      : {}),
+    resourceId: getResourceId(input),
     resourceLabel: getResourceLabel(input.path),
     resourceType: getResourceType(input.path),
     severity: 'warning' as const,
@@ -152,6 +182,8 @@ export function buildAuthorizationDeniedAuditEvent(input: AuthorizationDeniedAud
       attemptedIdentifier: normalizeOptionalString(input.email),
       invitationId: normalizeOptionalString(input.invitationId),
       path: input.path,
+      permission: 'auth_endpoint_access',
+      reason: getReason(input),
       ...(normalizeOptionalString(input.provider)
         ? { provider: normalizeOptionalString(input.provider) }
         : {}),

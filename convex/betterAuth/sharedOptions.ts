@@ -101,10 +101,15 @@ type SessionAuthMethodResolution =
 
 function getPasskeyOptions(siteUrlValue: string) {
   const siteUrl = new URL(siteUrlValue);
+  const hostname = siteUrl.hostname === '127.0.0.1' ? 'localhost' : siteUrl.hostname;
+  const origin =
+    hostname === siteUrl.hostname
+      ? siteUrl.origin
+      : `${siteUrl.protocol}//${hostname}${siteUrl.port ? `:${siteUrl.port}` : ''}`;
 
   return {
-    origin: siteUrl.origin,
-    rpID: siteUrl.hostname,
+    origin,
+    rpID: hostname,
     rpName: process.env.APP_NAME?.trim() || 'TanStack Start Template',
   };
 }

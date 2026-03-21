@@ -34,6 +34,7 @@ export interface AuthResult {
     recentStepUpAt?: number | null;
     recentStepUpValidUntil?: number | null;
   } | null;
+  hasSession: boolean;
   isAuthenticated: boolean;
   isSiteAdmin: boolean;
   requiresEmailVerification: boolean;
@@ -116,6 +117,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
               : null,
           }
         : null,
+      hasSession,
       isAuthenticated: canUseConvex,
       isSiteAdmin,
       requiresEmailVerification,
@@ -139,6 +141,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       profile?.recentStepUpAt,
       profile?.recentStepUpValidUntil,
       profile?.phoneNumber,
+      hasSession,
       canUseConvex,
       isImpersonating,
       impersonatedByUserId,

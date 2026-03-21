@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
 import { CheckCircle2, Lock } from 'lucide-react';
@@ -8,7 +9,7 @@ import { Button } from '~/components/ui/button';
 import { Card, CardContent } from '~/components/ui/card';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
-import { authClient } from '~/features/auth/auth-client';
+import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
@@ -35,6 +36,7 @@ function ResetPasswordPage() {
     [user, authState.isAuthenticated],
   );
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
   const newPasswordId = useId();
@@ -108,6 +110,7 @@ function ResetPasswordPage() {
             password: value.password,
             fetchOptions: { throw: true },
           });
+          await refreshAuthClientSession(queryClient);
         } catch (signInError) {
           const message =
             signInError instanceof Error ? signInError.message.toLowerCase() : String(signInError);

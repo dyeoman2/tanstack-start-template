@@ -1,7 +1,15 @@
 import { api } from '@convex/_generated/api';
 import { Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { CheckCircle2, KeyRound, Loader2, Mail, ShieldCheck } from 'lucide-react';
+import {
+  CheckCircle2,
+  ChevronRight,
+  KeyRound,
+  Loader2,
+  LockKeyhole,
+  Mail,
+  ShieldCheck,
+} from 'lucide-react';
 import { type ReactNode, useMemo, useState } from 'react';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Badge } from '~/components/ui/badge';
@@ -24,6 +32,7 @@ import {
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { useAuth } from '~/features/auth/hooks/useAuth';
+import { cn } from '~/lib/utils';
 
 function getEnrollmentErrorMessage(error: unknown) {
   if (
@@ -51,14 +60,126 @@ type AccountSetupPageProps = {
   verified?: string;
 };
 
+type SetupStage = 'sign-in' | 'bridging' | 'verify-email' | 'secure-account';
+type StepState = 'complete' | 'current' | 'upcoming';
+
+type SetupViewModel = {
+  hasSession: boolean;
+  isAuthenticated: boolean;
+  isEmailConfigured: boolean;
+  emailStepComplete: boolean;
+  securityStepComplete: boolean;
+  completedStepCount: number;
+  currentStage: SetupStage;
+  currentStep: 1 | 2;
+  title: string;
+  subtitle: string;
+  primaryCtaLabel: string | null;
+  canResendEmail: boolean;
+  canRefreshStatus: boolean;
+  canAddPasskey: boolean;
+  canAddAuthenticator: boolean;
+  isAwaitingSignInAfterVerification: boolean;
+};
+
+function getSetupViewModel(input: {
+  hasSession: boolean;
+  isAuthenticated: boolean;
+  isEmailConfigured: boolean;
+  isEmailVerifiedFromCallback: boolean;
+  requiresEmailVerification: boolean;
+  requiresMfaSetup: boolean;
+  resolvedEmail: string | null;
+}) {
+  const emailStepComplete =
+    input.isEmailVerifiedFromCallback ||
+    (input.isAuthenticated && !input.requiresEmailVerification);
+  const securityStepComplete = input.isAuthenticated && !input.requiresMfaSetup;
+  const completedStepCount = Number(emailStepComplete) + Number(securityStepComplete);
+  const isAwaitingSignInAfterVerification = emailStepComplete && !input.isAuthenticated;
+
+  let currentStage: SetupStage;
+  if (!input.hasSession) {
+    currentStage = 'sign-in';
+  } else if (!input.isAuthenticated) {
+    currentStage = 'bridging';
+  } else if (!emailStepComplete) {
+    currentStage = 'verify-email';
+  } else {
+    currentStage = 'secure-account';
+  }
+
+  const viewModel: SetupViewModel = {
+    hasSession: input.hasSession,
+    isAuthenticated: input.isAuthenticated,
+    isEmailConfigured: input.isEmailConfigured,
+    emailStepComplete,
+    securityStepComplete,
+    completedStepCount,
+    currentStage,
+    currentStep:
+      currentStage === 'secure-account' || (currentStage === 'sign-in' && emailStepComplete)
+        ? 2
+        : 1,
+    title: 'Complete your account setup',
+    subtitle: '',
+    primaryCtaLabel: null,
+    canResendEmail: !emailStepComplete && !!input.resolvedEmail && input.isEmailConfigured,
+    canRefreshStatus: currentStage === 'verify-email' || currentStage === 'bridging',
+    canAddPasskey: input.isAuthenticated && emailStepComplete && !securityStepComplete,
+    canAddAuthenticator: input.isAuthenticated && emailStepComplete && !securityStepComplete,
+    isAwaitingSignInAfterVerification,
+  };
+
+  switch (currentStage) {
+    case 'sign-in':
+      if (emailStepComplete) {
+        viewModel.subtitle = input.resolvedEmail
+          ? `${input.resolvedEmail} is verified. Sign in to continue securing your account.`
+          : 'Your email is verified. Sign in to continue securing your account.';
+        viewModel.primaryCtaLabel = 'Sign in to continue';
+      } else {
+        viewModel.subtitle = input.resolvedEmail
+          ? `Verify ${input.resolvedEmail} to continue setup.`
+          : 'Verify your email to continue setup.';
+      }
+      break;
+    case 'bridging':
+      viewModel.subtitle = input.resolvedEmail
+        ? `We found a session for ${input.resolvedEmail}. Finishing account status checks now.`
+        : 'Finishing account status checks now.';
+      break;
+    case 'verify-email':
+      viewModel.subtitle = input.resolvedEmail
+        ? `Verify ${input.resolvedEmail} to continue into the app.`
+        : 'Verify your email to continue into the app.';
+      viewModel.primaryCtaLabel = viewModel.canResendEmail ? 'Resend verification email' : null;
+      break;
+    case 'secure-account':
+      viewModel.subtitle = input.resolvedEmail
+        ? `${input.resolvedEmail} is verified. Add a passkey or authenticator to finish setup.`
+        : 'Add a passkey or authenticator to finish setup.';
+      viewModel.primaryCtaLabel = 'Add passkey';
+      break;
+  }
+
+  return viewModel;
+}
+
 export function AccountSetupPage({
   email: emailFromSearch,
   redirectTo,
   verified,
 }: AccountSetupPageProps) {
   const router = useRouter();
-  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup, user } =
-    useAuth();
+  const {
+    hasSession,
+    isAuthenticated,
+    isPending,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    user,
+  } = useAuth();
   const emailServiceStatus = useQuery(api.emails.checkEmailServiceConfigured, {});
   const isEmailConfigured = emailServiceStatus?.isConfigured ?? true;
   const redirectTarget = normalizeAppRedirectTarget(redirectTo);
@@ -88,6 +209,16 @@ export function AccountSetupPage({
     return <Navigate to={redirectTarget} replace />;
   }
 
+  const viewModel = getSetupViewModel({
+    hasSession,
+    isAuthenticated,
+    isEmailConfigured,
+    isEmailVerifiedFromCallback: verified === 'success',
+    requiresEmailVerification,
+    requiresMfaSetup,
+    resolvedEmail,
+  });
+
   async function handleRefreshStatus() {
     setIsRefreshing(true);
     setError(null);
@@ -100,8 +231,9 @@ export function AccountSetupPage({
   }
 
   async function handleResendVerificationEmail() {
-    if (!isAuthenticated || !user?.email) {
-      setError('Sign in to resend your verification email.');
+    const targetEmail = user?.email ?? resolvedEmail;
+    if (!targetEmail) {
+      setError('Enter or recover your email address before requesting verification.');
       return;
     }
 
@@ -116,12 +248,12 @@ export function AccountSetupPage({
           : getAccountSetupCallbackUrl(window.location.origin, { redirectTo: redirectTarget });
 
       await authClient.sendVerificationEmail({
-        email: user.email,
+        email: targetEmail,
         callbackURL,
         fetchOptions: { throw: true },
       });
 
-      setSuccessMessage(`Verification email sent to ${user.email}.`);
+      setSuccessMessage(`Verification email sent to ${targetEmail}.`);
     } catch (resendError) {
       setError(
         getBetterAuthUserFacingMessage(resendError, {
@@ -205,203 +337,286 @@ export function AccountSetupPage({
     window.location.assign(`${nextUrl.pathname}${nextUrl.search}`);
   }
 
-  const emailStepComplete = isAuthenticated && !requiresEmailVerification;
-  const securityStepComplete = isAuthenticated && !requiresMfaSetup;
-  const completedStepCount = Number(emailStepComplete) + Number(securityStepComplete);
-  const nextStepLabel = !isAuthenticated
-    ? 'Sign in to continue setup'
-    : !emailStepComplete
-      ? 'Verify your email'
-      : !securityStepComplete
-        ? 'Add a passkey or authenticator'
-        : 'Opening the app';
+  const stepOneState: StepState = viewModel.emailStepComplete
+    ? 'complete'
+    : viewModel.currentStep === 1
+      ? 'current'
+      : 'upcoming';
+  const stepTwoState: StepState = viewModel.securityStepComplete
+    ? 'complete'
+    : viewModel.currentStep === 2
+      ? 'current'
+      : 'upcoming';
 
   return (
     <>
-      <AuthRouteShell
-        supplemental={
-          <Card className="border-primary/15 bg-primary/5">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ShieldCheck className="h-5 w-5 text-primary" />
-                Finish account setup
+      <AuthRouteShell>
+        <Card className="w-full border-border/70">
+          <CardHeader className="space-y-5">
+            <div className="space-y-2">
+              <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] uppercase">
+                Account setup
+              </Badge>
+              <CardTitle className="text-3xl font-normal tracking-tight">
+                {viewModel.title}
               </CardTitle>
-              <CardDescription>
-                Create your account, verify your email, and add a passkey or authenticator before
-                using the app.
+              <CardDescription className="max-w-sm text-sm leading-6">
+                {viewModel.subtitle}
               </CardDescription>
-            </CardHeader>
-          </Card>
-        }
-      >
-        <div className="space-y-6">
-          <div className="space-y-2 text-center">
-            <h1 className="text-2xl font-semibold text-foreground">Complete your account setup</h1>
-            <p className="text-sm text-muted-foreground">
-              {resolvedEmail
-                ? `Your setup progress is tied to ${resolvedEmail}.`
-                : 'Sign in to continue setup and unlock the application.'}
-            </p>
-          </div>
+            </div>
 
-          <Card className="border-border/70 bg-muted/20">
-            <CardContent className="space-y-4 px-6 py-5">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-1">
-                  <p className="text-sm font-medium text-foreground">
-                    {completedStepCount} of 2 required steps complete
+            <div className="grid gap-3">
+              <ProgressStep
+                step={1}
+                title="Verify email"
+                detail={
+                  viewModel.emailStepComplete
+                    ? 'Complete'
+                    : viewModel.currentStep === 1
+                      ? 'Current step'
+                      : 'Up next'
+                }
+                state={stepOneState}
+              />
+              <ProgressStep
+                step={2}
+                title="Secure account"
+                detail={
+                  viewModel.securityStepComplete
+                    ? 'Complete'
+                    : viewModel.isAwaitingSignInAfterVerification
+                      ? 'Next step after sign-in'
+                      : viewModel.currentStep === 2
+                        ? 'Current step'
+                        : 'Locked until email is verified'
+                }
+                state={viewModel.isAwaitingSignInAfterVerification ? 'upcoming' : stepTwoState}
+              />
+            </div>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            {successMessage && !viewModel.isAwaitingSignInAfterVerification ? (
+              <Notice tone="success">{successMessage}</Notice>
+            ) : null}
+
+            {error ? <Notice tone="error">{error}</Notice> : null}
+
+            {viewModel.isAwaitingSignInAfterVerification ? (
+              <Notice tone="success">
+                Email verified. Sign in to continue to the final security step.
+              </Notice>
+            ) : null}
+
+            {viewModel.currentStage === 'bridging' ? (
+              <Notice tone="neutral">
+                You are signed in. We&apos;re still confirming your account requirements before we
+                unlock the next step.
+              </Notice>
+            ) : null}
+
+            <SetupStepCard
+              title="Verify email"
+              description="Confirm your email address before accessing any protected part of the app."
+              icon={<Mail className="h-5 w-5" />}
+              state={stepOneState}
+            >
+              {stepOneState === 'complete' ? (
+                <StepSummary>
+                  <p className="text-foreground">Email verified.</p>
+                  <p>Your account can now continue to security setup.</p>
+                </StepSummary>
+              ) : viewModel.currentStage === 'sign-in' ? (
+                <>
+                  <StepSummary>
+                    <p className="text-foreground">
+                      {resolvedEmail
+                        ? `Use the verification link sent to ${resolvedEmail}.`
+                        : 'Use the verification link from your inbox to continue.'}
+                    </p>
+                    <p>
+                      You can verify first, then return here to sign in and finish securing the
+                      account.
+                    </p>
+                  </StepSummary>
+
+                  {!viewModel.isEmailConfigured ? (
+                    <Notice tone="warning">
+                      Email delivery is not configured in this environment. Set `RESEND_API_KEY`
+                      before requiring email verification here.
+                    </Notice>
+                  ) : null}
+
+                  {viewModel.canResendEmail ? (
+                    <div className="flex flex-col gap-3 sm:flex-row">
+                      <Button
+                        type="button"
+                        className="w-full sm:w-full"
+                        onClick={() => void handleResendVerificationEmail()}
+                      >
+                        {isResending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Mail className="size-4" />
+                        )}
+                        {isResending ? 'Sending email' : 'Resend verification email'}
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              ) : viewModel.currentStage === 'bridging' ? (
+                <StepSummary>
+                  <p className="text-foreground">Checking your verification status.</p>
+                  <p>This page will update as soon as your account status loads.</p>
+                </StepSummary>
+              ) : (
+                <>
+                  <StepSummary>
+                    <p className="text-foreground">
+                      {resolvedEmail
+                        ? `Verification emails are sent to ${resolvedEmail}.`
+                        : 'Use the link in your inbox, then return here.'}
+                    </p>
+                    <p>
+                      Open the email link, then return here. Refresh if this page does not update on
+                      its own.
+                    </p>
+                  </StepSummary>
+
+                  {!viewModel.isEmailConfigured ? (
+                    <Notice tone="warning">
+                      Email delivery is not configured in this environment. Set `RESEND_API_KEY`
+                      before requiring email verification here.
+                    </Notice>
+                  ) : null}
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    {viewModel.canResendEmail ? (
+                      <Button type="button" onClick={() => void handleResendVerificationEmail()}>
+                        {isResending ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <Mail className="size-4" />
+                        )}
+                        {isResending ? 'Sending email' : 'Resend verification email'}
+                      </Button>
+                    ) : null}
+                    {viewModel.canRefreshStatus ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleRefreshStatus()}
+                        disabled={isRefreshing}
+                      >
+                        {isRefreshing ? <Loader2 className="size-4 animate-spin" /> : null}
+                        Refresh status
+                      </Button>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </SetupStepCard>
+
+            <SetupStepCard
+              title="Secure your account"
+              description="Add a passkey or authenticator app before app access is granted."
+              icon={<KeyRound className="h-5 w-5" />}
+              state={stepTwoState}
+            >
+              {stepTwoState === 'complete' ? (
+                <StepSummary>
+                  <p className="text-foreground">Account security complete.</p>
+                  <p>You&apos;re ready to continue into the app.</p>
+                </StepSummary>
+              ) : viewModel.currentStage === 'sign-in' && viewModel.emailStepComplete ? (
+                <StepSummary>
+                  <p className="text-foreground">Next step starts after you sign in.</p>
+                  <p>Sign in again to add a passkey or authenticator and finish setup.</p>
+                </StepSummary>
+              ) : stepTwoState === 'upcoming' ? (
+                <StepSummary>
+                  <p className="text-foreground">Locked until email is verified.</p>
+                  <p>
+                    Finish the email step first. Passkeys will then become available immediately.
                   </p>
-                  <p className="text-sm text-muted-foreground">Next: {nextStepLabel}</p>
-                </div>
-                <Badge variant={completedStepCount === 2 ? 'success' : 'secondary'}>
-                  {completedStepCount === 2 ? 'Ready' : 'Setup required'}
-                </Badge>
+                </StepSummary>
+              ) : (
+                <>
+                  <StepSummary>
+                    <p className="text-foreground">
+                      Add a passkey for the fastest setup on this device.
+                    </p>
+                    <p>Authenticator apps remain available if you prefer not to use a passkey.</p>
+                  </StepSummary>
+
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    {viewModel.canAddPasskey ? (
+                      <Button type="button" onClick={() => void handleAddPasskey()}>
+                        {isAddingPasskey ? (
+                          <Loader2 className="size-4 animate-spin" />
+                        ) : (
+                          <ShieldCheck className="size-4" />
+                        )}
+                        {isAddingPasskey ? 'Adding passkey' : 'Add passkey'}
+                      </Button>
+                    ) : null}
+                    {viewModel.canAddAuthenticator ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setError(null);
+                          setIsTwoFactorDialogOpen(true);
+                        }}
+                      >
+                        Use authenticator app instead
+                      </Button>
+                    ) : null}
+                  </div>
+                </>
+              )}
+            </SetupStepCard>
+
+            <div className="flex justify-between gap-3 border-t border-border/70 pt-4">
+              <div className="space-y-1 text-sm text-muted-foreground">
+                <p className="text-foreground">
+                  {viewModel.completedStepCount} of 2 required steps complete
+                </p>
+                <p>
+                  {viewModel.currentStage === 'sign-in'
+                    ? viewModel.emailStepComplete
+                      ? 'Email is verified. Sign in again to finish the final security step.'
+                      : 'Verify your email first, then sign in and secure the account.'
+                    : viewModel.currentStage === 'bridging'
+                      ? 'Waiting for account status to finish loading.'
+                      : viewModel.currentStage === 'verify-email'
+                        ? 'Finish email verification to unlock the final security step.'
+                        : 'Add a passkey or authenticator to finish setup.'}
+                </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
-                <StatusPill complete={emailStepComplete} label="Email verified" />
-                <StatusPill complete={securityStepComplete} label="Account secured" />
-              </div>
-            </CardContent>
-          </Card>
 
-          {successMessage ? (
-            <div className="rounded border border-primary/20 bg-primary/10 px-4 py-3 text-sm text-primary">
-              {successMessage}
+              {viewModel.currentStage === 'sign-in' && viewModel.emailStepComplete ? (
+                <Button asChild className="shrink-0">
+                  <Link
+                    to="/login"
+                    search={
+                      resolvedEmail
+                        ? {
+                            email: resolvedEmail,
+                            ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+                          }
+                        : redirectTarget !== '/app'
+                          ? { redirectTo: redirectTarget }
+                          : {}
+                    }
+                  >
+                    Sign in to continue
+                  </Link>
+                </Button>
+              ) : null}
             </div>
-          ) : null}
-
-          {error ? (
-            <div className="rounded border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-              {error}
-            </div>
-          ) : null}
-
-          <StepCard
-            description="Confirm your email address before accessing any protected part of the app."
-            icon={<Mail className="h-5 w-5" />}
-            title="Verify email"
-            complete={emailStepComplete}
-          >
-            <p className="text-sm text-muted-foreground">
-              {resolvedEmail
-                ? `Verification emails are sent to ${resolvedEmail}.`
-                : 'Sign in to see your verification status and resend the email if needed.'}
-            </p>
-            {!emailStepComplete && isAuthenticated ? (
-              <p className="text-sm text-foreground">
-                Use the link in your inbox, then return here. This page will pick up the updated
-                status automatically.
-              </p>
-            ) : null}
-
-            {!isEmailConfigured ? (
-              <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-                Email delivery is not configured in this environment. Set `RESEND_API_KEY` before
-                requiring email verification here.
-              </div>
-            ) : null}
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                type="button"
-                onClick={() => void handleResendVerificationEmail()}
-                disabled={
-                  isResending ||
-                  !isEmailConfigured ||
-                  !isAuthenticated ||
-                  !user?.email ||
-                  emailStepComplete
-                }
-              >
-                {isResending ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Mail className="size-4" />
-                )}
-                Resend verification email
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleRefreshStatus()}
-                disabled={isRefreshing}
-              >
-                {isRefreshing ? <Loader2 className="size-4 animate-spin" /> : null}
-                Refresh status
-              </Button>
-            </div>
-          </StepCard>
-
-          <StepCard
-            description="Secure the account with a passkey or authenticator app before app access is granted."
-            icon={<KeyRound className="h-5 w-5" />}
-            title="Secure your account"
-            complete={securityStepComplete}
-          >
-            <p className="text-sm text-muted-foreground">
-              Passkeys are recommended and satisfy the MFA requirement on their own.
-            </p>
-            {!emailStepComplete ? (
-              <p className="text-sm text-muted-foreground">
-                This step unlocks as soon as your email is verified.
-              </p>
-            ) : !securityStepComplete ? (
-              <p className="text-sm text-foreground">
-                Recommended: add a passkey for the fastest setup on this device.
-              </p>
-            ) : null}
-
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                type="button"
-                onClick={() => void handleAddPasskey()}
-                disabled={
-                  !isAuthenticated || isAddingPasskey || !emailStepComplete || securityStepComplete
-                }
-              >
-                {isAddingPasskey ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <ShieldCheck className="size-4" />
-                )}
-                Add passkey
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setError(null);
-                  setIsTwoFactorDialogOpen(true);
-                }}
-                disabled={!isAuthenticated || !emailStepComplete || securityStepComplete}
-              >
-                Use authenticator app instead
-              </Button>
-            </div>
-          </StepCard>
-
-          {!isAuthenticated ? (
-            <div className="flex justify-center">
-              <Button asChild>
-                <Link
-                  to="/login"
-                  search={
-                    resolvedEmail
-                      ? {
-                          email: resolvedEmail,
-                          ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
-                        }
-                      : redirectTarget !== '/app'
-                        ? { redirectTo: redirectTarget }
-                        : {}
-                  }
-                >
-                  Sign in to continue setup
-                </Link>
-              </Button>
-            </div>
-          ) : null}
-        </div>
+          </CardContent>
+        </Card>
       </AuthRouteShell>
 
       <Dialog open={isTwoFactorDialogOpen} onOpenChange={setIsTwoFactorDialogOpen}>
@@ -413,10 +628,7 @@ export function AccountSetupPage({
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
-            <label
-              htmlFor="account-setup-two-factor-password"
-              className="text-sm font-medium text-foreground"
-            >
+            <label htmlFor="account-setup-two-factor-password" className="text-sm text-foreground">
               Password
             </label>
             <Input
@@ -482,52 +694,126 @@ export function AccountSetupPage({
   );
 }
 
-function StatusPill({ complete, label }: { complete: boolean; label: string }) {
+function ProgressStep({
+  step,
+  title,
+  detail,
+  state,
+}: {
+  step: 1 | 2;
+  title: string;
+  detail: string;
+  state: StepState;
+}) {
   return (
-    <div className="flex items-center justify-between rounded-lg border border-border bg-background px-3 py-2">
-      <span className="text-sm text-foreground">{label}</span>
-      <Badge variant={complete ? 'success' : 'outline'}>{complete ? 'Complete' : 'Required'}</Badge>
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-xl border px-4 py-3',
+        state === 'current' && 'border-primary/30 bg-background',
+        state === 'complete' && 'border-border/70 bg-background',
+        state === 'upcoming' && 'border-border/70 bg-background',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-8 w-8 items-center justify-center rounded-full border text-sm',
+          state === 'current' && 'border-primary bg-primary/10 text-primary',
+          state === 'complete' && 'border-primary/20 bg-primary/5 text-primary',
+          state === 'upcoming' && 'border-border bg-background text-muted-foreground',
+        )}
+      >
+        {state === 'complete' ? <CheckCircle2 className="h-4 w-4" /> : step}
+      </div>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-foreground">{title}</p>
+        <p className="text-xs text-muted-foreground">{detail}</p>
+      </div>
+      {state === 'current' ? <ChevronRight className="h-4 w-4 text-primary" /> : null}
     </div>
   );
 }
 
-function StepCard({
+function SetupStepCard({
   children,
-  complete,
   description,
   icon,
+  state,
   title,
 }: {
   children: ReactNode;
-  complete: boolean;
   description: string;
   icon: ReactNode;
+  state: StepState;
   title: string;
 }) {
+  const badgeLabel =
+    state === 'complete' ? 'Complete' : state === 'current' ? 'Current step' : 'Locked';
+
   return (
-    <Card className={complete ? 'border-primary/20 bg-primary/5' : undefined}>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div className="space-y-1">
-            <CardTitle className="flex items-center gap-2 text-base">
+    <section
+      className={cn(
+        'rounded-2xl border p-5 transition-colors',
+        state === 'current' && 'border-primary/25 bg-background',
+        state === 'complete' && 'border-border/70 bg-background',
+        state === 'upcoming' && 'border-border/70 bg-muted/20',
+      )}
+    >
+      <div className="flex items-start justify-between gap-4">
+        <div className="space-y-2">
+          <div className="flex items-center gap-2">
+            <div
+              className={cn(
+                'rounded-full p-2',
+                state === 'current' && 'bg-primary/10 text-primary',
+                state === 'complete' && 'bg-primary/5 text-primary',
+                state === 'upcoming' && 'bg-background text-muted-foreground',
+              )}
+            >
               {icon}
-              {title}
-            </CardTitle>
-            <CardDescription>{description}</CardDescription>
-          </div>
-          <div
-            className={
-              complete
-                ? 'inline-flex items-center gap-1 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary'
-                : 'inline-flex items-center rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground'
-            }
-          >
-            {complete ? <CheckCircle2 className="h-3.5 w-3.5" /> : null}
-            {complete ? 'Complete' : 'Required'}
+            </div>
+            <div>
+              <h2 className="text-lg text-foreground">{title}</h2>
+              <p className="text-sm text-muted-foreground">{description}</p>
+            </div>
           </div>
         </div>
-      </CardHeader>
-      <CardContent className="space-y-4">{children}</CardContent>
-    </Card>
+
+        <Badge
+          variant={state === 'complete' ? 'success' : state === 'current' ? 'secondary' : 'outline'}
+          className="shrink-0 rounded-full px-3 py-1"
+        >
+          {state === 'upcoming' ? <LockKeyhole className="h-3.5 w-3.5" /> : null}
+          {badgeLabel}
+        </Badge>
+      </div>
+
+      <div className="mt-5 space-y-4">{children}</div>
+    </section>
+  );
+}
+
+function StepSummary({ children }: { children: ReactNode }) {
+  return <div className="space-y-1 text-sm text-muted-foreground">{children}</div>;
+}
+
+function Notice({
+  children,
+  tone,
+}: {
+  children: ReactNode;
+  tone: 'error' | 'neutral' | 'success' | 'warning';
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border px-4 py-3 text-sm',
+        tone === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
+        tone === 'neutral' && 'border-border/70 bg-muted/30 text-foreground',
+        tone === 'success' && 'border-primary/20 bg-primary/10 text-primary',
+        tone === 'warning' && 'border-amber-200 bg-amber-50 text-amber-900',
+      )}
+    >
+      {children}
+    </div>
   );
 }
