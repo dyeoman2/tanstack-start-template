@@ -1516,7 +1516,6 @@ async function main() {
             randomBytes(32).toString('hex'),
           );
           setGitHubSecret(githubRepo, 'DR_TEST_BETTER_AUTH_URL', 'http://127.0.0.1:3000');
-          setGitHubSecret(githubRepo, 'DR_TEST_CONVEX_SITE_URL', 'http://127.0.0.1:3211');
           setGitHubSecret(githubRepo, 'DR_TEST_JWKS', convexProdEnv?.JWKS ?? '{"keys":[]}');
           summary.completed.push('Configured Convex deploy and DR test secrets in GitHub Actions.');
         } else {

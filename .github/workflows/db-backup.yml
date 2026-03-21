@@ -128,10 +128,6 @@ jobs:
 
           CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
           CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
-          pnpm exec convex env set CONVEX_SITE_URL "$DR_TEST_CONVEX_SITE_URL"
-
-          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
-          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
           pnpm exec convex env set JWKS "$DR_TEST_JWKS"
 
           CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
@@ -142,7 +138,6 @@ jobs:
           DR_TEST_APP_URL: ${{ secrets.DR_TEST_APP_URL || 'http://127.0.0.1:3000' }}
           DR_TEST_BETTER_AUTH_SECRET: ${{ secrets.DR_TEST_BETTER_AUTH_SECRET || 'dr-test-only-better-auth-secret-0123456789abcdef' }}
           DR_TEST_BETTER_AUTH_URL: ${{ secrets.DR_TEST_BETTER_AUTH_URL || 'http://127.0.0.1:3000' }}
-          DR_TEST_CONVEX_SITE_URL: ${{ secrets.DR_TEST_CONVEX_SITE_URL || 'http://127.0.0.1:3211' }}
           DR_TEST_JWKS: ${{ secrets.DR_TEST_JWKS || '{"keys":[]}' }}
 
       - name: Restore test - import into local Convex

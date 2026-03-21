@@ -25,6 +25,15 @@ type ChatMessageSource =
   | { type: 'url'; id: string; url: string; title?: string }
   | { type: 'document'; id: string; mediaType: string; title: string; filename?: string };
 
+function getSafeHttpUrl(rawUrl: string) {
+  try {
+    const parsed = new URL(rawUrl);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
 function getTextFromParts(parts: ChatMessagePart[]) {
   return parts
     .map((part) => {
@@ -136,11 +145,12 @@ function getSourceHostname(source: ChatMessageSource) {
     return 'Document';
   }
 
-  try {
-    return new URL(source.url).hostname.replace(/^www\./, '');
-  } catch {
+  const safeUrl = getSafeHttpUrl(source.url);
+  if (!safeUrl) {
     return source.url;
   }
+
+  return safeUrl.hostname.replace(/^www\./, '');
 }
 
 function getSourceInitial(source: ChatMessageSource) {
@@ -155,12 +165,12 @@ function getSourceFaviconUrl(source: ChatMessageSource) {
     return null;
   }
 
-  try {
-    const url = new URL(source.url);
-    return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(url.hostname)}&sz=64`;
-  } catch {
+  const safeUrl = getSafeHttpUrl(source.url);
+  if (!safeUrl) {
     return null;
   }
+
+  return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(safeUrl.hostname)}&sz=64`;
 }
 
 function SourceAvatar({ source, className }: { source: ChatMessageSource; className?: string }) {
@@ -255,12 +265,13 @@ function Sources({ sources }: { sources: ChatMessageSource[] }) {
           {sources.map((source, index) => {
             const title = getSourceTitle(source);
             const hostname = getSourceHostname(source);
+            const safeSourceUrl = source.type === 'url' ? getSafeHttpUrl(source.url) : null;
 
-            if (source.type === 'url') {
+            if (source.type === 'url' && safeSourceUrl) {
               return (
                 <a
                   key={source.id}
-                  href={source.url}
+                  href={safeSourceUrl.href}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-start gap-3 border-b border-border/60 py-4 last:border-b-0 hover:bg-accent/20"
@@ -305,19 +316,24 @@ function UserPart({ part }: { part: ChatMessagePart }) {
 
   if (part.type === 'file') {
     const isImage = part.mediaType.startsWith('image/');
+    const safeFileUrl = getSafeHttpUrl(part.url);
     if (isImage) {
-      return (
+      return safeFileUrl ? (
         <img
-          src={part.url}
+          src={safeFileUrl.href}
           alt={part.filename || 'Uploaded image'}
           className="mt-2 max-h-[320px] max-w-full rounded-xl object-contain"
         />
+      ) : (
+        <span className="mt-2 inline-flex rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+          Image unavailable
+        </span>
       );
     }
 
-    return (
+    return safeFileUrl ? (
       <a
-        href={part.url}
+        href={safeFileUrl.href}
         target="_blank"
         rel="noopener noreferrer"
         className="mt-2 flex items-center gap-2 rounded-xl border border-border/60 bg-background/60 p-3 text-sm"
@@ -326,6 +342,10 @@ function UserPart({ part }: { part: ChatMessagePart }) {
         <span>{part.filename ?? 'Attachment'}</span>
         <ExternalLink className="ml-auto size-4" />
       </a>
+    ) : (
+      <span className="mt-2 inline-flex rounded-xl border border-border/60 bg-background/60 p-3 text-sm">
+        Attachment unavailable
+      </span>
     );
   }
 

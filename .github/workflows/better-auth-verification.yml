@@ -39,11 +39,52 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Start local Convex
+        id: start_local_convex
+        run: |
+          docker run -d --name better-auth-convex \
+            -p 3210:3210 \
+            -p 3211:3211 \
+            ghcr.io/get-convex/convex-backend:latest@sha256:a4a0c06c76b78ed6342730d326b79c0427ec1681d7723514602eb41b37ff2d56
+
+          for i in $(seq 1 30); do
+            if docker exec better-auth-convex curl -sf http://localhost:3210/version >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          admin_key=$(docker exec better-auth-convex bash -c \
+            'cd /convex && ./generate_admin_key.sh 2>&1 | tail -1')
+
+          echo "admin_key=${admin_key}" >> "$GITHUB_OUTPUT"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set APP_NAME "TanStack Start Template"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set BETTER_AUTH_URL "http://127.0.0.1:3000"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set BETTER_AUTH_SECRET "better-auth-ci-placeholder-secret-1234567890"
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex env set JWKS '{"keys":[]}'
+
+          CONVEX_SELF_HOSTED_URL=http://localhost:3210 \
+          CONVEX_SELF_HOSTED_ADMIN_KEY="$admin_key" \
+          pnpm exec convex deploy
+
       - name: Build app
         id: build_app
         env:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
+          VITE_CONVEX_URL: http://127.0.0.1:3210
         run: pnpm build
 
       - name: Start app server
@@ -51,6 +92,7 @@ jobs:
         env:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
+          VITE_CONVEX_URL: http://127.0.0.1:3210
         run: |
           pnpm start > /tmp/better-auth-app.log 2>&1 &
           echo $! > /tmp/better-auth-app.pid
@@ -73,6 +115,7 @@ jobs:
           BETTER_AUTH_URL: http://127.0.0.1:3000
           BETTER_AUTH_SECRET: better-auth-ci-placeholder-secret-1234567890
           BETTER_AUTH_VERIFY_URL: http://127.0.0.1:3000
+          VITE_CONVEX_URL: http://127.0.0.1:3210
         run: pnpm verify:better-auth
 
       - name: Record Better Auth verification evidence
@@ -161,3 +204,8 @@ jobs:
           if [ -f /tmp/better-auth-app.pid ]; then
             kill "$(cat /tmp/better-auth-app.pid)" || true
           fi
+
+      - name: Stop local Convex
+        if: always()
+        run: |
+          docker rm -f better-auth-convex 2>/dev/null || true

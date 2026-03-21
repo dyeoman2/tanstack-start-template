@@ -4,7 +4,6 @@ import { Children, type HTMLAttributes, memo, useCallback, useEffect, useState }
 import type { Components } from 'react-markdown';
 import ReactMarkdown from 'react-markdown';
 import rehypeKatex from 'rehype-katex';
-import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeOptions } from 'rehype-sanitize';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -39,8 +38,8 @@ const sanitizeSchema: SanitizeOptions = {
   ],
   attributes: {
     ...defaultSchema.attributes,
-    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'class', 'style'],
-    span: ['className', 'class', 'style', 'aria-hidden'],
+    '*': [...(defaultSchema.attributes?.['*'] || []), 'className', 'class'],
+    span: ['className', 'class', 'aria-hidden'],
     math: ['xmlns', 'display'],
     annotation: ['encoding'],
   },
@@ -190,7 +189,7 @@ export const Markdown = memo(function Markdown({ children }: { children: string 
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
-        rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex]}
+        rehypePlugins={[[rehypeSanitize, sanitizeSchema], rehypeKatex]}
         components={components}
       >
         {content}
