@@ -189,7 +189,7 @@ function TwoFactorPage() {
           <CardTitle className="text-3xl">Two-Factor</CardTitle>
           <CardDescription>
             {totpURI
-              ? 'Scan this QR code with your authenticator app, then enter the 6-digit code to finish setup.'
+              ? 'Passkeys are recommended for day-to-day sign-in. If you prefer an authenticator app as your fallback method, scan this QR code and enter the 6-digit code to finish setup.'
               : 'Please enter your one-time password to continue.'}
           </CardDescription>
         </CardHeader>
@@ -232,7 +232,8 @@ function TwoFactorPage() {
                 <div className="space-y-3">
                   <p className="text-sm text-muted-foreground">
                     Enter this setup key manually in Google Authenticator, 1Password, or another
-                    TOTP app.
+                    TOTP app if you want to use an authenticator instead of a passkey on this
+                    device.
                   </p>
                   <div className="flex items-center gap-3 rounded-md border border-border bg-background px-3 py-2">
                     <div className="min-w-0 flex-1 overflow-x-auto font-mono text-sm">
