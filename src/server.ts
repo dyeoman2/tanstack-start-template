@@ -5,17 +5,41 @@ import { setSentryServerUser } from '~/lib/sentry';
 // Database connection is now handled with lazy initialization via db proxy
 // No need to initialize on server startup as the proxy handles this automatically
 
+function getOrigin(input: string | undefined): string | null {
+  if (!input) {
+    return null;
+  }
+
+  try {
+    return new URL(input).origin;
+  } catch {
+    return null;
+  }
+}
+
+const convexOrigin = getOrigin(import.meta.env.VITE_CONVEX_URL);
+const sentryOrigin = getOrigin(import.meta.env.VITE_SENTRY_DSN);
+
+const connectSrc = ["'self'"];
+if (convexOrigin) {
+  connectSrc.push(convexOrigin);
+  connectSrc.push(convexOrigin.replace(/^http/, 'ws'));
+}
+if (sentryOrigin) {
+  connectSrc.push(sentryOrigin);
+}
+
 const DOCUMENT_CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "base-uri 'self'",
   "frame-ancestors 'none'",
   "form-action 'self'",
   "object-src 'none'",
-  "script-src 'self' 'unsafe-inline' https:",
-  "style-src 'self' 'unsafe-inline' https:",
-  "img-src 'self' data: blob: https:",
-  "font-src 'self' data: https:",
-  "connect-src 'self' https: wss:",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob: https://www.google.com",
+  "font-src 'self' data:",
+  `connect-src ${connectSrc.join(' ')}`,
   "manifest-src 'self'",
   "worker-src 'self' blob:",
   'upgrade-insecure-requests',
@@ -47,7 +71,9 @@ const handler = createStartHandler(async ({ request, router, responseHeaders }) 
   responseHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   responseHeaders.set('X-Content-Type-Options', 'nosniff');
   responseHeaders.set('X-Frame-Options', 'DENY');
-  responseHeaders.set('Cache-Control', 'no-store, max-age=0');
+  responseHeaders.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0, private');
+  responseHeaders.set('Pragma', 'no-cache');
+  responseHeaders.set('Expires', '0');
 
   return defaultRenderHandler({ request, router, responseHeaders });
 });
