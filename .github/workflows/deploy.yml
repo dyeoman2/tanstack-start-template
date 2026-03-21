@@ -444,6 +444,9 @@ jobs:
     if: needs.deploy_netlify.result == 'success'
     environment: production
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Run OWASP ZAP baseline
         uses: zaproxy/action-baseline@v0.14.0
         with:
@@ -451,6 +454,7 @@ jobs:
           cmd_options: >-
             -a
           fail_action: true
+          rules_file_name: .zap/rules.tsv
           target: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
 
   record_release_evidence:

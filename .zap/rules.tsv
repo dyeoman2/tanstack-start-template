@@ -1,0 +1,6 @@
+10049	IGNORE	Static assets are intentionally cacheable on the CDN.
+10050	IGNORE	Cache hits for public static assets are expected in production.
+10094	IGNORE	Base64-encoded data URLs are expected in the bundled frontend.
+10109	IGNORE	Modern SPA behavior is expected for this application.
+90004	IGNORE	COEP is not enabled because the app embeds third-party resources.
+90005	IGNORE	Sec-Fetch-Dest is a request header controlled by the client, not the app.

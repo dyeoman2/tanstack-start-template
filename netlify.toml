@@ -10,6 +10,34 @@ SECRETS_SCAN_OMIT_KEYS = "VITE_CONVEX_SITE_URL"
 [context.deploy-preview]
 command = "echo '🏗️ Building preview (skipping Convex deploy)...' && pnpm build && echo '🎉 Preview build completed successfully'"
 
+[[headers]]
+for = "/*"
+
+[headers.values]
+Content-Security-Policy = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
+Permissions-Policy = "camera=(), geolocation=(), microphone=(), payment=(), usb=(), browsing-topics=()"
+Referrer-Policy = "strict-origin-when-cross-origin"
+X-Content-Type-Options = "nosniff"
+X-Frame-Options = "DENY"
+
+[[headers]]
+for = "/"
+
+[headers.values]
+Cache-Control = "no-store, max-age=0"
+
+[[headers]]
+for = "/register"
+
+[headers.values]
+Cache-Control = "no-store, max-age=0"
+
+[[headers]]
+for = "/app/*"
+
+[headers.values]
+Cache-Control = "no-store, max-age=0"
+
 [[redirects]]
 from = "/app/*"
 to = "/index.html"
