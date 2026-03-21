@@ -30,6 +30,8 @@
     "build": "vite build",
     "start": "node --import ./instrument.server.mjs ./scripts/start-server.mjs",
     "test": "vitest run",
+    "test:ci": "vitest run --project unit-node --project unit-jsdom",
+    "test:cli-smoke": "vitest run --project unit-cli-smoke",
     "test:ssr-smoke": "pnpm run build && node ./scripts/smoke-ssr-runtime.mjs",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
