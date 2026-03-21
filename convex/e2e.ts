@@ -42,6 +42,7 @@ export const ensurePrincipalRole = internalAction({
     await updateBetterAuthUserRecord(ctx, userId, { role: args.role });
     const bootstrapResult = await ctx.runAction(internal.users.bootstrapUserContext, {
       authUserId: userId,
+      email: args.email,
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });

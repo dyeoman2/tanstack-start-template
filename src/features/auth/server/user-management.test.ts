@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { fetchAuthQueryMock, actionMock, handleServerErrorMock } = vi.hoisted(() => ({
-  fetchAuthQueryMock: vi.fn(),
+const { actionMock, handleServerErrorMock } = vi.hoisted(() => ({
   actionMock: vi.fn(),
   handleServerErrorMock: vi.fn((error: unknown) => error),
 }));
@@ -17,9 +16,7 @@ vi.mock('@tanstack/react-start', () => ({
 
 vi.mock('@convex/_generated/api', () => ({
   api: {
-    users: {
-      getCurrentUserProfile: 'getCurrentUserProfile',
-    },
+    users: {},
   },
   internal: {
     users: {
@@ -35,12 +32,6 @@ vi.mock('~/lib/server/convex-admin.server', () => ({
   }),
 }));
 
-vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
-  convexAuthReactStart: {
-    fetchAuthQuery: fetchAuthQueryMock,
-  },
-}));
-
 vi.mock('~/lib/server/error-utils.server', () => ({
   handleServerError: handleServerErrorMock,
 }));
@@ -53,13 +44,15 @@ describe('bootstrapSignedUpUserServerFn', () => {
   });
 
   it('assigns the first signed up user the admin role', async () => {
-    fetchAuthQueryMock.mockResolvedValueOnce({ id: 'user_1', email: 'admin@example.com' });
     actionMock.mockResolvedValue({ found: true, assignedRole: 'admin' });
 
-    const result = await bootstrapSignedUpUserServerFn();
+    const result = await bootstrapSignedUpUserServerFn({
+      data: { authUserId: 'user_1', email: 'admin@example.com' },
+    });
 
     expect(actionMock).toHaveBeenCalledWith('bootstrapUserContext', {
       authUserId: 'user_1',
+      email: 'admin@example.com',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
     });
@@ -72,13 +65,17 @@ describe('bootstrapSignedUpUserServerFn', () => {
 
   it('rolls back the auth user when bootstrap fails', async () => {
     const bootstrapError = new Error('bootstrap failed');
-    fetchAuthQueryMock.mockResolvedValueOnce({ id: 'user_2', email: 'user@example.com' });
     actionMock.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({ success: true });
 
-    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(bootstrapError);
+    await expect(
+      bootstrapSignedUpUserServerFn({
+        data: { authUserId: 'user_2', email: 'user@example.com' },
+      }),
+    ).rejects.toBe(bootstrapError);
 
     expect(actionMock).toHaveBeenNthCalledWith(1, 'bootstrapUserContext', {
       authUserId: 'user_2',
+      email: 'user@example.com',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
     });
@@ -88,19 +85,13 @@ describe('bootstrapSignedUpUserServerFn', () => {
     });
   });
 
-  it('fails closed when counting users fails before bootstrap', async () => {
-    const profileError = new Error('profile failed');
-    fetchAuthQueryMock
-      .mockRejectedValueOnce(profileError)
-      .mockResolvedValueOnce({ id: 'user_3', email: 'user3@example.com' });
-    actionMock.mockResolvedValueOnce({ success: true });
+  it('fails closed when the signup payload is invalid', async () => {
+    await expect(
+      bootstrapSignedUpUserServerFn({
+        data: { authUserId: '', email: 'user3@example.com' },
+      }),
+    ).rejects.toThrow('Authenticated signup context is unavailable');
 
-    await expect(bootstrapSignedUpUserServerFn()).rejects.toBe(profileError);
-
-    expect(actionMock).toHaveBeenCalledTimes(1);
-    expect(actionMock).toHaveBeenCalledWith('rollbackBootstrapUserContext', {
-      authUserId: 'user_3',
-      email: 'user3@example.com',
-    });
+    expect(actionMock).not.toHaveBeenCalled();
   });
 });

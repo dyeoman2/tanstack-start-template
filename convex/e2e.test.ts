@@ -75,6 +75,7 @@ describe('ensurePrincipalRole', () => {
     );
     expect(runAction).toHaveBeenCalledWith('bootstrapUserContext', {
       authUserId: 'user_1',
+      email: 'e2e-user@local.test',
       createdAt: expect.any(Number),
       updatedAt: expect.any(Number),
     });

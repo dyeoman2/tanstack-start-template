@@ -9,6 +9,7 @@ import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
 import { authClient } from '~/features/auth/auth-client';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import {
   getAccountSetupCallbackUrl,
@@ -104,7 +105,7 @@ function RegisterPage() {
             ? undefined
             : getAccountSetupCallbackUrl(window.location.origin, { redirectTo });
 
-        await authClient.signUp.email({
+        const signUpResult = await authClient.signUp.email({
           email,
           password,
           name,
@@ -115,7 +116,12 @@ function RegisterPage() {
         });
 
         try {
-          const bootstrapResult = await bootstrapSignedUpUserServerFn();
+          const bootstrapResult = await bootstrapSignedUpUserServerFn({
+            data: {
+              authUserId: signUpResult.user.id,
+              email: signUpResult.user.email,
+            },
+          });
 
           setSuccessMessage(bootstrapResult.message);
           setTimeout(() => {
@@ -145,14 +151,23 @@ function RegisterPage() {
           }, 1600);
         }
       } catch (error: unknown) {
-        if (
-          (error instanceof Error && error.message.toLowerCase().includes('rate limit')) ||
-          (error instanceof Error && error.message.includes('Too many'))
-        ) {
-          setError('Too many registration attempts. Please wait a few minutes and try again.');
-        } else {
-          setError('Unable to create your account. Check your details and try again.');
+        if (import.meta.env.DEV) {
+          console.error('[Register] signUp.email failed:', error);
         }
+
+        const message = getBetterAuthUserFacingMessage(error, {
+          fallback: 'Unable to create your account. Check your details and try again.',
+        });
+
+        if (
+          message === 'USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL' ||
+          message.toLowerCase().includes('already exists')
+        ) {
+          setError('An account with this email already exists. Sign in or use a different email.');
+          return;
+        }
+
+        setError(message);
       }
     },
   });

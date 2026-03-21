@@ -35,6 +35,7 @@ import {
   type BetterAuthUser,
   createBetterAuthMember,
   createBetterAuthOrganization,
+  findBetterAuthUserByEmail,
   fetchBetterAuthMembersByUserId,
   fetchBetterAuthOrganizationsByIds,
   fetchBetterAuthSessionsByUserId,
@@ -783,21 +784,13 @@ export const finalizeUserProfilesSnapshotSync = internalMutation({
 export const bootstrapUserContext = internalAction({
   args: {
     authUserId: v.string(),
+    email: v.string(),
     createdAt: v.number(),
     updatedAt: v.number(),
   },
   returns: bootstrapUserContextResultValidator,
   handler: async (ctx, args): Promise<BootstrapUserContextResult> => {
-    const authUser = await ctx.runQuery(components.betterAuth.adapter.findOne, {
-      model: 'user',
-      where: [
-        {
-          field: '_id',
-          operator: 'eq',
-          value: args.authUserId,
-        },
-      ],
-    });
+    const authUser = await findBetterAuthUserByEmail(ctx, args.email);
 
     if (!authUser) {
       return {
@@ -805,19 +798,20 @@ export const bootstrapUserContext = internalAction({
       };
     }
 
+    const authUserId = assertUserId(authUser, 'Failed to resolve Better Auth user ID');
     const assignedRole = await ctx.runMutation(internal.users.assignBootstrapUserRoleMutation, {
-      authUserId: args.authUserId,
+      authUserId,
     });
 
-    const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, args.authUserId);
+    const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
     if (existingMemberships.length === 0) {
-      const organization = await createDefaultOrganization(ctx, args.authUserId, args.createdAt);
+      const organization = await createDefaultOrganization(ctx, authUserId, args.createdAt);
       const organizationId = organization._id ?? organization.id;
       if (!organizationId) {
         throw new Error('Failed to initialize default organization');
       }
 
-      const sessions = await fetchBetterAuthSessionsByUserId(ctx, args.authUserId);
+      const sessions = await fetchBetterAuthSessionsByUserId(ctx, authUserId);
       await Promise.all(
         sessions.map(async (session) => {
           if (session.activeOrganizationId) {
@@ -832,7 +826,7 @@ export const bootstrapUserContext = internalAction({
     }
 
     const result = await ctx.runMutation(internal.users.ensureUserContextForAuthUser, {
-      authUserId: args.authUserId,
+      authUserId,
       createdAt: args.createdAt,
       updatedAt: args.updatedAt,
     });
