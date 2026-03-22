@@ -6,6 +6,7 @@ import {
   type GenericCtx,
 } from '@convex-dev/better-auth';
 import { betterAuth } from 'better-auth';
+import { generateRandomString, symmetricEncrypt } from 'better-auth/crypto';
 import { APIError } from 'better-auth/api';
 import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -262,6 +263,55 @@ type BetterAuthAdminSession = {
   userAgent: string | null;
   userId: string;
 };
+
+const onboardingAuthenticatorSetupResultValidator = v.object({
+  backupCodes: v.array(v.string()),
+  totpURI: v.string(),
+});
+
+function generateOnboardingBackupCodes() {
+  return Array.from({ length: 10 })
+    .fill(null)
+    .map(() => generateRandomString(10, 'a-z', '0-9', 'A-Z'))
+    .map((code) => `${code.slice(0, 5)}-${code.slice(5)}`);
+}
+
+function encodeBase32(input: string) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const bytes = new TextEncoder().encode(input);
+  let output = '';
+  let bits = 0;
+  let value = 0;
+
+  for (const byte of bytes) {
+    value = (value << 8) | byte;
+    bits += 8;
+
+    while (bits >= 5) {
+      output += alphabet[(value >>> (bits - 5)) & 31];
+      bits -= 5;
+    }
+  }
+
+  if (bits > 0) {
+    output += alphabet[(value << (5 - bits)) & 31];
+  }
+
+  return output;
+}
+
+function createTotpUri(secret: string, issuer: string, account: string) {
+  const encodedIssuer = encodeURIComponent(issuer);
+  const encodedAccount = encodeURIComponent(account);
+  const params = new URLSearchParams({
+    secret: encodeBase32(secret),
+    issuer,
+    digits: '6',
+    period: '30',
+  });
+
+  return `otpauth://totp/${encodedIssuer}:${encodedAccount}?${params.toString()}`;
+}
 
 type BetterAuthCurrentUserSession = {
   createdAt: number;
@@ -2048,6 +2098,67 @@ export const revokeCurrentOtherSessions = action({
         success: response.status,
       };
     });
+  },
+});
+
+export const beginOnboardingAuthenticatorSetup = action({
+  args: {},
+  returns: onboardingAuthenticatorSetupResultValidator,
+  handler: async (ctx) => {
+    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const authUserId = currentUser.authUserId;
+
+    if (currentUser.authUser.twoFactorEnabled === true) {
+      throw new ConvexError('Authenticator-based MFA is already enabled for this account.');
+    }
+
+    const secret = generateRandomString(32);
+    const encryptedSecret = await symmetricEncrypt({
+      key: getBetterAuthSecret(),
+      data: secret,
+    });
+    const backupCodes = generateOnboardingBackupCodes();
+    const encryptedBackupCodes = await symmetricEncrypt({
+      key: getBetterAuthSecret(),
+      data: JSON.stringify(backupCodes),
+    });
+
+    await ctx.runMutation(
+      components.betterAuth.adapter.deleteMany as never,
+      {
+        input: {
+          model: 'twoFactor',
+          where: [{ field: 'userId', operator: 'eq', value: authUserId }],
+        },
+        paginationOpts: {
+          cursor: null,
+          numItems: 1000,
+          id: 0,
+        },
+      } as never,
+    );
+
+    await ctx.runMutation(
+      components.betterAuth.adapter.create as never,
+      {
+        input: {
+          model: 'twoFactor',
+          data: {
+            secret: encryptedSecret,
+            backupCodes: encryptedBackupCodes,
+            userId: authUserId,
+          },
+        },
+      } as never,
+    );
+
+    const issuer = process.env.APP_NAME?.trim() || 'TanStack Start Template';
+    const totpURI = createTotpUri(secret, issuer, currentUser.authUser.email);
+
+    return {
+      backupCodes,
+      totpURI,
+    };
   },
 });
 

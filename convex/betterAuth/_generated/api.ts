@@ -14,6 +14,7 @@ import type * as authorizationDeniedAudit from "../authorizationDeniedAudit.js";
 import type * as options from "../options.js";
 import type * as policyServices from "../policyServices.js";
 import type * as sharedOptions from "../sharedOptions.js";
+import type * as staticJwks from "../staticJwks.js";
 
 import type {
   ApiFromModules,
@@ -29,6 +30,7 @@ const fullApi: ApiFromModules<{
   options: typeof options;
   policyServices: typeof policyServices;
   sharedOptions: typeof sharedOptions;
+  staticJwks: typeof staticJwks;
 }> = anyApi as any;
 
 /**

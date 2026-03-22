@@ -63,7 +63,7 @@ function getTotpMetadata(totpUri?: string) {
   }
 }
 
-function TwoFactorPage() {
+export function TwoFactorPage() {
   const { redirectTo, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();
@@ -302,24 +302,22 @@ function TwoFactorPage() {
               ) : null}
             </div>
 
-            {!totpURI ? (
-              <label
-                htmlFor="trust-device"
-                className="flex items-center gap-3 text-sm font-medium text-foreground"
-              >
-                <Checkbox
-                  id="trust-device"
-                  checked={trustDevice}
-                  onCheckedChange={(checked) => setTrustDevice(checked === true)}
-                />
-                Trust this device
-              </label>
-            ) : null}
+            <label
+              htmlFor="trust-device"
+              className="flex items-center gap-3 text-sm font-medium text-foreground"
+            >
+              <Checkbox
+                id="trust-device"
+                checked={trustDevice}
+                onCheckedChange={(checked) => setTrustDevice(checked === true)}
+              />
+              Trust this device for future logins
+            </label>
 
-            <Button className="w-full" type="submit" disabled={isSubmitting}>
-              {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
+            <Button className="w-full" type="submit" disabled={isSubmitting || isSuccess}>
+              {isSubmitting || isSuccess ? <Loader2 className="size-4 animate-spin" /> : null}
               {isSuccess
-                ? 'Verified'
+                ? 'Redirecting...'
                 : isSubmitting
                   ? totpURI
                     ? 'Verifying and enabling...'

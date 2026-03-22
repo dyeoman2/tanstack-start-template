@@ -27,6 +27,7 @@ import {
   userRole,
 } from '../../src/lib/shared/better-auth-access';
 import authConfig from '../auth.config';
+import { resolveBetterAuthPluginJwks } from './staticJwks';
 
 type BetterAuthEmailAndPasswordOptions = NonNullable<BetterAuthOptions['emailAndPassword']>;
 type BetterAuthEmailVerificationOptions = NonNullable<BetterAuthOptions['emailVerification']>;
@@ -545,7 +546,7 @@ export function createSharedBetterAuthOptions(
       passkey(getPasskeyOptions(betterAuthUrl)),
       convex({
         authConfig,
-        jwks: process.env.JWKS,
+        jwks: resolveBetterAuthPluginJwks(process.env.JWKS),
         options: {
           basePath: '/api/auth',
         },

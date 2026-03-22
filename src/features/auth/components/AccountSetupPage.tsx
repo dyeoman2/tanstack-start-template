@@ -14,7 +14,7 @@ import {
   Mail,
   ShieldCheck,
 } from 'lucide-react';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
@@ -240,6 +240,8 @@ export function AccountSetupPage({
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [backupCodesMessage, setBackupCodesMessage] = useState<string | null>(null);
   const [didCopyBackupCodes, setDidCopyBackupCodes] = useState(false);
+  const [didDownloadBackupCodes, setDidDownloadBackupCodes] = useState(false);
+  const [isContinuingToAuthenticator, setIsContinuingToAuthenticator] = useState(false);
   const [pendingTotpUri, setPendingTotpUri] = useState<string | null>(null);
   const [isSubmittingTwoFactor, setIsSubmittingTwoFactor] = useState(false);
   const [sessionContinuationState, setSessionContinuationState] =
@@ -248,7 +250,6 @@ export function AccountSetupPage({
   const hasAttemptedSessionContinuationRef = useRef(false);
   const hasResolvedInitialAuthRef = useRef(false);
   const hasRecoveredVerifiedSession = sessionContinuationState === 'verified';
-  const sessionRecoveryFailed = sessionContinuationState === 'failed';
   const isContinuingSession = sessionContinuationState === 'checking';
 
   const viewModel = getSetupViewModel({
@@ -288,45 +289,48 @@ export function AccountSetupPage({
     };
   }, [resendCooldownSeconds]);
 
-  async function runStatusCheck(background: boolean) {
-    if (background) {
-      if (isBackgroundRefreshInFlightRef.current) {
-        return;
+  const runStatusCheck = useCallback(
+    async (background: boolean) => {
+      if (background) {
+        if (isBackgroundRefreshInFlightRef.current) {
+          return;
+        }
+
+        if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+          return;
+        }
+
+        isBackgroundRefreshInFlightRef.current = true;
+      } else {
+        setIsRefreshing(true);
+        setError(null);
+        setInfoMessage(null);
+        setSessionContinuationState('idle');
       }
 
-      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-        return;
-      }
+      try {
+        const refreshedSession = await refreshAuthClientSession(queryClient);
 
-      isBackgroundRefreshInFlightRef.current = true;
-    } else {
-      setIsRefreshing(true);
-      setError(null);
-      setInfoMessage(null);
-      setSessionContinuationState('idle');
-    }
-
-    try {
-      const refreshedSession = await refreshAuthClientSession(queryClient);
-
-      if (!background) {
-        if (refreshedSession?.user?.emailVerified) {
-          setSessionContinuationState('verified');
-          setInfoMessage(null);
+        if (!background) {
+          if (refreshedSession?.user?.emailVerified) {
+            setSessionContinuationState('verified');
+            setInfoMessage(null);
+          } else {
+            setInfoMessage(
+              'Still waiting for verification. Open the latest email link or resend the email.',
+            );
+          }
+        }
+      } finally {
+        if (background) {
+          isBackgroundRefreshInFlightRef.current = false;
         } else {
-          setInfoMessage(
-            'Still waiting for verification. Open the latest email link or resend the email.',
-          );
+          setIsRefreshing(false);
         }
       }
-    } finally {
-      if (background) {
-        isBackgroundRefreshInFlightRef.current = false;
-      } else {
-        setIsRefreshing(false);
-      }
-    }
-  }
+    },
+    [queryClient],
+  );
 
   useEffect(() => {
     if (!viewModel.canPollStatus) {
@@ -345,7 +349,7 @@ export function AccountSetupPage({
       window.clearInterval(intervalId);
       isBackgroundRefreshInFlightRef.current = false;
     };
-  }, [viewModel.canPollStatus, viewModel.currentStage, router]);
+  }, [runStatusCheck, viewModel.canPollStatus, viewModel.currentStage]);
 
   useEffect(() => {
     const shouldAttemptAutomaticContinuation =
@@ -527,6 +531,7 @@ export function AccountSetupPage({
       const response = await beginAuthenticatorOnboardingServerFn();
       setPendingTotpUri(response.totpURI ?? null);
       setBackupCodes(response.backupCodes ?? []);
+      setIsContinuingToAuthenticator(false);
       setIsBackupCodesOpen(true);
     } catch (twoFactorError) {
       setError(getEnrollmentErrorMessage(twoFactorError));
@@ -538,22 +543,19 @@ export function AccountSetupPage({
   function handleContinueToAuthenticator() {
     setBackupCodesMessage(null);
     setDidCopyBackupCodes(false);
-
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const nextUrl = new URL('/two-factor', window.location.origin);
-
-    if (redirectTarget !== '/app') {
-      nextUrl.searchParams.set('redirectTo', redirectTarget);
-    }
-
-    if (pendingTotpUri) {
-      nextUrl.searchParams.set('totpURI', pendingTotpUri);
-    }
-
-    window.location.assign(`${nextUrl.pathname}${nextUrl.search}`);
+    setDidDownloadBackupCodes(false);
+    setIsContinuingToAuthenticator(true);
+    void router
+      .navigate({
+        to: '/two-factor',
+        search: {
+          ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+          ...(pendingTotpUri ? { totpURI: pendingTotpUri } : {}),
+        },
+      })
+      .catch(() => {
+        setIsContinuingToAuthenticator(false);
+      });
   }
 
   async function handleCopyBackupCodes() {
@@ -590,6 +592,10 @@ export function AccountSetupPage({
     anchor.click();
     window.URL.revokeObjectURL(objectUrl);
     setBackupCodesMessage(null);
+    setDidDownloadBackupCodes(true);
+    window.setTimeout(() => {
+      setDidDownloadBackupCodes(false);
+    }, 2000);
   }
 
   const stepOneState: StepState = viewModel.emailStepComplete
@@ -883,7 +889,16 @@ export function AccountSetupPage({
         </Card>
       </AuthRouteShell>
 
-      <Dialog open={isBackupCodesOpen} onOpenChange={setIsBackupCodesOpen}>
+      <Dialog
+        open={isBackupCodesOpen}
+        onOpenChange={(open) => {
+          setIsBackupCodesOpen(open);
+          if (!open) {
+            setIsContinuingToAuthenticator(false);
+            setDidDownloadBackupCodes(false);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>Save your backup codes</DialogTitle>
@@ -921,13 +936,28 @@ export function AccountSetupPage({
                 {didCopyBackupCodes ? <Check className="size-4" /> : <Copy className="size-4" />}
                 Copy codes
               </Button>
-              <Button type="button" variant="outline" onClick={handleDownloadBackupCodes}>
-                <Download className="size-4" />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleDownloadBackupCodes}
+                aria-label={didDownloadBackupCodes ? 'Backup codes downloaded' : 'Download codes'}
+                title={didDownloadBackupCodes ? 'Downloaded' : 'Download codes'}
+              >
+                {didDownloadBackupCodes ? (
+                  <Check className="size-4" />
+                ) : (
+                  <Download className="size-4" />
+                )}
                 Download codes
               </Button>
             </div>
-            <Button type="button" onClick={handleContinueToAuthenticator}>
-              Continue
+            <Button
+              type="button"
+              onClick={handleContinueToAuthenticator}
+              disabled={isContinuingToAuthenticator}
+            >
+              {isContinuingToAuthenticator ? <Loader2 className="size-4 animate-spin" /> : null}
+              {isContinuingToAuthenticator ? 'Continuing...' : 'Continue'}
             </Button>
           </DialogFooter>
         </DialogContent>

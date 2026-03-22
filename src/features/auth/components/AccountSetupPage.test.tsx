@@ -442,8 +442,18 @@ describe('AccountSetupPage', () => {
     expect(createObjectURLMock).toHaveBeenCalledTimes(1);
     expect(clickSpy).toHaveBeenCalledTimes(1);
     expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:backup-codes');
+    expect(screen.getByRole('button', { name: 'Backup codes downloaded' })).toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+
+    expect(screen.getByRole('button', { name: 'Continuing...' })).toBeDisabled();
+    expect(
+      screen.getByRole('button', { name: 'Continuing...' }).querySelector('.animate-spin'),
+    ).toBeTruthy();
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: '/two-factor',
+      search: { totpURI: 'otpauth://totp/example' },
+    });
 
     clickSpy.mockRestore();
     Object.defineProperty(URL, 'createObjectURL', {
