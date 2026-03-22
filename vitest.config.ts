@@ -1,9 +1,8 @@
-import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
 
-function createVitestPlugins() {
-  return [tanstackRouter({ target: 'react' }), react()];
+function createReactOnlyPlugins() {
+  return [react()];
 }
 
 const sharedTestConfig = {
@@ -42,7 +41,29 @@ export default defineConfig({
         resolve: {
           tsconfigPaths: true,
         },
-        plugins: createVitestPlugins(),
+        plugins: createReactOnlyPlugins(),
+        test: {
+          name: 'unit-jsdom-heavy',
+          environment: 'jsdom',
+          environmentOptions: {
+            jsdom: {
+              url: 'http://localhost:3000/',
+            },
+          },
+          setupFiles: ['./src/test/setup.ts'],
+          include: [
+            'src/features/chat/components/ChatWorkspace.test.tsx',
+            'src/features/organizations/components/OrganizationAuditPage.test.tsx',
+            'src/routes/**/*.test.tsx',
+          ],
+          ...sharedTestConfig,
+        },
+      },
+      {
+        resolve: {
+          tsconfigPaths: true,
+        },
+        plugins: createReactOnlyPlugins(),
         test: {
           name: 'unit-jsdom',
           environment: 'jsdom',
@@ -53,6 +74,11 @@ export default defineConfig({
           },
           setupFiles: ['./src/test/setup.ts'],
           include: ['src/**/*.test.tsx', 'src/lib/roleRefresh.test.ts'],
+          exclude: [
+            'src/features/chat/components/ChatWorkspace.test.tsx',
+            'src/features/organizations/components/OrganizationAuditPage.test.tsx',
+            'src/routes/**/*.test.tsx',
+          ],
           ...sharedTestConfig,
         },
       },

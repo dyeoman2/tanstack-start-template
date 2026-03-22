@@ -21,6 +21,27 @@ defaults:
     shell: bash
 
 jobs:
+  changes:
+    name: 🔎 Detect Changes
+    runs-on: ubuntu-22.04
+    outputs:
+      run_cli_smoke: ${{ steps.filter.outputs.cli_smoke }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Filter changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            cli_smoke:
+              - 'scripts/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - 'tsconfig.json'
+              - 'tsconfig.*'
+
   lint:
     name: 🪨 Linting
     runs-on: ubuntu-22.04
@@ -126,8 +147,8 @@ jobs:
           path: sbom.json
           retention-days: 30
 
-  test:
-    name: ⚡ Vitest
+  test_node:
+    name: ⚡ Vitest Node
     runs-on: ubuntu-22.04
     steps:
       - name: Checkout
@@ -147,12 +168,62 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run unit tests
-        run: pnpm run test:ci
+      - name: Run node tests
+        run: pnpm run test:node
+
+  test_jsdom:
+    name: ⚛️ Vitest JSDOM
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run jsdom tests
+        run: pnpm run test:jsdom
+
+  test_jsdom_heavy:
+    name: 🧪 Vitest JSDOM Heavy
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.0
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run heavy jsdom tests
+        run: pnpm run test:jsdom:heavy
 
   test_cli_smoke:
     name: 🧪 CLI Smoke
     runs-on: ubuntu-22.04
+    needs: changes
+    if: github.event_name != 'pull_request' || needs.changes.outputs.run_cli_smoke == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -234,7 +305,10 @@ jobs:
       - lint
       - typecheck
       - security
-      - test
+      - test_node
+      - test_jsdom
+      - test_jsdom_heavy
+      - changes
       - test_cli_smoke
       - sast
       - ssr_smoke

@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-20T21:59:26.540Z",
+  "generatedAt": "2026-03-22T06:04:52.525Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -991,7 +991,7 @@
       "title": "Identification and Authentication (Organizational Users)",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
-      "implementationSummary": "This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email enforcement, MFA or passkey enforcement for regulated access, and fresh-session step-up for sensitive operations.",
+      "implementationSummary": "This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email enforcement, required MFA enrollment before protected application access, and fresh-session step-up for sensitive operations.",
       "controlStatement": "Identification and Authentication (Organizational Users) is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1054,8 +1054,8 @@
         },
         {
           "itemId": "mfa-enforcement",
-          "label": "MFA or passkeys are enforced for regulated access",
-          "description": "The platform must enforce stronger authenticators for privileged or regulated organization access paths.",
+          "label": "MFA enrollment is enforced before protected application access",
+          "description": "The platform must block protected application access until each account completes passkey or authenticator-app enrollment, and must continue to enforce stronger authenticators for regulated or privileged access paths.",
           "verificationMethod": "Authentication policy and step-up workflow review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -1065,18 +1065,18 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "The regulated baseline requires MFA or passkeys, and privileged access paths enforce that requirement.",
+            "notes": "Protected application access is withheld until the user completes passkey or authenticator-app enrollment, and regulated organization access checks continue to enforce MFA requirements.",
             "evidence": [
               {
-                "title": "Regulated MFA baseline",
-                "description": "Regulated MFA baseline showing required MFA or passkey protections for regulated organizations and the related policy posture presented to administrators.",
+                "title": "Account setup MFA enrollment flow",
+                "description": "Account setup workflow showing verified users must add a passkey or authenticator app before they can continue into the protected application.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "MFA and fresh-session enforcement",
-                "description": "Authentication enforcement showing MFA, passkey, and fresh-session requirements before privileged or regulated access proceeds.",
+                "title": "Protected app and organization MFA enforcement",
+                "description": "Protected application and organization access enforcement showing users without MFA are redirected into account setup and regulated organization access is blocked until required MFA is satisfied.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2821,14 +2821,14 @@
       "title": "Authenticator Management",
       "familyId": "IA",
       "familyTitle": "Identification and Authentication",
-      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through stronger authenticators, recovery-related auditing, and guarded reset or account-recovery flows.",
+      "implementationSummary": "This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, and guarded credential or session recovery flows.",
       "controlStatement": "Verifying, as part of the initial authenticator distribution, the identity of the individual, group, role, service, or device receiving the authenticator; Establishing initial authenticator content for any authenticators issued by the organization; Ensuring that authenticators have sufficient strength of mechanism for their intended use; Establishing and implementing administrative procedures for initial authenticator distribution, for lost or compromised or damaged authenticators, and for revoking authenticators; Changing default authenticators prior to first use; Changing or refreshing authenticators {{ insert: param, ia-05_odp.01 }} or when {{ insert: param, ia-05_odp.02 }} occur; Protecting authenticator content from unauthorized disclosure and modification; Requiring individuals to take, and having devices implement, specific controls to protect authenticators; and Changing authenticators for group or role accounts when membership to those accounts changes.",
       "priority": "p1",
       "platformChecklistItems": [
         {
           "itemId": "strong-authenticators",
-          "label": "Strong authenticators are available",
-          "description": "The platform must support strong authenticators such as passkeys or MFA factors.",
+          "label": "Strong authenticators can be enrolled and managed",
+          "description": "The platform must let users enroll and manage strong authenticators such as passkeys and authenticator apps.",
           "verificationMethod": "Authenticator capability review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2838,11 +2838,11 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "The platform supports passkeys and built-in two-factor authentication for stronger authenticator management.",
+            "notes": "Users can enroll passkeys or an authenticator app during setup and later manage those authenticators from account security settings.",
             "evidence": [
               {
-                "title": "Passkey and two-factor support",
-                "description": "Passkey and two-factor support enables passkey and two-factor plugins, and profile UI exposes authenticator management flows.",
+                "title": "Passkey and authenticator enrollment configuration",
+                "description": "Authentication configuration and account security interfaces showing passkey enrollment and authenticator-app setup and management options.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2877,8 +2877,8 @@
         },
         {
           "itemId": "recovery-guardrails",
-          "label": "Recovery and authenticator changes are guarded",
-          "description": "Authenticator recovery and sign-in credential changes must be constrained by rate limits or fresh-session checks.",
+          "label": "Recovery and authenticator changes are controlled",
+          "description": "Authenticator recovery and sign-in credential changes must be constrained by fresh-session checks, controlled recovery artifacts, or rate limits.",
           "verificationMethod": "Recovery flow configuration review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2888,18 +2888,25 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Sensitive auth endpoints are rate-limited and sign-in email changes require a fresh session.",
+            "notes": "Sensitive auth endpoints are rate-limited, sign-in email changes require a fresh session, and authenticator onboarding issues backup codes for controlled recovery.",
             "evidence": [
               {
-                "title": "Better Auth recovery rate limits",
-                "description": "Better Auth recovery rate limits applying per-route rate limits for password reset, verification email, and credential-management endpoints.",
+                "title": "Authentication recovery rate-limit rules",
+                "description": "Authentication server configuration showing rate-limit rules applied to password reset, verification email, and other credential-management endpoints.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Fresh-session change-email protection",
-                "description": "Fresh-session change-email protection blocks change-email unless the session satisfies the recent step-up freshness window.",
+                "title": "Fresh-session credential-change protection",
+                "description": "Credential-change protection showing sign-in email updates require a recent step-up session before the change is accepted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Authenticator backup-code recovery workflow",
+                "description": "Authenticator onboarding and account-recovery workflow showing backup codes are issued during setup and accepted later when a user needs to regain access.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

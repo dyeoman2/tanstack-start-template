@@ -253,6 +253,14 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
     'Authentication enforcement showing MFA, passkey, and fresh-session requirements before privileged or regulated access proceeds.',
   ],
   [
+    'Account setup MFA enrollment flow',
+    'Account setup workflow showing verified users must add a passkey or authenticator app before they can continue into the protected application.',
+  ],
+  [
+    'Protected app and organization MFA enforcement',
+    'Protected application and organization access enforcement showing users without MFA are redirected into account setup and regulated organization access is blocked until required MFA is satisfied.',
+  ],
+  [
     'Evidence report review workflow',
     'Review workflow for recording evidence report status, reviewer notes, and follow-up actions.',
   ],
@@ -267,6 +275,22 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
   [
     'Site admin report generation interface',
     'Site admin interface showing evidence report and audit readiness report actions for current control and posture data.',
+  ],
+  [
+    'Passkey and authenticator enrollment configuration',
+    'Authentication configuration and account security interfaces showing passkey enrollment and authenticator-app setup and management options.',
+  ],
+  [
+    'Authentication recovery rate-limit rules',
+    'Authentication server configuration showing rate-limit rules applied to password reset, verification email, and other credential-management endpoints.',
+  ],
+  [
+    'Fresh-session credential-change protection',
+    'Credential-change protection showing sign-in email updates require a recent step-up session before the change is accepted.',
+  ],
+  [
+    'Authenticator backup-code recovery workflow',
+    'Authenticator onboarding and account-recovery workflow showing backup codes are issued during setup and accepted later when a user needs to regain access.',
   ],
   [
     'Control matrix operational evidence note',
@@ -1287,7 +1311,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IA-2',
     internalControlId: 'CTRL-IA-002',
     implementationSummary:
-      'This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email enforcement, MFA or passkey enforcement for regulated access, and fresh-session step-up for sensitive operations.',
+      'This control ensures users are uniquely identified and authenticated before accessing protected service functionality. The platform supports that objective through authenticated access flows, verified-email enforcement, required MFA enrollment before protected application access, and fresh-session step-up for sensitive operations.',
     coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
@@ -1340,23 +1364,23 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'mfa-enforcement',
-        label: 'MFA or passkeys are enforced for regulated access',
+        label: 'MFA enrollment is enforced before protected application access',
         description:
-          'The platform must enforce stronger authenticators for privileged or regulated organization access paths.',
+          'The platform must block protected application access until each account completes passkey or authenticator-app enrollment, and must continue to enforce stronger authenticators for regulated or privileged access paths.',
         verificationMethod: 'Authentication policy and step-up workflow review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The regulated baseline requires MFA or passkeys, and privileged access paths enforce that requirement.',
+          'Protected application access is withheld until the user completes passkey or authenticator-app enrollment, and regulated organization access checks continue to enforce MFA requirements.',
           [
             seededEvidence(
-              'Regulated MFA baseline',
-              'src/lib/shared/security-baseline.ts requires MFA or passkeys for regulated organizations and src/features/organizations/components/OrganizationPoliciesCard.tsx presents the always-enforced posture.',
+              'Account setup MFA enrollment flow',
+              'Account setup screens in `src/features/auth/components/AccountSetupPage.tsx` require a verified user to add a passkey or authenticator app before the protected application becomes available.',
             ),
             seededEvidence(
-              'MFA and fresh-session enforcement',
-              'src/features/auth/server/auth-guards.ts and convex/organizationManagement.ts require MFA/passkey presence or a fresh session before privileged access and regulated join flows.',
+              'Protected app and organization MFA enforcement',
+              'Protected-route and organization-access checks in `src/routes/app.tsx`, `src/features/auth/server/auth-guards.ts`, and `convex/organizationManagement.ts` redirect users without MFA into account setup and deny regulated organization access when required MFA has not been satisfied.',
             ),
           ],
           'Authentication',
@@ -1370,7 +1394,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IA-5',
     internalControlId: 'CTRL-IA-005',
     implementationSummary:
-      'This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through stronger authenticators, recovery-related auditing, and guarded reset or account-recovery flows.',
+      'This control ensures authenticators are managed, protected, and recoverable in a controlled manner. The platform supports that objective through passkey and authenticator-app enrollment, controlled backup-code recovery, recovery-related auditing, and guarded credential or session recovery flows.',
     coverage: 'covered' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -1382,19 +1406,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     platformChecklistItems: [
       {
         itemId: 'strong-authenticators',
-        label: 'Strong authenticators are available',
+        label: 'Strong authenticators can be enrolled and managed',
         description:
-          'The platform must support strong authenticators such as passkeys or MFA factors.',
+          'The platform must let users enroll and manage strong authenticators such as passkeys and authenticator apps.',
         verificationMethod: 'Authenticator capability review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The platform supports passkeys and built-in two-factor authentication for stronger authenticator management.',
+          'Users can enroll passkeys or an authenticator app during setup and later manage those authenticators from account security settings.',
           [
             seededEvidence(
-              'Passkey and two-factor support',
-              'convex/betterAuth/sharedOptions.ts enables passkey and two-factor plugins, and profile UI exposes authenticator management flows.',
+              'Passkey and authenticator enrollment configuration',
+              'Authentication configuration in `convex/betterAuth/sharedOptions.ts` and account security interfaces in `src/features/auth/components/AccountSetupPage.tsx`, `src/features/profile/components/ProfilePasskeysCard.tsx`, and `src/features/profile/components/ProfileTwoFactorCard.tsx` show passkey and authenticator-app enrollment and management options.',
             ),
           ],
           'Authentication',
@@ -1421,23 +1445,27 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'recovery-guardrails',
-        label: 'Recovery and authenticator changes are guarded',
+        label: 'Recovery and authenticator changes are controlled',
         description:
-          'Authenticator recovery and sign-in credential changes must be constrained by rate limits or fresh-session checks.',
+          'Authenticator recovery and sign-in credential changes must be constrained by fresh-session checks, controlled recovery artifacts, or rate limits.',
         verificationMethod: 'Recovery flow configuration review',
         required: true,
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Sensitive auth endpoints are rate-limited and sign-in email changes require a fresh session.',
+          'Sensitive auth endpoints are rate-limited, sign-in email changes require a fresh session, and authenticator onboarding issues backup codes for controlled recovery.',
           [
             seededEvidence(
-              'Better Auth recovery rate limits',
-              'convex/betterAuth/sharedOptions.ts applies per-route rate limits for password reset, verification email, and credential-management endpoints.',
+              'Authentication recovery rate-limit rules',
+              'Authentication server configuration in `convex/betterAuth/sharedOptions.ts` applies per-route rate limits to password reset, verification email, and other credential-management endpoints.',
             ),
             seededEvidence(
-              'Fresh-session change-email protection',
-              'convex/betterAuth/sharedOptions.ts blocks change-email unless the session satisfies the recent step-up freshness window.',
+              'Fresh-session credential-change protection',
+              'Change-email handling in `convex/betterAuth/sharedOptions.ts` blocks sign-in email updates unless the current session satisfies the recent step-up freshness window.',
+            ),
+            seededEvidence(
+              'Authenticator backup-code recovery workflow',
+              'Authenticator onboarding and recovery flows in `convex/auth.ts`, `src/features/auth/components/BackupCodesDialog.tsx`, and `src/routes/recover-account.tsx` issue backup codes during setup and accept those codes later when a user needs to regain access to the account.',
             ),
           ],
           'Authentication',
