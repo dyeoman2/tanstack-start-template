@@ -1,28 +1,41 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AnchorHTMLAttributes } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountSetupPage } from './AccountSetupPage';
 
 const {
   invalidateMock,
   navigateMock,
+  invalidateQueriesMock,
+  setQueryDataMock,
+  clipboardWriteTextMock,
+  refreshAuthClientSessionMock,
   sendVerificationEmailMock,
   addPasskeyMock,
-  enableTwoFactorMock,
+  beginAuthenticatorOnboardingMock,
   signOutMock,
   useAuthMock,
   useQueryMock,
 } = vi.hoisted(() => ({
   invalidateMock: vi.fn(),
   navigateMock: vi.fn(),
+  invalidateQueriesMock: vi.fn(),
+  setQueryDataMock: vi.fn(),
+  clipboardWriteTextMock: vi.fn(),
+  refreshAuthClientSessionMock: vi.fn(),
   sendVerificationEmailMock: vi.fn(),
   addPasskeyMock: vi.fn(),
-  enableTwoFactorMock: vi.fn(),
+  beginAuthenticatorOnboardingMock: vi.fn(),
   signOutMock: vi.fn(),
   useAuthMock: vi.fn(),
   useQueryMock: vi.fn(),
 }));
+
+const queryClientMock = {
+  invalidateQueries: invalidateQueriesMock,
+  setQueryData: setQueryDataMock,
+};
 
 type MockAuthState = {
   hasSession: boolean;
@@ -37,6 +50,7 @@ type MockAuthState = {
   user: {
     id: string;
     email: string;
+    emailVerified?: boolean;
     role: string;
     isSiteAdmin: boolean;
   } | null;
@@ -70,6 +84,10 @@ vi.mock('@tanstack/react-router', () => ({
   }),
 }));
 
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => queryClientMock,
+}));
+
 vi.mock('convex/react', () => ({
   useQuery: useQueryMock,
 }));
@@ -84,11 +102,14 @@ vi.mock('~/features/auth/auth-client', () => ({
     passkey: {
       addPasskey: (...args: unknown[]) => addPasskeyMock(...args),
     },
-    twoFactor: {
-      enable: (...args: unknown[]) => enableTwoFactorMock(...args),
-    },
   },
+  refreshAuthClientSession: (...args: unknown[]) => refreshAuthClientSessionMock(...args),
   signOut: (...args: unknown[]) => signOutMock(...args),
+}));
+
+vi.mock('~/features/auth/server/onboarding', () => ({
+  beginAuthenticatorOnboardingServerFn: (...args: unknown[]) =>
+    beginAuthenticatorOnboardingMock(...args),
 }));
 
 function createAuthState(overrides: Partial<MockAuthState> = {}): MockAuthState {
@@ -110,14 +131,35 @@ function createAuthState(overrides: Partial<MockAuthState> = {}): MockAuthState 
 describe('AccountSetupPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clipboardWriteTextMock.mockReset().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', {
+      clipboard: {
+        writeText: clipboardWriteTextMock,
+      },
+    });
+    Object.defineProperty(window.navigator, 'clipboard', {
+      value: {
+        writeText: clipboardWriteTextMock,
+      },
+      configurable: true,
+    });
     invalidateMock.mockResolvedValue(undefined);
     navigateMock.mockResolvedValue(undefined);
+    refreshAuthClientSessionMock.mockResolvedValue({ user: { emailVerified: false } });
     useQueryMock.mockReturnValue({ isConfigured: true });
     sendVerificationEmailMock.mockResolvedValue({ success: true });
     addPasskeyMock.mockResolvedValue({});
-    enableTwoFactorMock.mockResolvedValue({ backupCodes: [], totpURI: null });
+    beginAuthenticatorOnboardingMock.mockResolvedValue({
+      backupCodes: [],
+      totpURI: null,
+    });
     signOutMock.mockResolvedValue(undefined);
     useAuthMock.mockReturnValue(createAuthState());
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it('shows the verification checkpoint for signed-out users with concise rationale', () => {
@@ -125,36 +167,74 @@ describe('AccountSetupPage', () => {
 
     expect(
       screen.getByText(
-        'To protect workspace access, we require a verified email and a strong second sign-in method before granting app access.',
+        'We require a verified email and multi-factor authentication before granting app access.',
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText('Check your inbox for the verification link.')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Resend verification email' })).toBeEnabled();
+    expect(screen.queryByText('Check person@example.com to continue.')).not.toBeInTheDocument();
+    expect(
+      screen.getByText('We sent a verification email to person@example.com.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Open the link in that email to continue.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Send a new verification email' })).toBeEnabled();
     expect(screen.getByRole('button', { name: "I've verified my email" })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Wrong email? Use another account' })).toBeEnabled();
     expect(screen.queryByRole('link', { name: 'Sign in to continue' })).not.toBeInTheDocument();
   });
 
-  it('treats callback verification as completing step one and prompting sign-in', () => {
+  it('uses verified callbacks to try automatic session recovery before step two opens', async () => {
+    let currentAuthState = createAuthState();
+    useAuthMock.mockImplementation(() => currentAuthState);
+    refreshAuthClientSessionMock.mockImplementation(async () => {
+      currentAuthState = createAuthState({
+        hasSession: true,
+        isAuthenticated: true,
+        requiresEmailVerification: false,
+        requiresMfaSetup: true,
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          emailVerified: true,
+          role: 'user',
+          isSiteAdmin: false,
+        },
+      });
+
+      return { user: { emailVerified: true } };
+    });
+
     render(
       <AccountSetupPage email="person@example.com" redirectTo="/app/admin" verified="success" />,
     );
 
-    expect(
-      screen.getByText(
-        'person@example.com is verified. Sign in to add your passkey or authenticator.',
-      ),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Sign in to continue' })).toHaveAttribute(
-      'href',
-      '/login?email=person%40example.com&redirectTo=%2Fapp%2Fadmin',
-    );
-    expect(
-      screen.queryByRole('button', { name: 'Resend verification email' }),
-    ).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Add passkey' })).toBeEnabled();
+    });
+
+    expect(screen.queryByRole('link', { name: 'Sign in to continue' })).not.toBeInTheDocument();
   });
 
-  it('shows neutral bridging copy when a Better Auth session exists but app auth is still resolving', () => {
+  it('falls back to manual sign-in only after automatic continuation fails', async () => {
+    render(
+      <AccountSetupPage email="person@example.com" redirectTo="/app/admin" verified="success" />,
+    );
+
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText(
+            "We couldn't continue automatically. Sign in to finish setting up your account.",
+          ),
+        ).toBeInTheDocument();
+        expect(screen.getByRole('link', { name: 'Sign in to continue' })).toHaveAttribute(
+          'href',
+          '/login?email=person%40example.com&redirectTo=%2Fapp%2Fadmin',
+        );
+      },
+      { timeout: 3500 },
+    );
+  }, 7000);
+
+  it('lets users continue strong-auth setup as soon as a verified Better Auth session exists', () => {
     useAuthMock.mockReturnValue(
       createAuthState({
         hasSession: true,
@@ -162,6 +242,7 @@ describe('AccountSetupPage', () => {
         user: {
           id: 'user-1',
           email: 'person@example.com',
+          emailVerified: true,
           role: 'user',
           isSiteAdmin: false,
         },
@@ -170,13 +251,7 @@ describe('AccountSetupPage', () => {
 
     render(<AccountSetupPage />);
 
-    expect(
-      screen.getByText(/checking whether person@example.com has completed the verification step/i),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/we'll keep checking automatically, or you can confirm below/i),
-    ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: "I've verified my email" })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Add passkey' })).toBeEnabled();
   });
 
   it('treats email verification as the current step and keeps security locked', () => {
@@ -198,11 +273,11 @@ describe('AccountSetupPage', () => {
     render(<AccountSetupPage />);
 
     expect(
-      screen.getByText('Verify person@example.com to continue to passkey or authenticator setup.'),
+      screen.getByText('We sent a verification email to person@example.com.'),
     ).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Resend verification email' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Send a new verification email' })).toBeEnabled();
     expect(screen.getByRole('button', { name: "I've verified my email" })).toBeEnabled();
-    expect(screen.getByText('Locked until email is verified')).toBeInTheDocument();
+    expect(screen.getByText('Available after verification')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Add passkey' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Wrong email? Use another account' })).toBeEnabled();
   });
@@ -225,16 +300,11 @@ describe('AccountSetupPage', () => {
 
     render(<AccountSetupPage />);
 
-    expect(
-      screen.getByText(
-        'person@example.com is verified. Add a passkey or authenticator to finish setup.',
-      ),
-    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add passkey' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Use authenticator app instead' })).toBeEnabled();
-    expect(screen.getByText('Add a passkey or authenticator')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Use authenticator app' })).toBeEnabled();
+    expect(screen.getByText('Set up MFA')).toBeInTheDocument();
     expect(
-      screen.queryByRole('button', { name: 'Resend verification email' }),
+      screen.queryByRole('button', { name: 'Send a new verification email' }),
     ).not.toBeInTheDocument();
   });
 
@@ -277,10 +347,113 @@ describe('AccountSetupPage', () => {
 
     render(<AccountSetupPage verified="success" />);
 
-    expect(
-      screen.getByText('Email verified. Finish securing your account to continue.'),
-    ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Add passkey' })).toBeEnabled();
+  });
+
+  it('replaces stale-session passkey errors with re-auth guidance', async () => {
+    const user = userEvent.setup();
+    addPasskeyMock.mockRejectedValue({
+      error: {
+        code: 'SESSION_NOT_FRESH',
+        message: 'SESSION_NOT_FRESH',
+      },
+    });
+    useAuthMock.mockReturnValue(
+      createAuthState({
+        hasSession: true,
+        isAuthenticated: true,
+        requiresEmailVerification: false,
+        requiresMfaSetup: true,
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          role: 'user',
+          isSiteAdmin: false,
+        },
+      }),
+    );
+
+    render(<AccountSetupPage redirectTo="/app/admin" />);
+
+    await user.click(screen.getByRole('button', { name: 'Add passkey' }));
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          'For security, passkey setup requires a recent sign-in. Sign in again to continue, then return here to finish MFA setup.',
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Sign in again to add passkey' })).toHaveAttribute(
+        'href',
+        '/login?email=person%40example.com&redirectTo=%2Fapp%2Fadmin',
+      );
+    });
+
+    expect(screen.queryByText('SESSION_NOT_FRESH')).not.toBeInTheDocument();
+  });
+
+  it('lets users copy and download backup codes before continuing', async () => {
+    const user = userEvent.setup();
+    const createObjectURLMock = vi.fn(() => 'blob:backup-codes');
+    const revokeObjectURLMock = vi.fn();
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: createObjectURLMock,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: revokeObjectURLMock,
+      configurable: true,
+    });
+
+    beginAuthenticatorOnboardingMock.mockResolvedValue({
+      backupCodes: ['abc-123', 'def-456'],
+      totpURI: 'otpauth://totp/example',
+    });
+    useAuthMock.mockReturnValue(
+      createAuthState({
+        hasSession: true,
+        isAuthenticated: true,
+        requiresEmailVerification: false,
+        requiresMfaSetup: true,
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          role: 'user',
+          isSiteAdmin: false,
+        },
+      }),
+    );
+
+    render(<AccountSetupPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Use authenticator app' }));
+
+    expect(await screen.findByText('Save your backup codes')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Copy codes' }));
+    expect(screen.getByRole('button', { name: 'Backup codes copied' })).toBeInTheDocument();
+    expect(screen.queryByText('Backup codes copied.')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Download codes' }));
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:backup-codes');
+
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
+
+    clickSpy.mockRestore();
+    Object.defineProperty(URL, 'createObjectURL', {
+      value: originalCreateObjectURL,
+      configurable: true,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      value: originalRevokeObjectURL,
+      configurable: true,
+    });
   });
 
   it('resends verification email only when that action is the current step', async () => {
@@ -302,7 +475,7 @@ describe('AccountSetupPage', () => {
 
     render(<AccountSetupPage redirectTo="/app" />);
 
-    await user.click(screen.getByRole('button', { name: 'Resend verification email' }));
+    await user.click(screen.getByRole('button', { name: 'Send a new verification email' }));
 
     await waitFor(() => {
       expect(sendVerificationEmailMock).toHaveBeenCalledWith({
@@ -318,7 +491,7 @@ describe('AccountSetupPage', () => {
 
     render(<AccountSetupPage email="person@example.com" redirectTo="/app" />);
 
-    await user.click(screen.getByRole('button', { name: 'Resend verification email' }));
+    await user.click(screen.getByRole('button', { name: 'Send a new verification email' }));
 
     await waitFor(() => {
       expect(sendVerificationEmailMock).toHaveBeenCalledWith({
@@ -351,7 +524,13 @@ describe('AccountSetupPage', () => {
     await user.click(screen.getByRole('button', { name: "I've verified my email" }));
 
     await waitFor(() => {
-      expect(invalidateMock).toHaveBeenCalled();
+      expect(refreshAuthClientSessionMock).toHaveBeenCalledWith(queryClientMock);
+      expect(invalidateMock).not.toHaveBeenCalled();
+      expect(
+        screen.getByText(
+          'Still waiting for verification. Open the latest email link or resend the email.',
+        ),
+      ).toBeInTheDocument();
     });
   });
 
@@ -374,14 +553,14 @@ describe('AccountSetupPage', () => {
 
     const { unmount } = render(<AccountSetupPage />);
 
-    invalidateMock.mockClear();
+    refreshAuthClientSessionMock.mockClear();
     await vi.advanceTimersByTimeAsync(5000);
-    expect(invalidateMock).toHaveBeenCalledTimes(1);
+    expect(refreshAuthClientSessionMock).toHaveBeenCalledTimes(1);
 
     unmount();
-    invalidateMock.mockClear();
+    refreshAuthClientSessionMock.mockClear();
     await vi.advanceTimersByTimeAsync(5000);
-    expect(invalidateMock).not.toHaveBeenCalled();
+    expect(refreshAuthClientSessionMock).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
@@ -405,7 +584,7 @@ describe('AccountSetupPage', () => {
     render(<AccountSetupPage />);
 
     await vi.advanceTimersByTimeAsync(5000);
-    expect(invalidateMock).not.toHaveBeenCalled();
+    expect(refreshAuthClientSessionMock).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 

@@ -115,7 +115,11 @@ function getPasskeyOptions(siteUrlValue: string) {
 }
 
 function shouldDisableAuthRateLimit() {
-  return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
+  return (
+    process.env.NODE_ENV === 'development' ||
+    process.env.NODE_ENV === 'test' ||
+    process.env.VITEST === 'true'
+  );
 }
 
 function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit']>['customRules'] {

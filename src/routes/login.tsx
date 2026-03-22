@@ -21,7 +21,10 @@ import { Separator } from '~/components/ui/separator';
 import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
-import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
+import {
+  getAccountSetupCallbackUrl,
+  normalizeAppRedirectTarget,
+} from '~/features/auth/lib/account-setup-routing';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 
 export const Route = createFileRoute('/login')({
@@ -110,11 +113,20 @@ function LoginPage() {
     api.organizationManagement.resolveOrganizationEnterpriseAuthByEmail,
     emailForLookup ? { email: emailForLookup } : 'skip',
   );
-  const callbackURL = useMemo(
+  const postSignInRedirectUrl = useMemo(
     () =>
       typeof window === 'undefined'
         ? redirectTarget
         : new URL(redirectTarget, window.location.origin).toString(),
+    [redirectTarget],
+  );
+  const verificationCallbackURL = useMemo(
+    () =>
+      typeof window === 'undefined'
+        ? undefined
+        : getAccountSetupCallbackUrl(window.location.origin, {
+            redirectTo: redirectTarget,
+          }),
     [redirectTarget],
   );
 
@@ -173,6 +185,10 @@ function LoginPage() {
       await authClient.signIn.email({
         email: normalizeEmail(validatedEmail.data),
         password,
+        // Better Auth reuses the sign-in callback URL when sendOnSignIn verification
+        // mail is triggered for an unverified account. Keep that callback pointed at
+        // account setup, while successful sign-ins still navigate client-side below.
+        callbackURL: verificationCallbackURL ?? postSignInRedirectUrl,
         fetchOptions: { throw: true },
       });
       await refreshAuthClientSession(queryClient);
@@ -222,7 +238,7 @@ function LoginPage() {
       }
 
       await authClient.signIn.social({
-        callbackURL,
+        callbackURL: postSignInRedirectUrl,
         errorCallbackURL:
           typeof window === 'undefined'
             ? '/login'

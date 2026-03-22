@@ -20,6 +20,19 @@ export const markCurrentUserOnboardingCompleteServerFn = createServerFn({ method
   },
 );
 
+export const beginAuthenticatorOnboardingServerFn = createServerFn({ method: 'POST' }).handler(
+  async () => {
+    try {
+      return await convexAuthReactStart.fetchAuthAction(
+        api.auth.beginOnboardingAuthenticatorSetup,
+        {},
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Begin authenticator onboarding');
+    }
+  },
+);
+
 const resolvePasswordResetEmailSchema = z.object({
   token: z.string().min(1),
 });

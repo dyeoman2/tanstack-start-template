@@ -68,6 +68,9 @@ export function resolveAuthEmailUrl(url: string, request?: Request): string {
     }
 
     const nextOrigin = new URL(requestOrigin);
+    if (nextOrigin.hostname === '127.0.0.1' || nextOrigin.hostname === 'localhost') {
+      nextOrigin.hostname = 'localhost';
+    }
     canonicalUrl.protocol = nextOrigin.protocol;
     canonicalUrl.host = nextOrigin.host;
     return canonicalUrl.toString();

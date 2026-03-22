@@ -26,6 +26,6 @@ describe('account setup routing helpers', () => {
       getAccountSetupCallbackUrl('http://127.0.0.1:3000', {
         redirectTo: '/not-allowed',
       }),
-    ).toBe('http://127.0.0.1:3000/account-setup?verified=success');
+    ).toBe('http://localhost:3000/account-setup?verified=success');
   });
 });

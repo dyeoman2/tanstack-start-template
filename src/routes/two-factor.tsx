@@ -318,7 +318,15 @@ function TwoFactorPage() {
 
             <Button className="w-full" type="submit" disabled={isSubmitting}>
               {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
-              {isSuccess ? 'Verified' : totpURI ? 'Verify and enable' : 'Verify code'}
+              {isSuccess
+                ? 'Verified'
+                : isSubmitting
+                  ? totpURI
+                    ? 'Verifying and enabling...'
+                    : 'Verifying code...'
+                  : totpURI
+                    ? 'Verify and enable'
+                    : 'Verify code'}
             </Button>
           </form>
 

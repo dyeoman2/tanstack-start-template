@@ -8,6 +8,7 @@ import { ThemeProvider } from '~/components/theme-provider';
 import { Toaster } from '~/components/ui/sonner';
 import { ToastProvider } from '~/components/ui/toast';
 import { rawAuthClient } from '~/features/auth/auth-client-internal';
+import { DevAuthOriginWarning } from '~/features/auth/components/DevAuthOriginWarning';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { convexClient } from '~/lib/convexClient';
 import { setupClaimRefresh } from '~/lib/roleRefresh';
@@ -165,6 +166,7 @@ export function Providers({ children }: { children: ReactNode }) {
               disableTransitionOnChange
             >
               <ToastProvider>
+                <DevAuthOriginWarning />
                 {children}
                 <Toaster richColors />
               </ToastProvider>

@@ -5,6 +5,18 @@ import { AppNavigation } from '~/components/AppNavigation';
 import { ClientOnly } from '~/components/ClientOnly';
 import { useAuthContext } from '~/components/Providers';
 
+const AUTH_ROUTE_PREFIXES = ['/invite/'] as const;
+const AUTH_ROUTES = new Set([
+  '/account-setup',
+  '/forgot-password',
+  '/login',
+  '/recover-account',
+  '/register',
+  '/reset-password',
+  '/two-factor',
+  '/verify-email-pending',
+]);
+
 /**
  * Application shell component following TanStack Start best practices
  * Handles the main app layout with navigation and content area
@@ -16,6 +28,9 @@ export function AppShell() {
   const { authContext } = useAuthContext();
   const prevLocationRef = useRef<string | undefined>(undefined);
   const isAppRoute = location.pathname === '/app' || location.pathname.startsWith('/app/');
+  const isAuthRoute =
+    AUTH_ROUTES.has(location.pathname) ||
+    AUTH_ROUTE_PREFIXES.some((prefix) => location.pathname.startsWith(prefix));
 
   // Track navigation events with more detail
   useEffect(() => {
@@ -46,24 +61,15 @@ export function AppShell() {
     });
   }, [authContext, router]);
 
-  // Hide navigation on auth routes
-  const isAuthRoute = ['/login', '/register', '/forgot-password', '/reset-password'].includes(
-    location.pathname,
-  );
-
   return (
     <>
       <div className="min-h-screen bg-background">
-        {isAppRoute ? (
+        {isAppRoute || isAuthRoute ? (
           <Outlet />
         ) : (
           <>
-            {!isAuthRoute && <AppNavigation />}
-            <main
-              className={`max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8 ${
-                isAuthRoute ? 'pt-12' : ''
-              }`}
-            >
+            <AppNavigation />
+            <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
               <Outlet />
             </main>
           </>

@@ -22,6 +22,7 @@ This project enforces the regulated baseline we ship, distinguishing the control
 ### Origins and Base URL
 
 - Better Auth requires a canonical site URL. Production deployments must use an HTTPS `BETTER_AUTH_URL`; only loopback development may use `http://127.0.0.1` or `http://localhost`.
+- Local manual auth flows use `http://localhost:3000` as the canonical origin. See [`docs/LOCAL_AUTH_ENV.md`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/LOCAL_AUTH_ENV.md) for the required local `.env.local` and `npx convex env set BETTER_AUTH_URL ...` setup.
 - Set `BETTER_AUTH_PREVIEW_HOSTS` to explicit host patterns such as `*.netlify.app,*.vercel.app` for ephemeral environments and add extra trusted origins via `BETTER_AUTH_TRUSTED_ORIGINS` when necessary.
 - `BETTER_AUTH_TRUSTED_ORIGINS` must contain absolute origins such as `https://admin.example.com`; hostnames without a scheme are rejected at startup.
 - Deployment hardening (security headers, TLS termination, and monitoring for origin spoofing) must live outside this repo.

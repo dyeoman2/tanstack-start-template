@@ -40,11 +40,19 @@ describe('createSharedBetterAuthOptions', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it('keeps auth rate limiting enabled by default in development', () => {
+  it('disables auth rate limiting in development', () => {
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(true);
+    expect(options.rateLimit?.enabled).toBe(false);
     expect(options.rateLimit?.modelName).toBe('rateLimit');
+    expect(options.rateLimit?.customRules?.['/sign-up/email']).toEqual({
+      window: 60 * 60,
+      max: 5,
+    });
+    expect(options.rateLimit?.customRules?.['/send-verification-email']).toEqual({
+      window: 60 * 60,
+      max: 3,
+    });
   });
 
   it('sets a root Better Auth app name for provider and auth UX consistency', () => {
@@ -88,12 +96,12 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.advanced?.defaultCookieAttributes?.secure).toBe(true);
   });
 
-  it('ignores the disable-rate-limit env flag outside tests', () => {
+  it('keeps development rate limiting disabled even when the legacy disable flag is set', () => {
     process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = 'true';
 
     const options = createOptions();
 
-    expect(options.rateLimit?.enabled).toBe(true);
+    expect(options.rateLimit?.enabled).toBe(false);
   });
 
   it('revokes existing sessions on password reset', () => {

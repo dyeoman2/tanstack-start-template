@@ -8,6 +8,16 @@ export const APP_REDIRECT_TARGETS = [
 
 export type AppRedirectTarget = (typeof APP_REDIRECT_TARGETS)[number];
 
+function normalizeLocalAccountSetupOrigin(origin: string) {
+  const resolvedOrigin = new URL(origin);
+
+  if (resolvedOrigin.hostname === '127.0.0.1' || resolvedOrigin.hostname === 'localhost') {
+    resolvedOrigin.hostname = 'localhost';
+  }
+
+  return resolvedOrigin.origin;
+}
+
 export function normalizeAppRedirectTarget(value?: string | null): AppRedirectTarget {
   if (!value) {
     return '/app';
@@ -52,6 +62,6 @@ export function getAccountSetupCallbackUrl(
       redirectTo: options?.redirectTo,
       verified: true,
     }),
-    origin,
+    normalizeLocalAccountSetupOrigin(origin),
   ).toString();
 }

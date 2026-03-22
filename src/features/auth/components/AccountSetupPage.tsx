@@ -1,9 +1,13 @@
 import { api } from '@convex/_generated/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import {
+  Check,
   CheckCircle2,
   ChevronRight,
+  Copy,
+  Download,
   KeyRound,
   Loader2,
   LockKeyhole,
@@ -23,15 +27,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from '~/components/ui/dialog';
-import { Input } from '~/components/ui/input';
-import { authClient, signOut } from '~/features/auth/auth-client';
+import { authClient, refreshAuthClientSession, signOut } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
-import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
-import { useAuth } from '~/features/auth/hooks/useAuth';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { beginAuthenticatorOnboardingServerFn } from '~/features/auth/server/onboarding';
 import { cn } from '~/lib/utils';
 
 function getEnrollmentErrorMessage(error: unknown) {
@@ -54,6 +58,39 @@ function getEnrollmentErrorMessage(error: unknown) {
   return 'Something went wrong. Please try again.';
 }
 
+function isSessionNotFreshError(error: unknown) {
+  if (typeof error === 'object' && error !== null) {
+    const record = error as Record<string, unknown>;
+    if (typeof record.code === 'string' && record.code === 'SESSION_NOT_FRESH') {
+      return true;
+    }
+
+    const nestedError = record.error;
+    if (typeof nestedError === 'object' && nestedError !== null) {
+      const nestedRecord = nestedError as Record<string, unknown>;
+      if (typeof nestedRecord.code === 'string' && nestedRecord.code === 'SESSION_NOT_FRESH') {
+        return true;
+      }
+
+      if (
+        typeof nestedRecord.message === 'string' &&
+        nestedRecord.message.toUpperCase().includes('SESSION_NOT_FRESH')
+      ) {
+        return true;
+      }
+    }
+
+    if (
+      typeof record.message === 'string' &&
+      record.message.toUpperCase().includes('SESSION_NOT_FRESH')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 type AccountSetupPageProps = {
   email?: string;
   redirectTo?: string;
@@ -62,6 +99,7 @@ type AccountSetupPageProps = {
 
 type SetupStage = 'bridging' | 'secure-account' | 'verified-awaiting-sign-in' | 'verify-email';
 type StepState = 'complete' | 'current' | 'upcoming';
+type SessionContinuationState = 'idle' | 'checking' | 'failed' | 'verified';
 
 type SetupViewModel = {
   emailStepComplete: boolean;
@@ -83,32 +121,44 @@ type SetupViewModel = {
 
 const STATUS_POLL_INTERVAL_MS = 5000;
 const RESEND_COOLDOWN_SECONDS = 30;
+const SESSION_CONTINUATION_RETRY_DELAY_MS = 800;
+const SESSION_CONTINUATION_MAX_ATTEMPTS = 3;
 
 function getSetupViewModel(input: {
-  hasSession: boolean;
   isAuthenticated: boolean;
   isEmailConfigured: boolean;
-  isEmailVerifiedFromCallback: boolean;
+  hasVerificationCallback: boolean;
+  hasVerifiedEmailInSession: boolean;
   requiresEmailVerification: boolean;
   requiresMfaSetup: boolean;
   resolvedEmail: string | null;
+  sessionContinuationState: SessionContinuationState;
 }) {
+  const hasRecoveredVerifiedSession = input.sessionContinuationState === 'verified';
+  const sessionRecoveryFailed = input.sessionContinuationState === 'failed';
   const emailStepComplete =
-    input.isEmailVerifiedFromCallback ||
+    hasRecoveredVerifiedSession ||
+    input.hasVerifiedEmailInSession ||
     (input.isAuthenticated && !input.requiresEmailVerification);
   const securityStepComplete = input.isAuthenticated && !input.requiresMfaSetup;
   const completedStepCount = Number(emailStepComplete) + Number(securityStepComplete);
-  const isAwaitingSignInAfterVerification = emailStepComplete && !input.isAuthenticated;
+  const isAwaitingSignInAfterVerification =
+    emailStepComplete && !input.isAuthenticated && sessionRecoveryFailed;
+  const canContinueStrongAuthSetup =
+    emailStepComplete &&
+    (input.isAuthenticated || hasRecoveredVerifiedSession || input.hasVerifiedEmailInSession);
 
   let currentStage: SetupStage;
-  if (input.hasSession && !input.isAuthenticated) {
-    currentStage = 'bridging';
-  } else if (!emailStepComplete) {
-    currentStage = 'verify-email';
-  } else if (!input.isAuthenticated) {
-    currentStage = 'verified-awaiting-sign-in';
-  } else {
+  if (canContinueStrongAuthSetup) {
     currentStage = 'secure-account';
+  } else if (sessionRecoveryFailed && input.hasVerificationCallback) {
+    currentStage = 'verified-awaiting-sign-in';
+  } else if (emailStepComplete && !input.isAuthenticated) {
+    currentStage = sessionRecoveryFailed ? 'verified-awaiting-sign-in' : 'bridging';
+  } else if (input.hasVerificationCallback) {
+    currentStage = 'bridging';
+  } else {
+    currentStage = emailStepComplete ? 'secure-account' : 'verify-email';
   }
 
   const viewModel: SetupViewModel = {
@@ -120,12 +170,12 @@ function getSetupViewModel(input: {
       currentStage === 'secure-account' || currentStage === 'verified-awaiting-sign-in' ? 2 : 1,
     title: 'Complete your account setup',
     rationale:
-      'To protect workspace access, we require a verified email and a strong second sign-in method before granting app access.',
+      'We require a verified email and multi-factor authentication before granting app access.',
     subtitle: '',
     canResendEmail: !emailStepComplete && !!input.resolvedEmail && input.isEmailConfigured,
     canCheckVerification: currentStage === 'verify-email' || currentStage === 'bridging',
-    canAddPasskey: input.isAuthenticated && emailStepComplete && !securityStepComplete,
-    canAddAuthenticator: input.isAuthenticated && emailStepComplete && !securityStepComplete,
+    canAddPasskey: emailStepComplete && !securityStepComplete && !sessionRecoveryFailed,
+    canAddAuthenticator: emailStepComplete && !securityStepComplete && !sessionRecoveryFailed,
     canPollStatus: currentStage === 'verify-email' || currentStage === 'bridging',
     canUseDifferentEmail:
       currentStage === 'verify-email' || currentStage === 'verified-awaiting-sign-in',
@@ -139,19 +189,15 @@ function getSetupViewModel(input: {
         : 'Checking whether your verification step is complete.';
       break;
     case 'verify-email':
-      viewModel.subtitle = input.resolvedEmail
-        ? `Verify ${input.resolvedEmail} to continue to passkey or authenticator setup.`
-        : 'Verify your email to continue to passkey or authenticator setup.';
+      viewModel.subtitle = '';
       break;
     case 'verified-awaiting-sign-in':
       viewModel.subtitle = input.resolvedEmail
-        ? `${input.resolvedEmail} is verified. Sign in to add your passkey or authenticator.`
-        : 'Your email is verified. Sign in to add your passkey or authenticator.';
+        ? `${input.resolvedEmail} is verified. Sign in to set up MFA.`
+        : 'Your email is verified. Sign in to set up MFA.';
       break;
     case 'secure-account':
-      viewModel.subtitle = input.resolvedEmail
-        ? `${input.resolvedEmail} is verified. Add a passkey or authenticator to finish setup.`
-        : 'Add a passkey or authenticator to finish setup.';
+      viewModel.subtitle = '';
       break;
   }
 
@@ -164,6 +210,7 @@ export function AccountSetupPage({
   verified,
 }: AccountSetupPageProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const {
     hasSession,
     isAuthenticated,
@@ -179,39 +226,53 @@ export function AccountSetupPage({
     () => user?.email ?? emailFromSearch ?? null,
     [emailFromSearch, user?.email],
   );
+  const hasVerificationCallback = verified === 'success';
+  const hasVerifiedEmailInSession = user?.emailVerified === true;
   const [error, setError] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(
-    verified === 'success' ? 'Email verified. Finish securing your account to continue.' : null,
-  );
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [isResending, setIsResending] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [resendCooldownSeconds, setResendCooldownSeconds] = useState(0);
   const [isAddingPasskey, setIsAddingPasskey] = useState(false);
-  const [isTwoFactorDialogOpen, setIsTwoFactorDialogOpen] = useState(false);
+  const [needsFreshSignInForPasskey, setNeedsFreshSignInForPasskey] = useState(false);
   const [isBackupCodesOpen, setIsBackupCodesOpen] = useState(false);
-  const [password, setPassword] = useState('');
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [backupCodesMessage, setBackupCodesMessage] = useState<string | null>(null);
+  const [didCopyBackupCodes, setDidCopyBackupCodes] = useState(false);
   const [pendingTotpUri, setPendingTotpUri] = useState<string | null>(null);
   const [isSubmittingTwoFactor, setIsSubmittingTwoFactor] = useState(false);
+  const [sessionContinuationState, setSessionContinuationState] =
+    useState<SessionContinuationState>('idle');
   const isBackgroundRefreshInFlightRef = useRef(false);
-
-  if (isPending) {
-    return <AuthSkeleton />;
-  }
-
-  if (isAuthenticated && !requiresEmailVerification && !requiresMfaSetup) {
-    return <Navigate to={redirectTarget} replace />;
-  }
+  const hasAttemptedSessionContinuationRef = useRef(false);
+  const hasResolvedInitialAuthRef = useRef(false);
+  const hasRecoveredVerifiedSession = sessionContinuationState === 'verified';
+  const sessionRecoveryFailed = sessionContinuationState === 'failed';
+  const isContinuingSession = sessionContinuationState === 'checking';
 
   const viewModel = getSetupViewModel({
-    hasSession,
     isAuthenticated,
     isEmailConfigured,
-    isEmailVerifiedFromCallback: verified === 'success',
+    hasVerificationCallback,
+    hasVerifiedEmailInSession,
     requiresEmailVerification,
     requiresMfaSetup,
     resolvedEmail,
+    sessionContinuationState,
   });
+
+  useEffect(() => {
+    if (!isPending) {
+      hasResolvedInitialAuthRef.current = true;
+    }
+  }, [isPending]);
+
+  useEffect(() => {
+    if (!hasVerificationCallback && !hasVerifiedEmailInSession) {
+      setSessionContinuationState('idle');
+    }
+  }, [hasVerificationCallback, hasVerifiedEmailInSession]);
 
   useEffect(() => {
     if (resendCooldownSeconds <= 0) {
@@ -241,10 +302,23 @@ export function AccountSetupPage({
     } else {
       setIsRefreshing(true);
       setError(null);
+      setInfoMessage(null);
+      setSessionContinuationState('idle');
     }
 
     try {
-      await router.invalidate();
+      const refreshedSession = await refreshAuthClientSession(queryClient);
+
+      if (!background) {
+        if (refreshedSession?.user?.emailVerified) {
+          setSessionContinuationState('verified');
+          setInfoMessage(null);
+        } else {
+          setInfoMessage(
+            'Still waiting for verification. Open the latest email link or resend the email.',
+          );
+        }
+      }
     } finally {
       if (background) {
         isBackgroundRefreshInFlightRef.current = false;
@@ -273,6 +347,73 @@ export function AccountSetupPage({
     };
   }, [viewModel.canPollStatus, viewModel.currentStage, router]);
 
+  useEffect(() => {
+    const shouldAttemptAutomaticContinuation =
+      viewModel.currentStage === 'bridging' &&
+      (hasVerificationCallback || hasVerifiedEmailInSession) &&
+      !hasRecoveredVerifiedSession;
+
+    if (!shouldAttemptAutomaticContinuation) {
+      hasAttemptedSessionContinuationRef.current = false;
+      if (sessionContinuationState === 'checking') {
+        setSessionContinuationState('idle');
+      }
+      return;
+    }
+
+    if (hasAttemptedSessionContinuationRef.current) {
+      return;
+    }
+
+    hasAttemptedSessionContinuationRef.current = true;
+    setInfoMessage('Trying to continue your session...');
+    setSessionContinuationState('checking');
+
+    void (async () => {
+      try {
+        for (let attempt = 0; attempt < SESSION_CONTINUATION_MAX_ATTEMPTS; attempt += 1) {
+          const session = await refreshAuthClientSession(queryClient);
+          if (session?.user?.emailVerified) {
+            setSessionContinuationState('verified');
+            setInfoMessage(null);
+            return;
+          }
+
+          if (attempt < SESSION_CONTINUATION_MAX_ATTEMPTS - 1) {
+            await new Promise((resolve) => {
+              window.setTimeout(resolve, SESSION_CONTINUATION_RETRY_DELAY_MS);
+            });
+          }
+        }
+
+        setSessionContinuationState('failed');
+        setInfoMessage(
+          "We couldn't continue automatically. Sign in to finish setting up your account.",
+        );
+      } catch {
+        setSessionContinuationState('failed');
+        setInfoMessage(
+          "We couldn't continue automatically. Sign in to finish setting up your account.",
+        );
+      }
+    })();
+  }, [
+    hasRecoveredVerifiedSession,
+    hasVerificationCallback,
+    hasVerifiedEmailInSession,
+    queryClient,
+    sessionContinuationState,
+    viewModel.currentStage,
+  ]);
+
+  if (isPending && !hasResolvedInitialAuthRef.current) {
+    return <AuthSkeleton />;
+  }
+
+  if (isAuthenticated && !requiresEmailVerification && !requiresMfaSetup) {
+    return <Navigate to={redirectTarget} replace />;
+  }
+
   async function handleRefreshStatus() {
     await runStatusCheck(false);
   }
@@ -286,13 +427,16 @@ export function AccountSetupPage({
 
     setIsResending(true);
     setError(null);
+    setInfoMessage(null);
     setSuccessMessage(null);
 
     try {
       const callbackURL =
         typeof window === 'undefined'
           ? undefined
-          : getAccountSetupCallbackUrl(window.location.origin, { redirectTo: redirectTarget });
+          : getAccountSetupCallbackUrl(window.location.origin, {
+              redirectTo: redirectTarget,
+            });
 
       await authClient.sendVerificationEmail({
         email: targetEmail,
@@ -315,6 +459,7 @@ export function AccountSetupPage({
 
   async function handleUseDifferentEmail() {
     setError(null);
+    setInfoMessage(null);
     setSuccessMessage(null);
 
     if (hasSession) {
@@ -336,7 +481,9 @@ export function AccountSetupPage({
   async function handleAddPasskey() {
     setIsAddingPasskey(true);
     setError(null);
+    setInfoMessage(null);
     setSuccessMessage(null);
+    setNeedsFreshSignInForPasskey(false);
 
     try {
       const response = await authClient.passkey.addPasskey({
@@ -350,6 +497,15 @@ export function AccountSetupPage({
       setSuccessMessage('Passkey added. Finishing account setup…');
       await router.invalidate();
     } catch (passkeyError) {
+      if (isSessionNotFreshError(passkeyError)) {
+        setNeedsFreshSignInForPasskey(true);
+        setInfoMessage(
+          'For security, passkey setup requires a recent sign-in. Sign in again to continue, then return here to finish MFA setup.',
+        );
+        setError(null);
+        return;
+      }
+
       setError(
         getBetterAuthUserFacingMessage(passkeyError, {
           fallback: 'Unable to add a passkey right now.',
@@ -361,24 +517,16 @@ export function AccountSetupPage({
   }
 
   async function handleEnableAuthenticator() {
-    if (!password) {
-      setError('Password is required to enable authenticator-based verification.');
-      return;
-    }
-
     setIsSubmittingTwoFactor(true);
     setError(null);
+    setInfoMessage(null);
+    setBackupCodesMessage(null);
+    setNeedsFreshSignInForPasskey(false);
 
     try {
-      const response = await authClient.twoFactor.enable({
-        password,
-        fetchOptions: { throw: true },
-      });
-
-      setPassword('');
+      const response = await beginAuthenticatorOnboardingServerFn();
       setPendingTotpUri(response.totpURI ?? null);
       setBackupCodes(response.backupCodes ?? []);
-      setIsTwoFactorDialogOpen(false);
       setIsBackupCodesOpen(true);
     } catch (twoFactorError) {
       setError(getEnrollmentErrorMessage(twoFactorError));
@@ -388,6 +536,9 @@ export function AccountSetupPage({
   }
 
   function handleContinueToAuthenticator() {
+    setBackupCodesMessage(null);
+    setDidCopyBackupCodes(false);
+
     if (typeof window === 'undefined') {
       return;
     }
@@ -403,6 +554,42 @@ export function AccountSetupPage({
     }
 
     window.location.assign(`${nextUrl.pathname}${nextUrl.search}`);
+  }
+
+  async function handleCopyBackupCodes() {
+    if (typeof navigator === 'undefined' || !navigator.clipboard) {
+      setBackupCodesMessage('Copy is unavailable in this browser.');
+      setDidCopyBackupCodes(false);
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(backupCodes.join('\n'));
+      setBackupCodesMessage(null);
+      setDidCopyBackupCodes(true);
+      window.setTimeout(() => {
+        setDidCopyBackupCodes(false);
+      }, 2000);
+    } catch {
+      setBackupCodesMessage('Unable to copy backup codes.');
+      setDidCopyBackupCodes(false);
+    }
+  }
+
+  function handleDownloadBackupCodes() {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const fileContents = `${backupCodes.join('\n')}\n`;
+    const blob = new Blob([fileContents], { type: 'text/plain;charset=utf-8' });
+    const objectUrl = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = 'backup-codes.txt';
+    anchor.click();
+    window.URL.revokeObjectURL(objectUrl);
+    setBackupCodesMessage(null);
   }
 
   const stepOneState: StepState = viewModel.emailStepComplete
@@ -422,23 +609,31 @@ export function AccountSetupPage({
         <Card className="w-full border-border/70">
           <CardHeader className="space-y-5">
             <div className="space-y-2">
-              <Badge variant="secondary" className="rounded-full px-3 py-1 text-[11px] uppercase">
-                Account setup
-              </Badge>
               <CardTitle className="text-3xl font-normal tracking-tight">
                 {viewModel.title}
               </CardTitle>
               <CardDescription className="text-sm leading-6 text-foreground">
                 {viewModel.rationale}
               </CardDescription>
-              <CardDescription className="max-w-md text-sm leading-6">
-                {viewModel.subtitle}
-              </CardDescription>
+              {viewModel.subtitle ? (
+                <CardDescription className="max-w-md text-sm leading-6">
+                  {viewModel.subtitle}
+                </CardDescription>
+              ) : null}
             </div>
           </CardHeader>
 
           <CardContent className="space-y-4">
             {successMessage ? <Notice tone="success">{successMessage}</Notice> : null}
+
+            {infoMessage ? (
+              <Notice tone="neutral">
+                <div className="flex items-center gap-2">
+                  {isContinuingSession ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+                  <span>{infoMessage}</span>
+                </div>
+              </Notice>
+            ) : null}
 
             {error ? <Notice tone="error">{error}</Notice> : null}
 
@@ -459,8 +654,16 @@ export function AccountSetupPage({
                   viewModel.currentStage === 'bridging' ? (
                     <>
                       <StepSummary>
-                        <p className="text-foreground">Checking your verification status.</p>
-                        <p>We&apos;ll keep checking automatically, or you can confirm below.</p>
+                        <p className="text-foreground">
+                          {hasVerifiedEmailInSession || hasVerificationCallback
+                            ? 'We verified your email. Restoring your session now.'
+                            : 'Checking your verification status.'}
+                        </p>
+                        <p>
+                          {hasVerifiedEmailInSession || hasVerificationCallback
+                            ? 'We&apos;ll continue automatically as soon as your secure setup session is ready.'
+                            : 'We&apos;ll keep checking automatically, or you can confirm below.'}
+                        </p>
                       </StepSummary>
 
                       <div className="flex flex-col gap-3">
@@ -482,9 +685,11 @@ export function AccountSetupPage({
                     <>
                       <StepSummary>
                         <p className="text-foreground">
-                          Check your inbox for the verification link.
+                          {resolvedEmail
+                            ? `We sent a verification email to ${resolvedEmail}.`
+                            : 'We sent a verification email to your email address.'}
                         </p>
-                        <p>We&apos;ll keep checking automatically, or you can confirm below.</p>
+                        <p>Open the link in that email to continue.</p>
                       </StepSummary>
 
                       {!isEmailConfigured ? (
@@ -510,7 +715,7 @@ export function AccountSetupPage({
                           <Button
                             type="button"
                             variant="outline"
-                            className="w-full"
+                            className="w-full border-border/60 text-muted-foreground hover:text-foreground"
                             onClick={() => void handleResendVerificationEmail()}
                             disabled={isResending || resendCooldownSeconds > 0}
                           >
@@ -523,7 +728,7 @@ export function AccountSetupPage({
                               ? 'Sending email'
                               : resendCooldownSeconds > 0
                                 ? `Resend in ${resendCooldownSeconds}s`
-                                : 'Resend verification email'}
+                                : 'Send a new verification email'}
                           </Button>
                         ) : null}
                       </div>
@@ -550,7 +755,7 @@ export function AccountSetupPage({
 
               <ProgressAccordionStep
                 step={2}
-                title="Add a passkey or authenticator"
+                title="Set up MFA"
                 detail={
                   viewModel.securityStepComplete
                     ? 'Complete'
@@ -558,7 +763,7 @@ export function AccountSetupPage({
                       ? 'Current step'
                       : viewModel.currentStep === 2
                         ? 'Current step'
-                        : 'Locked until email is verified'
+                        : 'Available after verification'
                 }
                 state={viewModel.isAwaitingSignInAfterVerification ? 'current' : stepTwoState}
               >
@@ -570,7 +775,11 @@ export function AccountSetupPage({
                           ? `${resolvedEmail} is verified.`
                           : 'Your email is verified.'}
                       </p>
-                      <p>Sign in again to continue to passkey or authenticator setup.</p>
+                      <p>
+                        {isContinuingSession
+                          ? 'Trying to continue automatically.'
+                          : 'Sign in to continue to MFA setup.'}
+                      </p>
                     </StepSummary>
 
                     <Button asChild className="w-full">
@@ -596,33 +805,73 @@ export function AccountSetupPage({
                 ) : stepTwoState === 'current' ? (
                   <>
                     <StepSummary>
-                      <p className="text-foreground">
-                        Add a passkey for the strongest and fastest setup on this device.
+                      <p className="font-normal text-muted-foreground">
+                        {needsFreshSignInForPasskey
+                          ? 'Passkey setup requires a recent sign-in.'
+                          : 'Passkeys are recommended on this device.'}
                       </p>
-                      <p>Authenticator apps remain available as a supported fallback.</p>
                     </StepSummary>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="flex flex-col gap-3">
                       {viewModel.canAddPasskey ? (
-                        <Button type="button" onClick={() => void handleAddPasskey()}>
-                          {isAddingPasskey ? (
-                            <Loader2 className="size-4 animate-spin" />
-                          ) : (
-                            <ShieldCheck className="size-4" />
-                          )}
-                          {isAddingPasskey ? 'Adding passkey' : 'Add passkey'}
-                        </Button>
+                        needsFreshSignInForPasskey ? (
+                          <Button asChild className="w-full">
+                            <Link
+                              to="/login"
+                              search={
+                                resolvedEmail
+                                  ? {
+                                      email: resolvedEmail,
+                                      ...(redirectTarget !== '/app'
+                                        ? { redirectTo: redirectTarget }
+                                        : {}),
+                                    }
+                                  : redirectTarget !== '/app'
+                                    ? { redirectTo: redirectTarget }
+                                    : {}
+                              }
+                            >
+                              Sign in again to add passkey
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            className="w-full"
+                            onClick={() => void handleAddPasskey()}
+                          >
+                            {isAddingPasskey ? (
+                              <Loader2 className="size-4 animate-spin" />
+                            ) : (
+                              <ShieldCheck className="size-4" />
+                            )}
+                            {isAddingPasskey ? 'Adding passkey' : 'Add passkey'}
+                          </Button>
+                        )
+                      ) : null}
+                      {viewModel.canAddPasskey && viewModel.canAddAuthenticator ? (
+                        <div className="flex items-center gap-3 text-xs uppercase tracking-[0.18em] text-muted-foreground/70">
+                          <div className="h-px flex-1 bg-border/70" />
+                          <span>or</span>
+                          <div className="h-px flex-1 bg-border/70" />
+                        </div>
                       ) : null}
                       {viewModel.canAddAuthenticator ? (
                         <Button
                           type="button"
                           variant="outline"
-                          onClick={() => {
-                            setError(null);
-                            setIsTwoFactorDialogOpen(true);
-                          }}
+                          className="w-full"
+                          onClick={() => void handleEnableAuthenticator()}
+                          disabled={isSubmittingTwoFactor}
                         >
-                          Use authenticator app instead
+                          {isSubmittingTwoFactor ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <KeyRound className="size-4" />
+                          )}
+                          {isSubmittingTwoFactor
+                            ? 'Preparing authenticator app'
+                            : 'Use authenticator app'}
                         </Button>
                       ) : null}
                     </div>
@@ -633,47 +882,6 @@ export function AccountSetupPage({
           </CardContent>
         </Card>
       </AuthRouteShell>
-
-      <Dialog open={isTwoFactorDialogOpen} onOpenChange={setIsTwoFactorDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Set up authenticator app</DialogTitle>
-            <DialogDescription>
-              Enter your password to start authenticator-based multi-factor setup.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <label htmlFor="account-setup-two-factor-password" className="text-sm text-foreground">
-              Password
-            </label>
-            <Input
-              id="account-setup-two-factor-password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Password"
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setIsTwoFactorDialogOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void handleEnableAuthenticator()}
-              disabled={isSubmittingTwoFactor}
-            >
-              {isSubmittingTwoFactor ? <Loader2 className="size-4 animate-spin" /> : null}
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={isBackupCodesOpen} onOpenChange={setIsBackupCodesOpen}>
         <DialogContent className="sm:max-w-2xl">
@@ -688,6 +896,9 @@ export function AccountSetupPage({
             After this, you&apos;ll confirm the 6-digit code from your authenticator app to finish
             security setup.
           </p>
+          {backupCodesMessage ? (
+            <p className="text-sm text-muted-foreground">{backupCodesMessage}</p>
+          ) : null}
           <div className="grid grid-cols-2 gap-2">
             {backupCodes.map((code) => (
               <div
@@ -698,9 +909,25 @@ export function AccountSetupPage({
               </div>
             ))}
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => void handleCopyBackupCodes()}
+                aria-label={didCopyBackupCodes ? 'Backup codes copied' : 'Copy codes'}
+                title={didCopyBackupCodes ? 'Copied' : 'Copy codes'}
+              >
+                {didCopyBackupCodes ? <Check className="size-4" /> : <Copy className="size-4" />}
+                Copy codes
+              </Button>
+              <Button type="button" variant="outline" onClick={handleDownloadBackupCodes}>
+                <Download className="size-4" />
+                Download codes
+              </Button>
+            </div>
             <Button type="button" onClick={handleContinueToAuthenticator}>
-              Continue to authenticator setup
+              Continue
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -751,11 +978,6 @@ function ProgressAccordionStep({
           <p className="text-xs text-muted-foreground">{detail}</p>
         </div>
         <div className="flex items-center gap-3">
-          {isExpanded ? (
-            <Badge variant="secondary" className="shrink-0 rounded-full px-3 py-1">
-              {badgeLabel}
-            </Badge>
-          ) : null}
           {state === 'upcoming' ? (
             <Badge variant="outline" className="shrink-0 rounded-full px-3 py-1">
               <LockKeyhole className="h-3.5 w-3.5" />

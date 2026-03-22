@@ -1,7 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useForm } from '@tanstack/react-form';
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
-import { Lock, Mail, ShieldCheck, User } from 'lucide-react';
+import { Loader2, Lock, Mail, User } from 'lucide-react';
 import { useEffect, useId, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
@@ -9,12 +8,13 @@ import { ClientOnly } from '~/components/ClientOnly';
 import { Button } from '~/components/ui/button';
 import { Field, FieldLabel } from '~/components/ui/field';
 import { InputGroup, InputGroupIcon, InputGroupInput } from '~/components/ui/input-group';
-import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
+import { authClient } from '~/features/auth/auth-client';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
-import { useAuthState } from '~/features/auth/hooks/useAuthState';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
   getAccountSetupHref,
+  normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
 
@@ -38,12 +38,13 @@ function RegisterPage() {
   const nameId = `${uid}-name`;
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
-  const { isAuthenticated, isPending } = useAuthState();
+  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup, user } =
+    useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
+  const redirectTarget = normalizeAppRedirectTarget(redirectTo);
 
   const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [isCompletingSignup, setIsCompletingSignup] = useState(false);
 
   const form = useForm({
     defaultValues: {
@@ -53,7 +54,7 @@ function RegisterPage() {
     },
     onSubmit: async ({ value }) => {
       setError('');
-      setSuccessMessage('');
+      setIsCompletingSignup(true);
       const { email, password, name } = value;
 
       // Validate form fields
@@ -98,6 +99,7 @@ function RegisterPage() {
       // Show validation errors if any
       if (errors.length > 0) {
         setError(errors.join('. '));
+        setIsCompletingSignup(false);
         return;
       }
 
@@ -116,30 +118,24 @@ function RegisterPage() {
             throw: true,
           },
         });
-        await refreshAuthClientSession(queryClient);
 
         try {
-          const bootstrapResult = await bootstrapSignedUpUserServerFn({
+          await bootstrapSignedUpUserServerFn({
             data: {
               authUserId: signUpResult.user.id,
               email: signUpResult.user.email,
             },
           });
-
-          setSuccessMessage(bootstrapResult.message);
-          setTimeout(() => {
-            if (typeof window === 'undefined') {
-              return;
-            }
-
+          if (typeof window !== 'undefined') {
             window.location.assign(
               getAccountSetupHref({
                 email,
                 redirectTo,
               }),
             );
-          }, 1200);
+          }
         } catch {
+          setIsCompletingSignup(false);
           setError(
             'Your account may have been created, but setup did not finish cleanly. Sign in with this email to resume account setup.',
           );
@@ -154,6 +150,7 @@ function RegisterPage() {
           }, 1600);
         }
       } catch (error: unknown) {
+        setIsCompletingSignup(false);
         if (import.meta.env.DEV) {
           console.error('[Register] signUp.email failed:', error);
         }
@@ -183,10 +180,29 @@ function RegisterPage() {
       return;
     }
 
-    void navigate({ to: '/app', replace: true });
-  }, [isAuthenticated, navigate]);
+    if (requiresEmailVerification || requiresMfaSetup) {
+      void navigate({
+        to: '/account-setup',
+        search: {
+          ...(user?.email ? { email: user.email } : {}),
+          ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+        },
+        replace: true,
+      });
+      return;
+    }
 
-  if (isPending || isAuthenticated) {
+    void navigate({ to: redirectTarget, replace: true });
+  }, [
+    isAuthenticated,
+    navigate,
+    redirectTarget,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    user?.email,
+  ]);
+
+  if ((isPending || isAuthenticated) && !isCompletingSignup) {
     return <AuthSkeleton />;
   }
 
@@ -238,17 +254,6 @@ function RegisterPage() {
             {error && (
               <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
                 {error}
-              </div>
-            )}
-            {successMessage && (
-              <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-3 rounded">
-                {successMessage}
-                {successMessage.includes('Admin') && (
-                  <div className="mt-2 text-sm flex items-center">
-                    <ShieldCheck className="h-4 w-4 mr-1" />
-                    You have been granted administrator privileges as the first user!
-                  </div>
-                )}
               </div>
             )}
             <form.Field name="name">
@@ -338,8 +343,17 @@ function RegisterPage() {
             </form.Field>
             <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
               {([canSubmit, isSubmitting]) => (
-                <Button type="submit" disabled={!canSubmit} className="w-full">
-                  {isSubmitting ? 'Creating account...' : 'Create account'}
+                <Button
+                  type="submit"
+                  disabled={!canSubmit || isCompletingSignup}
+                  className="w-full"
+                >
+                  {isSubmitting || isCompletingSignup ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : null}
+                  {isSubmitting || isCompletingSignup
+                    ? 'Creating your account...'
+                    : 'Create account'}
                 </Button>
               )}
             </form.Subscribe>

@@ -51,6 +51,18 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
     ).toBe('https://app.example.com/reset-password?token=abc');
   });
 
+  it('normalizes loopback auth email urls to localhost for local happy-path flows', async () => {
+    process.env.BETTER_AUTH_URL = 'http://localhost:3000';
+    const { resolveAuthEmailUrl } = await import('./lib/betterAuthEmailServices');
+
+    expect(
+      resolveAuthEmailUrl(
+        '/verify-email?token=abc',
+        new Request('http://127.0.0.1:3000/api/auth/send-verification-email'),
+      ),
+    ).toBe('http://localhost:3000/verify-email?token=abc');
+  });
+
   it('schedules the change-email confirmation mutation with the normalized payload', async () => {
     process.env.BETTER_AUTH_URL = 'https://app.example.com';
     process.env.BETTER_AUTH_PREVIEW_HOSTS = 'preview.example.com';
