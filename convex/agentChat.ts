@@ -39,7 +39,7 @@ import {
   ensureThreadId,
   resolveChatModelId,
 } from './lib/agentChat';
-import { baseChatAgent } from './lib/chatAgentRuntime';
+import { getBaseChatAgent } from './lib/chatAgentRuntime';
 import {
   type AdvisoryChatRateLimit,
   buildChatUsageAggregatePatch,
@@ -1596,7 +1596,7 @@ export const sendMessage = mutation({
       ...(userMessage.fileIds.length > 0 ? { fileIds: userMessage.fileIds } : {}),
       ...(args.clientMessageId ? { clientMessageId: args.clientMessageId } : {}),
     };
-    const savedPrompt = await baseChatAgent.saveMessages(ctx, {
+    const savedPrompt = await getBaseChatAgent().saveMessages(ctx, {
       threadId: thread.agentThreadId,
       userId,
       messages: [userMessage.message],

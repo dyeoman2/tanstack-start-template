@@ -7,10 +7,10 @@ vi.mock('@convex-dev/agent', () => ({
 }));
 
 vi.mock('./lib/chatAgentRuntime', () => ({
-  baseChatAgent: {
-    createThread: vi.fn(),
-  },
   buildChatRequestConfig: vi.fn(),
+  getBaseChatAgent: vi.fn(() => ({
+    createThread: vi.fn(),
+  })),
 }));
 
 let isValidContinuationPromptMessage: typeof import('./agentChatActions').isValidContinuationPromptMessage;

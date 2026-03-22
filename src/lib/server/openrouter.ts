@@ -51,6 +51,10 @@ export function getOpenRouterConfig(): OpenRouterConfig {
   };
 }
 
+export function hasOpenRouterConfig() {
+  return Boolean(process.env.OPENROUTER_API_KEY?.trim());
+}
+
 export function getOpenRouterAttributionHeaders() {
   const siteUrl = process.env.BETTER_AUTH_URL?.trim();
   const siteName = process.env.APP_NAME?.trim();

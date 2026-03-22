@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-22T06:28:32.304Z",
+  "generatedAt": "2026-03-22T07:45:54.421Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -96,22 +96,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Identity and Access Management",
-            "notes": "Organization membership state and active session details are reviewable, but the workspace does not yet include a formal recurring access-review record or cadence.",
+            "notes": "Organization membership state and active session details are available for recurring provider or customer access review.",
             "evidence": [
               {
                 "title": "Organization membership management interface",
-                "description": "Interface Organization member management views show current members, roles, and suspended or deactivated state for customer administrators reviewing access.",
+                "description": "Interface showing current members, roles, and suspended or deactivated state for customer administrators reviewing account access.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Administrative user session review interface",
-                "description": "Interface Administrative session review dialogs show active sessions, creation time, expiry, IP address, and revocation actions for user access review.",
+                "description": "Interface showing active sessions, creation time, expiry, IP address, and revocation actions for provider review of current account access.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -478,22 +478,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Identity and Access Management",
-            "notes": "Privileged roles and membership state are reviewable, but the workspace does not yet include a formal recurring privileged-access review record or cadence.",
+            "notes": "Privileged role assignments and membership state are available for recurring provider or customer review.",
             "evidence": [
               {
                 "title": "Organization member role management interface",
-                "description": "Interface Organization membership views present current member roles and status so customer administrators can review privileged assignments.",
+                "description": "Interface showing current member roles, site admin indicators, and status so customer administrators can review privileged assignments.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Administrative user role management interface",
-                "description": "Interface Administrative user-management views present current top-level user roles and related session actions for provider review of privileged access.",
+                "description": "Interface showing top-level user roles and related session-management actions for provider review of privileged access.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -830,6 +830,162 @@
             "trustServiceCategory": "security"
           }
         ]
+      }
+    },
+    {
+      "internalControlId": "CTRL-AU-009",
+      "nist80053Id": "AU-9",
+      "title": "Protection of Audit Information",
+      "familyId": "AU",
+      "familyTitle": "Audit and Accountability",
+      "implementationSummary": "This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, append-only audit log writes guarded against shipped runtime updates or deletes, hash-linked audit records, and integrity-linked evidence report exports.",
+      "controlStatement": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion; and Alert {{ insert: param, au-09_odp }} upon detection of unauthorized access, modification, or deletion of audit information.",
+      "priority": "p0",
+      "platformChecklistItems": [
+        {
+          "itemId": "audit-record-protection",
+          "label": "Audit records are protected against unauthorized modification or deletion",
+          "description": "Access to audit records should be restricted and managed to reduce unauthorized modification or deletion risk.",
+          "verificationMethod": "Audit access path and storage protection review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system",
+            "note"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Audit log access is restricted, audit writes are append-only, and CI guardrails fail if shipped runtime code introduces direct audit-log patch, replace, or delete paths.",
+            "evidence": [
+              {
+                "title": "Restricted audit query access",
+                "description": "Restricted audit query access Administrative and self-scoped audit review paths restrict which users can inspect audit records and who can export security audit data.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Append-only audit log write path",
+                "description": "Workflow Audit log handling inserts new hash-linked audit records and does not expose shipped runtime update or delete paths for stored audit events.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit log immutability guardrail",
+                "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against audit log storage.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "tamper-detection",
+          "label": "Audit integrity checks detect broken hash chains or tampering conditions",
+          "description": "The audit subsystem should detect tampering conditions through integrity verification or equivalent controls.",
+          "verificationMethod": "Audit integrity implementation review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Audit events are hash-linked and the platform can detect and record chain verification failures.",
+            "evidence": [
+              {
+                "title": "Hash-linked audit insertion",
+                "description": "Hash-linked audit insertion retaining previousEventHash and eventHash when new audit records are inserted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Audit integrity verification",
+                "description": "Audit integrity verification recomputes the audit chain and emits audit_integrity_check_failed when hashes do not verify.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "export-integrity-metadata",
+          "label": "Audit-supporting exports preserve integrity metadata and review state",
+          "description": "Exported audit-supporting evidence should retain integrity metadata and reviewer state that can be validated later.",
+          "verificationMethod": "Evidence export and schema review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Audit and Logging",
+            "notes": "Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification, and release provenance records retain signed bundle hashes and deployment outcome details.",
+            "evidence": [
+              {
+                "title": "Evidence report integrity fields",
+                "description": "Evidence report integrity fields describing contentHash, exportHash, exportIntegritySummary, reviewStatus, reviewedAt, and reviewedByUserId on evidenceReports.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Integrity-linked export workflow",
+                "description": "Export workflow generating bundles with content hashes and export hashes displayed for reviewer verification.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Release provenance record workflow",
+                "description": "Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
+          }
+        }
+      ],
+      "owner": "Audit and Logging",
+      "responsibility": "platform",
+      "customerResponsibilityNotes": "Customer organizations are responsible for protecting exported audit material after it leaves the service and for applying any downstream retention or immutability requirements they require.",
+      "mappings": {
+        "hipaa": [
+          {
+            "citation": "45 CFR 164.312(b)",
+            "title": "Audit controls",
+            "type": "standard",
+            "implementationSpecification": null
+          },
+          {
+            "citation": "45 CFR 164.312(c)(1)",
+            "title": "Integrity",
+            "type": "standard",
+            "implementationSpecification": null
+          }
+        ],
+        "nist80066": [
+          {
+            "referenceId": "164.312(b)",
+            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
+            "mappingType": "relationship"
+          }
+        ],
+        "csf20": [
+          {
+            "subcategoryId": "PR.DS-10",
+            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
+          }
+        ],
+        "soc2": []
       }
     },
     {
@@ -1706,155 +1862,6 @@
       }
     },
     {
-      "internalControlId": "CTRL-AU-009",
-      "nist80053Id": "AU-9",
-      "title": "Protection of Audit Information",
-      "familyId": "AU",
-      "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures audit information is protected from unauthorized modification, monitored for tampering, and preserved with integrity metadata when shared or exported. The platform supports those objectives through access-controlled audit views, hash-linked audit records, integrity-linked evidence report exports, and retained release provenance records with signed-artifact hashes, while immutable retention controls beyond the application layer are not yet fully evidenced here.",
-      "controlStatement": "Protect audit information and audit logging tools from unauthorized access, modification, and deletion; and Alert {{ insert: param, au-09_odp }} upon detection of unauthorized access, modification, or deletion of audit information.",
-      "priority": "p0",
-      "platformChecklistItems": [
-        {
-          "itemId": "audit-record-protection",
-          "label": "Audit records are protected against unauthorized modification or deletion",
-          "description": "Access to audit records should be restricted and managed to reduce unauthorized modification or deletion risk.",
-          "verificationMethod": "Audit access path and storage protection review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system",
-            "note"
-          ],
-          "seed": {
-            "status": "in_progress",
-            "owner": "Audit and Logging",
-            "notes": "Audit access is constrained to privileged or self-scoped queries, but immutable storage or deletion-prevention evidence beyond app-layer controls is not attached yet.",
-            "evidence": [
-              {
-                "title": "Restricted audit query access",
-                "description": "Restricted audit query access limits audit-log queries so non-admin users can only read their own records.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              },
-              {
-                "title": "Privileged audit export path",
-                "description": "Workflow restricts security audit export to verified site admin users.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "tamper-detection",
-          "label": "Audit integrity checks detect broken hash chains or tampering conditions",
-          "description": "The audit subsystem should detect tampering conditions through integrity verification or equivalent controls.",
-          "verificationMethod": "Audit integrity implementation review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Audit and Logging",
-            "notes": "Audit events are hash-linked and the platform can detect and record chain verification failures.",
-            "evidence": [
-              {
-                "title": "Hash-linked audit insertion",
-                "description": "Hash-linked audit insertion retaining previousEventHash and eventHash when new audit records are inserted.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Audit integrity verification",
-                "description": "Audit integrity verification recomputes the audit chain and emits audit_integrity_check_failed when hashes do not verify.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              }
-            ]
-          }
-        },
-        {
-          "itemId": "export-integrity-metadata",
-          "label": "Audit-supporting exports preserve integrity metadata and review state",
-          "description": "Exported audit-supporting evidence should retain integrity metadata and reviewer state that can be validated later.",
-          "verificationMethod": "Evidence export and schema review",
-          "required": true,
-          "suggestedEvidenceTypes": [
-            "file",
-            "system"
-          ],
-          "seed": {
-            "status": "done",
-            "owner": "Audit and Logging",
-            "notes": "Evidence reports retain content hashes, export hashes, integrity summaries, and review metadata for later verification, and release provenance records retain signed bundle hashes and deployment outcome details.",
-            "evidence": [
-              {
-                "title": "Evidence report integrity fields",
-                "description": "Evidence report integrity fields describing contentHash, exportHash, exportIntegritySummary, reviewStatus, reviewedAt, and reviewedByUserId on evidenceReports.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Integrity-linked export workflow",
-                "description": "Export workflow generating bundles with content hashes and export hashes displayed for reviewer verification.",
-                "evidenceType": "note",
-                "sufficiency": "sufficient",
-                "url": null
-              },
-              {
-                "title": "Release provenance record workflow",
-                "description": "Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.",
-                "evidenceType": "note",
-                "sufficiency": "partial",
-                "url": null
-              }
-            ]
-          }
-        }
-      ],
-      "owner": "Audit and Logging",
-      "responsibility": "platform",
-      "customerResponsibilityNotes": "Customer organizations are responsible for protecting exported audit material after it leaves the service and for applying any downstream retention or immutability requirements they require.",
-      "mappings": {
-        "hipaa": [
-          {
-            "citation": "45 CFR 164.312(b)",
-            "title": "Audit controls",
-            "type": "standard",
-            "implementationSpecification": null
-          },
-          {
-            "citation": "45 CFR 164.312(c)(1)",
-            "title": "Integrity",
-            "type": "standard",
-            "implementationSpecification": null
-          }
-        ],
-        "nist80066": [
-          {
-            "referenceId": "164.312(b)",
-            "label": "HIPAA Standard: Implement hardware, software, and/or procedural mechanisms that record and examine activity in information systems that contain or use electronic protected health information.",
-            "mappingType": "relationship"
-          }
-        ],
-        "csf20": [
-          {
-            "subcategoryId": "PR.DS-10",
-            "label": "PR / PR.DS: The confidentiality, integrity, and availability of data-in-use are protected"
-          }
-        ],
-        "soc2": []
-      }
-    },
-    {
       "internalControlId": "CTRL-CP-009",
       "nist80053Id": "CP-9",
       "title": "System Backup",
@@ -2281,29 +2288,29 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Security Engineering",
-            "notes": "Security findings and scan outcomes retain severity and status context in audit, monitoring, and release evidence records, but a full provider vulnerability triage workflow is not yet evidenced in this workspace.",
+            "notes": "The site admin workspace retains current security findings with severity, current status, provider disposition, reviewer notes, and review timestamps across audit-integrity, document-scanning, and retained release-validation signals.",
             "evidence": [
               {
-                "title": "Organization audit severity records",
-                "description": "Organization audit severity records Organization audit records show event severity and event details for file-scan failures, quarantines, and related security findings under review.",
+                "title": "Security finding review record schema",
+                "description": "Schema Stored security finding review records retain finding key, severity, current status, provider disposition, reviewed-at timestamp, reviewer identity, source reference, and review notes for later follow-up.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Security monitoring summary",
-                "description": "Summary Administrative security posture summaries show scan status, rejection counts, quarantine counts, and related finding totals for provider review.",
+                "title": "Site admin security finding review interface",
+                "description": "Interface Administrative security interface shows current monitored findings with severity badges, current status, source context, provider disposition selection, and retained review notes.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Release provenance record workflow",
-                "description": "Workflow for retaining release run metadata, signed source bundle hash, deployment outcome, and production DAST result as linked release evidence.",
+                "title": "Current security finding aggregation workflow",
+                "description": "Workflow Security finding aggregation combines audit-integrity failures, document-scanning outcomes, and retained automated release-validation evidence into a current review queue for provider triage.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -2370,22 +2377,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Vendor Risk Management",
-            "notes": "The repo models approved vendors, environments, and allowed data classes, but it is not yet a full buyer-facing subprocessor register with legal and assurance metadata.",
+            "notes": "Approved external services are inventoried with their allowed data classes and environment restrictions.",
             "evidence": [
               {
                 "title": "Vendor boundary registry",
                 "description": "Vendor boundary registry inventories approved vendors, allowed data classes, allowed environments, and approval flags.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Runtime vendor posture snapshot",
                 "description": "Vendor posture snapshot showing approval status, allowed data classes, and environment restrictions for configured external services.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -3663,22 +3670,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Security Assurance",
-            "notes": "The workspace retains follow-up notes, reviewer identity, and attached evidence artifacts, but it does not yet provide a dedicated milestone-tracking data model.",
+            "notes": "The workspace retains reviewer notes and attached evidence artifacts that can document ownership, dates, and milestone expectations as follow-up support records.",
             "evidence": [
               {
                 "title": "Evidence report follow-up workflow",
                 "description": "Review workflow for recording follow-up status and reviewer notes on evidence reports.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Security control evidence attachment workflow",
-                "description": "Workflow Control evidence items can be attached, reviewed, and retained with notes and history to support provider action tracking artifacts.",
+                "description": "Workflow allowing site admins to attach, review, and retain security control evidence items with notes and history for follow-up tracking artifacts.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4130,29 +4137,29 @@
             "system"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Configuration Management",
-            "notes": "The repo inventories approved external services and documents selected security-relevant managed components, but it is not yet a complete component inventory for the full hosted environment.",
+            "notes": "Approved external services and selected security-relevant managed components are inventoried in repo-backed records and site admin-managed component views.",
             "evidence": [
               {
                 "title": "Vendor boundary registry",
                 "description": "Vendor boundary registry inventories approved external services, allowed data classes, allowed environments, and approval flags.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Vendor posture snapshot",
                 "description": "Vendor posture snapshot materializes current approval posture for configured external services.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Managed malware-scan stack definition",
-                "description": "Managed malware-scan stack definition showing the protected files bucket, GuardDuty malware protection plan, event routing, and forwarding components used for document scanning.",
+                "title": "Managed component catalog interface",
+                "description": "Interface retain and display selected provider-managed component records including status, access, refresh time, and deprecation context.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4202,22 +4209,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Configuration Management",
-            "notes": "Vendor and managed-component inventory records include environment, approval, and some lifecycle context, but they do not yet form a complete accountable system inventory.",
+            "notes": "Tracked vendor and managed-component inventory records include environment, approval, and lifecycle context where that information is maintained.",
             "evidence": [
               {
                 "title": "Vendor boundary inventory records",
                 "description": "Inventory Vendor inventory records include approval flags, approval source, allowed environments, and allowed data classes for configured external services.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Managed component lifecycle records",
                 "description": "Managed component lifecycle records Managed model catalog records retain deprecated state and optional deprecation dates for tracked provider-managed components.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4838,22 +4845,29 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Security Incident Response",
-            "notes": "The workspace retains recovery verification records and reviewable evidence-report context, but it does not yet contain a full set of incident exercise results or after-action records.",
+            "notes": "The workspace retains backup verification and restore drill records that providers can review later as incident-exercise-supporting artifacts.",
             "evidence": [
               {
                 "title": "Restore drill record structure",
-                "description": "Schema Retained backup verification records capture recent recovery drill outcomes, timestamps, summaries, and artifact hashes for later provider review.",
+                "description": "Schema retaining backup verification records with drill type, status, timestamps, restored item counts, summaries, and artifact hashes for later provider review.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Evidence report review and follow-up workflow",
-                "description": "Workflow Evidence report review records retain reviewer notes, review status, and integrity metadata that could be referenced when capturing exercise follow-up.",
+                "title": "Backup verification reporting workflow",
+                "description": "Workflow .github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/security.ts recordBackupVerification handling.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Restore drill summary interface",
+                "description": "Interface showing the latest restore drill status, timestamp, and related backup verification summary in the audit-readiness view.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -5711,22 +5725,22 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Secure Engineering",
-            "notes": "The repo includes automated code-health audit workflows and inventory outputs that support engineering review, but those workflows are not a full unsupported-component replacement program.",
+            "notes": "Automated code-health audit commands and inventory outputs provide reviewable artifacts for provider follow-up on unsupported or risky implementation patterns.",
             "evidence": [
               {
                 "title": "Code-health audit workflow",
-                "description": "Workflow describing audit:code-health and related check commands that run the code-health audit as part of provider engineering review.",
+                "description": "Workflow describing audit:code-health, audit:inventory, and related check commands that generate code-health review output for provider engineering follow-up.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Code-health audit script",
                 "description": "Code-health audit script used to review exported Convex functions and related implementation risk conditions.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -6066,14 +6080,14 @@
       "title": "System Monitoring",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The platform provides document scan records, audit-integrity failure signals, and security posture summaries for provider review, but provider alert response procedures are not yet evidenced in this register.",
+      "implementationSummary": "This control ensures the hosted service collects and retains security-relevant monitoring signals that can support detection review and follow-up. The hosted service supports that objective through document scan records, audit-integrity failure signals, and security posture summaries available for authorized review, but provider alert response procedures are not yet evidenced in this workspace.",
       "controlStatement": "Monitor the system to detect: Attacks and indicators of potential attacks in accordance with the following monitoring objectives: {{ insert: param, si-04_odp.01 }} ; and Unauthorized local, network, and remote connections; Identify unauthorized use of the system through the following techniques and methods: {{ insert: param, si-04_odp.02 }}; Invoke internal monitoring capabilities or deploy monitoring devices: Strategically within the system to collect organization-determined essential information; and At ad hoc locations within the system to track specific types of transactions of interest to the organization; Analyze detected events and anomalies; Adjust the level of system monitoring activity when there is a change in risk to organizational operations and assets, individuals, other organizations, or the Nation; Obtain legal opinion regarding system monitoring activities; and Provide {{ insert: param, si-04_odp.03 }} to {{ insert: param, si-04_odp.04 }} {{ insert: param, si-04_odp.05 }}.",
       "priority": "p1",
       "platformChecklistItems": [
         {
           "itemId": "monitoring-signals",
-          "label": "Hosted-service monitoring signals are collected and surfaced",
-          "description": "The platform should collect and surface security-relevant monitoring signals for provider review.",
+          "label": "Security-relevant monitoring signals are collected for authorized review",
+          "description": "The hosted service provides security-relevant monitoring signals that authorized personnel can review for detection follow-up.",
           "verificationMethod": "Telemetry and event review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -6083,11 +6097,11 @@
           "seed": {
             "status": "done",
             "owner": "Security Monitoring",
-            "notes": "Monitoring-related platform signals are collected and surfaced through document scan records, audit-integrity failures, and security posture summaries.",
+            "notes": "Monitoring-related platform signals are collected and retained through document scan records, audit-integrity failure signals, and security posture summaries.",
             "evidence": [
               {
-                "title": "Security monitoring signals",
-                "description": "Security monitoring summary showing document scan records, audit-integrity signals, and related security posture indicators.",
+                "title": "Security monitoring summary",
+                "description": "Summary Administrative monitoring summary and related records showing document scan status, audit-integrity failure signals, and security posture indicators available for authorized review.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

@@ -90,6 +90,49 @@ const securityPostureSummaryValidator = v.object({
   ),
 });
 
+const securityFindingTypeValidator = v.union(
+  v.literal('audit_integrity_failures'),
+  v.literal('document_scan_quarantines'),
+  v.literal('document_scan_rejections'),
+  v.literal('release_security_validation'),
+);
+const securityFindingSeverityValidator = v.union(
+  v.literal('info'),
+  v.literal('warning'),
+  v.literal('critical'),
+);
+const securityFindingStatusValidator = v.union(v.literal('open'), v.literal('resolved'));
+const securityFindingDispositionValidator = v.union(
+  v.literal('pending_review'),
+  v.literal('investigating'),
+  v.literal('accepted_risk'),
+  v.literal('false_positive'),
+  v.literal('resolved'),
+);
+const securityFindingSourceTypeValidator = v.union(
+  v.literal('audit_log'),
+  v.literal('security_metric'),
+  v.literal('security_control_evidence'),
+);
+const securityFindingListItemValidator = v.object({
+  description: v.string(),
+  disposition: securityFindingDispositionValidator,
+  findingKey: v.string(),
+  findingType: securityFindingTypeValidator,
+  firstObservedAt: v.number(),
+  lastObservedAt: v.number(),
+  reviewNotes: v.union(v.string(), v.null()),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByDisplay: v.union(v.string(), v.null()),
+  severity: securityFindingSeverityValidator,
+  sourceLabel: v.string(),
+  sourceRecordId: v.union(v.string(), v.null()),
+  sourceType: securityFindingSourceTypeValidator,
+  status: securityFindingStatusValidator,
+  title: v.string(),
+});
+const securityFindingListValidator = v.array(securityFindingListItemValidator);
+
 const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
   'application/json',
   'application/pdf',
@@ -504,6 +547,8 @@ const auditReadinessSnapshotValidator = v.object({
 });
 const EXPORT_ARTIFACT_SCHEMA_VERSION = '2026-03-18.audit-evidence.v1';
 const BACKUP_DRILL_STALE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const RELEASE_PROVENANCE_CONTROL_ID = 'CTRL-CM-003';
+const RELEASE_PROVENANCE_ITEM_ID = 'controlled-change-path';
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -841,6 +886,158 @@ async function _getSecurityMetricsSnapshot(ctx: QueryCtx) {
     updatedAt: latestScan?.createdAt ?? null,
     key: SECURITY_METRICS_KEY,
   };
+}
+
+type SecurityFindingSnapshot = {
+  description: string;
+  findingKey: string;
+  findingType:
+    | 'audit_integrity_failures'
+    | 'document_scan_quarantines'
+    | 'document_scan_rejections'
+    | 'release_security_validation';
+  firstObservedAt: number;
+  lastObservedAt: number;
+  severity: 'info' | 'warning' | 'critical';
+  sourceLabel: string;
+  sourceRecordId: string | null;
+  sourceType: 'audit_log' | 'security_metric' | 'security_control_evidence';
+  status: 'open' | 'resolved';
+  title: string;
+};
+
+function compareSecurityFindingSeverity(
+  severity: 'info' | 'warning' | 'critical',
+  other: 'info' | 'warning' | 'critical',
+) {
+  const rank = {
+    info: 0,
+    warning: 1,
+    critical: 2,
+  } as const;
+
+  return rank[other] - rank[severity];
+}
+
+async function buildCurrentSecurityFindings(ctx: QueryCtx): Promise<SecurityFindingSnapshot[]> {
+  const metrics = await _getSecurityMetricsSnapshot(ctx);
+  const referenceTime = Date.now();
+  const [integrityFailures, latestIntegrityFailure, releaseEvidenceRows] = await Promise.all([
+    countQueryResults(
+      ctx.db
+        .query('auditLogs')
+        .withIndex('by_eventType_and_createdAt', (q) =>
+          q.eq('eventType', 'audit_integrity_check_failed'),
+        ),
+    ),
+    ctx.db
+      .query('auditLogs')
+      .withIndex('by_eventType_and_createdAt', (q) =>
+        q.eq('eventType', 'audit_integrity_check_failed'),
+      )
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('securityControlEvidence')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q
+          .eq('internalControlId', RELEASE_PROVENANCE_CONTROL_ID)
+          .eq('itemId', RELEASE_PROVENANCE_ITEM_ID),
+      )
+      .collect(),
+  ]);
+
+  const findings: SecurityFindingSnapshot[] = [
+    {
+      findingKey: 'audit_integrity_failures',
+      findingType: 'audit_integrity_failures',
+      title: 'Audit integrity monitoring',
+      description:
+        integrityFailures > 0
+          ? `${integrityFailures} audit integrity failure signal${integrityFailures === 1 ? '' : 's'} recorded in the current audit log review set.`
+          : 'No audit integrity failures are present in the current review set.',
+      severity: integrityFailures > 0 ? 'critical' : 'info',
+      status: integrityFailures > 0 ? 'open' : 'resolved',
+      sourceType: 'audit_log',
+      sourceLabel: 'Audit log integrity verification',
+      sourceRecordId: latestIntegrityFailure?._id ?? null,
+      firstObservedAt: latestIntegrityFailure?.createdAt ?? referenceTime,
+      lastObservedAt: latestIntegrityFailure?.createdAt ?? referenceTime,
+    },
+    {
+      findingKey: 'document_scan_quarantines',
+      findingType: 'document_scan_quarantines',
+      title: 'Document scan quarantine monitoring',
+      description:
+        metrics.quarantinedDocumentScans > 0
+          ? `${metrics.quarantinedDocumentScans} quarantined document scan finding${metrics.quarantinedDocumentScans === 1 ? '' : 's'} are retained for provider review.`
+          : 'No quarantined document scan findings are present in the current metrics snapshot.',
+      severity: metrics.quarantinedDocumentScans > 0 ? 'warning' : 'info',
+      status: metrics.quarantinedDocumentScans > 0 ? 'open' : 'resolved',
+      sourceType: 'security_metric',
+      sourceLabel: 'Document scan metrics snapshot',
+      sourceRecordId: null,
+      firstObservedAt: metrics.lastDocumentScanAt ?? referenceTime,
+      lastObservedAt: metrics.lastDocumentScanAt ?? referenceTime,
+    },
+    {
+      findingKey: 'document_scan_rejections',
+      findingType: 'document_scan_rejections',
+      title: 'Document scan rejection monitoring',
+      description:
+        metrics.rejectedDocumentScans > 0
+          ? `${metrics.rejectedDocumentScans} rejected document scan finding${metrics.rejectedDocumentScans === 1 ? '' : 's'} are retained for provider review.`
+          : 'No rejected document scan findings are present in the current metrics snapshot.',
+      severity: metrics.rejectedDocumentScans > 0 ? 'warning' : 'info',
+      status: metrics.rejectedDocumentScans > 0 ? 'open' : 'resolved',
+      sourceType: 'security_metric',
+      sourceLabel: 'Document scan metrics snapshot',
+      sourceRecordId: null,
+      firstObservedAt: metrics.lastDocumentScanAt ?? referenceTime,
+      lastObservedAt: metrics.lastDocumentScanAt ?? referenceTime,
+    },
+  ];
+
+  const latestReleaseEvidence = [...releaseEvidenceRows]
+    .filter(
+      (row) =>
+        row.lifecycleStatus !== 'archived' &&
+        row.lifecycleStatus !== 'superseded' &&
+        row.source === 'automated_system_check',
+    )
+    .sort((left, right) => right.createdAt - left.createdAt)[0];
+
+  if (latestReleaseEvidence) {
+    findings.push({
+      findingKey: 'release_security_validation',
+      findingType: 'release_security_validation',
+      title: 'Release security validation monitoring',
+      description:
+        latestReleaseEvidence.sufficiency === 'partial'
+          ? 'The latest retained release validation evidence includes a partial security outcome that still requires provider follow-up.'
+          : 'The latest retained release validation evidence shows a sufficient security outcome for the monitored release path.',
+      severity: latestReleaseEvidence.sufficiency === 'partial' ? 'warning' : 'info',
+      status: latestReleaseEvidence.sufficiency === 'partial' ? 'open' : 'resolved',
+      sourceType: 'security_control_evidence',
+      sourceLabel: latestReleaseEvidence.title,
+      sourceRecordId: latestReleaseEvidence._id,
+      firstObservedAt: latestReleaseEvidence.evidenceDate ?? latestReleaseEvidence.createdAt,
+      lastObservedAt: latestReleaseEvidence.evidenceDate ?? latestReleaseEvidence.createdAt,
+    });
+  }
+
+  return findings.sort((left, right) => {
+    if (left.status !== right.status) {
+      return left.status === 'open' ? -1 : 1;
+    }
+
+    const severityComparison = compareSecurityFindingSeverity(left.severity, right.severity);
+    if (severityComparison !== 0) {
+      return severityComparison;
+    }
+
+    return right.lastObservedAt - left.lastObservedAt;
+  });
 }
 
 async function upsertSecurityControlEvidenceActivity(
@@ -1713,6 +1910,182 @@ export async function listSecurityControlEvidenceActivityHandler(
     reviewStatus: log.reviewStatus,
   }));
 }
+
+export async function listSecurityFindingsHandler(ctx: QueryCtx) {
+  await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const currentFindings = await buildCurrentSecurityFindings(ctx);
+  const storedFindingEntries = await Promise.all(
+    currentFindings.map(async (finding) => {
+      const record = await ctx.db
+        .query('securityFindings')
+        .withIndex('by_finding_key', (q) => q.eq('findingKey', finding.findingKey))
+        .unique();
+      return [finding.findingKey, record] as const;
+    }),
+  );
+  const storedFindingByKey = new Map(storedFindingEntries);
+  const reviewedByIds = Array.from(
+    new Set(
+      storedFindingEntries
+        .map(([, record]) => record?.reviewedByUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
+  );
+  const reviewedByProfiles = await Promise.all(
+    reviewedByIds.map(async (authUserId) => {
+      const profile = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+        .first();
+      return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
+    }),
+  );
+  const reviewedByDisplayById = new Map(reviewedByProfiles);
+
+  return currentFindings.map((finding) => {
+    const record = storedFindingByKey.get(finding.findingKey) ?? null;
+    return {
+      description: finding.description,
+      disposition: record?.disposition ?? ('pending_review' as const),
+      findingKey: finding.findingKey,
+      findingType: finding.findingType,
+      firstObservedAt: record
+        ? Math.min(record.firstObservedAt, finding.firstObservedAt)
+        : finding.firstObservedAt,
+      lastObservedAt: Math.max(
+        record?.lastObservedAt ?? finding.lastObservedAt,
+        finding.lastObservedAt,
+      ),
+      reviewNotes: record?.reviewNotes ?? null,
+      reviewedAt: record?.reviewedAt ?? null,
+      reviewedByDisplay: getActorDisplayName(
+        reviewedByDisplayById,
+        record?.reviewedByUserId ?? undefined,
+      ),
+      severity: finding.severity,
+      sourceLabel: finding.sourceLabel,
+      sourceRecordId: finding.sourceRecordId,
+      sourceType: finding.sourceType,
+      status: finding.status,
+      title: finding.title,
+    };
+  });
+}
+
+export const listSecurityFindings = query({
+  args: {},
+  returns: securityFindingListValidator,
+  handler: listSecurityFindingsHandler,
+});
+
+export async function reviewSecurityFindingHandler(
+  ctx: MutationCtx,
+  args: {
+    disposition:
+      | 'accepted_risk'
+      | 'false_positive'
+      | 'investigating'
+      | 'pending_review'
+      | 'resolved';
+    findingKey: string;
+    reviewNotes?: string;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const finding = (await buildCurrentSecurityFindings(ctx)).find(
+    (entry) => entry.findingKey === args.findingKey,
+  );
+
+  if (!finding) {
+    throw new Error('Security finding not found');
+  }
+
+  const now = Date.now();
+  const existing = await ctx.db
+    .query('securityFindings')
+    .withIndex('by_finding_key', (q) => q.eq('findingKey', args.findingKey))
+    .unique();
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      description: finding.description,
+      disposition: args.disposition,
+      findingType: finding.findingType,
+      firstObservedAt: Math.min(existing.firstObservedAt, finding.firstObservedAt),
+      lastObservedAt: Math.max(existing.lastObservedAt, finding.lastObservedAt),
+      reviewNotes: args.reviewNotes?.trim() || null,
+      reviewedAt: now,
+      reviewedByUserId: currentUser.authUserId,
+      severity: finding.severity,
+      sourceLabel: finding.sourceLabel,
+      sourceRecordId: finding.sourceRecordId,
+      sourceType: finding.sourceType,
+      status: finding.status,
+      title: finding.title,
+      updatedAt: now,
+    });
+  } else {
+    await ctx.db.insert('securityFindings', {
+      description: finding.description,
+      disposition: args.disposition,
+      findingKey: finding.findingKey,
+      findingType: finding.findingType,
+      firstObservedAt: finding.firstObservedAt,
+      lastObservedAt: finding.lastObservedAt,
+      reviewNotes: args.reviewNotes?.trim() || null,
+      reviewedAt: now,
+      reviewedByUserId: currentUser.authUserId,
+      severity: finding.severity,
+      sourceLabel: finding.sourceLabel,
+      sourceRecordId: finding.sourceRecordId,
+      sourceType: finding.sourceType,
+      status: finding.status,
+      title: finding.title,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+
+  const reviewerProfile = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', currentUser.authUserId))
+    .first();
+
+  return {
+    description: finding.description,
+    disposition: args.disposition,
+    findingKey: finding.findingKey,
+    findingType: finding.findingType,
+    firstObservedAt: existing
+      ? Math.min(existing.firstObservedAt, finding.firstObservedAt)
+      : finding.firstObservedAt,
+    lastObservedAt: existing
+      ? Math.max(existing.lastObservedAt, finding.lastObservedAt)
+      : finding.lastObservedAt,
+    reviewNotes: args.reviewNotes?.trim() || null,
+    reviewedAt: now,
+    reviewedByDisplay:
+      reviewerProfile?.name?.trim() ||
+      reviewerProfile?.email?.trim() ||
+      getActorDisplayName(new Map(), currentUser.authUserId),
+    severity: finding.severity,
+    sourceLabel: finding.sourceLabel,
+    sourceRecordId: finding.sourceRecordId,
+    sourceType: finding.sourceType,
+    status: finding.status,
+    title: finding.title,
+  };
+}
+
+export const reviewSecurityFinding = mutation({
+  args: {
+    disposition: securityFindingDispositionValidator,
+    findingKey: v.string(),
+    reviewNotes: v.optional(v.string()),
+  },
+  returns: securityFindingListItemValidator,
+  handler: reviewSecurityFindingHandler,
+});
 
 export const listSecurityControlEvidenceActivity = query({
   args: {

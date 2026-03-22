@@ -22,9 +22,11 @@ let exportEvidenceReportHandler: typeof import('./security').exportEvidenceRepor
 let generateEvidenceReportHandler: typeof import('./security').generateEvidenceReportHandler;
 let getAuditReadinessSnapshotHandler: typeof import('./security').getAuditReadinessSnapshotHandler;
 let _getSecurityPostureSummaryHandler: typeof import('./security').getSecurityPostureSummaryHandler;
+let listSecurityFindingsHandler: typeof import('./security').listSecurityFindingsHandler;
 let _listSecurityControlEvidenceActivityHandler: typeof import('./security').listSecurityControlEvidenceActivityHandler;
 let renewSecurityControlEvidenceHandler: typeof import('./security').renewSecurityControlEvidenceHandler;
 let recordBackupVerificationHandler: typeof import('./security').recordBackupVerificationHandler;
+let reviewSecurityFindingHandler: typeof import('./security').reviewSecurityFindingHandler;
 let summarizeIntegrityCheckFn: typeof import('./security').summarizeIntegrityCheck;
 let getVerifiedCurrentSiteAdminUserFromActionOrThrowMock: ReturnType<typeof vi.fn>;
 let getVerifiedCurrentSiteAdminUserOrThrowMock: ReturnType<typeof vi.fn>;
@@ -235,10 +237,12 @@ beforeAll(async () => {
   generateEvidenceReportHandler = securityModule.generateEvidenceReportHandler;
   getAuditReadinessSnapshotHandler = securityModule.getAuditReadinessSnapshotHandler;
   _getSecurityPostureSummaryHandler = securityModule.getSecurityPostureSummaryHandler;
+  listSecurityFindingsHandler = securityModule.listSecurityFindingsHandler;
   _listSecurityControlEvidenceActivityHandler =
     securityModule.listSecurityControlEvidenceActivityHandler;
   renewSecurityControlEvidenceHandler = securityModule.renewSecurityControlEvidenceHandler;
   recordBackupVerificationHandler = securityModule.recordBackupVerificationHandler;
+  reviewSecurityFindingHandler = securityModule.reviewSecurityFindingHandler;
   summarizeIntegrityCheckFn = securityModule.summarizeIntegrityCheck;
 });
 
@@ -531,6 +535,118 @@ describe('audit evidence helpers', () => {
     expect(result.audit.integrityFailures).toBe(2);
   });
 
+  it('lists retained security findings with stored disposition context', async () => {
+    const ctx = {
+      db: {
+        query: (table: string) => ({
+          withIndex: (
+            _index: string,
+            buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const filters: Array<[string, unknown]> = [];
+            const q = {
+              eq(field: string, value: unknown) {
+                filters.push([field, value]);
+                return q;
+              },
+            };
+            buildRange?.(q);
+
+            if (table === 'securityMetrics') {
+              return {
+                first: async () => ({
+                  key: 'global',
+                  totalDocumentScans: 8,
+                  quarantinedDocumentScans: 2,
+                  rejectedDocumentScans: 0,
+                  lastDocumentScanAt: 100,
+                  updatedAt: 100,
+                }),
+              };
+            }
+
+            if (table === 'auditLogs') {
+              if (
+                filters.some(
+                  ([field, value]) =>
+                    field === 'eventType' && value === 'audit_integrity_check_failed',
+                )
+              ) {
+                return {
+                  collect: async () => [{ _id: 'audit-failure-1' }],
+                  order: () => ({
+                    first: async () => ({
+                      _id: 'audit-failure-1',
+                      createdAt: 95,
+                    }),
+                  }),
+                };
+              }
+              return { order: () => ({ first: async () => ({ createdAt: 90 }) }) };
+            }
+
+            if (table === 'securityControlEvidence') {
+              return {
+                collect: async () => [
+                  {
+                    _id: 'release-evidence-1',
+                    createdAt: 80,
+                    evidenceDate: 81,
+                    lifecycleStatus: 'active',
+                    source: 'automated_system_check',
+                    sufficiency: 'partial',
+                    title: 'production release provenance',
+                  },
+                ],
+              };
+            }
+
+            if (table === 'securityFindings') {
+              return {
+                unique: async () => {
+                  const findingKey = filters.find(([field]) => field === 'findingKey')?.[1];
+                  if (findingKey === 'audit_integrity_failures') {
+                    return {
+                      findingKey: 'audit_integrity_failures',
+                      disposition: 'investigating',
+                      firstObservedAt: 90,
+                      lastObservedAt: 95,
+                      reviewNotes: 'triaging integrity break',
+                      reviewedAt: 120,
+                      reviewedByUserId: 'admin-user',
+                    };
+                  }
+                  return null;
+                },
+              };
+            }
+
+            if (table === 'userProfiles') {
+              return {
+                first: async () => ({ name: 'Admin User', email: 'admin@example.com' }),
+              };
+            }
+
+            throw new Error(`Unexpected query table: ${table}`);
+          },
+        }),
+      },
+    };
+
+    const result = await listSecurityFindingsHandler(ctx as never);
+
+    expect(result[0]).toMatchObject({
+      disposition: 'investigating',
+      findingKey: 'audit_integrity_failures',
+      reviewedByDisplay: 'Admin User',
+      severity: 'critical',
+      status: 'open',
+    });
+    expect(result.some((finding) => finding.findingKey === 'release_security_validation')).toBe(
+      true,
+    );
+  });
+
   it('reads projected evidence activity rows before raw-audit fallback', async () => {
     const ctx = {
       db: {
@@ -595,6 +711,107 @@ describe('audit evidence helpers', () => {
         reviewStatus: 'reviewed',
       }),
     ]);
+  });
+
+  it('stores provider disposition for a current security finding', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-03-18T12:00:00.000Z'));
+    const inserted: Array<Record<string, unknown>> = [];
+    const patched: Array<Record<string, unknown>> = [];
+    const ctx = {
+      db: {
+        insert: vi.fn(async (_table: string, value: Record<string, unknown>) => {
+          inserted.push(value);
+          return 'finding-1';
+        }),
+        patch: vi.fn(async (_id: string, value: Record<string, unknown>) => {
+          patched.push(value);
+        }),
+        query: (table: string) => ({
+          withIndex: (
+            _index: string,
+            buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const filters: Array<[string, unknown]> = [];
+            const q = {
+              eq(field: string, value: unknown) {
+                filters.push([field, value]);
+                return q;
+              },
+            };
+            buildRange?.(q);
+
+            if (table === 'securityMetrics') {
+              return {
+                first: async () => ({
+                  key: 'global',
+                  totalDocumentScans: 8,
+                  quarantinedDocumentScans: 0,
+                  rejectedDocumentScans: 1,
+                  lastDocumentScanAt: 100,
+                  updatedAt: 100,
+                }),
+              };
+            }
+
+            if (table === 'auditLogs') {
+              if (
+                filters.some(
+                  ([field, value]) =>
+                    field === 'eventType' && value === 'audit_integrity_check_failed',
+                )
+              ) {
+                return {
+                  collect: async () => [],
+                  order: () => ({ first: async () => null }),
+                };
+              }
+              return { order: () => ({ first: async () => ({ createdAt: 90 }) }) };
+            }
+
+            if (table === 'securityControlEvidence') {
+              return {
+                collect: async () => [],
+              };
+            }
+
+            if (table === 'securityFindings') {
+              return {
+                unique: async () => null,
+              };
+            }
+
+            if (table === 'userProfiles') {
+              return {
+                first: async () => ({ name: 'Admin User', email: 'admin@example.com' }),
+              };
+            }
+
+            throw new Error(`Unexpected query table: ${table}`);
+          },
+        }),
+      },
+    };
+
+    const result = await reviewSecurityFindingHandler(ctx as never, {
+      disposition: 'resolved',
+      findingKey: 'document_scan_rejections',
+      reviewNotes: ' mitigated in current workflow ',
+    });
+
+    expect(inserted[0]).toMatchObject({
+      disposition: 'resolved',
+      findingKey: 'document_scan_rejections',
+      reviewNotes: 'mitigated in current workflow',
+      reviewedByUserId: 'admin-user',
+    });
+    expect(patched).toHaveLength(0);
+    expect(result).toMatchObject({
+      disposition: 'resolved',
+      findingKey: 'document_scan_rejections',
+      reviewedByDisplay: 'Admin User',
+    });
+    vi.useRealTimers();
   });
 
   it('generates audit readiness reports with stale drill detection and persisted report metadata', async () => {

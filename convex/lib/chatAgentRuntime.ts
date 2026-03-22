@@ -2,6 +2,7 @@
 
 import { Agent, getThreadMetadata } from '@convex-dev/agent';
 import { generateText, type ModelMessage, stepCountIs } from 'ai';
+import { hasOpenRouterConfig } from '../../src/lib/server/openrouter';
 import {
   type ChatModelCatalogEntry,
   chatModelSupportsWebSearch,
@@ -229,44 +230,60 @@ async function debugRawRequestResponse(args: {
   console.log('[chat.debug.llm]', JSON.stringify(args));
 }
 
-export const baseChatAgent = new Agent(components.agent, {
-  name: DEFAULT_CHAT_AGENT_NAME,
-  languageModel: getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false),
-  textEmbeddingModel: getChatEmbeddingModel(),
-  contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
-  usageHandler: async (ctx, usageArgs) => {
-    if (!usageArgs.threadId) {
-      return;
-    }
+let baseChatAgent: Agent | null = null;
 
-    await recordChatUsageEvent(ctx, {
-      agentThreadId: usageArgs.threadId,
-      agentName: usageArgs.agentName,
-      model: usageArgs.model,
-      provider: usageArgs.provider,
-      totalTokens: usageArgs.usage.totalTokens,
-      inputTokens: usageArgs.usage.inputTokens,
-      outputTokens: usageArgs.usage.outputTokens,
-      providerMetadata: usageArgs.providerMetadata,
-    });
-  },
-  contextHandler: async (ctx, contextArgs) => {
-    if (!contextArgs.threadId) {
-      return contextArgs.allMessages;
-    }
+function createBaseChatAgent() {
+  return new Agent(components.agent, {
+    name: DEFAULT_CHAT_AGENT_NAME,
+    languageModel: getChatLanguageModel(DEFAULT_CHAT_MODEL_ID, false),
+    textEmbeddingModel: getChatEmbeddingModel(),
+    contextOptions: CHAT_AGENT_CONTEXT_OPTIONS,
+    usageHandler: async (ctx, usageArgs) => {
+      if (!usageArgs.threadId) {
+        return;
+      }
 
-    const thread = await getThreadMetadata(ctx, components.agent, {
-      threadId: contextArgs.threadId,
-    });
-    return buildChatContextMessages({
-      summary: thread.summary,
-      context: contextArgs,
-    });
-  },
-  rawRequestResponseHandler: async (_ctx, args) => {
-    await debugRawRequestResponse(args);
-  },
-});
+      await recordChatUsageEvent(ctx, {
+        agentThreadId: usageArgs.threadId,
+        agentName: usageArgs.agentName,
+        model: usageArgs.model,
+        provider: usageArgs.provider,
+        totalTokens: usageArgs.usage.totalTokens,
+        inputTokens: usageArgs.usage.inputTokens,
+        outputTokens: usageArgs.usage.outputTokens,
+        providerMetadata: usageArgs.providerMetadata,
+      });
+    },
+    contextHandler: async (ctx, contextArgs) => {
+      if (!contextArgs.threadId) {
+        return contextArgs.allMessages;
+      }
+
+      const thread = await getThreadMetadata(ctx, components.agent, {
+        threadId: contextArgs.threadId,
+      });
+      return buildChatContextMessages({
+        summary: thread.summary,
+        context: contextArgs,
+      });
+    },
+    rawRequestResponseHandler: async (_ctx, args) => {
+      await debugRawRequestResponse(args);
+    },
+  });
+}
+
+export function isChatAgentConfigured() {
+  return hasOpenRouterConfig();
+}
+
+export function getBaseChatAgent() {
+  if (!baseChatAgent) {
+    baseChatAgent = createBaseChatAgent();
+  }
+
+  return baseChatAgent;
+}
 
 export function buildChatRequestConfig(args: {
   model: Pick<ChatModelCatalogEntry, 'modelId' | 'supportsWebSearch'>;

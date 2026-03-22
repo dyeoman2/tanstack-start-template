@@ -255,6 +255,28 @@ type EvidenceReportListItem = {
   reviewNotes: string | null;
 };
 
+type SecurityFindingListItem = {
+  description: string;
+  disposition: 'accepted_risk' | 'false_positive' | 'investigating' | 'pending_review' | 'resolved';
+  findingKey: string;
+  findingType:
+    | 'audit_integrity_failures'
+    | 'document_scan_quarantines'
+    | 'document_scan_rejections'
+    | 'release_security_validation';
+  firstObservedAt: number;
+  lastObservedAt: number;
+  reviewNotes: string | null;
+  reviewedAt: number | null;
+  reviewedByDisplay: string | null;
+  severity: 'critical' | 'info' | 'warning';
+  sourceLabel: string;
+  sourceRecordId: string | null;
+  sourceType: 'audit_log' | 'security_control_evidence' | 'security_metric';
+  status: 'open' | 'resolved';
+  title: string;
+};
+
 async function uploadFileWithTarget(
   file: File,
   target: {
@@ -350,12 +372,16 @@ export function AdminSecurityRoute() {
   const evidenceReports = useQuery(api.security.listEvidenceReports, {
     limit: 10,
   }) as EvidenceReportListItem[] | undefined;
+  const securityFindings = useQuery(api.security.listSecurityFindings, {}) as
+    | SecurityFindingListItem[]
+    | undefined;
   const auditReadiness = useQuery(api.security.getAuditReadinessOverview, {}) as
     | AuditReadinessOverview
     | undefined;
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
   const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
   const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
+  const reviewSecurityFinding = useMutation(api.security.reviewSecurityFinding);
   const reviewControlEvidence = useMutation(api.security.reviewSecurityControlEvidence);
   const addEvidenceLink = useMutation(api.security.addSecurityControlEvidenceLink);
   const addEvidenceNote = useMutation(api.security.addSecurityControlEvidenceNote);
@@ -369,8 +395,13 @@ export function AdminSecurityRoute() {
   const [report, setReport] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
+  const [findingDispositions, setFindingDispositions] = useState<
+    Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
+  >({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+  const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
   const controls = controlWorkspaces;
@@ -394,6 +425,15 @@ export function AdminSecurityRoute() {
     : auditReadinessSummary.latestDrill
       ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
       : 'No drill evidence recorded';
+  const findingSummary = useMemo(() => {
+    const findingItems = securityFindings ?? [];
+    return {
+      openCount: findingItems.filter((finding) => finding.status === 'open').length,
+      reviewPendingCount: findingItems.filter((finding) => finding.disposition === 'pending_review')
+        .length,
+      totalCount: findingItems.length,
+    };
+  }, [securityFindings]);
   const controlSummary = useMemo(() => {
     return controlItems.reduce(
       (summaryAccumulator, control) => {
@@ -1009,6 +1049,28 @@ export function AdminSecurityRoute() {
     }
   };
 
+  const handleReviewFinding = useCallback(
+    async (findingKey: SecurityFindingListItem['findingKey']) => {
+      setBusyFindingKey(findingKey);
+      try {
+        await reviewSecurityFinding({
+          disposition: findingDispositions[findingKey] ?? 'pending_review',
+          findingKey,
+          reviewNotes: findingNotes[findingKey]?.trim() || undefined,
+        });
+        showToast('Security finding review saved.', 'success');
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : 'Failed to save security finding review.',
+          'error',
+        );
+      } finally {
+        setBusyFindingKey(null);
+      }
+    },
+    [findingDispositions, findingNotes, reviewSecurityFinding, showToast],
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1425,6 +1487,113 @@ export function AdminSecurityRoute() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Security Finding Review Queue</CardTitle>
+              <CardDescription>
+                Retained findings from audit integrity, document scanning, and release security
+                validation with provider disposition tracking.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                <SummaryCard
+                  title="Tracked Findings"
+                  description="Current monitored findings available for provider review."
+                  value={`${findingSummary.totalCount}`}
+                />
+                <SummaryCard
+                  title="Open Findings"
+                  description="Findings whose current status still requires provider attention."
+                  value={`${findingSummary.openCount}`}
+                />
+                <SummaryCard
+                  title="Pending Disposition"
+                  description="Findings that have not been assigned a provider disposition yet."
+                  value={`${findingSummary.reviewPendingCount}`}
+                />
+              </div>
+
+              {securityFindings?.length ? (
+                securityFindings.map((finding) => (
+                  <div key={finding.findingKey} className="space-y-3 rounded-lg border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{finding.title}</p>
+                          <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
+                            {formatFindingSeverity(finding.severity)}
+                          </Badge>
+                          <Badge variant={finding.status === 'open' ? 'destructive' : 'secondary'}>
+                            {formatFindingStatus(finding.status)}
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground">{finding.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Source: {finding.sourceLabel}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Last observed {new Date(finding.lastObservedAt).toLocaleString()}
+                          {finding.reviewedAt
+                            ? ` · Reviewed ${new Date(finding.reviewedAt).toLocaleString()}`
+                            : ''}
+                          {finding.reviewedByDisplay ? ` · ${finding.reviewedByDisplay}` : ''}
+                        </p>
+                      </div>
+                      <div className="min-w-[220px] space-y-2">
+                        <Select
+                          value={findingDispositions[finding.findingKey] ?? finding.disposition}
+                          onValueChange={(value: SecurityFindingListItem['disposition']) => {
+                            setFindingDispositions((current) => ({
+                              ...current,
+                              [finding.findingKey]: value,
+                            }));
+                          }}
+                        >
+                          <SelectTrigger aria-label={`Disposition for ${finding.title}`}>
+                            <SelectValue placeholder="Select disposition" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pending_review">Pending review</SelectItem>
+                            <SelectItem value="investigating">Investigating</SelectItem>
+                            <SelectItem value="accepted_risk">Accepted risk</SelectItem>
+                            <SelectItem value="false_positive">False positive</SelectItem>
+                            <SelectItem value="resolved">Resolved</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          disabled={busyFindingKey !== null}
+                          onClick={() => {
+                            void handleReviewFinding(finding.findingKey);
+                          }}
+                        >
+                          {busyFindingKey === finding.findingKey
+                            ? 'Saving…'
+                            : 'Save finding review'}
+                        </Button>
+                      </div>
+                    </div>
+                    <Textarea
+                      value={findingNotes[finding.findingKey] ?? finding.reviewNotes ?? ''}
+                      onChange={(event) => {
+                        setFindingNotes((current) => ({
+                          ...current,
+                          [finding.findingKey]: event.target.value,
+                        }));
+                      }}
+                      placeholder="Finding review notes"
+                    />
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No retained findings are available for review yet.
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -2729,6 +2898,39 @@ function formatEvidenceReadiness(readiness: SecurityControlWorkspace['evidenceRe
       return 'Partial';
     case 'missing':
       return 'Missing';
+  }
+}
+
+function getFindingSeverityBadgeVariant(
+  severity: SecurityFindingListItem['severity'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (severity) {
+    case 'critical':
+      return 'destructive';
+    case 'warning':
+      return 'secondary';
+    case 'info':
+      return 'outline';
+  }
+}
+
+function formatFindingSeverity(severity: SecurityFindingListItem['severity']) {
+  switch (severity) {
+    case 'critical':
+      return 'Critical';
+    case 'warning':
+      return 'Warning';
+    case 'info':
+      return 'Info';
+  }
+}
+
+function formatFindingStatus(status: SecurityFindingListItem['status']) {
+  switch (status) {
+    case 'open':
+      return 'Open';
+    case 'resolved':
+      return 'Resolved';
   }
 }
 

@@ -534,6 +534,44 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index('by_key', ['key']),
 
+  securityFindings: defineTable({
+    findingKey: v.string(),
+    findingType: v.union(
+      v.literal('audit_integrity_failures'),
+      v.literal('document_scan_quarantines'),
+      v.literal('document_scan_rejections'),
+      v.literal('release_security_validation'),
+    ),
+    title: v.string(),
+    description: v.string(),
+    severity: v.union(v.literal('info'), v.literal('warning'), v.literal('critical')),
+    status: v.union(v.literal('open'), v.literal('resolved')),
+    disposition: v.union(
+      v.literal('pending_review'),
+      v.literal('investigating'),
+      v.literal('accepted_risk'),
+      v.literal('false_positive'),
+      v.literal('resolved'),
+    ),
+    sourceType: v.union(
+      v.literal('audit_log'),
+      v.literal('security_metric'),
+      v.literal('security_control_evidence'),
+    ),
+    sourceLabel: v.string(),
+    sourceRecordId: v.union(v.string(), v.null()),
+    firstObservedAt: v.number(),
+    lastObservedAt: v.number(),
+    reviewNotes: v.union(v.string(), v.null()),
+    reviewedAt: v.union(v.number(), v.null()),
+    reviewedByUserId: v.union(v.string(), v.null()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_finding_key', ['findingKey'])
+    .index('by_updated_at', ['updatedAt'])
+    .index('by_status_and_updated_at', ['status', 'updatedAt']),
+
   evidenceReports: defineTable({
     organizationId: v.optional(v.string()),
     generatedByUserId: v.string(),

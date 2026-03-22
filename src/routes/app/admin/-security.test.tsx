@@ -275,6 +275,27 @@ function buildEvidenceReport(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
+function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    description: 'Audit integrity failures require provider follow-up.',
+    disposition: 'pending_review',
+    findingKey: 'audit_integrity_failures',
+    findingType: 'audit_integrity_failures',
+    firstObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    lastObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    reviewNotes: null,
+    reviewedAt: null,
+    reviewedByDisplay: null,
+    severity: 'critical',
+    sourceLabel: 'Audit log integrity verification',
+    sourceRecordId: 'audit-1',
+    sourceType: 'audit_log',
+    status: 'open',
+    title: 'Audit integrity monitoring',
+    ...overrides,
+  };
+}
+
 function renderRoute() {
   return render(<AdminSecurityRoute />);
 }
@@ -283,6 +304,7 @@ function mockSecurityQueries(args: {
   auditReadiness?: unknown;
   controls?: unknown[];
   evidenceReports?: unknown[];
+  findings?: unknown[];
   summary?: unknown;
 }) {
   let queryCallIndex = 0;
@@ -292,7 +314,7 @@ function mockSecurityQueries(args: {
       return undefined;
     }
 
-    const slot = queryCallIndex % 4;
+    const slot = queryCallIndex % 5;
     queryCallIndex += 1;
 
     switch (slot) {
@@ -303,6 +325,8 @@ function mockSecurityQueries(args: {
       case 2:
         return args.evidenceReports ?? [];
       case 3:
+        return args.findings ?? [buildSecurityFinding()];
+      case 4:
         return args.auditReadiness ?? buildAuditReadiness();
       default:
         return undefined;
@@ -334,6 +358,9 @@ describe('Admin security route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.HTMLElement.prototype.scrollIntoView = vi.fn();
+    window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+    window.HTMLElement.prototype.setPointerCapture = vi.fn();
+    window.HTMLElement.prototype.releasePointerCapture = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     useSearchMock.mockReturnValue(defaultSearch);
     useActionMock.mockReset();
@@ -364,7 +391,15 @@ describe('Admin security route', () => {
       vi.fn(),
       vi.fn(),
     ]);
-    mockSecurityMutations([reviewEvidenceReportMock, vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityMutations([
+      reviewEvidenceReportMock,
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+    ]);
 
     renderRoute();
 
@@ -436,7 +471,7 @@ describe('Admin security route', () => {
       evidenceReports: [],
     });
     mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
 
     renderRoute();
 
@@ -487,7 +522,15 @@ describe('Admin security route', () => {
       evidenceReports: [],
     });
     mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([vi.fn(), reviewControlEvidenceMock, vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityMutations([
+      vi.fn(),
+      vi.fn(),
+      reviewControlEvidenceMock,
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+    ]);
 
     renderRoute();
 
@@ -537,7 +580,7 @@ describe('Admin security route', () => {
       ],
     });
     mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
 
     renderRoute();
 
@@ -547,5 +590,44 @@ describe('Admin security route', () => {
     expect(screen.getByText('Metadata gaps')).toBeInTheDocument();
     expect(screen.getByText('Authorization denials')).toBeInTheDocument();
     expect(screen.getByText(/Manifest hash: manifest-hash-1/)).toBeInTheDocument();
+  });
+
+  it('retains provider disposition and notes for security findings', async () => {
+    const user = userEvent.setup();
+    const reviewSecurityFindingMock = vi.fn().mockResolvedValue(undefined);
+
+    mockSecurityQueries({
+      controls: [buildControl()],
+      evidenceReports: [buildEvidenceReport()],
+      findings: [buildSecurityFinding()],
+      auditReadiness: buildAuditReadiness(),
+    });
+    mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityMutations([
+      vi.fn(),
+      reviewSecurityFindingMock,
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+      vi.fn(),
+    ]);
+
+    renderRoute();
+
+    await user.type(screen.getByPlaceholderText('Finding review notes'), 'triage in progress');
+    await user.click(
+      screen.getByRole('combobox', { name: /disposition for audit integrity monitoring/i }),
+    );
+    await user.click(await screen.findByText('Investigating'));
+    await user.click(screen.getByRole('button', { name: /save finding review/i }));
+
+    await waitFor(() => {
+      expect(reviewSecurityFindingMock).toHaveBeenCalledWith({
+        disposition: 'investigating',
+        findingKey: 'audit_integrity_failures',
+        reviewNotes: 'triage in progress',
+      });
+    });
   });
 });

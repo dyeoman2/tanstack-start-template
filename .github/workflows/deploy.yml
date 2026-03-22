@@ -122,6 +122,9 @@ jobs:
       - name: Check admin audit guardrails
         run: pnpm run check:admin-audit-guardrails
 
+      - name: Check audit log immutability guardrails
+        run: pnpm run check:audit-log-immutability
+
       - name: Lint Convex boundaries
         run: pnpm run lint:convex
         env:

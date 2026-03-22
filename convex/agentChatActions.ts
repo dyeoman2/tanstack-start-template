@@ -21,7 +21,7 @@ import {
   classifyChatRunFailure,
   deriveThreadTitle,
 } from './lib/agentChat';
-import { baseChatAgent, buildChatRequestConfig } from './lib/chatAgentRuntime';
+import { buildChatRequestConfig, getBaseChatAgent } from './lib/chatAgentRuntime';
 import {
   buildAttachmentPromptSummary,
   extractDocumentText,
@@ -375,7 +375,7 @@ export async function resolveThread(
       name: attachment.name,
     })),
   });
-  const { threadId: agentThreadId } = await baseChatAgent.createThread(ctx, {
+  const { threadId: agentThreadId } = await getBaseChatAgent().createThread(ctx, {
     userId: args.userId,
     title,
   });
@@ -1110,7 +1110,7 @@ export const runChatGenerationInternal = internalAction({
         stopWhen: requestConfig.stopWhen as unknown,
       };
       const result = await (
-        baseChatAgent.streamText as unknown as (
+        getBaseChatAgent().streamText as unknown as (
           ctx: ActionCtx,
           thread: typeof threadTarget,
           args: typeof streamArgs,
