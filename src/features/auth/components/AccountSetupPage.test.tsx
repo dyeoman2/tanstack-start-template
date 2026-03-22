@@ -214,25 +214,26 @@ describe('AccountSetupPage', () => {
   });
 
   it('falls back to manual sign-in only after automatic continuation fails', async () => {
+    refreshAuthClientSessionMock
+      .mockResolvedValueOnce({ user: { emailVerified: false } })
+      .mockRejectedValueOnce(new Error('session restore failed'));
+
     render(
       <AccountSetupPage email="person@example.com" redirectTo="/app/admin" verified="success" />,
     );
 
-    await waitFor(
-      () => {
-        expect(
-          screen.getByText(
-            "We couldn't continue automatically. Sign in to finish setting up your account.",
-          ),
-        ).toBeInTheDocument();
-        expect(screen.getByRole('link', { name: 'Sign in to continue' })).toHaveAttribute(
-          'href',
-          '/login?email=person%40example.com&redirectTo=%2Fapp%2Fadmin',
-        );
-      },
-      { timeout: 3500 },
-    );
-  }, 7000);
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          "We couldn't continue automatically. Sign in to finish setting up your account.",
+        ),
+      ).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Sign in to continue' })).toHaveAttribute(
+        'href',
+        '/login?email=person%40example.com&redirectTo=%2Fapp%2Fadmin',
+      );
+    });
+  });
 
   it('lets users continue strong-auth setup as soon as a verified Better Auth session exists', () => {
     useAuthMock.mockReturnValue(

@@ -1,13 +1,19 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { USER_ROLES } from '~/features/auth/types';
 import { UserBanDialog } from './UserBanDialog';
 
-const { banAdminUserServerFn, unbanAdminUserServerFn } = vi.hoisted(() => ({
+const { banAdminUserServerFn, unbanAdminUserServerFn, invalidateQueriesMock } = vi.hoisted(() => ({
   banAdminUserServerFn: vi.fn(),
   unbanAdminUserServerFn: vi.fn(),
+  invalidateQueriesMock: vi.fn(),
+}));
+
+vi.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({
+    invalidateQueries: invalidateQueriesMock,
+  }),
 }));
 
 vi.mock('../server/admin-management', () => ({
@@ -16,13 +22,7 @@ vi.mock('../server/admin-management', () => ({
 }));
 
 function renderDialog(user: Parameters<typeof UserBanDialog>[0]['user']) {
-  const queryClient = new QueryClient();
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <UserBanDialog open user={user} onClose={vi.fn()} />
-    </QueryClientProvider>,
-  );
+  return render(<UserBanDialog open user={user} onClose={vi.fn()} />);
 }
 
 describe('UserBanDialog', () => {
@@ -45,7 +45,9 @@ describe('UserBanDialog', () => {
       updatedAt: Date.now(),
     });
 
-    await user.type(screen.getByLabelText('Ban reason'), 'Repeated abuse');
+    fireEvent.change(screen.getByLabelText('Ban reason'), {
+      target: { value: 'Repeated abuse' },
+    });
     await user.click(screen.getByRole('button', { name: /ban user/i }));
 
     await waitFor(() => {

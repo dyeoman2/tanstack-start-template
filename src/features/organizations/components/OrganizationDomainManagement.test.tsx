@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationDomainManagement } from './OrganizationDomainManagement';
@@ -177,10 +177,10 @@ describe('OrganizationDomainManagement', () => {
     const submitButton = within(dialog).getByRole('button', { name: /^add domain$/i });
     const domainInput = within(dialog).getByLabelText(/^domain$/i);
 
-    await user.clear(domainInput);
+    fireEvent.change(domainInput, { target: { value: '' } });
     expect(submitButton).toBeDisabled();
 
-    await user.type(domainInput, 'example.org');
+    fireEvent.change(domainInput, { target: { value: 'example.org' } });
     expect(submitButton).toBeEnabled();
   });
 

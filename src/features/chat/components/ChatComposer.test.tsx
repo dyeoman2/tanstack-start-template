@@ -1,15 +1,23 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ComponentProps } from 'react';
+import type { ComponentProps, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '~/components/ui/toast';
 import { TooltipProvider } from '~/components/ui/tooltip';
 import { ChatComposer } from '~/features/chat/components/ChatComposer';
 
 const useChatRateLimitMock = vi.fn();
+const showToastMock = vi.fn();
 
 vi.mock('~/features/chat/hooks/useChatRateLimit', () => ({
   useChatRateLimit: (...args: unknown[]) => useChatRateLimitMock(...args),
+}));
+
+vi.mock('~/components/ui/toast', () => ({
+  ToastProvider: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useToast: () => ({
+    showToast: showToastMock,
+  }),
 }));
 
 function renderChatComposer(props: Partial<ComponentProps<typeof ChatComposer>> = {}) {
@@ -38,6 +46,7 @@ function renderChatComposer(props: Partial<ComponentProps<typeof ChatComposer>> 
 
 describe('ChatComposer', () => {
   beforeEach(() => {
+    showToastMock.mockReset();
     useChatRateLimitMock.mockReturnValue({
       request: { ok: true, retryAfter: 0 },
       estimatedTokens: { ok: true, retryAfter: 0 },

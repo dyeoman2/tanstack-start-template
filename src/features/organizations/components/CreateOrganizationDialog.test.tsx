@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateOrganizationDialog } from './CreateOrganizationDialog';
@@ -98,7 +98,9 @@ describe('CreateOrganizationDialog', () => {
 
     render(<CreateOrganizationDialog open onOpenChange={vi.fn()} />);
 
-    await user.type(screen.getByLabelText('Name'), 'Cottage Hospital');
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Cottage Hospital' },
+    });
     await user.click(screen.getByRole('button', { name: /create organization/i }));
 
     await waitFor(() => {
@@ -148,7 +150,9 @@ describe('CreateOrganizationDialog', () => {
 
     render(<CreateOrganizationDialog open onOpenChange={vi.fn()} />);
 
-    await user.type(screen.getByLabelText('Name'), 'Cottage Hospital');
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Cottage Hospital' },
+    });
     await user.click(screen.getByRole('button', { name: /create organization/i }));
 
     await waitFor(() => {

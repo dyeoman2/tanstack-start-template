@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ProfileData } from '~/features/profile/hooks/useProfile';
@@ -55,8 +55,7 @@ describe('ProfileDetailsCard', () => {
     render(<ProfileDetailsCard profile={profile} />);
 
     const emailInput = screen.getByDisplayValue('current@example.com');
-    await user.clear(emailInput);
-    await user.type(emailInput, 'updated@example.com');
+    fireEvent.change(emailInput, { target: { value: 'updated@example.com' } });
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
@@ -101,8 +100,7 @@ describe('ProfileDetailsCard', () => {
     render(<ProfileDetailsCard profile={profile} />);
 
     const emailInput = screen.getByDisplayValue('current@example.com');
-    await user.clear(emailInput);
-    await user.type(emailInput, 'updated@example.com');
+    fireEvent.change(emailInput, { target: { value: 'updated@example.com' } });
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {

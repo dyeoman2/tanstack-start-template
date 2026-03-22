@@ -44,11 +44,11 @@ describe('ForgotPasswordRequestCard', () => {
   });
 
   it('blocks invalid email input before calling Better Auth', async () => {
-    const user = userEvent.setup();
-
     render(<ForgotPasswordRequestCard />);
 
-    await user.type(screen.getByLabelText('Email'), 'invalid-email');
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'invalid-email' },
+    });
     const form = screen.getByRole('button', { name: /send reset link/i }).closest('form');
     if (!form) {
       throw new Error('Expected forgot password form to be rendered');

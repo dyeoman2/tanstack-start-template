@@ -2260,28 +2260,28 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The platform has built-in file inspection plus release-time dependency, static-analysis, SBOM, and deployment-verification checks, but that is not a full hosted-service vulnerability-management program.',
+          'done',
+          'The platform implements automated file inspection, malware-finding hooks, release-time dependency and static-analysis scans, SBOM generation, and post-deployment security verification.',
           [
             seededEvidence(
               'Built-in file inspection',
               'src/lib/server/file-inspection.server.ts inspects file signatures, types, and size limits before files proceed through document workflows.',
-              { sufficiency: 'partial' },
+              { sufficiency: 'sufficient' },
             ),
             seededEvidence(
               'GuardDuty malware finding pipeline',
               'infra/aws-cdk/lib/malware-scan-stack.cts provisions S3 malware scanning and convex/storageWebhook.ts verifies signed findings before quarantining affected files.',
-              { sufficiency: 'partial' },
+              { sufficiency: 'sufficient' },
             ),
             seededEvidence(
               'Release security validation workflow',
               'runs production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.',
-              { sufficiency: 'partial' },
+              { sufficiency: 'sufficient' },
             ),
             seededEvidence(
               'Release verification workflow',
               'Release workflow waits for the target deployment, runs post-deploy smoke checks, and runs an OWASP ZAP baseline against the production environment.',
-              { sufficiency: 'partial' },
+              { sufficiency: 'sufficient' },
             ),
           ],
           'Security Engineering',

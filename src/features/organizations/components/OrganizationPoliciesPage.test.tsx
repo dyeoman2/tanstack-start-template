@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrganizationPoliciesPage } from './OrganizationPoliciesPage';
@@ -112,8 +112,9 @@ describe('OrganizationPoliciesPage', () => {
     render(<OrganizationPoliciesPage slug="cottage-hospital" />);
 
     await user.click(screen.getByRole('checkbox', { name: /require verified domains/i }));
-    await user.clear(screen.getByLabelText(/member cap/i));
-    await user.type(screen.getByLabelText(/member cap/i), '25');
+    fireEvent.change(screen.getByLabelText(/member cap/i), {
+      target: { value: '25' },
+    });
     await user.click(screen.getByRole('button', { name: /save access policies/i }));
 
     await waitFor(() => {

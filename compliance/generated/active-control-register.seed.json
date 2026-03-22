@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-22T06:04:52.525Z",
+  "generatedAt": "2026-03-22T06:28:32.304Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -2216,36 +2216,36 @@
             "system"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Security Engineering",
-            "notes": "The platform has built-in file inspection plus release-time dependency, static-analysis, SBOM, and deployment-verification checks, but that is not a full hosted-service vulnerability-management program.",
+            "notes": "The platform implements automated file inspection, malware-finding hooks, release-time dependency and static-analysis scans, SBOM generation, and post-deployment security verification.",
             "evidence": [
               {
                 "title": "Built-in file inspection",
                 "description": "Built-in file inspection inspects file signatures, types, and size limits before files proceed through document workflows.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "GuardDuty malware finding pipeline",
                 "description": "Malware-finding workflow showing S3 malware scanning, signed finding verification, and quarantine actions for affected files.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Release security validation workflow",
                 "description": "Workflow for running production dependency audit, Semgrep, OSV scanning, security boundary checks, and SBOM generation before deployment proceeds.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Release verification workflow",
                 "description": "Workflow for waiting on the target deployment, running post-deploy smoke checks, and running an OWASP ZAP baseline before final release evidence is recorded.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]

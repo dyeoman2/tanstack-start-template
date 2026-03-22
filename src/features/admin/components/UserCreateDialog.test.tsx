@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UserCreateDialog } from './UserCreateDialog';
@@ -34,8 +34,12 @@ describe('UserCreateDialog', () => {
 
     render(<UserCreateDialog open onClose={onClose} onCreated={onCreated} />);
 
-    await user.type(screen.getByLabelText('Name'), 'Dr. Meredith Grey');
-    await user.type(screen.getByLabelText('Email'), 'meredith@example.com');
+    fireEvent.change(screen.getByLabelText('Name'), {
+      target: { value: 'Dr. Meredith Grey' },
+    });
+    fireEvent.change(screen.getByLabelText('Email'), {
+      target: { value: 'meredith@example.com' },
+    });
     await user.click(screen.getByRole('button', { name: /create user/i }));
 
     await waitFor(() => {

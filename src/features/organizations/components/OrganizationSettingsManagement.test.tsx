@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -214,8 +214,9 @@ describe('OrganizationSettingsManagement', () => {
     await user.click(editProfileButton);
 
     const nameInput = await screen.findByLabelText('Name');
-    await user.clear(nameInput);
-    await user.type(nameInput, 'New Cottage Hospital');
+    fireEvent.change(nameInput, {
+      target: { value: 'New Cottage Hospital' },
+    });
     await user.click(screen.getByRole('button', { name: /save changes/i }));
 
     await waitFor(() => {
@@ -412,7 +413,9 @@ describe('OrganizationSettingsManagement', () => {
     render(<OrganizationSettingsManagement slug="cottage-hospital" searchParams={searchParams} />);
 
     await user.click(screen.getByRole('button', { name: /leave organization/i }));
-    await user.type(screen.getByPlaceholderText('Cottage Hospital'), 'Cottage Hospital');
+    fireEvent.change(screen.getByPlaceholderText('Cottage Hospital'), {
+      target: { value: 'Cottage Hospital' },
+    });
     await user.click(screen.getByRole('button', { name: /^leave organization$/i }));
 
     await waitFor(() => {

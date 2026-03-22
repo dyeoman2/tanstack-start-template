@@ -1,4 +1,3 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PropsWithChildren } from 'react';
@@ -53,13 +52,7 @@ const baseProps = {
 };
 
 function renderTable(users: Parameters<typeof UserTable>[0]['users'], currentUserId?: string) {
-  const queryClient = new QueryClient();
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <UserTable {...baseProps} users={users} currentUserId={currentUserId} />
-    </QueryClientProvider>,
-  );
+  return render(<UserTable {...baseProps} users={users} currentUserId={currentUserId} />);
 }
 
 describe('UserTable', () => {

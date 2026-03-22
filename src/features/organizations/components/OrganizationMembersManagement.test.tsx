@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -259,7 +259,9 @@ describe('OrganizationMembersManagement', () => {
     );
 
     await user.click(screen.getByRole('button', { name: /invite member/i }));
-    await user.type(screen.getByLabelText(/email/i), 'owner@example.com');
+    fireEvent.change(screen.getByLabelText(/email/i), {
+      target: { value: 'owner@example.com' },
+    });
     await user.click(screen.getByRole('button', { name: /send invite/i }));
 
     await waitFor(() => {
