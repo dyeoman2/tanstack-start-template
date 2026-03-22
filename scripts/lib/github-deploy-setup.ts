@@ -63,7 +63,9 @@ export function ask(question: string, initialValue?: string) {
   });
 }
 
-export const askInput = ask;
+export function askInput(question: string, initialValue?: string) {
+  return ask(question, initialValue);
+}
 
 export async function askRequired(question: string, initialValue?: string) {
   while (true) {

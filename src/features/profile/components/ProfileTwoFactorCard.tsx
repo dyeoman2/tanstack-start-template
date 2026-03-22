@@ -1,4 +1,4 @@
-import { CheckIcon, CopyIcon, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
@@ -14,6 +14,7 @@ import { Input } from '~/components/ui/input';
 import { Switch } from '~/components/ui/switch';
 import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
+import { BackupCodesDialog } from '~/features/auth/components/BackupCodesDialog';
 
 function getErrorMessage(error: unknown) {
   if (
@@ -44,7 +45,7 @@ export function ProfileTwoFactorCard() {
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
   const [pendingTotpUri, setPendingTotpUri] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [didCopyBackupCodes, setDidCopyBackupCodes] = useState(false);
+  const [isContinuingToAuthenticator, setIsContinuingToAuthenticator] = useState(false);
 
   const isTwoFactorEnabled = useMemo(
     () =>
@@ -104,36 +105,28 @@ export function ProfileTwoFactorCard() {
   }
 
   function handleContinueToAuthenticator() {
-    setIsBackupCodesOpen(false);
-    setDidCopyBackupCodes(false);
+    setIsContinuingToAuthenticator(true);
 
     const search = pendingTotpUri ? `?totpURI=${encodeURIComponent(pendingTotpUri)}` : '';
 
-    window.location.assign(`/two-factor${search}`);
-  }
-
-  async function handleCopyBackupCodes() {
-    await navigator.clipboard.writeText(backupCodes.join('\n'));
-    setDidCopyBackupCodes(true);
-    showToast('Backup codes copied.', 'success');
     window.setTimeout(() => {
-      setDidCopyBackupCodes(false);
-    }, 2000);
+      window.location.assign(`/two-factor${search}`);
+    }, 0);
   }
 
   const instructions = isTwoFactorEnabled
-    ? 'Enter your password to disable 2FA.'
-    : 'Enter your password to enable 2FA and finish setup with an authenticator app.';
+    ? 'Enter your password to disable your authenticator app.'
+    : 'Enter your password to enable your authenticator app and finish setup.';
 
   return (
     <>
       <Card className="w-full gap-0 overflow-hidden rounded-xl border border-border shadow-sm">
         <CardHeader className="border-b">
           <CardTitle className="font-semibold leading-none text-base md:text-base">
-            Two-Factor
+            Authenticator app
           </CardTitle>
           <CardDescription className="text-sm text-muted-foreground">
-            Require an authenticator code when signing in with your password.
+            Require a 6-digit code from your authenticator app when signing in with your password.
           </CardDescription>
         </CardHeader>
         <CardContent className="px-6 py-6">
@@ -147,11 +140,13 @@ export function ProfileTwoFactorCard() {
             />
             <div className="space-y-1">
               <p className="text-sm font-medium text-foreground">
-                {isTwoFactorEnabled ? 'Two-factor is enabled' : 'Two-factor is disabled'}
+                {isTwoFactorEnabled
+                  ? 'Authenticator app is enabled'
+                  : 'Authenticator app is disabled'}
               </p>
               {!isTwoFactorEnabled ? (
                 <p className="text-sm text-muted-foreground">
-                  Turn on authenticator-based verification for extra account security.
+                  Turn on authenticator-app verification for extra account security.
                 </p>
               ) : null}
             </div>
@@ -162,7 +157,7 @@ export function ProfileTwoFactorCard() {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Two-Factor</DialogTitle>
+            <DialogTitle>Authenticator app</DialogTitle>
             <DialogDescription>{instructions}</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
@@ -190,46 +185,24 @@ export function ProfileTwoFactorCard() {
               onClick={isTwoFactorEnabled ? handleDisable : handleEnable}
             >
               {isSubmitting ? <Loader2 className="size-4 animate-spin" /> : null}
-              {isTwoFactorEnabled ? 'Disable Two-Factor' : 'Enable Two-Factor'}
+              {isTwoFactorEnabled ? 'Disable authenticator app' : 'Enable authenticator app'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isBackupCodesOpen} onOpenChange={setIsBackupCodesOpen}>
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Backup Codes</DialogTitle>
-            <DialogDescription>
-              Save these backup codes in a secure place. You can use them to access your account if
-              you lose your two-factor authentication method.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid grid-cols-2 gap-2">
-            {backupCodes.map((code) => (
-              <div
-                key={code}
-                className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-center font-mono text-sm"
-              >
-                {code}
-              </div>
-            ))}
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={handleCopyBackupCodes}>
-              {didCopyBackupCodes ? (
-                <CheckIcon className="size-4" />
-              ) : (
-                <CopyIcon className="size-4" />
-              )}
-              {didCopyBackupCodes ? 'Copied to clipboard' : 'Copy all codes'}
-            </Button>
-            <Button type="button" onClick={handleContinueToAuthenticator}>
-              Continue
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <BackupCodesDialog
+        open={isBackupCodesOpen}
+        onOpenChange={(open) => {
+          setIsBackupCodesOpen(open);
+          if (!open) {
+            setIsContinuingToAuthenticator(false);
+          }
+        }}
+        backupCodes={backupCodes}
+        onContinue={handleContinueToAuthenticator}
+        isContinuing={isContinuingToAuthenticator}
+      />
     </>
   );
 }

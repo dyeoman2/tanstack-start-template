@@ -26,8 +26,7 @@
     "types": "warn",
     "nsExports": "error",
     "nsTypes": "warn",
-    "enumMembers": "error",
-    "classMembers": "error"
+    "enumMembers": "error"
   },
   "ignoreDependencies": [
     "@napi-rs/canvas",

@@ -248,7 +248,9 @@ export function isLikelyConvexAdminAuthToken(value: string): boolean {
   );
 }
 
-export const isLikelyConvexDeployKey = isLikelyConvexAdminAuthToken;
+export function isLikelyConvexDeployKey(value: string): boolean {
+  return isLikelyConvexAdminAuthToken(value);
+}
 
 export function buildDrSecretNames(projectSlug: string) {
   return {

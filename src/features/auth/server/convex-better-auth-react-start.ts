@@ -15,7 +15,7 @@ function getRequiredClientEnv(name: 'VITE_CONVEX_URL'): string {
   return value;
 }
 
-export function getConvexAuthReactStart(): ConvexAuthReactStart {
+function getConvexAuthReactStart(): ConvexAuthReactStart {
   if (cachedConvexAuthReactStart) {
     return cachedConvexAuthReactStart;
   }

@@ -3,11 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import {
-  Check,
   CheckCircle2,
   ChevronRight,
-  Copy,
-  Download,
   KeyRound,
   Loader2,
   LockKeyhole,
@@ -19,15 +16,8 @@ import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '~/components/ui/dialog';
 import { authClient, refreshAuthClientSession, signOut } from '~/features/auth/auth-client';
+import { BackupCodesDialog } from '~/features/auth/components/BackupCodesDialog';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
@@ -238,9 +228,6 @@ export function AccountSetupPage({
   const [needsFreshSignInForPasskey, setNeedsFreshSignInForPasskey] = useState(false);
   const [isBackupCodesOpen, setIsBackupCodesOpen] = useState(false);
   const [backupCodes, setBackupCodes] = useState<string[]>([]);
-  const [backupCodesMessage, setBackupCodesMessage] = useState<string | null>(null);
-  const [didCopyBackupCodes, setDidCopyBackupCodes] = useState(false);
-  const [didDownloadBackupCodes, setDidDownloadBackupCodes] = useState(false);
   const [isContinuingToAuthenticator, setIsContinuingToAuthenticator] = useState(false);
   const [pendingTotpUri, setPendingTotpUri] = useState<string | null>(null);
   const [isSubmittingTwoFactor, setIsSubmittingTwoFactor] = useState(false);
@@ -524,7 +511,6 @@ export function AccountSetupPage({
     setIsSubmittingTwoFactor(true);
     setError(null);
     setInfoMessage(null);
-    setBackupCodesMessage(null);
     setNeedsFreshSignInForPasskey(false);
 
     try {
@@ -541,9 +527,6 @@ export function AccountSetupPage({
   }
 
   function handleContinueToAuthenticator() {
-    setBackupCodesMessage(null);
-    setDidCopyBackupCodes(false);
-    setDidDownloadBackupCodes(false);
     setIsContinuingToAuthenticator(true);
     void router
       .navigate({
@@ -556,46 +539,6 @@ export function AccountSetupPage({
       .catch(() => {
         setIsContinuingToAuthenticator(false);
       });
-  }
-
-  async function handleCopyBackupCodes() {
-    if (typeof navigator === 'undefined' || !navigator.clipboard) {
-      setBackupCodesMessage('Copy is unavailable in this browser.');
-      setDidCopyBackupCodes(false);
-      return;
-    }
-
-    try {
-      await navigator.clipboard.writeText(backupCodes.join('\n'));
-      setBackupCodesMessage(null);
-      setDidCopyBackupCodes(true);
-      window.setTimeout(() => {
-        setDidCopyBackupCodes(false);
-      }, 2000);
-    } catch {
-      setBackupCodesMessage('Unable to copy backup codes.');
-      setDidCopyBackupCodes(false);
-    }
-  }
-
-  function handleDownloadBackupCodes() {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    const fileContents = `${backupCodes.join('\n')}\n`;
-    const blob = new Blob([fileContents], { type: 'text/plain;charset=utf-8' });
-    const objectUrl = window.URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = objectUrl;
-    anchor.download = 'backup-codes.txt';
-    anchor.click();
-    window.URL.revokeObjectURL(objectUrl);
-    setBackupCodesMessage(null);
-    setDidDownloadBackupCodes(true);
-    window.setTimeout(() => {
-      setDidDownloadBackupCodes(false);
-    }, 2000);
   }
 
   const stepOneState: StepState = viewModel.emailStepComplete
@@ -889,79 +832,18 @@ export function AccountSetupPage({
         </Card>
       </AuthRouteShell>
 
-      <Dialog
+      <BackupCodesDialog
         open={isBackupCodesOpen}
         onOpenChange={(open) => {
           setIsBackupCodesOpen(open);
           if (!open) {
             setIsContinuingToAuthenticator(false);
-            setDidDownloadBackupCodes(false);
           }
         }}
-      >
-        <DialogContent className="sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Save your backup codes</DialogTitle>
-            <DialogDescription>
-              Keep these in a secure place. You can use them if you lose access to your
-              authenticator.
-            </DialogDescription>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            After this, you&apos;ll confirm the 6-digit code from your authenticator app to finish
-            security setup.
-          </p>
-          {backupCodesMessage ? (
-            <p className="text-sm text-muted-foreground">{backupCodesMessage}</p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-2">
-            {backupCodes.map((code) => (
-              <div
-                key={code}
-                className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-center font-mono text-sm"
-              >
-                {code}
-              </div>
-            ))}
-          </div>
-          <DialogFooter className="flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => void handleCopyBackupCodes()}
-                aria-label={didCopyBackupCodes ? 'Backup codes copied' : 'Copy codes'}
-                title={didCopyBackupCodes ? 'Copied' : 'Copy codes'}
-              >
-                {didCopyBackupCodes ? <Check className="size-4" /> : <Copy className="size-4" />}
-                Copy codes
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleDownloadBackupCodes}
-                aria-label={didDownloadBackupCodes ? 'Backup codes downloaded' : 'Download codes'}
-                title={didDownloadBackupCodes ? 'Downloaded' : 'Download codes'}
-              >
-                {didDownloadBackupCodes ? (
-                  <Check className="size-4" />
-                ) : (
-                  <Download className="size-4" />
-                )}
-                Download codes
-              </Button>
-            </div>
-            <Button
-              type="button"
-              onClick={handleContinueToAuthenticator}
-              disabled={isContinuingToAuthenticator}
-            >
-              {isContinuingToAuthenticator ? <Loader2 className="size-4 animate-spin" /> : null}
-              {isContinuingToAuthenticator ? 'Continuing...' : 'Continue'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        backupCodes={backupCodes}
+        onContinue={handleContinueToAuthenticator}
+        isContinuing={isContinuingToAuthenticator}
+      />
     </>
   );
 }
