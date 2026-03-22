@@ -63,7 +63,7 @@ function getTotpMetadata(totpUri?: string) {
   }
 }
 
-export function TwoFactorPage() {
+function TwoFactorPage() {
   const { redirectTo, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();

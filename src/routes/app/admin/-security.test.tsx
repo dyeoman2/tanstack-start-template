@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdminSecurityRoute } from './security';
+import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
 
 const { useSearchMock, navigateMock, useQueryMock, useActionMock, useMutationMock, showToastMock } =
   vi.hoisted(() => ({
@@ -15,7 +15,7 @@ const { useSearchMock, navigateMock, useQueryMock, useActionMock, useMutationMoc
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => ({
-    ...config,
+    options: config,
     useSearch: useSearchMock,
   }),
   useNavigate: () => navigateMock,

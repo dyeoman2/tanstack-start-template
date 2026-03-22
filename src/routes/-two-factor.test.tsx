@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { AnchorHTMLAttributes } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TwoFactorPage } from './two-factor';
+import { TwoFactorPage } from '~/features/auth/components/TwoFactorPage';
 
 const {
   invalidateMock,
@@ -43,7 +43,8 @@ vi.mock('@tanstack/react-router', () => ({
       {children}
     </a>
   ),
-  createFileRoute: () => () => ({
+  createFileRoute: () => (config: Record<string, unknown>) => ({
+    options: config,
     useSearch: () => useSearchMock(),
   }),
   useRouter: () => ({

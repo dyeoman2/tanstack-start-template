@@ -351,7 +351,7 @@ function isSecurityTab(value: string): value is (typeof SECURITY_TABS)[number] {
   return SECURITY_TABS.includes(value as (typeof SECURITY_TABS)[number]);
 }
 
-export function AdminSecurityRoute() {
+function AdminSecurityRoute() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const {
