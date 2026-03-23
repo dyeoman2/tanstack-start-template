@@ -249,7 +249,7 @@ export async function generateEvidenceReportHandler(
     allowedDataClasses: string[];
     allowedEnvironments: Array<'development' | 'production' | 'test'>;
     approvalEnvVar: string | null;
-    displayName: string;
+    title: string;
     linkedEntities: Array<{
       entityId: string;
       entityType: 'control' | 'review_run';
@@ -257,6 +257,11 @@ export async function generateEvidenceReportHandler(
       relationshipType: 'follow_up_for' | 'related_control';
       status: string | null;
     }>;
+    linkedAnnualReviewTask: {
+      id: Id<'reviewTasks'>;
+      status: 'ready' | 'completed' | 'exception' | 'blocked';
+      title: string;
+    } | null;
     linkedFollowUpRunId: Id<'reviewRuns'> | null;
     owner: string | null;
     relatedControls: Array<{
@@ -266,14 +271,13 @@ export async function generateEvidenceReportHandler(
       nist80053Id: string;
       title: string;
     }>;
-    customerSummary: string | null;
-    internalNotes: string | null;
-    reviewStatus: 'pending' | 'reviewed' | 'needs_follow_up';
-    reviewedAt: number | null;
-    reviewedByDisplay: string | null;
+    reviewStatus: 'current' | 'due_soon' | 'overdue';
+    lastReviewedAt: number | null;
+    nextReviewAt: number | null;
     scopeId: string;
     scopeType: 'provider_global';
     vendor: 'openrouter' | 'resend' | 'sentry';
+    summary: string | null;
   }>;
   const currentFindings = (
     reportKind === 'findings_snapshot' || reportKind === 'annual_review'
@@ -337,9 +341,11 @@ export async function generateEvidenceReportHandler(
               generatedByUserId: currentUser.authUserId,
               summary: {
                 approvedCount: vendorWorkspaces.filter((vendor) => vendor.approved).length,
-                needsFollowUpCount: vendorWorkspaces.filter(
-                  (vendor) => vendor.reviewStatus === 'needs_follow_up',
+                dueSoonCount: vendorWorkspaces.filter(
+                  (vendor) => vendor.reviewStatus === 'due_soon',
                 ).length,
+                overdueCount: vendorWorkspaces.filter((vendor) => vendor.reviewStatus === 'overdue')
+                  .length,
                 totalCount: vendorWorkspaces.length,
               },
               vendorBoundary: vendorWorkspaces,

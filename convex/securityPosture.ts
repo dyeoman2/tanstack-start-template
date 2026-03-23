@@ -25,10 +25,10 @@ import {
 import {
   buildReviewRunDetail,
   buildReviewRunSummary,
-  buildVendorWorkspaceRows,
   listReviewTasksByRunId,
 } from './lib/security/review_runs_core';
 import { listSecurityFindingsHandler } from './lib/security/workspace';
+import { buildVendorWorkspaceRows } from './lib/security/vendors_core';
 
 export const createEvidenceReport = internalMutation({
   args: {
@@ -154,7 +154,8 @@ export const getSecurityWorkspaceOverview = query({
       scopeType: SECURITY_SCOPE_TYPE,
       vendorSummary: {
         approvedCount: vendorSummary.approvedCount,
-        needsFollowUpCount: vendorSummary.needsFollowUpCount,
+        dueSoonCount: vendorSummary.dueSoonCount,
+        overdueCount: vendorSummary.overdueCount,
         totalCount: vendorSummary.totalCount,
       },
     };

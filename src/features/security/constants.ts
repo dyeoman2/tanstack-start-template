@@ -14,6 +14,14 @@ export const CONTROL_TABLE_SORT_FIELDS = [
   'family',
 ] as const;
 
+export const POLICY_TABLE_SORT_FIELDS = [
+  'title',
+  'support',
+  'owner',
+  'mappedControlCount',
+  'nextReviewAt',
+] as const;
+
 export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
   'all',
   'platform',
@@ -22,8 +30,6 @@ export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
 ] as const;
 
 export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'missing'] as const;
-
-export const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 export const EVIDENCE_REVIEW_DUE_OPTIONS = [3, 6, 12] as const;
 export const EVIDENCE_SOURCE_OPTIONS = [
   'manual_upload',

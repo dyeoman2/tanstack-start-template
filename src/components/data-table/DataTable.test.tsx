@@ -71,6 +71,20 @@ describe('DataTable', () => {
     expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
     expect(screen.getByRole('table')).toHaveAttribute('aria-busy', 'true');
   });
+
+  it('can render rows without pagination controls', () => {
+    render(
+      <DataTable
+        data={[{ id: '1', name: 'Ada Lovelace' }]}
+        columns={columns}
+        searchParams={{ page: 1, pageSize: 10, sortBy: 'name', sortOrder: 'asc' }}
+        isLoading={false}
+      />,
+    );
+
+    expect(screen.getByText('Ada Lovelace')).toBeInTheDocument();
+    expect(screen.queryByText(/rows per page/i)).not.toBeInTheDocument();
+  });
 });
 
 describe('createSortableHeader', () => {

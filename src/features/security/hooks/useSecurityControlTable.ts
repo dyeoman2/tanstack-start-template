@@ -7,8 +7,6 @@ export function useSecurityControlTable(args: {
   controls: SecurityControlWorkspaceSummary[];
   supportFilter: 'all' | SecurityControlWorkspaceSummary['support'];
   familyFilter: string;
-  page: number;
-  pageSize: number;
   responsibilityFilter: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
   searchTerm: string;
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
@@ -128,41 +126,20 @@ export function useSecurityControlTable(args: {
     return sorted;
   }, [args.sortBy, args.sortOrder, filteredControls]);
 
-  const totalControlPages = Math.max(1, Math.ceil(sortedControls.length / args.pageSize));
-  const currentControlPage = Math.min(args.page, totalControlPages);
-
-  const paginatedControls = useMemo(() => {
-    const startIndex = (currentControlPage - 1) * args.pageSize;
-    return sortedControls.slice(startIndex, startIndex + args.pageSize);
-  }, [currentControlPage, args.pageSize, sortedControls]);
-
-  const controlPagination = useMemo(
-    () => ({
-      page: currentControlPage,
-      pageSize: args.pageSize,
-      total: sortedControls.length,
-      totalPages: totalControlPages,
-    }),
-    [currentControlPage, args.pageSize, sortedControls.length, totalControlPages],
-  );
-
   const controlSearchParams = useMemo(
     () => ({
-      page: currentControlPage,
-      pageSize: args.pageSize,
+      page: 1,
+      pageSize: sortedControls.length || args.controls.length || 1,
       sortBy: args.sortBy,
       sortOrder: args.sortOrder,
     }),
-    [currentControlPage, args.pageSize, args.sortBy, args.sortOrder],
+    [args.controls.length, args.sortBy, args.sortOrder, sortedControls.length],
   );
 
   return {
-    controlPagination,
     controlSearchParams,
-    currentControlPage,
     supportOptions,
     familyOptions,
-    paginatedControls,
     responsibilityOptions,
     sortedControls,
   };

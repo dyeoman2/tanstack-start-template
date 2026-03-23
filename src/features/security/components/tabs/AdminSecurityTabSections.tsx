@@ -1,13 +1,6 @@
 import type { Id } from '@convex/_generated/dataModel';
 import type { ColumnDef } from '@tanstack/react-table';
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from 'react';
+import { useCallback, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import {
   createSortableHeader,
   DataTable,
@@ -93,6 +86,8 @@ type ReviewTaskGroups = {
   autoCollected: ReviewTaskDetail[];
   needsAttestation: ReviewTaskDetail[];
   needsDocumentUpload: ReviewTaskDetail[];
+  findingsReview: ReviewTaskDetail[];
+  vendorReviews: ReviewTaskDetail[];
   blocked: ReviewTaskDetail[];
 };
 
@@ -113,8 +108,6 @@ type AutoCollectedEvidenceLink = {
   };
   taskTitle: string;
 };
-
-const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
 type PolicyTableSortField = 'title' | 'support' | 'owner' | 'mappedControlCount' | 'nextReviewAt';
 
@@ -225,15 +218,18 @@ export function AdminSecurityPoliciesTab(props: {
   onOpenPolicy: (policyId: string) => void;
   onSyncPolicies: () => Promise<void>;
   policies: SecurityPolicySummary[] | undefined;
+  searchTerm: string;
+  sortBy: PolicyTableSortField;
+  sortOrder: 'asc' | 'desc';
+  supportFilter: 'all' | SecurityPolicySummary['support'];
+  updatePolicySearch: (updates: {
+    policySearch?: string;
+    policySortBy?: PolicyTableSortField;
+    policySortOrder?: 'asc' | 'desc';
+    policySupport?: 'all' | SecurityPolicySummary['support'];
+    selectedPolicy?: string | undefined;
+  }) => void;
 }) {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [supportFilter, setSupportFilter] = useState<'all' | SecurityPolicySummary['support']>(
-    'all',
-  );
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<(typeof POLICY_PAGE_SIZE_OPTIONS)[number]>(10);
-  const [sortBy, setSortBy] = useState<PolicyTableSortField>('title');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const policies = useMemo(() => props.policies ?? [], [props.policies]);
   const counts = policies.reduce(
     (summary, policy) => {
@@ -258,10 +254,10 @@ export function AdminSecurityPoliciesTab(props: {
     [],
   );
   const filteredPolicies = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const query = props.searchTerm.trim().toLowerCase();
 
     return policies.filter((policy) => {
-      if (supportFilter !== 'all' && policy.support !== supportFilter) {
+      if (props.supportFilter !== 'all' && policy.support !== props.supportFilter) {
         return false;
       }
 
@@ -277,7 +273,7 @@ export function AdminSecurityPoliciesTab(props: {
         policy.linkedAnnualReviewTask?.title ?? '',
       ].some((value) => value.toLowerCase().includes(query));
     });
-  }, [policies, searchTerm, supportFilter]);
+  }, [policies, props.searchTerm, props.supportFilter]);
   const sortedPolicies = useMemo(() => {
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     const sorted = [...filteredPolicies];
@@ -285,7 +281,7 @@ export function AdminSecurityPoliciesTab(props: {
     sorted.sort((left, right) => {
       let result = 0;
 
-      switch (sortBy) {
+      switch (props.sortBy) {
         case 'title':
           result = collator.compare(left.title, right.title);
           break;
@@ -306,45 +302,30 @@ export function AdminSecurityPoliciesTab(props: {
         }
       }
 
-      return sortOrder === 'asc' ? result : -result;
+      return props.sortOrder === 'asc' ? result : -result;
     });
 
     return sorted;
-  }, [filteredPolicies, sortBy, sortOrder]);
+  }, [filteredPolicies, props.sortBy, props.sortOrder]);
   const totalPolicies = sortedPolicies.length;
-  const totalPages = totalPolicies === 0 ? 0 : Math.ceil(totalPolicies / pageSize);
-  const currentPage = totalPages === 0 ? 1 : Math.min(page, totalPages);
-  const paginatedPolicies = useMemo(() => {
-    const startIndex = (currentPage - 1) * pageSize;
-    return sortedPolicies.slice(startIndex, startIndex + pageSize);
-  }, [currentPage, pageSize, sortedPolicies]);
   const policySearchParams = useMemo(
     () => ({
-      page: currentPage,
-      pageSize,
-      sortBy,
-      sortOrder,
+      page: 1,
+      pageSize: totalPolicies || policies.length || 1,
+      sortBy: props.sortBy,
+      sortOrder: props.sortOrder,
     }),
-    [currentPage, pageSize, sortBy, sortOrder],
-  );
-  const policyPagination = useMemo(
-    () => ({
-      page: currentPage,
-      pageSize,
-      total: totalPolicies,
-      totalPages,
-    }),
-    [currentPage, pageSize, totalPages, totalPolicies],
+    [policies.length, props.sortBy, props.sortOrder, totalPolicies],
   );
   const handlePolicySorting = useCallback(
     (columnId: PolicyTableSortField) => {
-      setPage(1);
-      setSortBy(columnId);
-      setSortOrder((currentOrder) =>
-        sortBy === columnId ? (currentOrder === 'asc' ? 'desc' : 'asc') : 'asc',
-      );
+      props.updatePolicySearch({
+        policySortBy: columnId,
+        policySortOrder:
+          props.sortBy === columnId ? (props.sortOrder === 'asc' ? 'desc' : 'asc') : 'asc',
+      });
     },
-    [sortBy],
+    [props.sortBy, props.sortOrder, props.updatePolicySearch],
   );
   const policyColumns = useMemo<ColumnDef<SecurityPolicySummary, unknown>[]>(
     () => [
@@ -395,12 +376,6 @@ export function AdminSecurityPoliciesTab(props: {
     [handlePolicySorting, policySearchParams],
   );
 
-  useEffect(() => {
-    if (page > currentPage) {
-      setPage(currentPage);
-    }
-  }, [currentPage, page]);
-
   return (
     <>
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -449,11 +424,10 @@ export function AdminSecurityPoliciesTab(props: {
           <p className="text-sm text-muted-foreground whitespace-nowrap">{totalPolicies} matches</p>
           <div className="flex flex-wrap items-center gap-2">
             <TableFilter<'all' | SecurityPolicySummary['support']>
-              value={supportFilter}
+              value={props.supportFilter}
               options={supportOptions}
               onValueChange={(value) => {
-                setSupportFilter(value);
-                setPage(1);
+                props.updatePolicySearch({ policySupport: value });
               }}
               className="shrink-0"
               ariaLabel="Filter policies by support"
@@ -462,10 +436,9 @@ export function AdminSecurityPoliciesTab(props: {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
           <TableSearch
-            initialValue={searchTerm}
+            initialValue={props.searchTerm}
             onSearch={(value) => {
-              setSearchTerm(value);
-              setPage(1);
+              props.updatePolicySearch({ policySearch: value });
             }}
             placeholder="Search by policy, summary, owner, or source path"
             isSearching={false}
@@ -476,22 +449,10 @@ export function AdminSecurityPoliciesTab(props: {
       </div>
 
       <DataTable<SecurityPolicySummary, ColumnDef<SecurityPolicySummary, unknown>>
-        data={paginatedPolicies}
+        data={sortedPolicies}
         columns={policyColumns}
-        pagination={policyPagination}
         searchParams={policySearchParams}
         isLoading={props.policies === undefined}
-        onPageChange={setPage}
-        onPageSizeChange={(nextPageSize) => {
-          setPage(1);
-          setPageSize(
-            POLICY_PAGE_SIZE_OPTIONS.includes(
-              nextPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number],
-            )
-              ? (nextPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number])
-              : 10,
-          );
-        }}
         onRowClick={(policy) => {
           props.onOpenPolicy(policy.policyId);
         }}
@@ -503,12 +464,6 @@ export function AdminSecurityPoliciesTab(props: {
 
 export function AdminSecurityControlsTab(props: {
   controlColumns: ColumnDef<SecurityControlWorkspaceSummary, unknown>[];
-  controlPagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
   controlSearchParams: {
     page: number;
     pageSize: number;
@@ -522,18 +477,13 @@ export function AdminSecurityControlsTab(props: {
   familyFilter: string;
   familyOptions: TableFilterOption<string>[];
   isExportingControls: boolean;
-  paginatedControls: SecurityControlWorkspaceSummary[];
   responsibilityFilter: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
   responsibilityOptions: Array<
     TableFilterOption<'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>>
   >;
   sortedControls: SecurityControlWorkspaceSummary[];
-  handleControlPageChange: (nextPage: number) => void;
-  handleControlPageSizeChange: (nextPageSize: number) => void;
   handleExportControls: () => Promise<void>;
   updateControlSearch: (updates: {
-    page?: number;
-    pageSize?: 10 | 20 | 50;
     sortBy?: 'control' | 'support' | 'responsibility' | 'family';
     sortOrder?: 'asc' | 'desc';
     search?: string;
@@ -556,14 +506,14 @@ export function AdminSecurityControlsTab(props: {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
         <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">
           <p className="text-sm text-muted-foreground whitespace-nowrap">
-            {props.controlPagination.total} matches
+            {props.sortedControls.length} matches
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <TableFilter<string>
               value={props.familyFilter}
               options={props.familyOptions}
               onValueChange={(value) => {
-                props.updateControlSearch({ family: value, page: 1 });
+                props.updateControlSearch({ family: value });
               }}
               className="shrink-0"
               ariaLabel="Filter controls by family"
@@ -572,7 +522,7 @@ export function AdminSecurityControlsTab(props: {
               value={props.responsibilityFilter}
               options={props.responsibilityOptions}
               onValueChange={(value) => {
-                props.updateControlSearch({ responsibility: value, page: 1 });
+                props.updateControlSearch({ responsibility: value });
               }}
               className="shrink-0"
               ariaLabel="Filter controls by responsibility"
@@ -583,7 +533,6 @@ export function AdminSecurityControlsTab(props: {
               onValueChange={(value) => {
                 props.updateControlSearch({
                   support: value,
-                  page: 1,
                 });
               }}
               className="shrink-0"
@@ -595,7 +544,7 @@ export function AdminSecurityControlsTab(props: {
           <TableSearch
             initialValue={props.controlSearchTerm}
             onSearch={(value) => {
-              props.updateControlSearch({ search: value, page: 1 });
+              props.updateControlSearch({ search: value });
             }}
             placeholder="Search by control, checklist item, owner, responsibility, or framework"
             isSearching={false}
@@ -615,13 +564,10 @@ export function AdminSecurityControlsTab(props: {
         SecurityControlWorkspaceSummary,
         ColumnDef<SecurityControlWorkspaceSummary, unknown>
       >
-        data={props.paginatedControls}
+        data={props.sortedControls}
         columns={props.controlColumns}
-        pagination={props.controlPagination}
         searchParams={props.controlSearchParams}
         isLoading={false}
-        onPageChange={props.handleControlPageChange}
-        onPageSizeChange={props.handleControlPageSizeChange}
         onRowClick={(control) => {
           props.updateControlSearch({
             selectedControl: control.internalControlId,
@@ -1301,6 +1247,34 @@ export function AdminSecurityReviewsTab(props: {
               />
               <AdminSecurityReviewTaskGroup
                 busyAction={props.busyReviewTaskAction}
+                description="Vendor governance reviews that renew the vendor assessment cadence without affecting support rollups."
+                documents={props.reviewTaskDocuments}
+                notes={props.reviewTaskNotes}
+                onAttestTask={props.handleAttestTask}
+                onChangeDocumentField={props.onChangeDocumentField}
+                onChangeNote={props.onChangeNote}
+                onExceptionTask={props.handleExceptionTask}
+                onOpenControl={props.navigateToControl}
+                onOpenFollowUp={props.handleOpenReviewFollowUp}
+                tasks={props.reviewTaskGroups.vendorReviews}
+                title="Vendor reviews"
+              />
+              <AdminSecurityReviewTaskGroup
+                busyAction={props.busyReviewTaskAction}
+                description="Grouped findings review for annual governance posture. Critical open findings must be resolved or dispositioned before attestation."
+                documents={props.reviewTaskDocuments}
+                notes={props.reviewTaskNotes}
+                onAttestTask={props.handleAttestTask}
+                onChangeDocumentField={props.onChangeDocumentField}
+                onChangeNote={props.onChangeNote}
+                onExceptionTask={props.handleExceptionTask}
+                onOpenControl={props.navigateToControl}
+                onOpenFollowUp={props.handleOpenReviewFollowUp}
+                tasks={props.reviewTaskGroups.findingsReview}
+                title="Findings review"
+              />
+              <AdminSecurityReviewTaskGroup
+                busyAction={props.busyReviewTaskAction}
                 description="Tasks that require a linked document so the annual review can materialize fresh support evidence."
                 documents={props.reviewTaskDocuments}
                 notes={props.reviewTaskNotes}
@@ -1500,16 +1474,11 @@ function AdminSecurityVendorsTab(props: {
   navigateToReviews: () => void;
   onSelectVendor: (vendorKey: VendorWorkspace['vendor']) => void;
   onSelectReviewRun: (reviewRunId: ReviewRunSummary['id']) => void;
-  vendorCustomerSummaries: Record<string, string>;
-  vendorNotes: Record<string, string>;
+  vendorSummaries: Record<string, string>;
   vendorOwners: Record<string, string>;
   vendorWorkspaces: VendorWorkspace[] | undefined;
-  handleReviewVendor: (
-    vendor: VendorWorkspace,
-    reviewStatus: VendorWorkspace['reviewStatus'],
-  ) => Promise<void>;
-  setVendorCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setVendorNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  handleReviewVendor: (vendor: VendorWorkspace) => Promise<void>;
+  setVendorSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
@@ -1527,24 +1496,24 @@ function AdminSecurityVendorsTab(props: {
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium">{vendor.displayName}</p>
+                  <p className="font-medium">{vendor.title}</p>
                   <Badge variant={vendor.approved ? 'default' : 'secondary'}>
                     {vendor.approved ? 'Approved' : 'Blocked'}
                   </Badge>
                   <Badge
                     variant={
-                      vendor.reviewStatus === 'reviewed'
+                      vendor.reviewStatus === 'current'
                         ? 'default'
-                        : vendor.reviewStatus === 'needs_follow_up'
+                        : vendor.reviewStatus === 'overdue'
                           ? 'destructive'
                           : 'outline'
                     }
                   >
-                    {vendor.reviewStatus === 'needs_follow_up'
-                      ? 'Needs follow-up'
-                      : vendor.reviewStatus === 'reviewed'
-                        ? 'Reviewed'
-                        : 'Pending review'}
+                    {vendor.reviewStatus === 'overdue'
+                      ? 'Overdue'
+                      : vendor.reviewStatus === 'current'
+                        ? 'Current'
+                        : 'Due soon'}
                   </Badge>
                 </div>
                 <p className="text-sm text-muted-foreground">
@@ -1560,10 +1529,12 @@ function AdminSecurityVendorsTab(props: {
                       : `Approved via ${vendor.approvalEnvVar}`
                     : `Blocked until ${vendor.approvalEnvVar ?? 'approved'}`}
                 </p>
-                {vendor.reviewedAt ? (
+                {vendor.lastReviewedAt ? (
                   <p className="text-sm text-muted-foreground">
-                    Reviewed {new Date(vendor.reviewedAt).toLocaleString()}
-                    {vendor.reviewedByDisplay ? ` · ${vendor.reviewedByDisplay}` : ''}
+                    Last reviewed {new Date(vendor.lastReviewedAt).toLocaleString()}
+                    {vendor.nextReviewAt
+                      ? ` · Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
+                      : ''}
                   </p>
                 ) : null}
               </div>
@@ -1608,24 +1579,14 @@ function AdminSecurityVendorsTab(props: {
 
             <div className="mt-4 space-y-2">
               <Textarea
-                value={props.vendorNotes[vendor.vendor] ?? vendor.internalNotes ?? ''}
+                value={props.vendorSummaries[vendor.vendor] ?? vendor.summary ?? ''}
                 onChange={(event) => {
-                  props.setVendorNotes((current) => ({
+                  props.setVendorSummaries((current) => ({
                     ...current,
                     [vendor.vendor]: event.target.value,
                   }));
                 }}
-                placeholder="Internal notes"
-              />
-              <Textarea
-                value={props.vendorCustomerSummaries[vendor.vendor] ?? vendor.customerSummary ?? ''}
-                onChange={(event) => {
-                  props.setVendorCustomerSummaries((current) => ({
-                    ...current,
-                    [vendor.vendor]: event.target.value,
-                  }));
-                }}
-                placeholder="Customer-facing summary"
+                placeholder="Vendor summary"
               />
               <div className="flex flex-wrap gap-2">
                 <Button
@@ -1641,20 +1602,10 @@ function AdminSecurityVendorsTab(props: {
                   type="button"
                   disabled={props.busyVendorKey !== null}
                   onClick={() => {
-                    void props.handleReviewVendor(vendor, 'reviewed');
+                    void props.handleReviewVendor(vendor);
                   }}
                 >
-                  {props.busyVendorKey === vendor.vendor ? 'Saving…' : 'Mark reviewed'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={props.busyVendorKey !== null}
-                  onClick={() => {
-                    void props.handleReviewVendor(vendor, 'needs_follow_up');
-                  }}
-                >
-                  {props.busyVendorKey === vendor.vendor ? 'Opening…' : 'Needs follow-up'}
+                  {props.busyVendorKey === vendor.vendor ? 'Saving…' : 'Review now'}
                 </Button>
                 {vendor.linkedFollowUpRunId ? (
                   <Button
@@ -1718,8 +1669,7 @@ export function AdminSecurityOperationsTab(props: {
   selectedOperationId: string | undefined;
   selectedOperationType: SecurityOperationDetail['kind'] | undefined;
   triggeredReviewRuns: ReviewRunSummary[] | undefined;
-  vendorCustomerSummaries: Record<string, string>;
-  vendorNotes: Record<string, string>;
+  vendorSummaries: Record<string, string>;
   vendorOwners: Record<string, string>;
   vendorWorkspaces: VendorWorkspace[] | undefined;
   handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
@@ -1732,10 +1682,7 @@ export function AdminSecurityOperationsTab(props: {
     reviewStatus: 'needs_follow_up' | 'reviewed',
   ) => Promise<void>;
   handleExportReport: (id: Id<'evidenceReports'>) => Promise<void>;
-  handleReviewVendor: (
-    vendor: VendorWorkspace,
-    reviewStatus: VendorWorkspace['reviewStatus'],
-  ) => Promise<void>;
+  handleReviewVendor: (vendor: VendorWorkspace) => Promise<void>;
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: () => void;
   setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
@@ -1747,8 +1694,7 @@ export function AdminSecurityOperationsTab(props: {
   setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setReportNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  setVendorCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setVendorNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setVendorSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
@@ -1887,10 +1833,23 @@ export function AdminSecurityOperationsTab(props: {
                   const vendorReview = props.selectedOperationDetail.vendorReview;
                   return (
                     <div className="space-y-2 text-sm text-muted-foreground">
-                      <p className="font-medium text-foreground">{vendorReview.displayName}</p>
+                      <p className="font-medium text-foreground">{vendorReview.title}</p>
                       <p>Review: {vendorReview.reviewStatus}</p>
+                      {vendorReview.lastReviewedAt ? (
+                        <p>
+                          Last reviewed: {new Date(vendorReview.lastReviewedAt).toLocaleString()}
+                        </p>
+                      ) : null}
+                      {vendorReview.nextReviewAt ? (
+                        <p>
+                          Next review: {new Date(vendorReview.nextReviewAt).toLocaleDateString()}
+                        </p>
+                      ) : null}
                       <p>Data classes: {vendorReview.allowedDataClasses.join(', ')}</p>
                       <p>Environments: {vendorReview.allowedEnvironments.join(', ')}</p>
+                      {vendorReview.linkedAnnualReviewTask ? (
+                        <p>Annual review task: {vendorReview.linkedAnnualReviewTask.title}</p>
+                      ) : null}
                       {vendorReview.linkedFollowUpRunId ? (
                         <div className="flex flex-wrap gap-2">
                           <Button
@@ -2013,11 +1972,9 @@ export function AdminSecurityOperationsTab(props: {
         onSelectVendor={(vendorKey) => {
           props.onSelectOperation('vendor_review', vendorKey);
         }}
-        setVendorCustomerSummaries={props.setVendorCustomerSummaries}
-        setVendorNotes={props.setVendorNotes}
+        setVendorSummaries={props.setVendorSummaries}
         setVendorOwners={props.setVendorOwners}
-        vendorCustomerSummaries={props.vendorCustomerSummaries}
-        vendorNotes={props.vendorNotes}
+        vendorSummaries={props.vendorSummaries}
         vendorOwners={props.vendorOwners}
         vendorWorkspaces={props.vendorWorkspaces}
       />

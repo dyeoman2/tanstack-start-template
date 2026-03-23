@@ -33,9 +33,9 @@ const vendorRuntimePostureValidator = v.object({
   vendor: vendorKeyValidator,
 });
 const vendorReviewStatusValidator = v.union(
-  v.literal('pending'),
-  v.literal('reviewed'),
-  v.literal('needs_follow_up'),
+  v.literal('current'),
+  v.literal('due_soon'),
+  v.literal('overdue'),
 );
 const vendorRelatedControlValidator = v.object({
   internalControlId: v.string(),
@@ -159,16 +159,28 @@ const vendorWorkspaceValidator = v.object({
   approvalEnvVar: v.union(v.string(), v.null()),
   approved: v.boolean(),
   approvedByDefault: v.boolean(),
-  displayName: v.string(),
+  title: v.string(),
+  summary: v.union(v.string(), v.null()),
   linkedFollowUpRunId: v.union(v.id('reviewRuns'), v.null()),
   linkedEntities: v.array(linkedEntitySummaryValidator),
+  linkedAnnualReviewTask: v.union(
+    v.object({
+      id: v.id('reviewTasks'),
+      status: v.union(
+        v.literal('ready'),
+        v.literal('completed'),
+        v.literal('exception'),
+        v.literal('blocked'),
+      ),
+      title: v.string(),
+    }),
+    v.null(),
+  ),
   owner: v.union(v.string(), v.null()),
   relatedControls: v.array(vendorRelatedControlValidator),
-  customerSummary: v.union(v.string(), v.null()),
-  internalNotes: v.union(v.string(), v.null()),
   reviewStatus: vendorReviewStatusValidator,
-  reviewedAt: v.union(v.number(), v.null()),
-  reviewedByDisplay: v.union(v.string(), v.null()),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  nextReviewAt: v.union(v.number(), v.null()),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
   vendor: vendorKeyValidator,
@@ -945,6 +957,23 @@ const reviewTaskValidator = v.object({
     v.null(),
   ),
   policyControls: v.array(securityPolicyMappedControlValidator),
+  vendor: v.union(
+    v.object({
+      reviewStatus: vendorReviewStatusValidator,
+      title: v.string(),
+      vendorKey: vendorKeyValidator,
+    }),
+    v.null(),
+  ),
+  findingsSummary: v.union(
+    v.object({
+      criticalOpenCount: v.number(),
+      lowerSeverityOpenCount: v.number(),
+      totalOpenCount: v.number(),
+      undispositionedCount: v.number(),
+    }),
+    v.null(),
+  ),
   required: v.boolean(),
   satisfiedAt: v.union(v.number(), v.null()),
   satisfiedThroughAt: v.union(v.number(), v.null()),
@@ -1132,7 +1161,8 @@ const securityWorkspaceOverviewValidator = v.object({
   scopeType: securityScopeTypeValidator,
   vendorSummary: v.object({
     approvedCount: v.number(),
-    needsFollowUpCount: v.number(),
+    dueSoonCount: v.number(),
+    overdueCount: v.number(),
     totalCount: v.number(),
   }),
 });

@@ -1,22 +1,22 @@
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
+import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
 import {
   buildEvidenceReportDetail,
-  buildVendorWorkspaceRows,
   createTriggeredReviewRunRecord,
   reconcileEvidenceReportLinkedTasks,
-  syncVendorReviewOverlayRecords,
 } from './lib/security/review_runs_core';
+import {
+  buildVendorWorkspaceRows,
+  resolveVendorNextReviewAt,
+  syncSecurityVendorRecords,
+} from './lib/security/vendors_core';
 import { exportEvidenceReportHandler, generateEvidenceReportHandler } from './lib/security/reports';
 import {
-  buildVendorRelatedControls,
-  deleteSecurityRelationships,
   getSecurityScopeFields,
-  getVendorRelatedControlLinks,
   normalizeSecurityScope,
   stringifyStable,
-  upsertSecurityRelationship,
 } from './lib/security/core';
 import {
   evidenceReportDetailValidator,
@@ -25,7 +25,6 @@ import {
   evidenceReportRecordValidator,
   evidenceReportValidator,
   vendorKeyValidator,
-  vendorReviewStatusValidator,
   vendorWorkspaceListValidator,
   vendorWorkspaceValidator,
 } from './lib/security/validators';
@@ -194,81 +193,48 @@ export const syncVendorReviewRecords = mutation({
   returns: v.number(),
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    return await syncVendorReviewOverlayRecords(ctx);
+    await syncSecurityVendorRecords(ctx);
+    return 0;
   },
 });
 
 export const reviewVendorWorkspace = mutation({
   args: {
-    customerSummary: v.optional(v.string()),
-    internalNotes: v.optional(v.string()),
     owner: v.optional(v.string()),
-    reviewStatus: vendorReviewStatusValidator,
+    summary: v.optional(v.string()),
     vendorKey: vendorKeyValidator,
   },
   returns: vendorWorkspaceValidator,
   handler: async (ctx, args) => {
-    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const existing = await ctx.db
-      .query('securityVendorReviews')
+      .query('securityVendors')
       .withIndex('by_vendor_key', (q) => q.eq('vendorKey', args.vendorKey))
       .unique();
     const now = Date.now();
-    const linkedFollowUpRunId =
-      args.reviewStatus === 'needs_follow_up'
-        ? await createTriggeredReviewRunRecord(ctx, {
-            actorUserId: currentUser.authUserId,
-            controlLinks: buildVendorRelatedControls(args.vendorKey).map((control) => ({
-              internalControlId: control.internalControlId,
-              itemId: control.itemId ?? '',
-            })),
-            dedupeKey: `vendor-review:${args.vendorKey}`,
-            sourceLink: {
-              freshAt: now,
-              sourceId: args.vendorKey,
-              sourceLabel: args.vendorKey,
-              sourceType: 'vendor_review',
-            },
-            sourceRecordId: args.vendorKey,
-            sourceRecordType: 'vendor_review',
-            title: `${args.vendorKey} vendor follow-up`,
-            triggerType: 'vendor_review_follow_up',
-          })
-        : null;
+    const lastReviewedAt = now;
+    const nextReviewAt = resolveVendorNextReviewAt(now);
 
     if (existing) {
-      if (existing.linkedFollowUpRunId && existing.linkedFollowUpRunId !== linkedFollowUpRunId) {
-        await deleteSecurityRelationships(ctx, {
-          fromId: args.vendorKey,
-          fromType: 'vendor_review',
-          relationshipType: 'follow_up_for',
-          toId: existing.linkedFollowUpRunId,
-          toType: 'review_run',
-        });
-      }
-      const internalNotes = args.internalNotes?.trim() || null;
       await ctx.db.patch(existing._id, {
-        customerSummary: args.customerSummary?.trim() || null,
-        internalReviewNotes: internalNotes,
-        linkedFollowUpRunId: linkedFollowUpRunId ?? undefined,
+        lastReviewedAt,
+        nextReviewAt,
         owner: args.owner?.trim() || undefined,
-        reviewStatus: args.reviewStatus,
-        reviewedAt: now,
-        reviewedByUserId: currentUser.authUserId,
+        summary: args.summary?.trim() || null,
         updatedAt: now,
       });
     } else {
-      const internalNotes = args.internalNotes?.trim() || null;
-      await ctx.db.insert('securityVendorReviews', {
+      const runtimeVendor = getVendorBoundarySnapshot().find(
+        (vendor) => vendor.vendor === args.vendorKey,
+      );
+      await ctx.db.insert('securityVendors', {
         ...getSecurityScopeFields(),
         createdAt: now,
-        customerSummary: args.customerSummary?.trim() || null,
-        internalReviewNotes: internalNotes,
-        linkedFollowUpRunId: linkedFollowUpRunId ?? undefined,
+        lastReviewedAt,
+        nextReviewAt,
         owner: args.owner?.trim() || undefined,
-        reviewStatus: args.reviewStatus,
-        reviewedAt: now,
-        reviewedByUserId: currentUser.authUserId,
+        summary: args.summary?.trim() || null,
+        title: runtimeVendor?.displayName ?? args.vendorKey,
         updatedAt: now,
         vendorKey: args.vendorKey,
       });
@@ -279,35 +245,6 @@ export const reviewVendorWorkspace = mutation({
     if (!updated) {
       throw new Error('Vendor workspace not found after review update.');
     }
-    for (const controlLink of getVendorRelatedControlLinks(args.vendorKey)) {
-      await upsertSecurityRelationship(ctx, {
-        createdByUserId: currentUser.authUserId,
-        fromId: args.vendorKey,
-        fromType: 'vendor_review',
-        relationshipType: 'related_control',
-        toId: controlLink.internalControlId,
-        toType: 'control',
-      });
-      await upsertSecurityRelationship(ctx, {
-        createdByUserId: currentUser.authUserId,
-        fromId: controlLink.internalControlId,
-        fromType: 'control',
-        relationshipType: 'tracks_vendor_review',
-        toId: args.vendorKey,
-        toType: 'vendor_review',
-      });
-    }
-    if (linkedFollowUpRunId) {
-      await upsertSecurityRelationship(ctx, {
-        createdByUserId: currentUser.authUserId,
-        fromId: args.vendorKey,
-        fromType: 'vendor_review',
-        relationshipType: 'follow_up_for',
-        toId: linkedFollowUpRunId,
-        toType: 'review_run',
-      });
-    }
-
     return updated;
   },
 });

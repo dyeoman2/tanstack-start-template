@@ -24,13 +24,13 @@ interface DataTableProps<
 > {
   data: TData[];
   columns: TColumnDef[];
-  pagination: {
+  pagination?: {
     page: number;
     pageSize: number;
     total: number;
     totalPages: number;
   };
-  searchParams: {
+  searchParams?: {
     page: number;
     pageSize: number;
     sortBy: string;
@@ -38,8 +38,8 @@ interface DataTableProps<
   };
   isLoading: boolean;
   isFetching?: boolean;
-  onPageChange: (page: number) => void;
-  onPageSizeChange: (pageSize: number) => void;
+  onPageChange?: (page: number) => void;
+  onPageSizeChange?: (pageSize: number) => void;
   emptyMessage?: string;
   loadingSkeleton?: React.ReactNode;
   onRowClick?: (row: TData) => void;
@@ -62,7 +62,7 @@ export function DataTable<
   onRowClick,
 }: DataTableProps<TData, TColumnDef>) {
   const sortingState: SortingState = [
-    { id: searchParams.sortBy, desc: searchParams.sortOrder === 'desc' },
+    { id: searchParams?.sortBy ?? '', desc: searchParams?.sortOrder === 'desc' },
   ];
 
   const table = useReactTable({
@@ -138,8 +138,7 @@ export function DataTable<
         </Table>
       </div>
 
-      {/* Pagination Controls */}
-      {pagination && data.length > 0 && (
+      {pagination && onPageChange && onPageSizeChange && data.length > 0 && (
         <PaginationControls
           pagination={pagination}
           onPageChange={onPageChange}

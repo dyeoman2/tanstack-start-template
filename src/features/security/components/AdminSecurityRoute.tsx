@@ -31,8 +31,8 @@ import {
   AdminSecurityReviewsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
 import {
-  CONTROL_PAGE_SIZE_OPTIONS,
   CONTROL_TABLE_SORT_FIELDS,
+  POLICY_TABLE_SORT_FIELDS,
   SECURITY_TAB_PATHS,
   SECURITY_TABS,
 } from '~/features/security/constants';
@@ -94,8 +94,6 @@ function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
     case 'controls':
       return {
         family: search.family,
-        page: search.page,
-        pageSize: search.pageSize,
         responsibility: search.responsibility,
         search: search.search,
         selectedControl: search.selectedControl,
@@ -105,6 +103,10 @@ function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
       };
     case 'policies':
       return {
+        policySearch: search.policySearch,
+        policySortBy: search.policySortBy,
+        policySortOrder: search.policySortOrder,
+        policySupport: search.policySupport,
         selectedPolicy: search.selectedPolicy,
       };
     case 'operations':
@@ -270,8 +272,6 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
   const search = props.search;
   const {
     family: familyFilter,
-    page,
-    pageSize,
     responsibility: responsibilityFilter,
     search: controlSearchTerm,
     selectedControl: selectedControlId,
@@ -336,18 +336,14 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
     );
   }, [controls, workspaceOverview]);
   const {
-    controlPagination,
     controlSearchParams,
     familyOptions,
-    paginatedControls,
     responsibilityOptions,
     sortedControls,
     supportOptions,
   } = useSecurityControlTable({
     controls,
     familyFilter,
-    page,
-    pageSize,
     responsibilityFilter,
     searchTerm: controlSearchTerm,
     sortBy,
@@ -359,8 +355,6 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
     (
       updates: Partial<{
         family: string;
-        page: number;
-        pageSize: (typeof CONTROL_PAGE_SIZE_OPTIONS)[number];
         responsibility: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
         search: string;
         selectedControl: string | undefined;
@@ -383,33 +377,11 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
   const handleControlSorting = useCallback(
     (columnId: (typeof CONTROL_TABLE_SORT_FIELDS)[number]) => {
       updateControlSearch({
-        page: 1,
         sortBy: columnId,
         sortOrder: sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc',
       });
     },
     [sortBy, sortOrder, updateControlSearch],
-  );
-
-  const handleControlPageChange = useCallback(
-    (nextPage: number) => {
-      updateControlSearch({ page: nextPage });
-    },
-    [updateControlSearch],
-  );
-
-  const handleControlPageSizeChange = useCallback(
-    (nextPageSize: number) => {
-      updateControlSearch({
-        page: 1,
-        pageSize: CONTROL_PAGE_SIZE_OPTIONS.includes(
-          nextPageSize as (typeof CONTROL_PAGE_SIZE_OPTIONS)[number],
-        )
-          ? (nextPageSize as (typeof CONTROL_PAGE_SIZE_OPTIONS)[number])
-          : 10,
-      });
-    },
-    [updateControlSearch],
   );
 
   const controlColumns = useMemo<ColumnDef<SecurityControlWorkspaceSummary, unknown>[]>(
@@ -691,17 +663,13 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
     <>
       <AdminSecurityControlsTab
         controlColumns={controlColumns}
-        controlPagination={controlPagination}
         controlSearchParams={controlSearchParams}
         controlSearchTerm={controlSearchTerm}
         controlSummary={controlSummary}
         familyFilter={familyFilter}
         familyOptions={familyOptions}
-        handleControlPageChange={handleControlPageChange}
-        handleControlPageSizeChange={handleControlPageSizeChange}
         handleExportControls={handleExportControls}
         isExportingControls={isExportingControls}
-        paginatedControls={paginatedControls}
         responsibilityFilter={responsibilityFilter}
         responsibilityOptions={responsibilityOptions}
         sortedControls={sortedControls}
@@ -755,8 +723,10 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
 export function AdminSecurityRoute(props: {
   search: SecurityCompatSearch & {
     family?: string;
-    page?: number;
-    pageSize?: 10 | 20 | 50;
+    policySearch?: string;
+    policySortBy?: (typeof POLICY_TABLE_SORT_FIELDS)[number];
+    policySortOrder?: 'asc' | 'desc';
+    policySupport?: 'all' | 'complete' | 'partial' | 'missing';
     responsibility?: 'all' | 'platform' | 'shared-responsibility' | 'customer';
     search?: string;
     sortBy?: 'control' | 'support' | 'responsibility' | 'family';
@@ -774,8 +744,6 @@ export function AdminSecurityRoute(props: {
         <AdminSecurityControlsRoute
           search={{
             family: props.search.family ?? 'all',
-            page: props.search.page ?? 1,
-            pageSize: props.search.pageSize ?? 10,
             responsibility: props.search.responsibility ?? 'all',
             search: props.search.search ?? '',
             selectedControl: props.search.selectedControl,
@@ -788,6 +756,10 @@ export function AdminSecurityRoute(props: {
       {activeTab === 'policies' ? (
         <AdminSecurityPoliciesRoute
           search={{
+            policySearch: props.search.policySearch ?? '',
+            policySortBy: props.search.policySortBy ?? 'title',
+            policySortOrder: props.search.policySortOrder ?? 'asc',
+            policySupport: props.search.policySupport ?? 'all',
             selectedPolicy: props.search.selectedPolicy,
           }}
         />
@@ -809,7 +781,13 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { navigateToControl } = useSecurityNavigation();
-  const selectedPolicyId = props.search.selectedPolicy;
+  const {
+    policySearch,
+    policySortBy,
+    policySortOrder,
+    policySupport,
+    selectedPolicy: selectedPolicyId,
+  } = props.search;
   const policySummaries = useQuery(api.securityPolicies.listSecurityPolicies, {}) as
     | SecurityPolicySummary[]
     | undefined;
@@ -832,20 +810,41 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
     }
   }, [showToast, syncSecurityPoliciesFromSeed]);
 
+  const updatePolicySearch = useCallback(
+    (
+      updates: Partial<{
+        policySearch: string;
+        policySortBy: (typeof POLICY_TABLE_SORT_FIELDS)[number];
+        policySortOrder: 'asc' | 'desc';
+        policySupport: 'all' | SecurityPolicySummary['support'];
+        selectedPolicy: string | undefined;
+      }>,
+    ) => {
+      void navigate({
+        search: {
+          ...props.search,
+          ...updates,
+        },
+        to: getSecurityPath('policies'),
+      });
+    },
+    [navigate, props.search],
+  );
+
   return (
     <>
       <AdminSecurityPoliciesTab
         busySync={isSyncingPolicies}
         onOpenPolicy={(policyId) => {
-          void navigate({
-            search: {
-              selectedPolicy: policyId,
-            },
-            to: getSecurityPath('policies'),
-          });
+          updatePolicySearch({ selectedPolicy: policyId });
         }}
         onSyncPolicies={handleSyncPolicies}
         policies={policySummaries}
+        searchTerm={policySearch}
+        sortBy={policySortBy}
+        sortOrder={policySortOrder}
+        supportFilter={policySupport}
+        updatePolicySearch={updatePolicySearch}
       />
 
       <Sheet
@@ -855,12 +854,7 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
             return;
           }
 
-          void navigate({
-            search: {
-              selectedPolicy: undefined,
-            },
-            to: getSecurityPath('policies'),
-          });
+          updatePolicySearch({ selectedPolicy: undefined });
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
@@ -921,10 +915,7 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
   const [findingDispositions, setFindingDispositions] = useState<
     Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
   >({});
-  const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
-  const [vendorCustomerSummaries, setVendorCustomerSummaries] = useState<Record<string, string>>(
-    {},
-  );
+  const [vendorSummaries, setVendorSummaries] = useState<Record<string, string>>({});
   const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
@@ -985,7 +976,7 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
           id: vendorReview.vendor,
           kind: 'vendor_review',
           status: vendorReview.reviewStatus,
-          title: vendorReview.displayName,
+          title: vendorReview.title,
           vendorReview,
         };
       }
@@ -1131,14 +1122,12 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
   );
 
   const handleReviewVendor = useCallback(
-    async (vendor: VendorWorkspace, reviewStatus: VendorWorkspace['reviewStatus']) => {
+    async (vendor: VendorWorkspace) => {
       setBusyVendorKey(vendor.vendor);
       try {
         await reviewVendorWorkspace({
-          customerSummary: vendorCustomerSummaries[vendor.vendor]?.trim() || undefined,
-          internalNotes: vendorNotes[vendor.vendor]?.trim() || undefined,
           owner: vendorOwners[vendor.vendor]?.trim() || undefined,
-          reviewStatus,
+          summary: vendorSummaries[vendor.vendor]?.trim() || undefined,
           vendorKey: vendor.vendor,
         });
         showToast('Vendor review saved.', 'success');
@@ -1151,7 +1140,7 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
         setBusyVendorKey(null);
       }
     },
-    [reviewVendorWorkspace, showToast, vendorCustomerSummaries, vendorNotes, vendorOwners],
+    [reviewVendorWorkspace, showToast, vendorOwners, vendorSummaries],
   );
 
   const handleOpenReportDetail = useCallback(
@@ -1213,12 +1202,10 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
       setFindingNotes={setFindingNotes}
       setReportCustomerSummaries={setReportCustomerSummaries}
       setReportNotes={setReportNotes}
-      setVendorCustomerSummaries={setVendorCustomerSummaries}
-      setVendorNotes={setVendorNotes}
+      setVendorSummaries={setVendorSummaries}
       setVendorOwners={setVendorOwners}
       triggeredReviewRuns={triggeredReviewRuns}
-      vendorCustomerSummaries={vendorCustomerSummaries}
-      vendorNotes={vendorNotes}
+      vendorSummaries={vendorSummaries}
       vendorOwners={vendorOwners}
       vendorWorkspaces={vendorWorkspaces}
     />
@@ -1354,15 +1341,26 @@ export function AdminSecurityReviewsRoute() {
       autoCollected:
         currentAnnualReviewDetail?.tasks.filter((task) => task.taskType === 'automated_check') ??
         [],
-      blocked: currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'blocked') ?? [],
+      blocked:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) =>
+            task.status === 'blocked' && task.findingsSummary === null && task.vendor === null,
+        ) ?? [],
+      findingsReview:
+        currentAnnualReviewDetail?.tasks.filter((task) => task.findingsSummary !== null) ?? [],
       needsAttestation:
         currentAnnualReviewDetail?.tasks.filter(
-          (task) => task.taskType === 'attestation' && task.status !== 'completed',
+          (task) =>
+            task.taskType === 'attestation' &&
+            task.status !== 'completed' &&
+            task.findingsSummary === null &&
+            task.vendor === null,
         ) ?? [],
       needsDocumentUpload:
         currentAnnualReviewDetail?.tasks.filter(
           (task) => task.taskType === 'document_upload' && task.status !== 'completed',
         ) ?? [],
+      vendorReviews: currentAnnualReviewDetail?.tasks.filter((task) => task.vendor !== null) ?? [],
     }),
     [currentAnnualReviewDetail],
   );

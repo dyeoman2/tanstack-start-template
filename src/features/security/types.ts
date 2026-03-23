@@ -481,6 +481,17 @@ export type ReviewTaskDetail = {
     support: SecuritySupport;
     title: string;
   }>;
+  vendor: {
+    reviewStatus: 'current' | 'due_soon' | 'overdue';
+    title: string;
+    vendorKey: VendorKey;
+  } | null;
+  findingsSummary: {
+    criticalOpenCount: number;
+    lowerSeverityOpenCount: number;
+    totalOpenCount: number;
+    undispositionedCount: number;
+  } | null;
   required: boolean;
   satisfiedAt: number | null;
   satisfiedThroughAt: number | null;
@@ -511,9 +522,14 @@ export type VendorWorkspace = {
   approvalEnvVar: string | null;
   approved: boolean;
   approvedByDefault: boolean;
-  customerSummary: string | null;
-  displayName: string;
+  title: string;
+  summary: string | null;
   linkedEntities: LinkedEntitySummary[];
+  linkedAnnualReviewTask: {
+    id: Id<'reviewTasks'>;
+    status: 'ready' | 'completed' | 'exception' | 'blocked';
+    title: string;
+  } | null;
   linkedFollowUpRunId: Id<'reviewRuns'> | null;
   owner: string | null;
   relatedControls: Array<{
@@ -523,10 +539,9 @@ export type VendorWorkspace = {
     nist80053Id: string;
     title: string;
   }>;
-  internalNotes: string | null;
-  reviewStatus: 'pending' | 'reviewed' | 'needs_follow_up';
-  reviewedAt: number | null;
-  reviewedByDisplay: string | null;
+  reviewStatus: 'current' | 'due_soon' | 'overdue';
+  lastReviewedAt: number | null;
+  nextReviewAt: number | null;
   vendor: VendorKey;
 } & SecurityScope;
 
@@ -560,7 +575,8 @@ export type SecurityWorkspaceOverview = {
   };
   vendorSummary: {
     approvedCount: number;
-    needsFollowUpCount: number;
+    dueSoonCount: number;
+    overdueCount: number;
     totalCount: number;
   };
 } & SecurityScope;

@@ -807,6 +807,32 @@ export default defineSchema({
     .index('by_internal_control_id', ['internalControlId'])
     .index('by_policy_id_and_internal_control_id', ['policyId', 'internalControlId']),
 
+  securityVendors: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    title: v.string(),
+    owner: v.optional(v.string()),
+    summary: v.optional(v.union(v.string(), v.null())),
+    lastReviewedAt: v.optional(v.union(v.number(), v.null())),
+    nextReviewAt: v.optional(v.union(v.number(), v.null())),
+    linkedFollowUpRunId: v.optional(v.id('reviewRuns')),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_vendor_key', ['vendorKey'])
+    .index('by_next_review_at', ['nextReviewAt']),
+
+  securityVendorControlMappings: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    internalControlId: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_vendor_key', ['vendorKey'])
+    .index('by_internal_control_id', ['internalControlId']),
+
   reviewRuns: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
@@ -840,6 +866,9 @@ export default defineSchema({
     reviewRunId: v.id('reviewRuns'),
     templateKey: v.string(),
     policyId: v.optional(v.string()),
+    vendorKey: v.optional(
+      v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    ),
     title: v.string(),
     description: v.string(),
     taskType: v.union(

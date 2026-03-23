@@ -54,6 +54,7 @@ import type * as lib_security_securityEvidenceActivity from "../lib/security/sec
 import type * as lib_security_securityReviewConfig from "../lib/security/securityReviewConfig.js";
 import type * as lib_security_securityWorkspaceOverview from "../lib/security/securityWorkspaceOverview.js";
 import type * as lib_security_validators from "../lib/security/validators.js";
+import type * as lib_security_vendors_core from "../lib/security/vendors_core.js";
 import type * as lib_security_workspace from "../lib/security/workspace.js";
 import type * as lib_securityEvidenceActivity from "../lib/securityEvidenceActivity.js";
 import type * as lib_securityReviewConfig from "../lib/securityReviewConfig.js";
@@ -135,6 +136,7 @@ declare const fullApi: ApiFromModules<{
   "lib/security/securityReviewConfig": typeof lib_security_securityReviewConfig;
   "lib/security/securityWorkspaceOverview": typeof lib_security_securityWorkspaceOverview;
   "lib/security/validators": typeof lib_security_validators;
+  "lib/security/vendors_core": typeof lib_security_vendors_core;
   "lib/security/workspace": typeof lib_security_workspace;
   "lib/securityEvidenceActivity": typeof lib_securityEvidenceActivity;
   "lib/securityReviewConfig": typeof lib_securityReviewConfig;

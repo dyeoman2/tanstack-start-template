@@ -1,13 +1,11 @@
 import type { Doc, Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
-import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { listSecurityPolicyGovernanceContexts } from './governance_context';
 import { ANNUAL_REVIEW_TASK_BLUEPRINTS } from './securityReviewConfig';
 import type { ReviewTaskBlueprint } from './securityReviewConfig';
 import {
   addDays,
-  buildVendorRelatedControls,
   deleteSecurityRelationships,
   getSecurityFindingControlLinks,
   getSecurityRelationshipObjectTypeFromEvidenceSourceType,
@@ -22,11 +20,18 @@ import {
   upsertSecurityRelationship,
 } from './core';
 import {
+  buildCurrentSecurityFindings,
   buildActorDisplayMap,
   getActorDisplayName,
   listReviewTaskEvidenceLinksBySource,
   recordSecurityControlEvidenceAuditEvent,
 } from './operations_core';
+import {
+  buildAnnualVendorReviewTaskTemplateKey,
+  buildVendorWorkspaceRows as buildVendorWorkspaceRowsFromRecords,
+  syncSecurityVendorControlMappings,
+  syncSecurityVendorRecords,
+} from './vendors_core';
 
 type ReviewRunDoc = Doc<'reviewRuns'>;
 type ReviewTaskDoc = Doc<'reviewTasks'>;
@@ -99,6 +104,60 @@ function buildAnnualPolicyReviewTaskPatch(policy: Doc<'securityPolicies'>, now: 
   };
 }
 
+function buildAnnualVendorReviewTaskPatch(
+  vendor: Doc<'securityVendors'>,
+  now: number,
+): Omit<
+  ReviewTaskDoc,
+  | '_creationTime'
+  | '_id'
+  | 'createdAt'
+  | 'latestAttestationId'
+  | 'latestEvidenceLinkedAt'
+  | 'latestNote'
+  | 'latestResultId'
+  | 'reviewRunId'
+  | 'satisfiedAt'
+  | 'satisfiedThroughAt'
+  | 'status'
+  | 'templateKey'
+> {
+  return {
+    allowException: false,
+    controlLinks: [] as ReviewTaskDoc['controlLinks'],
+    description: `Review ${vendor.title} and attest that the vendor assessment remains current for the annual security review.`,
+    freshnessWindowDays: 365,
+    policyId: undefined,
+    required: true,
+    taskType: 'attestation',
+    title: `${vendor.title} vendor review`,
+    updatedAt: now,
+    vendorKey: vendor.vendorKey,
+  };
+}
+
+function buildAnnualFindingsReviewTaskPatch(now: number) {
+  return {
+    allowException: false,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-RA-005',
+        itemId: 'security-findings-can-be-reviewed-and-prioritized',
+      },
+      { internalControlId: 'CTRL-CA-005', itemId: 'follow-up-findings-can-be-surfaced' },
+    ] as ReviewTaskDoc['controlLinks'],
+    description:
+      'Review open security findings, confirm critical items are resolved or dispositioned, and document any lower-severity carry-forward decisions.',
+    freshnessWindowDays: 365,
+    policyId: undefined,
+    required: true,
+    taskType: 'attestation' as const,
+    title: 'Security findings reviewed',
+    updatedAt: now,
+    vendorKey: undefined,
+  };
+}
+
 async function syncAnnualPolicyReviewTasks(
   ctx: MutationCtx,
   args: {
@@ -151,6 +210,90 @@ async function syncAnnualPolicyReviewTasks(
   );
 }
 
+async function syncAnnualVendorReviewTasks(
+  ctx: MutationCtx,
+  args: {
+    existingByTemplateKey: Map<string, ReviewTaskDoc>;
+    existingTasks: ReviewTaskDoc[];
+    reviewRunId: Id<'reviewRuns'>;
+  },
+) {
+  await syncSecurityVendorRecords(ctx);
+  await syncSecurityVendorControlMappings(ctx);
+  const vendors = await ctx.db.query('securityVendors').collect();
+  const now = Date.now();
+  const validVendorTemplateKeys = new Set(
+    vendors.map((vendor) => buildAnnualVendorReviewTaskTemplateKey(vendor.vendorKey)),
+  );
+
+  await Promise.all(
+    vendors.map(async (vendor) => {
+      const templateKey = buildAnnualVendorReviewTaskTemplateKey(vendor.vendorKey);
+      const existing = args.existingByTemplateKey.get(templateKey);
+      const patch = buildAnnualVendorReviewTaskPatch(vendor, now);
+      if (existing) {
+        await ctx.db.patch(existing._id, patch);
+        return;
+      }
+      await ctx.db.insert('reviewTasks', {
+        ...patch,
+        latestAttestationId: undefined,
+        latestEvidenceLinkedAt: undefined,
+        latestNote: undefined,
+        latestResultId: undefined,
+        reviewRunId: args.reviewRunId,
+        satisfiedAt: undefined,
+        satisfiedThroughAt: undefined,
+        status: 'ready',
+        templateKey,
+        createdAt: now,
+      });
+    }),
+  );
+
+  await Promise.all(
+    args.existingTasks
+      .filter(
+        (task) =>
+          task.templateKey.startsWith('annual:attest:vendor:') &&
+          !validVendorTemplateKeys.has(task.templateKey),
+      )
+      .map((task) => ctx.db.delete(task._id)),
+  );
+}
+
+async function syncAnnualFindingsReviewTask(
+  ctx: MutationCtx,
+  args: {
+    existingByTemplateKey: Map<string, ReviewTaskDoc>;
+    reviewRunId: Id<'reviewRuns'>;
+  },
+) {
+  const templateKey = 'annual:attest:findings-review';
+  const existing = args.existingByTemplateKey.get(templateKey);
+  const now = Date.now();
+  const patch = buildAnnualFindingsReviewTaskPatch(now);
+
+  if (existing) {
+    await ctx.db.patch(existing._id, patch);
+    return;
+  }
+
+  await ctx.db.insert('reviewTasks', {
+    ...patch,
+    latestAttestationId: undefined,
+    latestEvidenceLinkedAt: undefined,
+    latestNote: undefined,
+    latestResultId: undefined,
+    reviewRunId: args.reviewRunId,
+    satisfiedAt: undefined,
+    satisfiedThroughAt: undefined,
+    status: 'ready',
+    templateKey,
+    createdAt: now,
+  });
+}
+
 async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'reviewRuns'>) {
   const existingTasks = await listReviewTasksByRunId(ctx, reviewRunId);
   const existingByTemplateKey = new Map(
@@ -167,6 +310,7 @@ async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'review
         description: blueprint.description,
         freshnessWindowDays: blueprint.freshnessWindowDays ?? undefined,
         policyId: undefined,
+        vendorKey: undefined,
         required: blueprint.required,
         taskType: blueprint.taskType,
         title: blueprint.title,
@@ -197,6 +341,15 @@ async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'review
   await syncAnnualPolicyReviewTasks(ctx, {
     existingByTemplateKey,
     existingTasks,
+    reviewRunId,
+  });
+  await syncAnnualVendorReviewTasks(ctx, {
+    existingByTemplateKey,
+    existingTasks,
+    reviewRunId,
+  });
+  await syncAnnualFindingsReviewTask(ctx, {
+    existingByTemplateKey,
     reviewRunId,
   });
 }
@@ -877,7 +1030,15 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
     return null;
   }
 
-  const [tasks, evidenceLinks, attestations, policyGovernanceContexts] = await Promise.all([
+  const [
+    tasks,
+    evidenceLinks,
+    attestations,
+    policyGovernanceContexts,
+    vendorWorkspaces,
+    currentFindings,
+    storedFindings,
+  ] = await Promise.all([
     listReviewTasksByRunId(ctx, reviewRunId),
     ctx.db
       .query('reviewTaskEvidenceLinks')
@@ -888,9 +1049,15 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
       .withIndex('by_review_run_id_and_attested_at', (q) => q.eq('reviewRunId', reviewRunId))
       .collect(),
     run.kind === 'annual' ? listSecurityPolicyGovernanceContexts(ctx) : Promise.resolve([]),
+    run.kind === 'annual' ? buildVendorWorkspaceRows(ctx) : Promise.resolve([]),
+    run.kind === 'annual' ? buildCurrentSecurityFindings(ctx) : Promise.resolve([]),
+    run.kind === 'annual' ? ctx.db.query('securityFindings').collect() : Promise.resolve([]),
   ]);
   const policyGovernanceContextById = new Map(
     policyGovernanceContexts.map((entry) => [entry.policy.policyId, entry] as const),
+  );
+  const vendorWorkspaceByKey = new Map(
+    vendorWorkspaces.map((entry) => [entry.vendor, entry] as const),
   );
 
   const actorIds = Array.from(
@@ -940,6 +1107,40 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
     }
     return policyGovernanceContextById.get(task.policyId)?.controls ?? [];
   };
+  const buildReviewTaskVendorSummary = (task: ReviewTaskDoc) => {
+    if (!task.vendorKey) {
+      return null;
+    }
+    const vendor = vendorWorkspaceByKey.get(task.vendorKey as 'openrouter' | 'resend' | 'sentry');
+    if (!vendor) {
+      return null;
+    }
+    return {
+      reviewStatus: vendor.reviewStatus,
+      title: vendor.title,
+      vendorKey: vendor.vendor,
+    };
+  };
+  const findingsSummary = (() => {
+    const storedFindingByKey = new Map(
+      storedFindings.map((finding) => [finding.findingKey, finding] as const),
+    );
+    const openFindings = currentFindings.filter((finding) => finding.status === 'open');
+    const criticalOpenCount = openFindings.filter(
+      (finding) => finding.severity === 'critical',
+    ).length;
+    const undispositionedCount = openFindings.filter((finding) => {
+      const disposition =
+        storedFindingByKey.get(finding.findingKey)?.disposition ?? 'pending_review';
+      return disposition === 'pending_review' || disposition === 'investigating';
+    }).length;
+    return {
+      criticalOpenCount,
+      lowerSeverityOpenCount: Math.max(0, openFindings.length - criticalOpenCount),
+      totalOpenCount: openFindings.length,
+      undispositionedCount,
+    };
+  })();
 
   return {
     createdAt: run.createdAt,
@@ -992,6 +1193,9 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
         latestNote: task.latestNote ?? null,
         policy: buildReviewTaskPolicySummary(task),
         policyControls: buildReviewTaskPolicyControls(task),
+        vendor: buildReviewTaskVendorSummary(task),
+        findingsSummary:
+          task.templateKey === 'annual:attest:findings-review' ? findingsSummary : null,
         required: task.required,
         satisfiedAt: task.satisfiedAt ?? null,
         satisfiedThroughAt: task.satisfiedThroughAt ?? null,
@@ -1170,127 +1374,13 @@ async function createTriggeredReviewRunRecord(
 }
 
 async function syncVendorReviewOverlayRecords(ctx: MutationCtx) {
-  const existing = await ctx.db.query('securityVendorReviews').collect();
-  const existingByKey = new Map(existing.map((row) => [row.vendorKey, row] as const));
-  const now = Date.now();
-  let inserted = 0;
-
-  for (const vendor of getVendorBoundarySnapshot()) {
-    if (existingByKey.has(vendor.vendor)) {
-      continue;
-    }
-
-    await ctx.db.insert('securityVendorReviews', {
-      ...getSecurityScopeFields(),
-      createdAt: now,
-      customerSummary: null,
-      internalReviewNotes: null,
-      linkedFollowUpRunId: undefined,
-      owner: undefined,
-      reviewStatus: 'pending',
-      reviewedAt: null,
-      reviewedByUserId: null,
-      updatedAt: now,
-      vendorKey: vendor.vendor,
-    });
-    inserted += 1;
-  }
-
-  return inserted;
+  await syncSecurityVendorRecords(ctx);
+  await syncSecurityVendorControlMappings(ctx);
+  return 0;
 }
 
 async function buildVendorWorkspaceRows(ctx: QueryCtx) {
-  const runtimePosture = getVendorBoundarySnapshot();
-  const reviewRows = await ctx.db.query('securityVendorReviews').collect();
-  const relationships = await ctx.db.query('securityRelationships').collect();
-  const reviewByVendorKey = new Map(reviewRows.map((row) => [row.vendorKey, row] as const));
-  const actorDisplayById = await buildActorDisplayMap(
-    ctx,
-    reviewRows
-      .map((row) => row.reviewedByUserId)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0),
-  );
-  const controlById = new Map(
-    ACTIVE_CONTROL_REGISTER.controls.map(
-      (control) => [control.internalControlId, control] as const,
-    ),
-  );
-  const relationshipsByFromKey = relationships.reduce<Map<string, typeof relationships>>(
-    (accumulator, relationship) => {
-      const key = `${relationship.fromType}:${relationship.fromId}`;
-      const current = accumulator.get(key) ?? [];
-      current.push(relationship);
-      accumulator.set(key, current);
-      return accumulator;
-    },
-    new Map(),
-  );
-  const reviewRunIds = Array.from(
-    new Set(
-      relationships
-        .filter((relationship) => relationship.toType === 'review_run')
-        .map((relationship) => relationship.toId as Id<'reviewRuns'>),
-    ),
-  );
-  const reviewRuns = await Promise.all(
-    reviewRunIds.map(async (reviewRunId) => await ctx.db.get(reviewRunId)),
-  );
-  const reviewRunById = new Map(
-    reviewRuns
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .map((entry) => [entry._id, entry] as const),
-  );
-
-  return runtimePosture.map((vendor) => {
-    const overlay = reviewByVendorKey.get(vendor.vendor);
-    const linkedEntities = (relationshipsByFromKey.get(`vendor_review:${vendor.vendor}`) ?? [])
-      .map((relationship) => {
-        if (relationship.toType === 'control') {
-          const control = controlById.get(relationship.toId);
-          if (!control) {
-            return null;
-          }
-          return {
-            entityId: relationship.toId,
-            entityType: relationship.toType,
-            label: `${control.nist80053Id} ${control.title}`,
-            relationshipType: relationship.relationshipType,
-            status: null,
-          };
-        }
-        if (relationship.toType === 'review_run') {
-          const run = reviewRunById.get(relationship.toId as Id<'reviewRuns'>);
-          if (!run) {
-            return null;
-          }
-          return {
-            entityId: relationship.toId,
-            entityType: relationship.toType,
-            label: run.title,
-            relationshipType: relationship.relationshipType,
-            status: run.status,
-          };
-        }
-        return null;
-      })
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
-    return {
-      ...vendor,
-      customerSummary: overlay?.customerSummary ?? null,
-      linkedFollowUpRunId: overlay?.linkedFollowUpRunId ?? null,
-      linkedEntities,
-      owner: overlay?.owner ?? null,
-      relatedControls: buildVendorRelatedControls(vendor.vendor),
-      internalNotes: overlay?.internalReviewNotes ?? null,
-      reviewStatus: overlay?.reviewStatus ?? ('pending' as const),
-      reviewedAt: overlay?.reviewedAt ?? null,
-      reviewedByDisplay: getActorDisplayName(
-        actorDisplayById,
-        overlay?.reviewedByUserId ?? undefined,
-      ),
-      ...getSecurityScopeFields(),
-    };
-  });
+  return await buildVendorWorkspaceRowsFromRecords(ctx);
 }
 
 async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: string) {
@@ -1306,6 +1396,8 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
     'reviewTaskResults',
     'reviewAttestations',
     'reviewTaskEvidenceLinks',
+    'securityVendors',
+    'securityVendorControlMappings',
     'securityVendorReviews',
     'retentionJobs',
     'backupVerificationReports',
@@ -1531,25 +1623,6 @@ function deriveReportBackedTaskOutcome(
   >,
   task: Pick<Doc<'reviewTasks'>, 'freshnessWindowDays'>,
 ) {
-  const parsed = JSON.parse(report.contentJson) as {
-    summary?: {
-      openCount?: number;
-    };
-  };
-  const findingsOpenCount =
-    report.reportKind === 'findings_snapshot' && typeof parsed.summary?.openCount === 'number'
-      ? parsed.summary.openCount
-      : 0;
-
-  if (findingsOpenCount > 0) {
-    return {
-      note: `${findingsOpenCount} open finding(s) still require follow-up.`,
-      satisfiedAt: null,
-      satisfiedThroughAt: null,
-      status: 'blocked' as const,
-    };
-  }
-
   if (report.reviewStatus === 'needs_follow_up') {
     return {
       note: 'Linked report is marked as needing follow-up.',

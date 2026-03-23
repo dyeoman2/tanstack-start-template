@@ -11,6 +11,7 @@ export default defineConfig((env) => {
 
   return {
     optimizeDeps: {
+      exclude: ['fsevents'],
       include: ['@tanstack/router-core', '@tanstack/router-core/ssr/client'],
     },
     resolve: {

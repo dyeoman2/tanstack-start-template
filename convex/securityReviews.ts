@@ -1,6 +1,7 @@
 import { internalMutation, mutation, query } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
+import { internal } from './_generated/api';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { siteAdminAction } from './auth/authorized';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
@@ -31,6 +32,7 @@ import {
   upsertAnnualReviewTasks,
   upsertReviewTaskEvidenceLinkRecord,
 } from './lib/security/review_runs_core';
+import { resolveVendorNextReviewAt } from './lib/security/vendors_core';
 import {
   reviewRunDetailValidator,
   reviewRunSummaryListValidator,
@@ -300,6 +302,16 @@ export const attestReviewTask = mutation({
     const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
       (entry) => entry.templateKey === task.templateKey,
     );
+    const taskVendorKey =
+      task.vendorKey === 'openrouter' || task.vendorKey === 'resend' || task.vendorKey === 'sentry'
+        ? task.vendorKey
+        : null;
+    const linkedVendor = taskVendorKey
+      ? await ctx.db
+          .query('securityVendors')
+          .withIndex('by_vendor_key', (q) => q.eq('vendorKey', taskVendorKey))
+          .unique()
+      : null;
     const linkedPolicy = task.policyId
       ? await ctx.db
           .query('securityPolicies')
@@ -311,8 +323,38 @@ export const attestReviewTask = mutation({
     const statementText =
       blueprint?.statementText ??
       (linkedPolicy ? `I reviewed the ${linkedPolicy.title} policy and it remains current.` : null);
-    if (statementKey === null || statementText === null) {
+    const vendorStatementKey = linkedVendor ? `vendor:${linkedVendor.vendorKey}:current` : null;
+    const vendorStatementText = linkedVendor
+      ? `I reviewed ${linkedVendor.title} and it remains current for the next 12 months.`
+      : null;
+    const findingsStatementKey =
+      task.templateKey === 'annual:attest:findings-review' ? 'findings:annual-review' : null;
+    const findingsStatementText =
+      task.templateKey === 'annual:attest:findings-review'
+        ? 'I reviewed current security findings, confirmed critical items are resolved or dispositioned, and documented any lower-severity carry-forward decisions.'
+        : null;
+    const resolvedStatementKey = statementKey ?? vendorStatementKey ?? findingsStatementKey;
+    const resolvedStatementText = statementText ?? vendorStatementText ?? findingsStatementText;
+    if (resolvedStatementKey === null || resolvedStatementText === null) {
       throw new Error('This task does not support attestation.');
+    }
+
+    if (task.templateKey === 'annual:attest:findings-review') {
+      const currentFindings = await ctx.runQuery(
+        internal.securityWorkspace.listSecurityFindingsInternal,
+        {},
+      );
+      const unresolvedCritical = currentFindings.filter(
+        (finding) =>
+          finding.status === 'open' &&
+          finding.severity === 'critical' &&
+          (finding.disposition === 'pending_review' || finding.disposition === 'investigating'),
+      );
+      if (unresolvedCritical.length > 0) {
+        throw new Error(
+          'Critical open findings must be resolved or dispositioned before attesting.',
+        );
+      }
     }
 
     if (task.taskType === 'document_upload') {
@@ -343,8 +385,8 @@ export const attestReviewTask = mutation({
       documentVersion: args.documentVersion?.trim() || undefined,
       reviewRunId: task.reviewRunId,
       reviewTaskId: task._id,
-      statementKey,
-      statementText,
+      statementKey: resolvedStatementKey,
+      statementText: resolvedStatementText,
     });
 
     const satisfiedThroughAt = addDays(
@@ -370,6 +412,13 @@ export const attestReviewTask = mutation({
           validUntil: satisfiedThroughAt,
         }),
       );
+    }
+    if (linkedVendor) {
+      await ctx.db.patch(linkedVendor._id, {
+        lastReviewedAt: now,
+        nextReviewAt: resolveVendorNextReviewAt(now),
+        updatedAt: now,
+      });
     }
     return null;
   },

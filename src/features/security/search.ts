@@ -3,18 +3,21 @@ import {
   CONTROL_SUPPORT_FILTER_VALUES,
   CONTROL_RESPONSIBILITY_FILTER_VALUES,
   CONTROL_TABLE_SORT_FIELDS,
+  POLICY_TABLE_SORT_FIELDS,
   SECURITY_TABS,
 } from '~/features/security/constants';
 
 export const securityCompatSearchSchema = z.object({
   tab: z.enum(SECURITY_TABS).optional(),
-  page: z.number().optional(),
-  pageSize: z.union([z.literal(10), z.literal(20), z.literal(50)]).optional(),
   sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).optional(),
+  policySortBy: z.enum(POLICY_TABLE_SORT_FIELDS).optional(),
   sortOrder: z.enum(['asc', 'desc']).optional(),
+  policySortOrder: z.enum(['asc', 'desc']).optional(),
   search: z.string().optional(),
+  policySearch: z.string().optional(),
   responsibility: z.enum(CONTROL_RESPONSIBILITY_FILTER_VALUES).optional(),
   support: z.enum(CONTROL_SUPPORT_FILTER_VALUES).optional(),
+  policySupport: z.enum(CONTROL_SUPPORT_FILTER_VALUES).optional(),
   family: z.string().optional(),
   selectedControl: z.string().optional(),
   selectedPolicy: z.string().optional(),
@@ -25,8 +28,6 @@ export const securityCompatSearchSchema = z.object({
 });
 
 export const securityControlsSearchSchema = z.object({
-  page: z.number().default(1),
-  pageSize: z.union([z.literal(10), z.literal(20), z.literal(50)]).default(10),
   sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).default('control'),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
@@ -37,6 +38,10 @@ export const securityControlsSearchSchema = z.object({
 });
 
 export const securityPoliciesSearchSchema = z.object({
+  policySearch: z.string().default(''),
+  policySortBy: z.enum(POLICY_TABLE_SORT_FIELDS).default('title'),
+  policySortOrder: z.enum(['asc', 'desc']).default('asc'),
+  policySupport: z.enum(CONTROL_SUPPORT_FILTER_VALUES).default('all'),
   selectedPolicy: z.string().optional(),
 });
 

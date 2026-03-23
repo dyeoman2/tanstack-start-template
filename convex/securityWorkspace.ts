@@ -119,6 +119,60 @@ export const listSecurityFindings = siteAdminQuery({
   handler: listSecurityFindingsHandler,
 });
 
+export const listSecurityFindingsInternal = internalQuery({
+  args: {},
+  returns: securityFindingListValidator,
+  handler: async (ctx) => {
+    const currentFindings = await buildCurrentSecurityFindings(ctx);
+    const storedFindingEntries = await Promise.all(
+      currentFindings.map(async (finding) => {
+        const record = await ctx.db
+          .query('securityFindings')
+          .withIndex('by_finding_key', (q) => q.eq('findingKey', finding.findingKey))
+          .unique();
+        return [finding.findingKey, record] as const;
+      }),
+    );
+    const storedFindingByKey = new Map(storedFindingEntries);
+
+    return currentFindings.map((finding) => {
+      const record = storedFindingByKey.get(finding.findingKey) ?? null;
+      return {
+        customerSummary: record?.customerSummary ?? null,
+        description: finding.description,
+        disposition: record?.disposition ?? ('pending_review' as const),
+        findingKey: finding.findingKey,
+        findingType: finding.findingType,
+        firstObservedAt: record
+          ? Math.min(record.firstObservedAt, finding.firstObservedAt)
+          : finding.firstObservedAt,
+        internalNotes: record?.internalReviewNotes ?? null,
+        lastObservedAt: Math.max(
+          record?.lastObservedAt ?? finding.lastObservedAt,
+          finding.lastObservedAt,
+        ),
+        relatedControls: getSecurityFindingControlLinks(finding.findingType).map((controlLink) => ({
+          internalControlId: controlLink.internalControlId,
+          itemId: controlLink.itemId,
+          itemLabel: null,
+          nist80053Id: controlLink.internalControlId,
+          title: controlLink.internalControlId,
+        })),
+        scopeId: getSecurityScopeFields().scopeId,
+        scopeType: getSecurityScopeFields().scopeType,
+        reviewedAt: record?.reviewedAt ?? null,
+        reviewedByDisplay: null,
+        severity: finding.severity,
+        sourceLabel: finding.sourceLabel,
+        sourceRecordId: finding.sourceRecordId,
+        sourceType: finding.sourceType,
+        status: finding.status,
+        title: finding.title,
+      };
+    });
+  },
+});
+
 export const reviewSecurityFinding = siteAdminMutation({
   args: {
     customerSummary: v.optional(v.string()),

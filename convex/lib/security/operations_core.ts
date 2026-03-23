@@ -1,5 +1,4 @@
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
-import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { RELEASE_PROVENANCE_CONTROL_ID, RELEASE_PROVENANCE_ITEM_ID } from './securityReviewConfig';
 import {
@@ -17,6 +16,7 @@ import {
 import { SECURITY_METRICS_KEY } from './validators';
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
+import { buildVendorWorkspaceRows } from './vendors_core';
 
 const SEEDED_EVIDENCE_VALIDITY_MONTHS = 12 as const;
 
@@ -587,30 +587,26 @@ async function buildSecurityWorkspaceFindingSummary(ctx: QueryCtx) {
 }
 
 async function buildSecurityWorkspaceVendorSummary(ctx: QueryCtx) {
-  const [runtimePosture, reviewRows] = await Promise.all([
-    Promise.resolve(getVendorBoundarySnapshot()),
-    ctx.db.query('securityVendorReviews').collect(),
-  ]);
-  const reviewByVendorKey = new Map(reviewRows.map((row) => [row.vendorKey, row] as const));
+  const vendorRows = await buildVendorWorkspaceRows(ctx);
 
-  return runtimePosture.reduce(
+  return vendorRows.reduce(
     (summary, vendor) => {
       summary.totalCount += 1;
       if (vendor.approved) {
         summary.approvedCount += 1;
       }
-      const reviewStatus = reviewByVendorKey.get(vendor.vendor)?.reviewStatus ?? 'pending';
-      if (reviewStatus === 'needs_follow_up') {
-        summary.needsFollowUpCount += 1;
-      }
-      if (reviewStatus === 'pending' || reviewStatus === 'needs_follow_up') {
+      if (vendor.reviewStatus === 'overdue') {
+        summary.overdueCount += 1;
         summary.pendingVendorReviews += 1;
+      } else if (vendor.reviewStatus === 'due_soon') {
+        summary.dueSoonCount += 1;
       }
       return summary;
     },
     {
       approvedCount: 0,
-      needsFollowUpCount: 0,
+      dueSoonCount: 0,
+      overdueCount: 0,
       pendingVendorReviews: 0,
       totalCount: 0,
     },

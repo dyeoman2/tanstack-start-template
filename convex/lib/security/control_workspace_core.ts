@@ -17,6 +17,7 @@ import {
   resolveSeededEvidenceValidUntil,
   resolveSeedSiteAdminActor,
 } from './operations_core';
+import { deriveVendorReviewStatus } from './vendors_core';
 
 async function listSecurityControlWorkspaceSummaryRecords(ctx: QueryCtx) {
   const controls = await listSecurityControlWorkspaceExportRecords(ctx);
@@ -230,30 +231,27 @@ async function _listSecurityControlWorkspaceRecords(
   );
   const allReviewTaskById = reviewTaskById;
   const allReportById = linkedReportById;
-  const vendorKeys = includeLinkedEntities
-    ? Array.from(
-        new Set(
-          allRelationships
-            .filter((relationship) => relationship.toType === 'vendor_review')
-            .map((relationship) => relationship.toId as 'openrouter' | 'resend' | 'sentry'),
-        ),
-      )
+  const vendorMappings = includeLinkedEntities
+    ? await ctx.db.query('securityVendorControlMappings').collect()
     : [];
-  const vendorReviewEntries = await Promise.all(
+  const vendorKeys = includeLinkedEntities
+    ? Array.from(new Set(vendorMappings.map((mapping) => mapping.vendorKey)))
+    : [];
+  const vendorEntries = await Promise.all(
     vendorKeys.map(async (vendorKey) => {
-      const review = await ctx.db
-        .query('securityVendorReviews')
+      const vendor = await ctx.db
+        .query('securityVendors')
         .withIndex('by_vendor_key', (q) => q.eq('vendorKey', vendorKey))
         .unique();
-      return [vendorKey, review] as const;
+      return [vendorKey, vendor] as const;
     }),
   );
-  const vendorReviewByKey = new Map(
-    vendorReviewEntries
+  const vendorByKey = new Map(
+    vendorEntries
       .filter(
         (entry): entry is [(typeof entry)[0], NonNullable<(typeof entry)[1]>] => entry[1] !== null,
       )
-      .map(([vendorKey, review]) => [vendorKey, review] as const),
+      .map(([vendorKey, vendor]) => [vendorKey, vendor] as const),
   );
   const vendorRuntimeByKey = includeLinkedEntities
     ? new Map(getVendorBoundarySnapshot().map((entry) => [entry.vendor, entry] as const))
@@ -282,7 +280,6 @@ async function _listSecurityControlWorkspaceRecords(
       .map(([findingKey, finding]) => [findingKey, finding] as const),
   );
   const findingRows = Array.from(findingByKey.values());
-  const vendorReviewRows = Array.from(vendorReviewByKey.values());
   const relationshipsByFromKey = includeLinkedEntities ? controlRelationshipsById : new Map();
   const actorIds = Array.from(
     new Set(
@@ -295,11 +292,7 @@ async function _listSecurityControlWorkspaceRecords(
         ...checklistItems.flatMap((item) =>
           (item.archivedSeedEvidence ?? []).map((entry) => entry.archivedByUserId),
         ),
-        ...(includeLinkedEntities
-          ? vendorReviewRows
-              .map((row) => row.reviewedByUserId)
-              .filter((value): value is string => typeof value === 'string' && value.length > 0)
-          : []),
+        ...(includeLinkedEntities ? [] : []),
         ...(includeLinkedEntities
           ? findingRows
               .map((row) => row.reviewedByUserId)
@@ -642,94 +635,124 @@ async function _listSecurityControlWorkspaceRecords(
       return latest === null ? value : Math.max(latest, value);
     }, null);
     const linkedEntities = includeLinkedEntities
-      ? (relationshipsByFromKey.get(`control:${control.internalControlId}`) ?? []).flatMap(
-          (relationship: (typeof allRelationships)[number]): LinkedEntity[] => {
-            switch (relationship.toType) {
-              case 'vendor_review': {
-                const vendorReview = vendorReviewByKey.get(
-                  relationship.toId as 'openrouter' | 'resend' | 'sentry',
-                );
-                const vendorRuntime = vendorRuntimeByKey.get(
-                  relationship.toId as 'openrouter' | 'resend' | 'sentry',
-                );
-                if (!vendorRuntime) {
-                  return [];
+      ? [
+          ...(relationshipsByFromKey.get(`control:${control.internalControlId}`) ?? []).flatMap(
+            (relationship: (typeof allRelationships)[number]): LinkedEntity[] => {
+              switch (relationship.toType) {
+                case 'vendor_review': {
+                  const vendorRecord = vendorByKey.get(
+                    relationship.toId as 'openrouter' | 'resend' | 'sentry',
+                  );
+                  const vendorRuntime = vendorRuntimeByKey.get(
+                    relationship.toId as 'openrouter' | 'resend' | 'sentry',
+                  );
+                  if (!vendorRuntime) {
+                    return [];
+                  }
+                  return [
+                    {
+                      entityId: relationship.toId,
+                      entityType: relationship.toType,
+                      label: vendorRuntime.displayName,
+                      relationshipType: relationship.relationshipType,
+                      status:
+                        vendorRecord !== undefined
+                          ? deriveVendorReviewStatus({
+                              nextReviewAt: vendorRecord.nextReviewAt ?? null,
+                            })
+                          : 'overdue',
+                    },
+                  ];
                 }
-                return [
-                  {
-                    entityId: relationship.toId,
-                    entityType: relationship.toType,
-                    label: vendorRuntime.displayName,
-                    relationshipType: relationship.relationshipType,
-                    status: vendorReview?.reviewStatus ?? 'pending',
-                  },
-                ];
-              }
-              case 'finding': {
-                const finding = findingByKey.get(relationship.toId);
-                if (!finding) {
-                  return [];
+                case 'finding': {
+                  const finding = findingByKey.get(relationship.toId);
+                  if (!finding) {
+                    return [];
+                  }
+                  return [
+                    {
+                      entityId: relationship.toId,
+                      entityType: relationship.toType,
+                      label: finding.title,
+                      relationshipType: relationship.relationshipType,
+                      status: finding.disposition,
+                    },
+                  ];
                 }
-                return [
-                  {
-                    entityId: relationship.toId,
-                    entityType: relationship.toType,
-                    label: finding.title,
-                    relationshipType: relationship.relationshipType,
-                    status: finding.disposition,
-                  },
-                ];
-              }
-              case 'review_task': {
-                const task = allReviewTaskById.get(relationship.toId as Id<'reviewTasks'>);
-                if (!task) {
-                  return [];
+                case 'review_task': {
+                  const task = allReviewTaskById.get(relationship.toId as Id<'reviewTasks'>);
+                  if (!task) {
+                    return [];
+                  }
+                  return [
+                    {
+                      entityId: relationship.toId,
+                      entityType: relationship.toType,
+                      label: task.title,
+                      relationshipType: relationship.relationshipType,
+                      status: task.status,
+                    },
+                  ];
                 }
-                return [
-                  {
-                    entityId: relationship.toId,
-                    entityType: relationship.toType,
-                    label: task.title,
-                    relationshipType: relationship.relationshipType,
-                    status: task.status,
-                  },
-                ];
-              }
-              case 'evidence_report': {
-                const report = allReportById.get(relationship.toId as Id<'evidenceReports'>);
-                if (!report) {
-                  return [];
+                case 'evidence_report': {
+                  const report = allReportById.get(relationship.toId as Id<'evidenceReports'>);
+                  if (!report) {
+                    return [];
+                  }
+                  return [
+                    {
+                      entityId: relationship.toId,
+                      entityType: relationship.toType,
+                      label: report.reportKind,
+                      relationshipType: relationship.relationshipType,
+                      status: report.reviewStatus,
+                    },
+                  ];
                 }
-                return [
-                  {
-                    entityId: relationship.toId,
-                    entityType: relationship.toType,
-                    label: report.reportKind,
-                    relationshipType: relationship.relationshipType,
-                    status: report.reviewStatus,
-                  },
-                ];
-              }
-              case 'evidence': {
-                const evidence = evidenceRows.find((entry) => entry._id === relationship.toId);
-                if (!evidence) {
-                  return [];
+                case 'evidence': {
+                  const evidence = evidenceRows.find((entry) => entry._id === relationship.toId);
+                  if (!evidence) {
+                    return [];
+                  }
+                  return [
+                    {
+                      entityId: relationship.toId,
+                      entityType: relationship.toType,
+                      label: evidence.title,
+                      relationshipType: relationship.relationshipType,
+                      status: evidence.reviewStatus ?? 'pending',
+                    },
+                  ];
                 }
-                return [
-                  {
-                    entityId: relationship.toId,
-                    entityType: relationship.toType,
-                    label: evidence.title,
-                    relationshipType: relationship.relationshipType,
-                    status: evidence.reviewStatus ?? 'pending',
-                  },
-                ];
+                default:
+                  return [];
               }
-              default:
+            },
+          ),
+          ...vendorMappings
+            .filter((mapping) => mapping.internalControlId === control.internalControlId)
+            .flatMap((mapping): LinkedEntity[] => {
+              const vendorRuntime = vendorRuntimeByKey.get(mapping.vendorKey);
+              if (!vendorRuntime) {
                 return [];
-            }
-          },
-        )
+              }
+              const vendorRecord = vendorByKey.get(mapping.vendorKey);
+              return [
+                {
+                  entityId: mapping.vendorKey,
+                  entityType: 'vendor_review',
+                  label: vendorRuntime.displayName,
+                  relationshipType: 'tracks_vendor_review',
+                  status:
+                    vendorRecord !== undefined
+                      ? deriveVendorReviewStatus({
+                          nextReviewAt: vendorRecord.nextReviewAt ?? null,
+                        })
+                      : 'overdue',
+                },
+              ];
+            }),
+        ]
       : [];
 
     return {

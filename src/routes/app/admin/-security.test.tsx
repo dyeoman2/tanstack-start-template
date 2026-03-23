@@ -96,8 +96,6 @@ vi.mock('~/components/ui/toast', () => ({
 
 type SearchState = {
   tab: 'overview' | 'controls' | 'policies' | 'operations' | 'reviews';
-  page: number;
-  pageSize: 10 | 20 | 50;
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
   search: string;
@@ -112,8 +110,6 @@ type SearchState = {
 
 const defaultSearch: SearchState = {
   tab: 'operations',
-  page: 1,
-  pageSize: 10,
   sortBy: 'control',
   sortOrder: 'asc',
   search: '',
@@ -560,11 +556,11 @@ function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
     approvalEnvVar: null,
     approved: true,
     approvedByDefault: true,
-    customerSummary: null,
-    displayName: 'Sentry',
-    internalNotes: 'SOC 2 reviewed.',
+    linkedAnnualReviewTask: null,
     linkedEntities: [],
     linkedFollowUpRunId: null,
+    lastReviewedAt: null,
+    nextReviewAt: null,
     owner: 'Platform Security',
     relatedControls: [
       {
@@ -574,11 +570,11 @@ function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
         title: 'External Services',
       },
     ],
-    reviewStatus: 'pending',
-    reviewedAt: null,
-    reviewedByDisplay: null,
+    reviewStatus: 'overdue',
     scopeId: 'provider',
     scopeType: 'provider_global',
+    summary: 'SOC 2 reviewed.',
+    title: 'Sentry',
     vendor: 'sentry',
     ...overrides,
   };
@@ -654,9 +650,8 @@ function buildWorkspaceOverview(args?: {
     queues: {
       blockedReviewTasks: 0,
       missingSupportControls: controls.filter((control) => control.support === 'missing').length,
-      pendingVendorReviews: vendorWorkspaces.filter(
-        (vendor) => vendor.reviewStatus === 'pending' || vendor.reviewStatus === 'needs_follow_up',
-      ).length,
+      pendingVendorReviews: vendorWorkspaces.filter((vendor) => vendor.reviewStatus === 'overdue')
+        .length,
       undispositionedFindings: findings.filter((finding) => finding.disposition !== 'resolved')
         .length,
     },
@@ -664,9 +659,8 @@ function buildWorkspaceOverview(args?: {
     scopeType: 'provider_global',
     vendorSummary: {
       approvedCount: vendorWorkspaces.filter((vendor) => vendor.approved).length,
-      needsFollowUpCount: vendorWorkspaces.filter(
-        (vendor) => vendor.reviewStatus === 'needs_follow_up',
-      ).length,
+      dueSoonCount: vendorWorkspaces.filter((vendor) => vendor.reviewStatus === 'due_soon').length,
+      overdueCount: vendorWorkspaces.filter((vendor) => vendor.reviewStatus === 'overdue').length,
       totalCount: vendorWorkspaces.length,
     },
   };
@@ -1307,22 +1301,10 @@ describe('Admin security route', () => {
     expect(screen.getByText('Current Annual Review')).toBeInTheDocument();
     expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
 
-    const attestationSection = screen
-      .getAllByText('Needs attestation')[0]
-      ?.closest('[data-slot="card"]');
-    expect(attestationSection).not.toBeNull();
+    await user.click(screen.getAllByRole('button', { name: 'Details' })[0]!);
 
-    await user.click(
-      within(attestationSection as HTMLElement).getAllByRole('button', { name: 'Details' })[0]!,
-    );
-
-    await user.type(
-      within(attestationSection as HTMLElement).getAllByPlaceholderText('Task note')[0]!,
-      'reviewed this procedure',
-    );
-    await user.click(
-      within(attestationSection as HTMLElement).getByRole('button', { name: /review and attest/i }),
-    );
+    await user.type(screen.getAllByPlaceholderText('Task note')[0]!, 'reviewed this procedure');
+    await user.click(screen.getByRole('button', { name: /review and attest/i }));
 
     await waitFor(() => {
       expect(attestReviewTaskMock).toHaveBeenCalledWith({
@@ -1334,11 +1316,7 @@ describe('Admin security route', () => {
       });
     });
 
-    await user.click(
-      within(attestationSection as HTMLElement).getByRole('button', {
-        name: /au-6 · provider review procedure/i,
-      }),
-    );
+    await user.click(screen.getByRole('button', { name: /au-6 · provider review procedure/i }));
 
     expect(navigateMock).toHaveBeenCalledWith({
       search: expect.objectContaining({
@@ -1396,8 +1374,6 @@ describe('Admin security route', () => {
     render(
       <AdminSecurityLayout
         search={{
-          page: 2,
-          pageSize: 20,
           search: 'access',
           selectedControl: 'ac-1',
           sortBy: 'support',
@@ -1415,8 +1391,6 @@ describe('Admin security route', () => {
         replace: true,
         search: {
           family: undefined,
-          page: 2,
-          pageSize: 20,
           responsibility: undefined,
           search: 'access',
           selectedControl: 'ac-1',
@@ -1451,19 +1425,15 @@ describe('Admin security route', () => {
 
     await user.clear(screen.getByLabelText(/owner/i));
     await user.type(screen.getByLabelText(/owner/i), 'Infra team');
-    const vendorInternalNotesFields = screen.getAllByPlaceholderText('Internal notes');
-    const vendorInternalNotesField =
-      vendorInternalNotesFields[vendorInternalNotesFields.length - 1];
-    expect(vendorInternalNotesField).toBeDefined();
-    await user.clear(vendorInternalNotesField!);
-    await user.type(vendorInternalNotesField!, 'Need updated DPA.');
-    await user.click(screen.getByRole('button', { name: /needs follow-up/i }));
+    const vendorSummaryField = screen.getByPlaceholderText('Vendor summary');
+    await user.clear(vendorSummaryField);
+    await user.type(vendorSummaryField, 'Need updated DPA.');
+    await user.click(screen.getByRole('button', { name: /review now/i }));
 
     await waitFor(() => {
       expect(reviewVendorWorkspaceMock).toHaveBeenCalledWith({
-        internalNotes: 'Need updated DPA.',
         owner: 'Infra team',
-        reviewStatus: 'needs_follow_up',
+        summary: 'Need updated DPA.',
         vendorKey: 'sentry',
       });
     });

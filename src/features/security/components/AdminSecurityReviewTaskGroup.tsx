@@ -150,6 +150,35 @@ export function AdminSecurityReviewTaskGroup(props: {
                       </div>
                     ) : null}
 
+                    {task.vendor ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Linked vendor</p>
+                        <div className="rounded-md border p-3 text-sm">
+                          <p className="font-medium">{task.vendor.title}</p>
+                          <p className="text-muted-foreground">
+                            {task.vendor.vendorKey} · {task.vendor.reviewStatus}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {task.findingsSummary ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Findings posture</p>
+                        <div className="rounded-md border p-3 text-sm text-muted-foreground">
+                          <p>
+                            Open findings: {task.findingsSummary.totalOpenCount}
+                            {' · '}Critical: {task.findingsSummary.criticalOpenCount}
+                            {' · '}Lower severity: {task.findingsSummary.lowerSeverityOpenCount}
+                          </p>
+                          <p>
+                            Undispositioned open findings:{' '}
+                            {task.findingsSummary.undispositionedCount}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
                     {task.policyControls.length ? (
                       <div className="space-y-2">
                         <p className="text-sm font-medium">Mapped controls under this policy</p>

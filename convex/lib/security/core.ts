@@ -22,6 +22,12 @@ function addDays(timestamp: number, days: number) {
   return timestamp + days * 24 * 60 * 60 * 1000;
 }
 
+function addMonths(timestamp: number, months: number) {
+  const date = new Date(timestamp);
+  date.setUTCMonth(date.getUTCMonth() + months);
+  return date.getTime();
+}
+
 function getCurrentAnnualReviewYear() {
   return new Date().getUTCFullYear();
 }
@@ -221,6 +227,8 @@ async function patchSecurityScopeDefaults(
     | 'reviewTaskResults'
     | 'reviewAttestations'
     | 'reviewTaskEvidenceLinks'
+    | 'securityVendors'
+    | 'securityVendorControlMappings'
     | 'securityVendorReviews'
     | 'retentionJobs'
     | 'backupVerificationReports'
@@ -429,6 +437,7 @@ export function summarizeIntegrityCheck(integrityCheck: {
 }
 
 export {
+  addMonths,
   addDays,
   buildVendorRelatedControls,
   getAnnualReviewRunKey,
