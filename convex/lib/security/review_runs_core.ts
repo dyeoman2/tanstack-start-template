@@ -24,6 +24,7 @@ import {
   buildActorDisplayMap,
   getActorDisplayName,
   listReviewTaskEvidenceLinksBySource,
+  recordSecurityControlEvidenceAuditEvent,
 } from './operations_core';
 
 type ReviewRunDoc = Doc<'reviewRuns'>;
@@ -138,64 +139,65 @@ async function syncReviewRunStatus(ctx: MutationCtx, reviewRunId: Id<'reviewRuns
   return status;
 }
 
-async function upsertChecklistReviewSatisfaction(
-  ctx: MutationCtx,
-  task: ReviewTaskDoc,
-  args: {
-    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
-    satisfiedAt: number;
-    satisfiedByUserId: string;
-    satisfiedThroughAt: number;
-  },
-) {
-  const now = Date.now();
-  await Promise.all(
-    task.controlLinks.map(async (link) => {
-      const existing = await ctx.db
-        .query('securityControlChecklistItems')
-        .withIndex('by_internal_control_id_and_item_id', (q) =>
-          q.eq('internalControlId', link.internalControlId).eq('itemId', link.itemId),
-        )
-        .unique();
-
-      const reviewSatisfaction = {
-        mode: args.mode,
-        reviewRunId: task.reviewRunId,
-        reviewTaskId: task._id,
-        satisfiedAt: args.satisfiedAt,
-        satisfiedByUserId: args.satisfiedByUserId,
-        satisfiedThroughAt: args.satisfiedThroughAt,
-      };
-
-      if (existing) {
-        await ctx.db.patch(existing._id, {
-          completedAt: args.satisfiedAt,
-          completedByUserId: args.satisfiedByUserId,
-          lastReviewedAt: args.satisfiedAt,
-          lastReviewedByUserId: args.satisfiedByUserId,
-          reviewSatisfaction,
-          updatedAt: now,
-        });
-        return;
-      }
-
-      await ctx.db.insert('securityControlChecklistItems', {
-        ...getSecurityScopeFields(),
-        completedAt: args.satisfiedAt,
-        completedByUserId: args.satisfiedByUserId,
-        createdAt: now,
-        internalControlId: link.internalControlId,
-        itemId: link.itemId,
-        lastReviewedAt: args.satisfiedAt,
-        lastReviewedByUserId: args.satisfiedByUserId,
-        reviewSatisfaction,
-        updatedAt: now,
-      });
-    }),
-  );
+function shouldMaterializeReviewOutcomeEvidence(args: {
+  mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+  status: 'ready' | 'completed' | 'exception' | 'blocked';
+  satisfiedAt: number | null;
+  satisfiedThroughAt: number | null;
+}) {
+  if (typeof args.satisfiedAt !== 'number' || typeof args.satisfiedThroughAt !== 'number') {
+    return false;
+  }
+  if (args.status === 'completed') {
+    return true;
+  }
+  return args.status === 'exception' && args.mode === 'exception';
 }
 
-async function clearChecklistReviewSatisfaction(
+function getReviewOutcomeEvidenceMetadata(args: {
+  mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+  task: ReviewTaskDoc;
+}) {
+  switch (args.mode) {
+    case 'automated_check':
+      return {
+        evidenceType: 'automated_review_result' as const,
+        source: 'automated_review_result' as const,
+        sufficiency: 'sufficient' as const,
+        title: `${args.task.title} result`,
+      };
+    case 'attestation':
+      return {
+        evidenceType: 'review_attestation' as const,
+        source: 'review_attestation' as const,
+        sufficiency: 'sufficient' as const,
+        title: `${args.task.title} attestation`,
+      };
+    case 'document_upload':
+      return {
+        evidenceType: 'review_document' as const,
+        source: 'review_document' as const,
+        sufficiency: 'sufficient' as const,
+        title: `${args.task.title} document`,
+      };
+    case 'follow_up':
+      return {
+        evidenceType: 'follow_up_resolution' as const,
+        source: 'follow_up_resolution' as const,
+        sufficiency: 'sufficient' as const,
+        title: `${args.task.title} follow-up`,
+      };
+    case 'exception':
+      return {
+        evidenceType: 'exception_record' as const,
+        source: 'review_exception' as const,
+        sufficiency: 'partial' as const,
+        title: `${args.task.title} exception`,
+      };
+  }
+}
+
+async function clearChecklistReviewOutcomeEvidence(
   ctx: MutationCtx,
   task: ReviewTaskDoc,
   args: {
@@ -206,24 +208,176 @@ async function clearChecklistReviewSatisfaction(
   const now = Date.now();
   await Promise.all(
     task.controlLinks.map(async (link) => {
-      const existing = await ctx.db
-        .query('securityControlChecklistItems')
+      const existingEvidence = await ctx.db
+        .query('securityControlEvidence')
         .withIndex('by_internal_control_id_and_item_id', (q) =>
           q.eq('internalControlId', link.internalControlId).eq('itemId', link.itemId),
         )
-        .unique();
+        .collect();
 
-      if (!existing || existing.reviewSatisfaction?.reviewTaskId !== task._id) {
-        return;
-      }
+      await Promise.all(
+        existingEvidence
+          .filter(
+            (entry) =>
+              entry.reviewOriginReviewTaskId === task._id &&
+              (entry.lifecycleStatus ?? 'active') === 'active',
+          )
+          .map(async (entry) => {
+            await ctx.db.patch(entry._id, {
+              archivedAt: now,
+              archivedByUserId: args.clearedByUserId,
+              lifecycleStatus: 'superseded',
+              updatedAt: now,
+            });
+            await recordSecurityControlEvidenceAuditEvent(ctx, {
+              actorUserId: args.clearedByUserId,
+              eventType: 'security_control_evidence_archived',
+              evidenceId: entry._id,
+              evidenceTitle: entry.title,
+              evidenceType: entry.evidenceType,
+              internalControlId: entry.internalControlId,
+              itemId: entry.itemId,
+              lifecycleStatus: 'superseded',
+              organizationId: undefined,
+              replacedByEvidenceId: undefined,
+              reviewStatus: entry.reviewStatus ?? null,
+            });
+          }),
+      );
+    }),
+  );
+}
 
-      await ctx.db.patch(existing._id, {
-        completedAt: undefined,
-        completedByUserId: undefined,
-        lastReviewedAt: args.clearedAt,
-        lastReviewedByUserId: args.clearedByUserId,
-        reviewSatisfaction: undefined,
+async function materializeReviewTaskSatisfactionEvidence(
+  ctx: MutationCtx,
+  task: ReviewTaskDoc,
+  args: {
+    actorUserId: string;
+    latestAttestationId?: Id<'reviewAttestations'>;
+    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+    note?: string;
+    resultId: Id<'reviewTaskResults'>;
+    satisfiedAt: number;
+    satisfiedThroughAt: number;
+  },
+) {
+  const now = Date.now();
+  const metadata = getReviewOutcomeEvidenceMetadata({
+    mode: args.mode,
+    task,
+  });
+  const [taskLinks, attestation] = await Promise.all([
+    ctx.db
+      .query('reviewTaskEvidenceLinks')
+      .withIndex('by_review_task_id', (q) => q.eq('reviewTaskId', task._id))
+      .collect(),
+    args.latestAttestationId ? ctx.db.get(args.latestAttestationId) : Promise.resolve(null),
+  ]);
+  const primarySource =
+    taskLinks.find((entry) => entry.role === 'primary') ??
+    taskLinks.find((entry) => entry.role === 'supporting') ??
+    taskLinks[0] ??
+    null;
+
+  await Promise.all(
+    task.controlLinks.map(async (link) => {
+      const existingEvidence = await ctx.db
+        .query('securityControlEvidence')
+        .withIndex('by_internal_control_id_and_item_id', (q) =>
+          q.eq('internalControlId', link.internalControlId).eq('itemId', link.itemId),
+        )
+        .collect();
+      const activeArtifacts = existingEvidence.filter(
+        (entry) =>
+          entry.reviewOriginReviewTaskId === task._id &&
+          (entry.lifecycleStatus ?? 'active') === 'active',
+      );
+
+      const evidenceId = await ctx.db.insert('securityControlEvidence', {
+        ...getSecurityScopeFields(),
+        createdAt: now,
+        description:
+          args.note?.trim() ||
+          attestation?.statementText ||
+          `Review outcome recorded from ${task.title}.`,
+        evidenceDate: args.satisfiedAt,
+        evidenceType: metadata.evidenceType,
+        fileName: undefined,
+        itemId: link.itemId,
+        internalControlId: link.internalControlId,
+        lifecycleStatus: 'active',
+        mimeType: undefined,
+        renewedFromEvidenceId: undefined,
+        replacedByEvidenceId: undefined,
+        reviewDueIntervalMonths: undefined,
+        reviewOriginReviewAttestationId: args.latestAttestationId,
+        reviewOriginReviewRunId: task.reviewRunId,
+        reviewOriginReviewTaskId: task._id,
+        reviewOriginReviewTaskResultId: args.resultId,
+        reviewOriginSourceId: primarySource?.sourceId,
+        reviewOriginSourceLabel: primarySource?.sourceLabel,
+        reviewOriginSourceType: primarySource?.sourceType,
+        reviewStatus: 'reviewed',
+        reviewedAt: args.satisfiedAt,
+        reviewedByUserId: args.actorUserId,
+        satisfiesThroughAt: args.satisfiedThroughAt,
+        sizeBytes: undefined,
+        source: metadata.source,
+        storageId: undefined,
+        sufficiency: metadata.sufficiency,
+        title:
+          args.mode === 'document_upload' && attestation?.documentLabel
+            ? attestation.documentLabel
+            : metadata.title,
         updatedAt: now,
+        uploadedByUserId: args.actorUserId,
+        url:
+          args.mode === 'document_upload'
+            ? attestation?.documentUrl
+            : primarySource?.sourceType === 'external_document'
+              ? primarySource.sourceId
+              : undefined,
+      });
+
+      await Promise.all(
+        activeArtifacts.map(async (entry) => {
+          await ctx.db.patch(entry._id, {
+            archivedAt: now,
+            archivedByUserId: args.actorUserId,
+            lifecycleStatus: 'superseded',
+            replacedByEvidenceId: evidenceId,
+            updatedAt: now,
+          });
+          await recordSecurityControlEvidenceAuditEvent(ctx, {
+            actorUserId: args.actorUserId,
+            eventType: 'security_control_evidence_archived',
+            evidenceId: entry._id,
+            evidenceTitle: entry.title,
+            evidenceType: entry.evidenceType,
+            internalControlId: entry.internalControlId,
+            itemId: entry.itemId,
+            lifecycleStatus: 'superseded',
+            organizationId: undefined,
+            replacedByEvidenceId: evidenceId,
+            reviewStatus: entry.reviewStatus ?? null,
+          });
+        }),
+      );
+
+      await recordSecurityControlEvidenceAuditEvent(ctx, {
+        actorUserId: args.actorUserId,
+        eventType: 'security_control_evidence_created',
+        evidenceId,
+        evidenceTitle:
+          args.mode === 'document_upload' && attestation?.documentLabel
+            ? attestation.documentLabel
+            : metadata.title,
+        evidenceType: metadata.evidenceType,
+        internalControlId: link.internalControlId,
+        itemId: link.itemId,
+        lifecycleStatus: 'active',
+        organizationId: undefined,
+        reviewStatus: 'reviewed',
       });
     }),
   );
@@ -377,18 +531,24 @@ async function applyReviewTaskState(
   });
 
   if (
-    (args.status === 'completed' || args.status === 'exception') &&
-    typeof args.satisfiedAt === 'number' &&
-    typeof args.satisfiedThroughAt === 'number'
-  ) {
-    await upsertChecklistReviewSatisfaction(ctx, task, {
+    shouldMaterializeReviewOutcomeEvidence({
       mode: args.mode,
-      satisfiedAt: args.satisfiedAt,
-      satisfiedByUserId: args.actorUserId,
-      satisfiedThroughAt: args.satisfiedThroughAt,
+      satisfiedAt: args.satisfiedAt ?? null,
+      satisfiedThroughAt: args.satisfiedThroughAt ?? null,
+      status: args.status,
+    })
+  ) {
+    await materializeReviewTaskSatisfactionEvidence(ctx, task, {
+      actorUserId: args.actorUserId,
+      latestAttestationId: args.latestAttestationId,
+      mode: args.mode,
+      note: args.note,
+      resultId,
+      satisfiedAt: args.satisfiedAt as number,
+      satisfiedThroughAt: args.satisfiedThroughAt as number,
     });
   } else {
-    await clearChecklistReviewSatisfaction(ctx, task, {
+    await clearChecklistReviewOutcomeEvidence(ctx, task, {
       clearedAt: now,
       clearedByUserId: args.actorUserId,
     });
@@ -1061,15 +1221,105 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
 
   const checklistItems = await ctx.db.query('securityControlChecklistItems').collect();
   let patchedChecklistStatuses = 0;
+  let migratedReviewArtifacts = 0;
   for (const checklistItem of checklistItems) {
     if (checklistItem.manualStatus || !checklistItem.status) {
+      // Continue checking legacy satisfaction even when manual status is already set.
+    } else {
+      await ctx.db.patch(checklistItem._id, {
+        manualStatus: checklistItem.status,
+        updatedAt: Date.now(),
+      });
+      patchedChecklistStatuses += 1;
+    }
+
+    const legacyReviewSatisfaction = (
+      checklistItem as unknown as {
+        reviewSatisfaction?: {
+          mode?: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+          reviewTaskId?: Id<'reviewTasks'>;
+          satisfiedAt?: number;
+          satisfiedByUserId?: string;
+          satisfiedThroughAt?: number;
+        };
+      }
+    ).reviewSatisfaction;
+    if (!legacyReviewSatisfaction?.reviewTaskId) {
       continue;
     }
-    await ctx.db.patch(checklistItem._id, {
-      manualStatus: checklistItem.status,
+
+    const legacyTask = await ctx.db.get(legacyReviewSatisfaction.reviewTaskId);
+    if (
+      !legacyTask ||
+      typeof legacyReviewSatisfaction.satisfiedAt !== 'number' ||
+      typeof legacyReviewSatisfaction.satisfiedThroughAt !== 'number'
+    ) {
+      await (
+        ctx.db.patch as unknown as (
+          id: Id<'securityControlChecklistItems'>,
+          value: Record<string, unknown>,
+        ) => Promise<void>
+      )(checklistItem._id, {
+        reviewSatisfaction: undefined,
+        updatedAt: Date.now(),
+      });
+      continue;
+    }
+
+    const existingArtifacts = await ctx.db
+      .query('securityControlEvidence')
+      .withIndex('by_internal_control_id_and_item_id', (q) =>
+        q
+          .eq('internalControlId', checklistItem.internalControlId)
+          .eq('itemId', checklistItem.itemId),
+      )
+      .collect();
+    const hasArtifact = existingArtifacts.some(
+      (entry) =>
+        entry.reviewOriginReviewTaskId === legacyTask._id &&
+        (entry.lifecycleStatus ?? 'active') === 'active',
+    );
+    if (!hasArtifact) {
+      const migrationResultId = await ctx.db.insert('reviewTaskResults', {
+        ...getSecurityScopeFields(),
+        actorUserId: legacyReviewSatisfaction.satisfiedByUserId ?? actorUserId,
+        createdAt: legacyReviewSatisfaction.satisfiedAt,
+        note: 'Migrated legacy checklist review satisfaction into evidence artifact.',
+        resultType: legacyTask.status === 'exception' ? 'exception_marked' : ('resolved' as const),
+        reviewRunId: legacyTask.reviewRunId,
+        reviewTaskId: legacyTask._id,
+        statusAfter: legacyTask.status,
+      });
+      await materializeReviewTaskSatisfactionEvidence(ctx, legacyTask, {
+        actorUserId: legacyReviewSatisfaction.satisfiedByUserId ?? actorUserId,
+        latestAttestationId: legacyTask.latestAttestationId,
+        mode:
+          legacyReviewSatisfaction.mode === 'follow_up'
+            ? 'follow_up'
+            : legacyReviewSatisfaction.mode === 'exception'
+              ? 'exception'
+              : legacyReviewSatisfaction.mode === 'automated_check'
+                ? 'automated_check'
+                : legacyReviewSatisfaction.mode === 'document_upload'
+                  ? 'document_upload'
+                  : 'attestation',
+        note: 'Migrated legacy checklist review satisfaction into evidence artifact.',
+        resultId: migrationResultId,
+        satisfiedAt: legacyReviewSatisfaction.satisfiedAt,
+        satisfiedThroughAt: legacyReviewSatisfaction.satisfiedThroughAt,
+      });
+      migratedReviewArtifacts += 1;
+    }
+
+    await (
+      ctx.db.patch as unknown as (
+        id: Id<'securityControlChecklistItems'>,
+        value: Record<string, unknown>,
+      ) => Promise<void>
+    )(checklistItem._id, {
+      reviewSatisfaction: undefined,
       updatedAt: Date.now(),
     });
-    patchedChecklistStatuses += 1;
   }
 
   let patchedReviewNotes = 0;
@@ -1245,6 +1495,7 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
   }
 
   return {
+    migratedReviewArtifacts,
     patchedChecklistStatuses,
     patchedReviewNotes,
     patchedScopeRecords,
@@ -1474,7 +1725,7 @@ export {
   buildReviewRunSummary,
   buildReviewRunTaskCounts,
   buildVendorWorkspaceRows,
-  clearChecklistReviewSatisfaction,
+  clearChecklistReviewOutcomeEvidence,
   clearReviewTaskEvidenceLinksBySourceType,
   createTriggeredReviewRunRecord,
   deriveReportBackedTaskOutcome,
@@ -1483,13 +1734,13 @@ export {
   getReviewBlueprintForTask,
   isReportBackedAutomatedTask,
   listReviewTasksByRunId,
+  materializeReviewTaskSatisfactionEvidence,
   reconcileEvidenceReportLinkedTasks,
   removeReviewTaskEvidenceLinkRelationships,
   runSecurityWorkspaceMigration,
   syncReviewRunStatus,
   syncVendorReviewOverlayRecords,
   upsertAnnualReviewTasks,
-  upsertChecklistReviewSatisfaction,
   upsertReviewTaskEvidenceLinkRecord,
 };
 export type { ReviewRunDoc, ReviewTaskDoc };

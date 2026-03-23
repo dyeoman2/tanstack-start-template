@@ -26,6 +26,7 @@ import {
   buildReviewRunSummary,
   clearReviewTaskEvidenceLinksBySourceType,
   createTriggeredReviewRunRecord,
+  runSecurityWorkspaceMigration,
   syncReviewRunStatus,
   upsertAnnualReviewTasks,
   upsertReviewTaskEvidenceLinkRecord,
@@ -34,7 +35,7 @@ import {
   reviewRunDetailValidator,
   reviewRunSummaryListValidator,
   reviewRunSummaryValidator,
-  reviewSatisfactionModeValidator,
+  reviewOutcomeModeValidator,
   reviewTaskControlReferenceValidator,
   reviewTaskEvidenceRoleValidator,
   reviewTaskEvidenceSourceTypeValidator,
@@ -169,7 +170,7 @@ export const applyReviewTaskStateInternal = internalMutation({
   args: {
     actorUserId: v.string(),
     latestAttestationId: v.optional(v.id('reviewAttestations')),
-    mode: reviewSatisfactionModeValidator,
+    mode: reviewOutcomeModeValidator,
     note: v.optional(v.string()),
     reviewTaskId: v.id('reviewTasks'),
     resultType: reviewTaskResultTypeValidator,
@@ -220,6 +221,21 @@ export const createTriggeredReviewRun = mutation({
       throw new Error('Triggered review run not found after create.');
     }
     return await buildReviewRunSummary(ctx as unknown as QueryCtx, latestRun);
+  },
+});
+
+export const runSecurityWorkspaceMigrationNow = mutation({
+  args: {},
+  returns: v.object({
+    migratedReviewArtifacts: v.number(),
+    patchedChecklistStatuses: v.number(),
+    patchedReviewNotes: v.number(),
+    patchedScopeRecords: v.number(),
+    syncedVendorReviewRows: v.number(),
+  }),
+  handler: async (ctx) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    return await runSecurityWorkspaceMigration(ctx, currentUser.authUserId);
   },
 });
 

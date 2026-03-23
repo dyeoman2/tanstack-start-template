@@ -1,4 +1,4 @@
-import type { Doc, Id } from '../../_generated/dataModel';
+import type { Doc } from '../../_generated/dataModel';
 import type { MutationCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import {
@@ -352,39 +352,6 @@ function getSecurityFindingControlLinks(
   }
 }
 
-function isReviewSatisfactionCurrent(input: { satisfiedAt: number; satisfiedThroughAt: number }) {
-  const now = Date.now();
-  return input.satisfiedAt <= now && input.satisfiedThroughAt >= now;
-}
-
-function hasActiveReviewSatisfaction(
-  satisfaction:
-    | {
-        reviewRunId: Id<'reviewRuns'>;
-        reviewTaskId: Id<'reviewTasks'>;
-        satisfiedAt: number;
-        satisfiedThroughAt: number;
-      }
-    | null
-    | undefined,
-  reviewTask: Pick<Doc<'reviewTasks'>, '_id' | 'reviewRunId' | 'status'> | null | undefined,
-  reviewRun: Pick<Doc<'reviewRuns'>, '_id'> | null | undefined,
-) {
-  if (!satisfaction || !reviewTask || !reviewRun) {
-    return false;
-  }
-  if (
-    reviewTask._id !== satisfaction.reviewTaskId ||
-    reviewTask.reviewRunId !== satisfaction.reviewRunId
-  ) {
-    return false;
-  }
-  if (reviewTask.status !== 'completed' && reviewTask.status !== 'exception') {
-    return false;
-  }
-  return isReviewSatisfactionCurrent(satisfaction);
-}
-
 type ExportManifest = {
   actorUserId: string;
   contentHash: string;
@@ -472,10 +439,8 @@ export {
   getSecurityRelationshipObjectTypeFromSourceRecordType,
   getSecurityScopeFields,
   getVendorRelatedControlLinks,
-  hasActiveReviewSatisfaction,
   hashContent,
   isMissingDocumentDeleteError,
-  isReviewSatisfactionCurrent,
   normalizeSecurityScope,
   patchSecurityScopeDefaults,
   resolveControlLinkMetadata,

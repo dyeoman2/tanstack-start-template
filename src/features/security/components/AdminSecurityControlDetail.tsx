@@ -431,22 +431,22 @@ function ChecklistAccordionItem(props: {
       <AccordionContent className="space-y-4 px-4 pb-4">
         <div className="space-y-3">
           <p className="text-sm text-muted-foreground">{item.description}</p>
-          {item.reviewSatisfaction ? (
+          {item.reviewArtifact ? (
             <div className="rounded-md border bg-muted/20 p-3 text-sm">
-              <p className="font-medium">{item.reviewSatisfaction.reviewTaskTitle}</p>
+              <p className="font-medium">{item.reviewArtifact.reviewTaskTitle}</p>
               <p className="text-muted-foreground">
-                {item.reviewSatisfaction.reviewRunTitle} ·{' '}
-                {formatReviewRunStatus(item.reviewSatisfaction.reviewRunStatus)}
+                {item.reviewArtifact.reviewRunTitle} ·{' '}
+                {formatReviewRunStatus(item.reviewArtifact.reviewRunStatus)}
               </p>
               <p className="text-muted-foreground">
-                Satisfied {formatEvidenceTimestamp(item.reviewSatisfaction.satisfiedAt)}
-                {item.reviewSatisfaction.satisfiedByDisplay
-                  ? ` · ${item.reviewSatisfaction.satisfiedByDisplay}`
+                Satisfied {formatEvidenceTimestamp(item.reviewArtifact.satisfiedAt)}
+                {item.reviewArtifact.satisfiedByDisplay
+                  ? ` · ${item.reviewArtifact.satisfiedByDisplay}`
                   : ''}
               </p>
-              {item.reviewSatisfaction.relatedReports.length ? (
+              {item.reviewArtifact.relatedReports.length ? (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  {item.reviewSatisfaction.relatedReports.map((report) => (
+                  {item.reviewArtifact.relatedReports.map((report) => (
                     <Badge key={report.id} variant="outline">
                       {report.reportKind} · {report.label}
                     </Badge>

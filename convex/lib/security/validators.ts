@@ -366,6 +366,11 @@ const evidenceSourceValidator = v.union(
   v.literal('automated_system_check'),
   v.literal('external_report'),
   v.literal('vendor_attestation'),
+  v.literal('review_attestation'),
+  v.literal('review_document'),
+  v.literal('automated_review_result'),
+  v.literal('follow_up_resolution'),
+  v.literal('review_exception'),
 );
 const evidenceExpiryStatusValidator = v.union(
   v.literal('none'),
@@ -377,6 +382,11 @@ const evidenceTypeValidator = v.union(
   v.literal('link'),
   v.literal('note'),
   v.literal('system_snapshot'),
+  v.literal('review_attestation'),
+  v.literal('review_document'),
+  v.literal('automated_review_result'),
+  v.literal('follow_up_resolution'),
+  v.literal('exception_record'),
 );
 const securityControlEvidenceAuditEventTypeValidator = v.union(
   v.literal('security_control_evidence_created'),
@@ -412,9 +422,26 @@ const controlEvidenceValidator = v.object({
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed')),
   reviewDueAt: v.union(v.number(), v.null()),
   reviewDueIntervalMonths: v.union(evidenceReviewDueIntervalValidator, v.null()),
+  reviewOriginReviewRunId: v.union(v.id('reviewRuns'), v.null()),
+  reviewOriginReviewTaskId: v.union(v.id('reviewTasks'), v.null()),
+  reviewOriginReviewTaskResultId: v.union(v.id('reviewTaskResults'), v.null()),
+  reviewOriginReviewAttestationId: v.union(v.id('reviewAttestations'), v.null()),
+  reviewOriginSourceId: v.union(v.string(), v.null()),
+  reviewOriginSourceLabel: v.union(v.string(), v.null()),
+  reviewOriginSourceType: v.union(
+    v.literal('security_control_evidence'),
+    v.literal('evidence_report'),
+    v.literal('security_finding'),
+    v.literal('backup_verification_report'),
+    v.literal('external_document'),
+    v.literal('review_task'),
+    v.literal('vendor_review'),
+    v.null(),
+  ),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByDisplay: v.union(v.string(), v.null()),
   sizeBytes: v.union(v.number(), v.null()),
+  satisfiesThroughAt: v.union(v.number(), v.null()),
   source: v.union(evidenceSourceValidator, v.null()),
   storageId: v.union(v.string(), v.null()),
   sufficiency: evidenceSufficiencyValidator,
@@ -449,15 +476,10 @@ const controlChecklistItemValidator = v.object({
   owner: v.union(v.string(), v.null()),
   operatorNotes: v.union(v.string(), v.null()),
   required: v.boolean(),
-  reviewSatisfaction: v.union(
+  reviewArtifact: v.union(
     v.object({
-      mode: v.union(
-        v.literal('automated_check'),
-        v.literal('attestation'),
-        v.literal('document_upload'),
-        v.literal('follow_up'),
-        v.literal('exception'),
-      ),
+      evidenceId: v.string(),
+      evidenceType: evidenceTypeValidator,
       relatedReports: v.array(
         v.object({
           id: v.id('evidenceReports'),
@@ -473,7 +495,7 @@ const controlChecklistItemValidator = v.object({
       reviewTaskTitle: v.string(),
       satisfiedAt: v.number(),
       satisfiedByDisplay: v.union(v.string(), v.null()),
-      satisfiedThroughAt: v.number(),
+      satisfiedThroughAt: v.union(v.number(), v.null()),
     }),
     v.null(),
   ),
@@ -784,7 +806,7 @@ const reviewTaskResultTypeValidator = v.union(
   v.literal('follow_up_opened'),
   v.literal('resolved'),
 );
-const reviewSatisfactionModeValidator = v.union(reviewTaskTypeValidator, v.literal('exception'));
+const reviewOutcomeModeValidator = v.union(reviewTaskTypeValidator, v.literal('exception'));
 const reviewTaskEvidenceSourceTypeValidator = v.union(
   v.literal('security_control_evidence'),
   v.literal('evidence_report'),
@@ -1085,7 +1107,7 @@ export {
   reviewRunStatusValidator,
   reviewRunSummaryListValidator,
   reviewRunSummaryValidator,
-  reviewSatisfactionModeValidator,
+  reviewOutcomeModeValidator,
   reviewTaskControlLinkValidator,
   reviewTaskControlReferenceValidator,
   reviewTaskEvidenceLinkValidator,

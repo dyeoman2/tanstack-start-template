@@ -676,22 +676,6 @@ export default defineSchema({
     completedByUserId: v.optional(v.string()),
     lastReviewedAt: v.optional(v.number()),
     lastReviewedByUserId: v.optional(v.string()),
-    reviewSatisfaction: v.optional(
-      v.object({
-        reviewRunId: v.id('reviewRuns'),
-        reviewTaskId: v.id('reviewTasks'),
-        satisfiedAt: v.number(),
-        satisfiedThroughAt: v.number(),
-        satisfiedByUserId: v.string(),
-        mode: v.union(
-          v.literal('automated_check'),
-          v.literal('attestation'),
-          v.literal('document_upload'),
-          v.literal('follow_up'),
-          v.literal('exception'),
-        ),
-      }),
-    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -708,6 +692,11 @@ export default defineSchema({
       v.literal('link'),
       v.literal('note'),
       v.literal('system_snapshot'),
+      v.literal('review_attestation'),
+      v.literal('review_document'),
+      v.literal('automated_review_result'),
+      v.literal('follow_up_resolution'),
+      v.literal('exception_record'),
     ),
     title: v.string(),
     description: v.optional(v.string()),
@@ -725,8 +714,31 @@ export default defineSchema({
         v.literal('automated_system_check'),
         v.literal('external_report'),
         v.literal('vendor_attestation'),
+        v.literal('review_attestation'),
+        v.literal('review_document'),
+        v.literal('automated_review_result'),
+        v.literal('follow_up_resolution'),
+        v.literal('review_exception'),
       ),
     ),
+    reviewOriginReviewRunId: v.optional(v.id('reviewRuns')),
+    reviewOriginReviewTaskId: v.optional(v.id('reviewTasks')),
+    reviewOriginReviewTaskResultId: v.optional(v.id('reviewTaskResults')),
+    reviewOriginReviewAttestationId: v.optional(v.id('reviewAttestations')),
+    reviewOriginSourceType: v.optional(
+      v.union(
+        v.literal('security_control_evidence'),
+        v.literal('evidence_report'),
+        v.literal('security_finding'),
+        v.literal('backup_verification_report'),
+        v.literal('external_document'),
+        v.literal('review_task'),
+        v.literal('vendor_review'),
+      ),
+    ),
+    reviewOriginSourceId: v.optional(v.string()),
+    reviewOriginSourceLabel: v.optional(v.string()),
+    satisfiesThroughAt: v.optional(v.number()),
     sufficiency: v.union(v.literal('missing'), v.literal('partial'), v.literal('sufficient')),
     uploadedByUserId: v.string(),
     reviewStatus: v.optional(v.union(v.literal('pending'), v.literal('reviewed'))),
@@ -743,7 +755,8 @@ export default defineSchema({
     updatedAt: v.number(),
   })
     .index('by_internal_control_id', ['internalControlId'])
-    .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
+    .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId'])
+    .index('by_review_origin_review_task_id', ['reviewOriginReviewTaskId']),
 
   securityControlEvidenceActivity: defineTable({
     scopeType: v.optional(v.literal('provider_global')),

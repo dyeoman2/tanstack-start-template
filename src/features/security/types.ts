@@ -10,8 +10,25 @@ import type {
 
 export type EvidenceReviewDueIntervalMonths = (typeof EVIDENCE_REVIEW_DUE_OPTIONS)[number];
 export type EvidenceSource = (typeof EVIDENCE_SOURCE_OPTIONS)[number];
+export type ReviewOriginEvidenceSource =
+  | 'review_attestation'
+  | 'review_document'
+  | 'automated_review_result'
+  | 'follow_up_resolution'
+  | 'review_exception';
+export type StoredEvidenceSource = EvidenceSource | ReviewOriginEvidenceSource;
 export type EvidenceExpiryStatus = 'current' | 'expiring_soon' | 'none';
 export type EvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
+export type SecurityEvidenceType =
+  | 'file'
+  | 'link'
+  | 'note'
+  | 'system_snapshot'
+  | 'review_attestation'
+  | 'review_document'
+  | 'automated_review_result'
+  | 'follow_up_resolution'
+  | 'exception_record';
 export type EvidenceReportKind =
   | 'security_posture'
   | 'audit_integrity'
@@ -58,7 +75,7 @@ export type SecurityChecklistEvidence = {
   createdAt: number;
   description: string | null;
   evidenceDate: number | null;
-  evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+  evidenceType: SecurityEvidenceType;
   expiryStatus: EvidenceExpiryStatus;
   fileName: string | null;
   id: string;
@@ -68,11 +85,27 @@ export type SecurityChecklistEvidence = {
   replacedByEvidenceId: string | null;
   reviewDueAt: number | null;
   reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths | null;
+  reviewOriginReviewAttestationId: Id<'reviewAttestations'> | null;
+  reviewOriginReviewRunId: Id<'reviewRuns'> | null;
+  reviewOriginReviewTaskId: Id<'reviewTasks'> | null;
+  reviewOriginReviewTaskResultId: Id<'reviewTaskResults'> | null;
+  reviewOriginSourceId: string | null;
+  reviewOriginSourceLabel: string | null;
+  reviewOriginSourceType:
+    | 'security_control_evidence'
+    | 'evidence_report'
+    | 'security_finding'
+    | 'backup_verification_report'
+    | 'external_document'
+    | 'review_task'
+    | 'vendor_review'
+    | null;
   reviewStatus: 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
+  satisfiesThroughAt: number | null;
   sizeBytes: number | null;
-  source: EvidenceSource | null;
+  source: StoredEvidenceSource | null;
   storageId: string | null;
   sufficiency: EvidenceSufficiency;
   title: string;
@@ -157,8 +190,9 @@ export type SecurityChecklistItem = {
   owner: string | null;
   operatorNotes: string | null;
   required: boolean;
-  reviewSatisfaction: {
-    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+  reviewArtifact: {
+    evidenceId: string;
+    evidenceType: SecurityEvidenceType;
     relatedReports: Array<{
       id: Id<'evidenceReports'>;
       label: string;
@@ -172,7 +206,7 @@ export type SecurityChecklistItem = {
     reviewTaskTitle: string;
     satisfiedAt: number;
     satisfiedByDisplay: string | null;
-    satisfiedThroughAt: number;
+    satisfiedThroughAt: number | null;
   } | null;
   status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
   suggestedEvidenceTypes: ControlChecklistEvidenceType[];

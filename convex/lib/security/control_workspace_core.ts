@@ -2,7 +2,7 @@ import type { Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
-import { getSecurityScopeFields, hasActiveReviewSatisfaction } from './core';
+import { getSecurityScopeFields } from './core';
 import {
   addMonths,
   buildActorDisplayMap,
@@ -104,49 +104,68 @@ async function _listSecurityControlWorkspaceRecords(
         options.controlIds?.includes(control.internalControlId),
       )
     : ACTIVE_CONTROL_REGISTER.controls;
-  const [perControlRows, allRelationships, vendorReviews, findingRows, allReviewTasks, allReports] =
-    await Promise.all([
-      Promise.all(
-        controls.map(async (control) => {
-          const [checklistItems, evidenceRows] = await Promise.all([
-            ctx.db
-              .query('securityControlChecklistItems')
-              .withIndex('by_internal_control_id', (q) =>
-                q.eq('internalControlId', control.internalControlId),
-              )
-              .collect(),
-            ctx.db
-              .query('securityControlEvidence')
-              .withIndex('by_internal_control_id', (q) =>
-                q.eq('internalControlId', control.internalControlId),
-              )
-              .collect(),
-          ]);
+  const [perControlRows, controlRelationshipsEntries] = await Promise.all([
+    Promise.all(
+      controls.map(async (control) => {
+        const [checklistItems, evidenceRows] = await Promise.all([
+          ctx.db
+            .query('securityControlChecklistItems')
+            .withIndex('by_internal_control_id', (q) =>
+              q.eq('internalControlId', control.internalControlId),
+            )
+            .collect(),
+          ctx.db
+            .query('securityControlEvidence')
+            .withIndex('by_internal_control_id', (q) =>
+              q.eq('internalControlId', control.internalControlId),
+            )
+            .collect(),
+        ]);
 
-          return {
-            internalControlId: control.internalControlId,
-            checklistItems,
-            evidenceRows,
-          };
-        }),
-      ),
-      includeLinkedEntities ? ctx.db.query('securityRelationships').collect() : [],
-      includeLinkedEntities ? ctx.db.query('securityVendorReviews').collect() : [],
-      includeLinkedEntities ? ctx.db.query('securityFindings').collect() : [],
-      includeLinkedEntities ? ctx.db.query('reviewTasks').collect() : [],
-      includeLinkedEntities ? ctx.db.query('evidenceReports').collect() : [],
-    ]);
+        return {
+          internalControlId: control.internalControlId,
+          checklistItems,
+          evidenceRows,
+        };
+      }),
+    ),
+    includeLinkedEntities
+      ? Promise.all(
+          controls.map(async (control) => {
+            const relationships = await ctx.db
+              .query('securityRelationships')
+              .withIndex('by_from', (q) =>
+                q.eq('fromType', 'control').eq('fromId', control.internalControlId),
+              )
+              .collect();
+            return [control.internalControlId, relationships] as const;
+          }),
+        ).then((entries) => new Map(entries))
+      : [],
+  ]);
+  const controlRelationshipsById = new Map(controlRelationshipsEntries);
   const checklistItems = perControlRows.flatMap((entry) => entry.checklistItems);
   const evidenceRows = perControlRows.flatMap((entry) => entry.evidenceRows);
-  const reviewSatisfactionEntries = checklistItems
-    .map((item) => item.reviewSatisfaction ?? null)
-    .filter(
-      (entry): entry is NonNullable<(typeof checklistItems)[number]['reviewSatisfaction']> =>
-        entry !== null,
-    );
-  const reviewTaskIds = Array.from(
-    new Set(reviewSatisfactionEntries.map((entry) => entry.reviewTaskId)),
+  const allRelationships = includeLinkedEntities
+    ? Array.from(controlRelationshipsById.values()).flat()
+    : [];
+  const reviewTaskIdsFromEvidence = Array.from(
+    new Set(
+      evidenceRows
+        .map((entry) => entry.reviewOriginReviewTaskId ?? null)
+        .filter((entry): entry is Id<'reviewTasks'> => entry !== null),
+    ),
   );
+  const linkedReviewTaskIds = includeLinkedEntities
+    ? Array.from(
+        new Set(
+          allRelationships
+            .filter((relationship) => relationship.toType === 'review_task')
+            .map((relationship) => relationship.toId as Id<'reviewTasks'>),
+        ),
+      )
+    : [];
+  const reviewTaskIds = Array.from(new Set([...reviewTaskIdsFromEvidence, ...linkedReviewTaskIds]));
   const reviewTasks = await Promise.all(
     reviewTaskIds.map((reviewTaskId) => ctx.db.get(reviewTaskId)),
   );
@@ -157,10 +176,12 @@ async function _listSecurityControlWorkspaceRecords(
   );
   const reviewRunIds = Array.from(
     new Set(
-      reviewSatisfactionEntries.flatMap((entry) => {
-        const task = reviewTaskById.get(entry.reviewTaskId);
-        return [entry.reviewRunId, task?.reviewRunId].filter(
-          (value): value is Id<'reviewRuns'> => value !== undefined,
+      evidenceRows.flatMap((entry) => {
+        const task = entry.reviewOriginReviewTaskId
+          ? reviewTaskById.get(entry.reviewOriginReviewTaskId)
+          : null;
+        return [entry.reviewOriginReviewRunId, task?.reviewRunId].filter(
+          (value): value is Id<'reviewRuns'> => value !== undefined && value !== null,
         );
       }),
     ),
@@ -180,46 +201,87 @@ async function _listSecurityControlWorkspaceRecords(
       return [reviewTaskId, links] as const;
     }),
   );
-  const reviewTaskEvidenceLinksByTaskId = new Map(reviewTaskEvidenceLinks);
   const linkedReportIds = Array.from(
-    new Set(
-      reviewTaskEvidenceLinks.flatMap(([, links]) =>
+    new Set([
+      ...reviewTaskEvidenceLinks.flatMap(([, links]) =>
         links
           .filter((link) => link.sourceType === 'evidence_report')
           .map((link) => link.sourceId as Id<'evidenceReports'>),
       ),
-    ),
+      ...evidenceRows
+        .filter((entry) => entry.reviewOriginSourceType === 'evidence_report')
+        .map((entry) => entry.reviewOriginSourceId as Id<'evidenceReports'> | null)
+        .filter((entry): entry is Id<'evidenceReports'> => entry !== null),
+    ]),
   );
-  const linkedReports = await Promise.all(linkedReportIds.map((reportId) => ctx.db.get(reportId)));
+  const relatedReportIds = includeLinkedEntities
+    ? allRelationships
+        .filter((relationship) => relationship.toType === 'evidence_report')
+        .map((relationship) => relationship.toId as Id<'evidenceReports'>)
+    : [];
+  const reportIds = Array.from(new Set([...linkedReportIds, ...relatedReportIds]));
+  const linkedReports = await Promise.all(reportIds.map((reportId) => ctx.db.get(reportId)));
   const linkedReportById = new Map(
     linkedReports
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
       .map((entry) => [entry._id, entry] as const),
   );
-  const allReviewTaskById = includeLinkedEntities
-    ? new Map(allReviewTasks.map((entry) => [entry._id, entry] as const))
-    : new Map();
-  const allReportById = includeLinkedEntities
-    ? new Map(allReports.map((entry) => [entry._id, entry] as const))
-    : new Map();
-  const vendorReviewByKey = includeLinkedEntities
-    ? new Map(vendorReviews.map((entry) => [entry.vendorKey, entry] as const))
-    : new Map();
+  const allReviewTaskById = reviewTaskById;
+  const allReportById = linkedReportById;
+  const vendorKeys = includeLinkedEntities
+    ? Array.from(
+        new Set(
+          allRelationships
+            .filter((relationship) => relationship.toType === 'vendor_review')
+            .map((relationship) => relationship.toId as 'openrouter' | 'resend' | 'sentry'),
+        ),
+      )
+    : [];
+  const vendorReviewEntries = await Promise.all(
+    vendorKeys.map(async (vendorKey) => {
+      const review = await ctx.db
+        .query('securityVendorReviews')
+        .withIndex('by_vendor_key', (q) => q.eq('vendorKey', vendorKey))
+        .unique();
+      return [vendorKey, review] as const;
+    }),
+  );
+  const vendorReviewByKey = new Map(
+    vendorReviewEntries
+      .filter(
+        (entry): entry is [(typeof entry)[0], NonNullable<(typeof entry)[1]>] => entry[1] !== null,
+      )
+      .map(([vendorKey, review]) => [vendorKey, review] as const),
+  );
   const vendorRuntimeByKey = includeLinkedEntities
     ? new Map(getVendorBoundarySnapshot().map((entry) => [entry.vendor, entry] as const))
     : new Map();
-  const findingByKey = includeLinkedEntities
-    ? new Map(findingRows.map((entry) => [entry.findingKey, entry] as const))
-    : new Map();
-  const relationshipsByFromKey = includeLinkedEntities
-    ? allRelationships.reduce<Map<string, typeof allRelationships>>((accumulator, relationship) => {
-        const key = `${relationship.fromType}:${relationship.fromId}`;
-        const current = accumulator.get(key) ?? [];
-        current.push(relationship);
-        accumulator.set(key, current);
-        return accumulator;
-      }, new Map())
-    : new Map();
+  const findingKeys = includeLinkedEntities
+    ? Array.from(
+        new Set(
+          allRelationships
+            .filter((relationship) => relationship.toType === 'finding')
+            .map((relationship) => relationship.toId),
+        ),
+      )
+    : [];
+  const findingEntries = await Promise.all(
+    findingKeys.map(async (findingKey) => {
+      const finding = await ctx.db
+        .query('securityFindings')
+        .withIndex('by_finding_key', (q) => q.eq('findingKey', findingKey))
+        .unique();
+      return [findingKey, finding] as const;
+    }),
+  );
+  const findingByKey = new Map(
+    findingEntries
+      .filter((entry): entry is [string, NonNullable<(typeof entry)[1]>] => entry[1] !== null)
+      .map(([findingKey, finding]) => [findingKey, finding] as const),
+  );
+  const findingRows = Array.from(findingByKey.values());
+  const vendorReviewRows = Array.from(vendorReviewByKey.values());
+  const relationshipsByFromKey = includeLinkedEntities ? controlRelationshipsById : new Map();
   const actorIds = Array.from(
     new Set(
       [
@@ -231,11 +293,8 @@ async function _listSecurityControlWorkspaceRecords(
         ...checklistItems.flatMap((item) =>
           (item.archivedSeedEvidence ?? []).map((entry) => entry.archivedByUserId),
         ),
-        ...checklistItems.flatMap((item) =>
-          item.reviewSatisfaction ? [item.reviewSatisfaction.satisfiedByUserId] : [],
-        ),
         ...(includeLinkedEntities
-          ? vendorReviews
+          ? vendorReviewRows
               .map((row) => row.reviewedByUserId)
               .filter((value): value is string => typeof value === 'string' && value.length > 0)
           : []),
@@ -283,55 +342,6 @@ async function _listSecurityControlWorkspaceRecords(
     };
     const platformChecklist = control.platformChecklistItems.map((item) => {
       const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
-      const satisfactionState =
-        itemState?.reviewSatisfaction &&
-        hasActiveReviewSatisfaction(
-          itemState.reviewSatisfaction,
-          reviewTaskById.get(itemState.reviewSatisfaction.reviewTaskId),
-          reviewRunById.get(itemState.reviewSatisfaction.reviewRunId),
-        )
-          ? itemState.reviewSatisfaction
-          : null;
-      const satisfactionTask = satisfactionState
-        ? reviewTaskById.get(satisfactionState.reviewTaskId)
-        : null;
-      const satisfactionRun = satisfactionState
-        ? reviewRunById.get(satisfactionState.reviewRunId)
-        : null;
-      const reviewSatisfaction =
-        satisfactionState && satisfactionTask && satisfactionRun
-          ? {
-              mode: satisfactionState.mode,
-              relatedReports: (
-                reviewTaskEvidenceLinksByTaskId.get(satisfactionState.reviewTaskId) ?? []
-              )
-                .filter((link) => link.sourceType === 'evidence_report')
-                .map((link) => {
-                  const report = linkedReportById.get(link.sourceId as Id<'evidenceReports'>);
-                  if (!report) {
-                    return null;
-                  }
-                  return {
-                    id: report._id,
-                    label: link.sourceLabel ?? report.reportKind,
-                    reportKind: report.reportKind,
-                  };
-                })
-                .filter((entry): entry is NonNullable<typeof entry> => entry !== null),
-              reviewRunId: satisfactionState.reviewRunId,
-              reviewRunKind: satisfactionRun.kind,
-              reviewRunStatus: satisfactionRun.status,
-              reviewRunTitle: satisfactionRun.title,
-              reviewTaskId: satisfactionState.reviewTaskId,
-              reviewTaskTitle: satisfactionTask.title,
-              satisfiedAt: satisfactionState.satisfiedAt,
-              satisfiedByDisplay: getActorDisplayName(
-                actorDisplayById,
-                satisfactionState.satisfiedByUserId,
-              ),
-              satisfiedThroughAt: satisfactionState.satisfiedThroughAt,
-            }
-          : null;
       const hiddenSeedEvidenceIds = new Set(itemState?.hiddenSeedEvidenceIds ?? []);
       const archivedSeedEvidenceById = new Map(
         (itemState?.archivedSeedEvidence ?? []).map((entry) => [entry.evidenceId, entry] as const),
@@ -363,6 +373,14 @@ async function _listSecurityControlWorkspaceRecords(
           reviewedByDisplay: seededActor.displayName,
           createdAt: seededReviewedAt,
           uploadedByDisplay: seededActor.displayName,
+          reviewOriginReviewRunId: null,
+          reviewOriginReviewTaskId: null,
+          reviewOriginReviewTaskResultId: null,
+          reviewOriginReviewAttestationId: null,
+          reviewOriginSourceType: null,
+          reviewOriginSourceId: null,
+          reviewOriginSourceLabel: null,
+          satisfiesThroughAt: null,
         }))
         .filter((entry) => !hiddenSeedEvidenceIds.has(entry.id));
       const archivedSeedEvidence = Array.from(hiddenSeedEvidenceIds)
@@ -405,6 +423,14 @@ async function _listSecurityControlWorkspaceRecords(
             reviewedByDisplay: seededActor.displayName,
             createdAt: seededReviewedAt,
             uploadedByDisplay: seededActor.displayName,
+            reviewOriginReviewRunId: null,
+            reviewOriginReviewTaskId: null,
+            reviewOriginReviewTaskResultId: null,
+            reviewOriginReviewAttestationId: null,
+            reviewOriginSourceType: null,
+            reviewOriginSourceId: null,
+            reviewOriginSourceLabel: null,
+            satisfiesThroughAt: null,
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -448,21 +474,93 @@ async function _listSecurityControlWorkspaceRecords(
           reviewedByDisplay: getActorDisplayName(actorDisplayById, entry.reviewedByUserId),
           createdAt: entry.createdAt,
           uploadedByDisplay: getActorDisplayName(actorDisplayById, entry.uploadedByUserId),
+          reviewOriginReviewRunId: entry.reviewOriginReviewRunId ?? null,
+          reviewOriginReviewTaskId: entry.reviewOriginReviewTaskId ?? null,
+          reviewOriginReviewTaskResultId: entry.reviewOriginReviewTaskResultId ?? null,
+          reviewOriginReviewAttestationId: entry.reviewOriginReviewAttestationId ?? null,
+          reviewOriginSourceType: entry.reviewOriginSourceType ?? null,
+          reviewOriginSourceId: entry.reviewOriginSourceId ?? null,
+          reviewOriginSourceLabel: entry.reviewOriginSourceLabel ?? null,
+          satisfiesThroughAt: entry.satisfiesThroughAt ?? null,
         };
       });
       const evidence = [...seededEvidence, ...persistedEvidence, ...archivedSeedEvidence];
+      const reviewArtifactEvidence =
+        [...persistedEvidence]
+          .filter(
+            (entry) =>
+              entry.lifecycleStatus === 'active' &&
+              entry.reviewStatus === 'reviewed' &&
+              entry.reviewOriginReviewTaskId !== null,
+          )
+          .sort((left, right) => {
+            const leftTimestamp = left.reviewedAt ?? left.createdAt;
+            const rightTimestamp = right.reviewedAt ?? right.createdAt;
+            return rightTimestamp - leftTimestamp;
+          })[0] ?? null;
+      const reviewTask =
+        reviewArtifactEvidence?.reviewOriginReviewTaskId !== null &&
+        reviewArtifactEvidence?.reviewOriginReviewTaskId !== undefined
+          ? reviewTaskById.get(reviewArtifactEvidence.reviewOriginReviewTaskId)
+          : null;
+      const reviewRun =
+        reviewArtifactEvidence?.reviewOriginReviewRunId !== null &&
+        reviewArtifactEvidence?.reviewOriginReviewRunId !== undefined
+          ? reviewRunById.get(reviewArtifactEvidence.reviewOriginReviewRunId)
+          : reviewTask
+            ? reviewRunById.get(reviewTask.reviewRunId)
+            : null;
+      const relatedReports = reviewArtifactEvidence
+        ? persistedEvidence
+            .filter(
+              (entry) =>
+                entry.lifecycleStatus === 'active' &&
+                entry.reviewOriginReviewTaskId ===
+                  reviewArtifactEvidence.reviewOriginReviewTaskId &&
+                entry.reviewOriginSourceType === 'evidence_report' &&
+                entry.reviewOriginSourceId !== null,
+            )
+            .map((entry) => {
+              const report = linkedReportById.get(
+                entry.reviewOriginSourceId as Id<'evidenceReports'>,
+              );
+              if (!report) {
+                return null;
+              }
+              return {
+                id: report._id,
+                label: entry.reviewOriginSourceLabel ?? report.reportKind,
+                reportKind: report.reportKind,
+              };
+            })
+            .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+        : [];
+      const reviewArtifact =
+        reviewArtifactEvidence && reviewTask && reviewRun
+          ? {
+              evidenceId: reviewArtifactEvidence.id,
+              evidenceType: reviewArtifactEvidence.evidenceType,
+              relatedReports,
+              reviewRunId: reviewRun._id,
+              reviewRunKind: reviewRun.kind,
+              reviewRunStatus: reviewRun.status,
+              reviewRunTitle: reviewRun.title,
+              reviewTaskId: reviewTask._id,
+              reviewTaskTitle: reviewTask.title,
+              satisfiedAt: reviewArtifactEvidence.reviewedAt ?? reviewArtifactEvidence.createdAt,
+              satisfiedByDisplay:
+                reviewArtifactEvidence.reviewedByDisplay ??
+                reviewArtifactEvidence.uploadedByDisplay,
+              satisfiedThroughAt: reviewArtifactEvidence.satisfiesThroughAt,
+            }
+          : null;
       const evidenceDerivedStatus = deriveChecklistItemStatus(evidence);
       const manualStatus = itemState?.manualStatus ?? itemState?.status ?? null;
-      const derivedStatus =
-        manualStatus ??
-        (evidenceDerivedStatus === 'done' || reviewSatisfaction !== null
-          ? ('done' as const)
-          : evidenceDerivedStatus);
+      const derivedStatus = manualStatus ?? evidenceDerivedStatus;
       const itemHasExpiringSoonEvidence = hasExpiringSoonEvidence(evidence);
       const completedAt =
         derivedStatus === 'done'
           ? [
-              reviewSatisfaction?.satisfiedAt ?? null,
               evidence
                 .filter(
                   (entry) =>
@@ -482,7 +580,6 @@ async function _listSecurityControlWorkspaceRecords(
       const lastReviewedAtCandidates = [
         item.seed.evidence.length > 0 || derivedStatus !== 'not_started' ? seededReviewedAt : null,
         completedAt,
-        reviewSatisfaction?.satisfiedAt ?? null,
         ...evidence.flatMap((entry) => [entry.reviewedAt, entry.createdAt, entry.archivedAt]),
         ...archivedSeedEvidence.map((entry) => entry.archivedAt),
       ];
@@ -508,7 +605,7 @@ async function _listSecurityControlWorkspaceRecords(
         evidence,
         evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
         hasExpiringSoonEvidence: itemHasExpiringSoonEvidence,
-        reviewSatisfaction,
+        reviewArtifact,
       };
     });
 

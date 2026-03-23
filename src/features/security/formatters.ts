@@ -1,6 +1,5 @@
 import type {
   EvidenceReviewDueIntervalMonths,
-  EvidenceSource,
   ReviewRunDetail,
   ReviewRunSummary,
   ReviewTaskDetail,
@@ -12,6 +11,7 @@ import type {
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
+  StoredEvidenceSource,
 } from '~/features/security/types';
 import {
   type ControlResponsibility,
@@ -417,7 +417,7 @@ export function formatEvidenceReviewDueInterval(interval: EvidenceReviewDueInter
   }
 }
 
-export function formatEvidenceSource(source: EvidenceSource) {
+export function formatEvidenceSource(source: StoredEvidenceSource) {
   switch (source) {
     case 'manual_upload':
       return 'Manual upload';
@@ -429,6 +429,16 @@ export function formatEvidenceSource(source: EvidenceSource) {
       return 'External report';
     case 'vendor_attestation':
       return 'Vendor attestation';
+    case 'review_attestation':
+      return 'Review attestation';
+    case 'review_document':
+      return 'Review document';
+    case 'automated_review_result':
+      return 'Automated review result';
+    case 'follow_up_resolution':
+      return 'Follow-up resolution';
+    case 'review_exception':
+      return 'Accepted exception';
   }
 }
 

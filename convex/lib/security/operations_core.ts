@@ -11,7 +11,6 @@ import {
   getCurrentAnnualReviewYear,
   getSecurityFindingControlLinks,
   getSecurityScopeFields,
-  hasActiveReviewSatisfaction,
   stringifyStable,
   upsertSecurityRelationship,
 } from './core';
@@ -204,13 +203,22 @@ async function recordSecurityControlEvidenceAuditEvent(
       | 'security_control_evidence_reviewed'
       | 'security_control_evidence_archived'
       | 'security_control_evidence_renewed';
-    evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+    evidenceType:
+      | 'file'
+      | 'link'
+      | 'note'
+      | 'system_snapshot'
+      | 'review_attestation'
+      | 'review_document'
+      | 'automated_review_result'
+      | 'follow_up_resolution'
+      | 'exception_record';
     internalControlId: string;
     itemId: string;
     lifecycleStatus?: 'active' | 'archived' | 'superseded';
     organizationId?: string;
     replacedByEvidenceId?: string;
-    reviewStatus?: 'pending' | 'reviewed';
+    reviewStatus?: 'pending' | 'reviewed' | null;
     renewedFromEvidenceId?: string;
   },
 ) {
@@ -596,45 +604,9 @@ async function buildSecurityWorkspaceControlSummary(ctx: QueryCtx) {
     },
     new Map(),
   );
-  const reviewSatisfactionEntries = checklistItems
-    .map((item) => item.reviewSatisfaction ?? null)
-    .filter(
-      (entry): entry is NonNullable<(typeof checklistItems)[number]['reviewSatisfaction']> =>
-        entry !== null,
-    );
-  const reviewTaskIds = Array.from(
-    new Set(reviewSatisfactionEntries.map((entry) => entry.reviewTaskId)),
-  );
-  const reviewTasks = await Promise.all(
-    reviewTaskIds.map(async (reviewTaskId) => await ctx.db.get(reviewTaskId)),
-  );
-  const reviewTaskById = new Map(
-    reviewTasks
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .map((entry) => [entry._id, entry] as const),
-  );
-  const reviewRunIds = Array.from(
-    new Set(reviewSatisfactionEntries.map((entry) => entry.reviewRunId)),
-  );
-  const reviewRuns = await Promise.all(
-    reviewRunIds.map(async (reviewRunId) => await ctx.db.get(reviewRunId)),
-  );
-  const reviewRunById = new Map(
-    reviewRuns
-      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-      .map((entry) => [entry._id, entry] as const),
-  );
-
   const controlSummary = ACTIVE_CONTROL_REGISTER.controls.reduce((summary, control) => {
     const platformChecklist = control.platformChecklistItems.map((item) => {
       const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
-      const reviewSatisfaction =
-        itemState?.reviewSatisfaction &&
-        hasActiveReviewSatisfaction(
-          itemState.reviewSatisfaction,
-          reviewTaskById.get(itemState.reviewSatisfaction.reviewTaskId),
-          reviewRunById.get(itemState.reviewSatisfaction.reviewRunId),
-        );
       const evidence = (evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? []).map(
         (entry) => ({
           lifecycleStatus: entry.lifecycleStatus ?? ('active' as const),
@@ -644,11 +616,7 @@ async function buildSecurityWorkspaceControlSummary(ctx: QueryCtx) {
       );
       const evidenceDerivedStatus = deriveChecklistItemStatus(evidence);
       const manualStatus = itemState?.manualStatus ?? itemState?.status ?? null;
-      const status =
-        manualStatus ??
-        (evidenceDerivedStatus === 'done' || reviewSatisfaction
-          ? ('done' as const)
-          : evidenceDerivedStatus);
+      const status = manualStatus ?? evidenceDerivedStatus;
 
       return {
         evidence,

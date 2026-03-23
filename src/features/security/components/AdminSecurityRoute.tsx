@@ -6,7 +6,13 @@ import { useAction, useConvex, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSortableHeader } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
-import { Sheet, SheetContent } from '~/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '~/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import {
@@ -1332,6 +1338,14 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {!selectedControl ? (
+            <SheetHeader className="sr-only">
+              <SheetTitle>Security control detail</SheetTitle>
+              <SheetDescription>
+                Review the selected security control, its checklist, and linked operations.
+              </SheetDescription>
+            </SheetHeader>
+          ) : null}
           {selectedControl === undefined && selectedControlId ? (
             <div className="p-4 text-sm text-muted-foreground">Loading control detail…</div>
           ) : selectedControl ? (
