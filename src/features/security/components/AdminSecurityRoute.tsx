@@ -39,6 +39,7 @@ import type {
   ReviewTaskDetail,
   SecurityChecklistEvidence,
   SecurityControlWorkspace,
+  SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
   SecurityOperationDetail,
@@ -134,7 +135,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const attestReviewTask = useMutation(api.security.attestReviewTask);
   const setReviewTaskException = useMutation(api.security.setReviewTaskException);
   const openTriggeredFollowUp = useMutation(api.security.openTriggeredFollowUp);
-  const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
   const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
     {},
   );
@@ -663,18 +664,10 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     setIsExportingControls(true);
 
     try {
-      const detailedControls = (
-        await Promise.all(
-          sortedControls.map(async (control) => {
-            return await convex.query(api.security.getSecurityControlWorkspaceDetail, {
-              internalControlId: control.internalControlId,
-            });
-          }),
-        )
-      ).filter(
-        (control): control is NonNullable<typeof control> => control !== null,
-      ) as SecurityControlWorkspace[];
-      exportSecurityControlsCsv(detailedControls);
+      const exportControls = (await convex.query(api.security.listSecurityControlWorkspaceExports, {
+        controlIds: sortedControls.map((control) => control.internalControlId),
+      })) as SecurityControlWorkspaceExport[];
+      exportSecurityControlsCsv(exportControls);
       showToast('Control register exported.', 'success');
     } catch (error) {
       showToast(
@@ -910,7 +903,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       await reviewEvidenceReport({
         customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
         id,
-        internalNotes: reviewNotes[id]?.trim() || undefined,
+        internalNotes: reportNotes[id]?.trim() || undefined,
         reviewStatus,
       });
     } finally {
@@ -1252,7 +1245,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             report={report}
             reportCustomerSummaries={reportCustomerSummaries}
             restoreDrillFooter={restoreDrillFooter}
-            reviewNotes={reviewNotes}
+            reportNotes={reportNotes}
             securityFindings={securityFindings}
             selectedOperationDetail={selectedOperationDetail}
             selectedOperationId={resolvedSelectedOperationId}
@@ -1262,7 +1255,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             setFindingDispositions={setFindingDispositions}
             setFindingNotes={setFindingNotes}
             setReportCustomerSummaries={setReportCustomerSummaries}
-            setReviewNotes={setReviewNotes}
+            setReportNotes={setReportNotes}
             setVendorCustomerSummaries={setVendorCustomerSummaries}
             setVendorNotes={setVendorNotes}
             setVendorOwners={setVendorOwners}

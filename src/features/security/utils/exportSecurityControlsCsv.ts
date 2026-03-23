@@ -7,9 +7,9 @@ import {
   formatHipaaMapping,
   getEvidenceProgress,
 } from '~/features/security/formatters';
-import type { SecurityControlWorkspace } from '~/features/security/types';
+import type { SecurityControlWorkspaceExport } from '~/features/security/types';
 
-export function exportSecurityControlsCsv(controls: SecurityControlWorkspace[]) {
+export function exportSecurityControlsCsv(controls: SecurityControlWorkspaceExport[]) {
   const csv = Papa.unparse(
     controls.map((control) => ({
       evidenceStatus: formatEvidenceReadiness(control.evidenceReadiness),

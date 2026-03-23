@@ -179,7 +179,7 @@ export type SecurityChecklistItem = {
   verificationMethod: string;
 };
 
-export type SecurityControlWorkspace = Omit<
+export type SecurityControlWorkspaceDetail = Omit<
   ActiveControlRecord,
   'mappings' | 'platformChecklistItems'
 > & {
@@ -223,6 +223,8 @@ export type SecurityControlWorkspace = Omit<
   };
   platformChecklist: SecurityChecklistItem[];
 } & SecurityScope;
+export type SecurityControlWorkspaceExport = Omit<SecurityControlWorkspaceDetail, 'linkedEntities'>;
+export type SecurityControlWorkspace = SecurityControlWorkspaceDetail;
 
 export type SecurityControlWorkspaceSummary = Omit<
   ActiveControlRecord,
@@ -235,7 +237,7 @@ export type SecurityControlWorkspaceSummary = Omit<
   evidenceReadiness: 'missing' | 'partial' | 'ready';
   hasExpiringSoonEvidence: boolean;
   lastReviewedAt: number | null;
-  mappings: SecurityControlWorkspace['mappings'];
+  mappings: SecurityControlWorkspaceDetail['mappings'];
   searchableText: string;
 } & SecurityScope;
 

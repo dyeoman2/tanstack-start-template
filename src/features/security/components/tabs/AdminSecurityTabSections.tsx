@@ -357,8 +357,8 @@ export function AdminSecurityEvidenceTab(props: {
   isGenerating: boolean;
   report: string | null;
   reportCustomerSummaries: Record<string, string>;
+  reportNotes: Record<string, string>;
   restoreDrillFooter: string;
-  reviewNotes: Record<string, string>;
   securityFindings: SecurityFindingListItem[] | undefined;
   selectedReportId: Id<'evidenceReports'> | null;
   handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
@@ -381,7 +381,7 @@ export function AdminSecurityEvidenceTab(props: {
   setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setReviewNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setReportNotes: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
     <>
@@ -495,7 +495,7 @@ export function AdminSecurityEvidenceTab(props: {
 
           <div className="space-y-3">
             <h3 className="text-sm font-medium">Recent Export Artifacts</h3>
-            {props.auditReadiness?.recentExports.length ? (
+            {props.auditReadiness?.recentExports?.length ? (
               <div className="space-y-2">
                 {props.auditReadiness.recentExports.slice(0, 5).map((artifact) => (
                   <div
@@ -520,7 +520,7 @@ export function AdminSecurityEvidenceTab(props: {
             <div className="space-y-2">
               <div className="rounded-md border p-3 text-sm">
                 <p className="font-medium">Metadata gaps</p>
-                {props.auditReadiness?.metadataGaps.length ? (
+                {props.auditReadiness?.metadataGaps?.length ? (
                   <div className="mt-2 space-y-1 text-muted-foreground">
                     {props.auditReadiness.metadataGaps.slice(0, 3).map((gap) => (
                       <p key={gap.id}>
@@ -534,7 +534,7 @@ export function AdminSecurityEvidenceTab(props: {
               </div>
               <div className="rounded-md border p-3 text-sm">
                 <p className="font-medium">Authorization denials</p>
-                {props.auditReadiness?.recentDeniedActions.length ? (
+                {props.auditReadiness?.recentDeniedActions?.length ? (
                   <div className="mt-2 space-y-1 text-muted-foreground">
                     {props.auditReadiness.recentDeniedActions.slice(0, 3).map((denial) => (
                       <p key={denial.id}>
@@ -681,9 +681,9 @@ export function AdminSecurityEvidenceTab(props: {
                   }}
                   placeholder="Customer-facing summary"
                 />
-                {finding.relatedControls.length ? (
+                {finding.relatedControls?.length ? (
                   <div className="flex flex-wrap gap-2">
-                    {finding.relatedControls.map((control) => (
+                    {finding.relatedControls?.map((control) => (
                       <Button
                         key={`${finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
                         type="button"
@@ -801,9 +801,9 @@ export function AdminSecurityEvidenceTab(props: {
                   </div>
                 </div>
                 <Textarea
-                  value={props.reviewNotes[item.id] ?? item.internalNotes ?? ''}
+                  value={props.reportNotes[item.id] ?? item.internalNotes ?? ''}
                   onChange={(event) => {
-                    props.setReviewNotes((current) => ({
+                    props.setReportNotes((current) => ({
                       ...current,
                       [item.id]: event.target.value,
                     }));
@@ -1411,8 +1411,8 @@ export function AdminSecurityOperationsTab(props: {
   isGenerating: boolean;
   report: string | null;
   reportCustomerSummaries: Record<string, string>;
+  reportNotes: Record<string, string>;
   restoreDrillFooter: string;
-  reviewNotes: Record<string, string>;
   securityFindings: SecurityFindingListItem[] | undefined;
   selectedOperationDetail: SecurityOperationDetail | null;
   selectedOperationId: string | undefined;
@@ -1446,7 +1446,7 @@ export function AdminSecurityOperationsTab(props: {
   >;
   setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setReviewNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setReportNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
@@ -1477,8 +1477,8 @@ export function AdminSecurityOperationsTab(props: {
         navigateToReviews={props.navigateToReviews}
         report={props.report}
         reportCustomerSummaries={props.reportCustomerSummaries}
+        reportNotes={props.reportNotes}
         restoreDrillFooter={props.restoreDrillFooter}
-        reviewNotes={props.reviewNotes}
         securityFindings={props.securityFindings}
         selectedReportId={
           props.selectedOperationType === 'evidence_report'
@@ -1489,7 +1489,7 @@ export function AdminSecurityOperationsTab(props: {
         setFindingDispositions={props.setFindingDispositions}
         setFindingNotes={props.setFindingNotes}
         setReportCustomerSummaries={props.setReportCustomerSummaries}
-        setReviewNotes={props.setReviewNotes}
+        setReportNotes={props.setReportNotes}
       />
 
       {props.selectedOperationId && props.selectedOperationType ? (
@@ -1520,10 +1520,10 @@ export function AdminSecurityOperationsTab(props: {
                     ) : null}
                   </div>
                   {'linkedTasks' in props.selectedOperationDetail.report &&
-                  props.selectedOperationDetail.report.linkedTasks.length ? (
+                  props.selectedOperationDetail.report.linkedTasks?.length ? (
                     <div className="space-y-3">
                       <p className="text-sm font-medium">Linked review tasks</p>
-                      {props.selectedOperationDetail.report.linkedTasks.map((task) => (
+                      {props.selectedOperationDetail.report.linkedTasks?.map((task) => (
                         <div key={task.taskId} className="rounded-md border p-3 text-sm">
                           <p className="font-medium">{task.taskTitle}</p>
                           <p className="text-muted-foreground">

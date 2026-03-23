@@ -51,7 +51,6 @@ export const createEvidenceReport = internalMutation({
       reviewStatus: 'pending',
       reviewedAt: null,
       reviewedByUserId: null,
-      reviewNotes: null,
       createdAt: Date.now(),
     });
   },

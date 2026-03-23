@@ -13,6 +13,7 @@ import type {
   SecurityChecklistEvidenceActivity,
   SecurityChecklistItem,
   SecurityControlWorkspace,
+  SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
 } from '~/features/security/types';
@@ -263,7 +264,10 @@ export function formatReviewTaskEvidenceSourceType(
 }
 
 export function getEvidenceProgress(
-  control: SecurityControlWorkspace | SecurityControlWorkspaceSummary,
+  control:
+    | SecurityControlWorkspace
+    | SecurityControlWorkspaceExport
+    | SecurityControlWorkspaceSummary,
 ) {
   if ('checklistStats' in control) {
     return {

@@ -88,7 +88,7 @@ const vendorWorkspaceValidator = v.object({
   owner: v.union(v.string(), v.null()),
   relatedControls: v.array(vendorRelatedControlValidator),
   customerSummary: v.union(v.string(), v.null()),
-  internalReviewNotes: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
   reviewStatus: vendorReviewStatusValidator,
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByDisplay: v.union(v.string(), v.null()),
@@ -167,8 +167,9 @@ const securityFindingListItemValidator = v.object({
   findingKey: v.string(),
   findingType: securityFindingTypeValidator,
   firstObservedAt: v.number(),
-  internalReviewNotes: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
   lastObservedAt: v.number(),
+  relatedControls: v.array(vendorRelatedControlValidator),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
   reviewedAt: v.union(v.number(), v.null()),
@@ -314,8 +315,9 @@ const evidenceReportRecordValidator = v.object({
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByUserId: v.union(v.string(), v.null()),
-  reviewNotes: v.optional(v.union(v.string(), v.null())),
+  customerSummary: v.optional(v.union(v.string(), v.null())),
   internalReviewNotes: v.optional(v.union(v.string(), v.null())),
+  reviewNotes: v.optional(v.union(v.string(), v.null())),
   createdAt: v.number(),
 });
 
@@ -323,7 +325,8 @@ const evidenceReportListItemValidator = v.object({
   id: v.id('evidenceReports'),
   createdAt: v.number(),
   generatedByUserId: v.string(),
-  internalReviewNotes: v.union(v.string(), v.null()),
+  customerSummary: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
   reportKind: v.union(
@@ -577,6 +580,89 @@ const securityControlWorkspaceValidator = v.object({
   ),
   title: v.string(),
 });
+const securityControlWorkspaceExportValidator = v.object({
+  controlStatement: v.string(),
+  customerResponsibilityNotes: v.union(v.string(), v.null()),
+  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  familyId: v.string(),
+  familyTitle: v.string(),
+  hasExpiringSoonEvidence: v.boolean(),
+  implementationSummary: v.string(),
+  internalControlId: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  mappings: v.object({
+    csf20: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        subcategoryId: v.string(),
+      }),
+    ),
+    hipaa: v.array(
+      v.object({
+        citation: v.string(),
+        implementationSpecification: v.union(
+          v.literal('addressable'),
+          v.literal('required'),
+          v.null(),
+        ),
+        text: v.union(v.string(), v.null()),
+        title: v.union(v.string(), v.null()),
+        type: v.union(
+          v.literal('implementation_specification'),
+          v.literal('section'),
+          v.literal('standard'),
+          v.literal('subsection'),
+          v.null(),
+        ),
+      }),
+    ),
+    nist80066: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        mappingType: v.union(
+          v.literal('key-activity'),
+          v.literal('relationship'),
+          v.literal('sample-question'),
+          v.null(),
+        ),
+        referenceId: v.string(),
+      }),
+    ),
+    soc2: v.array(
+      v.object({
+        criterionId: v.string(),
+        group: v.union(
+          v.literal('availability'),
+          v.literal('common-criteria'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+        ),
+        label: v.union(v.string(), v.null()),
+        trustServiceCategory: v.union(
+          v.literal('availability'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+          v.literal('security'),
+        ),
+      }),
+    ),
+  }),
+  nist80053Id: v.string(),
+  owner: v.string(),
+  platformChecklist: v.array(controlChecklistItemValidator),
+  priority: v.union(v.literal('p0'), v.literal('p1'), v.literal('p2')),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  responsibility: v.union(
+    v.literal('platform'),
+    v.literal('shared-responsibility'),
+    v.literal('customer'),
+    v.null(),
+  ),
+  title: v.string(),
+});
 const securityControlWorkspaceSummaryValidator = v.object({
   checklistStats: v.object({
     completeCount: v.number(),
@@ -664,6 +750,9 @@ const securityControlWorkspaceSummaryValidator = v.object({
 });
 const securityControlWorkspaceSummaryListValidator = v.array(
   securityControlWorkspaceSummaryValidator,
+);
+const securityControlWorkspaceExportListValidator = v.array(
+  securityControlWorkspaceExportValidator,
 );
 const releaseProvenanceEvidenceSummaryValidator = v.object({
   createdAt: v.number(),
@@ -805,7 +894,8 @@ const evidenceReportDetailValidator = v.object({
   scopeType: securityScopeTypeValidator,
   organizationId: v.union(v.string(), v.null()),
   reportKind: evidenceReportKindValidator,
-  internalReviewNotes: v.union(v.string(), v.null()),
+  customerSummary: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByDisplay: v.union(v.string(), v.null()),
@@ -953,6 +1043,7 @@ const securityOperationsBoardValidator = v.object({
 });
 const securityWorkspaceMigrationResultValidator = v.object({
   patchedChecklistStatuses: v.number(),
+  patchedReviewNotes: v.number(),
   patchedScopeRecords: v.number(),
   syncedVendorReviewRows: v.number(),
 });
@@ -1011,6 +1102,8 @@ export {
   securityControlEvidenceAuditEventTypeValidator,
   securityControlWorkspaceSummaryListValidator,
   securityControlWorkspaceSummaryValidator,
+  securityControlWorkspaceExportListValidator,
+  securityControlWorkspaceExportValidator,
   securityControlWorkspaceValidator,
   securityFindingDispositionValidator,
   securityFindingListItemValidator,

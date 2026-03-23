@@ -1,4 +1,4 @@
-import type { Id } from '../../../_generated/dataModel';
+import type { Doc, Id } from '../../../_generated/dataModel';
 import {
   action,
   internalMutation,
@@ -9,7 +9,6 @@ import {
 import type { ActionCtx, QueryCtx } from '../../../_generated/server';
 import { getRetentionPolicyConfig } from '../../../../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../../../../src/lib/server/vendor-boundary.server';
-import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
 import {
   ALWAYS_ON_REGULATED_BASELINE,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
@@ -64,6 +63,34 @@ import {
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 
+function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
+  return {
+    _id: report._id,
+    _creationTime: report._creationTime,
+    scopeId: report.scopeId,
+    scopeType: report.scopeType,
+    organizationId: report.organizationId,
+    generatedByUserId: report.generatedByUserId,
+    reportKind: report.reportKind,
+    contentJson: report.contentJson,
+    contentHash: report.contentHash,
+    exportBundleJson: report.exportBundleJson,
+    exportHash: report.exportHash,
+    exportIntegritySummary: report.exportIntegritySummary,
+    exportManifestJson: report.exportManifestJson,
+    exportManifestHash: report.exportManifestHash,
+    latestExportArtifactId: report.latestExportArtifactId,
+    exportedAt: report.exportedAt,
+    exportedByUserId: report.exportedByUserId,
+    reviewStatus: report.reviewStatus,
+    reviewedAt: report.reviewedAt,
+    reviewedByUserId: report.reviewedByUserId,
+    customerSummary: report.customerSummary,
+    internalReviewNotes: report.internalReviewNotes,
+    createdAt: report.createdAt,
+  };
+}
+
 export const listEvidenceReports = query({
   args: {
     limit: v.optional(v.number()),
@@ -81,7 +108,8 @@ export const listEvidenceReports = query({
       id: report._id,
       createdAt: report.createdAt,
       generatedByUserId: report.generatedByUserId,
-      internalReviewNotes: report.internalReviewNotes ?? report.reviewNotes ?? null,
+      customerSummary: report.customerSummary ?? null,
+      internalNotes: report.internalReviewNotes ?? null,
       scopeId: normalizeSecurityScope(report).scopeId,
       scopeType: normalizeSecurityScope(report).scopeType,
       reportKind: report.reportKind,
@@ -113,7 +141,6 @@ export const reviewEvidenceReport = mutation({
     customerSummary: v.optional(v.string()),
     id: v.id('evidenceReports'),
     internalNotes: v.optional(v.string()),
-    internalReviewNotes: v.optional(v.string()),
     reviewStatus: v.union(v.literal('reviewed'), v.literal('needs_follow_up')),
   },
   returns: evidenceReportRecordValidator,
@@ -125,11 +152,10 @@ export const reviewEvidenceReport = mutation({
     }
 
     const reviewedAt = Date.now();
-    const internalReviewNotes =
-      args.internalNotes?.trim() || args.internalReviewNotes?.trim() || null;
+    const internalNotes = args.internalNotes?.trim() || null;
     await ctx.db.patch(args.id, {
       customerSummary: args.customerSummary?.trim() || null,
-      internalReviewNotes,
+      internalReviewNotes: internalNotes,
       reviewStatus: args.reviewStatus,
       reviewedAt,
       reviewedByUserId: currentUser.authUserId,
@@ -166,7 +192,7 @@ export const reviewEvidenceReport = mutation({
       userId: currentUser.authUserId,
       metadata: stringifyStable({
         customerSummary: args.customerSummary?.trim() || null,
-        internalReviewNotes,
+        internalNotes,
         reviewStatus: args.reviewStatus,
       }),
     });
@@ -181,7 +207,7 @@ export const reviewEvidenceReport = mutation({
       report: updated,
     });
 
-    return updated;
+    return toEvidenceReportRecord(updated);
   },
 });
 
@@ -207,7 +233,6 @@ export const reviewVendorWorkspace = mutation({
   args: {
     customerSummary: v.optional(v.string()),
     internalNotes: v.optional(v.string()),
-    internalReviewNotes: v.optional(v.string()),
     owner: v.optional(v.string()),
     reviewStatus: vendorReviewStatusValidator,
     vendorKey: vendorKeyValidator,
@@ -252,11 +277,10 @@ export const reviewVendorWorkspace = mutation({
           toType: 'review_run',
         });
       }
-      const internalReviewNotes =
-        args.internalNotes?.trim() || args.internalReviewNotes?.trim() || null;
+      const internalNotes = args.internalNotes?.trim() || null;
       await ctx.db.patch(existing._id, {
         customerSummary: args.customerSummary?.trim() || null,
-        internalReviewNotes,
+        internalReviewNotes: internalNotes,
         linkedFollowUpRunId: linkedFollowUpRunId ?? undefined,
         owner: args.owner?.trim() || undefined,
         reviewStatus: args.reviewStatus,
@@ -265,13 +289,12 @@ export const reviewVendorWorkspace = mutation({
         updatedAt: now,
       });
     } else {
-      const internalReviewNotes =
-        args.internalNotes?.trim() || args.internalReviewNotes?.trim() || null;
+      const internalNotes = args.internalNotes?.trim() || null;
       await ctx.db.insert('securityVendorReviews', {
         ...getSecurityScopeFields(),
         createdAt: now,
         customerSummary: args.customerSummary?.trim() || null,
-        internalReviewNotes,
+        internalReviewNotes: internalNotes,
         linkedFollowUpRunId: linkedFollowUpRunId ?? undefined,
         owner: args.owner?.trim() || undefined,
         reviewStatus: args.reviewStatus,
@@ -450,7 +473,8 @@ export const getEvidenceReportInternal = internalQuery({
   },
   returns: v.union(evidenceReportRecordValidator, v.null()),
   handler: async (ctx, args) => {
-    return (await ctx.db.get(args.id)) ?? null;
+    const report = await ctx.db.get(args.id);
+    return report ? toEvidenceReportRecord(report) : null;
   },
 });
 
@@ -507,15 +531,10 @@ export async function generateEvidenceReportHandler(
   const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
   const controlWorkspace = (
     needsControlWorkspace
-      ? (
-          await Promise.all(
-            ACTIVE_CONTROL_REGISTER.controls.map(async (control) => {
-              return await ctx.runQuery(anyApi.security.getSecurityControlWorkspaceDetail, {
-                internalControlId: control.internalControlId,
-              });
-            }),
-          )
-        ).filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      ? await ctx.runQuery(
+          anyApi['lib/security/api/workspace'].listSecurityControlWorkspaceDetailsInternal,
+          {},
+        )
       : []
   ) as Array<{
     evidenceReadiness: 'missing' | 'partial' | 'ready';
@@ -581,7 +600,7 @@ export async function generateEvidenceReportHandler(
       title: string;
     }>;
     customerSummary: string | null;
-    internalReviewNotes: string | null;
+    internalNotes: string | null;
     reviewStatus: 'pending' | 'reviewed' | 'needs_follow_up';
     reviewedAt: number | null;
     reviewedByDisplay: string | null;

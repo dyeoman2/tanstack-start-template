@@ -8,6 +8,7 @@ import {
   query,
 } from '../../../_generated/server';
 import type { MutationCtx, QueryCtx } from '../../../_generated/server';
+import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
@@ -15,6 +16,7 @@ import {
 import { createUploadTargetWithMode } from '../../../storagePlatform';
 import {
   getSecurityControlWorkspaceRecord,
+  listSecurityControlWorkspaceExportRecords,
   listSecurityControlWorkspaceSummaryRecords,
 } from './control_workspace_core';
 import {
@@ -51,6 +53,7 @@ import {
   releaseProvenanceEvidenceSummaryValidator,
   reviewRunSummaryValidator,
   securityControlEvidenceActivityListValidator,
+  securityControlWorkspaceExportListValidator,
   securityControlWorkspaceSummaryListValidator,
   securityControlWorkspaceValidator,
   securityFindingDispositionValidator,
@@ -61,6 +64,31 @@ import {
   validateSecurityEvidenceUploadInput,
 } from './validators';
 import { v } from 'convex/values';
+
+const securityFindingRelatedControlMetadataById = new Map(
+  ACTIVE_CONTROL_REGISTER.controls.map((control) => [control.internalControlId, control] as const),
+);
+
+function getSecurityFindingRelatedControls(
+  findingType:
+    | 'audit_integrity_failures'
+    | 'document_scan_quarantines'
+    | 'document_scan_rejections'
+    | 'release_security_validation',
+) {
+  return getSecurityFindingControlLinks(findingType).map((controlLink) => {
+    const control = securityFindingRelatedControlMetadataById.get(controlLink.internalControlId);
+    return {
+      internalControlId: controlLink.internalControlId,
+      itemId: controlLink.itemId,
+      itemLabel:
+        control?.platformChecklistItems.find((item) => item.itemId === controlLink.itemId)?.label ??
+        null,
+      nist80053Id: control?.nist80053Id ?? controlLink.internalControlId,
+      title: control?.title ?? controlLink.internalControlId,
+    };
+  });
+}
 
 export const getSecurityOperationsBoard = query({
   args: {},
@@ -86,7 +114,8 @@ export const getSecurityOperationsBoard = query({
           id: report._id,
           createdAt: report.createdAt,
           generatedByUserId: report.generatedByUserId,
-          internalReviewNotes: report.internalReviewNotes ?? report.reviewNotes ?? null,
+          customerSummary: report.customerSummary ?? null,
+          internalNotes: report.internalReviewNotes ?? null,
           scopeId: normalizeSecurityScope(report).scopeId,
           scopeType: normalizeSecurityScope(report).scopeType,
           reportKind: report.reportKind,
@@ -166,6 +195,35 @@ export const getSecurityControlWorkspaceDetail = query({
     return await getSecurityControlWorkspaceRecord(ctx, args.internalControlId, {
       authUserId: currentUser.authUserId,
     });
+  },
+});
+
+export const listSecurityControlWorkspaceExports = query({
+  args: {
+    controlIds: v.optional(v.array(v.string())),
+  },
+  returns: securityControlWorkspaceExportListValidator,
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    return await listSecurityControlWorkspaceExportRecords(ctx, {
+      controlIds: args.controlIds,
+    });
+  },
+});
+
+export const listSecurityControlWorkspaceExportsInternal = internalQuery({
+  args: {},
+  returns: securityControlWorkspaceExportListValidator,
+  handler: async (ctx) => {
+    return await listSecurityControlWorkspaceExportRecords(ctx);
+  },
+});
+
+export const listSecurityControlWorkspaceDetailsInternal = internalQuery({
+  args: {},
+  returns: securityControlWorkspaceExportListValidator,
+  handler: async (ctx) => {
+    return await listSecurityControlWorkspaceExportRecords(ctx);
   },
 });
 
@@ -324,11 +382,12 @@ export async function listSecurityFindingsHandler(ctx: QueryCtx) {
       firstObservedAt: record
         ? Math.min(record.firstObservedAt, finding.firstObservedAt)
         : finding.firstObservedAt,
-      internalReviewNotes: record?.internalReviewNotes ?? record?.reviewNotes ?? null,
+      internalNotes: record?.internalReviewNotes ?? null,
       lastObservedAt: Math.max(
         record?.lastObservedAt ?? finding.lastObservedAt,
         finding.lastObservedAt,
       ),
+      relatedControls: getSecurityFindingRelatedControls(finding.findingType),
       scopeId: normalizeSecurityScope(record ?? {}).scopeId,
       scopeType: normalizeSecurityScope(record ?? {}).scopeType,
       reviewedAt: record?.reviewedAt ?? null,
@@ -375,7 +434,6 @@ export async function reviewSecurityFindingHandler(
       | 'resolved';
     findingKey: string;
     internalNotes?: string;
-    internalReviewNotes?: string;
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
@@ -394,8 +452,7 @@ export async function reviewSecurityFindingHandler(
     .withIndex('by_finding_key', (q) => q.eq('findingKey', args.findingKey))
     .unique();
   let findingRecordId = existing?._id ?? null;
-  const internalReviewNotes =
-    args.internalNotes?.trim() || args.internalReviewNotes?.trim() || null;
+  const internalNotes = args.internalNotes?.trim() || null;
 
   if (existing) {
     await ctx.db.patch(existing._id, {
@@ -404,7 +461,7 @@ export async function reviewSecurityFindingHandler(
       disposition: args.disposition,
       findingType: finding.findingType,
       firstObservedAt: Math.min(existing.firstObservedAt, finding.firstObservedAt),
-      internalReviewNotes,
+      internalReviewNotes: internalNotes,
       lastObservedAt: Math.max(existing.lastObservedAt, finding.lastObservedAt),
       reviewedAt: now,
       reviewedByUserId: currentUser.authUserId,
@@ -425,7 +482,7 @@ export async function reviewSecurityFindingHandler(
       findingType: finding.findingType,
       firstObservedAt: finding.firstObservedAt,
       lastObservedAt: finding.lastObservedAt,
-      internalReviewNotes,
+      internalReviewNotes: internalNotes,
       reviewedAt: now,
       reviewedByUserId: currentUser.authUserId,
       severity: finding.severity,
@@ -470,7 +527,8 @@ export async function reviewSecurityFindingHandler(
     lastObservedAt: existing
       ? Math.max(existing.lastObservedAt, finding.lastObservedAt)
       : finding.lastObservedAt,
-    internalReviewNotes,
+    internalNotes,
+    relatedControls: getSecurityFindingRelatedControls(finding.findingType),
     scopeId: normalizeSecurityScope(existing ?? {}).scopeId,
     scopeType: normalizeSecurityScope(existing ?? {}).scopeType,
     reviewedAt: now,
@@ -493,7 +551,6 @@ export const reviewSecurityFinding = mutation({
     disposition: securityFindingDispositionValidator,
     findingKey: v.string(),
     internalNotes: v.optional(v.string()),
-    internalReviewNotes: v.optional(v.string()),
   },
   returns: securityFindingListItemValidator,
   handler: reviewSecurityFindingHandler,

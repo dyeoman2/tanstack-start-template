@@ -930,7 +930,6 @@ async function syncVendorReviewOverlayRecords(ctx: MutationCtx) {
       internalReviewNotes: null,
       linkedFollowUpRunId: undefined,
       owner: undefined,
-      reviewNotes: null,
       reviewStatus: 'pending',
       reviewedAt: null,
       reviewedByUserId: null,
@@ -1025,7 +1024,7 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
       linkedEntities,
       owner: overlay?.owner ?? null,
       relatedControls: buildVendorRelatedControls(vendor.vendor),
-      internalReviewNotes: overlay?.internalReviewNotes ?? overlay?.reviewNotes ?? null,
+      internalNotes: overlay?.internalReviewNotes ?? null,
       reviewStatus: overlay?.reviewStatus ?? ('pending' as const),
       reviewedAt: overlay?.reviewedAt ?? null,
       reviewedByDisplay: getActorDisplayName(
@@ -1071,6 +1070,51 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
       updatedAt: Date.now(),
     });
     patchedChecklistStatuses += 1;
+  }
+
+  const getLegacyReviewNotes = (record: object) => {
+    const value = Reflect.get(record, 'reviewNotes');
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  };
+  let patchedReviewNotes = 0;
+  const [reports, findings, vendorReviewRows] = await Promise.all([
+    ctx.db.query('evidenceReports').collect(),
+    ctx.db.query('securityFindings').collect(),
+    ctx.db.query('securityVendorReviews').collect(),
+  ]);
+  for (const report of reports) {
+    const legacyReviewNotes = getLegacyReviewNotes(report);
+    if (legacyReviewNotes === null && Reflect.get(report, 'reviewNotes') === undefined) {
+      continue;
+    }
+    await ctx.db.patch(report._id, {
+      internalReviewNotes: report.internalReviewNotes ?? legacyReviewNotes,
+    });
+    patchedReviewNotes += 1;
+  }
+  for (const finding of findings) {
+    const legacyReviewNotes = getLegacyReviewNotes(finding);
+    if (legacyReviewNotes === null && Reflect.get(finding, 'reviewNotes') === undefined) {
+      continue;
+    }
+    await ctx.db.patch(finding._id, {
+      internalReviewNotes: finding.internalReviewNotes ?? legacyReviewNotes,
+    });
+    patchedReviewNotes += 1;
+  }
+  for (const vendorReview of vendorReviewRows) {
+    const legacyReviewNotes = getLegacyReviewNotes(vendorReview);
+    if (legacyReviewNotes === null && Reflect.get(vendorReview, 'reviewNotes') === undefined) {
+      continue;
+    }
+    await ctx.db.patch(vendorReview._id, {
+      internalReviewNotes: vendorReview.internalReviewNotes ?? legacyReviewNotes,
+    });
+    patchedReviewNotes += 1;
   }
 
   const syncedVendorReviewRows = await syncVendorReviewOverlayRecords(ctx);
@@ -1245,6 +1289,7 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
 
   return {
     patchedChecklistStatuses,
+    patchedReviewNotes,
     patchedScopeRecords,
     syncedVendorReviewRows,
   };
@@ -1456,7 +1501,8 @@ async function buildEvidenceReportDetail(ctx: QueryCtx, reportId: Id<'evidenceRe
     scopeType: normalizeSecurityScope(report).scopeType,
     organizationId: report.organizationId ?? null,
     reportKind: report.reportKind,
-    internalReviewNotes: report.internalReviewNotes ?? report.reviewNotes ?? null,
+    customerSummary: report.customerSummary ?? null,
+    internalNotes: report.internalReviewNotes ?? null,
     reviewStatus: report.reviewStatus,
     reviewedAt: report.reviewedAt ?? null,
     reviewedByDisplay: getActorDisplayName(actorDisplayById, report.reviewedByUserId ?? undefined),

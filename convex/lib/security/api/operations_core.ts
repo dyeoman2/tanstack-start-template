@@ -703,11 +703,10 @@ async function syncCurrentSecurityFindings(ctx: MutationCtx, actorUserId: string
         firstObservedAt: existing
           ? Math.min(existing.firstObservedAt, finding.firstObservedAt)
           : finding.firstObservedAt,
-        internalReviewNotes: existing?.internalReviewNotes ?? existing?.reviewNotes ?? null,
+        internalReviewNotes: existing?.internalReviewNotes ?? null,
         lastObservedAt: existing
           ? Math.max(existing.lastObservedAt, finding.lastObservedAt)
           : finding.lastObservedAt,
-        reviewNotes: undefined,
         reviewedAt: existing?.reviewedAt ?? null,
         reviewedByUserId: existing?.reviewedByUserId ?? null,
         severity: finding.severity,

@@ -26,6 +26,7 @@ let getAuditReadinessSnapshotHandler: typeof import('./security').getAuditReadin
 let _getSecurityPostureSummaryHandler: typeof import('./security').getSecurityPostureSummaryHandler;
 let listSecurityFindingsHandler: typeof import('./security').listSecurityFindingsHandler;
 let _listSecurityControlEvidenceActivityHandler: typeof import('./security').listSecurityControlEvidenceActivityHandler;
+let securityModuleRef: typeof import('./security');
 let renewSecurityControlEvidenceHandler: typeof import('./security').renewSecurityControlEvidenceHandler;
 let recordBackupVerificationHandler: typeof import('./security').recordBackupVerificationHandler;
 let reviewSecurityFindingHandler: typeof import('./security').reviewSecurityFindingHandler;
@@ -251,6 +252,7 @@ beforeAll(async () => {
     accessModule.getVerifiedCurrentSiteAdminUserOrThrow,
   );
   const securityModule = await import('./security');
+  securityModuleRef = securityModule;
   archiveSecurityControlEvidenceHandler = securityModule.archiveSecurityControlEvidenceHandler;
   buildExportManifestFn = securityModule.buildExportManifest;
   deleteSecurityRelationships = securityModule.deleteSecurityRelationships;
@@ -283,6 +285,10 @@ beforeEach(() => {
 });
 
 describe('audit evidence helpers', () => {
+  it('re-exports internal security queries used by evidence reports', () => {
+    expect(securityModuleRef.listSecurityControlWorkspaceExportsInternal).toBeDefined();
+  });
+
   it('ignores missing relationship rows during cleanup', async () => {
     const deleteFn = vi.fn(async () => {
       throw new Error('Delete on nonexistent document ID relationship-1');
@@ -698,7 +704,7 @@ describe('audit evidence helpers', () => {
     expect(result[0]).toMatchObject({
       disposition: 'investigating',
       findingKey: 'audit_integrity_failures',
-      internalReviewNotes: 'triaging integrity break',
+      internalNotes: 'triaging integrity break',
       reviewedByDisplay: 'Admin User',
       severity: 'critical',
       status: 'open',
@@ -857,7 +863,7 @@ describe('audit evidence helpers', () => {
     const result = await reviewSecurityFindingHandler(ctx as never, {
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
-      internalReviewNotes: ' mitigated in current workflow ',
+      internalNotes: ' mitigated in current workflow ',
     });
 
     const reviewedInsert = inserted.find(
@@ -874,7 +880,7 @@ describe('audit evidence helpers', () => {
     expect(result).toMatchObject({
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
-      internalReviewNotes: 'mitigated in current workflow',
+      internalNotes: 'mitigated in current workflow',
       reviewedByDisplay: 'Admin User',
     });
     vi.useRealTimers();
