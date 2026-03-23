@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import type { Id } from '@convex/_generated/dataModel';
-import { useNavigate } from '@tanstack/react-router';
+import { useLocation, useNavigate } from '@tanstack/react-router';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useAction, useConvex, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,132 +13,282 @@ import {
   SheetHeader,
   SheetTitle,
 } from '~/components/ui/sheet';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
+import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import {
   AdminSecurityControlCell,
-  AdminSecuritySupportCell,
   AdminSecurityFrameworkSummaryCell,
   AdminSecurityResponsibilityCell,
+  AdminSecuritySupportCell,
 } from '~/features/security/components/AdminSecurityControlCells';
 import { AdminSecurityControlDetail } from '~/features/security/components/AdminSecurityControlDetail';
 import { AdminSecurityPolicyDetail } from '~/features/security/components/AdminSecurityPolicyDetail';
 import {
   AdminSecurityControlsTab,
-  AdminSecurityOverviewTab,
   AdminSecurityOperationsTab,
+  AdminSecurityOverviewTab,
   AdminSecurityPoliciesTab,
   AdminSecurityReviewsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
 import {
   CONTROL_PAGE_SIZE_OPTIONS,
   CONTROL_TABLE_SORT_FIELDS,
+  SECURITY_TAB_PATHS,
   SECURITY_TABS,
 } from '~/features/security/constants';
 import { mergeReviewRunSummaryWithDetail } from '~/features/security/formatters';
 import { useSecurityControlTable } from '~/features/security/hooks/useSecurityControlTable';
-import type { SecuritySearch } from '~/features/security/search';
 import type {
-  EvidenceReviewDueIntervalMonths,
+  SecurityCompatSearch,
+  SecurityControlsSearch,
+  SecurityOperationsSearch,
+  SecurityPoliciesSearch,
+  SecurityTab,
+} from '~/features/security/search';
+import type {
   EvidenceReportDetail,
+  EvidenceReviewDueIntervalMonths,
   EvidenceSource,
   ReviewRunDetail,
   ReviewRunSummary,
   ReviewTaskDetail,
   SecurityChecklistEvidence,
-  SecurityPolicyDetail,
-  SecurityPolicySummary,
   SecurityControlWorkspace,
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
   SecurityOperationDetail,
   SecurityOperationsBoard,
+  SecurityPolicyDetail,
+  SecurityPolicySummary,
   SecurityWorkspaceOverview,
   VendorWorkspace,
 } from '~/features/security/types';
 import { exportSecurityControlsCsv } from '~/features/security/utils/exportSecurityControlsCsv';
 import { uploadFileWithTarget } from '~/features/security/utils/upload';
-function isSecurityTab(value: string): value is (typeof SECURITY_TABS)[number] {
-  return SECURITY_TABS.includes(value as (typeof SECURITY_TABS)[number]);
+
+function isSecurityTab(value: string): value is SecurityTab {
+  return SECURITY_TABS.includes(value as SecurityTab);
 }
 
-export function AdminSecurityRoute(props: { search: SecuritySearch }) {
+function getSecurityPath(tab: SecurityTab) {
+  return SECURITY_TAB_PATHS[tab];
+}
+
+const EMPTY_CONTROL_SUMMARY = {
+  byResponsibility: {
+    customer: 0,
+    platform: 0,
+    sharedResponsibility: 0,
+  },
+  bySupport: {
+    complete: 0,
+    missing: 0,
+    partial: 0,
+  },
+  totalControls: 0,
+};
+
+function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
+  switch (tab) {
+    case 'controls':
+      return {
+        family: search.family,
+        page: search.page,
+        pageSize: search.pageSize,
+        responsibility: search.responsibility,
+        search: search.search,
+        selectedControl: search.selectedControl,
+        sortBy: search.sortBy,
+        sortOrder: search.sortOrder,
+        support: search.support,
+      };
+    case 'policies':
+      return {
+        selectedPolicy: search.selectedPolicy,
+      };
+    case 'operations':
+      return {
+        selectedOperationId: search.selectedOperationId,
+        selectedOperationType: search.selectedOperationType,
+      };
+    case 'overview':
+    case 'reviews':
+      return {};
+  }
+}
+
+function useSecurityNavigation() {
   const navigate = useNavigate();
-  const convex = useConvex();
-  const search = props.search;
-  const {
-    tab: activeTab,
-    page,
-    pageSize,
-    sortBy,
-    sortOrder,
-    search: controlSearchTerm,
-    responsibility: responsibilityFilter,
-    support: supportFilter,
-    family: familyFilter,
-    selectedControl: selectedControlId,
-    selectedPolicy: selectedPolicyId,
-    selectedOperationId,
-    selectedOperationType,
-  } = props.search;
-  const { showToast } = useToast();
-  const [report, setReport] = useState<string | null>(null);
-  const [localSelectedReportId, setLocalSelectedReportId] = useState<Id<'evidenceReports'> | null>(
-    null,
+
+  const navigateToControl = useCallback(
+    (internalControlId: string) => {
+      void navigate({
+        to: getSecurityPath('controls'),
+        search: {
+          selectedControl: internalControlId,
+        },
+      });
+    },
+    [navigate],
   );
+
+  const navigateToPolicy = useCallback(
+    (policyId: string) => {
+      void navigate({
+        to: getSecurityPath('policies'),
+        search: {
+          selectedPolicy: policyId,
+        },
+      });
+    },
+    [navigate],
+  );
+
+  const navigateToOperation = useCallback(
+    (
+      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
+      operationId: string,
+    ) => {
+      void navigate({
+        to: getSecurityPath('operations'),
+        search: {
+          selectedOperationId: operationId,
+          selectedOperationType: operationType,
+        },
+      });
+    },
+    [navigate],
+  );
+
+  const navigateToReviews = useCallback(() => {
+    void navigate({
+      to: getSecurityPath('reviews'),
+    });
+  }, [navigate]);
+
+  return {
+    navigateToControl,
+    navigateToOperation,
+    navigateToPolicy,
+    navigateToReviews,
+  };
+}
+
+function SecurityPageShell(props: { activeTab: SecurityTab; children: React.ReactNode }) {
+  const navigate = useNavigate();
+
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Security Posture"
+        description="Review control implementation, evidence posture, vendor boundaries, and security oversight workflows."
+      />
+
+      <Tabs
+        value={props.activeTab}
+        onValueChange={(value) => {
+          if (!isSecurityTab(value) || value === props.activeTab) {
+            return;
+          }
+
+          void navigate({
+            to: getSecurityPath(value),
+          });
+        }}
+      >
+        <TabsList className="w-full justify-start overflow-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="policies">Policies</TabsTrigger>
+          <TabsTrigger value="controls">Controls</TabsTrigger>
+          <TabsTrigger value="operations">Operations</TabsTrigger>
+          <TabsTrigger value="reviews">Reviews</TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {props.children}
+    </div>
+  );
+}
+
+export function AdminSecurityLayout(props: {
+  children: React.ReactNode;
+  search: SecurityCompatSearch;
+}) {
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.pathname !== getSecurityPath('overview')) {
+      return;
+    }
+
+    if (!props.search.tab || props.search.tab === 'overview') {
+      return;
+    }
+
+    const nextTab = isSecurityTab(props.search.tab) ? props.search.tab : 'overview';
+
+    void navigate({
+      replace: true,
+      search: getCompatSearchForTab(nextTab, props.search),
+      to: getSecurityPath(nextTab),
+    });
+  }, [location.pathname, navigate, props.search]);
+
+  const activeTab = useMemo<SecurityTab>(() => {
+    const pathname = location.pathname;
+
+    if (pathname === getSecurityPath('controls')) return 'controls';
+    if (pathname === getSecurityPath('policies')) return 'policies';
+    if (pathname === getSecurityPath('operations')) return 'operations';
+    if (pathname === getSecurityPath('reviews')) return 'reviews';
+    return 'overview';
+  }, [location.pathname]);
+
+  return <SecurityPageShell activeTab={activeTab}>{props.children}</SecurityPageShell>;
+}
+
+export function AdminSecurityOverviewRoute() {
   const workspaceOverview = useQuery(api.securityPosture.getSecurityWorkspaceOverview, {}) as
     | SecurityWorkspaceOverview
     | undefined;
-  const controlsTabActive = activeTab === 'controls';
-  const policiesTabActive = activeTab === 'policies';
-  const operationsTabActive = activeTab === 'operations';
-  const reviewsTabActive = activeTab === 'reviews';
-  const selectedReportId = useMemo(() => {
-    if (selectedOperationType === 'evidence_report' && selectedOperationId) {
-      return selectedOperationId as Id<'evidenceReports'>;
-    }
-    return localSelectedReportId;
-  }, [localSelectedReportId, selectedOperationId, selectedOperationType]);
-  const operationsBoard = useQuery(
-    api.securityPosture.getSecurityOperationsBoard,
-    operationsTabActive ? {} : 'skip',
-  ) as SecurityOperationsBoard | undefined;
-  const controlWorkspaces = useQuery(
-    api.securityWorkspace.listSecurityControlWorkspaces,
-    controlsTabActive ? {} : 'skip',
-  ) as SecurityControlWorkspaceSummary[] | undefined;
+
+  return (
+    <AdminSecurityOverviewTab
+      controlSummary={workspaceOverview?.controlSummary ?? EMPTY_CONTROL_SUMMARY}
+      summary={workspaceOverview?.postureSummary}
+    />
+  );
+}
+
+export function AdminSecurityControlsRoute(props: { search: SecurityControlsSearch }) {
+  const navigate = useNavigate();
+  const convex = useConvex();
+  const { showToast } = useToast();
+  const { navigateToOperation, navigateToReviews } = useSecurityNavigation();
+  const search = props.search;
+  const {
+    family: familyFilter,
+    page,
+    pageSize,
+    responsibility: responsibilityFilter,
+    search: controlSearchTerm,
+    selectedControl: selectedControlId,
+    sortBy,
+    sortOrder,
+    support: supportFilter,
+  } = search;
+  const workspaceOverview = useQuery(api.securityPosture.getSecurityWorkspaceOverview, {}) as
+    | SecurityWorkspaceOverview
+    | undefined;
+  const controlWorkspaces = useQuery(api.securityWorkspace.listSecurityControlWorkspaces, {}) as
+    | SecurityControlWorkspaceSummary[]
+    | undefined;
   const selectedControl = useQuery(
     api.securityWorkspace.getSecurityControlWorkspaceDetail,
-    controlsTabActive && selectedControlId ? { internalControlId: selectedControlId } : 'skip',
+    selectedControlId ? { internalControlId: selectedControlId } : 'skip',
   ) as SecurityControlWorkspace | null | undefined;
-  const policySummaries = useQuery(
-    api.securityPolicies.listSecurityPolicies,
-    policiesTabActive ? {} : 'skip',
-  ) as SecurityPolicySummary[] | undefined;
-  const selectedPolicy = useQuery(
-    api.securityPolicies.getSecurityPolicyDetail,
-    policiesTabActive && selectedPolicyId ? { policyId: selectedPolicyId } : 'skip',
-  ) as SecurityPolicyDetail | null | undefined;
-  const evidenceReports = operationsBoard?.evidenceReports;
-  const securityFindings = operationsBoard?.findings;
-  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
-  const summary = workspaceOverview?.postureSummary;
-  const selectedReportDetail = useQuery(
-    api.securityReports.getEvidenceReportDetail,
-    operationsTabActive && selectedReportId ? { id: selectedReportId } : 'skip',
-  ) as EvidenceReportDetail | null | undefined;
-  const resolvedSelectedOperationType =
-    selectedOperationType ?? (selectedReportId ? 'evidence_report' : undefined);
-  const resolvedSelectedOperationId = selectedOperationId ?? selectedReportId ?? undefined;
-  const auditReadiness = workspaceOverview?.auditReadiness;
-  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
-  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
-  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
-  const reviewSecurityFinding = useMutation(api.securityWorkspace.reviewSecurityFinding);
-  const openSecurityFindingFollowUp = useMutation(
-    api.securityWorkspace.openSecurityFindingFollowUp,
-  );
   const reviewControlEvidence = useMutation(api.securityWorkspace.reviewSecurityControlEvidence);
   const addEvidenceLink = useMutation(api.securityWorkspace.addSecurityControlEvidenceLink);
   const addEvidenceNote = useMutation(api.securityWorkspace.addSecurityControlEvidenceNote);
@@ -151,199 +301,15 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   );
   const renewControlEvidence = useMutation(api.securityWorkspace.renewSecurityControlEvidence);
   const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
-  const refreshReviewRunAutomation = useAction(api.securityReviews.refreshReviewRunAutomation);
-  const finalizeReviewRun = useAction(api.securityReviews.finalizeReviewRun);
-  const ensureCurrentAnnualReviewRun = useMutation(
-    api.securityReviews.ensureCurrentAnnualReviewRun,
-  );
-  const createTriggeredReviewRun = useMutation(api.securityReviews.createTriggeredReviewRun);
-  const syncSecurityPoliciesFromSeed = useAction(api.securityPolicies.syncSecurityPoliciesFromSeed);
-  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
-  const attestReviewTask = useMutation(api.securityReviews.attestReviewTask);
-  const setReviewTaskException = useMutation(api.securityReviews.setReviewTaskException);
-  const openTriggeredFollowUp = useMutation(api.securityReviews.openTriggeredFollowUp);
-  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
-  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
-    {},
-  );
-  const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
-  const [findingCustomerSummaries, setFindingCustomerSummaries] = useState<Record<string, string>>(
-    {},
-  );
-  const [findingDispositions, setFindingDispositions] = useState<
-    Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
-  >({});
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
-  const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
-  const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
-  const [busyReviewRunAction, setBusyReviewRunAction] = useState<string | null>(null);
-  const [busyReviewTaskAction, setBusyReviewTaskAction] = useState<string | null>(null);
-  const [localAnnualReviewRun, setLocalAnnualReviewRun] = useState<ReviewRunSummary | null>(null);
-  const [localAnnualReviewDetail, setLocalAnnualReviewDetail] = useState<ReviewRunDetail | null>(
-    null,
-  );
-  const [isPreparingAnnualReview, setIsPreparingAnnualReview] = useState(false);
-  const [reviewTaskNotes, setReviewTaskNotes] = useState<Record<string, string>>({});
-  const [reviewTaskDocuments, setReviewTaskDocuments] = useState<
-    Record<string, { label: string; url: string; version: string }>
-  >({});
-  const [newTriggeredReviewTitle, setNewTriggeredReviewTitle] = useState('');
-  const [newTriggeredReviewType, setNewTriggeredReviewType] = useState('manual_follow_up');
-  const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
-  const [vendorCustomerSummaries, setVendorCustomerSummaries] = useState<Record<string, string>>(
-    {},
-  );
-  const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
-  const [isSyncingPolicies, setIsSyncingPolicies] = useState(false);
-  const reviewsInitializedRef = useRef(false);
-  const reviewsRefreshedForRunRef = useRef<string | null>(null);
-  const controls = controlWorkspaces;
-  const controlItems = useMemo(() => controls ?? [], [controls]);
-  const currentAnnualReviewRunQuery = useQuery(
-    api.securityReviews.getCurrentAnnualReviewRun,
-    reviewsTabActive ? {} : 'skip',
-  ) as ReviewRunSummary | null | undefined;
-  const triggeredReviewRuns = useQuery(
-    api.securityReviews.listTriggeredReviewRuns,
-    reviewsTabActive ? {} : 'skip',
-  ) as ReviewRunSummary[] | undefined;
-  const currentAnnualReviewRun =
-    workspaceOverview?.currentAnnualReviewRun ??
-    operationsBoard?.currentAnnualReviewRun ??
-    currentAnnualReviewRunQuery ??
-    localAnnualReviewRun;
-  const currentAnnualReviewDetailQuery = useQuery(
-    api.securityReviews.getReviewRunDetail,
-    reviewsTabActive && currentAnnualReviewRun?.id
-      ? { reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'> }
-      : 'skip',
-  ) as ReviewRunDetail | null | undefined;
-  const currentAnnualReviewDetail =
-    currentAnnualReviewDetailQuery ??
-    operationsBoard?.currentAnnualReviewDetail ??
-    localAnnualReviewDetail;
-  const triggeredReviewRunItems = triggeredReviewRuns ?? operationsBoard?.triggeredReviewRuns;
-  const selectedOperationDetail = useMemo<SecurityOperationDetail | null>(() => {
-    if (!resolvedSelectedOperationId || !resolvedSelectedOperationType) {
-      return null;
-    }
-
-    switch (resolvedSelectedOperationType) {
-      case 'evidence_report': {
-        const report =
-          (selectedReportDetail ?? null) ||
-          evidenceReports?.find((entry) => entry.id === resolvedSelectedOperationId);
-        if (!report) {
-          return null;
-        }
-        return {
-          kind: 'evidence_report',
-          id: resolvedSelectedOperationId as Id<'evidenceReports'>,
-          title: `${report.reportKind} report`,
-          status: report.reviewStatus,
-          report,
-        };
-      }
-      case 'finding': {
-        const finding = securityFindings?.find(
-          (entry) => entry.findingKey === resolvedSelectedOperationId,
-        );
-        if (!finding) {
-          return null;
-        }
-        return {
-          kind: 'finding',
-          id: finding.findingKey,
-          title: finding.title,
-          status: finding.disposition,
-          finding,
-        };
-      }
-      case 'vendor_review': {
-        const vendorReview = vendorWorkspaces?.find(
-          (entry) => entry.vendor === resolvedSelectedOperationId,
-        );
-        if (!vendorReview) {
-          return null;
-        }
-        return {
-          kind: 'vendor_review',
-          id: vendorReview.vendor,
-          title: vendorReview.displayName,
-          status: vendorReview.reviewStatus,
-          vendorReview,
-        };
-      }
-      case 'review_run': {
-        const reviewRun = triggeredReviewRunItems?.find(
-          (entry) => entry.id === resolvedSelectedOperationId,
-        );
-        if (!reviewRun) {
-          return null;
-        }
-        return {
-          kind: 'review_run',
-          id: reviewRun.id,
-          title: reviewRun.title,
-          status: reviewRun.status,
-          reviewRun,
-        };
-      }
-      default:
-        return null;
-    }
-  }, [
-    evidenceReports,
-    securityFindings,
-    selectedReportDetail,
-    triggeredReviewRunItems,
-    vendorWorkspaces,
-    resolvedSelectedOperationId,
-    resolvedSelectedOperationType,
-  ]);
-  const auditReadinessSummary = useMemo(() => {
-    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
-    const staleDrill =
-      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
-
-    return {
-      latestDrill,
-      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
-      metadataGapCount: auditReadiness?.metadataGaps.length ?? 0,
-      recentDeniedCount: auditReadiness?.recentDeniedActions.length ?? 0,
-      recentExportCount: auditReadiness?.recentExports.length ?? 0,
-      staleDrill,
-    };
-  }, [auditReadiness]);
-  const restoreDrillFooter = auditReadinessSummary.staleDrill
-    ? 'Drill evidence is stale'
-    : auditReadinessSummary.latestDrill
-      ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
-      : 'No drill evidence recorded';
-  const findingSummary = useMemo(() => {
-    const findingItems = securityFindings ?? [];
-    if (findingItems.length === 0 && workspaceOverview?.findingSummary) {
-      return {
-        openCount: workspaceOverview.findingSummary.openCount,
-        reviewPendingCount: workspaceOverview.findingSummary.undispositionedCount,
-        totalCount: workspaceOverview.findingSummary.totalCount,
-      };
-    }
-    return {
-      openCount: findingItems.filter((finding) => finding.status === 'open').length,
-      reviewPendingCount: findingItems.filter((finding) => finding.disposition === 'pending_review')
-        .length,
-      totalCount: findingItems.length,
-    };
-  }, [securityFindings, workspaceOverview]);
+  const controls = useMemo(() => controlWorkspaces ?? [], [controlWorkspaces]);
   const controlSummary = useMemo(() => {
     if (workspaceOverview?.controlSummary) {
       return workspaceOverview.controlSummary;
     }
-    return controlItems.reduce(
+
+    return controls.reduce(
       (summaryAccumulator, control) => {
         summaryAccumulator.totalControls += 1;
         if (control.responsibility === 'shared-responsibility') {
@@ -357,181 +323,28 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       {
         totalControls: 0,
         byResponsibility: {
+          customer: 0,
           platform: 0,
           sharedResponsibility: 0,
-          customer: 0,
         },
         bySupport: {
           complete: 0,
-          partial: 0,
           missing: 0,
+          partial: 0,
         },
       },
     );
-  }, [controlItems, workspaceOverview]);
-
-  useEffect(() => {
-    if (currentAnnualReviewRunQuery !== undefined) {
-      setLocalAnnualReviewRun(currentAnnualReviewRunQuery);
-    }
-  }, [currentAnnualReviewRunQuery]);
-
-  useEffect(() => {
-    if (currentAnnualReviewDetailQuery !== undefined) {
-      setLocalAnnualReviewDetail(currentAnnualReviewDetailQuery);
-    }
-  }, [currentAnnualReviewDetailQuery]);
-
-  useEffect(() => {
-    if (!reviewsTabActive) {
-      return;
-    }
-    if (reviewsInitializedRef.current) {
-      return;
-    }
-    if (currentAnnualReviewRunQuery === undefined) {
-      return;
-    }
-    if (currentAnnualReviewRunQuery !== null) {
-      reviewsInitializedRef.current = true;
-      return;
-    }
-
-    reviewsInitializedRef.current = true;
-    setIsPreparingAnnualReview(true);
-    void ensureCurrentAnnualReviewRun({})
-      .then(async (run) => {
-        setLocalAnnualReviewRun(run);
-        const detail = await refreshReviewRunAutomation({
-          reviewRunId: run.id as Id<'reviewRuns'>,
-        });
-        if (detail) {
-          setLocalAnnualReviewDetail(detail);
-          setLocalAnnualReviewRun(mergeReviewRunSummaryWithDetail(run, detail));
-        }
-      })
-      .catch((error: unknown) => {
-        reviewsInitializedRef.current = false;
-        showToast(
-          error instanceof Error ? error.message : 'Failed to initialize annual review.',
-          'error',
-        );
-      })
-      .finally(() => {
-        setIsPreparingAnnualReview(false);
-      });
-  }, [
-    currentAnnualReviewRunQuery,
-    ensureCurrentAnnualReviewRun,
-    refreshReviewRunAutomation,
-    reviewsTabActive,
-    showToast,
-  ]);
-
-  useEffect(() => {
-    if (!reviewsTabActive || !currentAnnualReviewRun?.id) {
-      return;
-    }
-    if (reviewsRefreshedForRunRef.current === currentAnnualReviewRun.id) {
-      return;
-    }
-
-    reviewsRefreshedForRunRef.current = currentAnnualReviewRun.id;
-    void refreshReviewRunAutomation({
-      reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
-    })
-      .then((detail) => {
-        if (detail) {
-          setLocalAnnualReviewDetail(detail);
-          setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
-        }
-      })
-      .catch((error: unknown) => {
-        reviewsRefreshedForRunRef.current = null;
-        showToast(
-          error instanceof Error ? error.message : 'Failed to refresh review automation.',
-          'error',
-        );
-      });
-  }, [currentAnnualReviewRun?.id, refreshReviewRunAutomation, reviewsTabActive, showToast]);
-
-  const reviewTaskGroups = useMemo(
-    () => ({
-      autoCollected:
-        currentAnnualReviewDetail?.tasks.filter((task) => task.taskType === 'automated_check') ??
-        [],
-      needsAttestation:
-        currentAnnualReviewDetail?.tasks.filter(
-          (task) => task.taskType === 'attestation' && task.status !== 'completed',
-        ) ?? [],
-      needsDocumentUpload:
-        currentAnnualReviewDetail?.tasks.filter(
-          (task) => task.taskType === 'document_upload' && task.status !== 'completed',
-        ) ?? [],
-      blocked: currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'blocked') ?? [],
-    }),
-    [currentAnnualReviewDetail],
-  );
-  const autoCollectedEvidenceLinks = useMemo(
-    () =>
-      reviewTaskGroups.autoCollected.flatMap((task) => {
-        const latestLink = task.evidenceLinks[0];
-        return latestLink
-          ? [
-              {
-                link: latestLink,
-                taskTitle: task.title,
-              },
-            ]
-          : [];
-      }),
-    [reviewTaskGroups.autoCollected],
-  );
-  const reviewExceptionTasks = useMemo(
-    () => currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'exception') ?? [],
-    [currentAnnualReviewDetail],
-  );
-  const reviewFinalizeState = useMemo(() => {
-    const tasks = currentAnnualReviewDetail?.tasks ?? [];
-    const requiredBlocked = tasks.filter((task) => task.required && task.status === 'blocked');
-    const requiredRemaining = tasks.filter(
-      (task) =>
-        task.required &&
-        task.status !== 'completed' &&
-        task.status !== 'exception' &&
-        task.status !== 'blocked',
-    );
-    const remainingByType = requiredRemaining.reduce(
-      (counts, task) => {
-        counts[task.taskType] += 1;
-        return counts;
-      },
-      {
-        attestation: 0,
-        automated_check: 0,
-        document_upload: 0,
-        follow_up: 0,
-      },
-    );
-
-    return {
-      canFinalize: requiredBlocked.length === 0 && requiredRemaining.length === 0,
-      requiredBlocked,
-      requiredRemaining,
-      remainingByType,
-    };
-  }, [currentAnnualReviewDetail]);
+  }, [controls, workspaceOverview]);
   const {
     controlPagination,
     controlSearchParams,
-    supportOptions,
     familyOptions,
     paginatedControls,
     responsibilityOptions,
     sortedControls,
+    supportOptions,
   } = useSecurityControlTable({
-    controls: controlItems,
-    supportFilter,
+    controls,
     familyFilter,
     page,
     pageSize,
@@ -539,127 +352,52 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     searchTerm: controlSearchTerm,
     sortBy,
     sortOrder,
+    supportFilter,
   });
+
   const updateControlSearch = useCallback(
     (
       updates: Partial<{
+        family: string;
         page: number;
         pageSize: (typeof CONTROL_PAGE_SIZE_OPTIONS)[number];
+        responsibility: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
+        search: string;
+        selectedControl: string | undefined;
         sortBy: (typeof CONTROL_TABLE_SORT_FIELDS)[number];
         sortOrder: 'asc' | 'desc';
-        search: string;
-        responsibility: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
         support: 'all' | SecurityControlWorkspaceSummary['support'];
-        family: string;
-        selectedControl: string | undefined;
-        selectedOperationId: string | undefined;
-        selectedOperationType:
-          | 'evidence_report'
-          | 'finding'
-          | 'vendor_review'
-          | 'review_run'
-          | undefined;
       }>,
     ) => {
       void navigate({
-        to: '/app/admin/security',
         search: {
           ...search,
           ...updates,
         },
+        to: getSecurityPath('controls'),
       });
     },
     [navigate, search],
   );
-  const navigateToControl = useCallback(
-    (internalControlId: string) => {
-      void navigate({
-        to: '/app/admin/security',
-        search: {
-          ...search,
-          selectedOperationId: undefined,
-          selectedOperationType: undefined,
-          selectedControl: internalControlId,
-          selectedPolicy: undefined,
-          tab: 'controls',
-        },
-      });
-    },
-    [navigate, search],
-  );
-  const navigateToPolicy = useCallback(
-    (policyId: string) => {
-      void navigate({
-        to: '/app/admin/security',
-        search: {
-          ...search,
-          selectedControl: undefined,
-          selectedOperationId: undefined,
-          selectedOperationType: undefined,
-          selectedPolicy: policyId,
-          tab: 'policies',
-        },
-      });
-    },
-    [navigate, search],
-  );
-  const navigateToOperation = useCallback(
-    (
-      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
-      operationId: string,
-    ) => {
-      void navigate({
-        to: '/app/admin/security',
-        search: {
-          ...search,
-          selectedControl: undefined,
-          selectedOperationId: operationId,
-          selectedOperationType: operationType,
-          selectedPolicy: undefined,
-          tab: 'operations',
-        },
-      });
-    },
-    [navigate, search],
-  );
-  const navigateToReviews = useCallback(() => {
-    void navigate({
-      to: '/app/admin/security',
-      search: {
-        ...search,
-        selectedControl: undefined,
-        selectedPolicy: undefined,
-        tab: 'reviews',
-      },
-    });
-  }, [navigate, search]);
-  const handleSyncPolicies = useCallback(async () => {
-    setIsSyncingPolicies(true);
-    try {
-      await syncSecurityPoliciesFromSeed({});
-      showToast('Policy catalog synced from repo markdown.', 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Failed to sync policies.', 'error');
-    } finally {
-      setIsSyncingPolicies(false);
-    }
-  }, [showToast, syncSecurityPoliciesFromSeed]);
+
   const handleControlSorting = useCallback(
     (columnId: (typeof CONTROL_TABLE_SORT_FIELDS)[number]) => {
       updateControlSearch({
+        page: 1,
         sortBy: columnId,
         sortOrder: sortBy === columnId && sortOrder === 'asc' ? 'desc' : 'asc',
-        page: 1,
       });
     },
     [sortBy, sortOrder, updateControlSearch],
   );
+
   const handleControlPageChange = useCallback(
     (nextPage: number) => {
       updateControlSearch({ page: nextPage });
     },
     [updateControlSearch],
   );
+
   const handleControlPageSizeChange = useCallback(
     (nextPageSize: number) => {
       updateControlSearch({
@@ -673,51 +411,53 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [updateControlSearch],
   );
+
   const controlColumns = useMemo<ColumnDef<SecurityControlWorkspaceSummary, unknown>[]>(
     () => [
       {
         accessorKey: 'control',
+        cell: ({ row }) => <AdminSecurityControlCell control={row.original} />,
         header: createSortableHeader(
           'Control',
           'control',
           controlSearchParams,
           handleControlSorting,
         ),
-        cell: ({ row }) => <AdminSecurityControlCell control={row.original} />,
       },
       {
         accessorKey: 'responsibility',
+        cell: ({ row }) => <AdminSecurityResponsibilityCell control={row.original} />,
         header: createSortableHeader(
           'Responsibility',
           'responsibility',
           controlSearchParams,
           handleControlSorting,
         ),
-        cell: ({ row }) => <AdminSecurityResponsibilityCell control={row.original} />,
       },
       {
         accessorKey: 'support',
+        cell: ({ row }) => <AdminSecuritySupportCell control={row.original} />,
         header: createSortableHeader(
           'Support',
           'support',
           controlSearchParams,
           handleControlSorting,
         ),
-        cell: ({ row }) => <AdminSecuritySupportCell control={row.original} />,
       },
       {
         accessorKey: 'family',
+        cell: ({ row }) => <AdminSecurityFrameworkSummaryCell control={row.original} />,
         header: createSortableHeader(
           'Frameworks',
           'family',
           controlSearchParams,
           handleControlSorting,
         ),
-        cell: ({ row }) => <AdminSecurityFrameworkSummaryCell control={row.original} />,
       },
     ],
     [controlSearchParams, handleControlSorting],
   );
+
   const handleExportControls = useCallback(async () => {
     setIsExportingControls(true);
 
@@ -739,28 +479,6 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       setIsExportingControls(false);
     }
   }, [convex, showToast, sortedControls]);
-
-  const handleOpenReportDetail = useCallback(
-    (reportId: Id<'evidenceReports'>) => {
-      setLocalSelectedReportId(reportId);
-      navigateToOperation('evidence_report', reportId);
-    },
-    [navigateToOperation],
-  );
-  const handleSelectOperation = useCallback(
-    (
-      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
-      operationId: string,
-    ) => {
-      if (operationType === 'evidence_report') {
-        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
-      } else {
-        setLocalSelectedReportId(null);
-      }
-      navigateToOperation(operationType, operationId);
-    },
-    [navigateToOperation],
-  );
 
   const handleAddEvidenceLink = useCallback(
     async (args: {
@@ -849,8 +567,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
           itemId: args.itemId,
           mimeType: args.file.type || 'application/octet-stream',
           reviewDueIntervalMonths: args.reviewDueIntervalMonths,
-          storageId: uploadedStorageId ?? target.storageId,
           source: args.source,
+          storageId: uploadedStorageId ?? target.storageId,
           sufficiency: args.sufficiency,
           title: args.title,
         });
@@ -941,6 +659,390 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     [reviewControlEvidence, showToast],
   );
 
+  const handleOpenLinkedEntity = useCallback(
+    (entity: SecurityControlWorkspace['linkedEntities'][number]) => {
+      switch (entity.entityType) {
+        case 'control':
+          void navigate({
+            search: {
+              ...search,
+              selectedControl: entity.entityId,
+            },
+            to: getSecurityPath('controls'),
+          });
+          return;
+        case 'review_run':
+        case 'review_task':
+          navigateToReviews();
+          return;
+        case 'evidence_report':
+        case 'finding':
+        case 'vendor_review':
+          navigateToOperation(entity.entityType, entity.entityId);
+          return;
+        default:
+          return;
+      }
+    },
+    [navigate, navigateToOperation, navigateToReviews, search],
+  );
+
+  return (
+    <>
+      <AdminSecurityControlsTab
+        controlColumns={controlColumns}
+        controlPagination={controlPagination}
+        controlSearchParams={controlSearchParams}
+        controlSearchTerm={controlSearchTerm}
+        controlSummary={controlSummary}
+        familyFilter={familyFilter}
+        familyOptions={familyOptions}
+        handleControlPageChange={handleControlPageChange}
+        handleControlPageSizeChange={handleControlPageSizeChange}
+        handleExportControls={handleExportControls}
+        isExportingControls={isExportingControls}
+        paginatedControls={paginatedControls}
+        responsibilityFilter={responsibilityFilter}
+        responsibilityOptions={responsibilityOptions}
+        sortedControls={sortedControls}
+        supportFilter={supportFilter}
+        supportOptions={supportOptions}
+        updateControlSearch={updateControlSearch}
+      />
+
+      <Sheet
+        open={selectedControlId !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          updateControlSearch({ selectedControl: undefined });
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          {!selectedControl ? (
+            <SheetHeader className="sr-only">
+              <SheetTitle>Security control detail</SheetTitle>
+              <SheetDescription>
+                Review the selected security control, its checklist, and linked operations.
+              </SheetDescription>
+            </SheetHeader>
+          ) : null}
+          {selectedControl === undefined && selectedControlId ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading control detail…</div>
+          ) : selectedControl ? (
+            <AdminSecurityControlDetail
+              busyAction={busyControlAction}
+              control={selectedControl}
+              onAddEvidenceLink={handleAddEvidenceLink}
+              onAddEvidenceNote={handleAddEvidenceNote}
+              onArchiveEvidence={handleArchiveEvidence}
+              onOpenEvidence={handleOpenEvidence}
+              onOpenLinkedEntity={handleOpenLinkedEntity}
+              onOpenReviews={navigateToReviews}
+              onRenewEvidence={handleRenewEvidence}
+              onReviewEvidence={handleReviewEvidence}
+              onUploadEvidenceFile={handleUploadEvidenceFile}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+export function AdminSecurityRoute(props: {
+  search: SecurityCompatSearch & {
+    family?: string;
+    page?: number;
+    pageSize?: 10 | 20 | 50;
+    responsibility?: 'all' | 'platform' | 'shared-responsibility' | 'customer';
+    search?: string;
+    sortBy?: 'control' | 'support' | 'responsibility' | 'family';
+    sortOrder?: 'asc' | 'desc';
+    support?: 'all' | 'complete' | 'partial' | 'missing';
+    tab?: SecurityTab;
+  };
+}) {
+  const activeTab = props.search.tab ?? 'overview';
+
+  return (
+    <SecurityPageShell activeTab={activeTab}>
+      {activeTab === 'overview' ? <AdminSecurityOverviewRoute /> : null}
+      {activeTab === 'controls' ? (
+        <AdminSecurityControlsRoute
+          search={{
+            family: props.search.family ?? 'all',
+            page: props.search.page ?? 1,
+            pageSize: props.search.pageSize ?? 10,
+            responsibility: props.search.responsibility ?? 'all',
+            search: props.search.search ?? '',
+            selectedControl: props.search.selectedControl,
+            sortBy: props.search.sortBy ?? 'control',
+            sortOrder: props.search.sortOrder ?? 'asc',
+            support: props.search.support ?? 'all',
+          }}
+        />
+      ) : null}
+      {activeTab === 'policies' ? (
+        <AdminSecurityPoliciesRoute
+          search={{
+            selectedPolicy: props.search.selectedPolicy,
+          }}
+        />
+      ) : null}
+      {activeTab === 'operations' ? (
+        <AdminSecurityOperationsRoute
+          search={{
+            selectedOperationId: props.search.selectedOperationId,
+            selectedOperationType: props.search.selectedOperationType,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reviews' ? <AdminSecurityReviewsRoute /> : null}
+    </SecurityPageShell>
+  );
+}
+
+export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSearch }) {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { navigateToControl } = useSecurityNavigation();
+  const selectedPolicyId = props.search.selectedPolicy;
+  const policySummaries = useQuery(api.securityPolicies.listSecurityPolicies, {}) as
+    | SecurityPolicySummary[]
+    | undefined;
+  const selectedPolicy = useQuery(
+    api.securityPolicies.getSecurityPolicyDetail,
+    selectedPolicyId ? { policyId: selectedPolicyId } : 'skip',
+  ) as SecurityPolicyDetail | null | undefined;
+  const syncSecurityPoliciesFromSeed = useAction(api.securityPolicies.syncSecurityPoliciesFromSeed);
+  const [isSyncingPolicies, setIsSyncingPolicies] = useState(false);
+
+  const handleSyncPolicies = useCallback(async () => {
+    setIsSyncingPolicies(true);
+    try {
+      await syncSecurityPoliciesFromSeed({});
+      showToast('Policy catalog synced from repo markdown.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to sync policies.', 'error');
+    } finally {
+      setIsSyncingPolicies(false);
+    }
+  }, [showToast, syncSecurityPoliciesFromSeed]);
+
+  return (
+    <>
+      <AdminSecurityPoliciesTab
+        busySync={isSyncingPolicies}
+        onOpenPolicy={(policyId) => {
+          void navigate({
+            search: {
+              selectedPolicy: policyId,
+            },
+            to: getSecurityPath('policies'),
+          });
+        }}
+        onSyncPolicies={handleSyncPolicies}
+        policies={policySummaries}
+      />
+
+      <Sheet
+        open={selectedPolicyId !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          void navigate({
+            search: {
+              selectedPolicy: undefined,
+            },
+            to: getSecurityPath('policies'),
+          });
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Security policy detail</SheetTitle>
+            <SheetDescription>
+              Review the selected policy, its mapped controls, and annual review linkage.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedPolicy === undefined && selectedPolicyId ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading policy detail…</div>
+          ) : selectedPolicy ? (
+            <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy} />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+export function AdminSecurityOperationsRoute(props: { search: SecurityOperationsSearch }) {
+  const { showToast } = useToast();
+  const { navigateToControl, navigateToOperation, navigateToReviews } = useSecurityNavigation();
+  const { selectedOperationId, selectedOperationType } = props.search;
+  const [report, setReport] = useState<string | null>(null);
+  const [localSelectedReportId, setLocalSelectedReportId] = useState<Id<'evidenceReports'> | null>(
+    null,
+  );
+  const operationsBoard = useQuery(api.securityPosture.getSecurityOperationsBoard, {}) as
+    | SecurityOperationsBoard
+    | undefined;
+  const selectedReportId = useMemo(() => {
+    if (selectedOperationType === 'evidence_report' && selectedOperationId) {
+      return selectedOperationId as Id<'evidenceReports'>;
+    }
+    return localSelectedReportId;
+  }, [localSelectedReportId, selectedOperationId, selectedOperationType]);
+  const selectedReportDetail = useQuery(
+    api.securityReports.getEvidenceReportDetail,
+    selectedReportId ? { id: selectedReportId } : 'skip',
+  ) as EvidenceReportDetail | null | undefined;
+  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
+  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
+  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
+  const reviewSecurityFinding = useMutation(api.securityWorkspace.reviewSecurityFinding);
+  const openSecurityFindingFollowUp = useMutation(
+    api.securityWorkspace.openSecurityFindingFollowUp,
+  );
+  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
+  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
+  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
+  const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
+  const [findingCustomerSummaries, setFindingCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
+  const [findingDispositions, setFindingDispositions] = useState<
+    Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
+  >({});
+  const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
+  const [vendorCustomerSummaries, setVendorCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
+  const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+  const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
+  const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
+  const evidenceReports = operationsBoard?.evidenceReports;
+  const securityFindings = operationsBoard?.findings;
+  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
+  const triggeredReviewRuns = operationsBoard?.triggeredReviewRuns;
+  const auditReadiness = operationsBoard?.auditReadiness;
+  const resolvedSelectedOperationType =
+    selectedOperationType ?? (selectedReportId ? 'evidence_report' : undefined);
+  const resolvedSelectedOperationId = selectedOperationId ?? selectedReportId ?? undefined;
+  const selectedOperationDetail = useMemo<SecurityOperationDetail | null>(() => {
+    if (!resolvedSelectedOperationId || !resolvedSelectedOperationType) {
+      return null;
+    }
+
+    switch (resolvedSelectedOperationType) {
+      case 'evidence_report': {
+        const reportItem =
+          (selectedReportDetail ?? null) ||
+          evidenceReports?.find((entry) => entry.id === resolvedSelectedOperationId);
+        if (!reportItem) {
+          return null;
+        }
+        return {
+          id: resolvedSelectedOperationId as Id<'evidenceReports'>,
+          kind: 'evidence_report',
+          report: reportItem,
+          status: reportItem.reviewStatus,
+          title: `${reportItem.reportKind} report`,
+        };
+      }
+      case 'finding': {
+        const finding = securityFindings?.find(
+          (entry) => entry.findingKey === resolvedSelectedOperationId,
+        );
+        if (!finding) {
+          return null;
+        }
+        return {
+          finding,
+          id: finding.findingKey,
+          kind: 'finding',
+          status: finding.disposition,
+          title: finding.title,
+        };
+      }
+      case 'vendor_review': {
+        const vendorReview = vendorWorkspaces?.find(
+          (entry) => entry.vendor === resolvedSelectedOperationId,
+        );
+        if (!vendorReview) {
+          return null;
+        }
+        return {
+          id: vendorReview.vendor,
+          kind: 'vendor_review',
+          status: vendorReview.reviewStatus,
+          title: vendorReview.displayName,
+          vendorReview,
+        };
+      }
+      case 'review_run': {
+        const reviewRun = triggeredReviewRuns?.find(
+          (entry) => entry.id === resolvedSelectedOperationId,
+        );
+        if (!reviewRun) {
+          return null;
+        }
+        return {
+          id: reviewRun.id,
+          kind: 'review_run',
+          reviewRun,
+          status: reviewRun.status,
+          title: reviewRun.title,
+        };
+      }
+    }
+  }, [
+    evidenceReports,
+    resolvedSelectedOperationId,
+    resolvedSelectedOperationType,
+    securityFindings,
+    selectedReportDetail,
+    triggeredReviewRuns,
+    vendorWorkspaces,
+  ]);
+  const auditReadinessSummary = useMemo(() => {
+    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
+    const staleDrill =
+      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
+
+    return {
+      latestDrill,
+      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
+      metadataGapCount: auditReadiness?.metadataGaps.length ?? 0,
+      recentDeniedCount: auditReadiness?.recentDeniedActions.length ?? 0,
+      recentExportCount: auditReadiness?.recentExports.length ?? 0,
+      staleDrill,
+    };
+  }, [auditReadiness]);
+  const restoreDrillFooter = auditReadinessSummary.staleDrill
+    ? 'Drill evidence is stale'
+    : auditReadinessSummary.latestDrill
+      ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
+      : 'No drill evidence recorded';
+  const findingSummary = useMemo(() => {
+    const findingItems = securityFindings ?? [];
+    return {
+      openCount: findingItems.filter((finding) => finding.status === 'open').length,
+      reviewPendingCount: findingItems.filter((finding) => finding.disposition === 'pending_review')
+        .length,
+      totalCount: findingItems.length,
+    };
+  }, [securityFindings]);
+
   const handleGenerateReport = async (
     reportKind: 'audit_readiness' | 'security_posture' = 'security_posture',
   ) => {
@@ -1006,6 +1108,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [findingCustomerSummaries, findingDispositions, findingNotes, reviewSecurityFinding, showToast],
   );
+
   const handleOpenFindingFollowUp = useCallback(
     async (finding: SecurityFindingListItem) => {
       setBusyFindingKey(finding.findingKey);
@@ -1026,6 +1129,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [findingNotes, openSecurityFindingFollowUp, showToast],
   );
+
   const handleReviewVendor = useCallback(
     async (vendor: VendorWorkspace, reviewStatus: VendorWorkspace['reviewStatus']) => {
       setBusyVendorKey(vendor.vendor);
@@ -1049,6 +1153,271 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [reviewVendorWorkspace, showToast, vendorCustomerSummaries, vendorNotes, vendorOwners],
   );
+
+  const handleOpenReportDetail = useCallback(
+    (reportId: Id<'evidenceReports'>) => {
+      setLocalSelectedReportId(reportId);
+      navigateToOperation('evidence_report', reportId);
+    },
+    [navigateToOperation],
+  );
+
+  const handleSelectOperation = useCallback(
+    (
+      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
+      operationId: string,
+    ) => {
+      if (operationType === 'evidence_report') {
+        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
+      } else {
+        setLocalSelectedReportId(null);
+      }
+      navigateToOperation(operationType, operationId);
+    },
+    [navigateToOperation],
+  );
+
+  return (
+    <AdminSecurityOperationsTab
+      auditReadiness={auditReadiness}
+      auditReadinessSummary={auditReadinessSummary}
+      busyFindingKey={busyFindingKey}
+      busyReportAction={busyReportAction}
+      busyVendorKey={busyVendorKey}
+      evidenceReports={evidenceReports}
+      findingCustomerSummaries={findingCustomerSummaries}
+      findingDispositions={findingDispositions}
+      findingNotes={findingNotes}
+      findingSummary={findingSummary}
+      handleExportReport={handleExportReport}
+      handleGenerateReport={handleGenerateReport}
+      handleOpenFindingFollowUp={handleOpenFindingFollowUp}
+      handleOpenReportDetail={handleOpenReportDetail}
+      handleReviewFinding={handleReviewFinding}
+      handleReviewReport={handleReviewReport}
+      handleReviewVendor={handleReviewVendor}
+      isGenerating={isGenerating}
+      navigateToControl={navigateToControl}
+      navigateToReviews={navigateToReviews}
+      onSelectOperation={handleSelectOperation}
+      report={report}
+      reportCustomerSummaries={reportCustomerSummaries}
+      reportNotes={reportNotes}
+      restoreDrillFooter={restoreDrillFooter}
+      securityFindings={securityFindings}
+      selectedOperationDetail={selectedOperationDetail}
+      selectedOperationId={resolvedSelectedOperationId}
+      selectedOperationType={resolvedSelectedOperationType}
+      setFindingCustomerSummaries={setFindingCustomerSummaries}
+      setFindingDispositions={setFindingDispositions}
+      setFindingNotes={setFindingNotes}
+      setReportCustomerSummaries={setReportCustomerSummaries}
+      setReportNotes={setReportNotes}
+      setVendorCustomerSummaries={setVendorCustomerSummaries}
+      setVendorNotes={setVendorNotes}
+      setVendorOwners={setVendorOwners}
+      triggeredReviewRuns={triggeredReviewRuns}
+      vendorCustomerSummaries={vendorCustomerSummaries}
+      vendorNotes={vendorNotes}
+      vendorOwners={vendorOwners}
+      vendorWorkspaces={vendorWorkspaces}
+    />
+  );
+}
+
+export function AdminSecurityReviewsRoute() {
+  const { showToast } = useToast();
+  const { navigateToControl } = useSecurityNavigation();
+  const refreshReviewRunAutomation = useAction(api.securityReviews.refreshReviewRunAutomation);
+  const finalizeReviewRun = useAction(api.securityReviews.finalizeReviewRun);
+  const ensureCurrentAnnualReviewRun = useMutation(
+    api.securityReviews.ensureCurrentAnnualReviewRun,
+  );
+  const createTriggeredReviewRun = useMutation(api.securityReviews.createTriggeredReviewRun);
+  const attestReviewTask = useMutation(api.securityReviews.attestReviewTask);
+  const setReviewTaskException = useMutation(api.securityReviews.setReviewTaskException);
+  const openTriggeredFollowUp = useMutation(api.securityReviews.openTriggeredFollowUp);
+  const currentAnnualReviewRunQuery = useQuery(api.securityReviews.getCurrentAnnualReviewRun, {}) as
+    | ReviewRunSummary
+    | null
+    | undefined;
+  const triggeredReviewRuns = useQuery(api.securityReviews.listTriggeredReviewRuns, {}) as
+    | ReviewRunSummary[]
+    | undefined;
+  const [localAnnualReviewRun, setLocalAnnualReviewRun] = useState<ReviewRunSummary | null>(null);
+  const [localAnnualReviewDetail, setLocalAnnualReviewDetail] = useState<ReviewRunDetail | null>(
+    null,
+  );
+  const currentAnnualReviewRun = currentAnnualReviewRunQuery ?? localAnnualReviewRun;
+  const currentAnnualReviewDetailQuery = useQuery(
+    api.securityReviews.getReviewRunDetail,
+    currentAnnualReviewRun?.id
+      ? { reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'> }
+      : 'skip',
+  ) as ReviewRunDetail | null | undefined;
+  const currentAnnualReviewDetail = currentAnnualReviewDetailQuery ?? localAnnualReviewDetail;
+  const [busyReviewRunAction, setBusyReviewRunAction] = useState<string | null>(null);
+  const [busyReviewTaskAction, setBusyReviewTaskAction] = useState<string | null>(null);
+  const [isPreparingAnnualReview, setIsPreparingAnnualReview] = useState(false);
+  const [reviewTaskNotes, setReviewTaskNotes] = useState<Record<string, string>>({});
+  const [reviewTaskDocuments, setReviewTaskDocuments] = useState<
+    Record<string, { label: string; url: string; version: string }>
+  >({});
+  const [newTriggeredReviewTitle, setNewTriggeredReviewTitle] = useState('');
+  const [newTriggeredReviewType, setNewTriggeredReviewType] = useState('manual_follow_up');
+  const reviewsInitializedRef = useRef(false);
+  const reviewsRefreshedForRunRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentAnnualReviewRunQuery !== undefined) {
+      setLocalAnnualReviewRun(currentAnnualReviewRunQuery);
+    }
+  }, [currentAnnualReviewRunQuery]);
+
+  useEffect(() => {
+    if (currentAnnualReviewDetailQuery !== undefined) {
+      setLocalAnnualReviewDetail(currentAnnualReviewDetailQuery);
+    }
+  }, [currentAnnualReviewDetailQuery]);
+
+  useEffect(() => {
+    if (reviewsInitializedRef.current) {
+      return;
+    }
+    if (currentAnnualReviewRunQuery === undefined) {
+      return;
+    }
+    if (currentAnnualReviewRunQuery !== null) {
+      reviewsInitializedRef.current = true;
+      return;
+    }
+
+    reviewsInitializedRef.current = true;
+    setIsPreparingAnnualReview(true);
+    void ensureCurrentAnnualReviewRun({})
+      .then(async (run) => {
+        setLocalAnnualReviewRun(run);
+        const detail = await refreshReviewRunAutomation({
+          reviewRunId: run.id as Id<'reviewRuns'>,
+        });
+        if (detail) {
+          setLocalAnnualReviewDetail(detail);
+          setLocalAnnualReviewRun(mergeReviewRunSummaryWithDetail(run, detail));
+        }
+      })
+      .catch((error: unknown) => {
+        reviewsInitializedRef.current = false;
+        showToast(
+          error instanceof Error ? error.message : 'Failed to initialize annual review.',
+          'error',
+        );
+      })
+      .finally(() => {
+        setIsPreparingAnnualReview(false);
+      });
+  }, [
+    currentAnnualReviewRunQuery,
+    ensureCurrentAnnualReviewRun,
+    refreshReviewRunAutomation,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!currentAnnualReviewRun?.id) {
+      return;
+    }
+    if (reviewsRefreshedForRunRef.current === currentAnnualReviewRun.id) {
+      return;
+    }
+
+    reviewsRefreshedForRunRef.current = currentAnnualReviewRun.id;
+    void refreshReviewRunAutomation({
+      reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+    })
+      .then((detail) => {
+        if (detail) {
+          setLocalAnnualReviewDetail(detail);
+          setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
+        }
+      })
+      .catch((error: unknown) => {
+        reviewsRefreshedForRunRef.current = null;
+        showToast(
+          error instanceof Error ? error.message : 'Failed to refresh review automation.',
+          'error',
+        );
+      });
+  }, [currentAnnualReviewRun?.id, refreshReviewRunAutomation, showToast]);
+
+  const reviewTaskGroups = useMemo(
+    () => ({
+      autoCollected:
+        currentAnnualReviewDetail?.tasks.filter((task) => task.taskType === 'automated_check') ??
+        [],
+      blocked: currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'blocked') ?? [],
+      needsAttestation:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) => task.taskType === 'attestation' && task.status !== 'completed',
+        ) ?? [],
+      needsDocumentUpload:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) => task.taskType === 'document_upload' && task.status !== 'completed',
+        ) ?? [],
+    }),
+    [currentAnnualReviewDetail],
+  );
+
+  const autoCollectedEvidenceLinks = useMemo(
+    () =>
+      reviewTaskGroups.autoCollected.flatMap((task) => {
+        const latestLink = task.evidenceLinks[0];
+        return latestLink
+          ? [
+              {
+                link: latestLink,
+                taskTitle: task.title,
+              },
+            ]
+          : [];
+      }),
+    [reviewTaskGroups.autoCollected],
+  );
+
+  const reviewExceptionTasks = useMemo(
+    () => currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'exception') ?? [],
+    [currentAnnualReviewDetail],
+  );
+
+  const reviewFinalizeState = useMemo(() => {
+    const tasks = currentAnnualReviewDetail?.tasks ?? [];
+    const requiredBlocked = tasks.filter((task) => task.required && task.status === 'blocked');
+    const requiredRemaining = tasks.filter(
+      (task) =>
+        task.required &&
+        task.status !== 'blocked' &&
+        task.status !== 'completed' &&
+        task.status !== 'exception',
+    );
+    const remainingByType = requiredRemaining.reduce(
+      (counts, task) => {
+        counts[task.taskType] += 1;
+        return counts;
+      },
+      {
+        attestation: 0,
+        automated_check: 0,
+        document_upload: 0,
+        follow_up: 0,
+      },
+    );
+
+    return {
+      canFinalize: requiredBlocked.length === 0 && requiredRemaining.length === 0,
+      remainingByType,
+      requiredBlocked,
+      requiredRemaining,
+    };
+  }, [currentAnnualReviewDetail]);
 
   const handleRefreshAnnualReview = useCallback(async () => {
     if (!currentAnnualReviewRun?.id) {
@@ -1198,262 +1567,48 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [openTriggeredFollowUp, reviewTaskNotes, showToast],
   );
-  const handleOpenLinkedEntity = useCallback(
-    (entity: SecurityControlWorkspace['linkedEntities'][number]) => {
-      switch (entity.entityType) {
-        case 'control':
-          navigateToControl(entity.entityId);
-          return;
-        case 'review_run':
-        case 'review_task':
-          navigateToReviews();
-          return;
-        case 'evidence_report':
-        case 'finding':
-        case 'vendor_review':
-          navigateToOperation(entity.entityType, entity.entityId);
-          return;
-        default:
-          return;
-      }
-    },
-    [navigateToControl, navigateToOperation, navigateToReviews],
-  );
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title="Security Posture"
-        description="Review control implementation, evidence posture, vendor boundaries, and security oversight workflows."
-      />
-
-      <Tabs
-        value={activeTab}
-        onValueChange={(value) => {
-          if (!isSecurityTab(value) || value === activeTab) {
-            return;
-          }
-
-          void navigate({
-            to: '/app/admin/security',
-            search: {
-              ...search,
-              tab: value,
-              selectedControl: value === 'controls' ? search.selectedControl : undefined,
-              selectedPolicy: value === 'policies' ? search.selectedPolicy : undefined,
-              selectedOperationId: value === 'operations' ? search.selectedOperationId : undefined,
-              selectedOperationType:
-                value === 'operations' ? search.selectedOperationType : undefined,
-            },
-          });
-        }}
-      >
-        <TabsList className="w-full justify-start overflow-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="policies">Policies</TabsTrigger>
-          <TabsTrigger value="controls">Controls</TabsTrigger>
-          <TabsTrigger value="operations">Operations</TabsTrigger>
-          <TabsTrigger value="reviews">Reviews</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-6">
-          <AdminSecurityOverviewTab controlSummary={controlSummary} summary={summary} />
-        </TabsContent>
-
-        <TabsContent value="controls" className="space-y-6">
-          <AdminSecurityControlsTab
-            controlColumns={controlColumns}
-            controlPagination={controlPagination}
-            controlSearchParams={controlSearchParams}
-            controlSearchTerm={controlSearchTerm}
-            controlSummary={controlSummary}
-            supportFilter={supportFilter}
-            supportOptions={supportOptions}
-            familyFilter={familyFilter}
-            familyOptions={familyOptions}
-            handleControlPageChange={handleControlPageChange}
-            handleControlPageSizeChange={handleControlPageSizeChange}
-            handleExportControls={handleExportControls}
-            isExportingControls={isExportingControls}
-            paginatedControls={paginatedControls}
-            responsibilityFilter={responsibilityFilter}
-            responsibilityOptions={responsibilityOptions}
-            sortedControls={sortedControls}
-            updateControlSearch={updateControlSearch}
-          />
-        </TabsContent>
-
-        <TabsContent value="policies" className="space-y-6">
-          <AdminSecurityPoliciesTab
-            busySync={isSyncingPolicies}
-            onOpenPolicy={navigateToPolicy}
-            onSyncPolicies={handleSyncPolicies}
-            policies={policySummaries}
-          />
-        </TabsContent>
-
-        <TabsContent value="operations" className="space-y-6">
-          <AdminSecurityOperationsTab
-            auditReadiness={auditReadiness}
-            auditReadinessSummary={auditReadinessSummary}
-            busyFindingKey={busyFindingKey}
-            busyReportAction={busyReportAction}
-            busyVendorKey={busyVendorKey}
-            evidenceReports={evidenceReports}
-            findingCustomerSummaries={findingCustomerSummaries}
-            findingDispositions={findingDispositions}
-            findingNotes={findingNotes}
-            findingSummary={findingSummary}
-            handleExportReport={handleExportReport}
-            handleGenerateReport={handleGenerateReport}
-            handleOpenFindingFollowUp={handleOpenFindingFollowUp}
-            handleOpenReportDetail={handleOpenReportDetail}
-            handleReviewFinding={handleReviewFinding}
-            handleReviewReport={handleReviewReport}
-            handleReviewVendor={handleReviewVendor}
-            isGenerating={isGenerating}
-            navigateToControl={navigateToControl}
-            navigateToReviews={navigateToReviews}
-            report={report}
-            reportCustomerSummaries={reportCustomerSummaries}
-            restoreDrillFooter={restoreDrillFooter}
-            reportNotes={reportNotes}
-            securityFindings={securityFindings}
-            selectedOperationDetail={selectedOperationDetail}
-            selectedOperationId={resolvedSelectedOperationId}
-            selectedOperationType={resolvedSelectedOperationType}
-            onSelectOperation={handleSelectOperation}
-            setFindingCustomerSummaries={setFindingCustomerSummaries}
-            setFindingDispositions={setFindingDispositions}
-            setFindingNotes={setFindingNotes}
-            setReportCustomerSummaries={setReportCustomerSummaries}
-            setReportNotes={setReportNotes}
-            setVendorCustomerSummaries={setVendorCustomerSummaries}
-            setVendorNotes={setVendorNotes}
-            setVendorOwners={setVendorOwners}
-            triggeredReviewRuns={triggeredReviewRunItems}
-            vendorCustomerSummaries={vendorCustomerSummaries}
-            vendorNotes={vendorNotes}
-            vendorOwners={vendorOwners}
-            vendorWorkspaces={vendorWorkspaces}
-          />
-        </TabsContent>
-
-        <TabsContent value="reviews" className="space-y-6">
-          <AdminSecurityReviewsTab
-            autoCollectedEvidenceLinks={autoCollectedEvidenceLinks}
-            busyReviewRunAction={busyReviewRunAction}
-            busyReviewTaskAction={busyReviewTaskAction}
-            currentAnnualReviewRun={currentAnnualReviewRun}
-            handleAttestTask={handleAttestTask}
-            handleCreateTriggeredReviewRun={handleCreateTriggeredReviewRun}
-            handleExceptionTask={handleExceptionTask}
-            handleFinalizeAnnualReview={handleFinalizeAnnualReview}
-            handleOpenReviewFollowUp={handleOpenReviewFollowUp}
-            handleRefreshAnnualReview={handleRefreshAnnualReview}
-            isPreparingAnnualReview={isPreparingAnnualReview}
-            navigateToControl={navigateToControl}
-            newTriggeredReviewTitle={newTriggeredReviewTitle}
-            newTriggeredReviewType={newTriggeredReviewType}
-            onChangeDocumentField={(taskId, field, value) => {
-              setReviewTaskDocuments((current) => ({
-                ...current,
-                [taskId]: {
-                  label: current[taskId]?.label ?? '',
-                  url: current[taskId]?.url ?? '',
-                  version: current[taskId]?.version ?? '',
-                  [field]: value,
-                },
-              }));
-            }}
-            onChangeNote={(taskId, value) => {
-              setReviewTaskNotes((current) => ({
-                ...current,
-                [taskId]: value,
-              }));
-            }}
-            reviewExceptionTasks={reviewExceptionTasks}
-            reviewFinalizeState={reviewFinalizeState}
-            reviewTaskDocuments={reviewTaskDocuments}
-            reviewTaskGroups={reviewTaskGroups}
-            reviewTaskNotes={reviewTaskNotes}
-            setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
-            setNewTriggeredReviewType={setNewTriggeredReviewType}
-            triggeredReviewRuns={triggeredReviewRunItems}
-          />
-        </TabsContent>
-      </Tabs>
-
-      <Sheet
-        open={selectedControlId !== undefined}
-        onOpenChange={(open) => {
-          if (open) {
-            return;
-          }
-
-          updateControlSearch({ selectedControl: undefined });
-        }}
-      >
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          {!selectedControl ? (
-            <SheetHeader className="sr-only">
-              <SheetTitle>Security control detail</SheetTitle>
-              <SheetDescription>
-                Review the selected security control, its checklist, and linked operations.
-              </SheetDescription>
-            </SheetHeader>
-          ) : null}
-          {selectedControl === undefined && selectedControlId ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading control detail…</div>
-          ) : selectedControl ? (
-            <AdminSecurityControlDetail
-              busyAction={busyControlAction}
-              control={selectedControl}
-              onAddEvidenceLink={handleAddEvidenceLink}
-              onAddEvidenceNote={handleAddEvidenceNote}
-              onArchiveEvidence={handleArchiveEvidence}
-              onOpenEvidence={handleOpenEvidence}
-              onOpenLinkedEntity={handleOpenLinkedEntity}
-              onOpenReviews={navigateToReviews}
-              onReviewEvidence={handleReviewEvidence}
-              onRenewEvidence={handleRenewEvidence}
-              onUploadEvidenceFile={handleUploadEvidenceFile}
-            />
-          ) : null}
-        </SheetContent>
-      </Sheet>
-
-      <Sheet
-        open={selectedPolicyId !== undefined}
-        onOpenChange={(open) => {
-          if (open) {
-            return;
-          }
-
-          void navigate({
-            to: '/app/admin/security',
-            search: {
-              ...search,
-              selectedPolicy: undefined,
-              tab: 'policies',
-            },
-          });
-        }}
-      >
-        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
-          <SheetHeader className="sr-only">
-            <SheetTitle>Security policy detail</SheetTitle>
-            <SheetDescription>
-              Review the selected policy, its mapped controls, and annual review linkage.
-            </SheetDescription>
-          </SheetHeader>
-          {selectedPolicy === undefined && selectedPolicyId ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading policy detail…</div>
-          ) : selectedPolicy ? (
-            <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy} />
-          ) : null}
-        </SheetContent>
-      </Sheet>
-    </div>
+    <AdminSecurityReviewsTab
+      autoCollectedEvidenceLinks={autoCollectedEvidenceLinks}
+      busyReviewRunAction={busyReviewRunAction}
+      busyReviewTaskAction={busyReviewTaskAction}
+      currentAnnualReviewRun={currentAnnualReviewRun}
+      handleAttestTask={handleAttestTask}
+      handleCreateTriggeredReviewRun={handleCreateTriggeredReviewRun}
+      handleExceptionTask={handleExceptionTask}
+      handleFinalizeAnnualReview={handleFinalizeAnnualReview}
+      handleOpenReviewFollowUp={handleOpenReviewFollowUp}
+      handleRefreshAnnualReview={handleRefreshAnnualReview}
+      isPreparingAnnualReview={isPreparingAnnualReview}
+      navigateToControl={navigateToControl}
+      newTriggeredReviewTitle={newTriggeredReviewTitle}
+      newTriggeredReviewType={newTriggeredReviewType}
+      onChangeDocumentField={(taskId, field, value) => {
+        setReviewTaskDocuments((current) => ({
+          ...current,
+          [taskId]: {
+            label: current[taskId]?.label ?? '',
+            url: current[taskId]?.url ?? '',
+            version: current[taskId]?.version ?? '',
+            [field]: value,
+          },
+        }));
+      }}
+      onChangeNote={(taskId, value) => {
+        setReviewTaskNotes((current) => ({
+          ...current,
+          [taskId]: value,
+        }));
+      }}
+      reviewExceptionTasks={reviewExceptionTasks}
+      reviewFinalizeState={reviewFinalizeState}
+      reviewTaskDocuments={reviewTaskDocuments}
+      reviewTaskGroups={reviewTaskGroups}
+      reviewTaskNotes={reviewTaskNotes}
+      setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
+      setNewTriggeredReviewType={setNewTriggeredReviewType}
+      triggeredReviewRuns={triggeredReviewRuns}
+    />
   );
 }

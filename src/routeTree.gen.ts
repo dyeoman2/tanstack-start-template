@@ -44,12 +44,17 @@ import { Route as ApiTestE2eAuthRouteImport } from './routes/api/test/e2e-auth'
 import { Route as ApiTestAgentAuthRouteImport } from './routes/api/test/agent-auth'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppOrganizationsSlugIndexRouteImport } from './routes/app/organizations/$slug/index'
+import { Route as AppAdminSecurityIndexRouteImport } from './routes/app/admin/security.index'
 import { Route as AppOrganizationsSlugSettingsRouteImport } from './routes/app/organizations/$slug/settings'
 import { Route as AppOrganizationsSlugPoliciesRouteImport } from './routes/app/organizations/$slug/policies'
 import { Route as AppOrganizationsSlugMembersRouteImport } from './routes/app/organizations/$slug/members'
 import { Route as AppOrganizationsSlugIdentityRouteImport } from './routes/app/organizations/$slug/identity'
 import { Route as AppOrganizationsSlugDomainsRouteImport } from './routes/app/organizations/$slug/domains'
 import { Route as AppOrganizationsSlugAuditRouteImport } from './routes/app/organizations/$slug/audit'
+import { Route as AppAdminSecurityReviewsRouteImport } from './routes/app/admin/security.reviews'
+import { Route as AppAdminSecurityPoliciesRouteImport } from './routes/app/admin/security.policies'
+import { Route as AppAdminSecurityOperationsRouteImport } from './routes/app/admin/security.operations'
+import { Route as AppAdminSecurityControlsRouteImport } from './routes/app/admin/security.controls'
 
 const VerifyEmailPendingRoute = VerifyEmailPendingRouteImport.update({
   id: '/verify-email-pending',
@@ -227,6 +232,11 @@ const AppOrganizationsSlugIndexRoute =
     path: '/organizations/$slug/',
     getParentRoute: () => AppRoute,
   } as any)
+const AppAdminSecurityIndexRoute = AppAdminSecurityIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => AppAdminSecurityRoute,
+} as any)
 const AppOrganizationsSlugSettingsRoute =
   AppOrganizationsSlugSettingsRouteImport.update({
     id: '/organizations/$slug/settings',
@@ -263,6 +273,29 @@ const AppOrganizationsSlugAuditRoute =
     path: '/organizations/$slug/audit',
     getParentRoute: () => AppRoute,
   } as any)
+const AppAdminSecurityReviewsRoute = AppAdminSecurityReviewsRouteImport.update({
+  id: '/reviews',
+  path: '/reviews',
+  getParentRoute: () => AppAdminSecurityRoute,
+} as any)
+const AppAdminSecurityPoliciesRoute =
+  AppAdminSecurityPoliciesRouteImport.update({
+    id: '/policies',
+    path: '/policies',
+    getParentRoute: () => AppAdminSecurityRoute,
+  } as any)
+const AppAdminSecurityOperationsRoute =
+  AppAdminSecurityOperationsRouteImport.update({
+    id: '/operations',
+    path: '/operations',
+    getParentRoute: () => AppAdminSecurityRoute,
+  } as any)
+const AppAdminSecurityControlsRoute =
+  AppAdminSecurityControlsRouteImport.update({
+    id: '/controls',
+    path: '/controls',
+    getParentRoute: () => AppAdminSecurityRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -291,7 +324,7 @@ export interface FileRoutesByFullPath {
   '/app/admin': typeof AppAdminLayoutRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
-  '/app/admin/security': typeof AppAdminSecurityRoute
+  '/app/admin/security': typeof AppAdminSecurityRouteWithChildren
   '/app/admin/stats': typeof AppAdminStatsRoute
   '/app/admin/users': typeof AppAdminUsersRoute
   '/app/chat/$threadId': typeof AppChatThreadIdRoute
@@ -299,12 +332,17 @@ export interface FileRoutesByFullPath {
   '/app/admin/': typeof AppAdminIndexRoute
   '/app/chat/': typeof AppChatIndexRoute
   '/app/organizations/': typeof AppOrganizationsIndexRoute
+  '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
+  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
   '/app/organizations/$slug/domains': typeof AppOrganizationsSlugDomainsRoute
   '/app/organizations/$slug/identity': typeof AppOrganizationsSlugIdentityRoute
   '/app/organizations/$slug/members': typeof AppOrganizationsSlugMembersRoute
   '/app/organizations/$slug/policies': typeof AppOrganizationsSlugPoliciesRoute
   '/app/organizations/$slug/settings': typeof AppOrganizationsSlugSettingsRoute
+  '/app/admin/security/': typeof AppAdminSecurityIndexRoute
   '/app/organizations/$slug/': typeof AppOrganizationsSlugIndexRoute
 }
 export interface FileRoutesByTo {
@@ -333,18 +371,22 @@ export interface FileRoutesByTo {
   '/app/admin': typeof AppAdminIndexRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
-  '/app/admin/security': typeof AppAdminSecurityRoute
   '/app/admin/stats': typeof AppAdminStatsRoute
   '/app/admin/users': typeof AppAdminUsersRoute
   '/app/chat/$threadId': typeof AppChatThreadIdRoute
   '/app/organizations': typeof AppOrganizationsIndexRoute
   '/app/chat': typeof AppChatIndexRoute
+  '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
+  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
   '/app/organizations/$slug/domains': typeof AppOrganizationsSlugDomainsRoute
   '/app/organizations/$slug/identity': typeof AppOrganizationsSlugIdentityRoute
   '/app/organizations/$slug/members': typeof AppOrganizationsSlugMembersRoute
   '/app/organizations/$slug/policies': typeof AppOrganizationsSlugPoliciesRoute
   '/app/organizations/$slug/settings': typeof AppOrganizationsSlugSettingsRoute
+  '/app/admin/security': typeof AppAdminSecurityIndexRoute
   '/app/organizations/$slug': typeof AppOrganizationsSlugIndexRoute
 }
 export interface FileRoutesById {
@@ -375,7 +417,7 @@ export interface FileRoutesById {
   '/app/admin/_layout': typeof AppAdminLayoutRoute
   '/app/admin/emails': typeof AppAdminEmailsRoute
   '/app/admin/models': typeof AppAdminModelsRoute
-  '/app/admin/security': typeof AppAdminSecurityRoute
+  '/app/admin/security': typeof AppAdminSecurityRouteWithChildren
   '/app/admin/stats': typeof AppAdminStatsRoute
   '/app/admin/users': typeof AppAdminUsersRoute
   '/app/chat/$threadId': typeof AppChatThreadIdRoute
@@ -383,12 +425,17 @@ export interface FileRoutesById {
   '/app/admin/': typeof AppAdminIndexRoute
   '/app/chat/': typeof AppChatIndexRoute
   '/app/organizations/': typeof AppOrganizationsIndexRoute
+  '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
+  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
   '/app/organizations/$slug/domains': typeof AppOrganizationsSlugDomainsRoute
   '/app/organizations/$slug/identity': typeof AppOrganizationsSlugIdentityRoute
   '/app/organizations/$slug/members': typeof AppOrganizationsSlugMembersRoute
   '/app/organizations/$slug/policies': typeof AppOrganizationsSlugPoliciesRoute
   '/app/organizations/$slug/settings': typeof AppOrganizationsSlugSettingsRoute
+  '/app/admin/security/': typeof AppAdminSecurityIndexRoute
   '/app/organizations/$slug/': typeof AppOrganizationsSlugIndexRoute
 }
 export interface FileRouteTypes {
@@ -428,12 +475,17 @@ export interface FileRouteTypes {
     | '/app/admin/'
     | '/app/chat/'
     | '/app/organizations/'
+    | '/app/admin/security/controls'
+    | '/app/admin/security/operations'
+    | '/app/admin/security/policies'
+    | '/app/admin/security/reviews'
     | '/app/organizations/$slug/audit'
     | '/app/organizations/$slug/domains'
     | '/app/organizations/$slug/identity'
     | '/app/organizations/$slug/members'
     | '/app/organizations/$slug/policies'
     | '/app/organizations/$slug/settings'
+    | '/app/admin/security/'
     | '/app/organizations/$slug/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -462,18 +514,22 @@ export interface FileRouteTypes {
     | '/app/admin'
     | '/app/admin/emails'
     | '/app/admin/models'
-    | '/app/admin/security'
     | '/app/admin/stats'
     | '/app/admin/users'
     | '/app/chat/$threadId'
     | '/app/organizations'
     | '/app/chat'
+    | '/app/admin/security/controls'
+    | '/app/admin/security/operations'
+    | '/app/admin/security/policies'
+    | '/app/admin/security/reviews'
     | '/app/organizations/$slug/audit'
     | '/app/organizations/$slug/domains'
     | '/app/organizations/$slug/identity'
     | '/app/organizations/$slug/members'
     | '/app/organizations/$slug/policies'
     | '/app/organizations/$slug/settings'
+    | '/app/admin/security'
     | '/app/organizations/$slug'
   id:
     | '__root__'
@@ -511,12 +567,17 @@ export interface FileRouteTypes {
     | '/app/admin/'
     | '/app/chat/'
     | '/app/organizations/'
+    | '/app/admin/security/controls'
+    | '/app/admin/security/operations'
+    | '/app/admin/security/policies'
+    | '/app/admin/security/reviews'
     | '/app/organizations/$slug/audit'
     | '/app/organizations/$slug/domains'
     | '/app/organizations/$slug/identity'
     | '/app/organizations/$slug/members'
     | '/app/organizations/$slug/policies'
     | '/app/organizations/$slug/settings'
+    | '/app/admin/security/'
     | '/app/organizations/$slug/'
   fileRoutesById: FileRoutesById
 }
@@ -791,6 +852,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationsSlugIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/admin/security/': {
+      id: '/app/admin/security/'
+      path: '/'
+      fullPath: '/app/admin/security/'
+      preLoaderRoute: typeof AppAdminSecurityIndexRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
     '/app/organizations/$slug/settings': {
       id: '/app/organizations/$slug/settings'
       path: '/organizations/$slug/settings'
@@ -833,8 +901,55 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppOrganizationsSlugAuditRouteImport
       parentRoute: typeof AppRoute
     }
+    '/app/admin/security/reviews': {
+      id: '/app/admin/security/reviews'
+      path: '/reviews'
+      fullPath: '/app/admin/security/reviews'
+      preLoaderRoute: typeof AppAdminSecurityReviewsRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
+    '/app/admin/security/policies': {
+      id: '/app/admin/security/policies'
+      path: '/policies'
+      fullPath: '/app/admin/security/policies'
+      preLoaderRoute: typeof AppAdminSecurityPoliciesRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
+    '/app/admin/security/operations': {
+      id: '/app/admin/security/operations'
+      path: '/operations'
+      fullPath: '/app/admin/security/operations'
+      preLoaderRoute: typeof AppAdminSecurityOperationsRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
+    '/app/admin/security/controls': {
+      id: '/app/admin/security/controls'
+      path: '/controls'
+      fullPath: '/app/admin/security/controls'
+      preLoaderRoute: typeof AppAdminSecurityControlsRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
   }
 }
+
+interface AppAdminSecurityRouteChildren {
+  AppAdminSecurityControlsRoute: typeof AppAdminSecurityControlsRoute
+  AppAdminSecurityOperationsRoute: typeof AppAdminSecurityOperationsRoute
+  AppAdminSecurityPoliciesRoute: typeof AppAdminSecurityPoliciesRoute
+  AppAdminSecurityReviewsRoute: typeof AppAdminSecurityReviewsRoute
+  AppAdminSecurityIndexRoute: typeof AppAdminSecurityIndexRoute
+}
+
+const AppAdminSecurityRouteChildren: AppAdminSecurityRouteChildren = {
+  AppAdminSecurityControlsRoute: AppAdminSecurityControlsRoute,
+  AppAdminSecurityOperationsRoute: AppAdminSecurityOperationsRoute,
+  AppAdminSecurityPoliciesRoute: AppAdminSecurityPoliciesRoute,
+  AppAdminSecurityReviewsRoute: AppAdminSecurityReviewsRoute,
+  AppAdminSecurityIndexRoute: AppAdminSecurityIndexRoute,
+}
+
+const AppAdminSecurityRouteWithChildren =
+  AppAdminSecurityRoute._addFileChildren(AppAdminSecurityRouteChildren)
 
 interface AppRouteChildren {
   AppProfileRoute: typeof AppProfileRoute
@@ -842,7 +957,7 @@ interface AppRouteChildren {
   AppAdminLayoutRoute: typeof AppAdminLayoutRoute
   AppAdminEmailsRoute: typeof AppAdminEmailsRoute
   AppAdminModelsRoute: typeof AppAdminModelsRoute
-  AppAdminSecurityRoute: typeof AppAdminSecurityRoute
+  AppAdminSecurityRoute: typeof AppAdminSecurityRouteWithChildren
   AppAdminStatsRoute: typeof AppAdminStatsRoute
   AppAdminUsersRoute: typeof AppAdminUsersRoute
   AppChatThreadIdRoute: typeof AppChatThreadIdRoute
@@ -865,7 +980,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminLayoutRoute: AppAdminLayoutRoute,
   AppAdminEmailsRoute: AppAdminEmailsRoute,
   AppAdminModelsRoute: AppAdminModelsRoute,
-  AppAdminSecurityRoute: AppAdminSecurityRoute,
+  AppAdminSecurityRoute: AppAdminSecurityRouteWithChildren,
   AppAdminStatsRoute: AppAdminStatsRoute,
   AppAdminUsersRoute: AppAdminUsersRoute,
   AppChatThreadIdRoute: AppChatThreadIdRoute,

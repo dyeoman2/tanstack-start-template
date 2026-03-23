@@ -2,10 +2,14 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
+import {
+  AdminSecurityLayout,
+  AdminSecurityRoute,
+} from '~/features/security/components/AdminSecurityRoute';
 
 const {
   useSearchMock,
+  useLocationMock,
   navigateMock,
   useQueryMock,
   useActionMock,
@@ -14,6 +18,7 @@ const {
   showToastMock,
 } = vi.hoisted(() => ({
   useSearchMock: vi.fn(),
+  useLocationMock: vi.fn(),
   navigateMock: vi.fn(),
   useQueryMock: vi.fn(),
   useActionMock: vi.fn(),
@@ -27,6 +32,7 @@ vi.mock('@tanstack/react-router', () => ({
     options: config,
     useSearch: useSearchMock,
   }),
+  useLocation: () => useLocationMock(),
   useNavigate: () => navigateMock,
 }));
 
@@ -751,6 +757,7 @@ describe('Admin security route', () => {
     window.HTMLElement.prototype.releasePointerCapture = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     useSearchMock.mockReturnValue(defaultSearch);
+    useLocationMock.mockReturnValue({ pathname: '/app/admin/security/operations' });
     useActionMock.mockReset();
     useMutationMock.mockReset();
     useQueryMock.mockReset();
@@ -1117,9 +1124,8 @@ describe('Admin security route', () => {
       search: expect.objectContaining({
         selectedOperationId: 'report-1',
         selectedOperationType: 'evidence_report',
-        tab: 'operations',
       }),
-      to: '/app/admin/security',
+      to: '/app/admin/security/operations',
     });
 
     useSearchMock.mockReturnValue({
@@ -1141,9 +1147,8 @@ describe('Admin security route', () => {
     expect(navigateMock).toHaveBeenCalledWith({
       search: expect.objectContaining({
         selectedControl: 'ac-1',
-        tab: 'controls',
       }),
-      to: '/app/admin/security',
+      to: '/app/admin/security/controls',
     });
   });
 
@@ -1338,9 +1343,8 @@ describe('Admin security route', () => {
     expect(navigateMock).toHaveBeenCalledWith({
       search: expect.objectContaining({
         selectedControl: 'CTRL-AU-006',
-        tab: 'controls',
       }),
-      to: '/app/admin/security',
+      to: '/app/admin/security/controls',
     });
 
     await user.type(screen.getByPlaceholderText('Triggered review title'), 'Manual follow-up');
@@ -1382,6 +1386,45 @@ describe('Admin security route', () => {
     await waitFor(() => {
       expect(refreshReviewRunAutomationMock).toHaveBeenCalledWith({
         reviewRunId: 'review-run-1',
+      });
+    });
+  });
+
+  it('redirects legacy tab search params to the dedicated tab routes', async () => {
+    useLocationMock.mockReturnValue({ pathname: '/app/admin/security' });
+
+    render(
+      <AdminSecurityLayout
+        search={{
+          page: 2,
+          pageSize: 20,
+          search: 'access',
+          selectedControl: 'ac-1',
+          sortBy: 'support',
+          sortOrder: 'desc',
+          support: 'partial',
+          tab: 'controls',
+        }}
+      >
+        <div>child</div>
+      </AdminSecurityLayout>,
+    );
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        replace: true,
+        search: {
+          family: undefined,
+          page: 2,
+          pageSize: 20,
+          responsibility: undefined,
+          search: 'access',
+          selectedControl: 'ac-1',
+          sortBy: 'support',
+          sortOrder: 'desc',
+          support: 'partial',
+        },
+        to: '/app/admin/security/controls',
       });
     });
   });

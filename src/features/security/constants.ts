@@ -1,4 +1,11 @@
 export const SECURITY_TABS = ['overview', 'controls', 'policies', 'operations', 'reviews'] as const;
+export const SECURITY_TAB_PATHS = {
+  overview: '/app/admin/security',
+  controls: '/app/admin/security/controls',
+  policies: '/app/admin/security/policies',
+  operations: '/app/admin/security/operations',
+  reviews: '/app/admin/security/reviews',
+} as const;
 
 export const CONTROL_TABLE_SORT_FIELDS = [
   'control',

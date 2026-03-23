@@ -113,7 +113,7 @@
     "dr:sync-env": "bash ./scripts/sync-dr-env-to-secrets-manager.sh"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.1014.0",
+    "@aws-sdk/client-s3": "^3.1015.0",
     "@better-auth/passkey": "1.5.6",
     "@better-auth/scim": "^1.5.6",
     "@convex-dev/agent": "^0.6.1",
@@ -148,7 +148,7 @@
     "@tanstack/react-start": "^1.167.5",
     "@tanstack/react-table": "^8.21.3",
     "@tanstack/router-plugin": "^1.167.4",
-    "ai": "^6.0.136",
+    "ai": "^6.0.137",
     "better-auth": "^1.5.6",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -197,7 +197,7 @@
     "constructs": "^10.6.0",
     "husky": "^9.1.7",
     "jsdom": "^29.0.1",
-    "knip": "^6.0.3",
+    "knip": "^6.0.4",
     "lint-staged": "^16.4.0",
     "oxfmt": "^0.41.0",
     "oxlint": "^1.56.0",
