@@ -57,7 +57,6 @@ import type * as lib_securityEvidenceActivity from "../lib/securityEvidenceActiv
 import type * as lib_securityReviewConfig from "../lib/securityReviewConfig.js";
 import type * as lib_securityWorkspaceOverview from "../lib/securityWorkspaceOverview.js";
 import type * as lib_storageS3 from "../lib/storageS3.js";
-import type * as migrations from "../migrations.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
@@ -135,7 +134,6 @@ declare const fullApi: ApiFromModules<{
   "lib/securityReviewConfig": typeof lib_securityReviewConfig;
   "lib/securityWorkspaceOverview": typeof lib_securityWorkspaceOverview;
   "lib/storageS3": typeof lib_storageS3;
-  migrations: typeof migrations;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
   playground: typeof playground;

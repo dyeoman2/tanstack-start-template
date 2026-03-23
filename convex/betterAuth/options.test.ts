@@ -18,9 +18,8 @@ describe('getOptions', () => {
     expect(options.rateLimit?.storage).toBe('database');
   });
 
-  it('does not require BETTER_AUTH_URL in tooling mode', () => {
+  it('can build tooling options with the deterministic loopback fallback', () => {
     delete process.env.BETTER_AUTH_URL;
-    delete process.env.SITE_URL;
 
     expect(() => getOptions('tooling')).not.toThrow();
   });

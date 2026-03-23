@@ -49,9 +49,8 @@ describe('Better Auth env helpers', () => {
     process.env = { ...ORIGINAL_ENV };
   });
 
-  it('prefers BETTER_AUTH_URL over generic site url envs', () => {
+  it('uses BETTER_AUTH_URL as the canonical Better Auth origin', () => {
     process.env.BETTER_AUTH_URL = 'https://auth.example.com';
-    process.env.SITE_URL = 'https://site.example.com';
 
     expect(getBetterAuthAllowedHosts()).toEqual(['auth.example.com']);
     expect(getBetterAuthTrustedOrigins()).toEqual(['https://auth.example.com']);
@@ -85,11 +84,10 @@ describe('Better Auth env helpers', () => {
     ]);
   });
 
-  it('requires BETTER_AUTH_URL for strict helpers but infers trusted origins like tooling URL', () => {
+  it('requires BETTER_AUTH_URL for production Better Auth helpers', () => {
     process.env.NODE_ENV = 'production';
     delete process.env.VITEST;
     delete process.env.BETTER_AUTH_URL;
-    process.env.SITE_URL = 'https://site.example.com';
 
     expect(() => getRequiredBetterAuthUrl()).toThrow(
       'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
@@ -97,17 +95,18 @@ describe('Better Auth env helpers', () => {
     expect(() => getBetterAuthAllowedHosts()).toThrow(
       'BETTER_AUTH_URL environment variable is required for Better Auth configuration.',
     );
-    // Convex / Better Auth trustedOrigins must not throw: same fallback chain as getBetterAuthUrlForTooling.
-    expect(getBetterAuthTrustedOrigins()).toEqual(['https://site.example.com']);
+    expect(getBetterAuthTrustedOrigins()).toEqual([
+      'http://127.0.0.1:3000',
+      'http://localhost:3000',
+    ]);
   });
 
-  it('falls back to the inferred site url for Better Auth tooling', () => {
+  it('uses the deterministic loopback fallback for Better Auth tooling when unset', () => {
     process.env.NODE_ENV = 'development';
     delete process.env.VITEST;
     delete process.env.BETTER_AUTH_URL;
-    delete process.env.SITE_URL;
 
-    expect(getBetterAuthUrlForTooling()).toBe('http://localhost:3000');
+    expect(getBetterAuthUrlForTooling()).toBe('http://127.0.0.1:3000');
   });
 
   it('requires BETTER_AUTH_URL to be https outside loopback runtimes', () => {

@@ -13,7 +13,7 @@ import { createInterface } from 'node:readline';
 import { deriveConvexSiteUrl } from '../src/lib/convex-url';
 import { requirePnpmAndConvexCli } from './lib/cli-preflight';
 import { convexEnvSet, convexRun } from './lib/convex-cli';
-import { removeStructuredEnvValue, upsertStructuredEnvValue } from './lib/env-file';
+import { upsertStructuredEnvValue } from './lib/env-file';
 import {
   printJwksRemediation,
   syncConvexJwksFromBetterAuth,
@@ -167,7 +167,6 @@ async function main() {
     let updatedEnvContent = upsertStructuredEnvValue(envContent, 'VITE_CONVEX_URL', convexUrl, {
       sectionMarker: '# CONVEX DATABASE',
     });
-    updatedEnvContent = removeStructuredEnvValue(updatedEnvContent, 'VITE_CONVEX_SITE_URL');
 
     writeFileSync(envPath, updatedEnvContent, 'utf8');
     envContent = updatedEnvContent; // Update for later use
@@ -206,17 +205,6 @@ async function main() {
     }
 
     siteUrl = deriveConvexSiteUrl(convexUrl);
-    const cleanedEnvContent = removeStructuredEnvValue(envContent, 'VITE_CONVEX_SITE_URL');
-    if (cleanedEnvContent !== envContent) {
-      writeFileSync(envPath, cleanedEnvContent, 'utf8');
-      envContent = cleanedEnvContent;
-      updatedEnvFile = true;
-      console.log('✅ Removed obsolete VITE_CONVEX_SITE_URL from .env.local.');
-      console.log('────────────────────────────────────────────────');
-      console.log('🔗 Derived Convex site URL:');
-      console.log(`   ${siteUrl}`);
-      console.log('────────────────────────────────────────────────');
-    }
   }
 
   const betterAuthSecret = readOptionalEnvValue(envContent, 'BETTER_AUTH_SECRET');

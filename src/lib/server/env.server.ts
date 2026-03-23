@@ -3,8 +3,6 @@
  * Provides automatic inference of common environment variables.
  */
 
-import { parseTimestampLike } from '../shared/email-verification';
-
 const TEST_BETTER_AUTH_SECRET = 'test-better-auth-secret-abcdefghijklmnopqrstuvwxyz';
 const TEST_BETTER_AUTH_URL = 'http://127.0.0.1:3000';
 
@@ -20,32 +18,6 @@ function isTestRuntime() {
   return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 }
 
-/**
- * Automatically infer the site URL based on deployment environment.
- * Prefers explicit overrides and falls back to hosting platform defaults.
- */
-function getSiteUrl(): string {
-  const candidates: Array<[string | undefined, string]> = [
-    [process.env.BETTER_AUTH_URL, 'BETTER_AUTH_URL'],
-    [process.env.SITE_URL, 'SITE_URL'],
-    [process.env.PUBLIC_SITE_URL, 'PUBLIC_SITE_URL'],
-    [process.env.NEXT_PUBLIC_SITE_URL, 'NEXT_PUBLIC_SITE_URL'],
-    [process.env.URL, 'URL'],
-    [process.env.DEPLOY_URL, 'DEPLOY_URL'],
-    [process.env.DEPLOY_PRIME_URL, 'DEPLOY_PRIME_URL'],
-  ];
-
-  for (const [value, label] of candidates) {
-    const resolved = resolveSiteUrlCandidate(value, label);
-    if (resolved) {
-      return resolved;
-    }
-  }
-
-  // Local development - default fallback
-  return 'http://localhost:3000';
-}
-
 export function getRequiredBetterAuthUrl(): string {
   return getBetterAuthRuntimeConfig().siteUrl;
 }
@@ -56,7 +28,7 @@ export function getBetterAuthUrlForTooling(): string {
     return parseBetterAuthUrl(configuredUrl, 'BETTER_AUTH_URL').origin;
   }
 
-  return parseBetterAuthUrl(getSiteUrl(), 'site URL fallback').origin;
+  return TEST_BETTER_AUTH_URL;
 }
 
 function isLoopbackHostname(hostname: string): boolean {
@@ -126,11 +98,6 @@ function normalizeAllowedHost(value: string): string | null {
   return trimmed.toLowerCase();
 }
 
-/**
- * When BETTER_AUTH_URL is set, full runtime config (preview hosts, extra origins) applies only
- * if the resolved site URL matches that canonical origin. Otherwise build from the given URL only
- * — avoids calling getRequiredBetterAuthUrl() (which throws) when comparing against a tooling fallback.
- */
 function shouldUseEnvBackedBetterAuthRuntimeConfig(siteUrl: string): boolean {
   const envUrl = process.env.BETTER_AUTH_URL?.trim();
   if (!envUrl) {
@@ -329,26 +296,6 @@ function resolveAbsoluteOrigin(value: string | undefined, label: string): string
   }
 }
 
-function resolveSiteUrlCandidate(value: string | undefined, label: string): string | null {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-
-  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
-  try {
-    const url = new URL(withProtocol);
-    return url.origin;
-  } catch {
-    console.warn(`Ignoring invalid ${label} value for site URL: ${trimmed}`);
-    return null;
-  }
-}
-
 /**
  * Get the Better Auth secret, with validation.
  */
@@ -409,14 +356,6 @@ function getRequiredServerEnv(name: string): string {
     throw new Error(`${name} environment variable is required`);
   }
   return value;
-}
-
-function readOptionalEnv(name: string): string | undefined {
-  try {
-    return process.env[name];
-  } catch {
-    return undefined;
-  }
 }
 
 export function isE2ETestAuthEnabled(): boolean {
