@@ -2587,32 +2587,87 @@ export const recordOrganizationBulkAuditEventsInternal = internalMutation({
     success: v.literal(true),
   }),
   handler: async (ctx, args) => {
-    const organization = await findBetterAuthOrganizationById(ctx, args.organizationId);
-    if (!organization) {
-      throwConvexError('NOT_FOUND', 'Organization not found');
-    }
+    return await recordOrganizationBulkAuditEventsMutation(ctx, args);
+  },
+});
 
-    await Promise.all(
-      args.entries.map(async (entry) => {
-        await ctx.runMutation(internal.audit.insertAuditLog, {
-          eventType: args.eventType,
-          organizationId: args.organizationId,
-          userId: args.actorUserId,
-          actorUserId: args.actorUserId,
-          identifier: entry.targetEmail.toLowerCase(),
-          metadata: JSON.stringify({
-            actorEmail: args.actorEmail,
-            targetId: entry.targetId,
-            targetEmail: entry.targetEmail,
-            ...(entry.targetRole ? { targetRole: entry.targetRole } : {}),
-          }),
-        });
+async function recordOrganizationBulkAuditEventsMutation(
+  ctx: MutationCtx,
+  args: {
+    actorEmail?: string;
+    actorUserId: string;
+    organizationId: string;
+    eventType: 'bulk_invite_revoked' | 'bulk_invite_resent' | 'bulk_member_removed';
+    entries: Array<{
+      targetEmail: string;
+      targetId: string;
+      targetRole?: 'owner' | 'admin' | 'member';
+    }>;
+  },
+) {
+  const organization = await findBetterAuthOrganizationById(ctx, args.organizationId);
+  if (!organization) {
+    throwConvexError('NOT_FOUND', 'Organization not found');
+  }
+
+  await Promise.all(
+    args.entries.map(async (entry) => {
+      await ctx.runMutation(internal.audit.insertAuditLog, {
+        eventType: args.eventType,
+        organizationId: args.organizationId,
+        userId: args.actorUserId,
+        actorUserId: args.actorUserId,
+        identifier: entry.targetEmail.toLowerCase(),
+        metadata: JSON.stringify({
+          actorEmail: args.actorEmail,
+          targetId: entry.targetId,
+          targetEmail: entry.targetEmail,
+          ...(entry.targetRole ? { targetRole: entry.targetRole } : {}),
+        }),
+      });
+    }),
+  );
+
+  return {
+    success: true as const,
+  };
+}
+
+export const recordOrganizationBulkAuditEvents = mutation({
+  args: {
+    organizationId: v.string(),
+    eventType: v.union(
+      v.literal('bulk_invite_revoked'),
+      v.literal('bulk_invite_resent'),
+      v.literal('bulk_member_removed'),
+    ),
+    entries: v.array(
+      v.object({
+        targetId: v.string(),
+        targetEmail: v.string(),
+        targetRole: v.optional(
+          v.union(v.literal('owner'), v.literal('admin'), v.literal('member')),
+        ),
       }),
-    );
+    ),
+  },
+  returns: v.object({
+    success: v.literal(true),
+  }),
+  handler: async (ctx, args): Promise<{ success: true }> => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'manageMembers',
+    });
 
-    return {
-      success: true as const,
-    };
+    return await recordOrganizationBulkAuditEventsMutation(ctx, {
+      actorEmail: typeof user.authUser.email === 'string' ? user.authUser.email : undefined,
+      actorUserId: user.authUserId,
+      entries: args.entries,
+      eventType: args.eventType,
+      organizationId: args.organizationId,
+    });
   },
 });
 

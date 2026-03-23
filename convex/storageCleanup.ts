@@ -69,6 +69,9 @@ export const enforceMalwareDeadlinesInternal = internalAction({
         reason: 'Attachment quarantined because malware scan SLA elapsed.',
         storageId: row.storageId,
       });
+      await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+        storageId: row.storageId,
+      });
     }
     return null;
   },

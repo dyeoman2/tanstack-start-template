@@ -143,8 +143,6 @@ async function refreshCurrentUserContext() {
 }
 
 async function recordBulkOrganizationAuditEvents(input: {
-  actorEmail?: string;
-  actorUserId: string;
   organizationId: string;
   eventType: 'bulk_invite_revoked' | 'bulk_invite_resent' | 'bulk_member_removed';
   entries: Array<{
@@ -153,8 +151,8 @@ async function recordBulkOrganizationAuditEvents(input: {
     targetRole?: 'owner' | 'admin' | 'member';
   }>;
 }) {
-  await createConvexAdminClient().mutation(
-    internal.organizationManagement.recordOrganizationBulkAuditEventsInternal,
+  await convexAuthReactStart.fetchAuthMutation(
+    api.organizationManagement.recordOrganizationBulkAuditEvents,
     input,
   );
 }
@@ -601,7 +599,7 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
   .inputValidator(organizationBulkActionSchema)
   .handler(async ({ data }) => {
     try {
-      const { user } = await requireAuth();
+      await requireAuth();
 
       const results: Array<{
         key: string;
@@ -636,8 +634,6 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
         );
         if (successful.length > 0) {
           await recordBulkOrganizationAuditEvents({
-            actorEmail: user.email,
-            actorUserId: user.id,
             organizationId: data.organizationId,
             eventType: 'bulk_invite_revoked',
             entries: successful.map((invitation) => ({
@@ -684,8 +680,6 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
         );
         if (successful.length > 0) {
           await recordBulkOrganizationAuditEvents({
-            actorEmail: user.email,
-            actorUserId: user.id,
             organizationId: data.organizationId,
             eventType: 'bulk_invite_resent',
             entries: successful.map((invitation) => ({
@@ -728,8 +722,6 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
         );
         if (successful.length > 0) {
           await recordBulkOrganizationAuditEvents({
-            actorEmail: user.email,
-            actorUserId: user.id,
             organizationId: data.organizationId,
             eventType: 'bulk_member_removed',
             entries: successful.map((member) => ({

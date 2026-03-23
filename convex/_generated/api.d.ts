@@ -62,6 +62,8 @@ import type * as lib_securityWorkspaceOverview from "../lib/securityWorkspaceOve
 import type * as lib_storageS3 from "../lib/storageS3.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
+import type * as pdfParse from "../pdfParse.js";
+import type * as pdfParseActions from "../pdfParseActions.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
@@ -77,6 +79,7 @@ import type * as storageCleanup from "../storageCleanup.js";
 import type * as storageCleanupData from "../storageCleanupData.js";
 import type * as storageLifecycle from "../storageLifecycle.js";
 import type * as storagePlatform from "../storagePlatform.js";
+import type * as storageReadiness from "../storageReadiness.js";
 import type * as storageS3Mirror from "../storageS3Mirror.js";
 import type * as storageS3Primary from "../storageS3Primary.js";
 import type * as storageTypes from "../storageTypes.js";
@@ -144,6 +147,8 @@ declare const fullApi: ApiFromModules<{
   "lib/storageS3": typeof lib_storageS3;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;
+  pdfParse: typeof pdfParse;
+  pdfParseActions: typeof pdfParseActions;
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
@@ -159,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   storageCleanupData: typeof storageCleanupData;
   storageLifecycle: typeof storageLifecycle;
   storagePlatform: typeof storagePlatform;
+  storageReadiness: typeof storageReadiness;
   storageS3Mirror: typeof storageS3Mirror;
   storageS3Primary: typeof storageS3Primary;
   storageTypes: typeof storageTypes;

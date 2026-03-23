@@ -51,6 +51,13 @@ const chatUsageOperationKindValidator = v.union(
   v.literal('thread_title'),
   v.literal('thread_summary'),
 );
+const pdfParseJobStatusValidator = v.union(
+  v.literal('queued'),
+  v.literal('processing'),
+  v.literal('ready'),
+  v.literal('failed'),
+  v.literal('quarantined'),
+);
 
 const onboardingStatusValidator = v.union(
   v.literal('not_started'),
@@ -402,6 +409,21 @@ export default defineSchema({
   })
     .index('by_token', ['token'])
     .index('by_expiresAt', ['expiresAt']),
+
+  pdfParseJobs: defineTable({
+    storageId: v.string(),
+    organizationId: v.string(),
+    requestedByUserId: v.string(),
+    status: pdfParseJobStatusValidator,
+    errorMessage: v.optional(v.string()),
+    resultStorageId: v.optional(v.id('_storage')),
+    completedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_storageId', ['storageId'])
+    .index('by_status_and_updatedAt', ['status', 'updatedAt'])
+    .index('by_requestedByUserId_and_createdAt', ['requestedByUserId', 'createdAt']),
 
   storageLifecycle: defineTable({
     createdAt: v.number(),

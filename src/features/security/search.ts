@@ -21,10 +21,9 @@ export const securityCompatSearchSchema = z.object({
   family: z.string().optional(),
   selectedControl: z.string().optional(),
   selectedPolicy: z.string().optional(),
+  selectedVendor: z.string().optional(),
   selectedOperationId: z.string().optional(),
-  selectedOperationType: z
-    .enum(['evidence_report', 'finding', 'vendor_review', 'review_run'])
-    .optional(),
+  selectedOperationType: z.enum(['evidence_report', 'finding', 'review_run']).optional(),
 });
 
 export const securityControlsSearchSchema = z.object({
@@ -47,9 +46,11 @@ export const securityPoliciesSearchSchema = z.object({
 
 export const securityOperationsSearchSchema = z.object({
   selectedOperationId: z.string().optional(),
-  selectedOperationType: z
-    .enum(['evidence_report', 'finding', 'vendor_review', 'review_run'])
-    .optional(),
+  selectedOperationType: z.enum(['evidence_report', 'finding', 'review_run']).optional(),
+});
+
+export const securityVendorsSearchSchema = z.object({
+  selectedVendor: z.string().optional(),
 });
 
 export const securityReviewsSearchSchema = z.object({});
@@ -59,4 +60,5 @@ export type SecurityCompatSearch = z.infer<typeof securityCompatSearchSchema>;
 export type SecurityControlsSearch = z.infer<typeof securityControlsSearchSchema>;
 export type SecurityPoliciesSearch = z.infer<typeof securityPoliciesSearchSchema>;
 export type SecurityOperationsSearch = z.infer<typeof securityOperationsSearchSchema>;
+export type SecurityVendorsSearch = z.infer<typeof securityVendorsSearchSchema>;
 export type SecurityReviewsSearch = z.infer<typeof securityReviewsSearchSchema>;

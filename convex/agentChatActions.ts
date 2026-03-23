@@ -31,6 +31,7 @@ import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateL
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { getS3Object } from './lib/storageS3';
 import { finalizeUploadWithMode, resolveFileUrlWithMode } from './storagePlatform';
+import { getStorageReadiness } from './storageReadiness';
 import { buildDeterministicStorageKey } from './storageS3Primary';
 
 type ChatDataCtx =
@@ -177,6 +178,40 @@ async function toBlob(body: unknown, mimeType: string) {
   }
 
   throw new Error('Uploaded file body could not be converted to a blob.');
+}
+
+async function loadAttachmentProcessingBlob(
+  ctx: ActionCtx,
+  args: {
+    attachment: ChatAttachmentDoc;
+    lifecycle: Doc<'storageLifecycle'>;
+  },
+) {
+  if (args.attachment.rawStorageId) {
+    const blob = await ctx.storage.get(args.attachment.rawStorageId);
+    if (blob) {
+      return blob;
+    }
+  }
+
+  if (args.lifecycle.backendMode === 's3-primary') {
+    if (!args.lifecycle.canonicalBucket || !args.lifecycle.canonicalKey) {
+      throw new ConvexError('Stored file does not have an S3 backing object.');
+    }
+
+    const object = await getS3Object({
+      bucket: args.lifecycle.canonicalBucket,
+      key: args.lifecycle.canonicalKey,
+    });
+    return await toBlob(object.Body, args.attachment.mimeType);
+  }
+
+  const blob = await ctx.storage.get(args.attachment.storageId as Id<'_storage'>);
+  if (!blob) {
+    throw new ConvexError('Uploaded file was not found.');
+  }
+
+  return blob;
 }
 
 async function getAssistantMessageForOrder(ctx: ChatDataCtx, agentThreadId: string, order: number) {
@@ -923,40 +958,18 @@ export const createChatAttachmentFromUpload = action({
         }),
       });
 
-      const stored = blob
-        ? await storeFile(ctx, components.agent, blob, {
-            filename: validatedAttachment.normalizedName,
-          })
-        : null;
-      let extractedTextStorageId: Id<'_storage'> | undefined;
-      let promptSummary = initialSummary;
+      await finalizeUploadWithMode(ctx, {
+        backendMode,
+        fileName: validatedAttachment.normalizedName,
+        fileSize: validatedAttachment.sizeBytes,
+        mimeType: validatedAttachment.mimeType,
+        sourceId: attachmentId,
+        sourceType: 'chat_attachment',
+        storageId: args.storageId,
+      });
 
-      if (kind === 'document' && blob) {
-        const extractedText = await extractDocumentText(
-          blob,
-          validatedAttachment.normalizedName,
-          validatedAttachment.mimeType,
-        );
-        extractedTextStorageId = await ctx.storage.store(
-          new Blob([extractedText], { type: 'text/plain' }),
-        );
-        promptSummary = buildAttachmentPromptSummary({
-          kind,
-          name: validatedAttachment.normalizedName,
-          text: extractedText,
-        });
-      }
-
-      await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
-        attachmentId,
-        patch: {
-          extractedTextStorageId: extractedTextStorageId ?? null,
-          agentFileId: stored?.file.fileId ?? null,
-          promptSummary,
-          status: 'ready',
-          errorMessage: null,
-          updatedAt: Date.now(),
-        },
+      await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
+        storageId: args.storageId,
       });
 
       const attachment = (await ctx.runQuery(internal.agentChat.getAttachmentByIdInternal, {
@@ -967,16 +980,6 @@ export const createChatAttachmentFromUpload = action({
       if (!attachment) {
         throw new Error('Attachment was not found after processing.');
       }
-
-      await finalizeUploadWithMode(ctx, {
-        backendMode,
-        fileName: validatedAttachment.normalizedName,
-        fileSize: validatedAttachment.sizeBytes,
-        mimeType: validatedAttachment.mimeType,
-        sourceId: attachmentId,
-        sourceType: 'chat_attachment',
-        storageId: args.storageId,
-      });
 
       const resolvedUrl: { storageId: string; url: string | null } = await resolveFileUrlWithMode(
         ctx,
@@ -1008,7 +1011,8 @@ export const createChatAttachmentFromUpload = action({
 
       return {
         ...attachment,
-        previewUrl: kind === 'image' ? resolvedUrl.url : null,
+        previewUrl:
+          attachment.kind === 'image' && attachment.status === 'ready' ? resolvedUrl.url : null,
       };
     } catch (error) {
       if (error instanceof ConvexError) {
@@ -1043,6 +1047,77 @@ export const createChatAttachmentFromUpload = action({
 
       throw error;
     }
+  },
+});
+
+export const processPendingChatAttachmentInternal = internalAction({
+  args: {
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const attachment = (await ctx.runQuery(internal.agentChat.getAttachmentByStorageIdInternal, {
+      storageId: args.storageId,
+    })) as ChatAttachmentDoc | null;
+    if (!attachment || attachment.status !== 'pending_scan') {
+      return null;
+    }
+
+    const lifecycle = (await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
+      storageId: args.storageId,
+    })) as Doc<'storageLifecycle'> | null;
+    const readiness = getStorageReadiness(lifecycle);
+    if (!lifecycle || !readiness.readable) {
+      return null;
+    }
+
+    try {
+      const blob = await loadAttachmentProcessingBlob(ctx, {
+        attachment,
+        lifecycle,
+      });
+      const stored = await storeFile(ctx, components.agent, blob, {
+        filename: attachment.name,
+      });
+      let extractedTextStorageId: Id<'_storage'> | undefined;
+      let promptSummary = attachment.promptSummary;
+
+      if (attachment.kind === 'document') {
+        const extractedText = await extractDocumentText(blob, attachment.name, attachment.mimeType);
+        extractedTextStorageId = await ctx.storage.store(
+          new Blob([extractedText], { type: 'text/plain' }),
+        );
+        promptSummary = buildAttachmentPromptSummary({
+          kind: attachment.kind,
+          name: attachment.name,
+          text: extractedText,
+        });
+      }
+
+      await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+        attachmentId: attachment._id,
+        patch: {
+          extractedTextStorageId: extractedTextStorageId ?? null,
+          agentFileId: stored.file.fileId,
+          errorMessage: null,
+          promptSummary,
+          status: 'ready',
+          updatedAt: Date.now(),
+        },
+      });
+    } catch (error) {
+      await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+        attachmentId: attachment._id,
+        patch: {
+          errorMessage:
+            error instanceof Error ? error.message : 'Failed to finalize attachment processing.',
+          status: 'error',
+          updatedAt: Date.now(),
+        },
+      });
+    }
+
+    return null;
   },
 });
 

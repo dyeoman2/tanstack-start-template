@@ -13,6 +13,7 @@ import type {
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
   StoredEvidenceSource,
+  VendorWorkspace,
 } from '~/features/security/types';
 import {
   type ControlResponsibility,
@@ -373,6 +374,164 @@ export function formatEvidenceActivityEvent(
     case 'security_control_evidence_renewed':
       return 'Renewed';
   }
+}
+
+type VendorBadgeVariant = 'default' | 'destructive' | 'outline' | 'secondary';
+
+export function getVendorPrimaryStatus(vendor: Pick<VendorWorkspace, 'approved'>): {
+  label: 'Approved' | 'Blocked';
+  variant: VendorBadgeVariant;
+} {
+  return vendor.approved
+    ? { label: 'Approved', variant: 'default' }
+    : { label: 'Blocked', variant: 'destructive' };
+}
+
+export function getVendorGovernanceState(args: {
+  controlCount: number;
+  hasDraftReview: boolean;
+  owner: string;
+  reviewStatus: VendorWorkspace['reviewStatus'];
+}): {
+  label:
+    | 'Current review'
+    | 'Draft review'
+    | 'Missing controls'
+    | 'Review due soon'
+    | 'Review overdue'
+    | 'Unassigned';
+  variant: VendorBadgeVariant;
+} {
+  if (args.hasDraftReview) {
+    return { label: 'Draft review', variant: 'outline' };
+  }
+
+  if (args.reviewStatus === 'overdue') {
+    return { label: 'Review overdue', variant: 'destructive' };
+  }
+
+  if (args.owner.trim().length === 0) {
+    return { label: 'Unassigned', variant: 'destructive' };
+  }
+
+  if (args.controlCount === 0) {
+    return { label: 'Missing controls', variant: 'destructive' };
+  }
+
+  if (args.reviewStatus === 'due_soon') {
+    return { label: 'Review due soon', variant: 'outline' };
+  }
+
+  return { label: 'Current review', variant: 'secondary' };
+}
+
+function formatVendorApprovalReason(
+  vendor: Pick<
+    VendorWorkspace,
+    'allowedEnvironments' | 'approvalEnvVar' | 'approved' | 'approvedByDefault'
+  >,
+) {
+  const environmentCount = vendor.allowedEnvironments.length;
+  const environmentScope =
+    environmentCount > 0
+      ? `${environmentCount} configured environment${environmentCount === 1 ? '' : 's'}`
+      : 'configured use';
+
+  if (vendor.approved) {
+    if (vendor.approvedByDefault) {
+      return `Approved for ${environmentScope}`;
+    }
+
+    if (vendor.approvalEnvVar) {
+      return `Approved because ${vendor.approvalEnvVar} is enabled`;
+    }
+
+    return `Approved for ${environmentScope}`;
+  }
+
+  if (vendor.approvalEnvVar) {
+    return `Blocked because ${vendor.approvalEnvVar} is not enabled`;
+  }
+
+  return 'Blocked pending approval';
+}
+
+export function formatVendorRuntimePosture(
+  vendor: Pick<
+    VendorWorkspace,
+    | 'allowedDataClasses'
+    | 'allowedEnvironments'
+    | 'approvalEnvVar'
+    | 'approved'
+    | 'approvedByDefault'
+  >,
+) {
+  return {
+    dataClasses:
+      vendor.allowedDataClasses.length > 0
+        ? vendor.allowedDataClasses.join(', ')
+        : 'No data classes recorded',
+    decision: formatVendorApprovalReason(vendor),
+    environments:
+      vendor.allowedEnvironments.length > 0
+        ? vendor.allowedEnvironments.join(', ')
+        : 'No environments recorded',
+  };
+}
+
+export function formatVendorDecisionSummary(args: {
+  controlCount: number;
+  hasDraftReview: boolean;
+  lastReviewedAt: number | null;
+  owner: string;
+  reviewStatus: VendorWorkspace['reviewStatus'];
+  vendor: Pick<
+    VendorWorkspace,
+    'allowedEnvironments' | 'approvalEnvVar' | 'approved' | 'approvedByDefault'
+  >;
+}) {
+  const summaryLead = formatVendorApprovalReason(args.vendor);
+  const governanceGaps: string[] = [];
+
+  if (args.owner.trim().length === 0) {
+    governanceGaps.push('no owner is assigned');
+  }
+
+  if (args.controlCount === 0) {
+    governanceGaps.push('no controls are linked');
+  }
+
+  if (args.hasDraftReview) {
+    governanceGaps.push('a draft review is in progress');
+  } else if (args.lastReviewedAt === null) {
+    governanceGaps.push('no completed review is recorded');
+  } else if (args.reviewStatus === 'overdue') {
+    governanceGaps.push('the governance review is overdue');
+  } else if (args.reviewStatus === 'due_soon') {
+    governanceGaps.push('the next review is due soon');
+  }
+
+  if (governanceGaps.length === 0) {
+    return `${summaryLead}.`;
+  }
+
+  return `${summaryLead}, but ${governanceGaps.join(', ')}.`;
+}
+
+export function getVendorPrimaryActionLabel(args: {
+  controlCount: number;
+  hasDraftReview: boolean;
+  owner: string;
+}) {
+  if (args.hasDraftReview) {
+    return 'Save changes';
+  }
+
+  if (args.owner.trim().length === 0 || args.controlCount === 0) {
+    return 'Resolve governance gaps';
+  }
+
+  return 'Review now';
 }
 
 export function formatEvidenceLifecycleStatus(

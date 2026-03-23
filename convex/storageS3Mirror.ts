@@ -77,6 +77,12 @@ export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: st
     storageId: args.storageId,
     versionId: result.VersionId,
   });
+  await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
+    storageId: args.storageId,
+  });
+  await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+    storageId: args.storageId,
+  });
 }
 
 export async function scheduleMirrorRetry(

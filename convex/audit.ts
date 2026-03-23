@@ -690,7 +690,7 @@ export const insertAuditLog = internalMutation({
   },
 });
 
-export const recordClientAuditEvent = internalAction({
+export const recordClientAuditEvent = action({
   args: {
     eventType: v.string(),
     organizationId: v.optional(v.string()),

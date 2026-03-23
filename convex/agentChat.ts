@@ -513,6 +513,25 @@ export const getAttachmentByIdInternal = internalQuery({
   },
 });
 
+export const getAttachmentByStorageIdInternal = internalQuery({
+  args: {
+    storageId: v.string(),
+  },
+  returns: v.union(chatAttachmentsDocValidator, v.null()),
+  handler: async (ctx, args) => {
+    const attachment = await ctx.db
+      .query('chatAttachments')
+      .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
+      .unique();
+
+    if (!attachment || attachment.deletedAt) {
+      return null;
+    }
+
+    return attachment;
+  },
+});
+
 export const createThreadShellInternal = internalMutation({
   args: {
     ownerUserId: v.string(),

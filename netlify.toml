@@ -16,6 +16,7 @@ for = "/*"
 Content-Security-Policy = "default-src 'self'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'; object-src 'none'; script-src 'self' 'unsafe-inline' https:; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https:; font-src 'self' data: https:; connect-src 'self' https: wss:; manifest-src 'self'; worker-src 'self' blob:; upgrade-insecure-requests"
 Permissions-Policy = "camera=(), geolocation=(), microphone=(), payment=(), usb=(), browsing-topics=()"
 Referrer-Policy = "strict-origin-when-cross-origin"
+Strict-Transport-Security = "max-age=31536000; includeSubDomains; preload"
 X-Content-Type-Options = "nosniff"
 X-Frame-Options = "DENY"
 

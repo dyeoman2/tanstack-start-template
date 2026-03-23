@@ -51,6 +51,7 @@ vi.mock('@convex/_generated/api', () => ({
     organizationManagement: {
       deactivateOrganizationMember: 'deactivateOrganizationMember',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
+      recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
       reactivateOrganizationMember: 'reactivateOrganizationMember',
       suspendOrganizationMember: 'suspendOrganizationMember',
@@ -488,9 +489,7 @@ describe('organization management server functions', () => {
       'invite_1',
       expect.any(Function),
     );
-    expect(adminMutationMock).toHaveBeenCalledWith('recordOrganizationBulkAuditEventsInternal', {
-      actorEmail: 'admin@example.com',
-      actorUserId: 'user_1',
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('recordOrganizationBulkAuditEvents', {
       organizationId: 'org_1',
       eventType: 'bulk_invite_revoked',
       entries: [

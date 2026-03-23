@@ -95,7 +95,7 @@ vi.mock('~/components/ui/toast', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'policies' | 'operations' | 'reviews';
+  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'operations' | 'reviews';
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
   search: string;
@@ -104,8 +104,9 @@ type SearchState = {
   family: string;
   selectedControl?: string;
   selectedPolicy?: string;
+  selectedVendor?: string;
   selectedOperationId?: string;
-  selectedOperationType?: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run';
+  selectedOperationType?: 'evidence_report' | 'finding' | 'review_run';
 };
 
 const defaultSearch: SearchState = {
@@ -118,6 +119,7 @@ const defaultSearch: SearchState = {
   family: 'all',
   selectedControl: undefined,
   selectedPolicy: undefined,
+  selectedVendor: undefined,
   selectedOperationId: undefined,
   selectedOperationType: undefined,
 };
@@ -796,12 +798,11 @@ describe('Admin security route', () => {
     });
     expect(screen.getAllByText('{"status":"ok"}').length).toBeGreaterThan(0);
 
-    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
-    const reportInternalNotesField = internalNoteFields[internalNoteFields.length - 1];
-    expect(reportInternalNotesField).toBeDefined();
-    await user.clear(reportInternalNotesField!);
-    await user.type(reportInternalNotesField!, '  needs deeper review  ');
-    await user.click(screen.getByRole('button', { name: /needs follow-up/i }));
+    await user.click(screen.getAllByText(/security_posture/i)[0]!);
+    const reportInternalNotesField = screen.getByPlaceholderText('Add reviewer-only notes');
+    await user.clear(reportInternalNotesField);
+    await user.type(reportInternalNotesField, '  needs deeper review  ');
+    await user.click(screen.getAllByRole('button', { name: /needs follow-up/i }).at(-1)!);
 
     await waitFor(() => {
       expect(reviewEvidenceReportMock).toHaveBeenCalledWith({
@@ -811,7 +812,7 @@ describe('Admin security route', () => {
       });
     });
 
-    await user.click(screen.getByRole('button', { name: /export bundle/i }));
+    await user.click(screen.getAllByRole('button', { name: /export bundle/i }).at(-1)!);
 
     await waitFor(() => {
       expect(exportEvidenceReportMock).toHaveBeenCalledWith({ id: 'report-1' });
@@ -1090,7 +1091,6 @@ describe('Admin security route', () => {
     expect(screen.getAllByText(/manifest-hash-1/).length).toBeGreaterThan(0);
     expect(screen.getByText('Metadata gaps')).toBeInTheDocument();
     expect(screen.getByText('Authorization denials')).toBeInTheDocument();
-    expect(screen.getByText(/Manifest hash: manifest-hash-1/)).toBeInTheDocument();
   });
 
   it('loads persisted report detail and control deep-links from the operations queue', async () => {
@@ -1112,7 +1112,11 @@ describe('Admin security route', () => {
       .closest('[data-selected]') as HTMLElement | null;
     expect(reportRow).not.toBeNull();
 
-    await user.click(within(reportRow!).getByRole('button', { name: /view details/i }));
+    await user.click(
+      within(reportRow!)
+        .getAllByRole('button', { name: /view details/i })
+        .at(-1)!,
+    );
 
     expect(navigateMock).toHaveBeenCalledWith({
       search: expect.objectContaining({
@@ -1163,13 +1167,13 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
-    await user.type(internalNoteFields[0]!, 'triage in progress');
+    await user.click(screen.getByText('Audit integrity monitoring'));
+    await user.type(screen.getByPlaceholderText('Add reviewer-only notes'), 'triage in progress');
     await user.click(
       screen.getByRole('combobox', { name: /disposition for audit integrity monitoring/i }),
     );
     await user.click(await screen.findByText('Investigating'));
-    await user.click(screen.getByRole('button', { name: /save finding review/i }));
+    await user.click(screen.getAllByRole('button', { name: /save changes/i }).at(-1)!);
 
     await waitFor(() => {
       expect(reviewSecurityFindingMock).toHaveBeenCalledWith({
@@ -1197,8 +1201,11 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
-    await user.type(internalNoteFields[0]!, 'escalate to remediation');
+    await user.click(screen.getByText('Audit integrity monitoring'));
+    await user.type(
+      screen.getByPlaceholderText('Add reviewer-only notes'),
+      'escalate to remediation',
+    );
     await user.click(screen.getByRole('button', { name: /open follow-up/i }));
 
     await waitFor(() => {
@@ -1409,7 +1416,7 @@ describe('Admin security route', () => {
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
-      tab: 'operations',
+      tab: 'vendors',
     });
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness(),
@@ -1423,12 +1430,16 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.clear(screen.getByLabelText(/owner/i));
-    await user.type(screen.getByLabelText(/owner/i), 'Infra team');
-    const vendorSummaryField = screen.getByPlaceholderText('Vendor summary');
+    await user.click(screen.getByText('Sentry'));
+    const ownerField = screen.getByPlaceholderText('Assign a vendor owner');
+    await user.clear(ownerField);
+    await user.type(ownerField, 'Infra team');
+    const vendorSummaryField = screen.getByPlaceholderText(
+      'Summarize the vendor posture and review context',
+    );
     await user.clear(vendorSummaryField);
     await user.type(vendorSummaryField, 'Need updated DPA.');
-    await user.click(screen.getByRole('button', { name: /review now/i }));
+    await user.click(screen.getAllByRole('button', { name: /save changes/i }).at(-1)!);
 
     await waitFor(() => {
       expect(reviewVendorWorkspaceMock).toHaveBeenCalledWith({
@@ -1437,5 +1448,20 @@ describe('Admin security route', () => {
         vendorKey: 'sentry',
       });
     });
+  });
+
+  it('keeps vendor editing out of the operations tab', () => {
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'operations',
+    });
+    mockSecurityQueries({
+      vendorWorkspaces: [buildVendorWorkspace()],
+    });
+
+    renderRoute();
+
+    expect(screen.queryByPlaceholderText('Vendor summary')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/owner/i)).not.toBeInTheDocument();
   });
 });

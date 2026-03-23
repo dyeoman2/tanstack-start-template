@@ -663,13 +663,6 @@ export type SecurityOperationDetail =
       finding: SecurityFindingListItem;
     }
   | {
-      kind: 'vendor_review';
-      id: VendorWorkspace['vendor'];
-      title: string;
-      status: VendorWorkspace['reviewStatus'];
-      vendorReview: VendorWorkspace;
-    }
-  | {
       kind: 'review_run';
       id: ReviewRunSummary['id'];
       title: string;

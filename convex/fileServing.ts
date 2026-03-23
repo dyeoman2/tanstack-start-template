@@ -7,6 +7,7 @@ import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
 import { requireStorageReadAccessFromActionOrThrow } from './auth/access';
 import { createPresignedS3Url } from './lib/storageS3';
+import { getStorageReadiness } from './storageReadiness';
 
 const FILE_SERVE_URL_TTL_MS = 15 * 60 * 1000;
 
@@ -81,11 +82,10 @@ export async function resolveServeRedirect(ctx: ActionCtx, storageId: string) {
   if (!lifecycle) {
     throw new ConvexError('Stored file not found.');
   }
-  if (
-    lifecycle.malwareStatus === 'INFECTED' ||
-    lifecycle.malwareStatus === 'QUARANTINED_UNSCANNED'
-  ) {
-    throw new ConvexError('Stored file is quarantined.');
+
+  const readiness = getStorageReadiness(lifecycle);
+  if (!readiness.readable) {
+    throw new ConvexError(readiness.message);
   }
 
   const bucket =
@@ -112,9 +112,20 @@ export const createSignedServeUrlInternal = internalAction({
   args: { storageId: v.string() },
   returns: v.object({
     storageId: v.string(),
-    url: v.string(),
+    url: v.union(v.string(), v.null()),
   }),
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args) => {
+    const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
+      storageId: args.storageId,
+    });
+    const readiness = getStorageReadiness(lifecycle);
+    if (!readiness.readable) {
+      return {
+        storageId: args.storageId,
+        url: null,
+      };
+    }
+
     const runtimeConfig = getStorageRuntimeConfig();
     if (!runtimeConfig.convexSiteUrl) {
       throw new ConvexError('CONVEX_SITE_URL is not configured.');
@@ -155,6 +166,14 @@ export const createSignedServeUrl = action({
       storageId: args.storageId,
       sourceSurface: 'file.serve_url_create',
     });
+
+    const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
+      storageId: args.storageId,
+    });
+    const readiness = getStorageReadiness(lifecycle);
+    if (!readiness.readable) {
+      throw new ConvexError(readiness.message);
+    }
 
     const runtimeConfig = getStorageRuntimeConfig();
     if (!runtimeConfig.convexSiteUrl) {

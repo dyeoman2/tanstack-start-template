@@ -1,8 +1,16 @@
-export const SECURITY_TABS = ['overview', 'controls', 'policies', 'operations', 'reviews'] as const;
+export const SECURITY_TABS = [
+  'overview',
+  'controls',
+  'policies',
+  'vendors',
+  'operations',
+  'reviews',
+] as const;
 export const SECURITY_TAB_PATHS = {
   overview: '/app/admin/security',
   controls: '/app/admin/security/controls',
   policies: '/app/admin/security/policies',
+  vendors: '/app/admin/security/vendors',
   operations: '/app/admin/security/operations',
   reviews: '/app/admin/security/reviews',
 } as const;

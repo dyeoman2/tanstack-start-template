@@ -108,7 +108,7 @@ export async function resolveFileUrlWithMode(
     return { storageId: args.storageId, url };
   }
 
-  const signedServeUrl: { storageId: string; url: string } = await ctx.runAction(
+  const signedServeUrl: { storageId: string; url: string | null } = await ctx.runAction(
     internal.fileServing.createSignedServeUrlInternal,
     {
       storageId: args.storageId,

@@ -3,7 +3,7 @@ import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
+import { createConvexPublicClient } from '~/lib/server/convex-admin.server';
 import { handleServerError } from '~/lib/server/error-utils.server';
 
 export const markCurrentUserOnboardingCompleteServerFn = createServerFn({ method: 'POST' }).handler(
@@ -41,7 +41,7 @@ export const resolvePasswordResetEmailServerFn = createServerFn({ method: 'POST'
   .inputValidator(resolvePasswordResetEmailSchema)
   .handler(async ({ data }) => {
     try {
-      return await createConvexAdminClient().action(api.auth.resolvePasswordResetEmail, data);
+      return await createConvexPublicClient().action(api.auth.resolvePasswordResetEmail, data);
     } catch (error) {
       throw handleServerError(error, 'Resolve password reset email');
     }

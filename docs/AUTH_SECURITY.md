@@ -26,6 +26,8 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Set `BETTER_AUTH_PREVIEW_HOSTS` to explicit host patterns such as `*.netlify.app,*.vercel.app` for ephemeral environments and add extra trusted origins via `BETTER_AUTH_TRUSTED_ORIGINS` when necessary.
 - `BETTER_AUTH_TRUSTED_ORIGINS` must contain absolute origins such as `https://admin.example.com`; hostnames without a scheme are rejected at startup.
 - Deployment hardening (security headers, TLS termination, and monitoring for origin spoofing) must live outside this repo.
+- Production edges should send `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` or an equivalent HSTS policy.
+- Any deployment that relies on forwarded client IP metadata must use a trusted edge or load balancer that strips and rewrites forwarding headers such as `x-forwarded-for`; this app assumes those headers are canonicalized before requests reach Better Auth and rate-limit logic.
 
 ### Cookies and Sessions
 

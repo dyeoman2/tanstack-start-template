@@ -6,6 +6,8 @@ import { useAction, useConvex, useMutation, useQuery } from 'convex/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createSortableHeader } from '~/components/data-table';
 import { PageHeader } from '~/components/PageHeader';
+import { Badge } from '~/components/ui/badge';
+import { Button } from '~/components/ui/button';
 import {
   Sheet,
   SheetContent,
@@ -29,6 +31,7 @@ import {
   AdminSecurityOverviewTab,
   AdminSecurityPoliciesTab,
   AdminSecurityReviewsTab,
+  AdminSecurityVendorsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
 import {
   CONTROL_TABLE_SORT_FIELDS,
@@ -36,7 +39,14 @@ import {
   SECURITY_TAB_PATHS,
   SECURITY_TABS,
 } from '~/features/security/constants';
-import { mergeReviewRunSummaryWithDetail } from '~/features/security/formatters';
+import {
+  formatVendorDecisionSummary,
+  formatVendorRuntimePosture,
+  getVendorGovernanceState,
+  getVendorPrimaryActionLabel,
+  getVendorPrimaryStatus,
+  mergeReviewRunSummaryWithDetail,
+} from '~/features/security/formatters';
 import { useSecurityControlTable } from '~/features/security/hooks/useSecurityControlTable';
 import type {
   SecurityCompatSearch,
@@ -44,6 +54,7 @@ import type {
   SecurityOperationsSearch,
   SecurityPoliciesSearch,
   SecurityTab,
+  SecurityVendorsSearch,
 } from '~/features/security/search';
 import type {
   EvidenceReportDetail,
@@ -114,6 +125,10 @@ function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
         selectedOperationId: search.selectedOperationId,
         selectedOperationType: search.selectedOperationType,
       };
+    case 'vendors':
+      return {
+        selectedVendor: search.selectedVendor,
+      };
     case 'overview':
     case 'reviews':
       return {};
@@ -148,15 +163,24 @@ function useSecurityNavigation() {
   );
 
   const navigateToOperation = useCallback(
-    (
-      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
-      operationId: string,
-    ) => {
+    (operationType: 'evidence_report' | 'finding' | 'review_run', operationId: string) => {
       void navigate({
         to: getSecurityPath('operations'),
         search: {
           selectedOperationId: operationId,
           selectedOperationType: operationType,
+        },
+      });
+    },
+    [navigate],
+  );
+
+  const navigateToVendor = useCallback(
+    (vendorKey: VendorWorkspace['vendor']) => {
+      void navigate({
+        to: getSecurityPath('vendors'),
+        search: {
+          selectedVendor: vendorKey,
         },
       });
     },
@@ -173,6 +197,7 @@ function useSecurityNavigation() {
     navigateToControl,
     navigateToOperation,
     navigateToPolicy,
+    navigateToVendor,
     navigateToReviews,
   };
 }
@@ -203,6 +228,7 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="policies">Policies</TabsTrigger>
           <TabsTrigger value="controls">Controls</TabsTrigger>
+          <TabsTrigger value="vendors">Vendors</TabsTrigger>
           <TabsTrigger value="operations">Operations</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
@@ -229,7 +255,7 @@ export function AdminSecurityLayout(props: {
       return;
     }
 
-    const nextTab = isSecurityTab(props.search.tab) ? props.search.tab : 'overview';
+    const nextTab = isSecurityTab(props.search.tab ?? '') ? props.search.tab : 'overview';
 
     void navigate({
       replace: true,
@@ -243,6 +269,7 @@ export function AdminSecurityLayout(props: {
 
     if (pathname === getSecurityPath('controls')) return 'controls';
     if (pathname === getSecurityPath('policies')) return 'policies';
+    if (pathname === getSecurityPath('vendors')) return 'vendors';
     if (pathname === getSecurityPath('operations')) return 'operations';
     if (pathname === getSecurityPath('reviews')) return 'reviews';
     return 'overview';
@@ -268,7 +295,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
   const navigate = useNavigate();
   const convex = useConvex();
   const { showToast } = useToast();
-  const { navigateToOperation, navigateToReviews } = useSecurityNavigation();
+  const { navigateToOperation, navigateToReviews, navigateToVendor } = useSecurityNavigation();
   const search = props.search;
   const {
     family: familyFilter,
@@ -649,14 +676,16 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
           return;
         case 'evidence_report':
         case 'finding':
-        case 'vendor_review':
           navigateToOperation(entity.entityType, entity.entityId);
+          return;
+        case 'vendor_review':
+          navigateToVendor(entity.entityId as VendorWorkspace['vendor']);
           return;
         default:
           return;
       }
     },
-    [navigate, navigateToOperation, navigateToReviews, search],
+    [navigate, navigateToOperation, navigateToReviews, navigateToVendor, search],
   );
 
   return (
@@ -729,6 +758,7 @@ export function AdminSecurityRoute(props: {
     policySupport?: 'all' | 'complete' | 'partial' | 'missing';
     responsibility?: 'all' | 'platform' | 'shared-responsibility' | 'customer';
     search?: string;
+    selectedVendor?: string;
     sortBy?: 'control' | 'support' | 'responsibility' | 'family';
     sortOrder?: 'asc' | 'desc';
     support?: 'all' | 'complete' | 'partial' | 'missing';
@@ -769,6 +799,13 @@ export function AdminSecurityRoute(props: {
           search={{
             selectedOperationId: props.search.selectedOperationId,
             selectedOperationType: props.search.selectedOperationType,
+          }}
+        />
+      ) : null}
+      {activeTab === 'vendors' ? (
+        <AdminSecurityVendorsRoute
+          search={{
+            selectedVendor: props.search.selectedVendor,
           }}
         />
       ) : null}
@@ -903,7 +940,6 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
   const openSecurityFindingFollowUp = useMutation(
     api.securityWorkspace.openSecurityFindingFollowUp,
   );
-  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
   const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
   const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
     {},
@@ -915,15 +951,11 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
   const [findingDispositions, setFindingDispositions] = useState<
     Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
   >({});
-  const [vendorSummaries, setVendorSummaries] = useState<Record<string, string>>({});
-  const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
   const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
-  const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
   const evidenceReports = operationsBoard?.evidenceReports;
   const securityFindings = operationsBoard?.findings;
-  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
   const triggeredReviewRuns = operationsBoard?.triggeredReviewRuns;
   const auditReadiness = operationsBoard?.auditReadiness;
   const resolvedSelectedOperationType =
@@ -965,21 +997,6 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
           title: finding.title,
         };
       }
-      case 'vendor_review': {
-        const vendorReview = vendorWorkspaces?.find(
-          (entry) => entry.vendor === resolvedSelectedOperationId,
-        );
-        if (!vendorReview) {
-          return null;
-        }
-        return {
-          id: vendorReview.vendor,
-          kind: 'vendor_review',
-          status: vendorReview.reviewStatus,
-          title: vendorReview.title,
-          vendorReview,
-        };
-      }
       case 'review_run': {
         const reviewRun = triggeredReviewRuns?.find(
           (entry) => entry.id === resolvedSelectedOperationId,
@@ -1003,7 +1020,6 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
     securityFindings,
     selectedReportDetail,
     triggeredReviewRuns,
-    vendorWorkspaces,
   ]);
   const auditReadinessSummary = useMemo(() => {
     const latestDrill = auditReadiness?.latestBackupDrill ?? null;
@@ -1121,6 +1137,103 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
     [findingNotes, openSecurityFindingFollowUp, showToast],
   );
 
+  const handleOpenReportDetail = useCallback(
+    (reportId: Id<'evidenceReports'>) => {
+      setLocalSelectedReportId(reportId);
+      navigateToOperation('evidence_report', reportId);
+    },
+    [navigateToOperation],
+  );
+
+  const handleSelectOperation = useCallback(
+    (operationType: 'evidence_report' | 'finding' | 'review_run', operationId: string) => {
+      if (operationType === 'evidence_report') {
+        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
+      } else {
+        setLocalSelectedReportId(null);
+      }
+      navigateToOperation(operationType, operationId);
+    },
+    [navigateToOperation],
+  );
+
+  return (
+    <AdminSecurityOperationsTab
+      auditReadiness={auditReadiness}
+      auditReadinessSummary={auditReadinessSummary}
+      busyFindingKey={busyFindingKey}
+      busyReportAction={busyReportAction}
+      evidenceReports={evidenceReports}
+      findingCustomerSummaries={findingCustomerSummaries}
+      findingDispositions={findingDispositions}
+      findingNotes={findingNotes}
+      findingSummary={findingSummary}
+      handleExportReport={handleExportReport}
+      handleGenerateReport={handleGenerateReport}
+      handleOpenFindingFollowUp={handleOpenFindingFollowUp}
+      handleOpenReportDetail={handleOpenReportDetail}
+      handleReviewFinding={handleReviewFinding}
+      handleReviewReport={handleReviewReport}
+      isGenerating={isGenerating}
+      navigateToControl={navigateToControl}
+      navigateToReviews={navigateToReviews}
+      onSelectOperation={handleSelectOperation}
+      report={report}
+      reportCustomerSummaries={reportCustomerSummaries}
+      reportNotes={reportNotes}
+      restoreDrillFooter={restoreDrillFooter}
+      securityFindings={securityFindings}
+      selectedOperationDetail={selectedOperationDetail}
+      selectedOperationId={resolvedSelectedOperationId}
+      selectedOperationType={resolvedSelectedOperationType}
+      setFindingCustomerSummaries={setFindingCustomerSummaries}
+      setFindingDispositions={setFindingDispositions}
+      setFindingNotes={setFindingNotes}
+      setReportCustomerSummaries={setReportCustomerSummaries}
+      setReportNotes={setReportNotes}
+      triggeredReviewRuns={triggeredReviewRuns}
+    />
+  );
+}
+
+export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch }) {
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { navigateToControl, navigateToOperation, navigateToReviews } = useSecurityNavigation();
+  const operationsBoard = useQuery(api.securityPosture.getSecurityOperationsBoard, {}) as
+    | SecurityOperationsBoard
+    | undefined;
+  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
+  const [vendorSummaries, setVendorSummaries] = useState<Record<string, string>>({});
+  const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
+  const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
+  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
+  const selectedVendor = useMemo(
+    () => vendorWorkspaces?.find((vendor) => vendor.vendor === props.search.selectedVendor) ?? null,
+    [props.search.selectedVendor, vendorWorkspaces],
+  );
+  const vendorSummary = useMemo(() => {
+    const vendors = vendorWorkspaces ?? [];
+    return {
+      currentCount: vendors.filter((vendor) => vendor.reviewStatus === 'current').length,
+      dueSoonCount: vendors.filter((vendor) => vendor.reviewStatus === 'due_soon').length,
+      overdueCount: vendors.filter((vendor) => vendor.reviewStatus === 'overdue').length,
+      totalCount: vendors.length,
+    };
+  }, [vendorWorkspaces]);
+
+  const updateVendorSearch = useCallback(
+    (selectedVendor: string | undefined) => {
+      void navigate({
+        search: {
+          selectedVendor,
+        },
+        to: getSecurityPath('vendors'),
+      });
+    },
+    [navigate],
+  );
+
   const handleReviewVendor = useCallback(
     async (vendor: VendorWorkspace) => {
       setBusyVendorKey(vendor.vendor);
@@ -1143,72 +1256,248 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
     [reviewVendorWorkspace, showToast, vendorOwners, vendorSummaries],
   );
 
-  const handleOpenReportDetail = useCallback(
-    (reportId: Id<'evidenceReports'>) => {
-      setLocalSelectedReportId(reportId);
-      navigateToOperation('evidence_report', reportId);
-    },
-    [navigateToOperation],
-  );
-
-  const handleSelectOperation = useCallback(
-    (
-      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
-      operationId: string,
-    ) => {
-      if (operationType === 'evidence_report') {
-        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
-      } else {
-        setLocalSelectedReportId(null);
-      }
-      navigateToOperation(operationType, operationId);
-    },
-    [navigateToOperation],
-  );
-
   return (
-    <AdminSecurityOperationsTab
-      auditReadiness={auditReadiness}
-      auditReadinessSummary={auditReadinessSummary}
-      busyFindingKey={busyFindingKey}
-      busyReportAction={busyReportAction}
-      busyVendorKey={busyVendorKey}
-      evidenceReports={evidenceReports}
-      findingCustomerSummaries={findingCustomerSummaries}
-      findingDispositions={findingDispositions}
-      findingNotes={findingNotes}
-      findingSummary={findingSummary}
-      handleExportReport={handleExportReport}
-      handleGenerateReport={handleGenerateReport}
-      handleOpenFindingFollowUp={handleOpenFindingFollowUp}
-      handleOpenReportDetail={handleOpenReportDetail}
-      handleReviewFinding={handleReviewFinding}
-      handleReviewReport={handleReviewReport}
-      handleReviewVendor={handleReviewVendor}
-      isGenerating={isGenerating}
-      navigateToControl={navigateToControl}
-      navigateToReviews={navigateToReviews}
-      onSelectOperation={handleSelectOperation}
-      report={report}
-      reportCustomerSummaries={reportCustomerSummaries}
-      reportNotes={reportNotes}
-      restoreDrillFooter={restoreDrillFooter}
-      securityFindings={securityFindings}
-      selectedOperationDetail={selectedOperationDetail}
-      selectedOperationId={resolvedSelectedOperationId}
-      selectedOperationType={resolvedSelectedOperationType}
-      setFindingCustomerSummaries={setFindingCustomerSummaries}
-      setFindingDispositions={setFindingDispositions}
-      setFindingNotes={setFindingNotes}
-      setReportCustomerSummaries={setReportCustomerSummaries}
-      setReportNotes={setReportNotes}
-      setVendorSummaries={setVendorSummaries}
-      setVendorOwners={setVendorOwners}
-      triggeredReviewRuns={triggeredReviewRuns}
-      vendorSummaries={vendorSummaries}
-      vendorOwners={vendorOwners}
-      vendorWorkspaces={vendorWorkspaces}
-    />
+    <>
+      <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-lg border bg-card p-6">
+          <p className="text-sm font-medium text-muted-foreground">Tracked vendors</p>
+          <p className="mt-3 text-4xl font-semibold">{vendorSummary.totalCount}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            First-class vendor governance records linked to controls.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-card p-6">
+          <p className="text-sm font-medium text-muted-foreground">Current reviews</p>
+          <p className="mt-3 text-4xl font-semibold">{vendorSummary.currentCount}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Vendors reviewed within the current 12-month cadence.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-card p-6">
+          <p className="text-sm font-medium text-muted-foreground">Due soon</p>
+          <p className="mt-3 text-4xl font-semibold">{vendorSummary.dueSoonCount}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Reviews approaching expiry but still current.
+          </p>
+        </div>
+        <div className="rounded-lg border bg-card p-6">
+          <p className="text-sm font-medium text-muted-foreground">Overdue</p>
+          <p className="mt-3 text-4xl font-semibold">{vendorSummary.overdueCount}</p>
+          <p className="mt-2 text-sm text-muted-foreground">
+            These block annual review finalization until renewed.
+          </p>
+        </div>
+      </div>
+
+      <AdminSecurityVendorsTab
+        busyVendorKey={busyVendorKey}
+        handleReviewVendor={handleReviewVendor}
+        navigateToControl={navigateToControl}
+        navigateToReviews={navigateToReviews}
+        onOpenVendor={(vendorKey) => {
+          updateVendorSearch(vendorKey);
+        }}
+        setVendorSummaries={setVendorSummaries}
+        setVendorOwners={setVendorOwners}
+        vendorSummaries={vendorSummaries}
+        vendorOwners={vendorOwners}
+        vendorWorkspaces={vendorWorkspaces}
+      />
+
+      <Sheet
+        open={props.search.selectedVendor !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          updateVendorSearch(undefined);
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Vendor detail</SheetTitle>
+            <SheetDescription>
+              Review vendor posture, linked controls, review cadence, and follow-up linkage.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedVendor === null && props.search.selectedVendor ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading vendor detail…</div>
+          ) : selectedVendor ? (
+            (() => {
+              const currentOwner =
+                vendorOwners[selectedVendor.vendor] ?? selectedVendor.owner ?? '';
+              const currentSummary =
+                vendorSummaries[selectedVendor.vendor] ?? selectedVendor.summary ?? '';
+              const isDirty =
+                currentOwner !== (selectedVendor.owner ?? '') ||
+                currentSummary !== (selectedVendor.summary ?? '');
+              const primaryStatus = getVendorPrimaryStatus(selectedVendor);
+              const governanceState = getVendorGovernanceState({
+                controlCount: selectedVendor.relatedControls.length,
+                hasDraftReview: isDirty,
+                owner: currentOwner,
+                reviewStatus: selectedVendor.reviewStatus,
+              });
+              const runtimePosture = formatVendorRuntimePosture(selectedVendor);
+              const decisionSummary = formatVendorDecisionSummary({
+                controlCount: selectedVendor.relatedControls.length,
+                hasDraftReview: isDirty,
+                lastReviewedAt: selectedVendor.lastReviewedAt,
+                owner: currentOwner,
+                reviewStatus: selectedVendor.reviewStatus,
+                vendor: selectedVendor,
+              });
+              const primaryActionLabel = getVendorPrimaryActionLabel({
+                controlCount: selectedVendor.relatedControls.length,
+                hasDraftReview: isDirty,
+                owner: currentOwner,
+              });
+
+              return (
+                <div className="space-y-6 p-1">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="text-2xl font-semibold">{selectedVendor.title}</h2>
+                      <Badge variant={primaryStatus.variant}>{primaryStatus.label}</Badge>
+                      <Badge variant={governanceState.variant}>{governanceState.label}</Badge>
+                    </div>
+                    <p className="text-sm text-foreground">{decisionSummary}</p>
+                  </div>
+
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div className="space-y-4 rounded-lg border bg-muted/10 p-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">Runtime posture</p>
+                        <p className="mt-2">{runtimePosture.decision}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Environments: {runtimePosture.environments}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          Data classes: {runtimePosture.dataClasses}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 rounded-lg border bg-background p-4">
+                      <div>
+                        <p className="text-sm font-medium text-muted-foreground">
+                          Governance posture
+                        </p>
+                        <p className="mt-2">{currentOwner || 'Owner not assigned'}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedVendor.relatedControls.length > 0
+                            ? `${selectedVendor.relatedControls.length} linked control${selectedVendor.relatedControls.length === 1 ? '' : 's'}`
+                            : 'No linked controls'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedVendor.lastReviewedAt
+                            ? `Last reviewed ${new Date(selectedVendor.lastReviewedAt).toLocaleString()}`
+                            : 'No completed review recorded'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {selectedVendor.nextReviewAt
+                            ? `Next review ${new Date(selectedVendor.nextReviewAt).toLocaleDateString()}`
+                            : 'Next review not scheduled'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">{governanceState.label}</p>
+                      </div>
+                      {selectedVendor.linkedAnnualReviewTask ? (
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Annual review task
+                          </p>
+                          <p>{selectedVendor.linkedAnnualReviewTask.title}</p>
+                        </div>
+                      ) : null}
+                      {selectedVendor.linkedEntities.length ? (
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Linked context
+                          </p>
+                          <ul className="mt-2 space-y-1 text-sm text-muted-foreground">
+                            {selectedVendor.linkedEntities.map((entity) => (
+                              <li key={`${entity.entityType}:${entity.entityId}`}>
+                                {entity.label}
+                                {entity.status ? ` · ${entity.status}` : ''}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Vendor summary</p>
+                    <p className="rounded-lg border bg-background p-3 text-sm">
+                      {currentSummary || 'No vendor summary recorded yet.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-muted-foreground">Linked controls</p>
+                    {selectedVendor.relatedControls.length > 0 ? (
+                      <div className="flex flex-wrap gap-2">
+                        {selectedVendor.relatedControls.map((control) => (
+                          <Button
+                            key={`${selectedVendor.vendor}:${control.internalControlId}:${control.itemId ?? 'none'}`}
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              navigateToControl(control.internalControlId);
+                            }}
+                          >
+                            {control.nist80053Id} · {control.title}
+                          </Button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                        No linked controls.
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      type="button"
+                      disabled={busyVendorKey !== null}
+                      onClick={() => {
+                        void handleReviewVendor(selectedVendor);
+                      }}
+                    >
+                      {busyVendorKey === selectedVendor.vendor ? 'Saving…' : primaryActionLabel}
+                    </Button>
+                    {selectedVendor.linkedFollowUpRunId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          navigateToOperation('review_run', selectedVendor.linkedFollowUpRunId!);
+                        }}
+                      >
+                        Open follow-up
+                      </Button>
+                    ) : null}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        navigateToReviews();
+                      }}
+                    >
+                      Open reviews
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

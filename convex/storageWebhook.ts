@@ -145,6 +145,12 @@ export async function applyGuardDutyFinding(
       scannedAt: args.scannedAt,
       storageId: lifecycle.storageId,
     });
+    await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
+      storageId: lifecycle.storageId,
+    });
+    await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+      storageId: lifecycle.storageId,
+    });
   } else {
     await ctx.runMutation(internal.storageLifecycle.markInfectedInternal, {
       findingId: args.findingId,
@@ -153,6 +159,9 @@ export async function applyGuardDutyFinding(
     });
     await ctx.runMutation(internal.agentChat.quarantineAttachmentByStorageIdInternal, {
       reason: 'Attachment blocked by GuardDuty malware finding.',
+      storageId: lifecycle.storageId,
+    });
+    await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
       storageId: lifecycle.storageId,
     });
   }

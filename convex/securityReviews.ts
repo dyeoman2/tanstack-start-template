@@ -340,10 +340,19 @@ export const attestReviewTask = mutation({
     }
 
     if (task.templateKey === 'annual:attest:findings-review') {
-      const currentFindings = await ctx.runQuery(
+      const currentFindings = (await ctx.runQuery(
         internal.securityWorkspace.listSecurityFindingsInternal,
         {},
-      );
+      )) as Array<{
+        disposition:
+          | 'accepted_risk'
+          | 'false_positive'
+          | 'investigating'
+          | 'pending_review'
+          | 'resolved';
+        severity: 'critical' | 'high' | 'info' | 'low' | 'medium';
+        status: 'open' | 'resolved';
+      }>;
       const unresolvedCritical = currentFindings.filter(
         (finding) =>
           finding.status === 'open' &&

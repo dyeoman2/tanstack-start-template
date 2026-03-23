@@ -1,9 +1,17 @@
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import type { Id } from './_generated/dataModel';
+import {
+  internalAction,
+  internalMutation,
+  internalQuery,
+  mutation,
+  type MutationCtx,
+} from './_generated/server';
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { getE2ETestSecret } from '../src/lib/server/env.server';
 import { getSecurityScopeFields } from './lib/security/core';
+import { getVerifiedCurrentUserOrThrow, requireOrganizationPermission } from './auth/access';
 import {
   documentScanEventArgs,
   recordBackupVerificationHandler,
@@ -15,6 +23,33 @@ import {
   backupVerificationInitiatedByKindValidator,
   backupVerificationTargetEnvironmentValidator,
 } from './lib/security/validators';
+
+async function insertDocumentScanEvent(
+  ctx: MutationCtx,
+  args: {
+    attachmentId?: Id<'chatAttachments'>;
+    details: string | null;
+    fileName: string;
+    mimeType: string;
+    organizationId: string;
+    requestedByUserId: string;
+    resultStatus: 'accepted' | 'inspection_failed' | 'quarantined' | 'rejected';
+    scannedAt: number;
+    scannerEngine: string;
+  },
+) {
+  const recordId = await ctx.db.insert('documentScanEvents', {
+    ...args,
+    createdAt: Date.now(),
+    details: args.details ?? null,
+  });
+  await updateSecurityMetrics(ctx, {
+    resultStatus: args.resultStatus,
+    scannedAt: args.scannedAt,
+  });
+  await syncCurrentSecurityFindings(ctx, 'system:document-scan');
+  return recordId;
+}
 
 export const cleanupExpiredAttachments = internalAction({
   args: {},
@@ -182,17 +217,42 @@ export const recordDocumentScanEventInternal = internalMutation({
   },
   returns: v.id('documentScanEvents'),
   handler: async (ctx, args) => {
-    const recordId = await ctx.db.insert('documentScanEvents', {
+    return await insertDocumentScanEvent(ctx, {
       ...args,
-      createdAt: Date.now(),
       details: args.details ?? null,
     });
-    await updateSecurityMetrics(ctx, {
-      resultStatus: args.resultStatus,
-      scannedAt: args.scannedAt,
+  },
+});
+
+export const recordDocumentScanEvent = mutation({
+  args: {
+    attachmentId: v.optional(v.id('chatAttachments')),
+    details: v.union(v.string(), v.null()),
+    fileName: v.string(),
+    mimeType: v.string(),
+    organizationId: v.string(),
+    resultStatus: v.union(
+      v.literal('accepted'),
+      v.literal('inspection_failed'),
+      v.literal('quarantined'),
+      v.literal('rejected'),
+    ),
+    scannedAt: v.number(),
+    scannerEngine: v.string(),
+  },
+  returns: v.id('documentScanEvents'),
+  handler: async (ctx, args): Promise<Id<'documentScanEvents'>> => {
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'viewOrganization',
     });
-    await syncCurrentSecurityFindings(ctx, 'system:document-scan');
-    return recordId;
+
+    return await insertDocumentScanEvent(ctx, {
+      ...args,
+      details: args.details ?? null,
+      requestedByUserId: user.authUserId,
+    });
   },
 });
 

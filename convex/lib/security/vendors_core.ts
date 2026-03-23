@@ -38,11 +38,26 @@ function resolveVendorNextReviewAt(lastReviewedAt: number | null) {
   return addMonths(lastReviewedAt, VENDOR_REVIEW_CADENCE_MONTHS);
 }
 
+async function resolveDefaultSecurityOwner(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+): Promise<string> {
+  const adminProfiles = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_role_and_created_at', (q) => q.eq('role', 'admin'))
+    .collect();
+  const firstSiteAdmin = [...adminProfiles]
+    .filter((profile) => profile.isSiteAdmin)
+    .sort((left, right) => left.createdAt - right.createdAt)[0];
+
+  return firstSiteAdmin?.name?.trim() || firstSiteAdmin?.email?.trim() || 'Site admin';
+}
+
 async function syncSecurityVendorRecords(ctx: MutationCtx) {
-  const [runtimeVendors, existingVendors, legacyVendorReviews] = await Promise.all([
+  const [runtimeVendors, existingVendors, legacyVendorReviews, defaultOwner] = await Promise.all([
     Promise.resolve(getVendorBoundarySnapshot()),
     ctx.db.query('securityVendors').collect(),
     ctx.db.query('securityVendorReviews').collect(),
+    resolveDefaultSecurityOwner(ctx),
   ]);
   const existingByKey = new Map(existingVendors.map((row) => [row.vendorKey, row] as const));
   const legacyByKey = new Map(legacyVendorReviews.map((row) => [row.vendorKey, row] as const));
@@ -53,7 +68,7 @@ async function syncSecurityVendorRecords(ctx: MutationCtx) {
     const legacy = legacyByKey.get(runtimeVendor.vendor);
     const legacyLastReviewedAt = legacy?.reviewedAt ?? null;
     const patch = {
-      owner: existing?.owner ?? legacy?.owner ?? undefined,
+      owner: existing?.owner ?? legacy?.owner ?? defaultOwner,
       summary: existing?.summary ?? legacy?.customerSummary ?? legacy?.internalReviewNotes ?? null,
       title: runtimeVendor.displayName,
       updatedAt: now,
@@ -146,7 +161,7 @@ async function listSecurityVendorRecords(ctx: QueryCtx): Promise<
 }
 
 async function buildVendorWorkspaceRows(ctx: QueryCtx) {
-  const [vendors, mappings, relationships, annualTasks] = await Promise.all([
+  const [vendors, mappings, relationships, annualTasks, defaultOwner] = await Promise.all([
     listSecurityVendorRecords(ctx),
     ctx.db.query('securityVendorControlMappings').collect(),
     ctx.db.query('securityRelationships').collect(),
@@ -163,6 +178,7 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
         .withIndex('by_review_run_id', (q) => q.eq('reviewRunId', run._id))
         .collect();
     })(),
+    resolveDefaultSecurityOwner(ctx),
   ]);
   const controlById = new Map(
     ACTIVE_CONTROL_REGISTER.controls.map(
@@ -253,7 +269,7 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
       linkedEntities,
       linkedFollowUpRunId: vendor.linkedFollowUpRunId ?? null,
       nextReviewAt: vendor.nextReviewAt ?? null,
-      owner: vendor.owner ?? null,
+      owner: vendor.owner ?? defaultOwner,
       relatedControls,
       reviewStatus: vendor.reviewStatus,
       scopeId: normalizeSecurityScope(vendor).scopeId,
@@ -269,6 +285,7 @@ export {
   buildAnnualVendorReviewTaskTemplateKey,
   buildVendorWorkspaceRows,
   deriveVendorReviewStatus,
+  resolveDefaultSecurityOwner,
   resolveVendorNextReviewAt,
   syncSecurityVendorControlMappings,
   syncSecurityVendorRecords,

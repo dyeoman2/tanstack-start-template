@@ -26,10 +26,14 @@ function getRequiredServerEnv(name: 'CONVEX_DEPLOY_KEY' | 'VITE_CONVEX_URL') {
   return value.trim();
 }
 
-export function createConvexAdminClient() {
-  const client = new ConvexHttpClient(getRequiredServerEnv('VITE_CONVEX_URL'), {
+export function createConvexPublicClient() {
+  return new ConvexHttpClient(getRequiredServerEnv('VITE_CONVEX_URL'), {
     logger: false,
-  }) as unknown as InternalConvexHttpClient;
+  });
+}
+
+export function createConvexAdminClient() {
+  const client = createConvexPublicClient() as unknown as InternalConvexHttpClient;
   client.setAdminAuth(getRequiredServerEnv('CONVEX_DEPLOY_KEY'));
   return client;
 }

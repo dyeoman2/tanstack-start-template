@@ -9,6 +9,7 @@ import {
 } from './lib/security/review_runs_core';
 import {
   buildVendorWorkspaceRows,
+  resolveDefaultSecurityOwner,
   resolveVendorNextReviewAt,
   syncSecurityVendorRecords,
 } from './lib/security/vendors_core';
@@ -211,15 +212,17 @@ export const reviewVendorWorkspace = mutation({
       .query('securityVendors')
       .withIndex('by_vendor_key', (q) => q.eq('vendorKey', args.vendorKey))
       .unique();
+    const defaultOwner = await resolveDefaultSecurityOwner(ctx);
     const now = Date.now();
     const lastReviewedAt = now;
     const nextReviewAt = resolveVendorNextReviewAt(now);
+    const resolvedOwner = args.owner?.trim() || existing?.owner || defaultOwner;
 
     if (existing) {
       await ctx.db.patch(existing._id, {
         lastReviewedAt,
         nextReviewAt,
-        owner: args.owner?.trim() || undefined,
+        owner: resolvedOwner,
         summary: args.summary?.trim() || null,
         updatedAt: now,
       });
@@ -232,7 +235,7 @@ export const reviewVendorWorkspace = mutation({
         createdAt: now,
         lastReviewedAt,
         nextReviewAt,
-        owner: args.owner?.trim() || undefined,
+        owner: resolvedOwner,
         summary: args.summary?.trim() || null,
         title: runtimeVendor?.displayName ?? args.vendorKey,
         updatedAt: now,
