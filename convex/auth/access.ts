@@ -46,6 +46,7 @@ import {
   getOrganizationMembershipStatus,
   getOrganizationMembershipStatuses,
 } from '../lib/organizationMembershipState';
+import { organizationPermissionDecisionValidator } from '../lib/returnValidators';
 import { throwConvexError } from './errors';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -137,6 +138,18 @@ type StorageReadAccessResult =
 const organizationPermissionValidator = v.union(
   ...ORGANIZATION_PERMISSION_VALUES.map((permission) => v.literal(permission)),
 );
+
+function serializeOrganizationPermissionDecision(decision: OrganizationPermissionDecision) {
+  return {
+    ...decision,
+    membership: decision.membership
+      ? {
+          ...decision.membership,
+          createdAt: toMillis(decision.membership.createdAt),
+        }
+      : null,
+  };
+}
 
 function getPermissionStepUpRequirement(
   permission: OrganizationPermission,
@@ -1130,7 +1143,7 @@ export const resolveOrganizationPermissionById = query({
     }),
     v.object({
       allowed: v.literal(true),
-      decision: v.any(),
+      decision: organizationPermissionDecisionValidator,
     }),
   ),
   handler: async (ctx, args) => {
@@ -1144,7 +1157,7 @@ export const resolveOrganizationPermissionById = query({
     }
     return {
       allowed: true as const,
-      decision: result,
+      decision: serializeOrganizationPermissionDecision(result),
     };
   },
 });
@@ -1162,7 +1175,7 @@ export const resolveOrganizationPermissionBySlug = query({
     }),
     v.object({
       allowed: v.literal(true),
-      decision: v.any(),
+      decision: organizationPermissionDecisionValidator,
     }),
   ),
   handler: async (ctx, args) => {
@@ -1179,7 +1192,7 @@ export const resolveOrganizationPermissionBySlug = query({
     }
     return {
       allowed: true as const,
-      decision: result,
+      decision: serializeOrganizationPermissionDecision(result),
     };
   },
 });
@@ -1191,10 +1204,10 @@ export const resolveStorageReadAccess = query({
   returns: v.object({
     allowed: v.boolean(),
     organizationId: v.union(v.string(), v.null()),
-    permission: v.union(v.string(), v.null()),
+    permission: v.union(organizationPermissionValidator, v.null()),
     reason: v.union(v.string(), v.null()),
   }),
-  handler: async (ctx, args) => {
+  handler: async (ctx, args): Promise<StorageReadAccessResult> => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     const lifecycle = await ctx.db
       .query('storageLifecycle')
@@ -1219,7 +1232,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: null,
-          permission: 'issueAttachmentAccessUrl',
+          permission: 'issueAttachmentAccessUrl' as const,
           reason: 'Attachment not found',
         };
       }
@@ -1232,7 +1245,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: attachment.organizationId,
-          permission: 'issueAttachmentAccessUrl',
+          permission: 'issueAttachmentAccessUrl' as const,
           reason: decision.reason,
         };
       }
@@ -1241,7 +1254,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: attachment.organizationId,
-          permission: 'issueAttachmentAccessUrl',
+          permission: 'issueAttachmentAccessUrl' as const,
           reason: 'Attachment access denied',
         };
       }
@@ -1249,7 +1262,7 @@ export const resolveStorageReadAccess = query({
       return {
         allowed: true,
         organizationId: attachment.organizationId,
-        permission: 'issueAttachmentAccessUrl',
+        permission: 'issueAttachmentAccessUrl' as const,
         reason: null,
       };
     }
@@ -1266,7 +1279,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence',
+          permission: 'manageEvidence' as const,
           reason: 'Site admin access required',
         };
       }
@@ -1275,7 +1288,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence',
+          permission: 'manageEvidence' as const,
           reason: 'Multi-factor authentication is required for site admin access',
         };
       }
@@ -1284,7 +1297,7 @@ export const resolveStorageReadAccess = query({
         return {
           allowed: false,
           organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence',
+          permission: 'manageEvidence' as const,
           reason: 'Recent step-up authentication is required',
         };
       }
@@ -1292,7 +1305,7 @@ export const resolveStorageReadAccess = query({
       return {
         allowed: true,
         organizationId: user.activeOrganizationId,
-        permission: 'manageEvidence',
+        permission: 'manageEvidence' as const,
         reason: null,
       };
     }

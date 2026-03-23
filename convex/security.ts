@@ -9,7 +9,7 @@ import {
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
 import { components, internal } from './_generated/api';
-import type { Id } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import {
   type ActionCtx,
   action,
@@ -226,6 +226,10 @@ const evidenceReportValidator = v.object({
     v.literal('security_posture'),
     v.literal('audit_integrity'),
     v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
   ),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
 });
@@ -239,6 +243,10 @@ const evidenceReportRecordValidator = v.object({
     v.literal('security_posture'),
     v.literal('audit_integrity'),
     v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
   ),
   contentJson: v.string(),
   contentHash: v.string(),
@@ -265,6 +273,10 @@ const evidenceReportListItemValidator = v.object({
     v.literal('security_posture'),
     v.literal('audit_integrity'),
     v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
   ),
   contentHash: v.string(),
   exportHash: v.union(v.string(), v.null()),
@@ -364,6 +376,23 @@ const controlChecklistItemValidator = v.object({
   notes: v.union(v.string(), v.null()),
   owner: v.union(v.string(), v.null()),
   required: v.boolean(),
+  reviewSatisfaction: v.union(
+    v.object({
+      mode: v.union(
+        v.literal('automated_check'),
+        v.literal('attestation'),
+        v.literal('document_upload'),
+        v.literal('follow_up'),
+        v.literal('exception'),
+      ),
+      reviewRunId: v.id('reviewRuns'),
+      reviewTaskId: v.id('reviewTasks'),
+      satisfiedAt: v.number(),
+      satisfiedByDisplay: v.union(v.string(), v.null()),
+      satisfiedThroughAt: v.number(),
+    }),
+    v.null(),
+  ),
   status: checklistStatusValidator,
   suggestedEvidenceTypes: v.array(suggestedEvidenceTypeValidator),
   verificationMethod: v.string(),
@@ -471,7 +500,122 @@ const evidenceReportKindValidator = v.union(
   v.literal('security_posture'),
   v.literal('audit_integrity'),
   v.literal('audit_readiness'),
+  v.literal('annual_review'),
+  v.literal('findings_snapshot'),
+  v.literal('vendor_posture_snapshot'),
+  v.literal('control_workspace_snapshot'),
 );
+const reviewRunKindValidator = v.union(v.literal('annual'), v.literal('triggered'));
+const reviewRunStatusValidator = v.union(
+  v.literal('ready'),
+  v.literal('needs_attention'),
+  v.literal('completed'),
+);
+const reviewTaskTypeValidator = v.union(
+  v.literal('automated_check'),
+  v.literal('attestation'),
+  v.literal('document_upload'),
+  v.literal('follow_up'),
+);
+const reviewTaskStatusValidator = v.union(
+  v.literal('ready'),
+  v.literal('completed'),
+  v.literal('exception'),
+  v.literal('blocked'),
+);
+const reviewTaskResultTypeValidator = v.union(
+  v.literal('automated_check'),
+  v.literal('attested'),
+  v.literal('document_linked'),
+  v.literal('exception_marked'),
+  v.literal('follow_up_opened'),
+  v.literal('resolved'),
+);
+const reviewSatisfactionModeValidator = v.union(reviewTaskTypeValidator, v.literal('exception'));
+const reviewTaskEvidenceSourceTypeValidator = v.union(
+  v.literal('security_control_evidence'),
+  v.literal('evidence_report'),
+  v.literal('security_finding'),
+  v.literal('backup_verification_report'),
+  v.literal('external_document'),
+);
+const reviewTaskEvidenceRoleValidator = v.union(
+  v.literal('primary'),
+  v.literal('supporting'),
+  v.literal('blocking'),
+);
+const reviewTaskControlLinkValidator = v.object({
+  internalControlId: v.string(),
+  itemId: v.string(),
+});
+const reviewTaskEvidenceLinkValidator = v.object({
+  id: v.id('reviewTaskEvidenceLinks'),
+  freshAt: v.union(v.number(), v.null()),
+  linkedAt: v.number(),
+  linkedByDisplay: v.union(v.string(), v.null()),
+  role: reviewTaskEvidenceRoleValidator,
+  sourceId: v.string(),
+  sourceLabel: v.string(),
+  sourceType: reviewTaskEvidenceSourceTypeValidator,
+});
+const reviewAttestationValidator = v.object({
+  documentLabel: v.union(v.string(), v.null()),
+  documentUrl: v.union(v.string(), v.null()),
+  documentVersion: v.union(v.string(), v.null()),
+  statementKey: v.string(),
+  statementText: v.string(),
+  attestedAt: v.number(),
+  attestedByDisplay: v.union(v.string(), v.null()),
+});
+const reviewTaskValidator = v.object({
+  allowException: v.boolean(),
+  controlLinks: v.array(reviewTaskControlLinkValidator),
+  description: v.string(),
+  evidenceLinks: v.array(reviewTaskEvidenceLinkValidator),
+  freshnessWindowDays: v.union(v.number(), v.null()),
+  id: v.id('reviewTasks'),
+  latestAttestation: v.union(reviewAttestationValidator, v.null()),
+  latestNote: v.union(v.string(), v.null()),
+  required: v.boolean(),
+  satisfiedAt: v.union(v.number(), v.null()),
+  satisfiedThroughAt: v.union(v.number(), v.null()),
+  status: reviewTaskStatusValidator,
+  taskType: reviewTaskTypeValidator,
+  templateKey: v.string(),
+  title: v.string(),
+});
+const reviewRunSummaryValidator = v.object({
+  createdAt: v.number(),
+  finalizedAt: v.union(v.number(), v.null()),
+  id: v.id('reviewRuns'),
+  kind: reviewRunKindValidator,
+  status: reviewRunStatusValidator,
+  taskCounts: v.object({
+    blocked: v.number(),
+    completed: v.number(),
+    exception: v.number(),
+    ready: v.number(),
+    total: v.number(),
+  }),
+  title: v.string(),
+  triggerType: v.union(v.string(), v.null()),
+  year: v.union(v.number(), v.null()),
+});
+const reviewRunDetailValidator = v.object({
+  createdAt: v.number(),
+  finalReportId: v.union(v.id('evidenceReports'), v.null()),
+  finalizedAt: v.union(v.number(), v.null()),
+  id: v.id('reviewRuns'),
+  kind: reviewRunKindValidator,
+  sourceRecordId: v.union(v.string(), v.null()),
+  sourceRecordType: v.union(v.string(), v.null()),
+  status: reviewRunStatusValidator,
+  tasks: v.array(reviewTaskValidator),
+  title: v.string(),
+  triggerType: v.union(v.string(), v.null()),
+  year: v.union(v.number(), v.null()),
+});
+const reviewRunSummaryListValidator = v.array(reviewRunSummaryValidator);
 const exportArtifactTypeValidator = v.union(
   v.literal('audit_csv'),
   v.literal('directory_csv'),
@@ -549,6 +693,381 @@ const EXPORT_ARTIFACT_SCHEMA_VERSION = '2026-03-18.audit-evidence.v1';
 const BACKUP_DRILL_STALE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const RELEASE_PROVENANCE_CONTROL_ID = 'CTRL-CM-003';
 const RELEASE_PROVENANCE_ITEM_ID = 'controlled-change-path';
+const REVIEW_RUN_EXPORT_SCHEMA_VERSION = '2026-03-22.review-runs.v1';
+const REVIEW_RUN_SOURCE_SURFACE = 'admin.security.reviews';
+const ANNUAL_REVIEW_TASK_FRESHNESS_DAYS = 365;
+
+type ReviewTaskBlueprint = {
+  allowException: boolean;
+  controlLinks: Array<{
+    internalControlId: string;
+    itemId: string;
+  }>;
+  description: string;
+  freshnessWindowDays: number | null;
+  required: boolean;
+  statementKey: string | null;
+  statementText: string | null;
+  taskType: 'automated_check' | 'attestation' | 'document_upload';
+  templateKey: string;
+  title: string;
+  automationKind?:
+    | 'audit_readiness'
+    | 'backup_verification'
+    | 'control_workspace_snapshot'
+    | 'findings_snapshot'
+    | 'release_provenance'
+    | 'security_posture'
+    | 'vendor_posture_snapshot';
+};
+
+const ANNUAL_REVIEW_TASK_BLUEPRINTS: ReviewTaskBlueprint[] = [
+  {
+    allowException: false,
+    automationKind: 'security_posture',
+    controlLinks: [
+      { internalControlId: 'CTRL-CA-007', itemId: 'posture-signals-collected' },
+      { internalControlId: 'CTRL-CA-007', itemId: 'evidence-report-from-monitoring-state' },
+    ],
+    description: 'Generate and retain the current security posture summary for annual review.',
+    freshnessWindowDays: 30,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:security-posture',
+    title: 'Security posture summary is current',
+  },
+  {
+    allowException: false,
+    automationKind: 'audit_readiness',
+    controlLinks: [
+      { internalControlId: 'CTRL-CA-007', itemId: 'evidence-report-from-monitoring-state' },
+      { internalControlId: 'CTRL-CA-005', itemId: 'follow-up-findings-can-be-surfaced' },
+    ],
+    description: 'Generate the current audit readiness report and retain it for annual review.',
+    freshnessWindowDays: 30,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:audit-readiness',
+    title: 'Audit readiness report is current',
+  },
+  {
+    allowException: true,
+    automationKind: 'findings_snapshot',
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-RA-005',
+        itemId: 'security-findings-can-be-reviewed-and-prioritized',
+      },
+      { internalControlId: 'CTRL-CA-005', itemId: 'follow-up-findings-can-be-surfaced' },
+    ],
+    description:
+      'Capture the current findings snapshot and verify any follow-up items are tracked.',
+    freshnessWindowDays: 30,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:findings-snapshot',
+    title: 'Security findings snapshot is current',
+  },
+  {
+    allowException: false,
+    automationKind: 'vendor_posture_snapshot',
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-SA-009',
+        itemId: 'external-service-approval-state-can-be-reviewed',
+      },
+      {
+        internalControlId: 'CTRL-CM-008',
+        itemId: 'component-posture-can-be-reviewed-in-site-admin',
+      },
+    ],
+    description: 'Capture the current vendor posture and approval state used for annual review.',
+    freshnessWindowDays: 30,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:vendor-posture',
+    title: 'Vendor posture snapshot is current',
+  },
+  {
+    allowException: false,
+    automationKind: 'control_workspace_snapshot',
+    controlLinks: [
+      { internalControlId: 'CTRL-AU-006', itemId: 'provider-review-procedure' },
+      { internalControlId: 'CTRL-CA-007', itemId: 'evidence-report-from-monitoring-state' },
+    ],
+    description: 'Capture the current control workspace state for the annual review record.',
+    freshnessWindowDays: 30,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:control-workspace',
+    title: 'Control workspace snapshot is current',
+  },
+  {
+    allowException: true,
+    automationKind: 'backup_verification',
+    controlLinks: [
+      { internalControlId: 'CTRL-CP-009', itemId: 'backup-verification-records-maintained' },
+      { internalControlId: 'CTRL-CP-009', itemId: 'restore-testing-recorded' },
+    ],
+    description: 'Link the latest backup verification and restore evidence into the annual review.',
+    freshnessWindowDays: 90,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:backup-verification',
+    title: 'Backup verification evidence is current',
+  },
+  {
+    allowException: true,
+    automationKind: 'release_provenance',
+    controlLinks: [
+      { internalControlId: 'CTRL-CM-003', itemId: 'automated-guardrail-checks' },
+      { internalControlId: 'CTRL-CM-003', itemId: 'controlled-change-path' },
+    ],
+    description:
+      'Link the latest release provenance and guardrail evidence into the annual review.',
+    freshnessWindowDays: 90,
+    required: true,
+    statementKey: null,
+    statementText: null,
+    taskType: 'automated_check',
+    templateKey: 'annual:auto:release-provenance',
+    title: 'Release provenance evidence is current',
+  },
+  {
+    allowException: false,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-AT-002',
+        itemId: 'provider-security-awareness-program-documented',
+      },
+    ],
+    description:
+      'Review the provider security-awareness training program and confirm it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'security-awareness-program-current',
+    statementText:
+      'I reviewed the provider security-awareness training program and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:security-awareness-program',
+    title: 'Security awareness training program reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-IR-004', itemId: 'provider-incident-response-procedure' },
+    ],
+    description: 'Review the incident response procedure and attest that it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'incident-response-procedure-current',
+    statementText: 'I reviewed the provider incident response procedure and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:incident-response-procedure',
+    title: 'Incident response procedure reviewed',
+  },
+  {
+    allowException: false,
+    controlLinks: [{ internalControlId: 'CTRL-AU-006', itemId: 'provider-review-procedure' }],
+    description: 'Review the audit review procedure and attest that it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'audit-review-procedure-current',
+    statementText: 'I reviewed the provider audit review procedure and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:audit-review-procedure',
+    title: 'Audit review procedure reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-CM-002', itemId: 'provider-baseline-review-procedure-documented' },
+    ],
+    description: 'Review the baseline review procedure and confirm current baseline expectations.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'baseline-review-procedure-current',
+    statementText:
+      'I reviewed the provider baseline review procedure and the current baseline remains appropriate.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:baseline-review',
+    title: 'Baseline review completed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-CM-003',
+        itemId: 'provider-change-approval-and-rollback-procedure-documented',
+      },
+    ],
+    description:
+      'Review the change approval and rollback procedure and confirm it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'change-procedure-current',
+    statementText:
+      'I reviewed the provider change approval and rollback procedure and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:change-procedure',
+    title: 'Change procedure reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-CM-008',
+        itemId: 'provider-component-inventory-review-procedure-documented',
+      },
+    ],
+    description:
+      'Review the managed-component inventory review procedure and confirm it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'component-inventory-review-current',
+    statementText:
+      'I reviewed the managed-component inventory review procedure and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:inventory-review',
+    title: 'Component inventory review completed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-CP-004', itemId: 'provider-contingency-test-plan-documented' },
+    ],
+    description:
+      'Review the contingency test plan and confirm the current cadence and expectations remain appropriate.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'contingency-test-plan-current',
+    statementText: 'I reviewed the contingency test plan and its cadence and they remain current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:contingency-test-plan',
+    title: 'Contingency test plan reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      {
+        internalControlId: 'CTRL-SC-013',
+        itemId: 'provider-cryptography-standard-selection-documented',
+      },
+    ],
+    description:
+      'Review the provider cryptography standard selection and confirm it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'cryptography-standard-current',
+    statementText:
+      'I reviewed the provider cryptography standard selection and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:cryptography-standard',
+    title: 'Cryptography standard reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [{ internalControlId: 'CTRL-SI-004', itemId: 'provider-alert-procedure' }],
+    description: 'Review the monitoring response procedure and confirm it remains current.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'monitoring-procedure-current',
+    statementText: 'I reviewed the provider monitoring response procedure and it remains current.',
+    taskType: 'attestation',
+    templateKey: 'annual:attest:monitoring-procedure',
+    title: 'Monitoring procedure reviewed',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-CA-002', itemId: 'provider-assessment-plan-documented' },
+    ],
+    description: 'Attach or link the current control assessment plan and confirm its version.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'assessment-plan-current',
+    statementText: 'I linked the current control assessment plan used for the annual review.',
+    taskType: 'document_upload',
+    templateKey: 'annual:document:assessment-plan',
+    title: 'Control assessment plan linked',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-CA-005', itemId: 'provider-poam-workflow-documented' },
+    ],
+    description:
+      'Attach or link the current plan-of-action workflow artifact and confirm its version.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'poam-workflow-current',
+    statementText:
+      'I linked the current plan-of-action workflow artifact used for the annual review.',
+    taskType: 'document_upload',
+    templateKey: 'annual:document:poam-workflow',
+    title: 'Plan-of-action workflow linked',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-CP-002', itemId: 'provider-contingency-plan-documented' },
+    ],
+    description: 'Attach or link the current contingency plan and confirm its version.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'contingency-plan-current',
+    statementText: 'I linked the current contingency plan used for the annual review.',
+    taskType: 'document_upload',
+    templateKey: 'annual:document:contingency-plan',
+    title: 'Contingency plan linked',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-IR-008', itemId: 'provider-incident-response-plan-documented' },
+      {
+        internalControlId: 'CTRL-IR-008',
+        itemId: 'provider-incident-response-plan-review-cadence-documented',
+      },
+    ],
+    description: 'Attach or link the current incident response plan and confirm its version.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'incident-response-plan-current',
+    statementText: 'I linked the current incident response plan used for the annual review.',
+    taskType: 'document_upload',
+    templateKey: 'annual:document:incident-response-plan',
+    title: 'Incident response plan linked',
+  },
+  {
+    allowException: true,
+    controlLinks: [
+      { internalControlId: 'CTRL-PL-002', itemId: 'provider-plan-review-and-approval-documented' },
+    ],
+    description:
+      'Attach or link the current system security and privacy plan artifact and confirm its version.',
+    freshnessWindowDays: ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    required: true,
+    statementKey: 'security-privacy-plan-current',
+    statementText:
+      'I linked the current system security and privacy plan artifact used for the annual review.',
+    taskType: 'document_upload',
+    templateKey: 'annual:document:security-privacy-plan',
+    title: 'Security and privacy plan linked',
+  },
+];
 
 function stringifyStable(value: unknown) {
   return JSON.stringify(value, null, 2);
@@ -557,6 +1076,27 @@ function stringifyStable(value: unknown) {
 async function hashContent(value: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), (part) => part.toString(16).padStart(2, '0')).join('');
+}
+
+function addDays(timestamp: number, days: number) {
+  return timestamp + days * 24 * 60 * 60 * 1000;
+}
+
+function getCurrentAnnualReviewYear() {
+  return new Date().getUTCFullYear();
+}
+
+function getAnnualReviewRunKey(year: number) {
+  return `annual:${year}`;
+}
+
+function getAnnualReviewRunTitle(year: number) {
+  return `Annual Security Review ${year}`;
+}
+
+function isReviewSatisfactionCurrent(input: { satisfiedAt: number; satisfiedThroughAt: number }) {
+  const now = Date.now();
+  return input.satisfiedAt <= now && input.satisfiedThroughAt >= now;
 }
 
 type ExportManifest = {
@@ -1339,6 +1879,9 @@ async function listSecurityControlWorkspaceRecords(
         ...checklistItems.flatMap((item) =>
           (item.archivedSeedEvidence ?? []).map((entry) => entry.archivedByUserId),
         ),
+        ...checklistItems.flatMap((item) =>
+          item.reviewSatisfaction ? [item.reviewSatisfaction.satisfiedByUserId] : [],
+        ),
       ].filter((value): value is string => typeof value === 'string' && value.length > 0),
     ),
   );
@@ -1371,6 +1914,20 @@ async function listSecurityControlWorkspaceRecords(
   return ACTIVE_CONTROL_REGISTER.controls.map((control) => {
     const platformChecklist = control.platformChecklistItems.map((item) => {
       const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
+      const reviewSatisfaction =
+        itemState?.reviewSatisfaction && isReviewSatisfactionCurrent(itemState.reviewSatisfaction)
+          ? {
+              mode: itemState.reviewSatisfaction.mode,
+              reviewRunId: itemState.reviewSatisfaction.reviewRunId,
+              reviewTaskId: itemState.reviewSatisfaction.reviewTaskId,
+              satisfiedAt: itemState.reviewSatisfaction.satisfiedAt,
+              satisfiedByDisplay: getActorDisplayName(
+                actorDisplayById,
+                itemState.reviewSatisfaction.satisfiedByUserId,
+              ),
+              satisfiedThroughAt: itemState.reviewSatisfaction.satisfiedThroughAt,
+            }
+          : null;
       const hiddenSeedEvidenceIds = new Set(itemState?.hiddenSeedEvidenceIds ?? []);
       const archivedSeedEvidenceById = new Map(
         (itemState?.archivedSeedEvidence ?? []).map((entry) => [entry.evidenceId, entry] as const),
@@ -1490,22 +2047,36 @@ async function listSecurityControlWorkspaceRecords(
         };
       });
       const evidence = [...seededEvidence, ...persistedEvidence, ...archivedSeedEvidence];
-      const derivedStatus = deriveChecklistItemStatus(evidence);
+      const evidenceDerivedStatus = deriveChecklistItemStatus(evidence);
+      const derivedStatus =
+        evidenceDerivedStatus === 'done' || reviewSatisfaction !== null
+          ? ('done' as const)
+          : evidenceDerivedStatus;
       const itemHasExpiringSoonEvidence = hasExpiringSoonEvidence(evidence);
       const completedAt =
         derivedStatus === 'done'
-          ? evidence
-              .filter(
-                (entry) => entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
-              )
-              .reduce<number | null>((latest, entry) => {
-                const candidate = entry.reviewedAt ?? entry.createdAt;
-                return latest === null ? candidate : Math.max(latest, candidate);
-              }, null)
+          ? [
+              reviewSatisfaction?.satisfiedAt ?? null,
+              evidence
+                .filter(
+                  (entry) =>
+                    entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
+                )
+                .reduce<number | null>((latest, entry) => {
+                  const candidate = entry.reviewedAt ?? entry.createdAt;
+                  return latest === null ? candidate : Math.max(latest, candidate);
+                }, null),
+            ].reduce<number | null>((latest, value) => {
+              if (typeof value !== 'number') {
+                return latest;
+              }
+              return latest === null ? value : Math.max(latest, value);
+            }, null)
           : null;
       const lastReviewedAtCandidates = [
         item.seed.evidence.length > 0 || derivedStatus !== 'not_started' ? seededReviewedAt : null,
         completedAt,
+        reviewSatisfaction?.satisfiedAt ?? null,
         ...evidence.flatMap((entry) => [entry.reviewedAt, entry.createdAt, entry.archivedAt]),
         ...archivedSeedEvidence.map((entry) => entry.archivedAt),
       ];
@@ -1531,6 +2102,7 @@ async function listSecurityControlWorkspaceRecords(
         evidence,
         evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
         hasExpiringSoonEvidence: itemHasExpiringSoonEvidence,
+        reviewSatisfaction,
       };
     });
 
@@ -1580,6 +2152,905 @@ async function listSecurityControlWorkspaceRecords(
     };
   });
 }
+
+type ReviewRunDoc = Doc<'reviewRuns'>;
+type ReviewTaskDoc = Doc<'reviewTasks'>;
+
+async function buildReviewRunSnapshot() {
+  const snapshotJson = stringifyStable({
+    generatedAt: ACTIVE_CONTROL_REGISTER.generatedAt,
+    schemaVersion: ACTIVE_CONTROL_REGISTER.schemaVersion,
+    controls: ACTIVE_CONTROL_REGISTER.controls,
+  });
+
+  return {
+    snapshotHash: await hashContent(snapshotJson),
+    snapshotJson,
+  };
+}
+
+function buildReviewRunTaskCounts(tasks: ReviewTaskDoc[]) {
+  return tasks.reduce(
+    (counts, task) => {
+      counts.total += 1;
+      counts[task.status] += 1;
+      return counts;
+    },
+    {
+      blocked: 0,
+      completed: 0,
+      exception: 0,
+      ready: 0,
+      total: 0,
+    },
+  );
+}
+
+function deriveReviewRunStatus(tasks: ReviewTaskDoc[], finalizedAt?: number) {
+  if (typeof finalizedAt === 'number') {
+    return 'completed' as const;
+  }
+  if (tasks.some((task) => task.status === 'blocked' || task.status === 'exception')) {
+    return 'needs_attention' as const;
+  }
+  return 'ready' as const;
+}
+
+async function listReviewTasksByRunId(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  reviewRunId: Id<'reviewRuns'>,
+) {
+  return await ctx.db
+    .query('reviewTasks')
+    .withIndex('by_review_run_id', (q) => q.eq('reviewRunId', reviewRunId))
+    .collect();
+}
+
+async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'reviewRuns'>) {
+  const existingTasks = await listReviewTasksByRunId(ctx, reviewRunId);
+  const existingByTemplateKey = new Map(
+    existingTasks.map((task) => [task.templateKey, task] as const),
+  );
+  const now = Date.now();
+
+  await Promise.all(
+    ANNUAL_REVIEW_TASK_BLUEPRINTS.map(async (blueprint) => {
+      const existing = existingByTemplateKey.get(blueprint.templateKey);
+      const patch = {
+        allowException: blueprint.allowException,
+        controlLinks: blueprint.controlLinks,
+        description: blueprint.description,
+        freshnessWindowDays: blueprint.freshnessWindowDays ?? undefined,
+        required: blueprint.required,
+        taskType: blueprint.taskType,
+        title: blueprint.title,
+        updatedAt: now,
+      };
+
+      if (existing) {
+        await ctx.db.patch(existing._id, patch);
+        return;
+      }
+
+      await ctx.db.insert('reviewTasks', {
+        ...patch,
+        latestAttestationId: undefined,
+        latestEvidenceLinkedAt: undefined,
+        latestNote: undefined,
+        latestResultId: undefined,
+        reviewRunId,
+        satisfiedAt: undefined,
+        satisfiedThroughAt: undefined,
+        status: 'ready',
+        templateKey: blueprint.templateKey,
+        createdAt: now,
+      });
+    }),
+  );
+}
+
+async function syncReviewRunStatus(ctx: MutationCtx, reviewRunId: Id<'reviewRuns'>) {
+  const run = await ctx.db.get(reviewRunId);
+  if (!run) {
+    throw new Error('Review run not found.');
+  }
+  const tasks = await listReviewTasksByRunId(ctx, reviewRunId);
+  const status = deriveReviewRunStatus(tasks, run.finalizedAt);
+  if (status !== run.status) {
+    await ctx.db.patch(reviewRunId, {
+      status,
+      updatedAt: Date.now(),
+    });
+  }
+  return status;
+}
+
+async function upsertChecklistReviewSatisfaction(
+  ctx: MutationCtx,
+  task: ReviewTaskDoc,
+  args: {
+    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+    satisfiedAt: number;
+    satisfiedByUserId: string;
+    satisfiedThroughAt: number;
+  },
+) {
+  const now = Date.now();
+  await Promise.all(
+    task.controlLinks.map(async (link) => {
+      const existing = await ctx.db
+        .query('securityControlChecklistItems')
+        .withIndex('by_internal_control_id_and_item_id', (q) =>
+          q.eq('internalControlId', link.internalControlId).eq('itemId', link.itemId),
+        )
+        .unique();
+
+      const reviewSatisfaction = {
+        mode: args.mode,
+        reviewRunId: task.reviewRunId,
+        reviewTaskId: task._id,
+        satisfiedAt: args.satisfiedAt,
+        satisfiedByUserId: args.satisfiedByUserId,
+        satisfiedThroughAt: args.satisfiedThroughAt,
+      };
+
+      if (existing) {
+        await ctx.db.patch(existing._id, {
+          completedAt: args.satisfiedAt,
+          completedByUserId: args.satisfiedByUserId,
+          lastReviewedAt: args.satisfiedAt,
+          lastReviewedByUserId: args.satisfiedByUserId,
+          reviewSatisfaction,
+          updatedAt: now,
+        });
+        return;
+      }
+
+      await ctx.db.insert('securityControlChecklistItems', {
+        completedAt: args.satisfiedAt,
+        completedByUserId: args.satisfiedByUserId,
+        createdAt: now,
+        internalControlId: link.internalControlId,
+        itemId: link.itemId,
+        lastReviewedAt: args.satisfiedAt,
+        lastReviewedByUserId: args.satisfiedByUserId,
+        reviewSatisfaction,
+        updatedAt: now,
+      });
+    }),
+  );
+}
+
+async function applyReviewTaskState(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: string;
+    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+    note?: string;
+    reviewTaskId: Id<'reviewTasks'>;
+    satisfiedAt?: number | null;
+    satisfiedThroughAt?: number | null;
+    status: 'ready' | 'completed' | 'exception' | 'blocked';
+    resultType:
+      | 'automated_check'
+      | 'attested'
+      | 'document_linked'
+      | 'exception_marked'
+      | 'follow_up_opened'
+      | 'resolved';
+    latestAttestationId?: Id<'reviewAttestations'>;
+  },
+) {
+  const task = await ctx.db.get(args.reviewTaskId);
+  if (!task) {
+    throw new Error('Review task not found.');
+  }
+  const now = Date.now();
+  const trimmedNote = args.note?.trim() || undefined;
+  const resultId = await ctx.db.insert('reviewTaskResults', {
+    actorUserId: args.actorUserId,
+    createdAt: now,
+    note: trimmedNote,
+    resultType: args.resultType,
+    reviewRunId: task.reviewRunId,
+    reviewTaskId: task._id,
+    statusAfter: args.status,
+  });
+
+  await ctx.db.patch(task._id, {
+    latestAttestationId: args.latestAttestationId,
+    latestNote: trimmedNote,
+    latestResultId: resultId,
+    satisfiedAt: args.satisfiedAt ?? undefined,
+    satisfiedThroughAt: args.satisfiedThroughAt ?? undefined,
+    status: args.status,
+    updatedAt: now,
+  });
+
+  if (
+    (args.status === 'completed' || args.status === 'exception') &&
+    typeof args.satisfiedAt === 'number' &&
+    typeof args.satisfiedThroughAt === 'number'
+  ) {
+    await upsertChecklistReviewSatisfaction(ctx, task, {
+      mode: args.mode,
+      satisfiedAt: args.satisfiedAt,
+      satisfiedByUserId: args.actorUserId,
+      satisfiedThroughAt: args.satisfiedThroughAt,
+    });
+  }
+
+  await syncReviewRunStatus(ctx, task.reviewRunId);
+}
+
+async function upsertReviewTaskEvidenceLinkRecord(
+  ctx: MutationCtx,
+  args: {
+    freshAt?: number;
+    linkedByUserId?: string;
+    reviewRunId: Id<'reviewRuns'>;
+    reviewTaskId: Id<'reviewTasks'>;
+    role: 'primary' | 'supporting' | 'blocking';
+    sourceId: string;
+    sourceLabel: string;
+    sourceType:
+      | 'security_control_evidence'
+      | 'evidence_report'
+      | 'security_finding'
+      | 'backup_verification_report'
+      | 'external_document';
+  },
+) {
+  const now = Date.now();
+  const existing = (
+    await ctx.db
+      .query('reviewTaskEvidenceLinks')
+      .withIndex('by_review_task_id', (q) => q.eq('reviewTaskId', args.reviewTaskId))
+      .collect()
+  ).find(
+    (link) =>
+      link.sourceId === args.sourceId &&
+      link.sourceType === args.sourceType &&
+      link.role === args.role,
+  );
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      freshAt: args.freshAt,
+      linkedAt: now,
+      linkedByUserId: args.linkedByUserId,
+      sourceLabel: args.sourceLabel,
+    });
+    return existing._id;
+  }
+
+  return await ctx.db.insert('reviewTaskEvidenceLinks', {
+    freshAt: args.freshAt,
+    linkedAt: now,
+    linkedByUserId: args.linkedByUserId,
+    reviewRunId: args.reviewRunId,
+    reviewTaskId: args.reviewTaskId,
+    role: args.role,
+    sourceId: args.sourceId,
+    sourceLabel: args.sourceLabel,
+    sourceType: args.sourceType,
+  });
+}
+
+async function clearReviewTaskEvidenceLinksBySourceType(
+  ctx: MutationCtx,
+  reviewTaskId: Id<'reviewTasks'>,
+  sourceTypes: Array<
+    | 'security_control_evidence'
+    | 'evidence_report'
+    | 'security_finding'
+    | 'backup_verification_report'
+    | 'external_document'
+  >,
+) {
+  if (sourceTypes.length === 0) {
+    return;
+  }
+
+  const existingLinks = await ctx.db
+    .query('reviewTaskEvidenceLinks')
+    .withIndex('by_review_task_id', (q) => q.eq('reviewTaskId', reviewTaskId))
+    .collect();
+
+  await Promise.all(
+    existingLinks
+      .filter((link) => sourceTypes.includes(link.sourceType))
+      .map((link) => ctx.db.delete(link._id)),
+  );
+}
+
+function getAutomationEvidenceLabel(blueprint: ReviewTaskBlueprint) {
+  switch (blueprint.automationKind) {
+    case 'audit_readiness':
+      return 'Audit readiness report';
+    case 'backup_verification':
+      return 'Backup verification evidence';
+    case 'control_workspace_snapshot':
+      return 'Control workspace snapshot';
+    case 'findings_snapshot':
+      return 'Security findings snapshot';
+    case 'release_provenance':
+      return 'Release provenance evidence';
+    case 'security_posture':
+      return 'Security posture summary';
+    case 'vendor_posture_snapshot':
+      return 'Vendor posture snapshot';
+    default:
+      return blueprint.title;
+  }
+}
+
+async function buildReviewRunSummary(ctx: QueryCtx, run: ReviewRunDoc) {
+  const tasks = await listReviewTasksByRunId(ctx, run._id);
+  return {
+    createdAt: run.createdAt,
+    finalizedAt: run.finalizedAt ?? null,
+    id: run._id,
+    kind: run.kind,
+    status: deriveReviewRunStatus(tasks, run.finalizedAt),
+    taskCounts: buildReviewRunTaskCounts(tasks),
+    title: run.title,
+    triggerType: run.triggerType ?? null,
+    year: run.year ?? null,
+  };
+}
+
+async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>) {
+  const run = await ctx.db.get(reviewRunId);
+  if (!run) {
+    return null;
+  }
+
+  const [tasks, evidenceLinks, attestations] = await Promise.all([
+    listReviewTasksByRunId(ctx, reviewRunId),
+    ctx.db
+      .query('reviewTaskEvidenceLinks')
+      .withIndex('by_review_run_id_and_linked_at', (q) => q.eq('reviewRunId', reviewRunId))
+      .collect(),
+    ctx.db
+      .query('reviewAttestations')
+      .withIndex('by_review_run_id_and_attested_at', (q) => q.eq('reviewRunId', reviewRunId))
+      .collect(),
+  ]);
+
+  const actorIds = Array.from(
+    new Set([
+      ...evidenceLinks
+        .map((link) => link.linkedByUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      ...attestations
+        .map((attestation) => attestation.attestedByUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ]),
+  );
+  const actorProfiles = await Promise.all(
+    actorIds.map(async (authUserId) => {
+      const profile = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+        .first();
+      return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
+    }),
+  );
+  const actorDisplayById = new Map(actorProfiles);
+  const evidenceLinksByTaskId = evidenceLinks.reduce<Map<string, Doc<'reviewTaskEvidenceLinks'>[]>>(
+    (accumulator, link) => {
+      const current = accumulator.get(link.reviewTaskId) ?? [];
+      current.push(link);
+      accumulator.set(link.reviewTaskId, current);
+      return accumulator;
+    },
+    new Map(),
+  );
+  const attestationByTaskId = new Map(
+    attestations.map((attestation) => [attestation.reviewTaskId, attestation] as const),
+  );
+  const sortedTasks = [...tasks].sort((left, right) =>
+    left.templateKey.localeCompare(right.templateKey),
+  );
+
+  return {
+    createdAt: run.createdAt,
+    finalReportId: run.finalReportId ?? null,
+    finalizedAt: run.finalizedAt ?? null,
+    id: run._id,
+    kind: run.kind,
+    sourceRecordId: run.sourceRecordId ?? null,
+    sourceRecordType: run.sourceRecordType ?? null,
+    status: deriveReviewRunStatus(tasks, run.finalizedAt),
+    tasks: sortedTasks.map((task) => {
+      const latestAttestation = attestationByTaskId.get(task._id);
+      return {
+        allowException: task.allowException,
+        controlLinks: task.controlLinks,
+        description: task.description,
+        evidenceLinks: (evidenceLinksByTaskId.get(task._id) ?? [])
+          .sort((left, right) => right.linkedAt - left.linkedAt)
+          .map((link) => ({
+            id: link._id,
+            freshAt: link.freshAt ?? null,
+            linkedAt: link.linkedAt,
+            linkedByDisplay: getActorDisplayName(actorDisplayById, link.linkedByUserId),
+            role: link.role,
+            sourceId: link.sourceId,
+            sourceLabel: link.sourceLabel ?? link.sourceId,
+            sourceType: link.sourceType,
+          })),
+        freshnessWindowDays: task.freshnessWindowDays ?? null,
+        id: task._id,
+        latestAttestation: latestAttestation
+          ? {
+              documentLabel: latestAttestation.documentLabel ?? null,
+              documentUrl: latestAttestation.documentUrl ?? null,
+              documentVersion: latestAttestation.documentVersion ?? null,
+              statementKey: latestAttestation.statementKey,
+              statementText: latestAttestation.statementText,
+              attestedAt: latestAttestation.attestedAt,
+              attestedByDisplay: getActorDisplayName(
+                actorDisplayById,
+                latestAttestation.attestedByUserId,
+              ),
+            }
+          : null,
+        latestNote: task.latestNote ?? null,
+        required: task.required,
+        satisfiedAt: task.satisfiedAt ?? null,
+        satisfiedThroughAt: task.satisfiedThroughAt ?? null,
+        status: task.status,
+        taskType: task.taskType,
+        templateKey: task.templateKey,
+        title: task.title,
+      };
+    }),
+    title: run.title,
+    triggerType: run.triggerType ?? null,
+    year: run.year ?? null,
+  };
+}
+
+async function createTriggeredReviewRunRecord(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: string;
+    controlLinks?: Array<{ internalControlId: string; itemId: string }>;
+    dedupeKey?: string;
+    sourceRecordId?: string;
+    sourceRecordType?: string;
+    title: string;
+    triggerType: string;
+  },
+) {
+  const existing = args.dedupeKey
+    ? await ctx.db
+        .query('reviewRuns')
+        .withIndex('by_dedupe_key', (q) => q.eq('dedupeKey', args.dedupeKey))
+        .unique()
+    : null;
+  const now = Date.now();
+
+  if (existing) {
+    return existing._id;
+  }
+
+  const snapshot = await buildReviewRunSnapshot();
+  const runId = await ctx.db.insert('reviewRuns', {
+    controlRegisterGeneratedAt: ACTIVE_CONTROL_REGISTER.generatedAt,
+    controlRegisterSchemaVersion: ACTIVE_CONTROL_REGISTER.schemaVersion,
+    createdAt: now,
+    createdByUserId: args.actorUserId,
+    dedupeKey: args.dedupeKey,
+    finalReportId: undefined,
+    finalizedAt: undefined,
+    finalizedByUserId: undefined,
+    kind: 'triggered',
+    runKey: `triggered:${args.triggerType}:${crypto.randomUUID()}`,
+    snapshotHash: snapshot.snapshotHash,
+    snapshotJson: snapshot.snapshotJson,
+    sourceRecordId: args.sourceRecordId,
+    sourceRecordType: args.sourceRecordType,
+    status: 'ready',
+    title: args.title.trim(),
+    triggerType: args.triggerType.trim(),
+    updatedAt: now,
+  });
+
+  await ctx.db.insert('reviewTasks', {
+    allowException: true,
+    controlLinks: args.controlLinks ?? [],
+    createdAt: now,
+    description: `Follow up on ${args.title.trim().toLowerCase()}.`,
+    freshnessWindowDays: undefined,
+    latestAttestationId: undefined,
+    latestEvidenceLinkedAt: undefined,
+    latestNote: undefined,
+    latestResultId: undefined,
+    required: true,
+    reviewRunId: runId,
+    satisfiedAt: undefined,
+    satisfiedThroughAt: undefined,
+    status: 'ready',
+    taskType: 'follow_up',
+    templateKey: `triggered:${args.triggerType.trim()}`,
+    title: args.title.trim(),
+    updatedAt: now,
+  });
+
+  await syncReviewRunStatus(ctx, runId);
+  return runId;
+}
+
+export const getCurrentAnnualReviewRun = query({
+  args: {},
+  returns: v.union(reviewRunSummaryValidator, v.null()),
+  handler: async (ctx) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const existing = await ctx.db
+      .query('reviewRuns')
+      .withIndex('by_run_key', (q) =>
+        q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
+      )
+      .unique();
+    if (!existing) {
+      return null;
+    }
+    return await buildReviewRunSummary(ctx, existing);
+  },
+});
+
+export const ensureCurrentAnnualReviewRun = mutation({
+  args: {},
+  returns: reviewRunSummaryValidator,
+  handler: async (ctx) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const year = getCurrentAnnualReviewYear();
+    const runKey = getAnnualReviewRunKey(year);
+    let run = await ctx.db
+      .query('reviewRuns')
+      .withIndex('by_run_key', (q) => q.eq('runKey', runKey))
+      .unique();
+
+    if (!run) {
+      const snapshot = await buildReviewRunSnapshot();
+      const now = Date.now();
+      const runId = await ctx.db.insert('reviewRuns', {
+        controlRegisterGeneratedAt: ACTIVE_CONTROL_REGISTER.generatedAt,
+        controlRegisterSchemaVersion: ACTIVE_CONTROL_REGISTER.schemaVersion,
+        createdAt: now,
+        createdByUserId: currentUser.authUserId,
+        finalReportId: undefined,
+        finalizedAt: undefined,
+        finalizedByUserId: undefined,
+        kind: 'annual',
+        runKey,
+        snapshotHash: snapshot.snapshotHash,
+        snapshotJson: snapshot.snapshotJson,
+        status: 'ready',
+        title: getAnnualReviewRunTitle(year),
+        updatedAt: now,
+        year,
+      });
+      await upsertAnnualReviewTasks(ctx, runId);
+      run = await ctx.db.get(runId);
+    } else {
+      await upsertAnnualReviewTasks(ctx, run._id);
+    }
+
+    if (!run) {
+      throw new Error('Failed to ensure current annual review run.');
+    }
+    await syncReviewRunStatus(ctx, run._id);
+    const latestRun = await ctx.db.get(run._id);
+    if (!latestRun) {
+      throw new Error('Review run not found after ensure.');
+    }
+    return await buildReviewRunSummary(ctx as unknown as QueryCtx, latestRun);
+  },
+});
+
+export const listTriggeredReviewRuns = query({
+  args: {},
+  returns: reviewRunSummaryListValidator,
+  handler: async (ctx) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const runs = await ctx.db
+      .query('reviewRuns')
+      .withIndex('by_kind_and_created_at', (q) => q.eq('kind', 'triggered'))
+      .order('desc')
+      .collect();
+    return await Promise.all(runs.map(async (run) => await buildReviewRunSummary(ctx, run)));
+  },
+});
+
+export const getReviewRunDetail = query({
+  args: {
+    reviewRunId: v.id('reviewRuns'),
+  },
+  returns: v.union(reviewRunDetailValidator, v.null()),
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    return await buildReviewRunDetail(ctx, args.reviewRunId);
+  },
+});
+
+export const upsertReviewTaskEvidenceLinkInternal = internalMutation({
+  args: {
+    freshAt: v.optional(v.number()),
+    linkedByUserId: v.optional(v.string()),
+    reviewRunId: v.id('reviewRuns'),
+    reviewTaskId: v.id('reviewTasks'),
+    role: reviewTaskEvidenceRoleValidator,
+    sourceId: v.string(),
+    sourceLabel: v.string(),
+    sourceType: reviewTaskEvidenceSourceTypeValidator,
+  },
+  returns: v.id('reviewTaskEvidenceLinks'),
+  handler: async (ctx, args) => {
+    return await upsertReviewTaskEvidenceLinkRecord(ctx, args);
+  },
+});
+
+export const replaceReviewTaskEvidenceLinksInternal = internalMutation({
+  args: {
+    reviewTaskId: v.id('reviewTasks'),
+    sourceTypes: v.array(reviewTaskEvidenceSourceTypeValidator),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await clearReviewTaskEvidenceLinksBySourceType(ctx, args.reviewTaskId, args.sourceTypes);
+    return null;
+  },
+});
+
+export const applyReviewTaskStateInternal = internalMutation({
+  args: {
+    actorUserId: v.string(),
+    latestAttestationId: v.optional(v.id('reviewAttestations')),
+    mode: reviewSatisfactionModeValidator,
+    note: v.optional(v.string()),
+    reviewTaskId: v.id('reviewTasks'),
+    resultType: reviewTaskResultTypeValidator,
+    satisfiedAt: v.optional(v.union(v.number(), v.null())),
+    satisfiedThroughAt: v.optional(v.union(v.number(), v.null())),
+    status: reviewTaskStatusValidator,
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await applyReviewTaskState(ctx, {
+      actorUserId: args.actorUserId,
+      latestAttestationId: args.latestAttestationId,
+      mode: args.mode,
+      note: args.note,
+      resultType: args.resultType,
+      reviewTaskId: args.reviewTaskId,
+      satisfiedAt: args.satisfiedAt ?? null,
+      satisfiedThroughAt: args.satisfiedThroughAt ?? null,
+      status: args.status,
+    });
+    return null;
+  },
+});
+
+export const createTriggeredReviewRun = mutation({
+  args: {
+    controlLinks: v.optional(v.array(reviewTaskControlLinkValidator)),
+    dedupeKey: v.optional(v.string()),
+    sourceRecordId: v.optional(v.string()),
+    sourceRecordType: v.optional(v.string()),
+    title: v.string(),
+    triggerType: v.string(),
+  },
+  returns: reviewRunSummaryValidator,
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const runId = await createTriggeredReviewRunRecord(ctx, {
+      actorUserId: currentUser.authUserId,
+      controlLinks: args.controlLinks,
+      dedupeKey: args.dedupeKey,
+      sourceRecordId: args.sourceRecordId,
+      sourceRecordType: args.sourceRecordType,
+      title: args.title,
+      triggerType: args.triggerType,
+    });
+    const latestRun = await ctx.db.get(runId);
+    if (!latestRun) {
+      throw new Error('Triggered review run not found after create.');
+    }
+    return await buildReviewRunSummary(ctx as unknown as QueryCtx, latestRun);
+  },
+});
+
+export const linkReviewTaskEvidence = mutation({
+  args: {
+    freshAt: v.optional(v.number()),
+    reviewTaskId: v.id('reviewTasks'),
+    role: v.optional(reviewTaskEvidenceRoleValidator),
+    sourceId: v.string(),
+    sourceLabel: v.string(),
+    sourceType: reviewTaskEvidenceSourceTypeValidator,
+  },
+  returns: v.id('reviewTaskEvidenceLinks'),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const task = await ctx.db.get(args.reviewTaskId);
+    if (!task) {
+      throw new Error('Review task not found.');
+    }
+    const linkId = await upsertReviewTaskEvidenceLinkRecord(ctx, {
+      freshAt: args.freshAt,
+      linkedByUserId: currentUser.authUserId,
+      reviewRunId: task.reviewRunId,
+      reviewTaskId: args.reviewTaskId,
+      role: args.role ?? 'primary',
+      sourceId: args.sourceId.trim(),
+      sourceLabel: args.sourceLabel.trim(),
+      sourceType: args.sourceType,
+    });
+    await ctx.db.patch(task._id, {
+      latestEvidenceLinkedAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    await syncReviewRunStatus(ctx, task.reviewRunId);
+    return linkId;
+  },
+});
+
+export const attestReviewTask = mutation({
+  args: {
+    documentLabel: v.optional(v.string()),
+    documentUrl: v.optional(v.string()),
+    documentVersion: v.optional(v.string()),
+    note: v.optional(v.string()),
+    reviewTaskId: v.id('reviewTasks'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const task = await ctx.db.get(args.reviewTaskId);
+    if (!task) {
+      throw new Error('Review task not found.');
+    }
+    const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
+      (entry) => entry.templateKey === task.templateKey,
+    );
+    if (!blueprint || blueprint.statementKey === null || blueprint.statementText === null) {
+      throw new Error('This task does not support attestation.');
+    }
+
+    if (task.taskType === 'document_upload') {
+      const documentLabel = args.documentLabel?.trim() ?? '';
+      const documentUrl = args.documentUrl?.trim() ?? '';
+      if (!documentLabel || !documentUrl) {
+        throw new Error('Document-upload tasks require both a document label and URL.');
+      }
+      await upsertReviewTaskEvidenceLinkRecord(ctx, {
+        linkedByUserId: currentUser.authUserId,
+        reviewRunId: task.reviewRunId,
+        reviewTaskId: task._id,
+        role: 'primary',
+        sourceId: documentUrl,
+        sourceLabel: documentLabel,
+        sourceType: 'external_document',
+      });
+    }
+
+    const now = Date.now();
+    const attestationId = await ctx.db.insert('reviewAttestations', {
+      attestedAt: now,
+      attestedByUserId: currentUser.authUserId,
+      createdAt: now,
+      documentLabel: args.documentLabel?.trim() || undefined,
+      documentUrl: args.documentUrl?.trim() || undefined,
+      documentVersion: args.documentVersion?.trim() || undefined,
+      reviewRunId: task.reviewRunId,
+      reviewTaskId: task._id,
+      statementKey: blueprint.statementKey,
+      statementText: blueprint.statementText,
+    });
+
+    const satisfiedThroughAt = addDays(
+      now,
+      task.freshnessWindowDays ?? ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+    );
+    await applyReviewTaskState(ctx, {
+      actorUserId: currentUser.authUserId,
+      latestAttestationId: attestationId,
+      mode: task.taskType,
+      note: args.note,
+      resultType: task.taskType === 'document_upload' ? 'document_linked' : 'attested',
+      reviewTaskId: task._id,
+      satisfiedAt: now,
+      satisfiedThroughAt,
+      status: 'completed',
+    });
+    return null;
+  },
+});
+
+export const setReviewTaskException = mutation({
+  args: {
+    note: v.string(),
+    reviewTaskId: v.id('reviewTasks'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const task = await ctx.db.get(args.reviewTaskId);
+    if (!task) {
+      throw new Error('Review task not found.');
+    }
+    if (!task.allowException) {
+      throw new Error('This task does not allow exceptions.');
+    }
+    const trimmedNote = args.note.trim();
+    if (!trimmedNote) {
+      throw new Error('Exception note is required.');
+    }
+    const now = Date.now();
+    await applyReviewTaskState(ctx, {
+      actorUserId: currentUser.authUserId,
+      mode: 'exception',
+      note: trimmedNote,
+      resultType: 'exception_marked',
+      reviewTaskId: task._id,
+      satisfiedAt: now,
+      satisfiedThroughAt: addDays(
+        now,
+        task.freshnessWindowDays ?? ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+      ),
+      status: 'exception',
+    });
+    return null;
+  },
+});
+
+export const openTriggeredFollowUp = mutation({
+  args: {
+    note: v.optional(v.string()),
+    reviewTaskId: v.id('reviewTasks'),
+  },
+  returns: reviewRunSummaryValidator,
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const task = await ctx.db.get(args.reviewTaskId);
+    if (!task) {
+      throw new Error('Review task not found.');
+    }
+    const runId = await createTriggeredReviewRunRecord(ctx, {
+      actorUserId: currentUser.authUserId,
+      controlLinks: task.controlLinks,
+      dedupeKey: `review-task:${task._id}`,
+      sourceRecordId: task._id,
+      sourceRecordType: 'review_task',
+      title: `${task.title} follow-up`,
+      triggerType: 'review_task_follow_up',
+    });
+    const run = await ctx.db.get(runId);
+    if (!run) {
+      throw new Error('Follow-up review run not found after create.');
+    }
+    const summary = await buildReviewRunSummary(ctx as unknown as QueryCtx, run);
+
+    await applyReviewTaskState(ctx, {
+      actorUserId: currentUser.authUserId,
+      mode: 'follow_up',
+      note: args.note,
+      resultType: 'follow_up_opened',
+      reviewTaskId: task._id,
+      satisfiedAt: Date.now(),
+      satisfiedThroughAt: addDays(
+        Date.now(),
+        task.freshnessWindowDays ?? ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
+      ),
+      status: 'exception',
+    });
+    return summary;
+  },
+});
 
 export const createEvidenceReport = internalMutation({
   args: {
@@ -2781,6 +4252,17 @@ export const reviewEvidenceReport = mutation({
       reviewedByUserId: currentUser.authUserId,
     });
 
+    if (args.reviewStatus === 'needs_follow_up') {
+      await createTriggeredReviewRunRecord(ctx, {
+        actorUserId: currentUser.authUserId,
+        dedupeKey: `evidence-report:${report._id}`,
+        sourceRecordId: report._id,
+        sourceRecordType: 'evidence_report',
+        title: `${report.reportKind} follow-up`,
+        triggerType: 'evidence_report_follow_up',
+      });
+    }
+
     await ctx.runMutation(anyApi.audit.insertAuditLog, {
       actorUserId: currentUser.authUserId,
       eventType: 'evidence_report_reviewed',
@@ -2971,13 +4453,38 @@ export const storeEvidenceReportExport = internalMutation({
 export async function generateEvidenceReportHandler(
   ctx: ActionCtx,
   args: {
-    reportKind?: 'security_posture' | 'audit_integrity' | 'audit_readiness';
+    reportKind?:
+      | 'security_posture'
+      | 'audit_integrity'
+      | 'audit_readiness'
+      | 'annual_review'
+      | 'findings_snapshot'
+      | 'vendor_posture_snapshot'
+      | 'control_workspace_snapshot';
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
   const reportKind = args.reportKind ?? 'security_posture';
   const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
-  const controlWorkspace = await ctx.runQuery(anyApi.security.listSecurityControlWorkspaces, {});
+  const controlWorkspace = (await ctx.runQuery(
+    anyApi.security.listSecurityControlWorkspaces,
+    {},
+  )) as Array<{
+    evidenceReadiness: 'missing' | 'partial' | 'ready';
+    internalControlId: string;
+    platformChecklist: Array<{
+      evidence: Array<{
+        createdAt: number;
+        id: string;
+        lifecycleStatus: 'active' | 'archived' | 'superseded';
+        reviewStatus: 'pending' | 'reviewed';
+        reviewedAt: number | null;
+        sufficiency: 'missing' | 'partial' | 'sufficient';
+        title: string;
+      }>;
+      itemId: string;
+    }>;
+  }>;
   const recentAuditLogs: Array<{
     createdAt: number;
     eventType: string;
@@ -2993,11 +4500,24 @@ export async function generateEvidenceReportHandler(
   });
   const auditReadinessSnapshot = await ctx.runQuery(anyApi.security.getAuditReadinessSnapshot, {});
   const currentOrganizationPolicies = currentUser.activeOrganizationId
-    ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPolicies, {
+    ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPoliciesInternal, {
         organizationId: currentUser.activeOrganizationId,
       })
     : null;
   const vendorPosture = getVendorBoundarySnapshot();
+  const currentFindings = (
+    reportKind === 'findings_snapshot' || reportKind === 'annual_review'
+      ? await ctx.runQuery(anyApi.security.listSecurityFindings, {})
+      : []
+  ) as Array<{
+    disposition:
+      | 'accepted_risk'
+      | 'false_positive'
+      | 'investigating'
+      | 'pending_review'
+      | 'resolved';
+    status: 'open' | 'resolved';
+  }>;
   const createdAt = Date.now();
   const reportPayload =
     reportKind === 'audit_readiness'
@@ -3028,44 +4548,89 @@ export async function generateEvidenceReportHandler(
             metadataGapCount: auditReadinessSnapshot.metadataGaps.length,
           },
         }
-      : {
-          generatedAt: new Date(createdAt).toISOString(),
-          generatedByUserId: currentUser.authUserId,
-          baselineDefaults: {
-            organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
-          },
-          sessionPolicy: {
-            sessionExpiryHours: 24,
-            sessionRefreshHours: 4,
-            recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
-            temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
-          },
-          telemetryPosture: {
-            sentryApproved: vendorPosture.some(
-              (vendor) => vendor.vendor === 'sentry' && vendor.approved,
-            ),
-            sentryEnabled:
-              vendorPosture.some((vendor) => vendor.vendor === 'sentry' && vendor.approved) &&
-              Boolean(process.env.VITE_SENTRY_DSN),
-          },
-          vendorBoundary: vendorPosture,
-          verificationPosture: {
-            emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
-            mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
-          },
-          integrityCheck,
-          recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
-            createdAt: log.createdAt,
-            eventType: log.eventType,
-            outcome: log.outcome ?? null,
-            organizationId: log.organizationId ?? null,
-            resourceType: log.resourceType ?? null,
-            sourceSurface: log.sourceSurface ?? null,
-          })),
-          scopedOrganizationPolicies: currentOrganizationPolicies,
-          summary,
-          controls: controlWorkspace,
-        };
+      : reportKind === 'findings_snapshot'
+        ? {
+            findings: currentFindings,
+            generatedAt: new Date(createdAt).toISOString(),
+            generatedByUserId: currentUser.authUserId,
+            summary: {
+              openCount: currentFindings.filter((finding) => finding.status === 'open').length,
+              totalCount: currentFindings.length,
+              unresolvedCount: currentFindings.filter(
+                (finding) => finding.disposition !== 'resolved',
+              ).length,
+            },
+          }
+        : reportKind === 'vendor_posture_snapshot'
+          ? {
+              generatedAt: new Date(createdAt).toISOString(),
+              generatedByUserId: currentUser.authUserId,
+              summary: {
+                approvedCount: vendorPosture.filter((vendor) => vendor.approved).length,
+                totalCount: vendorPosture.length,
+              },
+              vendorBoundary: vendorPosture,
+            }
+          : reportKind === 'control_workspace_snapshot'
+            ? {
+                controls: controlWorkspace,
+                generatedAt: new Date(createdAt).toISOString(),
+                generatedByUserId: currentUser.authUserId,
+                summary: {
+                  readyCount: controlWorkspace.filter(
+                    (control) => control.evidenceReadiness === 'ready',
+                  ).length,
+                  totalCount: controlWorkspace.length,
+                },
+              }
+            : reportKind === 'annual_review'
+              ? {
+                  controls: controlWorkspace,
+                  findings: currentFindings,
+                  generatedAt: new Date(createdAt).toISOString(),
+                  generatedByUserId: currentUser.authUserId,
+                  summary,
+                  vendorBoundary: vendorPosture,
+                }
+              : {
+                  generatedAt: new Date(createdAt).toISOString(),
+                  generatedByUserId: currentUser.authUserId,
+                  baselineDefaults: {
+                    organizationPolicies: REGULATED_ORGANIZATION_POLICY_DEFAULTS,
+                  },
+                  sessionPolicy: {
+                    sessionExpiryHours: 24,
+                    sessionRefreshHours: 4,
+                    recentStepUpWindowMinutes: getRetentionPolicyConfig().recentStepUpWindowMinutes,
+                    temporaryLinkTtlMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
+                  },
+                  telemetryPosture: {
+                    sentryApproved: vendorPosture.some(
+                      (vendor) => vendor.vendor === 'sentry' && vendor.approved,
+                    ),
+                    sentryEnabled:
+                      vendorPosture.some(
+                        (vendor) => vendor.vendor === 'sentry' && vendor.approved,
+                      ) && Boolean(process.env.VITE_SENTRY_DSN),
+                  },
+                  vendorBoundary: vendorPosture,
+                  verificationPosture: {
+                    emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
+                    mfaRequired: ALWAYS_ON_REGULATED_BASELINE.requireMfaOrPasskey,
+                  },
+                  integrityCheck,
+                  recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
+                    createdAt: log.createdAt,
+                    eventType: log.eventType,
+                    outcome: log.outcome ?? null,
+                    organizationId: log.organizationId ?? null,
+                    resourceType: log.resourceType ?? null,
+                    sourceSurface: log.sourceSurface ?? null,
+                  })),
+                  scopedOrganizationPolicies: currentOrganizationPolicies,
+                  summary,
+                  controls: controlWorkspace,
+                };
   const report = stringifyStable(reportPayload);
   const contentHash = await hashContent(report);
 
@@ -3111,6 +4676,331 @@ export const generateEvidenceReport = action({
   },
   returns: evidenceReportValidator,
   handler: generateEvidenceReportHandler,
+});
+
+export const storeReviewRunFinalization = internalMutation({
+  args: {
+    finalReportId: v.id('evidenceReports'),
+    finalizedAt: v.number(),
+    finalizedByUserId: v.string(),
+    reviewRunId: v.id('reviewRuns'),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.reviewRunId, {
+      finalReportId: args.finalReportId,
+      finalizedAt: args.finalizedAt,
+      finalizedByUserId: args.finalizedByUserId,
+      status: 'completed',
+      updatedAt: args.finalizedAt,
+    });
+    return null;
+  },
+});
+
+export const refreshReviewRunAutomation = action({
+  args: {
+    reviewRunId: v.id('reviewRuns'),
+  },
+  returns: v.union(reviewRunDetailValidator, v.null()),
+  handler: async (ctx, args) => {
+    await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    const detail = (await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+      reviewRunId: args.reviewRunId,
+    })) as {
+      id: Id<'reviewRuns'>;
+      kind: 'annual' | 'triggered';
+      tasks: Array<{
+        freshnessWindowDays: number | null;
+        id: Id<'reviewTasks'>;
+        taskType: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up';
+        templateKey: string;
+        title: string;
+      }>;
+    } | null;
+    if (!detail) {
+      return null;
+    }
+    if (detail.kind !== 'annual') {
+      return detail;
+    }
+
+    const controlWorkspace = (await ctx.runQuery(
+      anyApi.security.listSecurityControlWorkspaces,
+      {},
+    )) as Array<{
+      internalControlId: string;
+      platformChecklist: Array<{
+        evidence: Array<{
+          createdAt: number;
+          id: string;
+          lifecycleStatus: 'active' | 'archived' | 'superseded';
+          reviewedAt: number | null;
+          sufficiency: 'missing' | 'partial' | 'sufficient';
+          title: string;
+        }>;
+        itemId: string;
+      }>;
+    }>;
+    const findings = (await ctx.runQuery(anyApi.security.listSecurityFindings, {})) as Array<{
+      status: 'open' | 'resolved';
+    }>;
+    const auditReadiness = await ctx.runQuery(anyApi.security.getAuditReadinessOverview, {});
+
+    for (const task of detail.tasks.filter((entry) => entry.taskType === 'automated_check')) {
+      const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
+        (entry) => entry.templateKey === task.templateKey,
+      );
+      if (!blueprint?.automationKind) {
+        continue;
+      }
+
+      const now = Date.now();
+      if (
+        blueprint.automationKind === 'security_posture' ||
+        blueprint.automationKind === 'audit_readiness' ||
+        blueprint.automationKind === 'findings_snapshot' ||
+        blueprint.automationKind === 'vendor_posture_snapshot' ||
+        blueprint.automationKind === 'control_workspace_snapshot'
+      ) {
+        const reportKind =
+          blueprint.automationKind === 'security_posture'
+            ? 'security_posture'
+            : blueprint.automationKind === 'audit_readiness'
+              ? 'audit_readiness'
+              : blueprint.automationKind;
+        const report = await generateEvidenceReportHandler(ctx, {
+          reportKind,
+        });
+        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+          reviewTaskId: task.id,
+          sourceTypes: ['evidence_report'],
+        });
+        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+          freshAt: report.createdAt,
+          reviewRunId: detail.id,
+          reviewTaskId: task.id,
+          role: 'primary',
+          sourceId: report.id,
+          sourceLabel: getAutomationEvidenceLabel(blueprint),
+          sourceType: 'evidence_report',
+        });
+
+        const findingsOpenCount =
+          reportKind === 'findings_snapshot'
+            ? findings.filter((finding) => finding.status === 'open').length
+            : 0;
+        const status =
+          reportKind === 'findings_snapshot' && findingsOpenCount > 0 ? 'blocked' : 'completed';
+        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+          actorUserId: 'system:automation',
+          mode: 'automated_check',
+          note:
+            status === 'blocked'
+              ? `${findingsOpenCount} open finding(s) still require follow-up.`
+              : undefined,
+          reviewTaskId: task.id,
+          resultType: 'automated_check',
+          satisfiedAt: status === 'completed' ? report.createdAt : null,
+          satisfiedThroughAt:
+            status === 'completed'
+              ? addDays(report.createdAt, task.freshnessWindowDays ?? 30)
+              : null,
+          status,
+        });
+        continue;
+      }
+
+      if (blueprint.automationKind === 'backup_verification') {
+        const latestBackupDrill = auditReadiness.latestBackupDrill;
+        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+          reviewTaskId: task.id,
+          sourceTypes: ['backup_verification_report'],
+        });
+        if (!latestBackupDrill) {
+          await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+            actorUserId: 'system:automation',
+            mode: 'automated_check',
+            note: 'No backup verification evidence is currently recorded.',
+            reviewTaskId: task.id,
+            resultType: 'automated_check',
+            satisfiedAt: null,
+            satisfiedThroughAt: null,
+            status: 'blocked',
+          });
+          continue;
+        }
+
+        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+          freshAt: latestBackupDrill.checkedAt,
+          reviewRunId: detail.id,
+          reviewTaskId: task.id,
+          role: 'primary',
+          sourceId: latestBackupDrill.drillId,
+          sourceLabel: getAutomationEvidenceLabel(blueprint),
+          sourceType: 'backup_verification_report',
+        });
+        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+          actorUserId: 'system:automation',
+          mode: 'automated_check',
+          reviewTaskId: task.id,
+          resultType: 'automated_check',
+          satisfiedAt: latestBackupDrill.checkedAt,
+          satisfiedThroughAt: addDays(latestBackupDrill.checkedAt, task.freshnessWindowDays ?? 90),
+          status: 'completed',
+        });
+        continue;
+      }
+
+      if (blueprint.automationKind === 'release_provenance') {
+        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+          reviewTaskId: task.id,
+          sourceTypes: ['security_control_evidence'],
+        });
+        const releaseControl = controlWorkspace.find(
+          (control) => control.internalControlId === RELEASE_PROVENANCE_CONTROL_ID,
+        );
+        const releaseItem = releaseControl?.platformChecklist.find(
+          (item) => item.itemId === RELEASE_PROVENANCE_ITEM_ID,
+        );
+        const latestEvidence = [...(releaseItem?.evidence ?? [])]
+          .filter((entry) => entry.lifecycleStatus === 'active')
+          .sort((left, right) => right.createdAt - left.createdAt)[0];
+
+        if (!latestEvidence) {
+          await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+            actorUserId: 'system:automation',
+            mode: 'automated_check',
+            note: 'No release provenance evidence is currently linked.',
+            reviewTaskId: task.id,
+            resultType: 'automated_check',
+            satisfiedAt: null,
+            satisfiedThroughAt: null,
+            status: 'blocked',
+          });
+          continue;
+        }
+
+        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+          freshAt: latestEvidence.reviewedAt ?? latestEvidence.createdAt,
+          reviewRunId: detail.id,
+          reviewTaskId: task.id,
+          role: latestEvidence.sufficiency === 'sufficient' ? 'primary' : 'blocking',
+          sourceId: latestEvidence.id,
+          sourceLabel: latestEvidence.title,
+          sourceType: 'security_control_evidence',
+        });
+        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+          actorUserId: 'system:automation',
+          mode: 'automated_check',
+          note:
+            latestEvidence.sufficiency === 'sufficient'
+              ? undefined
+              : 'The latest release provenance evidence is partial and still needs follow-up.',
+          reviewTaskId: task.id,
+          resultType: 'automated_check',
+          satisfiedAt:
+            latestEvidence.sufficiency === 'sufficient'
+              ? (latestEvidence.reviewedAt ?? latestEvidence.createdAt)
+              : null,
+          satisfiedThroughAt:
+            latestEvidence.sufficiency === 'sufficient'
+              ? addDays(
+                  latestEvidence.reviewedAt ?? latestEvidence.createdAt,
+                  task.freshnessWindowDays ?? 90,
+                )
+              : null,
+          status: latestEvidence.sufficiency === 'sufficient' ? 'completed' : 'blocked',
+        });
+      }
+    }
+
+    return await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+      reviewRunId: args.reviewRunId,
+    });
+  },
+});
+
+export const finalizeReviewRun = action({
+  args: {
+    reviewRunId: v.id('reviewRuns'),
+  },
+  returns: v.union(reviewRunDetailValidator, v.null()),
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    const detail = (await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+      reviewRunId: args.reviewRunId,
+    })) as {
+      id: Id<'reviewRuns'>;
+      required?: boolean;
+      tasks: Array<{
+        required: boolean;
+        status: 'ready' | 'completed' | 'exception' | 'blocked';
+        title: string;
+      }>;
+      title: string;
+    } | null;
+    if (!detail) {
+      return null;
+    }
+
+    const blockingTask = detail.tasks.find((task) => task.required && task.status === 'blocked');
+    if (blockingTask) {
+      throw new Error(`Finalize is blocked by "${blockingTask.title}".`);
+    }
+    const incompleteTask = detail.tasks.find(
+      (task) => task.required && task.status !== 'completed' && task.status !== 'exception',
+    );
+    if (incompleteTask) {
+      throw new Error(`Finalize requires "${incompleteTask.title}" to be completed first.`);
+    }
+
+    const createdAt = Date.now();
+    const reportPayload = stringifyStable({
+      finalizedAt: new Date(createdAt).toISOString(),
+      generatedAt: new Date(createdAt).toISOString(),
+      generatedByUserId: currentUser.authUserId,
+      reviewRun: detail,
+    });
+    const reportId = await ctx.runMutation(anyApi.security.createEvidenceReport, {
+      contentJson: reportPayload,
+      contentHash: await hashContent(reportPayload),
+      generatedByUserId: currentUser.authUserId,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      reportKind: 'annual_review',
+    });
+    await exportEvidenceReportHandler(ctx, {
+      id: reportId,
+    });
+    await ctx.runMutation(anyApi.security.storeReviewRunFinalization, {
+      finalReportId: reportId,
+      finalizedAt: createdAt,
+      finalizedByUserId: currentUser.authUserId,
+      reviewRunId: args.reviewRunId,
+    });
+
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'security_review_run_finalized',
+      identifier: currentUser.authUser.email ?? undefined,
+      organizationId: currentUser.activeOrganizationId ?? undefined,
+      outcome: 'success',
+      resourceId: args.reviewRunId,
+      resourceLabel: detail.title,
+      resourceType: 'review_run',
+      severity: 'info',
+      sourceSurface: REVIEW_RUN_SOURCE_SURFACE,
+      userId: currentUser.authUserId,
+      metadata: stringifyStable({
+        finalReportId: reportId,
+        reviewRunId: args.reviewRunId,
+      }),
+    });
+
+    return await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+      reviewRunId: args.reviewRunId,
+    });
+  },
 });
 
 export const cleanupExpiredAttachments = internalAction({
@@ -3184,6 +5074,11 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
   },
   returns: v.object({
     activeSeedControlCount: v.number(),
+    deletedReviewAttestations: v.number(),
+    deletedReviewRuns: v.number(),
+    deletedReviewTaskEvidenceLinks: v.number(),
+    deletedReviewTaskResults: v.number(),
+    deletedReviewTasks: v.number(),
     deletedChecklistItems: v.number(),
     deletedEvidence: v.number(),
     deletedEvidenceActivity: v.number(),
@@ -3195,14 +5090,29 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       throw new Error('Invalid reseed secret.');
     }
 
-    const [checklistItems, evidenceRows, evidenceActivityRows, evidenceReports, exportArtifacts] =
-      await Promise.all([
-        ctx.db.query('securityControlChecklistItems').collect(),
-        ctx.db.query('securityControlEvidence').collect(),
-        ctx.db.query('securityControlEvidenceActivity').collect(),
-        ctx.db.query('evidenceReports').collect(),
-        ctx.db.query('exportArtifacts').collect(),
-      ]);
+    const [
+      checklistItems,
+      evidenceRows,
+      evidenceActivityRows,
+      evidenceReports,
+      exportArtifacts,
+      reviewRuns,
+      reviewTasks,
+      reviewTaskResults,
+      reviewAttestations,
+      reviewTaskEvidenceLinks,
+    ] = await Promise.all([
+      ctx.db.query('securityControlChecklistItems').collect(),
+      ctx.db.query('securityControlEvidence').collect(),
+      ctx.db.query('securityControlEvidenceActivity').collect(),
+      ctx.db.query('evidenceReports').collect(),
+      ctx.db.query('exportArtifacts').collect(),
+      ctx.db.query('reviewRuns').collect(),
+      ctx.db.query('reviewTasks').collect(),
+      ctx.db.query('reviewTaskResults').collect(),
+      ctx.db.query('reviewAttestations').collect(),
+      ctx.db.query('reviewTaskEvidenceLinks').collect(),
+    ]);
 
     await Promise.all([
       ...checklistItems.map((row) => ctx.db.delete(row._id)),
@@ -3210,10 +5120,20 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       ...evidenceActivityRows.map((row) => ctx.db.delete(row._id)),
       ...evidenceReports.map((row) => ctx.db.delete(row._id)),
       ...exportArtifacts.map((row) => ctx.db.delete(row._id)),
+      ...reviewRuns.map((row) => ctx.db.delete(row._id)),
+      ...reviewTasks.map((row) => ctx.db.delete(row._id)),
+      ...reviewTaskResults.map((row) => ctx.db.delete(row._id)),
+      ...reviewAttestations.map((row) => ctx.db.delete(row._id)),
+      ...reviewTaskEvidenceLinks.map((row) => ctx.db.delete(row._id)),
     ]);
 
     return {
       activeSeedControlCount: ACTIVE_CONTROL_REGISTER.controls.length,
+      deletedReviewAttestations: reviewAttestations.length,
+      deletedReviewRuns: reviewRuns.length,
+      deletedReviewTaskEvidenceLinks: reviewTaskEvidenceLinks.length,
+      deletedReviewTaskResults: reviewTaskResults.length,
+      deletedReviewTasks: reviewTasks.length,
       deletedChecklistItems: checklistItems.length,
       deletedEvidence: evidenceRows.length,
       deletedEvidenceActivity: evidenceActivityRows.length,

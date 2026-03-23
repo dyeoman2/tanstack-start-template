@@ -76,7 +76,10 @@ import {
   organizationDomainsResponseValidator,
   organizationDomainValidator,
   organizationEnterpriseAccessResultValidator,
+  organizationEnterpriseAuthModeValidator,
+  organizationEnterpriseAuthProtocolValidator,
   organizationEnterpriseAuthResolutionResultValidator,
+  organizationEnterpriseProviderKeyValidator,
   organizationInvitePolicyValidator,
   organizationMemberStatusValidator,
   organizationSettingsValidator,
@@ -160,6 +163,23 @@ type OrganizationPolicies = {
   temporaryLinkTtlMinutes: number;
   webSearchAllowed: boolean;
 };
+const organizationPoliciesValidator = v.object({
+  invitePolicy: organizationInvitePolicyValidator,
+  verifiedDomainsOnly: v.boolean(),
+  memberCap: v.union(v.number(), v.null()),
+  mfaRequired: v.boolean(),
+  auditExportRequiresStepUp: v.boolean(),
+  attachmentSharingAllowed: v.boolean(),
+  dataRetentionDays: v.number(),
+  enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
+  enterpriseProviderKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
+  enterpriseProtocol: v.union(organizationEnterpriseAuthProtocolValidator, v.null()),
+  enterpriseEnabledAt: v.union(v.number(), v.null()),
+  enterpriseEnforcedAt: v.union(v.number(), v.null()),
+  allowBreakGlassPasswordLogin: v.boolean(),
+  temporaryLinkTtlMinutes: v.number(),
+  webSearchAllowed: v.boolean(),
+});
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
 const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
@@ -435,6 +455,16 @@ export async function getOrganizationPolicies(
   return toOrganizationPolicies(policy);
 }
 
+export const getOrganizationPoliciesInternal = internalQuery({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: organizationPoliciesValidator,
+  handler: async (ctx, args) => {
+    return await getOrganizationPolicies(ctx, args.organizationId);
+  },
+});
+
 async function countActiveOwners(ctx: QueryCtx | MutationCtx, memberships: BetterAuthMember[]) {
   const membershipStatuses = await getOrganizationMembershipStatuses(
     ctx,
@@ -602,7 +632,12 @@ function getOrganizationDomainVerificationRecordValue(token: string) {
   return `better-auth-verify=${token}`;
 }
 
-function toOrganizationDomain(domain: OrganizationDomainDoc) {
+function toOrganizationDomain(
+  domain: OrganizationDomainDoc,
+  options: {
+    includeVerificationDetails: boolean;
+  },
+) {
   return {
     id: domain._id,
     organizationId: domain.organizationId,
@@ -610,9 +645,13 @@ function toOrganizationDomain(domain: OrganizationDomainDoc) {
     normalizedDomain: domain.normalizedDomain,
     status: domain.status,
     verificationMethod: domain.verificationMethod,
-    verificationToken: domain.verificationToken,
-    verificationRecordName: getOrganizationDomainVerificationRecordName(domain.normalizedDomain),
-    verificationRecordValue: getOrganizationDomainVerificationRecordValue(domain.verificationToken),
+    verificationToken: options.includeVerificationDetails ? domain.verificationToken : null,
+    verificationRecordName: options.includeVerificationDetails
+      ? getOrganizationDomainVerificationRecordName(domain.normalizedDomain)
+      : null,
+    verificationRecordValue: options.includeVerificationDetails
+      ? getOrganizationDomainVerificationRecordValue(domain.verificationToken)
+      : null,
     verifiedAt: domain.verifiedAt,
     createdByUserId: domain.createdByUserId,
     createdAt: domain.createdAt,
@@ -1333,11 +1372,14 @@ export const setOrganizationDomainVerifiedInternal = internalMutation({
       verifiedAt: args.verifiedAt,
     });
 
-    return toOrganizationDomain({
-      ...domain,
-      status: 'verified',
-      verifiedAt: args.verifiedAt,
-    });
+    return toOrganizationDomain(
+      {
+        ...domain,
+        status: 'verified',
+        verifiedAt: args.verifiedAt,
+      },
+      { includeVerificationDetails: false },
+    );
   },
 });
 
@@ -2343,7 +2385,11 @@ export const listOrganizationDomains = query({
         canManageDomains: capabilities.canManageDomains,
         canViewAudit: capabilities.canViewAudit,
       },
-      domains: domains.map(toOrganizationDomain),
+      domains: domains.map((domain) =>
+        toOrganizationDomain(domain, {
+          includeVerificationDetails: capabilities.canManageDomains,
+        }),
+      ),
     };
   },
 });
@@ -2412,7 +2458,9 @@ export const addOrganizationDomain = mutation({
       },
     });
 
-    return toOrganizationDomain(domain);
+    return toOrganizationDomain(domain, {
+      includeVerificationDetails: true,
+    });
   },
 });
 
@@ -2501,17 +2549,24 @@ export const regenerateOrganizationDomainToken = mutation({
       },
     });
 
-    return toOrganizationDomain({
-      ...domain,
-      verificationToken: nextToken,
-      status: 'pending_verification',
-      verifiedAt: null,
-    });
+    return toOrganizationDomain(
+      {
+        ...domain,
+        verificationToken: nextToken,
+        status: 'pending_verification',
+        verifiedAt: null,
+      },
+      {
+        includeVerificationDetails: true,
+      },
+    );
   },
 });
 
-export const recordOrganizationBulkAuditEvents = mutation({
+export const recordOrganizationBulkAuditEventsInternal = internalMutation({
   args: {
+    actorEmail: v.optional(v.string()),
+    actorUserId: v.string(),
     organizationId: v.string(),
     eventType: v.union(
       v.literal('bulk_invite_revoked'),
@@ -2532,13 +2587,9 @@ export const recordOrganizationBulkAuditEvents = mutation({
     success: v.literal(true),
   }),
   handler: async (ctx, args) => {
-    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
-    if (!context || !context.access.view) {
+    const organization = await findBetterAuthOrganizationById(ctx, args.organizationId);
+    if (!organization) {
       throwConvexError('NOT_FOUND', 'Organization not found');
-    }
-
-    if (!canManageOrganization(context.viewerRole)) {
-      throwConvexError('FORBIDDEN', 'Organization admin access required');
     }
 
     await Promise.all(
@@ -2546,10 +2597,11 @@ export const recordOrganizationBulkAuditEvents = mutation({
         await ctx.runMutation(internal.audit.insertAuditLog, {
           eventType: args.eventType,
           organizationId: args.organizationId,
-          userId: context.user.authUserId,
+          userId: args.actorUserId,
+          actorUserId: args.actorUserId,
           identifier: entry.targetEmail.toLowerCase(),
           metadata: JSON.stringify({
-            actorEmail: context.user.authUser.email ?? undefined,
+            actorEmail: args.actorEmail,
             targetId: entry.targetId,
             targetEmail: entry.targetEmail,
             ...(entry.targetRole ? { targetRole: entry.targetRole } : {}),

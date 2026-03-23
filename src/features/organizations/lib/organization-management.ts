@@ -198,9 +198,9 @@ export type OrganizationDomain = {
   normalizedDomain: string;
   status: OrganizationDomainStatus;
   verificationMethod: 'dns_txt';
-  verificationToken: string;
-  verificationRecordName: string;
-  verificationRecordValue: string;
+  verificationToken: string | null;
+  verificationRecordName: string | null;
+  verificationRecordValue: string | null;
   verifiedAt: number | null;
   createdByUserId: string;
   createdAt: number;

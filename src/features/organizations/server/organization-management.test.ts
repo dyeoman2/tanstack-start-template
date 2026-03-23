@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   adminActionMock,
+  adminMutationMock,
   cancelBetterAuthOrganizationInvitationMock,
   checkBetterAuthOrganizationSlugMock,
   createBetterAuthOrganizationInvitationMock,
@@ -17,6 +18,7 @@ const {
   updateBetterAuthOrganizationMock,
 } = vi.hoisted(() => ({
   adminActionMock: vi.fn(),
+  adminMutationMock: vi.fn(),
   cancelBetterAuthOrganizationInvitationMock: vi.fn(),
   checkBetterAuthOrganizationSlugMock: vi.fn(),
   createBetterAuthOrganizationInvitationMock: vi.fn(),
@@ -51,7 +53,6 @@ vi.mock('@convex/_generated/api', () => ({
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
       reactivateOrganizationMember: 'reactivateOrganizationMember',
-      recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       suspendOrganizationMember: 'suspendOrganizationMember',
       updateOrganizationPolicies: 'updateOrganizationPolicies',
     },
@@ -59,6 +60,7 @@ vi.mock('@convex/_generated/api', () => ({
   internal: {
     organizationManagement: {
       cleanupOrganizationDataInternal: 'cleanupOrganizationDataInternal',
+      recordOrganizationBulkAuditEventsInternal: 'recordOrganizationBulkAuditEventsInternal',
     },
   },
 }));
@@ -78,6 +80,7 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
 vi.mock('~/lib/server/convex-admin.server', () => ({
   createConvexAdminClient: () => ({
     action: adminActionMock,
+    mutation: adminMutationMock,
   }),
 }));
 
@@ -125,9 +128,25 @@ import {
 describe('organization management server functions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    requireAuthMock.mockResolvedValue({
+      user: {
+        id: 'user_1',
+        email: 'admin@example.com',
+        role: 'admin',
+        isSiteAdmin: true,
+        emailVerified: true,
+        requiresEmailVerification: false,
+        mfaEnabled: true,
+        mfaRequired: true,
+        requiresMfaSetup: false,
+        recentStepUpAt: null,
+        recentStepUpValidUntil: null,
+      },
+    });
     fetchAuthQueryMock.mockResolvedValue({ allowed: true });
     fetchAuthMutationMock.mockResolvedValue({ success: true });
     adminActionMock.mockResolvedValue({ success: true });
+    adminMutationMock.mockResolvedValue({ success: true });
     checkBetterAuthOrganizationSlugMock.mockResolvedValue({ status: true });
     createBetterAuthOrganizationInvitationMock.mockResolvedValue({ id: 'invite-1' });
     updateBetterAuthOrganizationMemberRoleMock.mockResolvedValue({
@@ -469,7 +488,9 @@ describe('organization management server functions', () => {
       'invite_1',
       expect.any(Function),
     );
-    expect(fetchAuthMutationMock).toHaveBeenCalledWith('recordOrganizationBulkAuditEvents', {
+    expect(adminMutationMock).toHaveBeenCalledWith('recordOrganizationBulkAuditEventsInternal', {
+      actorEmail: 'admin@example.com',
+      actorUserId: 'user_1',
       organizationId: 'org_1',
       eventType: 'bulk_invite_revoked',
       entries: [

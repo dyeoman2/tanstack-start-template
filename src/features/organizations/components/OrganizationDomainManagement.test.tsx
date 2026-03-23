@@ -153,6 +153,22 @@ describe('OrganizationDomainManagement', () => {
     );
   });
 
+  it('does not render verification secrets for viewers without domain management access', () => {
+    useQueryMock.mockReturnValue({
+      ...domainResponse,
+      capabilities: {
+        canManageDomains: false,
+        canViewAudit: true,
+      },
+    });
+
+    render(<OrganizationDomainManagement slug="cottage-hospital" />);
+
+    expect(screen.queryByText('_ba-verify.example.com')).not.toBeInTheDocument();
+    expect(screen.queryByText('better-auth-verify=token-1')).not.toBeInTheDocument();
+    expect(screen.getByText('Domain Verification In Progress')).toBeInTheDocument();
+  });
+
   it('renders an inline domain input prefilled from the user email when no domains exist', () => {
     useQueryMock.mockReturnValue({
       ...domainResponse,

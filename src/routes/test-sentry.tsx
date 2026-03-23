@@ -1,11 +1,17 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { SentryTestButton } from '~/components/SentryTestButton';
+import { NotFound } from '~/components/NotFound';
+import { isSentryTestSurfaceEnabled } from '~/lib/shared/sentry-test-surface';
 
 export const Route = createFileRoute('/test-sentry')({
   component: TestSentryRoute,
 });
 
 function TestSentryRoute() {
+  if (!isSentryTestSurfaceEnabled()) {
+    return <NotFound />;
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="max-w-md mx-auto p-6 bg-card rounded-lg shadow-lg border">

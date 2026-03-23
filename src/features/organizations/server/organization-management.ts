@@ -142,6 +142,23 @@ async function refreshCurrentUserContext() {
   await convexAuthReactStart.fetchAuthAction(api.users.ensureCurrentUserContext, {});
 }
 
+async function recordBulkOrganizationAuditEvents(input: {
+  actorEmail?: string;
+  actorUserId: string;
+  organizationId: string;
+  eventType: 'bulk_invite_revoked' | 'bulk_invite_resent' | 'bulk_member_removed';
+  entries: Array<{
+    targetEmail: string;
+    targetId: string;
+    targetRole?: 'owner' | 'admin' | 'member';
+  }>;
+}) {
+  await createConvexAdminClient().mutation(
+    internal.organizationManagement.recordOrganizationBulkAuditEventsInternal,
+    input,
+  );
+}
+
 function normalizeOrganizationAuthErrorMessage(
   code: string | undefined,
   message: string | undefined,
@@ -584,7 +601,7 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
   .inputValidator(organizationBulkActionSchema)
   .handler(async ({ data }) => {
     try {
-      await requireAuth();
+      const { user } = await requireAuth();
 
       const results: Array<{
         key: string;
@@ -618,18 +635,17 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
           results.some((result) => result.key === invitation.invitationId && result.success),
         );
         if (successful.length > 0) {
-          await convexAuthReactStart.fetchAuthMutation(
-            api.organizationManagement.recordOrganizationBulkAuditEvents,
-            {
-              organizationId: data.organizationId,
-              eventType: 'bulk_invite_revoked',
-              entries: successful.map((invitation) => ({
-                targetEmail: invitation.email.toLowerCase(),
-                targetId: invitation.invitationId,
-                targetRole: invitation.role,
-              })),
-            },
-          );
+          await recordBulkOrganizationAuditEvents({
+            actorEmail: user.email,
+            actorUserId: user.id,
+            organizationId: data.organizationId,
+            eventType: 'bulk_invite_revoked',
+            entries: successful.map((invitation) => ({
+              targetEmail: invitation.email.toLowerCase(),
+              targetId: invitation.invitationId,
+              targetRole: invitation.role,
+            })),
+          });
         }
       }
 
@@ -667,18 +683,17 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
           results.some((result) => result.key === invitation.invitationId && result.success),
         );
         if (successful.length > 0) {
-          await convexAuthReactStart.fetchAuthMutation(
-            api.organizationManagement.recordOrganizationBulkAuditEvents,
-            {
-              organizationId: data.organizationId,
-              eventType: 'bulk_invite_resent',
-              entries: successful.map((invitation) => ({
-                targetEmail: invitation.email.toLowerCase(),
-                targetId: invitation.invitationId,
-                targetRole: invitation.role,
-              })),
-            },
-          );
+          await recordBulkOrganizationAuditEvents({
+            actorEmail: user.email,
+            actorUserId: user.id,
+            organizationId: data.organizationId,
+            eventType: 'bulk_invite_resent',
+            entries: successful.map((invitation) => ({
+              targetEmail: invitation.email.toLowerCase(),
+              targetId: invitation.invitationId,
+              targetRole: invitation.role,
+            })),
+          });
         }
       }
 
@@ -712,18 +727,17 @@ export const bulkOrganizationDirectoryActionServerFn = createServerFn({ method: 
           results.some((result) => result.key === member.membershipId && result.success),
         );
         if (successful.length > 0) {
-          await convexAuthReactStart.fetchAuthMutation(
-            api.organizationManagement.recordOrganizationBulkAuditEvents,
-            {
-              organizationId: data.organizationId,
-              eventType: 'bulk_member_removed',
-              entries: successful.map((member) => ({
-                targetEmail: member.email.toLowerCase(),
-                targetId: member.membershipId,
-                targetRole: member.role,
-              })),
-            },
-          );
+          await recordBulkOrganizationAuditEvents({
+            actorEmail: user.email,
+            actorUserId: user.id,
+            organizationId: data.organizationId,
+            eventType: 'bulk_member_removed',
+            entries: successful.map((member) => ({
+              targetEmail: member.email.toLowerCase(),
+              targetId: member.membershipId,
+              targetRole: member.role,
+            })),
+          });
           await refreshCurrentUserContext();
         }
       }

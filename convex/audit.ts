@@ -942,15 +942,32 @@ export const verifyAuditIntegrityInternal = internalAction({
     limit: v.optional(v.number()),
   },
   returns: v.object({
+    checkedAt: v.number(),
     checked: v.number(),
+    failures: v.array(
+      v.object({
+        id: v.string(),
+      }),
+    ),
     ok: v.boolean(),
     failureEventId: v.union(v.string(), v.null()),
+    limit: v.number(),
+    verified: v.boolean(),
   }),
   handler: async (
     ctx,
     args,
-  ): Promise<{ checked: number; ok: boolean; failureEventId: string | null }> => {
+  ): Promise<{
+    checked: number;
+    checkedAt: number;
+    failureEventId: string | null;
+    failures: Array<{ id: string }>;
+    limit: number;
+    ok: boolean;
+    verified: boolean;
+  }> => {
     const limit = Math.max(1, Math.min(args.limit ?? 500, 2_000));
+    const checkedAt = Date.now();
     const logs: AuditLogDoc[] = await ctx.runQuery(internal.audit.getRecentAuditLogsInternal, {
       limit,
     });
@@ -1012,8 +1029,12 @@ export const verifyAuditIntegrityInternal = internalAction({
 
         return {
           checked: orderedLogs.length,
+          checkedAt,
           ok: false,
           failureEventId,
+          failures: [{ id: failureEventId }],
+          limit,
+          verified: false,
         };
       }
 
@@ -1022,8 +1043,12 @@ export const verifyAuditIntegrityInternal = internalAction({
 
     return {
       checked: orderedLogs.length,
+      checkedAt,
       ok: true,
       failureEventId: null,
+      failures: [],
+      limit,
+      verified: true,
     };
   },
 });

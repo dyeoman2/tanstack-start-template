@@ -6,7 +6,7 @@ import { useAction, useMutation, useQuery } from 'convex/react';
 import { Archive, Check, History, MoreHorizontal, RefreshCw } from 'lucide-react';
 import Papa from 'papaparse';
 import type { ReactNode } from 'react';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import {
   createSortableHeader,
@@ -68,7 +68,7 @@ import {
   getControlResponsibilityDisplayLabel,
 } from '~/lib/shared/compliance/control-register';
 
-const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors'] as const;
+const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors', 'reviews'] as const;
 const CONTROL_TABLE_SORT_FIELDS = ['control', 'evidence', 'responsibility', 'family'] as const;
 const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
   'all',
@@ -150,6 +150,14 @@ type SecurityChecklistItem = {
   notes: string | null;
   owner: string | null;
   required: boolean;
+  reviewSatisfaction: {
+    mode: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
+    reviewRunId: string;
+    reviewTaskId: string;
+    satisfiedAt: number;
+    satisfiedByDisplay: string | null;
+    satisfiedThroughAt: number;
+  } | null;
   status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
   suggestedEvidenceTypes: ControlChecklistEvidenceType[];
   verificationMethod: string;
@@ -277,6 +285,126 @@ type SecurityFindingListItem = {
   title: string;
 };
 
+type ReviewRunSummary = {
+  createdAt: number;
+  finalizedAt: number | null;
+  id: string;
+  kind: 'annual' | 'triggered';
+  status: 'ready' | 'needs_attention' | 'completed';
+  taskCounts: {
+    blocked: number;
+    completed: number;
+    exception: number;
+    ready: number;
+    total: number;
+  };
+  title: string;
+  triggerType: string | null;
+  year: number | null;
+};
+
+type ReviewTaskEvidenceLink = {
+  freshAt: number | null;
+  id: string;
+  linkedAt: number;
+  linkedByDisplay: string | null;
+  role: 'primary' | 'supporting' | 'blocking';
+  sourceId: string;
+  sourceLabel: string;
+  sourceType:
+    | 'security_control_evidence'
+    | 'evidence_report'
+    | 'security_finding'
+    | 'backup_verification_report'
+    | 'external_document';
+};
+
+type ReviewTaskDetail = {
+  allowException: boolean;
+  controlLinks: Array<{
+    internalControlId: string;
+    itemId: string;
+  }>;
+  description: string;
+  evidenceLinks: ReviewTaskEvidenceLink[];
+  freshnessWindowDays: number | null;
+  id: string;
+  latestAttestation: {
+    documentLabel: string | null;
+    documentUrl: string | null;
+    documentVersion: string | null;
+    statementKey: string;
+    statementText: string;
+    attestedAt: number;
+    attestedByDisplay: string | null;
+  } | null;
+  latestNote: string | null;
+  required: boolean;
+  satisfiedAt: number | null;
+  satisfiedThroughAt: number | null;
+  status: 'ready' | 'completed' | 'exception' | 'blocked';
+  taskType: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up';
+  templateKey: string;
+  title: string;
+};
+
+type ReviewRunDetail = {
+  createdAt: number;
+  finalReportId: Id<'evidenceReports'> | null;
+  finalizedAt: number | null;
+  id: string;
+  kind: 'annual' | 'triggered';
+  sourceRecordId: string | null;
+  sourceRecordType: string | null;
+  status: 'ready' | 'needs_attention' | 'completed';
+  tasks: ReviewTaskDetail[];
+  title: string;
+  triggerType: string | null;
+  year: number | null;
+};
+
+function countReviewTasksByStatus(tasks: ReviewRunDetail['tasks']) {
+  return tasks.reduce(
+    (counts, task) => {
+      counts.total += 1;
+      counts[task.status] += 1;
+      return counts;
+    },
+    {
+      blocked: 0,
+      completed: 0,
+      exception: 0,
+      ready: 0,
+      total: 0,
+    },
+  );
+}
+
+function mergeReviewRunSummaryWithDetail(
+  summary: ReviewRunSummary | null,
+  detail: ReviewRunDetail,
+): ReviewRunSummary {
+  return {
+    createdAt: detail.createdAt,
+    finalizedAt: detail.finalizedAt,
+    id: detail.id,
+    kind: detail.kind,
+    status: detail.status,
+    taskCounts: countReviewTasksByStatus(detail.tasks),
+    title: detail.title,
+    triggerType: detail.triggerType,
+    year: detail.year,
+    ...(summary
+      ? {
+          createdAt: summary.createdAt,
+          finalizedAt: detail.finalizedAt ?? summary.finalizedAt,
+          triggerType: summary.triggerType,
+          year: summary.year,
+        }
+      : {}),
+  };
+}
+
 async function uploadFileWithTarget(
   file: File,
   target: {
@@ -392,6 +520,13 @@ function AdminSecurityRoute() {
   const finalizeEvidenceUpload = useAction(api.security.finalizeSecurityControlEvidenceUpload);
   const renewControlEvidence = useMutation(api.security.renewSecurityControlEvidence);
   const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
+  const refreshReviewRunAutomation = useAction(api.security.refreshReviewRunAutomation);
+  const finalizeReviewRun = useAction(api.security.finalizeReviewRun);
+  const ensureCurrentAnnualReviewRun = useMutation(api.security.ensureCurrentAnnualReviewRun);
+  const createTriggeredReviewRun = useMutation(api.security.createTriggeredReviewRun);
+  const attestReviewTask = useMutation(api.security.attestReviewTask);
+  const setReviewTaskException = useMutation(api.security.setReviewTaskException);
+  const openTriggeredFollowUp = useMutation(api.security.openTriggeredFollowUp);
   const [report, setReport] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
@@ -404,8 +539,41 @@ function AdminSecurityRoute() {
   const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
   const [isExportingControls, setIsExportingControls] = useState(false);
   const [busyControlAction, setBusyControlAction] = useState<string | null>(null);
+  const [busyReviewRunAction, setBusyReviewRunAction] = useState<string | null>(null);
+  const [busyReviewTaskAction, setBusyReviewTaskAction] = useState<string | null>(null);
+  const [localAnnualReviewRun, setLocalAnnualReviewRun] = useState<ReviewRunSummary | null>(null);
+  const [localAnnualReviewDetail, setLocalAnnualReviewDetail] = useState<ReviewRunDetail | null>(
+    null,
+  );
+  const [isPreparingAnnualReview, setIsPreparingAnnualReview] = useState(false);
+  const [reviewTaskNotes, setReviewTaskNotes] = useState<Record<string, string>>({});
+  const [reviewTaskDocuments, setReviewTaskDocuments] = useState<
+    Record<string, { label: string; url: string; version: string }>
+  >({});
+  const [newTriggeredReviewTitle, setNewTriggeredReviewTitle] = useState('');
+  const [newTriggeredReviewType, setNewTriggeredReviewType] = useState('manual_follow_up');
+  const reviewsInitializedRef = useRef(false);
+  const reviewsRefreshedForRunRef = useRef<string | null>(null);
   const controls = controlWorkspaces;
   const controlItems = useMemo(() => controls ?? [], [controls]);
+  const reviewsTabActive = activeTab === 'reviews';
+  const currentAnnualReviewRunQuery = useQuery(
+    api.security.getCurrentAnnualReviewRun,
+    reviewsTabActive ? {} : 'skip',
+  ) as ReviewRunSummary | null | undefined;
+  const currentAnnualReviewRun = currentAnnualReviewRunQuery ?? localAnnualReviewRun;
+  const currentAnnualReviewRunId = currentAnnualReviewRun?.id ?? null;
+  const triggeredReviewRuns = useQuery(
+    api.security.listTriggeredReviewRuns,
+    reviewsTabActive ? {} : 'skip',
+  ) as ReviewRunSummary[] | undefined;
+  const currentAnnualReviewDetailQuery = useQuery(
+    api.security.getReviewRunDetail,
+    reviewsTabActive && currentAnnualReviewRunId
+      ? { reviewRunId: currentAnnualReviewRunId as Id<'reviewRuns'> }
+      : 'skip',
+  ) as ReviewRunDetail | null | undefined;
+  const currentAnnualReviewDetail = currentAnnualReviewDetailQuery ?? localAnnualReviewDetail;
   const auditReadinessSummary = useMemo(() => {
     const latestDrill = auditReadiness?.latestBackupDrill ?? null;
     const staleDrill =
@@ -459,6 +627,158 @@ function AdminSecurityRoute() {
       },
     );
   }, [controlItems]);
+
+  useEffect(() => {
+    if (currentAnnualReviewRunQuery !== undefined) {
+      setLocalAnnualReviewRun(currentAnnualReviewRunQuery);
+    }
+  }, [currentAnnualReviewRunQuery]);
+
+  useEffect(() => {
+    if (currentAnnualReviewDetailQuery !== undefined) {
+      setLocalAnnualReviewDetail(currentAnnualReviewDetailQuery);
+    }
+  }, [currentAnnualReviewDetailQuery]);
+
+  useEffect(() => {
+    if (!reviewsTabActive) {
+      return;
+    }
+    if (reviewsInitializedRef.current) {
+      return;
+    }
+    if (currentAnnualReviewRunQuery !== null) {
+      reviewsInitializedRef.current = true;
+      return;
+    }
+    if (currentAnnualReviewRunQuery === undefined) {
+      return;
+    }
+
+    reviewsInitializedRef.current = true;
+    setIsPreparingAnnualReview(true);
+    void ensureCurrentAnnualReviewRun({})
+      .then(async (run) => {
+        setLocalAnnualReviewRun(run);
+        const detail = await refreshReviewRunAutomation({
+          reviewRunId: run.id as Id<'reviewRuns'>,
+        });
+        if (detail) {
+          setLocalAnnualReviewDetail(detail);
+          setLocalAnnualReviewRun(mergeReviewRunSummaryWithDetail(run, detail));
+        }
+      })
+      .catch((error: unknown) => {
+        reviewsInitializedRef.current = false;
+        showToast(
+          error instanceof Error ? error.message : 'Failed to initialize annual review.',
+          'error',
+        );
+      })
+      .finally(() => {
+        setIsPreparingAnnualReview(false);
+      });
+  }, [
+    currentAnnualReviewRunQuery,
+    ensureCurrentAnnualReviewRun,
+    refreshReviewRunAutomation,
+    reviewsTabActive,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!reviewsTabActive || !currentAnnualReviewRun?.id) {
+      return;
+    }
+    if (reviewsRefreshedForRunRef.current === currentAnnualReviewRun.id) {
+      return;
+    }
+
+    reviewsRefreshedForRunRef.current = currentAnnualReviewRun.id;
+    void refreshReviewRunAutomation({
+      reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+    })
+      .then((detail) => {
+        if (detail) {
+          setLocalAnnualReviewDetail(detail);
+          setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
+        }
+      })
+      .catch((error: unknown) => {
+        reviewsRefreshedForRunRef.current = null;
+        showToast(
+          error instanceof Error ? error.message : 'Failed to refresh review automation.',
+          'error',
+        );
+      });
+  }, [currentAnnualReviewRun?.id, refreshReviewRunAutomation, reviewsTabActive, showToast]);
+
+  const reviewTaskGroups = useMemo(
+    () => ({
+      autoCollected:
+        currentAnnualReviewDetail?.tasks.filter((task) => task.taskType === 'automated_check') ??
+        [],
+      needsAttestation:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) => task.taskType === 'attestation' && task.status !== 'completed',
+        ) ?? [],
+      needsDocumentUpload:
+        currentAnnualReviewDetail?.tasks.filter(
+          (task) => task.taskType === 'document_upload' && task.status !== 'completed',
+        ) ?? [],
+      blocked: currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'blocked') ?? [],
+    }),
+    [currentAnnualReviewDetail],
+  );
+  const autoCollectedEvidenceLinks = useMemo(
+    () =>
+      reviewTaskGroups.autoCollected.flatMap((task) => {
+        const latestLink = task.evidenceLinks[0];
+        return latestLink
+          ? [
+              {
+                link: latestLink,
+                taskTitle: task.title,
+              },
+            ]
+          : [];
+      }),
+    [reviewTaskGroups.autoCollected],
+  );
+  const reviewExceptionTasks = useMemo(
+    () => currentAnnualReviewDetail?.tasks.filter((task) => task.status === 'exception') ?? [],
+    [currentAnnualReviewDetail],
+  );
+  const reviewFinalizeState = useMemo(() => {
+    const tasks = currentAnnualReviewDetail?.tasks ?? [];
+    const requiredBlocked = tasks.filter((task) => task.required && task.status === 'blocked');
+    const requiredRemaining = tasks.filter(
+      (task) =>
+        task.required &&
+        task.status !== 'completed' &&
+        task.status !== 'exception' &&
+        task.status !== 'blocked',
+    );
+    const remainingByType = requiredRemaining.reduce(
+      (counts, task) => {
+        counts[task.taskType] += 1;
+        return counts;
+      },
+      {
+        attestation: 0,
+        automated_check: 0,
+        document_upload: 0,
+        follow_up: 0,
+      },
+    );
+
+    return {
+      canFinalize: requiredBlocked.length === 0 && requiredRemaining.length === 0,
+      requiredBlocked,
+      requiredRemaining,
+      remainingByType,
+    };
+  }, [currentAnnualReviewDetail]);
   const familyOptions = useMemo<TableFilterOption<string>[]>(
     () => [
       { label: 'All families', value: 'all' },
@@ -1071,6 +1391,151 @@ function AdminSecurityRoute() {
     [findingDispositions, findingNotes, reviewSecurityFinding, showToast],
   );
 
+  const handleRefreshAnnualReview = useCallback(async () => {
+    if (!currentAnnualReviewRun?.id) {
+      return;
+    }
+    setBusyReviewRunAction('refresh');
+    try {
+      const detail = await refreshReviewRunAutomation({
+        reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+      });
+      if (detail) {
+        setLocalAnnualReviewDetail(detail);
+        setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
+      }
+      showToast('Annual review automation refreshed.', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to refresh annual review automation.',
+        'error',
+      );
+    } finally {
+      setBusyReviewRunAction(null);
+    }
+  }, [currentAnnualReviewRun?.id, refreshReviewRunAutomation, showToast]);
+
+  const handleFinalizeAnnualReview = useCallback(async () => {
+    if (!currentAnnualReviewRun?.id) {
+      return;
+    }
+    setBusyReviewRunAction('finalize');
+    try {
+      const detail = await finalizeReviewRun({
+        reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'>,
+      });
+      if (detail) {
+        setLocalAnnualReviewDetail(detail);
+        setLocalAnnualReviewRun((current) => mergeReviewRunSummaryWithDetail(current, detail));
+      }
+      showToast('Annual review finalized.', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to finalize annual review.',
+        'error',
+      );
+    } finally {
+      setBusyReviewRunAction(null);
+    }
+  }, [currentAnnualReviewRun?.id, finalizeReviewRun, showToast]);
+
+  const handleCreateTriggeredReviewRun = useCallback(async () => {
+    const title = newTriggeredReviewTitle.trim();
+    if (!title) {
+      showToast('Triggered review title is required.', 'error');
+      return;
+    }
+    setBusyReviewRunAction('create-triggered');
+    try {
+      await createTriggeredReviewRun({
+        title,
+        triggerType: newTriggeredReviewType,
+      });
+      setNewTriggeredReviewTitle('');
+      showToast('Triggered review created.', 'success');
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Failed to create triggered review.',
+        'error',
+      );
+    } finally {
+      setBusyReviewRunAction(null);
+    }
+  }, [createTriggeredReviewRun, newTriggeredReviewTitle, newTriggeredReviewType, showToast]);
+
+  const handleAttestTask = useCallback(
+    async (task: ReviewTaskDetail) => {
+      setBusyReviewTaskAction(`${task.id}:attest`);
+      try {
+        const document = reviewTaskDocuments[task.id] ?? { label: '', url: '', version: '' };
+        await attestReviewTask({
+          documentLabel: task.taskType === 'document_upload' ? document.label.trim() : undefined,
+          documentUrl: task.taskType === 'document_upload' ? document.url.trim() : undefined,
+          documentVersion:
+            task.taskType === 'document_upload' ? document.version.trim() || undefined : undefined,
+          note: reviewTaskNotes[task.id]?.trim() || undefined,
+          reviewTaskId: task.id as Id<'reviewTasks'>,
+        });
+        showToast(
+          task.taskType === 'document_upload'
+            ? 'Document-linked review task completed.'
+            : 'Review task attested.',
+          'success',
+        );
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : 'Failed to save task attestation.',
+          'error',
+        );
+      } finally {
+        setBusyReviewTaskAction(null);
+      }
+    },
+    [attestReviewTask, reviewTaskDocuments, reviewTaskNotes, showToast],
+  );
+
+  const handleExceptionTask = useCallback(
+    async (task: ReviewTaskDetail) => {
+      setBusyReviewTaskAction(`${task.id}:exception`);
+      try {
+        await setReviewTaskException({
+          note: reviewTaskNotes[task.id]?.trim() || '',
+          reviewTaskId: task.id as Id<'reviewTasks'>,
+        });
+        showToast('Task exception recorded.', 'success');
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : 'Failed to mark task exception.',
+          'error',
+        );
+      } finally {
+        setBusyReviewTaskAction(null);
+      }
+    },
+    [reviewTaskNotes, setReviewTaskException, showToast],
+  );
+
+  const handleOpenReviewFollowUp = useCallback(
+    async (task: ReviewTaskDetail) => {
+      setBusyReviewTaskAction(`${task.id}:follow-up`);
+      try {
+        await openTriggeredFollowUp({
+          note: reviewTaskNotes[task.id]?.trim() || undefined,
+          reviewTaskId: task.id as Id<'reviewTasks'>,
+        });
+        showToast('Triggered follow-up created.', 'success');
+      } catch (error) {
+        showToast(
+          error instanceof Error ? error.message : 'Failed to create triggered follow-up.',
+          'error',
+        );
+      } finally {
+        setBusyReviewTaskAction(null);
+      }
+    },
+    [openTriggeredFollowUp, reviewTaskNotes, showToast],
+  );
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -1100,6 +1565,7 @@ function AdminSecurityRoute() {
           <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="evidence">Evidence</TabsTrigger>
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
+          <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-6">
@@ -1681,6 +2147,388 @@ function AdminSecurityRoute() {
                 ))
               ) : (
                 <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="reviews" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Current Annual Review</CardTitle>
+                  <CardDescription>
+                    Review automation, required attestations, document links, and finalization for
+                    the current annual cycle.
+                  </CardDescription>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={!currentAnnualReviewRun?.id || busyReviewRunAction !== null}
+                    onClick={() => {
+                      void handleRefreshAnnualReview();
+                    }}
+                  >
+                    {busyReviewRunAction === 'refresh' ? 'Refreshing…' : 'Refresh automation'}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={
+                      !currentAnnualReviewRun?.id ||
+                      busyReviewRunAction !== null ||
+                      !reviewFinalizeState.canFinalize
+                    }
+                    onClick={() => {
+                      void handleFinalizeAnnualReview();
+                    }}
+                  >
+                    {busyReviewRunAction === 'finalize' ? 'Finalizing…' : 'Finalize annual review'}
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {currentAnnualReviewRun ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <SummaryCard
+                      title="Status"
+                      description="Current annual review rollup."
+                      value={formatReviewRunStatus(currentAnnualReviewRun.status)}
+                    />
+                    <SummaryCard
+                      title="Completed Tasks"
+                      description="Tasks already completed or exceptioned."
+                      value={`${currentAnnualReviewRun.taskCounts.completed + currentAnnualReviewRun.taskCounts.exception}/${currentAnnualReviewRun.taskCounts.total}`}
+                    />
+                    <SummaryCard
+                      title="Blocked"
+                      description="Tasks that still need follow-up."
+                      value={`${currentAnnualReviewRun.taskCounts.blocked}`}
+                    />
+                    <SummaryCard
+                      title="Ready"
+                      description="Tasks currently ready for action."
+                      value={`${currentAnnualReviewRun.taskCounts.ready}`}
+                    />
+                  </div>
+
+                  <div className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{currentAnnualReviewRun.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          Created {new Date(currentAnnualReviewRun.createdAt).toLocaleString()}
+                          {currentAnnualReviewRun.finalizedAt
+                            ? ` · Finalized ${new Date(currentAnnualReviewRun.finalizedAt).toLocaleString()}`
+                            : ''}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={getReviewRunStatusBadgeVariant(currentAnnualReviewRun.status)}
+                      >
+                        {formatReviewRunStatus(currentAnnualReviewRun.status)}
+                      </Badge>
+                    </div>
+                  </div>
+
+                  {reviewFinalizeState.canFinalize ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
+                      All required tasks are complete. The annual review can be finalized now.
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                      <p className="font-medium">Finalize is still blocked.</p>
+                      <p className="mt-1 text-amber-900">
+                        {reviewFinalizeState.requiredRemaining.length > 0
+                          ? `Remaining required work: ${reviewFinalizeState.remainingByType.attestation} attestation${reviewFinalizeState.remainingByType.attestation === 1 ? '' : 's'}, ${reviewFinalizeState.remainingByType.document_upload} document link${reviewFinalizeState.remainingByType.document_upload === 1 ? '' : 's'}, ${reviewFinalizeState.remainingByType.automated_check} automated check${reviewFinalizeState.remainingByType.automated_check === 1 ? '' : 's'}, ${reviewFinalizeState.remainingByType.follow_up} follow-up${reviewFinalizeState.remainingByType.follow_up === 1 ? '' : 's'}.`
+                          : 'No remaining manual tasks are open.'}
+                      </p>
+                      {reviewFinalizeState.requiredBlocked.length > 0 ? (
+                        <p className="mt-1 text-amber-900">
+                          Blocked tasks:{' '}
+                          {reviewFinalizeState.requiredBlocked.map((task) => task.title).join(', ')}
+                          .
+                        </p>
+                      ) : null}
+                    </div>
+                  )}
+
+                  <ReviewTaskGroup
+                    busyAction={busyReviewTaskAction}
+                    description="Tasks the system generated or linked automatically for the current run."
+                    documents={reviewTaskDocuments}
+                    notes={reviewTaskNotes}
+                    onAttestTask={handleAttestTask}
+                    onChangeDocumentField={(taskId, field, value) => {
+                      setReviewTaskDocuments((current) => ({
+                        ...current,
+                        [taskId]: {
+                          label: current[taskId]?.label ?? '',
+                          url: current[taskId]?.url ?? '',
+                          version: current[taskId]?.version ?? '',
+                          [field]: value,
+                        },
+                      }));
+                    }}
+                    onChangeNote={(taskId, value) => {
+                      setReviewTaskNotes((current) => ({
+                        ...current,
+                        [taskId]: value,
+                      }));
+                    }}
+                    onExceptionTask={handleExceptionTask}
+                    onOpenFollowUp={handleOpenReviewFollowUp}
+                    tasks={reviewTaskGroups.autoCollected}
+                    title="Auto-collected"
+                  />
+
+                  <ReviewTaskGroup
+                    busyAction={busyReviewTaskAction}
+                    description="Tasks that require a human attestation."
+                    documents={reviewTaskDocuments}
+                    notes={reviewTaskNotes}
+                    onAttestTask={handleAttestTask}
+                    onChangeDocumentField={(taskId, field, value) => {
+                      setReviewTaskDocuments((current) => ({
+                        ...current,
+                        [taskId]: {
+                          label: current[taskId]?.label ?? '',
+                          url: current[taskId]?.url ?? '',
+                          version: current[taskId]?.version ?? '',
+                          [field]: value,
+                        },
+                      }));
+                    }}
+                    onChangeNote={(taskId, value) => {
+                      setReviewTaskNotes((current) => ({
+                        ...current,
+                        [taskId]: value,
+                      }));
+                    }}
+                    onExceptionTask={handleExceptionTask}
+                    onOpenFollowUp={handleOpenReviewFollowUp}
+                    tasks={reviewTaskGroups.needsAttestation}
+                    title="Needs attestation"
+                  />
+
+                  <ReviewTaskGroup
+                    busyAction={busyReviewTaskAction}
+                    description="Tasks that require a linked document and reviewer confirmation."
+                    documents={reviewTaskDocuments}
+                    notes={reviewTaskNotes}
+                    onAttestTask={handleAttestTask}
+                    onChangeDocumentField={(taskId, field, value) => {
+                      setReviewTaskDocuments((current) => ({
+                        ...current,
+                        [taskId]: {
+                          label: current[taskId]?.label ?? '',
+                          url: current[taskId]?.url ?? '',
+                          version: current[taskId]?.version ?? '',
+                          [field]: value,
+                        },
+                      }));
+                    }}
+                    onChangeNote={(taskId, value) => {
+                      setReviewTaskNotes((current) => ({
+                        ...current,
+                        [taskId]: value,
+                      }));
+                    }}
+                    onExceptionTask={handleExceptionTask}
+                    onOpenFollowUp={handleOpenReviewFollowUp}
+                    tasks={reviewTaskGroups.needsDocumentUpload}
+                    title="Needs document upload"
+                  />
+
+                  <ReviewTaskGroup
+                    busyAction={busyReviewTaskAction}
+                    description="Tasks that remain blocked or have documented exceptions needing follow-up."
+                    documents={reviewTaskDocuments}
+                    notes={reviewTaskNotes}
+                    onAttestTask={handleAttestTask}
+                    onChangeDocumentField={(taskId, field, value) => {
+                      setReviewTaskDocuments((current) => ({
+                        ...current,
+                        [taskId]: {
+                          label: current[taskId]?.label ?? '',
+                          url: current[taskId]?.url ?? '',
+                          version: current[taskId]?.version ?? '',
+                          [field]: value,
+                        },
+                      }));
+                    }}
+                    onChangeNote={(taskId, value) => {
+                      setReviewTaskNotes((current) => ({
+                        ...current,
+                        [taskId]: value,
+                      }));
+                    }}
+                    onExceptionTask={handleExceptionTask}
+                    onOpenFollowUp={handleOpenReviewFollowUp}
+                    tasks={reviewTaskGroups.blocked}
+                    title="Blocked by open issue"
+                  />
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {isPreparingAnnualReview
+                    ? 'Preparing the current annual review…'
+                    : 'Annual review is not ready yet. Refresh automation to try again.'}
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Auto-Collected Evidence</CardTitle>
+              <CardDescription>
+                The latest artifact currently linked to each automated annual-review task.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {autoCollectedEvidenceLinks.length ? (
+                autoCollectedEvidenceLinks.map(({ link, taskTitle }) => (
+                  <div key={link.id} className="rounded-lg border p-4">
+                    <p className="font-medium">{link.sourceLabel}</p>
+                    {link.sourceLabel !== taskTitle ? (
+                      <p className="text-sm text-muted-foreground">{taskTitle}</p>
+                    ) : null}
+                    <p className="text-sm text-muted-foreground">
+                      {formatReviewTaskEvidenceSourceType(link.sourceType)} · Linked{' '}
+                      {new Date(link.linkedAt).toLocaleString()}
+                      {link.freshAt ? ` · Fresh ${new Date(link.freshAt).toLocaleString()}` : ''}
+                    </p>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No auto-collected evidence is linked yet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Triggered Reviews</CardTitle>
+              <CardDescription>
+                Manual and repo-native follow-up runs that should not wait for the annual cycle.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-3 sm:grid-cols-[1fr,200px,auto]">
+                <Input
+                  value={newTriggeredReviewTitle}
+                  onChange={(event) => {
+                    setNewTriggeredReviewTitle(event.target.value);
+                  }}
+                  placeholder="Triggered review title"
+                />
+                <Select value={newTriggeredReviewType} onValueChange={setNewTriggeredReviewType}>
+                  <SelectTrigger aria-label="Triggered review type">
+                    <SelectValue placeholder="Trigger type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manual_follow_up">Manual follow-up</SelectItem>
+                    <SelectItem value="remediation_follow_up">Remediation</SelectItem>
+                    <SelectItem value="termination_follow_up">Termination</SelectItem>
+                    <SelectItem value="certificate_operations">Certificate operations</SelectItem>
+                    <SelectItem value="unsupported_component">Unsupported component</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  disabled={busyReviewRunAction !== null}
+                  onClick={() => {
+                    void handleCreateTriggeredReviewRun();
+                  }}
+                >
+                  {busyReviewRunAction === 'create-triggered' ? 'Creating…' : 'Create run'}
+                </Button>
+              </div>
+
+              {triggeredReviewRuns?.length ? (
+                triggeredReviewRuns.map((run) => (
+                  <div key={run.id} className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{run.title}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {run.triggerType ?? 'manual follow-up'} · Created{' '}
+                          {new Date(run.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <Badge variant={getReviewRunStatusBadgeVariant(run.status)}>
+                        {formatReviewRunStatus(run.status)}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No triggered reviews have been created yet.
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Exceptions / Open Follow-Up</CardTitle>
+              <CardDescription>
+                Tasks that currently require an exception note or a triggered follow-up run.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {reviewExceptionTasks.length ? (
+                reviewExceptionTasks.map((task) => (
+                  <div key={task.id} className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="font-medium">{task.title}</p>
+                        <p className="text-sm text-muted-foreground">{task.description}</p>
+                        <p className="text-sm text-muted-foreground">
+                          {formatReviewTaskStatus(task.status)}
+                          {task.latestNote ? ` · ${task.latestNote}` : ''}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={busyReviewTaskAction !== null}
+                          onClick={() => {
+                            void handleExceptionTask(task);
+                          }}
+                        >
+                          {busyReviewTaskAction === `${task.id}:exception`
+                            ? 'Saving…'
+                            : 'Mark exception'}
+                        </Button>
+                        <Button
+                          type="button"
+                          disabled={busyReviewTaskAction !== null}
+                          onClick={() => {
+                            void handleOpenReviewFollowUp(task);
+                          }}
+                        >
+                          {busyReviewTaskAction === `${task.id}:follow-up`
+                            ? 'Opening…'
+                            : 'Open triggered follow-up'}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  No exceptions or open follow-up items are currently tracked.
+                </p>
               )}
             </CardContent>
           </Card>
@@ -2934,6 +3782,105 @@ function formatFindingStatus(status: SecurityFindingListItem['status']) {
   }
 }
 
+function getReviewRunStatusBadgeVariant(
+  status: ReviewRunSummary['status'],
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  switch (status) {
+    case 'completed':
+      return 'default';
+    case 'needs_attention':
+      return 'destructive';
+    case 'ready':
+      return 'secondary';
+  }
+}
+
+function formatReviewRunStatus(status: ReviewRunSummary['status']) {
+  switch (status) {
+    case 'completed':
+      return 'Completed';
+    case 'needs_attention':
+      return 'Needs attention';
+    case 'ready':
+      return 'Ready';
+  }
+}
+
+function formatReviewTaskStatus(status: ReviewTaskDetail['status']) {
+  switch (status) {
+    case 'blocked':
+      return 'Blocked';
+    case 'completed':
+      return 'Completed';
+    case 'exception':
+      return 'Exception';
+    case 'ready':
+      return 'Ready';
+  }
+}
+
+function getReviewTaskBadgeVariant(
+  task: ReviewTaskDetail,
+): 'default' | 'destructive' | 'outline' | 'secondary' {
+  if (task.status === 'blocked' || task.status === 'exception') {
+    return 'destructive';
+  }
+  if (task.status === 'completed') {
+    return 'default';
+  }
+  if (task.taskType === 'automated_check') {
+    return 'secondary';
+  }
+  return 'outline';
+}
+
+function getReviewTaskStatusLabel(task: ReviewTaskDetail) {
+  if (task.status === 'blocked') {
+    return 'Blocked';
+  }
+  if (task.status === 'exception') {
+    return 'Exception';
+  }
+  if (task.status === 'completed') {
+    switch (task.taskType) {
+      case 'automated_check':
+        return 'Satisfied';
+      case 'attestation':
+        return 'Attested';
+      case 'document_upload':
+        return 'Document linked';
+      case 'follow_up':
+        return 'Follow-up opened';
+    }
+  }
+
+  switch (task.taskType) {
+    case 'automated_check':
+      return 'Auto-collected';
+    case 'attestation':
+      return 'Needs attestation';
+    case 'document_upload':
+      return 'Needs document';
+    case 'follow_up':
+      return 'Needs follow-up';
+  }
+}
+
+function formatReviewTaskEvidenceSourceType(sourceType: ReviewTaskEvidenceLink['sourceType']) {
+  switch (sourceType) {
+    case 'backup_verification_report':
+      return 'Backup verification evidence';
+    case 'evidence_report':
+      return 'Evidence report';
+    case 'external_document':
+      return 'Linked document';
+    case 'security_control_evidence':
+      return 'Control evidence';
+    case 'security_finding':
+      return 'Security finding';
+  }
+}
+
 function getEvidenceProgress(control: SecurityControlWorkspace) {
   const checklistItems = control.platformChecklist;
   const completeItems = checklistItems.filter((item) => item.status === 'done');
@@ -3064,6 +4011,193 @@ function formatEvidenceSource(source: EvidenceSource) {
 
 function formatEvidenceTimestamp(timestamp: number) {
   return new Date(timestamp).toLocaleString();
+}
+
+function ReviewTaskGroup(props: {
+  busyAction: string | null;
+  description: string;
+  documents: Record<string, { label: string; url: string; version: string }>;
+  notes: Record<string, string>;
+  onAttestTask: (task: ReviewTaskDetail) => Promise<void>;
+  onChangeDocumentField: (
+    taskId: string,
+    field: 'label' | 'url' | 'version',
+    value: string,
+  ) => void;
+  onChangeNote: (taskId: string, value: string) => void;
+  onExceptionTask: (task: ReviewTaskDetail) => Promise<void>;
+  onOpenFollowUp: (task: ReviewTaskDetail) => Promise<void>;
+  tasks: ReviewTaskDetail[];
+  title: string;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-center gap-2">
+          <CardTitle>{props.title}</CardTitle>
+          <Badge variant="outline">{props.tasks.length}</Badge>
+        </div>
+        <CardDescription>{props.description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {props.tasks.length ? (
+          <Accordion type="multiple" className="rounded-md border">
+            {props.tasks.map((task) => {
+              const document = props.documents[task.id] ?? { label: '', url: '', version: '' };
+              return (
+                <AccordionItem key={task.id} value={task.id} className="border-b last:border-b-0">
+                  <div className="flex flex-wrap items-start justify-between gap-3 px-4 py-4">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium">{task.title}</p>
+                        <Badge variant={getReviewTaskBadgeVariant(task)}>
+                          {getReviewTaskStatusLabel(task)}
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{task.description}</p>
+                      {task.latestAttestation ? (
+                        <p className="text-sm text-muted-foreground">
+                          Attested {new Date(task.latestAttestation.attestedAt).toLocaleString()}
+                          {task.latestAttestation.attestedByDisplay
+                            ? ` · ${task.latestAttestation.attestedByDisplay}`
+                            : ''}
+                        </p>
+                      ) : null}
+                      {task.latestNote ? (
+                        <p className="text-sm text-muted-foreground">
+                          Latest note: {task.latestNote}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {task.evidenceLinks.length ? (
+                        <p className="text-sm text-muted-foreground">
+                          {task.evidenceLinks.length} linked evidence item
+                          {task.evidenceLinks.length === 1 ? '' : 's'}
+                        </p>
+                      ) : null}
+                      <AccordionTrigger className="py-0 text-sm">Details</AccordionTrigger>
+                    </div>
+                  </div>
+                  <AccordionContent className="space-y-4 px-4 pb-4">
+                    {task.taskType === 'automated_check' ? (
+                      <div className="rounded-lg border bg-muted/20 p-3 text-sm text-muted-foreground">
+                        {task.status === 'completed'
+                          ? 'This task is already satisfied by auto-collected evidence. Review the linked evidence or open follow-up only if something changed.'
+                          : 'This task depends on automated evidence collection. Refresh automation or open follow-up if the result looks incorrect.'}
+                      </div>
+                    ) : null}
+
+                    {task.evidenceLinks.length ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Linked evidence</p>
+                        <div className="space-y-2">
+                          {task.evidenceLinks.map((link) => (
+                            <div key={link.id} className="rounded-md border p-3 text-sm">
+                              <p className="font-medium">{link.sourceLabel}</p>
+                              <p className="text-muted-foreground">
+                                {link.sourceType} · Linked{' '}
+                                {new Date(link.linkedAt).toLocaleString()}
+                                {link.freshAt
+                                  ? ` · Fresh ${new Date(link.freshAt).toLocaleString()}`
+                                  : ''}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {task.taskType === 'document_upload' ? (
+                      <div className="grid gap-3 md:grid-cols-3">
+                        <Input
+                          value={document.label}
+                          onChange={(event) => {
+                            props.onChangeDocumentField(task.id, 'label', event.target.value);
+                          }}
+                          placeholder="Document label"
+                        />
+                        <Input
+                          value={document.url}
+                          onChange={(event) => {
+                            props.onChangeDocumentField(task.id, 'url', event.target.value);
+                          }}
+                          placeholder="Document URL"
+                        />
+                        <Input
+                          value={document.version}
+                          onChange={(event) => {
+                            props.onChangeDocumentField(task.id, 'version', event.target.value);
+                          }}
+                          placeholder="Version"
+                        />
+                      </div>
+                    ) : null}
+
+                    {task.taskType !== 'automated_check' || task.allowException ? (
+                      <Textarea
+                        value={props.notes[task.id] ?? task.latestNote ?? ''}
+                        onChange={(event) => {
+                          props.onChangeNote(task.id, event.target.value);
+                        }}
+                        placeholder="Task note"
+                      />
+                    ) : null}
+
+                    <div className="flex flex-wrap gap-2">
+                      {task.taskType !== 'follow_up' && task.taskType !== 'automated_check' ? (
+                        <Button
+                          type="button"
+                          disabled={props.busyAction !== null}
+                          onClick={() => {
+                            void props.onAttestTask(task);
+                          }}
+                        >
+                          {props.busyAction === `${task.id}:attest`
+                            ? 'Saving…'
+                            : task.taskType === 'document_upload'
+                              ? 'Upload / link latest document'
+                              : 'Review and attest'}
+                        </Button>
+                      ) : null}
+                      {task.allowException ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={props.busyAction !== null}
+                          onClick={() => {
+                            void props.onExceptionTask(task);
+                          }}
+                        >
+                          {props.busyAction === `${task.id}:exception`
+                            ? 'Saving…'
+                            : 'Mark exception with note'}
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={props.busyAction !== null}
+                        onClick={() => {
+                          void props.onOpenFollowUp(task);
+                        }}
+                      >
+                        {props.busyAction === `${task.id}:follow-up`
+                          ? 'Opening…'
+                          : 'Open triggered follow-up'}
+                      </Button>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              );
+            })}
+          </Accordion>
+        ) : (
+          <p className="text-sm text-muted-foreground">No tasks in this group.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function SummaryCard(props: {

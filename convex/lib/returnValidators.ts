@@ -20,6 +20,20 @@ export const organizationViewerRoleValidator = v.union(
   v.literal('site-admin'),
   v.null(),
 );
+export const organizationPermissionValidator = v.union(
+  v.literal('viewOrganization'),
+  v.literal('manageMembers'),
+  v.literal('manageDomains'),
+  v.literal('managePolicies'),
+  v.literal('viewAudit'),
+  v.literal('exportAudit'),
+  v.literal('manageEvidence'),
+  v.literal('readThread'),
+  v.literal('writeThread'),
+  v.literal('readAttachment'),
+  v.literal('deleteAttachment'),
+  v.literal('issueAttachmentAccessUrl'),
+);
 export const organizationAccessValidator = v.object({
   admin: v.boolean(),
   delete: v.boolean(),
@@ -99,7 +113,57 @@ export const advisoryChatRateLimitValidator = v.object({
   estimatedInputTokens: v.number(),
 });
 
-export const authUserValidator = v.any();
+export const authUserValidator = v.object({
+  _id: v.optional(v.string()),
+  _creationTime: v.optional(v.number()),
+  id: v.optional(v.string()),
+  name: v.optional(v.union(v.string(), v.null())),
+  email: v.optional(v.union(v.string(), v.null())),
+  emailVerified: v.optional(v.boolean()),
+  image: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.optional(v.number()),
+  updatedAt: v.optional(v.number()),
+  twoFactorEnabled: v.optional(v.union(v.boolean(), v.null())),
+  isAnonymous: v.optional(v.union(v.boolean(), v.null())),
+  username: v.optional(v.union(v.string(), v.null())),
+  displayUsername: v.optional(v.union(v.string(), v.null())),
+  phoneNumber: v.optional(v.union(v.string(), v.null())),
+  phoneNumberVerified: v.optional(v.union(v.boolean(), v.null())),
+  userId: v.optional(v.union(v.string(), v.null())),
+  role: v.optional(v.union(v.string(), v.array(v.string()), v.null())),
+  banned: v.optional(v.union(v.boolean(), v.null())),
+  banReason: v.optional(v.union(v.string(), v.null())),
+  banExpires: v.optional(v.union(v.number(), v.null())),
+});
+
+export const authSessionValidator = v.object({
+  _id: v.optional(v.string()),
+  _creationTime: v.optional(v.number()),
+  id: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+  token: v.optional(v.string()),
+  createdAt: v.optional(v.number()),
+  updatedAt: v.optional(v.number()),
+  ipAddress: v.optional(v.union(v.string(), v.null())),
+  userAgent: v.optional(v.union(v.string(), v.null())),
+  userId: v.optional(v.string()),
+  impersonatedBy: v.optional(v.union(v.string(), v.null())),
+  activeOrganizationId: v.optional(v.union(v.string(), v.null())),
+  authMethod: v.optional(v.union(v.string(), v.null())),
+  enterpriseOrganizationId: v.optional(v.union(v.string(), v.null())),
+  enterpriseProviderKey: v.optional(v.union(v.string(), v.null())),
+  enterpriseProtocol: v.optional(v.union(v.string(), v.null())),
+});
+
+export const betterAuthMemberValidator = v.object({
+  _id: v.optional(v.string()),
+  _creationTime: v.optional(v.number()),
+  id: v.optional(v.string()),
+  organizationId: v.string(),
+  userId: v.string(),
+  role: v.string(),
+  createdAt: v.number(),
+});
 
 export const usersDocValidator = v.object({
   _id: v.id('users'),
@@ -658,9 +722,9 @@ export const organizationDomainValidator = v.object({
   normalizedDomain: v.string(),
   status: organizationDomainStatusValidator,
   verificationMethod: v.literal('dns_txt'),
-  verificationToken: v.string(),
-  verificationRecordName: v.string(),
-  verificationRecordValue: v.string(),
+  verificationToken: v.union(v.string(), v.null()),
+  verificationRecordName: v.union(v.string(), v.null()),
+  verificationRecordValue: v.union(v.string(), v.null()),
   verifiedAt: v.union(v.number(), v.null()),
   createdByUserId: v.string(),
   createdAt: v.number(),
@@ -784,9 +848,30 @@ export const currentAppUserValidator = v.object({
   createdAt: v.number(),
   updatedAt: v.number(),
   activeOrganizationId: v.union(v.string(), v.null()),
-  authSession: v.any(),
+  authSession: v.union(authSessionValidator, v.null()),
   authUser: authUserValidator,
   isSiteAdmin: v.boolean(),
+});
+
+export const organizationPermissionDecisionValidator = v.object({
+  assurance: v.object({
+    emailVerified: v.boolean(),
+    enterpriseSatisfied: v.boolean(),
+    mfaSatisfied: v.boolean(),
+    recentStepUpSatisfied: v.boolean(),
+  }),
+  membership: v.union(betterAuthMemberValidator, v.null()),
+  membershipStatus: v.union(
+    v.literal('active'),
+    v.literal('deactivated'),
+    v.literal('suspended'),
+    v.null(),
+  ),
+  organizationId: v.string(),
+  organizationSlug: v.union(v.string(), v.null()),
+  permission: organizationPermissionValidator,
+  user: currentAppUserValidator,
+  viewerRole: organizationViewerRoleValidator,
 });
 
 export const currentUserSessionValidator = v.object({

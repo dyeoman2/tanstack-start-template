@@ -1,4 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { api } from '@convex/_generated/api';
+import { render, screen, waitFor, within } from '@testing-library/react';
+import { getFunctionName } from 'convex/server';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
@@ -75,7 +77,7 @@ vi.mock('~/components/ui/toast', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'evidence' | 'vendors';
+  tab: 'overview' | 'controls' | 'evidence' | 'vendors' | 'reviews';
   page: number;
   pageSize: 10 | 20 | 50;
   sortBy: 'control' | 'evidence' | 'responsibility' | 'family';
@@ -252,6 +254,7 @@ function buildControl(
         notes: null,
         owner: null,
         required: true,
+        reviewSatisfaction: null,
         status: 'not_started',
         suggestedEvidenceTypes: ['link', 'file'],
         verificationMethod: 'Review uploaded report',
@@ -296,6 +299,82 @@ function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
+function buildReviewRunSummary(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    finalizedAt: null,
+    id: 'review-run-1',
+    kind: 'annual',
+    status: 'ready',
+    taskCounts: {
+      blocked: 0,
+      completed: 2,
+      exception: 0,
+      ready: 3,
+      total: 5,
+    },
+    title: 'Annual Security Review 2026',
+    triggerType: null,
+    year: 2026,
+    ...overrides,
+  };
+}
+
+function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    finalReportId: null,
+    finalizedAt: null,
+    id: 'review-run-1',
+    kind: 'annual',
+    sourceRecordId: null,
+    sourceRecordType: null,
+    status: 'ready',
+    tasks: [
+      {
+        allowException: true,
+        controlLinks: [{ internalControlId: 'CTRL-AU-006', itemId: 'provider-review-procedure' }],
+        description: 'Review the audit review procedure and attest that it remains current.',
+        evidenceLinks: [],
+        freshnessWindowDays: 365,
+        id: 'review-task-1',
+        latestAttestation: null,
+        latestNote: null,
+        required: true,
+        satisfiedAt: null,
+        satisfiedThroughAt: null,
+        status: 'ready',
+        taskType: 'attestation',
+        templateKey: 'annual:attest:audit-review-procedure',
+        title: 'Audit review procedure reviewed',
+      },
+      {
+        allowException: true,
+        controlLinks: [
+          { internalControlId: 'CTRL-CA-002', itemId: 'provider-assessment-plan-documented' },
+        ],
+        description: 'Attach or link the current control assessment plan and confirm its version.',
+        evidenceLinks: [],
+        freshnessWindowDays: 365,
+        id: 'review-task-2',
+        latestAttestation: null,
+        latestNote: null,
+        required: true,
+        satisfiedAt: null,
+        satisfiedThroughAt: null,
+        status: 'ready',
+        taskType: 'document_upload',
+        templateKey: 'annual:document:assessment-plan',
+        title: 'Control assessment plan linked',
+      },
+    ],
+    title: 'Annual Security Review 2026',
+    triggerType: null,
+    year: 2026,
+    ...overrides,
+  };
+}
+
 function renderRoute() {
   return render(<AdminSecurityRoute />);
 }
@@ -303,54 +382,54 @@ function renderRoute() {
 function mockSecurityQueries(args: {
   auditReadiness?: unknown;
   controls?: unknown[];
+  currentAnnualRun?: unknown;
   evidenceReports?: unknown[];
   findings?: unknown[];
+  reviewDetail?: unknown;
   summary?: unknown;
+  triggeredReviewRuns?: unknown[];
 }) {
-  let queryCallIndex = 0;
-
-  useQueryMock.mockImplementation((_query: unknown, queryArgs?: unknown) => {
+  useQueryMock.mockImplementation((query: unknown, queryArgs?: unknown) => {
     if (queryArgs === 'skip') {
       return undefined;
     }
 
-    const slot = queryCallIndex % 5;
-    queryCallIndex += 1;
+    const functionName = getFunctionName(query as Parameters<typeof getFunctionName>[0]);
 
-    switch (slot) {
-      case 0:
+    switch (functionName) {
+      case 'security:getSecurityPostureSummary':
         return args.summary ?? buildSummary();
-      case 1:
+      case 'security:listSecurityControlWorkspaces':
         return args.controls ?? [buildControl()];
-      case 2:
+      case 'security:listEvidenceReports':
         return args.evidenceReports ?? [];
-      case 3:
+      case 'security:listSecurityFindings':
         return args.findings ?? [buildSecurityFinding()];
-      case 4:
+      case 'security:getAuditReadinessOverview':
         return args.auditReadiness ?? buildAuditReadiness();
+      case 'security:getCurrentAnnualReviewRun':
+        return args.currentAnnualRun ?? null;
+      case 'security:listTriggeredReviewRuns':
+        return args.triggeredReviewRuns ?? [];
+      case 'security:getReviewRunDetail':
+        return args.reviewDetail ?? null;
       default:
         return undefined;
     }
   });
 }
 
-function mockSecurityActions(slots: Array<(...args: never[]) => unknown>) {
-  let actionCallIndex = 0;
-
-  useActionMock.mockImplementation(() => {
-    const action = slots[actionCallIndex % slots.length];
-    actionCallIndex += 1;
-    return action;
+function mockSecurityActions(actions: Partial<Record<string, (...args: never[]) => unknown>>) {
+  useActionMock.mockImplementation((action: unknown) => {
+    const functionName = getFunctionName(action as Parameters<typeof getFunctionName>[0]);
+    return actions[functionName] ?? vi.fn();
   });
 }
 
-function mockSecurityMutations(slots: Array<(...args: never[]) => unknown>) {
-  let mutationCallIndex = 0;
-
-  useMutationMock.mockImplementation(() => {
-    const mutation = slots[mutationCallIndex % slots.length];
-    mutationCallIndex += 1;
-    return mutation;
+function mockSecurityMutations(mutations: Partial<Record<string, (...args: never[]) => unknown>>) {
+  useMutationMock.mockImplementation((mutation: unknown) => {
+    const functionName = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
+    return mutations[functionName] ?? vi.fn();
   });
 }
 
@@ -384,22 +463,13 @@ describe('Admin security route', () => {
       evidenceReports: [buildEvidenceReport()],
       auditReadiness: buildAuditReadiness(),
     });
-    mockSecurityActions([
-      generateEvidenceReportMock,
-      exportEvidenceReportMock,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-    ]);
-    mockSecurityMutations([
-      reviewEvidenceReportMock,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-    ]);
+    mockSecurityActions({
+      'security:generateEvidenceReport': generateEvidenceReportMock,
+      'security:exportEvidenceReport': exportEvidenceReportMock,
+    });
+    mockSecurityMutations({
+      'security:reviewEvidenceReport': reviewEvidenceReportMock,
+    });
 
     renderRoute();
 
@@ -461,6 +531,7 @@ describe('Admin security route', () => {
               notes: null,
               owner: null,
               required: true,
+              reviewSatisfaction: null,
               status: 'in_progress',
               suggestedEvidenceTypes: ['link', 'file'],
               verificationMethod: 'Review uploaded report',
@@ -470,8 +541,8 @@ describe('Admin security route', () => {
       ],
       evidenceReports: [],
     });
-    mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityActions({});
+    mockSecurityMutations({});
 
     renderRoute();
 
@@ -512,6 +583,7 @@ describe('Admin security route', () => {
               notes: null,
               owner: null,
               required: true,
+              reviewSatisfaction: null,
               status: 'in_progress',
               suggestedEvidenceTypes: ['link', 'file'],
               verificationMethod: 'Review uploaded report',
@@ -521,16 +593,10 @@ describe('Admin security route', () => {
       ],
       evidenceReports: [],
     });
-    mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([
-      vi.fn(),
-      vi.fn(),
-      reviewControlEvidenceMock,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-    ]);
+    mockSecurityActions({});
+    mockSecurityMutations({
+      'security:reviewSecurityControlEvidence': reviewControlEvidenceMock,
+    });
 
     renderRoute();
 
@@ -579,8 +645,8 @@ describe('Admin security route', () => {
         }),
       ],
     });
-    mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
+    mockSecurityActions({});
+    mockSecurityMutations({});
 
     renderRoute();
 
@@ -602,16 +668,10 @@ describe('Admin security route', () => {
       findings: [buildSecurityFinding()],
       auditReadiness: buildAuditReadiness(),
     });
-    mockSecurityActions([vi.fn(), vi.fn(), vi.fn(), vi.fn(), vi.fn()]);
-    mockSecurityMutations([
-      vi.fn(),
-      reviewSecurityFindingMock,
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-      vi.fn(),
-    ]);
+    mockSecurityActions({});
+    mockSecurityMutations({
+      'security:reviewSecurityFinding': reviewSecurityFindingMock,
+    });
 
     renderRoute();
 
@@ -627,6 +687,88 @@ describe('Admin security route', () => {
         disposition: 'investigating',
         findingKey: 'audit_integrity_failures',
         reviewNotes: 'triage in progress',
+      });
+    });
+  });
+
+  it('loads annual review actions in the reviews tab', async () => {
+    const user = userEvent.setup();
+    const refreshReviewRunAutomationMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
+    const finalizeReviewRunMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
+    const createTriggeredReviewRunMock = vi
+      .fn()
+      .mockResolvedValue(
+        buildReviewRunSummary({
+          id: 'triggered-review-1',
+          kind: 'triggered',
+          title: 'Manual follow-up',
+        }),
+      );
+    const attestReviewTaskMock = vi.fn().mockResolvedValue(undefined);
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'reviews',
+    });
+    mockSecurityQueries({
+      currentAnnualRun: buildReviewRunSummary(),
+      reviewDetail: buildReviewRunDetail(),
+      triggeredReviewRuns: [],
+    });
+    mockSecurityActions({
+      'security:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
+      'security:finalizeReviewRun': finalizeReviewRunMock,
+    });
+    mockSecurityMutations({
+      'security:createTriggeredReviewRun': createTriggeredReviewRunMock,
+      'security:attestReviewTask': attestReviewTaskMock,
+    });
+
+    renderRoute();
+
+    await waitFor(() => {
+      expect(refreshReviewRunAutomationMock).toHaveBeenCalledWith({
+        reviewRunId: 'review-run-1',
+      });
+    });
+
+    expect(screen.getByText('Current Annual Review')).toBeInTheDocument();
+    expect(screen.getByText('Annual Security Review 2026')).toBeInTheDocument();
+
+    const attestationSection = screen
+      .getAllByText('Needs attestation')[0]
+      ?.closest('[data-slot="card"]');
+    expect(attestationSection).not.toBeNull();
+
+    await user.click(
+      within(attestationSection as HTMLElement).getAllByRole('button', { name: 'Details' })[0]!,
+    );
+
+    await user.type(
+      within(attestationSection as HTMLElement).getAllByPlaceholderText('Task note')[0]!,
+      'reviewed this procedure',
+    );
+    await user.click(
+      within(attestationSection as HTMLElement).getByRole('button', { name: /review and attest/i }),
+    );
+
+    await waitFor(() => {
+      expect(attestReviewTaskMock).toHaveBeenCalledWith({
+        documentLabel: undefined,
+        documentUrl: undefined,
+        documentVersion: undefined,
+        note: 'reviewed this procedure',
+        reviewTaskId: 'review-task-1',
+      });
+    });
+
+    await user.type(screen.getByPlaceholderText('Triggered review title'), 'Manual follow-up');
+    await user.click(screen.getByRole('button', { name: /create run/i }));
+
+    await waitFor(() => {
+      expect(createTriggeredReviewRunMock).toHaveBeenCalledWith({
+        title: 'Manual follow-up',
+        triggerType: 'manual_follow_up',
       });
     });
   });

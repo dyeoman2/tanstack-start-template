@@ -1,10 +1,15 @@
 import * as Sentry from '@sentry/tanstackstart-react';
 import { createFileRoute } from '@tanstack/react-router';
+import { isSentryTestSurfaceEnabled } from '~/lib/shared/sentry-test-surface';
 
 export const Route = createFileRoute('/api/sentry-example')({
   server: {
     handlers: {
       GET: () => {
+        if (!isSentryTestSurfaceEnabled()) {
+          return new Response('Not found', { status: 404 });
+        }
+
         // Test server-side console logging
         console.log('Sentry server test: This is a server console.log message');
         console.warn('Sentry server test: This is a server console.warn message');

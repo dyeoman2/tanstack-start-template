@@ -426,7 +426,10 @@ export function OrganizationDomainManagement({
                     </div>
                   </div>
 
-                  {!isVerified ? (
+                  {!isVerified &&
+                  canManageDomains &&
+                  item.verificationRecordName &&
+                  item.verificationRecordValue ? (
                     <div className="flex flex-col gap-2.5 text-sm text-muted-foreground">
                       <p className="font-medium text-foreground">DNS Setup</p>
                       <ol className="list-inside list-decimal">
@@ -496,13 +499,18 @@ export function OrganizationDomainManagement({
                                         variant="ghost"
                                         size="icon-sm"
                                         className="text-muted-foreground hover:text-foreground"
-                                        onClick={() =>
+                                        disabled={!item.verificationRecordName}
+                                        onClick={() => {
+                                          if (!item.verificationRecordName) {
+                                            return;
+                                          }
+
                                           void handleCopyField(
                                             item.verificationRecordName,
                                             'Record name',
                                             copyKey,
-                                          )
-                                        }
+                                          );
+                                        }}
                                         aria-label={
                                           isCopied ? 'Record name copied' : 'Copy record name'
                                         }
@@ -531,13 +539,18 @@ export function OrganizationDomainManagement({
                                         variant="ghost"
                                         size="icon-sm"
                                         className="text-muted-foreground hover:text-foreground"
-                                        onClick={() =>
+                                        disabled={!item.verificationRecordValue}
+                                        onClick={() => {
+                                          if (!item.verificationRecordValue) {
+                                            return;
+                                          }
+
                                           void handleCopyField(
                                             item.verificationRecordValue,
                                             'Record value',
                                             copyKey,
-                                          )
-                                        }
+                                          );
+                                        }}
                                         aria-label={
                                           isCopied ? 'Record value copied' : 'Copy record value'
                                         }
@@ -588,6 +601,15 @@ export function OrganizationDomainManagement({
                         </div>
                       </div>
                     </div>
+                  ) : !isVerified ? (
+                    <Alert>
+                      <ShieldCheck className="size-4" />
+                      <AlertTitle>Domain Verification In Progress</AlertTitle>
+                      <AlertDescription>
+                        A domain manager needs to complete DNS verification before this domain can
+                        be enforced for sign-in or policy checks.
+                      </AlertDescription>
+                    </Alert>
                   ) : null}
 
                   {item.verifiedAt ? (

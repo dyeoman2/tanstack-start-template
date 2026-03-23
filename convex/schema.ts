@@ -579,6 +579,10 @@ export default defineSchema({
       v.literal('security_posture'),
       v.literal('audit_integrity'),
       v.literal('audit_readiness'),
+      v.literal('annual_review'),
+      v.literal('findings_snapshot'),
+      v.literal('vendor_posture_snapshot'),
+      v.literal('control_workspace_snapshot'),
     ),
     contentJson: v.string(),
     contentHash: v.string(),
@@ -653,6 +657,22 @@ export default defineSchema({
     completedByUserId: v.optional(v.string()),
     lastReviewedAt: v.optional(v.number()),
     lastReviewedByUserId: v.optional(v.string()),
+    reviewSatisfaction: v.optional(
+      v.object({
+        reviewRunId: v.id('reviewRuns'),
+        reviewTaskId: v.id('reviewTasks'),
+        satisfiedAt: v.number(),
+        satisfiedThroughAt: v.number(),
+        satisfiedByUserId: v.string(),
+        mode: v.union(
+          v.literal('automated_check'),
+          v.literal('attestation'),
+          v.literal('document_upload'),
+          v.literal('follow_up'),
+          v.literal('exception'),
+        ),
+      }),
+    ),
     createdAt: v.number(),
     updatedAt: v.number(),
   })
@@ -734,6 +754,128 @@ export default defineSchema({
       'itemId',
       'createdAt',
     ]),
+
+  reviewRuns: defineTable({
+    kind: v.union(v.literal('annual'), v.literal('triggered')),
+    status: v.union(v.literal('ready'), v.literal('needs_attention'), v.literal('completed')),
+    title: v.string(),
+    runKey: v.string(),
+    year: v.optional(v.number()),
+    triggerType: v.optional(v.string()),
+    sourceRecordType: v.optional(v.string()),
+    sourceRecordId: v.optional(v.string()),
+    dedupeKey: v.optional(v.string()),
+    controlRegisterGeneratedAt: v.string(),
+    controlRegisterSchemaVersion: v.string(),
+    snapshotHash: v.string(),
+    snapshotJson: v.string(),
+    finalReportId: v.optional(v.id('evidenceReports')),
+    createdAt: v.number(),
+    createdByUserId: v.string(),
+    finalizedAt: v.optional(v.number()),
+    finalizedByUserId: v.optional(v.string()),
+    updatedAt: v.number(),
+  })
+    .index('by_run_key', ['runKey'])
+    .index('by_kind_and_created_at', ['kind', 'createdAt'])
+    .index('by_dedupe_key', ['dedupeKey']),
+
+  reviewTasks: defineTable({
+    reviewRunId: v.id('reviewRuns'),
+    templateKey: v.string(),
+    title: v.string(),
+    description: v.string(),
+    taskType: v.union(
+      v.literal('automated_check'),
+      v.literal('attestation'),
+      v.literal('document_upload'),
+      v.literal('follow_up'),
+    ),
+    status: v.union(
+      v.literal('ready'),
+      v.literal('completed'),
+      v.literal('exception'),
+      v.literal('blocked'),
+    ),
+    controlLinks: v.array(
+      v.object({
+        internalControlId: v.string(),
+        itemId: v.string(),
+      }),
+    ),
+    required: v.boolean(),
+    allowException: v.boolean(),
+    freshnessWindowDays: v.optional(v.number()),
+    satisfiedAt: v.optional(v.number()),
+    satisfiedThroughAt: v.optional(v.number()),
+    latestResultId: v.optional(v.id('reviewTaskResults')),
+    latestAttestationId: v.optional(v.id('reviewAttestations')),
+    latestNote: v.optional(v.string()),
+    latestEvidenceLinkedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_review_run_id', ['reviewRunId'])
+    .index('by_review_run_id_and_template_key', ['reviewRunId', 'templateKey']),
+
+  reviewTaskResults: defineTable({
+    reviewRunId: v.id('reviewRuns'),
+    reviewTaskId: v.id('reviewTasks'),
+    resultType: v.union(
+      v.literal('automated_check'),
+      v.literal('attested'),
+      v.literal('document_linked'),
+      v.literal('exception_marked'),
+      v.literal('follow_up_opened'),
+      v.literal('resolved'),
+    ),
+    statusAfter: v.union(
+      v.literal('ready'),
+      v.literal('completed'),
+      v.literal('exception'),
+      v.literal('blocked'),
+    ),
+    note: v.optional(v.string()),
+    actorUserId: v.string(),
+    createdAt: v.number(),
+  })
+    .index('by_review_task_id_and_created_at', ['reviewTaskId', 'createdAt'])
+    .index('by_review_run_id_and_created_at', ['reviewRunId', 'createdAt']),
+
+  reviewAttestations: defineTable({
+    reviewRunId: v.id('reviewRuns'),
+    reviewTaskId: v.id('reviewTasks'),
+    statementKey: v.string(),
+    statementText: v.string(),
+    attestedAt: v.number(),
+    attestedByUserId: v.string(),
+    documentLabel: v.optional(v.string()),
+    documentUrl: v.optional(v.string()),
+    documentVersion: v.optional(v.string()),
+    createdAt: v.number(),
+  })
+    .index('by_review_task_id', ['reviewTaskId'])
+    .index('by_review_run_id_and_attested_at', ['reviewRunId', 'attestedAt']),
+
+  reviewTaskEvidenceLinks: defineTable({
+    reviewRunId: v.id('reviewRuns'),
+    reviewTaskId: v.id('reviewTasks'),
+    sourceType: v.union(
+      v.literal('security_control_evidence'),
+      v.literal('evidence_report'),
+      v.literal('security_finding'),
+      v.literal('backup_verification_report'),
+      v.literal('external_document'),
+    ),
+    sourceId: v.string(),
+    sourceLabel: v.optional(v.string()),
+    role: v.union(v.literal('primary'), v.literal('supporting'), v.literal('blocking')),
+    linkedAt: v.number(),
+    linkedByUserId: v.optional(v.string()),
+    freshAt: v.optional(v.number()),
+  })
+    .index('by_review_task_id', ['reviewTaskId'])
+    .index('by_review_run_id_and_linked_at', ['reviewRunId', 'linkedAt']),
 
   organizationAuditEvents: defineTable({
     auditEventId: v.string(),
