@@ -1,4 +1,3 @@
-import type { Id } from '@convex/_generated/dataModel';
 import type { ColumnDef } from '@tanstack/react-table';
 import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react';
 import {
@@ -27,20 +26,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from '~/components/ui/select';
+import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 import { AdminSecurityReviewTaskGroup } from '~/features/security/components/AdminSecurityReviewTaskGroup';
 import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
+import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
 import {
   formatVendorDecisionSummary,
-  formatFindingSeverity,
-  formatFindingStatus,
   formatPolicySupportProgress,
   formatVendorRuntimePosture,
   formatReviewRunStatus,
   formatReviewTaskEvidenceSourceType,
   formatReviewTaskStatus,
   formatSupportStatus,
-  getFindingSeverityBadgeVariant,
   getReviewRunStatusBadgeVariant,
   getSupportBadgeVariant,
   getVendorGovernanceState,
@@ -48,14 +46,10 @@ import {
   getVendorPrimaryStatus,
 } from '~/features/security/formatters';
 import type {
-  AuditReadinessOverview,
-  EvidenceReportListItem,
   ReviewRunSummary,
   ReviewTaskDetail,
   SecurityPolicySummary,
   SecurityControlWorkspaceSummary,
-  SecurityFindingListItem,
-  SecurityOperationDetail,
   SecurityPostureSummary,
   VendorWorkspace,
 } from '~/features/security/types';
@@ -73,12 +67,6 @@ type ControlSummary = {
     sharedResponsibility: number;
   };
   totalControls: number;
-};
-
-type FindingSummary = {
-  openCount: number;
-  reviewPendingCount: number;
-  totalCount: number;
 };
 
 type ReviewFinalizeState = {
@@ -122,75 +110,24 @@ type AutoCollectedEvidenceLink = {
 
 type PolicyTableSortField = 'title' | 'support' | 'owner' | 'mappedControlCount' | 'nextReviewAt';
 
-function formatFindingDisposition(disposition: SecurityFindingListItem['disposition']) {
-  switch (disposition) {
-    case 'accepted_risk':
-      return 'Accepted risk';
-    case 'false_positive':
-      return 'False positive';
-    case 'investigating':
-      return 'Investigating';
-    case 'pending_review':
-      return 'Pending review';
-    case 'resolved':
-      return 'Resolved';
-  }
-}
-
-function getFindingDispositionBadgeVariant(
-  disposition: SecurityFindingListItem['disposition'],
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (disposition) {
-    case 'resolved':
-      return 'default';
-    case 'accepted_risk':
-    case 'false_positive':
-      return 'secondary';
-    case 'investigating':
-      return 'outline';
-    case 'pending_review':
-      return 'destructive';
-  }
-}
-
-function formatEvidenceQueueReviewStatus(status: EvidenceReportListItem['reviewStatus']) {
-  switch (status) {
-    case 'needs_follow_up':
-      return 'Needs follow-up';
-    case 'pending':
-      return 'Pending review';
-    case 'reviewed':
-      return 'Reviewed';
-  }
-}
-
-function getEvidenceQueueReviewBadgeVariant(
-  status: EvidenceReportListItem['reviewStatus'],
-): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (status) {
-    case 'reviewed':
-      return 'default';
-    case 'needs_follow_up':
-      return 'destructive';
-    case 'pending':
-      return 'outline';
-  }
-}
-
-function truncateHash(value: string, visibleChars = 8) {
-  if (value.length <= visibleChars * 2 + 3) {
-    return value;
-  }
-
-  return `${value.slice(0, visibleChars)}...${value.slice(-visibleChars)}`;
-}
-
 export function AdminSecurityOverviewTab(props: {
-  controlSummary: ControlSummary;
+  controlSummary: ControlSummary | undefined;
   summary: SecurityPostureSummary | undefined;
 }) {
+  const loadingValue = (
+    <>
+      <Spinner className="size-5" />
+      <span className="sr-only">Loading</span>
+    </>
+  );
+
   return (
     <>
+      <AdminSecurityTabHeader
+        title="Overview"
+        description="Program-wide posture across authentication, audit integrity, inspection pipelines, retention jobs, telemetry, and session policy."
+      />
+
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
         <AdminSecuritySummaryCard
           title="MFA Coverage"
@@ -198,7 +135,7 @@ export function AdminSecurityOverviewTab(props: {
           value={
             props.summary
               ? `${props.summary.auth.mfaCoveragePercent}% (${props.summary.auth.mfaEnabledUsers}/${props.summary.auth.totalUsers})`
-              : 'Loading…'
+              : loadingValue
           }
           footer={
             props.summary
@@ -212,7 +149,7 @@ export function AdminSecurityOverviewTab(props: {
           value={
             props.summary
               ? `${props.summary.scanner.totalScans} inspected, ${props.summary.scanner.quarantinedCount} quarantined, ${props.summary.scanner.rejectedCount} rejected`
-              : 'Loading…'
+              : loadingValue
           }
           footer={
             props.summary?.scanner.lastScanAt
@@ -226,7 +163,7 @@ export function AdminSecurityOverviewTab(props: {
           value={
             props.summary
               ? `${props.summary.audit.integrityFailures} integrity failures`
-              : 'Loading…'
+              : loadingValue
           }
           footer={
             props.summary?.audit.lastEventAt
@@ -256,7 +193,7 @@ export function AdminSecurityOverviewTab(props: {
               ? props.summary.telemetry.sentryApproved
                 ? 'Sentry approved'
                 : 'Sentry blocked by default'
-              : 'Loading…'
+              : loadingValue
           }
           footer={
             props.summary
@@ -272,7 +209,7 @@ export function AdminSecurityOverviewTab(props: {
           value={
             props.summary
               ? `${props.summary.sessions.freshWindowMinutes} minute step-up window`
-              : 'Loading…'
+              : loadingValue
           }
           footer={
             props.summary
@@ -304,7 +241,18 @@ export function AdminSecurityPoliciesTab(props: {
     selectedPolicy?: string | undefined;
   }) => void;
 }) {
-  const policies = useMemo(() => props.policies ?? [], [props.policies]);
+  const {
+    busySync,
+    onOpenPolicy,
+    onSyncPolicies,
+    policies: policyInput,
+    searchTerm,
+    sortBy,
+    sortOrder,
+    supportFilter,
+    updatePolicySearch,
+  } = props;
+  const policies = useMemo(() => policyInput ?? [], [policyInput]);
   const counts = policies.reduce(
     (summary, policy) => {
       summary[policy.support] += 1;
@@ -328,10 +276,10 @@ export function AdminSecurityPoliciesTab(props: {
     [],
   );
   const filteredPolicies = useMemo(() => {
-    const query = props.searchTerm.trim().toLowerCase();
+    const query = searchTerm.trim().toLowerCase();
 
     return policies.filter((policy) => {
-      if (props.supportFilter !== 'all' && policy.support !== props.supportFilter) {
+      if (supportFilter !== 'all' && policy.support !== supportFilter) {
         return false;
       }
 
@@ -347,7 +295,7 @@ export function AdminSecurityPoliciesTab(props: {
         policy.linkedAnnualReviewTask?.title ?? '',
       ].some((value) => value.toLowerCase().includes(query));
     });
-  }, [policies, props.searchTerm, props.supportFilter]);
+  }, [policies, searchTerm, supportFilter]);
   const sortedPolicies = useMemo(() => {
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     const sorted = [...filteredPolicies];
@@ -355,7 +303,7 @@ export function AdminSecurityPoliciesTab(props: {
     sorted.sort((left, right) => {
       let result = 0;
 
-      switch (props.sortBy) {
+      switch (sortBy) {
         case 'title':
           result = collator.compare(left.title, right.title);
           break;
@@ -376,30 +324,29 @@ export function AdminSecurityPoliciesTab(props: {
         }
       }
 
-      return props.sortOrder === 'asc' ? result : -result;
+      return sortOrder === 'asc' ? result : -result;
     });
 
     return sorted;
-  }, [filteredPolicies, props.sortBy, props.sortOrder]);
+  }, [filteredPolicies, sortBy, sortOrder]);
   const totalPolicies = sortedPolicies.length;
   const policySearchParams = useMemo(
     () => ({
       page: 1,
       pageSize: totalPolicies || policies.length || 1,
-      sortBy: props.sortBy,
-      sortOrder: props.sortOrder,
+      sortBy,
+      sortOrder,
     }),
-    [policies.length, props.sortBy, props.sortOrder, totalPolicies],
+    [policies.length, sortBy, sortOrder, totalPolicies],
   );
   const handlePolicySorting = useCallback(
     (columnId: PolicyTableSortField) => {
-      props.updatePolicySearch({
+      updatePolicySearch({
         policySortBy: columnId,
-        policySortOrder:
-          props.sortBy === columnId ? (props.sortOrder === 'asc' ? 'desc' : 'asc') : 'asc',
+        policySortOrder: sortBy === columnId ? (sortOrder === 'asc' ? 'desc' : 'asc') : 'asc',
       });
     },
-    [props.sortBy, props.sortOrder, props.updatePolicySearch],
+    [sortBy, sortOrder, updatePolicySearch],
   );
   const policyColumns = useMemo<ColumnDef<SecurityPolicySummary, unknown>[]>(
     () => [
@@ -452,25 +399,22 @@ export function AdminSecurityPoliciesTab(props: {
 
   return (
     <>
-      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold">Policies</h2>
-          <p className="text-sm text-muted-foreground">
-            Governance layer backed by repo markdown, mapped controls, and annual policy
-            attestations.
-          </p>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={props.busySync}
-          onClick={() => {
-            void props.onSyncPolicies();
-          }}
-        >
-          {props.busySync ? 'Syncing…' : 'Sync policy catalog'}
-        </Button>
-      </div>
+      <AdminSecurityTabHeader
+        title="Policies"
+        description="Governance layer backed by repo markdown, mapped controls, and annual policy attestations."
+        actions={
+          <Button
+            type="button"
+            variant="outline"
+            disabled={busySync}
+            onClick={() => {
+              void onSyncPolicies();
+            }}
+          >
+            {busySync ? 'Syncing…' : 'Sync policy catalog'}
+          </Button>
+        }
+      />
 
       <div className="grid gap-4 md:grid-cols-3">
         <AdminSecuritySummaryCard
@@ -498,10 +442,10 @@ export function AdminSecurityPoliciesTab(props: {
           <p className="text-sm text-muted-foreground whitespace-nowrap">{totalPolicies} matches</p>
           <div className="flex flex-wrap items-center gap-2">
             <TableFilter<'all' | SecurityPolicySummary['support']>
-              value={props.supportFilter}
+              value={supportFilter}
               options={supportOptions}
               onValueChange={(value) => {
-                props.updatePolicySearch({ policySupport: value });
+                updatePolicySearch({ policySupport: value });
               }}
               className="shrink-0"
               ariaLabel="Filter policies by support"
@@ -510,9 +454,9 @@ export function AdminSecurityPoliciesTab(props: {
         </div>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
           <TableSearch
-            initialValue={props.searchTerm}
+            initialValue={searchTerm}
             onSearch={(value) => {
-              props.updatePolicySearch({ policySearch: value });
+              updatePolicySearch({ policySearch: value });
             }}
             placeholder="Search by policy, summary, owner, or source path"
             isSearching={false}
@@ -526,9 +470,9 @@ export function AdminSecurityPoliciesTab(props: {
         data={sortedPolicies}
         columns={policyColumns}
         searchParams={policySearchParams}
-        isLoading={props.policies === undefined}
+        isLoading={policyInput === undefined}
         onRowClick={(policy) => {
-          props.onOpenPolicy(policy.policyId);
+          onOpenPolicy(policy.policyId);
         }}
         emptyMessage="No policies matched the current filters."
       />
@@ -545,7 +489,7 @@ export function AdminSecurityControlsTab(props: {
     sortOrder: 'asc' | 'desc';
   };
   controlSearchTerm: string;
-  controlSummary: ControlSummary;
+  controlSummary: ControlSummary | undefined;
   supportFilter: 'all' | SecurityControlWorkspaceSummary['support'];
   supportOptions: Array<TableFilterOption<'all' | SecurityControlWorkspaceSummary['support']>>;
   familyFilter: string;
@@ -569,12 +513,10 @@ export function AdminSecurityControlsTab(props: {
 }) {
   return (
     <>
-      <div className="space-y-1">
-        <h2 className="text-lg font-semibold">Control Register</h2>
-        <p className="text-sm text-muted-foreground">
-          Active control register with evidence, responsibility, and framework mapping detail.
-        </p>
-      </div>
+      <AdminSecurityTabHeader
+        title="Control Register"
+        description="Active control register with evidence, responsibility, and framework mapping detail."
+      />
       <SecurityControlSummaryGrid controlSummary={props.controlSummary} />
 
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
@@ -653,776 +595,6 @@ export function AdminSecurityControlsTab(props: {
   );
 }
 
-function AdminSecurityEvidenceTab(props: {
-  auditReadiness: AuditReadinessOverview | undefined;
-  auditReadinessSummary: {
-    latestDrill: AuditReadinessOverview['latestBackupDrill'];
-    latestManifestHash: string | null;
-    metadataGapCount: number;
-    recentDeniedCount: number;
-    recentExportCount: number;
-    staleDrill: boolean;
-  };
-  busyFindingKey: string | null;
-  busyReportAction: string | null;
-  evidenceReports: EvidenceReportListItem[] | undefined;
-  findingDispositions: Record<
-    SecurityFindingListItem['findingKey'],
-    SecurityFindingListItem['disposition']
-  >;
-  findingCustomerSummaries: Record<string, string>;
-  findingNotes: Record<string, string>;
-  findingSummary: FindingSummary;
-  isGenerating: boolean;
-  report: string | null;
-  reportCustomerSummaries: Record<string, string>;
-  reportNotes: Record<string, string>;
-  restoreDrillFooter: string;
-  securityFindings: SecurityFindingListItem[] | undefined;
-  selectedReportId: Id<'evidenceReports'> | null;
-  handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
-  handleOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
-  handleOpenReportDetail: (reportId: Id<'evidenceReports'>) => void;
-  handleOpenFindingDetail: (findingKey: SecurityFindingListItem['findingKey']) => void;
-  handleReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
-  handleReviewReport: (
-    id: Id<'evidenceReports'>,
-    reviewStatus: 'needs_follow_up' | 'reviewed',
-  ) => Promise<void>;
-  handleExportReport: (id: Id<'evidenceReports'>) => Promise<void>;
-  navigateToControl: (internalControlId: string) => void;
-  navigateToReviews: () => void;
-  setFindingDispositions: Dispatch<
-    SetStateAction<
-      Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
-    >
-  >;
-  setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setReportNotes: Dispatch<SetStateAction<Record<string, string>>>;
-}) {
-  return (
-    <>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <AdminSecuritySummaryCard
-          title="Recent Exports"
-          description="Manifest-backed audit, directory, and evidence exports recorded recently."
-          value={`${props.auditReadinessSummary.recentExportCount}`}
-          footer={
-            props.auditReadinessSummary.latestManifestHash
-              ? `Latest manifest: ${props.auditReadinessSummary.latestManifestHash.slice(0, 16)}…`
-              : 'No export manifests recorded'
-          }
-        />
-        <AdminSecuritySummaryCard
-          title="Denied Actions"
-          description="Recent authorization denials captured through the canonical audit path."
-          value={`${props.auditReadinessSummary.recentDeniedCount}`}
-          footer="Review the latest denial reasons below"
-        />
-        <AdminSecuritySummaryCard
-          title="Metadata Gaps"
-          description="Recent privileged events missing required evidence metadata fields."
-          value={`${props.auditReadinessSummary.metadataGapCount}`}
-          footer={
-            props.auditReadinessSummary.metadataGapCount === 0
-              ? 'No gaps in the latest scan'
-              : 'Investigate before sharing audit artifacts'
-          }
-        />
-        <AdminSecuritySummaryCard
-          title="Restore Drill"
-          description="Most recent restore or operator-recorded backup verification evidence."
-          value={
-            props.auditReadinessSummary.latestDrill
-              ? props.auditReadinessSummary.latestDrill.status
-              : 'missing'
-          }
-          footer={props.restoreDrillFooter}
-        />
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Evidence Report</CardTitle>
-          <CardDescription>
-            Generate a JSON evidence snapshot suitable for internal review and export.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Button
-            onClick={() => {
-              void props.handleGenerateReport('security_posture');
-            }}
-            disabled={props.isGenerating}
-          >
-            {props.isGenerating ? 'Generating…' : 'Generate evidence report'}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              void props.handleGenerateReport('audit_readiness');
-            }}
-            disabled={props.isGenerating}
-          >
-            {props.isGenerating ? 'Generating…' : 'Generate audit readiness report'}
-          </Button>
-          {props.report ? (
-            <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-              {props.report}
-            </pre>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Audit Readiness Signals</CardTitle>
-          <CardDescription>
-            Surface manifest history, authorization denials, metadata gaps, and backup drill
-            evidence without opening raw JSON.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-6 xl:grid-cols-3">
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Latest Backup Drill</h3>
-            {props.auditReadiness?.latestBackupDrill ? (
-              <div className="space-y-1 text-sm text-muted-foreground">
-                <p>
-                  {props.auditReadiness.latestBackupDrill.status} ·{' '}
-                  {props.auditReadiness.latestBackupDrill.drillType}
-                </p>
-                <p>{props.auditReadiness.latestBackupDrill.sourceDataset}</p>
-                <p>
-                  {new Date(props.auditReadiness.latestBackupDrill.checkedAt).toLocaleString()} ·{' '}
-                  {props.auditReadiness.latestBackupDrill.targetEnvironment}
-                </p>
-                <p>Verification: {props.auditReadiness.latestBackupDrill.verificationMethod}</p>
-                <p>Restored items: {props.auditReadiness.latestBackupDrill.restoredItemCount}</p>
-                {props.auditReadiness.latestBackupDrill.artifactHash ? (
-                  <p>Artifact hash: {props.auditReadiness.latestBackupDrill.artifactHash}</p>
-                ) : null}
-                {props.auditReadiness.latestBackupDrill.failureReason ? (
-                  <p>Failure: {props.auditReadiness.latestBackupDrill.failureReason}</p>
-                ) : null}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No drill evidence recorded yet.</p>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Recent Export Artifacts</h3>
-            {props.auditReadiness?.recentExports?.length ? (
-              <div className="space-y-2">
-                {props.auditReadiness.recentExports.slice(0, 5).map((artifact) => (
-                  <div
-                    key={`${artifact.artifactType}:${artifact.manifestHash}`}
-                    className="rounded-md border p-3 text-sm"
-                  >
-                    <p className="font-medium">{artifact.artifactType}</p>
-                    <p className="text-muted-foreground">
-                      {new Date(artifact.exportedAt).toLocaleString()}
-                    </p>
-                    <p className="text-muted-foreground">Manifest: {artifact.manifestHash}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">No export artifacts recorded yet.</p>
-            )}
-          </div>
-
-          <div className="space-y-3">
-            <h3 className="text-sm font-medium">Latest Findings</h3>
-            <div className="space-y-2">
-              <div className="rounded-md border p-3 text-sm">
-                <p className="font-medium">Metadata gaps</p>
-                {props.auditReadiness?.metadataGaps?.length ? (
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    {props.auditReadiness.metadataGaps.slice(0, 3).map((gap) => (
-                      <p key={gap.id}>
-                        {gap.eventType} · {new Date(gap.createdAt).toLocaleString()}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-muted-foreground">No recent metadata gaps.</p>
-                )}
-              </div>
-              <div className="rounded-md border p-3 text-sm">
-                <p className="font-medium">Authorization denials</p>
-                {props.auditReadiness?.recentDeniedActions?.length ? (
-                  <div className="mt-2 space-y-1 text-muted-foreground">
-                    {props.auditReadiness.recentDeniedActions.slice(0, 3).map((denial) => (
-                      <p key={denial.id}>
-                        {new Date(denial.createdAt).toLocaleString()} ·{' '}
-                        {denial.organizationId ?? 'global'}
-                      </p>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="mt-2 text-muted-foreground">No recent denials.</p>
-                )}
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Security Finding Review Queue</CardTitle>
-          <CardDescription>
-            Retained findings from audit integrity, document scanning, and release security
-            validation with provider disposition tracking.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 md:grid-cols-3">
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Tracked findings
-              </p>
-              <p className="mt-2 text-2xl font-semibold">{props.findingSummary.totalCount}</p>
-              <p className="mt-1 text-sm text-muted-foreground">Items currently in review scope</p>
-            </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Open findings
-              </p>
-              <p className="mt-2 text-2xl font-semibold">{props.findingSummary.openCount}</p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Findings still awaiting provider action
-              </p>
-            </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Pending disposition
-              </p>
-              <p className="mt-2 text-2xl font-semibold">
-                {props.findingSummary.reviewPendingCount}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Findings without a recorded decision
-              </p>
-            </div>
-          </div>
-
-          {props.securityFindings?.length ? (
-            <Accordion type="multiple" className="space-y-3">
-              {props.securityFindings.map((finding) => {
-                const currentDisposition =
-                  props.findingDispositions[finding.findingKey] ?? finding.disposition;
-                const currentNotes =
-                  props.findingNotes[finding.findingKey] ?? finding.internalNotes ?? '';
-                const currentCustomerSummary =
-                  props.findingCustomerSummaries[finding.findingKey] ??
-                  finding.customerSummary ??
-                  '';
-                const isDirty =
-                  currentDisposition !== finding.disposition ||
-                  currentNotes !== (finding.internalNotes ?? '') ||
-                  currentCustomerSummary !== (finding.customerSummary ?? '');
-
-                return (
-                  <AccordionItem
-                    key={finding.findingKey}
-                    value={finding.findingKey}
-                    className="overflow-hidden rounded-xl border bg-background"
-                  >
-                    <div className="px-4 py-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                          <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1.7fr)_minmax(16rem,0.9fr)] lg:items-start">
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-base font-semibold">{finding.title}</p>
-                                <Badge variant={getFindingSeverityBadgeVariant(finding.severity)}>
-                                  {formatFindingSeverity(finding.severity)}
-                                </Badge>
-                                <Badge
-                                  variant={finding.status === 'open' ? 'destructive' : 'secondary'}
-                                >
-                                  {formatFindingStatus(finding.status)}
-                                </Badge>
-                                <Badge
-                                  variant={getFindingDispositionBadgeVariant(currentDisposition)}
-                                >
-                                  {formatFindingDisposition(currentDisposition)}
-                                </Badge>
-                              </div>
-                              <p className="max-w-3xl text-sm text-muted-foreground">
-                                {finding.description}
-                              </p>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                <p>Source: {finding.sourceLabel}</p>
-                                <p>
-                                  Last observed {new Date(finding.lastObservedAt).toLocaleString()}
-                                </p>
-                                {finding.reviewedAt ? (
-                                  <p>Reviewed {new Date(finding.reviewedAt).toLocaleString()}</p>
-                                ) : null}
-                                {finding.reviewedByDisplay ? (
-                                  <p>{finding.reviewedByDisplay}</p>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                              <div>
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                  Controls
-                                </p>
-                                <p className="mt-1 text-foreground">
-                                  {finding.relatedControls.length > 0
-                                    ? `${finding.relatedControls.length} linked`
-                                    : 'No control links'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                  Review state
-                                </p>
-                                <p className="mt-1 text-foreground">
-                                  {isDirty ? 'Unsaved edits' : 'Saved'}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </AccordionTrigger>
-                        <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                          <Button
-                            type="button"
-                            size="sm"
-                            disabled={props.busyFindingKey !== null}
-                            onClick={() => {
-                              void props.handleReviewFinding(finding.findingKey);
-                            }}
-                          >
-                            {props.busyFindingKey === finding.findingKey
-                              ? 'Saving…'
-                              : isDirty
-                                ? 'Save changes'
-                                : 'Save review'}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={props.busyFindingKey !== null}
-                            onClick={() => {
-                              props.handleOpenFindingDetail(finding.findingKey);
-                            }}
-                          >
-                            View details
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
-                      <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                        <div className="space-y-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Internal notes
-                              </p>
-                              <Textarea
-                                value={currentNotes}
-                                onChange={(event) => {
-                                  props.setFindingNotes((current) => ({
-                                    ...current,
-                                    [finding.findingKey]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Add reviewer-only notes"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Customer summary
-                              </p>
-                              <Textarea
-                                value={currentCustomerSummary}
-                                onChange={(event) => {
-                                  props.setFindingCustomerSummaries((current) => ({
-                                    ...current,
-                                    [finding.findingKey]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Summarize the finding for customer-facing review"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                          </div>
-                          {finding.relatedControls?.length ? (
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Related controls
-                              </p>
-                              <div className="flex flex-wrap gap-2">
-                                {finding.relatedControls.map((control) => (
-                                  <Button
-                                    key={`${finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      props.navigateToControl(control.internalControlId);
-                                    }}
-                                  >
-                                    {control.nist80053Id} · {control.title}
-                                  </Button>
-                                ))}
-                                <Button
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    props.navigateToReviews();
-                                  }}
-                                >
-                                  Open reviews
-                                </Button>
-                              </div>
-                            </div>
-                          ) : null}
-                        </div>
-                        <div className="space-y-4 rounded-lg border bg-background p-4">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Disposition
-                            </p>
-                            <Select
-                              value={currentDisposition}
-                              onValueChange={(value: SecurityFindingListItem['disposition']) => {
-                                props.setFindingDispositions((current) => ({
-                                  ...current,
-                                  [finding.findingKey]: value,
-                                }));
-                              }}
-                            >
-                              <SelectTrigger aria-label={`Disposition for ${finding.title}`}>
-                                <SelectValue placeholder="Select disposition" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="pending_review">Pending review</SelectItem>
-                                <SelectItem value="investigating">Investigating</SelectItem>
-                                <SelectItem value="accepted_risk">Accepted risk</SelectItem>
-                                <SelectItem value="false_positive">False positive</SelectItem>
-                                <SelectItem value="resolved">Resolved</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Actions
-                            </p>
-                            <div className="flex flex-col gap-2">
-                              <Button
-                                type="button"
-                                disabled={props.busyFindingKey !== null}
-                                onClick={() => {
-                                  void props.handleReviewFinding(finding.findingKey);
-                                }}
-                              >
-                                {props.busyFindingKey === finding.findingKey
-                                  ? 'Saving…'
-                                  : isDirty
-                                    ? 'Save changes'
-                                    : 'Save review'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={props.busyFindingKey !== null}
-                                onClick={() => {
-                                  void props.handleOpenFindingFollowUp(finding);
-                                }}
-                              >
-                                {props.busyFindingKey === finding.findingKey
-                                  ? 'Opening…'
-                                  : 'Open follow-up'}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No retained findings are available for review yet.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Evidence Review Queue</CardTitle>
-          <CardDescription>
-            Review generated evidence, capture notes, and export integrity-linked bundles.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 md:grid-cols-3">
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Pending review
-              </p>
-              <p className="mt-2 text-2xl font-semibold">
-                {props.evidenceReports?.filter((item) => item.reviewStatus === 'pending').length ??
-                  0}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">Reports waiting for first pass</p>
-            </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Needs follow-up
-              </p>
-              <p className="mt-2 text-2xl font-semibold">
-                {props.evidenceReports?.filter((item) => item.reviewStatus === 'needs_follow_up')
-                  .length ?? 0}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">Reports requiring more evidence</p>
-            </div>
-            <div className="rounded-lg bg-background px-4 py-3">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Exported bundles
-              </p>
-              <p className="mt-2 text-2xl font-semibold">
-                {props.evidenceReports?.filter((item) => item.exportedAt !== null).length ?? 0}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">Reports already packaged</p>
-            </div>
-          </div>
-
-          {props.evidenceReports?.length ? (
-            <Accordion type="multiple" className="space-y-3">
-              {props.evidenceReports.map((item) => {
-                const currentNotes = props.reportNotes[item.id] ?? item.internalNotes ?? '';
-                const currentCustomerSummary =
-                  props.reportCustomerSummaries[item.id] ?? item.customerSummary ?? '';
-                const isDirty =
-                  currentNotes !== (item.internalNotes ?? '') ||
-                  currentCustomerSummary !== (item.customerSummary ?? '');
-
-                return (
-                  <AccordionItem
-                    key={item.id}
-                    value={item.id}
-                    className="overflow-hidden rounded-xl border bg-background"
-                    data-selected={props.selectedReportId === item.id}
-                  >
-                    <div className="px-4 py-4">
-                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                        <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                          <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.9fr)] lg:items-start">
-                            <div className="space-y-2">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="text-base font-semibold">{item.reportKind}</p>
-                                <Badge
-                                  variant={getEvidenceQueueReviewBadgeVariant(item.reviewStatus)}
-                                >
-                                  {formatEvidenceQueueReviewStatus(item.reviewStatus)}
-                                </Badge>
-                                {item.exportedAt ? (
-                                  <Badge variant="secondary">Exported</Badge>
-                                ) : null}
-                              </div>
-                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                                <p>Created {new Date(item.createdAt).toLocaleString()}</p>
-                                <p>Content hash {truncateHash(item.contentHash)}</p>
-                                {item.reviewedAt ? (
-                                  <p>Reviewed {new Date(item.reviewedAt).toLocaleString()}</p>
-                                ) : null}
-                              </div>
-                            </div>
-                            <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                              <div>
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                  Export bundle
-                                </p>
-                                <p className="mt-1 text-foreground">
-                                  {item.exportHash ? truncateHash(item.exportHash) : 'Not exported'}
-                                </p>
-                              </div>
-                              <div>
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                  Notes
-                                </p>
-                                <p className="mt-1 text-foreground">
-                                  {isDirty ? 'Unsaved edits' : 'Saved'}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </AccordionTrigger>
-                        <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant={item.reviewStatus === 'reviewed' ? 'outline' : 'default'}
-                            disabled={props.busyReportAction !== null}
-                            onClick={() => {
-                              void props.handleReviewReport(item.id, 'reviewed');
-                            }}
-                          >
-                            {props.busyReportAction === `${item.id}:reviewed`
-                              ? 'Saving…'
-                              : 'Mark reviewed'}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            disabled={props.busyReportAction !== null}
-                            onClick={() => {
-                              props.handleOpenReportDetail(item.id);
-                            }}
-                          >
-                            View details
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                    <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
-                      <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                        <div className="space-y-4">
-                          <div className="grid gap-4 md:grid-cols-2">
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Internal notes
-                              </p>
-                              <Textarea
-                                value={currentNotes}
-                                onChange={(event) => {
-                                  props.setReportNotes((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Add reviewer-only notes"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Customer summary
-                              </p>
-                              <Textarea
-                                value={currentCustomerSummary}
-                                onChange={(event) => {
-                                  props.setReportCustomerSummaries((current) => ({
-                                    ...current,
-                                    [item.id]: event.target.value,
-                                  }));
-                                }}
-                                placeholder="Summarize the evidence package for customers"
-                                className="min-h-28 bg-background"
-                              />
-                            </div>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-2">
-                            <div className="rounded-lg border bg-background p-3">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Content hash
-                              </p>
-                              <p className="mt-2 break-all font-mono text-xs">{item.contentHash}</p>
-                            </div>
-                            <div className="rounded-lg border bg-background p-3">
-                              <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Manifest hash
-                              </p>
-                              <p className="mt-2 break-all font-mono text-xs">
-                                {item.exportManifestHash ?? 'Not recorded yet'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="space-y-4 rounded-lg border bg-background p-4">
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Review actions
-                            </p>
-                            <div className="flex flex-col gap-2">
-                              <Button
-                                type="button"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleReviewReport(item.id, 'reviewed');
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:reviewed`
-                                  ? 'Saving…'
-                                  : 'Mark reviewed'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleReviewReport(item.id, 'needs_follow_up');
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:needs_follow_up`
-                                  ? 'Saving…'
-                                  : 'Needs follow-up'}
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="outline"
-                                disabled={props.busyReportAction !== null}
-                                onClick={() => {
-                                  void props.handleExportReport(item.id);
-                                }}
-                              >
-                                {props.busyReportAction === `${item.id}:export`
-                                  ? 'Exporting…'
-                                  : 'Export bundle'}
-                              </Button>
-                            </div>
-                          </div>
-                          <div className="space-y-2 text-sm text-muted-foreground">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Export status
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {item.exportHash ? 'Bundle recorded' : 'Not exported yet'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Manifest
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {item.exportManifestHash ? 'Recorded' : 'Not recorded yet'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </AccordionContent>
-                  </AccordionItem>
-                );
-              })}
-            </Accordion>
-          ) : (
-            <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
-          )}
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
 export function AdminSecurityReviewsTab(props: {
   autoCollectedEvidenceLinks: AutoCollectedEvidenceLink[];
   busyReviewRunAction: string | null;
@@ -1455,44 +627,45 @@ export function AdminSecurityReviewsTab(props: {
 }) {
   return (
     <>
+      <AdminSecurityTabHeader
+        title="Reviews"
+        description="Annual revalidation status, triggered follow-up runs, and evidence collection for the security program."
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={!props.currentAnnualReviewRun?.id || props.busyReviewRunAction !== null}
+              onClick={() => {
+                void props.handleRefreshAnnualReview();
+              }}
+            >
+              {props.busyReviewRunAction === 'refresh' ? 'Refreshing…' : 'Refresh automation'}
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                !props.currentAnnualReviewRun?.id ||
+                props.busyReviewRunAction !== null ||
+                !props.reviewFinalizeState.canFinalize
+              }
+              onClick={() => {
+                void props.handleFinalizeAnnualReview();
+              }}
+            >
+              {props.busyReviewRunAction === 'finalize' ? 'Finalizing…' : 'Finalize annual review'}
+            </Button>
+          </>
+        }
+      />
+
       <Card>
         <CardHeader>
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <CardTitle>Current Annual Review</CardTitle>
-              <CardDescription>
-                Revalidate the current evidence base, complete the required attestations and
-                document links, and finalize the annual review record for this cycle.
-              </CardDescription>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!props.currentAnnualReviewRun?.id || props.busyReviewRunAction !== null}
-                onClick={() => {
-                  void props.handleRefreshAnnualReview();
-                }}
-              >
-                {props.busyReviewRunAction === 'refresh' ? 'Refreshing…' : 'Refresh automation'}
-              </Button>
-              <Button
-                type="button"
-                disabled={
-                  !props.currentAnnualReviewRun?.id ||
-                  props.busyReviewRunAction !== null ||
-                  !props.reviewFinalizeState.canFinalize
-                }
-                onClick={() => {
-                  void props.handleFinalizeAnnualReview();
-                }}
-              >
-                {props.busyReviewRunAction === 'finalize'
-                  ? 'Finalizing…'
-                  : 'Finalize annual review'}
-              </Button>
-            </div>
-          </div>
+          <CardTitle>Current Annual Review</CardTitle>
+          <CardDescription>
+            Revalidate the current evidence base, complete the required attestations and document
+            links, and finalize the annual review record for this cycle.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {props.currentAnnualReviewRun ? (
@@ -1828,271 +1001,104 @@ export function AdminSecurityVendorsTab(props: {
   setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Vendors</CardTitle>
-        <CardDescription>
-          Runtime vendor posture, governance review cadence, follow-up context, and linked controls.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {props.vendorWorkspaces ? (
-          <Accordion type="multiple" className="space-y-3">
-            {props.vendorWorkspaces.map((vendor) => {
-              const currentOwner = props.vendorOwners[vendor.vendor] ?? vendor.owner ?? '';
-              const currentSummary = props.vendorSummaries[vendor.vendor] ?? vendor.summary ?? '';
-              const isDirty =
-                currentOwner !== (vendor.owner ?? '') || currentSummary !== (vendor.summary ?? '');
-              const primaryStatus = getVendorPrimaryStatus(vendor);
-              const governanceState = getVendorGovernanceState({
-                controlCount: vendor.relatedControls.length,
-                hasDraftReview: isDirty,
-                owner: currentOwner,
-                reviewStatus: vendor.reviewStatus,
-              });
-              const runtimePosture = formatVendorRuntimePosture(vendor);
-              const decisionSummary = formatVendorDecisionSummary({
-                controlCount: vendor.relatedControls.length,
-                hasDraftReview: isDirty,
-                lastReviewedAt: vendor.lastReviewedAt,
-                owner: currentOwner,
-                reviewStatus: vendor.reviewStatus,
-                vendor,
-              });
-              const primaryActionLabel = getVendorPrimaryActionLabel({
-                controlCount: vendor.relatedControls.length,
-                hasDraftReview: isDirty,
-                owner: currentOwner,
-              });
+    <div className="space-y-4">
+      {props.vendorWorkspaces ? (
+        <Accordion type="multiple" className="space-y-3">
+          {props.vendorWorkspaces.map((vendor) => {
+            const currentOwner = props.vendorOwners[vendor.vendor] ?? vendor.owner ?? '';
+            const currentSummary = props.vendorSummaries[vendor.vendor] ?? vendor.summary ?? '';
+            const isDirty =
+              currentOwner !== (vendor.owner ?? '') || currentSummary !== (vendor.summary ?? '');
+            const primaryStatus = getVendorPrimaryStatus(vendor);
+            const governanceState = getVendorGovernanceState({
+              controlCount: vendor.relatedControls.length,
+              hasDraftReview: isDirty,
+              owner: currentOwner,
+              reviewStatus: vendor.reviewStatus,
+            });
+            const runtimePosture = formatVendorRuntimePosture(vendor);
+            const decisionSummary = formatVendorDecisionSummary({
+              controlCount: vendor.relatedControls.length,
+              hasDraftReview: isDirty,
+              lastReviewedAt: vendor.lastReviewedAt,
+              owner: currentOwner,
+              reviewStatus: vendor.reviewStatus,
+              vendor,
+            });
+            const primaryActionLabel = getVendorPrimaryActionLabel({
+              controlCount: vendor.relatedControls.length,
+              hasDraftReview: isDirty,
+              owner: currentOwner,
+            });
 
-              return (
-                <AccordionItem
-                  key={vendor.vendor}
-                  value={vendor.vendor}
-                  className="overflow-hidden rounded-xl border bg-background"
-                >
-                  <div className="px-4 py-4">
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                      <AccordionTrigger className="flex-1 py-0 hover:no-underline">
-                        <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,0.9fr)] lg:items-start">
-                          <div className="space-y-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <p className="text-base font-semibold">{vendor.title}</p>
-                              <Badge variant={primaryStatus.variant}>{primaryStatus.label}</Badge>
-                              <Badge variant={governanceState.variant}>
-                                {governanceState.label}
-                              </Badge>
-                            </div>
-                            <p className="max-w-3xl text-sm text-foreground">{decisionSummary}</p>
-                            <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm md:grid-cols-2">
-                              <div className="space-y-1">
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                  Runtime posture
-                                </p>
-                                <p className="text-foreground">{runtimePosture.decision}</p>
-                                <p className="text-muted-foreground">
-                                  Environments: {runtimePosture.environments}
-                                </p>
-                                <p className="text-muted-foreground">
-                                  Data classes: {runtimePosture.dataClasses}
-                                </p>
-                              </div>
-                              <div className="space-y-1">
-                                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                  Governance posture
-                                </p>
-                                <p className="text-foreground">
-                                  {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
-                                </p>
-                                <p className="text-muted-foreground">
-                                  {vendor.relatedControls.length > 0
-                                    ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
-                                    : 'No linked controls'}
-                                </p>
-                                <p className="text-muted-foreground">
-                                  {vendor.lastReviewedAt
-                                    ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleDateString()}`
-                                    : 'No completed review recorded'}
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                              <p>{vendor.allowedDataClasses.length} data classes</p>
-                              <p>{vendor.allowedEnvironments.length} environments</p>
-                              <p>
-                                {vendor.nextReviewAt
-                                  ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
-                                  : 'Next review not scheduled'}
-                              </p>
-                              <p>
-                                {vendor.linkedFollowUpRunId
-                                  ? 'Follow-up review linked'
-                                  : 'No follow-up run'}
-                              </p>
-                            </div>
+            return (
+              <AccordionItem
+                key={vendor.vendor}
+                value={vendor.vendor}
+                className="overflow-hidden rounded-xl border bg-background"
+              >
+                <div className="px-4 py-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <AccordionTrigger className="flex-1 py-0 hover:no-underline">
+                      <div className="grid w-full gap-4 lg:grid-cols-[minmax(0,1.6fr)_minmax(16rem,0.9fr)] lg:items-start">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="text-base font-semibold">{vendor.title}</p>
+                            <Badge variant={primaryStatus.variant}>{primaryStatus.label}</Badge>
+                            <Badge variant={governanceState.variant}>{governanceState.label}</Badge>
                           </div>
-                          <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Governance state
+                          <p className="max-w-3xl text-sm text-foreground">{decisionSummary}</p>
+                          <div className="grid gap-3 rounded-lg border bg-muted/20 p-3 text-sm md:grid-cols-2">
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                                Runtime posture
                               </p>
-                              <p className="mt-1 text-foreground">{governanceState.label}</p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Annual review task
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {vendor.linkedAnnualReviewTask?.title ??
-                                  'No linked annual review task'}
-                              </p>
-                            </div>
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                                Vendor notes
-                              </p>
-                              <p className="mt-1 text-foreground">
-                                {currentSummary.trim().length > 0
-                                  ? 'Summary recorded'
-                                  : 'No summary recorded'}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </AccordionTrigger>
-                      <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
-                        <Button
-                          type="button"
-                          size="sm"
-                          disabled={props.busyVendorKey !== null}
-                          onClick={() => {
-                            void props.handleReviewVendor(vendor);
-                          }}
-                        >
-                          {props.busyVendorKey === vendor.vendor ? 'Saving…' : primaryActionLabel}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            props.onOpenVendor(vendor.vendor);
-                          }}
-                        >
-                          View details
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                  <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
-                    <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
-                      <div className="space-y-4">
-                        <div className="grid gap-4 md:grid-cols-2">
-                          <div className="space-y-2">
-                            <label
-                              className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground"
-                              htmlFor={`vendor-owner-${vendor.vendor}`}
-                            >
-                              Owner
-                            </label>
-                            <Input
-                              id={`vendor-owner-${vendor.vendor}`}
-                              value={currentOwner}
-                              onChange={(event) => {
-                                props.setVendorOwners((current) => ({
-                                  ...current,
-                                  [vendor.vendor]: event.target.value,
-                                }));
-                              }}
-                              placeholder="Assign a vendor owner"
-                              className="bg-background"
-                            />
-                          </div>
-                          <div className="space-y-2">
-                            <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                              Runtime posture
-                            </p>
-                            <div className="rounded-lg border bg-background p-3 text-sm text-muted-foreground">
                               <p className="text-foreground">{runtimePosture.decision}</p>
-                              <p className="mt-2">Environments: {runtimePosture.environments}</p>
-                              <p className="mt-1">Data classes: {runtimePosture.dataClasses}</p>
+                              <p className="text-muted-foreground">
+                                Environments: {runtimePosture.environments}
+                              </p>
+                              <p className="text-muted-foreground">
+                                Data classes: {runtimePosture.dataClasses}
+                              </p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                                Governance posture
+                              </p>
+                              <p className="text-foreground">
+                                {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
+                              </p>
+                              <p className="text-muted-foreground">
+                                {vendor.relatedControls.length > 0
+                                  ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
+                                  : 'No linked controls'}
+                              </p>
+                              <p className="text-muted-foreground">
+                                {vendor.lastReviewedAt
+                                  ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleDateString()}`
+                                  : 'No completed review recorded'}
+                              </p>
                             </div>
                           </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Decision summary
-                          </p>
-                          <div className="rounded-lg border bg-background p-3 text-sm text-foreground">
-                            {decisionSummary}
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Vendor summary
-                          </p>
-                          <Textarea
-                            value={currentSummary}
-                            onChange={(event) => {
-                              props.setVendorSummaries((current) => ({
-                                ...current,
-                                [vendor.vendor]: event.target.value,
-                              }));
-                            }}
-                            placeholder="Summarize the vendor posture and review context"
-                            className="min-h-28 bg-background"
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Related controls
-                          </p>
-                          {vendor.relatedControls.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {vendor.relatedControls.map((control) => (
-                                <Button
-                                  key={`${vendor.vendor}:${control.internalControlId}:${control.itemId ?? 'none'}`}
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    props.navigateToControl(control.internalControlId);
-                                  }}
-                                >
-                                  {control.nist80053Id} · {control.title}
-                                </Button>
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="rounded-lg border border-dashed bg-background p-3 text-sm text-muted-foreground">
-                              No linked controls.
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                      <div className="space-y-4 rounded-lg border bg-background p-4">
-                        <div className="space-y-2 text-sm text-muted-foreground">
-                          <div>
-                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Governance posture
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {vendor.relatedControls.length > 0
-                                ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
-                                : 'No linked controls'}
-                            </p>
-                            <p className="mt-1 text-foreground">
-                              {vendor.lastReviewedAt
-                                ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleString()}`
-                                : 'No completed review recorded'}
-                            </p>
-                            <p className="mt-1 text-foreground">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                            <p>{vendor.allowedDataClasses.length} data classes</p>
+                            <p>{vendor.allowedEnvironments.length} environments</p>
+                            <p>
                               {vendor.nextReviewAt
                                 ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
-                                : 'Next review date not set'}
+                                : 'Next review not scheduled'}
+                            </p>
+                            <p>
+                              {vendor.linkedFollowUpRunId
+                                ? 'Follow-up review linked'
+                                : 'No follow-up run'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="grid gap-3 text-sm text-muted-foreground sm:grid-cols-2 lg:grid-cols-1">
+                          <div>
+                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
+                              Governance state
                             </p>
                             <p className="mt-1 text-foreground">{governanceState.label}</p>
                           </div>
@@ -2107,363 +1113,280 @@ export function AdminSecurityVendorsTab(props: {
                           </div>
                           <div>
                             <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
-                              Follow-up
+                              Vendor notes
                             </p>
                             <p className="mt-1 text-foreground">
-                              {vendor.linkedFollowUpRunId
-                                ? 'Follow-up review linked'
-                                : 'No follow-up run'}
+                              {currentSummary.trim().length > 0
+                                ? 'Summary recorded'
+                                : 'No summary recorded'}
                             </p>
-                          </div>
-                        </div>
-                        <div className="space-y-2">
-                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Actions
-                          </p>
-                          <div className="flex flex-col gap-2">
-                            <Button
-                              type="button"
-                              disabled={props.busyVendorKey !== null}
-                              onClick={() => {
-                                void props.handleReviewVendor(vendor);
-                              }}
-                            >
-                              {props.busyVendorKey === vendor.vendor
-                                ? 'Saving…'
-                                : primaryActionLabel}
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              onClick={() => {
-                                props.onOpenVendor(vendor.vendor);
-                              }}
-                            >
-                              View details
-                            </Button>
-                            {vendor.linkedFollowUpRunId ? (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                onClick={() => {
-                                  props.navigateToReviews();
-                                }}
-                              >
-                                Open reviews
-                              </Button>
-                            ) : null}
                           </div>
                         </div>
                       </div>
+                    </AccordionTrigger>
+                    <div className="flex flex-wrap items-center justify-start gap-2 lg:justify-end">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={props.busyVendorKey !== null}
+                        onClick={() => {
+                          void props.handleReviewVendor(vendor);
+                        }}
+                      >
+                        {props.busyVendorKey === vendor.vendor ? 'Saving…' : primaryActionLabel}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          props.onOpenVendor(vendor.vendor);
+                        }}
+                      >
+                        View details
+                      </Button>
                     </div>
-                  </AccordionContent>
-                </AccordionItem>
-              );
-            })}
-          </Accordion>
-        ) : (
-          <p className="text-sm text-muted-foreground">Loading vendor posture…</p>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-export function AdminSecurityOperationsTab(props: {
-  auditReadiness: AuditReadinessOverview | undefined;
-  auditReadinessSummary: {
-    latestDrill: AuditReadinessOverview['latestBackupDrill'];
-    latestManifestHash: string | null;
-    metadataGapCount: number;
-    recentDeniedCount: number;
-    recentExportCount: number;
-    staleDrill: boolean;
-  };
-  busyFindingKey: string | null;
-  busyReportAction: string | null;
-  evidenceReports: EvidenceReportListItem[] | undefined;
-  findingCustomerSummaries: Record<string, string>;
-  findingDispositions: Record<
-    SecurityFindingListItem['findingKey'],
-    SecurityFindingListItem['disposition']
-  >;
-  findingNotes: Record<string, string>;
-  findingSummary: FindingSummary;
-  isGenerating: boolean;
-  report: string | null;
-  reportCustomerSummaries: Record<string, string>;
-  reportNotes: Record<string, string>;
-  restoreDrillFooter: string;
-  securityFindings: SecurityFindingListItem[] | undefined;
-  selectedOperationDetail: SecurityOperationDetail | null;
-  selectedOperationId: string | undefined;
-  selectedOperationType: SecurityOperationDetail['kind'] | undefined;
-  triggeredReviewRuns: ReviewRunSummary[] | undefined;
-  handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
-  handleOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
-  handleOpenReportDetail: (reportId: Id<'evidenceReports'>) => void;
-  onSelectOperation: (operationType: SecurityOperationDetail['kind'], operationId: string) => void;
-  handleReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
-  handleReviewReport: (
-    id: Id<'evidenceReports'>,
-    reviewStatus: 'needs_follow_up' | 'reviewed',
-  ) => Promise<void>;
-  handleExportReport: (id: Id<'evidenceReports'>) => Promise<void>;
-  navigateToControl: (internalControlId: string) => void;
-  navigateToReviews: () => void;
-  setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setFindingDispositions: Dispatch<
-    SetStateAction<
-      Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
-    >
-  >;
-  setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
-  setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
-  setReportNotes: Dispatch<SetStateAction<Record<string, string>>>;
-}) {
-  return (
-    <>
-      <AdminSecurityEvidenceTab
-        auditReadiness={props.auditReadiness}
-        auditReadinessSummary={props.auditReadinessSummary}
-        busyFindingKey={props.busyFindingKey}
-        busyReportAction={props.busyReportAction}
-        evidenceReports={props.evidenceReports}
-        findingCustomerSummaries={props.findingCustomerSummaries}
-        findingDispositions={props.findingDispositions}
-        findingNotes={props.findingNotes}
-        findingSummary={props.findingSummary}
-        handleExportReport={props.handleExportReport}
-        handleGenerateReport={props.handleGenerateReport}
-        handleOpenFindingFollowUp={props.handleOpenFindingFollowUp}
-        handleOpenFindingDetail={(findingKey) => {
-          props.onSelectOperation('finding', findingKey);
-        }}
-        handleOpenReportDetail={props.handleOpenReportDetail}
-        handleReviewFinding={props.handleReviewFinding}
-        handleReviewReport={props.handleReviewReport}
-        isGenerating={props.isGenerating}
-        navigateToControl={props.navigateToControl}
-        navigateToReviews={props.navigateToReviews}
-        report={props.report}
-        reportCustomerSummaries={props.reportCustomerSummaries}
-        reportNotes={props.reportNotes}
-        restoreDrillFooter={props.restoreDrillFooter}
-        securityFindings={props.securityFindings}
-        selectedReportId={
-          props.selectedOperationType === 'evidence_report'
-            ? (props.selectedOperationId as Id<'evidenceReports'>)
-            : null
-        }
-        setFindingCustomerSummaries={props.setFindingCustomerSummaries}
-        setFindingDispositions={props.setFindingDispositions}
-        setFindingNotes={props.setFindingNotes}
-        setReportCustomerSummaries={props.setReportCustomerSummaries}
-        setReportNotes={props.setReportNotes}
-      />
-
-      {props.selectedOperationId && props.selectedOperationType ? (
-        <Card className="border-dashed">
-          <CardHeader>
-            <CardTitle>Selected Operation</CardTitle>
-            <CardDescription>
-              Linked detail for the currently selected report, finding, or follow-up run.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {props.selectedOperationDetail ? (
-              props.selectedOperationDetail.kind === 'evidence_report' ? (
-                <>
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    <p>
-                      {props.selectedOperationDetail.report.reportKind} ·{' '}
-                      {new Date(props.selectedOperationDetail.report.createdAt).toLocaleString()}
-                    </p>
-                    <p>Content hash: {props.selectedOperationDetail.report.contentHash}</p>
-                    <p>Review: {props.selectedOperationDetail.report.reviewStatus}</p>
-                    {'exportManifestHash' in props.selectedOperationDetail.report &&
-                    props.selectedOperationDetail.report.exportManifestHash ? (
-                      <p>
-                        Manifest hash: {props.selectedOperationDetail.report.exportManifestHash}
-                      </p>
-                    ) : null}
                   </div>
-                  {'linkedTasks' in props.selectedOperationDetail.report &&
-                  props.selectedOperationDetail.report.linkedTasks?.length ? (
-                    <div className="space-y-3">
-                      <p className="text-sm font-medium">Linked review tasks</p>
-                      {props.selectedOperationDetail.report.linkedTasks?.map((task) => (
-                        <div key={task.taskId} className="rounded-md border p-3 text-sm">
-                          <p className="font-medium">{task.taskTitle}</p>
-                          <p className="text-muted-foreground">
-                            {task.reviewRunTitle} · {formatReviewRunStatus(task.reviewRunStatus)}
+                </div>
+                <AccordionContent className="border-t bg-muted/10 px-4 pb-4">
+                  <div className="grid gap-4 pt-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+                    <div className="space-y-4">
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <div className="space-y-2">
+                          <label
+                            className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground"
+                            htmlFor={`vendor-owner-${vendor.vendor}`}
+                          >
+                            Owner
+                          </label>
+                          <Input
+                            id={`vendor-owner-${vendor.vendor}`}
+                            value={currentOwner}
+                            onChange={(event) => {
+                              props.setVendorOwners((current) => ({
+                                ...current,
+                                [vendor.vendor]: event.target.value,
+                              }));
+                            }}
+                            placeholder="Assign a vendor owner"
+                            className="bg-background"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            Runtime posture
                           </p>
-                          <div className="mt-2 flex flex-wrap gap-2">
+                          <div className="rounded-lg border bg-background p-3 text-sm text-muted-foreground">
+                            <p className="text-foreground">{runtimePosture.decision}</p>
+                            <p className="mt-2">Environments: {runtimePosture.environments}</p>
+                            <p className="mt-1">Data classes: {runtimePosture.dataClasses}</p>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Decision summary
+                        </p>
+                        <div className="rounded-lg border bg-background p-3 text-sm text-foreground">
+                          {decisionSummary}
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Vendor summary
+                        </p>
+                        <Textarea
+                          value={currentSummary}
+                          onChange={(event) => {
+                            props.setVendorSummaries((current) => ({
+                              ...current,
+                              [vendor.vendor]: event.target.value,
+                            }));
+                          }}
+                          placeholder="Summarize the vendor posture and review context"
+                          className="min-h-28 bg-background"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Related controls
+                        </p>
+                        {vendor.relatedControls.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {vendor.relatedControls.map((control) => (
+                              <Button
+                                key={`${vendor.vendor}:${control.internalControlId}:${control.itemId ?? 'none'}`}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  props.navigateToControl(control.internalControlId);
+                                }}
+                              >
+                                {control.nist80053Id} · {control.title}
+                              </Button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="rounded-lg border border-dashed bg-background p-3 text-sm text-muted-foreground">
+                            No linked controls.
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="space-y-4 rounded-lg border bg-background p-4">
+                      <div className="space-y-2 text-sm text-muted-foreground">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
+                            Governance posture
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {currentOwner.length > 0 ? currentOwner : 'Owner not assigned'}
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {vendor.relatedControls.length > 0
+                              ? `${vendor.relatedControls.length} linked control${vendor.relatedControls.length === 1 ? '' : 's'}`
+                              : 'No linked controls'}
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {vendor.lastReviewedAt
+                              ? `Last reviewed ${new Date(vendor.lastReviewedAt).toLocaleString()}`
+                              : 'No completed review recorded'}
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {vendor.nextReviewAt
+                              ? `Next review ${new Date(vendor.nextReviewAt).toLocaleDateString()}`
+                              : 'Next review date not set'}
+                          </p>
+                          <p className="mt-1 text-foreground">{governanceState.label}</p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
+                            Annual review task
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {vendor.linkedAnnualReviewTask?.title ?? 'No linked annual review task'}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
+                            Follow-up
+                          </p>
+                          <p className="mt-1 text-foreground">
+                            {vendor.linkedFollowUpRunId
+                              ? 'Follow-up review linked'
+                              : 'No follow-up run'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Actions
+                        </p>
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            type="button"
+                            disabled={props.busyVendorKey !== null}
+                            onClick={() => {
+                              void props.handleReviewVendor(vendor);
+                            }}
+                          >
+                            {props.busyVendorKey === vendor.vendor ? 'Saving…' : primaryActionLabel}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              props.onOpenVendor(vendor.vendor);
+                            }}
+                          >
+                            View details
+                          </Button>
+                          {vendor.linkedFollowUpRunId ? (
                             <Button
                               type="button"
                               variant="outline"
-                              size="sm"
                               onClick={() => {
                                 props.navigateToReviews();
                               }}
                             >
                               Open reviews
                             </Button>
-                            {task.controlLinks.map((link) => (
-                              <Button
-                                key={`${task.taskId}:${link.internalControlId}:${link.itemId}`}
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  props.navigateToControl(link.internalControlId);
-                                }}
-                              >
-                                {link.nist80053Id ?? link.internalControlId}
-                                {link.itemLabel ? ` · ${link.itemLabel}` : ''}
-                              </Button>
-                            ))}
-                          </div>
+                          ) : null}
                         </div>
-                      ))}
+                      </div>
                     </div>
-                  ) : null}
-                  {'contentJson' in props.selectedOperationDetail.report ? (
-                    <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-                      {props.selectedOperationDetail.report.contentJson}
-                    </pre>
-                  ) : props.report ? (
-                    <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-                      {props.report}
-                    </pre>
-                  ) : null}
-                </>
-              ) : props.selectedOperationDetail.kind === 'finding' ? (
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">
-                    {props.selectedOperationDetail.finding.title}
-                  </p>
-                  <p>{props.selectedOperationDetail.finding.description}</p>
-                  <p>
-                    {formatFindingSeverity(props.selectedOperationDetail.finding.severity)} ·{' '}
-                    {formatFindingStatus(props.selectedOperationDetail.finding.status)}
-                  </p>
-                  <p>Disposition: {props.selectedOperationDetail.finding.disposition}</p>
-                  <p>Source: {props.selectedOperationDetail.finding.sourceLabel}</p>
-                </div>
-              ) : (
-                <div className="space-y-2 text-sm text-muted-foreground">
-                  <p className="font-medium text-foreground">
-                    {props.selectedOperationDetail.reviewRun.title}
-                  </p>
-                  <p>
-                    Status: {formatReviewRunStatus(props.selectedOperationDetail.reviewRun.status)}
-                  </p>
-                  <p>
-                    {props.selectedOperationDetail.reviewRun.triggerType ?? 'manual follow-up'} ·{' '}
-                    {new Date(props.selectedOperationDetail.reviewRun.createdAt).toLocaleString()}
-                  </p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      props.navigateToReviews();
-                    }}
-                  >
-                    Open reviews
-                  </Button>
-                </div>
-              )
-            ) : (
-              <p className="text-sm text-muted-foreground">Loading operation detail…</p>
-            )}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Follow-Up Runs</CardTitle>
-          <CardDescription>
-            Triggered follow-up reviews opened from reports, findings, and other governance review
-            work.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {props.triggeredReviewRuns?.length ? (
-            props.triggeredReviewRuns.map((run) => (
-              <div key={run.id} className="rounded-lg border p-4">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="font-medium">{run.title}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {run.triggerType ?? 'manual follow-up'} · Created{' '}
-                      {new Date(run.createdAt).toLocaleString()}
-                    </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge variant={getReviewRunStatusBadgeVariant(run.status)}>
-                      {formatReviewRunStatus(run.status)}
-                    </Badge>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        props.onSelectOperation('review_run', run.id);
-                      }}
-                    >
-                      View details
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => {
-                        props.navigateToReviews();
-                      }}
-                    >
-                      Open reviews
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              No triggered follow-up runs are currently open.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-    </>
+                </AccordionContent>
+              </AccordionItem>
+            );
+          })}
+        </Accordion>
+      ) : (
+        <div className="flex min-h-24 items-center justify-center rounded-xl border border-dashed bg-muted/20 text-sm text-muted-foreground">
+          <Spinner className="size-5" />
+          <span className="sr-only">Loading vendor posture</span>
+        </div>
+      )}
+    </div>
   );
 }
 
-function SecurityControlSummaryGrid(props: { controlSummary: ControlSummary }) {
+function renderCardStatValue(value: number | undefined) {
+  if (value === undefined) {
+    return (
+      <>
+        <Spinner className="size-5" />
+        <span className="sr-only">Loading</span>
+      </>
+    );
+  }
+
+  return value;
+}
+
+function SecurityControlSummaryGrid(props: { controlSummary: ControlSummary | undefined }) {
   return (
     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
       <AdminSecuritySummaryCard
         title="Active Controls"
         description="Controls currently tracked in the active register."
-        value={`${props.controlSummary.totalControls}`}
-        footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
+        value={renderCardStatValue(props.controlSummary?.totalControls)}
+        footer={
+          props.controlSummary
+            ? `Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`
+            : undefined
+        }
       />
       <AdminSecuritySummaryCard
         title="Complete Support"
         description="Controls where every checklist item is fully supported by current evidence."
-        value={`${props.controlSummary.bySupport.complete}`}
-        footer={`${props.controlSummary.bySupport.partial} partial controls`}
+        value={renderCardStatValue(props.controlSummary?.bySupport.complete)}
+        footer={
+          props.controlSummary
+            ? `${props.controlSummary.bySupport.partial} partial controls`
+            : undefined
+        }
       />
       <AdminSecuritySummaryCard
         title="Shared responsibility"
         description="Controls where customer governance or procedures are still required."
-        value={`${props.controlSummary.byResponsibility.sharedResponsibility}`}
-        footer={`${props.controlSummary.byResponsibility.platform} platform controls`}
+        value={renderCardStatValue(props.controlSummary?.byResponsibility.sharedResponsibility)}
+        footer={
+          props.controlSummary
+            ? `${props.controlSummary.byResponsibility.platform} platform controls`
+            : undefined
+        }
       />
       <AdminSecuritySummaryCard
         title="Customer"
         description="Controls primarily fulfilled through customer-side governance or procedure."
-        value={`${props.controlSummary.byResponsibility.customer}`}
-        footer={`${props.controlSummary.bySupport.missing} missing support controls`}
+        value={renderCardStatValue(props.controlSummary?.byResponsibility.customer)}
+        footer={
+          props.controlSummary
+            ? `${props.controlSummary.bySupport.missing} missing support controls`
+            : undefined
+        }
       />
     </div>
   );

@@ -23,6 +23,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '~/components/ui/sheet';
+import { Spinner } from '~/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
@@ -1349,8 +1350,8 @@ export function OrganizationAuditPage({
           emptyMessage="No audit events matched the current filters."
           loadingSkeleton={
             <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
-              <Loader2 className="mr-2 size-4 animate-spin" />
-              Loading audit history...
+              <Spinner className="size-5" />
+              <span className="sr-only">Loading audit history</span>
             </div>
           }
         />

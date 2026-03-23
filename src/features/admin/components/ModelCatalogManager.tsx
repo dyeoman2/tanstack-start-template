@@ -29,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from '~/components/ui/table';
+import { Spinner } from '~/components/ui/spinner';
 import type { ChatModelAccess } from '~/lib/shared/chat-models';
 
 type ModelCatalogEntry = {
@@ -179,7 +180,7 @@ export function ModelCatalogManager({
     setDialogOpen(true);
   };
 
-  const activeModels = models?.filter((model) => model.isActive) ?? [];
+  const activeModels = models?.filter((model) => model.isActive);
 
   return (
     <section className="space-y-4 rounded-3xl border border-border/70 bg-card/70 p-6 shadow-sm">
@@ -223,11 +224,11 @@ export function ModelCatalogManager({
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <StatusCard label="Total models" value={models?.length ?? 0} />
-        <StatusCard label="Active models" value={activeModels.length} />
+        <StatusCard label="Total models" value={models?.length} />
+        <StatusCard label="Active models" value={activeModels?.length} />
         <StatusCard
           label="Admin-only models"
-          value={activeModels.filter((model) => model.access === 'admin').length}
+          value={activeModels?.filter((model) => model.access === 'admin').length}
         />
       </div>
 
@@ -604,11 +605,20 @@ export function ModelCatalogManager({
   );
 }
 
-function StatusCard({ label, value }: { label: string; value: number }) {
+function StatusCard({ label, value }: { label: string; value: number | undefined }) {
   return (
     <div className="rounded-2xl border border-border/70 bg-background/70 px-4 py-3">
       <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="mt-2 text-2xl font-semibold tracking-tight">{value}</p>
+      <div className="mt-2 flex min-h-8 items-center text-2xl font-semibold tracking-tight">
+        {value === undefined ? (
+          <>
+            <Spinner className="size-5" />
+            <span className="sr-only">Loading {label.toLowerCase()}</span>
+          </>
+        ) : (
+          value
+        )}
+      </div>
     </div>
   );
 }

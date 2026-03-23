@@ -43,6 +43,7 @@ import {
   FieldLabel,
 } from '~/components/ui/field';
 import { Input } from '~/components/ui/input';
+import { Spinner } from '~/components/ui/spinner';
 import { useToast } from '~/components/ui/toast';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { getServerFunctionErrorMessage } from '~/features/organizations/lib/organization-session';
@@ -295,9 +296,9 @@ export function OrganizationDomainManagement({
         </Alert>
       ) : null}
       {response === undefined ? (
-        <div className="flex min-h-32 items-center justify-center gap-2 rounded-2xl border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          Loading Domains…
+        <div className="flex min-h-32 items-center justify-center rounded-2xl border border-dashed border-border/70 bg-muted/20 text-sm text-muted-foreground">
+          <Spinner className="size-5" />
+          <span className="sr-only">Loading domains</span>
         </div>
       ) : sortedDomains.length === 0 ? (
         canManageDomains ? (

@@ -21,9 +21,10 @@ export const securityCompatSearchSchema = z.object({
   family: z.string().optional(),
   selectedControl: z.string().optional(),
   selectedPolicy: z.string().optional(),
+  selectedFinding: z.string().optional(),
+  selectedReport: z.string().optional(),
+  selectedReviewRun: z.string().optional(),
   selectedVendor: z.string().optional(),
-  selectedOperationId: z.string().optional(),
-  selectedOperationType: z.enum(['evidence_report', 'finding', 'review_run']).optional(),
 });
 
 export const securityControlsSearchSchema = z.object({
@@ -44,21 +45,27 @@ export const securityPoliciesSearchSchema = z.object({
   selectedPolicy: z.string().optional(),
 });
 
-export const securityOperationsSearchSchema = z.object({
-  selectedOperationId: z.string().optional(),
-  selectedOperationType: z.enum(['evidence_report', 'finding', 'review_run']).optional(),
+export const securityFindingsSearchSchema = z.object({
+  selectedFinding: z.string().optional(),
+});
+
+export const securityReportsSearchSchema = z.object({
+  selectedReport: z.string().optional(),
 });
 
 export const securityVendorsSearchSchema = z.object({
   selectedVendor: z.string().optional(),
 });
 
-export const securityReviewsSearchSchema = z.object({});
+export const securityReviewsSearchSchema = z.object({
+  selectedReviewRun: z.string().optional(),
+});
 
 export type SecurityTab = (typeof SECURITY_TABS)[number];
 export type SecurityCompatSearch = z.infer<typeof securityCompatSearchSchema>;
 export type SecurityControlsSearch = z.infer<typeof securityControlsSearchSchema>;
 export type SecurityPoliciesSearch = z.infer<typeof securityPoliciesSearchSchema>;
-export type SecurityOperationsSearch = z.infer<typeof securityOperationsSearchSchema>;
+export type SecurityFindingsSearch = z.infer<typeof securityFindingsSearchSchema>;
+export type SecurityReportsSearch = z.infer<typeof securityReportsSearchSchema>;
 export type SecurityVendorsSearch = z.infer<typeof securityVendorsSearchSchema>;
 export type SecurityReviewsSearch = z.infer<typeof securityReviewsSearchSchema>;

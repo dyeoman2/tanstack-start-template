@@ -10,8 +10,9 @@ import {
   auditReadinessSnapshotValidator,
   evidenceReportKindValidator,
   exportArtifactTypeValidator,
-  securityOperationsBoardValidator,
+  securityFindingsBoardValidator,
   securityPostureSummaryValidator,
+  securityReportsBoardValidator,
   securityWorkspaceOverviewValidator,
 } from './lib/security/validators';
 import { v } from 'convex/values';
@@ -22,13 +23,8 @@ import {
   buildSecurityWorkspaceVendorSummary,
   getCurrentAnnualReviewRunRecord,
 } from './lib/security/operations_core';
-import {
-  buildReviewRunDetail,
-  buildReviewRunSummary,
-  listReviewTasksByRunId,
-} from './lib/security/review_runs_core';
+import { buildReviewRunSummary, listReviewTasksByRunId } from './lib/security/review_runs_core';
 import { listSecurityFindingsHandler } from './lib/security/workspace';
-import { buildVendorWorkspaceRows } from './lib/security/vendors_core';
 
 export const createEvidenceReport = internalMutation({
   args: {
@@ -162,19 +158,34 @@ export const getSecurityWorkspaceOverview = query({
   },
 });
 
-export const getSecurityOperationsBoard = query({
+export const getSecurityFindingsBoard = query({
   args: {},
-  returns: securityOperationsBoardValidator,
+  returns: securityFindingsBoardValidator,
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    const [
-      auditReadiness,
-      evidenceReports,
+    const findings = await listSecurityFindingsHandler(ctx);
+    const summary = {
+      openCount: findings.filter((finding) => finding.status === 'open').length,
+      reviewPendingCount: findings.filter((finding) => finding.disposition === 'pending_review')
+        .length,
+      totalCount: findings.length,
+    };
+
+    return {
       findings,
-      vendorWorkspaces,
-      currentAnnualReviewRun,
-      triggeredReviewRuns,
-    ] = await Promise.all([
+      summary,
+      scopeId: SECURITY_SCOPE_ID,
+      scopeType: SECURITY_SCOPE_TYPE,
+    };
+  },
+});
+
+export const getSecurityReportsBoard = query({
+  args: {},
+  returns: securityReportsBoardValidator,
+  handler: async (ctx) => {
+    await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    const [auditReadiness, evidenceReports] = await Promise.all([
       getAuditReadinessSnapshotHandler(ctx),
       (async () => {
         const reports = await ctx.db
@@ -201,35 +212,13 @@ export const getSecurityOperationsBoard = query({
           reviewedByUserId: report.reviewedByUserId ?? null,
         }));
       })(),
-      listSecurityFindingsHandler(ctx),
-      buildVendorWorkspaceRows(ctx),
-      (async () => {
-        const existing = await getCurrentAnnualReviewRunRecord(ctx);
-        return existing ? await buildReviewRunSummary(ctx, existing) : null;
-      })(),
-      (async () => {
-        const runs = await ctx.db
-          .query('reviewRuns')
-          .withIndex('by_kind_and_created_at', (q) => q.eq('kind', 'triggered'))
-          .order('desc')
-          .collect();
-        return await Promise.all(runs.map(async (run) => await buildReviewRunSummary(ctx, run)));
-      })(),
     ]);
-    const currentAnnualReviewDetail = currentAnnualReviewRun
-      ? await buildReviewRunDetail(ctx, currentAnnualReviewRun.id)
-      : null;
 
     return {
       auditReadiness,
-      currentAnnualReviewDetail,
-      currentAnnualReviewRun,
       evidenceReports,
-      findings,
       scopeId: SECURITY_SCOPE_ID,
       scopeType: SECURITY_SCOPE_TYPE,
-      triggeredReviewRuns,
-      vendorWorkspaces,
     };
   },
 });

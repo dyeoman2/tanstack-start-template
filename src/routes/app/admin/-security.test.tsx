@@ -45,6 +45,7 @@ vi.mock('convex/react', () => ({
 
 vi.mock('~/components/data-table', () => ({
   createSortableHeader: (label: string) => label,
+  formatTableDate: (value: number) => new Date(value).toLocaleDateString(),
   DataTable: ({
     data,
     onRowClick,
@@ -95,7 +96,7 @@ vi.mock('~/components/ui/toast', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'operations' | 'reviews';
+  tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reports' | 'reviews';
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
   search: string;
@@ -103,14 +104,15 @@ type SearchState = {
   support: 'all' | 'complete' | 'partial' | 'missing';
   family: string;
   selectedControl?: string;
+  selectedFinding?: string;
   selectedPolicy?: string;
+  selectedReport?: string;
+  selectedReviewRun?: string;
   selectedVendor?: string;
-  selectedOperationId?: string;
-  selectedOperationType?: 'evidence_report' | 'finding' | 'review_run';
 };
 
 const defaultSearch: SearchState = {
-  tab: 'operations',
+  tab: 'reports',
   sortBy: 'control',
   sortOrder: 'asc',
   search: '',
@@ -118,10 +120,11 @@ const defaultSearch: SearchState = {
   support: 'all',
   family: 'all',
   selectedControl: undefined,
+  selectedFinding: undefined,
   selectedPolicy: undefined,
+  selectedReport: undefined,
+  selectedReviewRun: undefined,
   selectedVendor: undefined,
-  selectedOperationId: undefined,
-  selectedOperationType: undefined,
 };
 
 function buildSummary() {
@@ -582,25 +585,30 @@ function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
-function buildOperationsBoard(args: {
-  auditReadiness?: unknown;
-  currentAnnualRun?: unknown;
-  evidenceReports?: unknown[];
-  findings?: unknown[];
-  reviewDetail?: unknown;
-  triggeredReviewRuns?: unknown[];
-  vendorWorkspaces?: unknown[];
-}) {
+function buildFindingsBoard(args: { findings?: unknown[] }) {
+  const findings = args.findings ?? [buildSecurityFinding()];
   return {
-    auditReadiness: args.auditReadiness ?? buildAuditReadiness(),
-    currentAnnualReviewDetail: args.reviewDetail ?? null,
-    currentAnnualReviewRun: args.currentAnnualRun ?? null,
-    evidenceReports: args.evidenceReports ?? [],
-    findings: args.findings ?? [buildSecurityFinding()],
+    findings,
+    summary: {
+      openCount: (findings as Array<{ status: string }>).filter(
+        (finding) => finding.status === 'open',
+      ).length,
+      reviewPendingCount: (findings as Array<{ disposition: string }>).filter(
+        (finding) => finding.disposition === 'pending_review',
+      ).length,
+      totalCount: findings.length,
+    },
     scopeId: 'provider',
     scopeType: 'provider_global',
-    triggeredReviewRuns: args.triggeredReviewRuns ?? [],
-    vendorWorkspaces: args.vendorWorkspaces ?? [],
+  };
+}
+
+function buildReportsBoard(args: { auditReadiness?: unknown; evidenceReports?: unknown[] }) {
+  return {
+    auditReadiness: args.auditReadiness ?? buildAuditReadiness(),
+    evidenceReports: args.evidenceReports ?? [],
+    scopeId: 'provider',
+    scopeType: 'provider_global',
   };
 }
 
@@ -714,10 +722,14 @@ function mockSecurityQueries(args: {
         return args.policies ?? [buildPolicySummary()];
       case 'securityPolicies:getSecurityPolicyDetail':
         return args.policyDetail ?? buildPolicyDetail();
-      case 'securityPosture:getSecurityOperationsBoard':
-        return buildOperationsBoard(args);
+      case 'securityPosture:getSecurityFindingsBoard':
+        return buildFindingsBoard(args);
+      case 'securityPosture:getSecurityReportsBoard':
+        return buildReportsBoard(args);
       case 'securityReports:getEvidenceReportDetail':
         return args.reportDetail ?? null;
+      case 'securityReports:listVendorReviewWorkspaces':
+        return args.vendorWorkspaces ?? [buildVendorWorkspace()];
       case 'securityReviews:getCurrentAnnualReviewRun':
         return args.currentAnnualRun ?? null;
       case 'securityReviews:getReviewRunDetail':
@@ -753,7 +765,6 @@ describe('Admin security route', () => {
     window.HTMLElement.prototype.releasePointerCapture = vi.fn();
     navigateMock.mockResolvedValue(undefined);
     useSearchMock.mockReturnValue(defaultSearch);
-    useLocationMock.mockReturnValue({ pathname: '/app/admin/security/operations' });
     useActionMock.mockReset();
     useMutationMock.mockReset();
     useQueryMock.mockReset();
@@ -761,6 +772,7 @@ describe('Admin security route', () => {
     useConvexMock.mockReturnValue({
       query: vi.fn(),
     });
+    useLocationMock.mockReturnValue({ pathname: '/app/admin/security/reports' });
   });
 
   it('generates evidence reports and submits trimmed review notes', async () => {
@@ -1051,7 +1063,7 @@ describe('Admin security route', () => {
     expect(showToastMock).toHaveBeenCalledWith('Evidence marked as reviewed.', 'success');
   });
 
-  it('surfaces audit readiness signals and manifest hashes in the operations tab', () => {
+  it('surfaces audit readiness signals and manifest hashes in the reports tab', () => {
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness({
         metadataGaps: [
@@ -1093,7 +1105,7 @@ describe('Admin security route', () => {
     expect(screen.getByText('Authorization denials')).toBeInTheDocument();
   });
 
-  it('loads persisted report detail and control deep-links from the operations queue', async () => {
+  it('loads persisted report detail and control deep-links from the reports route', async () => {
     const user = userEvent.setup();
 
     mockSecurityQueries({
@@ -1107,33 +1119,22 @@ describe('Admin security route', () => {
 
     const view = renderRoute();
 
-    const reportRow = screen
-      .getByText(/security_posture/i)
-      .closest('[data-selected]') as HTMLElement | null;
-    expect(reportRow).not.toBeNull();
-
-    await user.click(
-      within(reportRow!)
-        .getAllByRole('button', { name: /view details/i })
-        .at(-1)!,
-    );
+    await user.click(screen.getAllByRole('button', { name: /view details/i }).at(-1)!);
 
     expect(navigateMock).toHaveBeenCalledWith({
       search: expect.objectContaining({
-        selectedOperationId: 'report-1',
-        selectedOperationType: 'evidence_report',
+        selectedReport: 'report-1',
       }),
-      to: '/app/admin/security/operations',
+      to: '/app/admin/security/reports',
     });
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
-      selectedOperationId: 'report-1',
-      selectedOperationType: 'evidence_report',
+      selectedReport: 'report-1',
     });
     view.rerender(<AdminSecurityRoute search={useSearchMock() as SearchState} />);
 
-    expect(screen.getByText('Selected Operation')).toBeInTheDocument();
+    expect(screen.getByText('Linked review tasks')).toBeInTheDocument();
     expect(screen.getByText('{"status":"persisted"}')).toBeInTheDocument();
 
     await user.click(
@@ -1153,6 +1154,11 @@ describe('Admin security route', () => {
   it('retains provider disposition and notes for security findings', async () => {
     const user = userEvent.setup();
     const reviewSecurityFindingMock = vi.fn().mockResolvedValue(undefined);
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'findings',
+    });
 
     mockSecurityQueries({
       controls: [buildControl()],
@@ -1184,9 +1190,21 @@ describe('Admin security route', () => {
     });
   });
 
-  it('opens finding follow-up reviews directly from the operations queue', async () => {
+  it('opens finding follow-up reviews directly from the findings route', async () => {
     const user = userEvent.setup();
-    const openSecurityFindingFollowUpMock = vi.fn().mockResolvedValue(undefined);
+    const openSecurityFindingFollowUpMock = vi.fn().mockResolvedValue(
+      buildReviewRunSummary({
+        id: 'triggered-review-1',
+        kind: 'triggered',
+        title: 'Audit integrity monitoring follow-up',
+        triggerType: 'security_finding_follow_up',
+      }),
+    );
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'findings',
+    });
 
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness(),
@@ -1213,6 +1231,13 @@ describe('Admin security route', () => {
         findingKey: 'audit_integrity_failures',
         note: 'escalate to remediation',
       });
+    });
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      search: {
+        selectedReviewRun: 'triggered-review-1',
+      },
+      to: '/app/admin/security/reviews',
     });
   });
 
@@ -1450,10 +1475,10 @@ describe('Admin security route', () => {
     });
   });
 
-  it('keeps vendor editing out of the operations tab', () => {
+  it('keeps vendor editing out of the reports route', () => {
     useSearchMock.mockReturnValue({
       ...defaultSearch,
-      tab: 'operations',
+      tab: 'reports',
     });
     mockSecurityQueries({
       vendorWorkspaces: [buildVendorWorkspace()],

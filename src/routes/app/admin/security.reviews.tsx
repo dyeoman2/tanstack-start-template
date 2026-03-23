@@ -4,5 +4,9 @@ import { securityReviewsSearchSchema } from '~/features/security/search';
 
 export const Route = createFileRoute('/app/admin/security/reviews')({
   validateSearch: securityReviewsSearchSchema,
-  component: AdminSecurityReviewsRoute,
+  component: AdminSecurityReviewsRouteComponent,
 });
+
+function AdminSecurityReviewsRouteComponent() {
+  return <AdminSecurityReviewsRoute search={Route.useSearch()} />;
+}

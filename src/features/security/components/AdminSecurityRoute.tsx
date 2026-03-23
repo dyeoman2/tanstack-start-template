@@ -15,6 +15,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '~/components/ui/sheet';
+import { Spinner } from '~/components/ui/spinner';
 import { Tabs, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import {
@@ -24,21 +25,26 @@ import {
   AdminSecuritySupportCell,
 } from '~/features/security/components/AdminSecurityControlCells';
 import { AdminSecurityControlDetail } from '~/features/security/components/AdminSecurityControlDetail';
+import { AdminSecurityFindingDetail } from '~/features/security/components/AdminSecurityFindingDetail';
 import { AdminSecurityPolicyDetail } from '~/features/security/components/AdminSecurityPolicyDetail';
+import { AdminSecurityReportDetail } from '~/features/security/components/AdminSecurityReportDetail';
+import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSecuritySummaryCard';
+import { AdminSecurityTabHeader } from '~/features/security/components/AdminSecurityTabHeader';
+import {
+  getSecurityPath,
+  isSecurityTab,
+  useSecurityNavigation,
+} from '~/features/security/components/routes/securityRouteUtils';
 import {
   AdminSecurityControlsTab,
-  AdminSecurityOperationsTab,
   AdminSecurityOverviewTab,
   AdminSecurityPoliciesTab,
   AdminSecurityReviewsTab,
   AdminSecurityVendorsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
-import {
-  CONTROL_TABLE_SORT_FIELDS,
-  POLICY_TABLE_SORT_FIELDS,
-  SECURITY_TAB_PATHS,
-  SECURITY_TABS,
-} from '~/features/security/constants';
+import { AdminSecurityFindingsTab } from '~/features/security/components/tabs/AdminSecurityFindingsTab';
+import { AdminSecurityReportsTab } from '~/features/security/components/tabs/AdminSecurityReportsTab';
+import { CONTROL_TABLE_SORT_FIELDS, POLICY_TABLE_SORT_FIELDS } from '~/features/security/constants';
 import {
   formatVendorDecisionSummary,
   formatVendorRuntimePosture,
@@ -51,10 +57,12 @@ import { useSecurityControlTable } from '~/features/security/hooks/useSecurityCo
 import type {
   SecurityCompatSearch,
   SecurityControlsSearch,
-  SecurityOperationsSearch,
+  SecurityFindingsSearch,
   SecurityPoliciesSearch,
+  SecurityReportsSearch,
   SecurityTab,
   SecurityVendorsSearch,
+  SecurityReviewsSearch,
 } from '~/features/security/search';
 import type {
   EvidenceReportDetail,
@@ -67,38 +75,16 @@ import type {
   SecurityControlWorkspace,
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
+  SecurityFindingsBoard,
   SecurityFindingListItem,
-  SecurityOperationDetail,
-  SecurityOperationsBoard,
   SecurityPolicyDetail,
   SecurityPolicySummary,
+  SecurityReportsBoard,
   SecurityWorkspaceOverview,
   VendorWorkspace,
 } from '~/features/security/types';
 import { exportSecurityControlsCsv } from '~/features/security/utils/exportSecurityControlsCsv';
 import { uploadFileWithTarget } from '~/features/security/utils/upload';
-
-function isSecurityTab(value: string): value is SecurityTab {
-  return SECURITY_TABS.includes(value as SecurityTab);
-}
-
-function getSecurityPath(tab: SecurityTab) {
-  return SECURITY_TAB_PATHS[tab];
-}
-
-const EMPTY_CONTROL_SUMMARY = {
-  byResponsibility: {
-    customer: 0,
-    platform: 0,
-    sharedResponsibility: 0,
-  },
-  bySupport: {
-    complete: 0,
-    missing: 0,
-    partial: 0,
-  },
-  totalControls: 0,
-};
 
 function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
   switch (tab) {
@@ -120,86 +106,25 @@ function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
         policySupport: search.policySupport,
         selectedPolicy: search.selectedPolicy,
       };
-    case 'operations':
+    case 'findings':
       return {
-        selectedOperationId: search.selectedOperationId,
-        selectedOperationType: search.selectedOperationType,
+        selectedFinding: search.selectedFinding,
+      };
+    case 'reports':
+      return {
+        selectedReport: search.selectedReport,
       };
     case 'vendors':
       return {
         selectedVendor: search.selectedVendor,
       };
-    case 'overview':
     case 'reviews':
+      return {
+        selectedReviewRun: search.selectedReviewRun,
+      };
+    case 'overview':
       return {};
   }
-}
-
-function useSecurityNavigation() {
-  const navigate = useNavigate();
-
-  const navigateToControl = useCallback(
-    (internalControlId: string) => {
-      void navigate({
-        to: getSecurityPath('controls'),
-        search: {
-          selectedControl: internalControlId,
-        },
-      });
-    },
-    [navigate],
-  );
-
-  const navigateToPolicy = useCallback(
-    (policyId: string) => {
-      void navigate({
-        to: getSecurityPath('policies'),
-        search: {
-          selectedPolicy: policyId,
-        },
-      });
-    },
-    [navigate],
-  );
-
-  const navigateToOperation = useCallback(
-    (operationType: 'evidence_report' | 'finding' | 'review_run', operationId: string) => {
-      void navigate({
-        to: getSecurityPath('operations'),
-        search: {
-          selectedOperationId: operationId,
-          selectedOperationType: operationType,
-        },
-      });
-    },
-    [navigate],
-  );
-
-  const navigateToVendor = useCallback(
-    (vendorKey: VendorWorkspace['vendor']) => {
-      void navigate({
-        to: getSecurityPath('vendors'),
-        search: {
-          selectedVendor: vendorKey,
-        },
-      });
-    },
-    [navigate],
-  );
-
-  const navigateToReviews = useCallback(() => {
-    void navigate({
-      to: getSecurityPath('reviews'),
-    });
-  }, [navigate]);
-
-  return {
-    navigateToControl,
-    navigateToOperation,
-    navigateToPolicy,
-    navigateToVendor,
-    navigateToReviews,
-  };
 }
 
 function SecurityPageShell(props: { activeTab: SecurityTab; children: React.ReactNode }) {
@@ -209,7 +134,7 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
     <div className="space-y-6">
       <PageHeader
         title="Security Posture"
-        description="Review control implementation, evidence posture, vendor boundaries, and security oversight workflows."
+        description="Review controls, policies, vendors, findings, evidence reports, and review workflows."
       />
 
       <Tabs
@@ -229,7 +154,8 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
           <TabsTrigger value="policies">Policies</TabsTrigger>
           <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="vendors">Vendors</TabsTrigger>
-          <TabsTrigger value="operations">Operations</TabsTrigger>
+          <TabsTrigger value="findings">Findings</TabsTrigger>
+          <TabsTrigger value="reports">Reports</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
       </Tabs>
@@ -270,7 +196,8 @@ export function AdminSecurityLayout(props: {
     if (pathname === getSecurityPath('controls')) return 'controls';
     if (pathname === getSecurityPath('policies')) return 'policies';
     if (pathname === getSecurityPath('vendors')) return 'vendors';
-    if (pathname === getSecurityPath('operations')) return 'operations';
+    if (pathname === getSecurityPath('findings')) return 'findings';
+    if (pathname === getSecurityPath('reports')) return 'reports';
     if (pathname === getSecurityPath('reviews')) return 'reviews';
     return 'overview';
   }, [location.pathname]);
@@ -285,7 +212,7 @@ export function AdminSecurityOverviewRoute() {
 
   return (
     <AdminSecurityOverviewTab
-      controlSummary={workspaceOverview?.controlSummary ?? EMPTY_CONTROL_SUMMARY}
+      controlSummary={workspaceOverview?.controlSummary}
       summary={workspaceOverview?.postureSummary}
     />
   );
@@ -295,7 +222,8 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
   const navigate = useNavigate();
   const convex = useConvex();
   const { showToast } = useToast();
-  const { navigateToOperation, navigateToReviews, navigateToVendor } = useSecurityNavigation();
+  const { navigateToFinding, navigateToReport, navigateToReviews, navigateToVendor } =
+    useSecurityNavigation();
   const search = props.search;
   const {
     family: familyFilter,
@@ -336,6 +264,10 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
       return workspaceOverview.controlSummary;
     }
 
+    if (controlWorkspaces === undefined) {
+      return undefined;
+    }
+
     return controls.reduce(
       (summaryAccumulator, control) => {
         summaryAccumulator.totalControls += 1;
@@ -361,7 +293,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         },
       },
     );
-  }, [controls, workspaceOverview]);
+  }, [controlWorkspaces, controls, workspaceOverview]);
   const {
     controlSearchParams,
     familyOptions,
@@ -675,8 +607,10 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
           navigateToReviews();
           return;
         case 'evidence_report':
+          navigateToReport(entity.entityId);
+          return;
         case 'finding':
-          navigateToOperation(entity.entityType, entity.entityId);
+          navigateToFinding(entity.entityId);
           return;
         case 'vendor_review':
           navigateToVendor(entity.entityId as VendorWorkspace['vendor']);
@@ -685,7 +619,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
           return;
       }
     },
-    [navigate, navigateToOperation, navigateToReviews, navigateToVendor, search],
+    [navigate, navigateToFinding, navigateToReport, navigateToReviews, navigateToVendor, search],
   );
 
   return (
@@ -722,12 +656,12 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
             <SheetHeader className="sr-only">
               <SheetTitle>Security control detail</SheetTitle>
               <SheetDescription>
-                Review the selected security control, its checklist, and linked operations.
+                Review the selected security control, its checklist, and linked governance context.
               </SheetDescription>
             </SheetHeader>
           ) : null}
           {selectedControl === undefined && selectedControlId ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading control detail…</div>
+            <DetailLoadingState label="Loading control detail" />
           ) : selectedControl ? (
             <AdminSecurityControlDetail
               busyAction={busyControlAction}
@@ -758,6 +692,9 @@ export function AdminSecurityRoute(props: {
     policySupport?: 'all' | 'complete' | 'partial' | 'missing';
     responsibility?: 'all' | 'platform' | 'shared-responsibility' | 'customer';
     search?: string;
+    selectedFinding?: string;
+    selectedReport?: string;
+    selectedReviewRun?: string;
     selectedVendor?: string;
     sortBy?: 'control' | 'support' | 'responsibility' | 'family';
     sortOrder?: 'asc' | 'desc';
@@ -794,14 +731,6 @@ export function AdminSecurityRoute(props: {
           }}
         />
       ) : null}
-      {activeTab === 'operations' ? (
-        <AdminSecurityOperationsRoute
-          search={{
-            selectedOperationId: props.search.selectedOperationId,
-            selectedOperationType: props.search.selectedOperationType,
-          }}
-        />
-      ) : null}
       {activeTab === 'vendors' ? (
         <AdminSecurityVendorsRoute
           search={{
@@ -809,7 +738,27 @@ export function AdminSecurityRoute(props: {
           }}
         />
       ) : null}
-      {activeTab === 'reviews' ? <AdminSecurityReviewsRoute /> : null}
+      {activeTab === 'findings' ? (
+        <AdminSecurityFindingsRoute
+          search={{
+            selectedFinding: props.search.selectedFinding,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reports' ? (
+        <AdminSecurityReportsRoute
+          search={{
+            selectedReport: props.search.selectedReport,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reviews' ? (
+        <AdminSecurityReviewsRoute
+          search={{
+            selectedReviewRun: props.search.selectedReviewRun,
+          }}
+        />
+      ) : null}
     </SecurityPageShell>
   );
 }
@@ -902,7 +851,7 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
             </SheetDescription>
           </SheetHeader>
           {selectedPolicy === undefined && selectedPolicyId ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading policy detail…</div>
+            <DetailLoadingState label="Loading policy detail" />
           ) : selectedPolicy ? (
             <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy} />
           ) : null}
@@ -912,37 +861,16 @@ export function AdminSecurityPoliciesRoute(props: { search: SecurityPoliciesSear
   );
 }
 
-export function AdminSecurityOperationsRoute(props: { search: SecurityOperationsSearch }) {
+export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSearch }) {
+  const navigate = useNavigate();
   const { showToast } = useToast();
-  const { navigateToControl, navigateToOperation, navigateToReviews } = useSecurityNavigation();
-  const { selectedOperationId, selectedOperationType } = props.search;
-  const [report, setReport] = useState<string | null>(null);
-  const [localSelectedReportId, setLocalSelectedReportId] = useState<Id<'evidenceReports'> | null>(
-    null,
-  );
-  const operationsBoard = useQuery(api.securityPosture.getSecurityOperationsBoard, {}) as
-    | SecurityOperationsBoard
+  const { navigateToControl, navigateToReviews } = useSecurityNavigation();
+  const findingsBoard = useQuery(api.securityPosture.getSecurityFindingsBoard, {}) as
+    | SecurityFindingsBoard
     | undefined;
-  const selectedReportId = useMemo(() => {
-    if (selectedOperationType === 'evidence_report' && selectedOperationId) {
-      return selectedOperationId as Id<'evidenceReports'>;
-    }
-    return localSelectedReportId;
-  }, [localSelectedReportId, selectedOperationId, selectedOperationType]);
-  const selectedReportDetail = useQuery(
-    api.securityReports.getEvidenceReportDetail,
-    selectedReportId ? { id: selectedReportId } : 'skip',
-  ) as EvidenceReportDetail | null | undefined;
-  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
-  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
-  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
   const reviewSecurityFinding = useMutation(api.securityWorkspace.reviewSecurityFinding);
   const openSecurityFindingFollowUp = useMutation(
     api.securityWorkspace.openSecurityFindingFollowUp,
-  );
-  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
-  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
-    {},
   );
   const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
   const [findingCustomerSummaries, setFindingCustomerSummaries] = useState<Record<string, string>>(
@@ -951,147 +879,24 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
   const [findingDispositions, setFindingDispositions] = useState<
     Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
   >({});
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
   const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
-  const evidenceReports = operationsBoard?.evidenceReports;
-  const securityFindings = operationsBoard?.findings;
-  const triggeredReviewRuns = operationsBoard?.triggeredReviewRuns;
-  const auditReadiness = operationsBoard?.auditReadiness;
-  const resolvedSelectedOperationType =
-    selectedOperationType ?? (selectedReportId ? 'evidence_report' : undefined);
-  const resolvedSelectedOperationId = selectedOperationId ?? selectedReportId ?? undefined;
-  const selectedOperationDetail = useMemo<SecurityOperationDetail | null>(() => {
-    if (!resolvedSelectedOperationId || !resolvedSelectedOperationType) {
-      return null;
-    }
+  const findings = findingsBoard?.findings;
+  const selectedFinding = useMemo(
+    () => findings?.find((entry) => entry.findingKey === props.search.selectedFinding) ?? null,
+    [findings, props.search.selectedFinding],
+  );
 
-    switch (resolvedSelectedOperationType) {
-      case 'evidence_report': {
-        const reportItem =
-          (selectedReportDetail ?? null) ||
-          evidenceReports?.find((entry) => entry.id === resolvedSelectedOperationId);
-        if (!reportItem) {
-          return null;
-        }
-        return {
-          id: resolvedSelectedOperationId as Id<'evidenceReports'>,
-          kind: 'evidence_report',
-          report: reportItem,
-          status: reportItem.reviewStatus,
-          title: `${reportItem.reportKind} report`,
-        };
-      }
-      case 'finding': {
-        const finding = securityFindings?.find(
-          (entry) => entry.findingKey === resolvedSelectedOperationId,
-        );
-        if (!finding) {
-          return null;
-        }
-        return {
-          finding,
-          id: finding.findingKey,
-          kind: 'finding',
-          status: finding.disposition,
-          title: finding.title,
-        };
-      }
-      case 'review_run': {
-        const reviewRun = triggeredReviewRuns?.find(
-          (entry) => entry.id === resolvedSelectedOperationId,
-        );
-        if (!reviewRun) {
-          return null;
-        }
-        return {
-          id: reviewRun.id,
-          kind: 'review_run',
-          reviewRun,
-          status: reviewRun.status,
-          title: reviewRun.title,
-        };
-      }
-    }
-  }, [
-    evidenceReports,
-    resolvedSelectedOperationId,
-    resolvedSelectedOperationType,
-    securityFindings,
-    selectedReportDetail,
-    triggeredReviewRuns,
-  ]);
-  const auditReadinessSummary = useMemo(() => {
-    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
-    const staleDrill =
-      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
-
-    return {
-      latestDrill,
-      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
-      metadataGapCount: auditReadiness?.metadataGaps.length ?? 0,
-      recentDeniedCount: auditReadiness?.recentDeniedActions.length ?? 0,
-      recentExportCount: auditReadiness?.recentExports.length ?? 0,
-      staleDrill,
-    };
-  }, [auditReadiness]);
-  const restoreDrillFooter = auditReadinessSummary.staleDrill
-    ? 'Drill evidence is stale'
-    : auditReadinessSummary.latestDrill
-      ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
-      : 'No drill evidence recorded';
-  const findingSummary = useMemo(() => {
-    const findingItems = securityFindings ?? [];
-    return {
-      openCount: findingItems.filter((finding) => finding.status === 'open').length,
-      reviewPendingCount: findingItems.filter((finding) => finding.disposition === 'pending_review')
-        .length,
-      totalCount: findingItems.length,
-    };
-  }, [securityFindings]);
-
-  const handleGenerateReport = async (
-    reportKind: 'audit_readiness' | 'security_posture' = 'security_posture',
-  ) => {
-    setIsGenerating(true);
-    try {
-      const generated = await generateEvidenceReport({ reportKind });
-      setReport(generated.report);
-      setLocalSelectedReportId(generated.id);
-      navigateToOperation('evidence_report', generated.id);
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleReviewReport = async (
-    id: Id<'evidenceReports'>,
-    reviewStatus: 'needs_follow_up' | 'reviewed',
-  ) => {
-    setBusyReportAction(`${id}:${reviewStatus}`);
-    try {
-      await reviewEvidenceReport({
-        customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
-        id,
-        internalNotes: reportNotes[id]?.trim() || undefined,
-        reviewStatus,
+  const updateFindingSearch = useCallback(
+    (selectedFinding: string | undefined) => {
+      void navigate({
+        search: {
+          selectedFinding,
+        },
+        to: getSecurityPath('findings'),
       });
-    } finally {
-      setBusyReportAction(null);
-    }
-  };
-
-  const handleExportReport = async (id: Id<'evidenceReports'>) => {
-    setBusyReportAction(`${id}:export`);
-    try {
-      const exported = await exportEvidenceReport({ id });
-      setReport(exported.report);
-      setLocalSelectedReportId(id);
-      navigateToOperation('evidence_report', id);
-    } finally {
-      setBusyReportAction(null);
-    }
-  };
+    },
+    [navigate],
+  );
 
   const handleReviewFinding = useCallback(
     async (findingKey: SecurityFindingListItem['findingKey']) => {
@@ -1120,11 +925,12 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
     async (finding: SecurityFindingListItem) => {
       setBusyFindingKey(finding.findingKey);
       try {
-        await openSecurityFindingFollowUp({
+        const reviewRun = await openSecurityFindingFollowUp({
           findingKey: finding.findingKey,
           note: findingNotes[finding.findingKey]?.trim() || undefined,
         });
         showToast('Finding follow-up review created.', 'success');
+        navigateToReviews(reviewRun.id);
       } catch (error) {
         showToast(
           error instanceof Error ? error.message : 'Failed to open finding follow-up.',
@@ -1134,86 +940,275 @@ export function AdminSecurityOperationsRoute(props: { search: SecurityOperations
         setBusyFindingKey(null);
       }
     },
-    [findingNotes, openSecurityFindingFollowUp, showToast],
-  );
-
-  const handleOpenReportDetail = useCallback(
-    (reportId: Id<'evidenceReports'>) => {
-      setLocalSelectedReportId(reportId);
-      navigateToOperation('evidence_report', reportId);
-    },
-    [navigateToOperation],
-  );
-
-  const handleSelectOperation = useCallback(
-    (operationType: 'evidence_report' | 'finding' | 'review_run', operationId: string) => {
-      if (operationType === 'evidence_report') {
-        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
-      } else {
-        setLocalSelectedReportId(null);
-      }
-      navigateToOperation(operationType, operationId);
-    },
-    [navigateToOperation],
+    [findingNotes, navigateToReviews, openSecurityFindingFollowUp, showToast],
   );
 
   return (
-    <AdminSecurityOperationsTab
-      auditReadiness={auditReadiness}
-      auditReadinessSummary={auditReadinessSummary}
-      busyFindingKey={busyFindingKey}
-      busyReportAction={busyReportAction}
-      evidenceReports={evidenceReports}
-      findingCustomerSummaries={findingCustomerSummaries}
-      findingDispositions={findingDispositions}
-      findingNotes={findingNotes}
-      findingSummary={findingSummary}
-      handleExportReport={handleExportReport}
-      handleGenerateReport={handleGenerateReport}
-      handleOpenFindingFollowUp={handleOpenFindingFollowUp}
-      handleOpenReportDetail={handleOpenReportDetail}
-      handleReviewFinding={handleReviewFinding}
-      handleReviewReport={handleReviewReport}
-      isGenerating={isGenerating}
-      navigateToControl={navigateToControl}
-      navigateToReviews={navigateToReviews}
-      onSelectOperation={handleSelectOperation}
-      report={report}
-      reportCustomerSummaries={reportCustomerSummaries}
-      reportNotes={reportNotes}
-      restoreDrillFooter={restoreDrillFooter}
-      securityFindings={securityFindings}
-      selectedOperationDetail={selectedOperationDetail}
-      selectedOperationId={resolvedSelectedOperationId}
-      selectedOperationType={resolvedSelectedOperationType}
-      setFindingCustomerSummaries={setFindingCustomerSummaries}
-      setFindingDispositions={setFindingDispositions}
-      setFindingNotes={setFindingNotes}
-      setReportCustomerSummaries={setReportCustomerSummaries}
-      setReportNotes={setReportNotes}
-      triggeredReviewRuns={triggeredReviewRuns}
-    />
+    <>
+      <AdminSecurityFindingsTab
+        busyFindingKey={busyFindingKey}
+        findingCustomerSummaries={findingCustomerSummaries}
+        findingDispositions={findingDispositions}
+        findingNotes={findingNotes}
+        findings={findings}
+        navigateToControl={navigateToControl}
+        navigateToReviews={navigateToReviews}
+        onOpenFinding={(findingKey) => {
+          updateFindingSearch(findingKey);
+        }}
+        onOpenFindingFollowUp={handleOpenFindingFollowUp}
+        onReviewFinding={handleReviewFinding}
+        setFindingCustomerSummaries={setFindingCustomerSummaries}
+        setFindingDispositions={setFindingDispositions}
+        setFindingNotes={setFindingNotes}
+        summary={
+          findingsBoard?.summary ?? {
+            openCount: undefined,
+            reviewPendingCount: undefined,
+            totalCount: undefined,
+          }
+        }
+      />
+      <Sheet
+        open={props.search.selectedFinding !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          updateFindingSearch(undefined);
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Finding detail</SheetTitle>
+            <SheetDescription>
+              Review the selected finding, its linked controls, and the review workflow hand-off.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedFinding === null && props.search.selectedFinding ? (
+            <DetailLoadingState label="Loading finding detail" />
+          ) : selectedFinding ? (
+            <AdminSecurityFindingDetail
+              finding={selectedFinding}
+              onOpenControl={navigateToControl}
+              onOpenReviews={() => {
+                navigateToReviews();
+              }}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch }) {
+  const navigate = useNavigate();
+  const { navigateToControl, navigateToReviews } = useSecurityNavigation();
+  const reportsBoard = useQuery(api.securityPosture.getSecurityReportsBoard, {}) as
+    | SecurityReportsBoard
+    | undefined;
+  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
+  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
+  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
+  const [report, setReport] = useState<string | null>(null);
+  const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
+  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+  const selectedReportDetail = useQuery(
+    api.securityReports.getEvidenceReportDetail,
+    props.search.selectedReport
+      ? { id: props.search.selectedReport as Id<'evidenceReports'> }
+      : 'skip',
+  ) as EvidenceReportDetail | null | undefined;
+  const selectedReport = useMemo(() => {
+    if (selectedReportDetail) {
+      return selectedReportDetail;
+    }
+    return (
+      reportsBoard?.evidenceReports.find((entry) => entry.id === props.search.selectedReport) ??
+      null
+    );
+  }, [props.search.selectedReport, reportsBoard?.evidenceReports, selectedReportDetail]);
+  const auditReadiness = reportsBoard?.auditReadiness;
+  const auditReadinessSummary = useMemo(() => {
+    if (auditReadiness === undefined) {
+      return {
+        latestDrill: null,
+        latestManifestHash: null,
+        metadataGapCount: undefined,
+        recentDeniedCount: undefined,
+        recentExportCount: undefined,
+        staleDrill: undefined,
+      };
+    }
+
+    const latestDrill = auditReadiness?.latestBackupDrill ?? null;
+    const staleDrill =
+      latestDrill === null || Date.now() - latestDrill.checkedAt > 30 * 24 * 60 * 60 * 1000;
+
+    return {
+      latestDrill,
+      latestManifestHash: auditReadiness?.recentExports[0]?.manifestHash ?? null,
+      metadataGapCount: auditReadiness.metadataGaps.length,
+      recentDeniedCount: auditReadiness.recentDeniedActions.length,
+      recentExportCount: auditReadiness.recentExports.length,
+      staleDrill,
+    };
+  }, [auditReadiness]);
+  const restoreDrillFooter =
+    auditReadinessSummary.staleDrill === undefined
+      ? undefined
+      : auditReadinessSummary.staleDrill
+        ? 'Drill evidence is stale'
+        : auditReadinessSummary.latestDrill
+          ? `Checked ${new Date(auditReadinessSummary.latestDrill.checkedAt).toLocaleString()}`
+          : 'No drill evidence recorded';
+
+  const updateReportSearch = useCallback(
+    (selectedReport: string | undefined) => {
+      void navigate({
+        search: {
+          selectedReport,
+        },
+        to: getSecurityPath('reports'),
+      });
+    },
+    [navigate],
+  );
+
+  const handleGenerateReport = useCallback(
+    async (reportKind: 'audit_readiness' | 'security_posture' = 'security_posture') => {
+      setIsGenerating(true);
+      try {
+        const generated = await generateEvidenceReport({ reportKind });
+        setReport(generated.report);
+        updateReportSearch(generated.id);
+      } finally {
+        setIsGenerating(false);
+      }
+    },
+    [generateEvidenceReport, updateReportSearch],
+  );
+
+  const handleReviewReport = useCallback(
+    async (id: Id<'evidenceReports'>, reviewStatus: 'needs_follow_up' | 'reviewed') => {
+      setBusyReportAction(`${id}:${reviewStatus}`);
+      try {
+        await reviewEvidenceReport({
+          customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
+          id,
+          internalNotes: reportNotes[id]?.trim() || undefined,
+          reviewStatus,
+        });
+      } finally {
+        setBusyReportAction(null);
+      }
+    },
+    [reportCustomerSummaries, reportNotes, reviewEvidenceReport],
+  );
+
+  const handleExportReport = useCallback(
+    async (id: Id<'evidenceReports'>) => {
+      setBusyReportAction(`${id}:export`);
+      try {
+        const exported = await exportEvidenceReport({ id });
+        setReport(exported.report);
+        updateReportSearch(id);
+      } finally {
+        setBusyReportAction(null);
+      }
+    },
+    [exportEvidenceReport, updateReportSearch],
+  );
+
+  return (
+    <>
+      <AdminSecurityReportsTab
+        auditReadiness={auditReadiness}
+        auditReadinessSummary={auditReadinessSummary}
+        busyReportAction={busyReportAction}
+        evidenceReports={reportsBoard?.evidenceReports}
+        handleExportReport={handleExportReport}
+        handleGenerateReport={handleGenerateReport}
+        handleOpenReportDetail={(reportId) => {
+          updateReportSearch(reportId);
+        }}
+        handleReviewReport={handleReviewReport}
+        isGenerating={isGenerating}
+        report={report}
+        reportCustomerSummaries={reportCustomerSummaries}
+        reportNotes={reportNotes}
+        restoreDrillFooter={restoreDrillFooter}
+        setReportCustomerSummaries={setReportCustomerSummaries}
+        setReportNotes={setReportNotes}
+      />
+
+      <Sheet
+        open={props.search.selectedReport !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          updateReportSearch(undefined);
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Evidence report detail</SheetTitle>
+            <SheetDescription>
+              Review the selected evidence report and linked review task context.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedReport === null && props.search.selectedReport ? (
+            <DetailLoadingState label="Loading report detail" />
+          ) : selectedReport ? (
+            <AdminSecurityReportDetail
+              generatedReport={report}
+              onOpenControl={navigateToControl}
+              onOpenReviewRun={(reviewRunId) => {
+                navigateToReviews(reviewRunId);
+              }}
+              report={selectedReport}
+            />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 
 export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch }) {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { navigateToControl, navigateToOperation, navigateToReviews } = useSecurityNavigation();
-  const operationsBoard = useQuery(api.securityPosture.getSecurityOperationsBoard, {}) as
-    | SecurityOperationsBoard
+  const { navigateToControl, navigateToReviews } = useSecurityNavigation();
+  const vendorWorkspaces = useQuery(api.securityReports.listVendorReviewWorkspaces, {}) as
+    | VendorWorkspace[]
     | undefined;
   const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
   const [vendorSummaries, setVendorSummaries] = useState<Record<string, string>>({});
   const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
   const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
-  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
   const selectedVendor = useMemo(
     () => vendorWorkspaces?.find((vendor) => vendor.vendor === props.search.selectedVendor) ?? null,
     [props.search.selectedVendor, vendorWorkspaces],
   );
   const vendorSummary = useMemo(() => {
-    const vendors = vendorWorkspaces ?? [];
+    if (vendorWorkspaces === undefined) {
+      return {
+        currentCount: undefined,
+        dueSoonCount: undefined,
+        overdueCount: undefined,
+        totalCount: undefined,
+      };
+    }
+
+    const vendors = vendorWorkspaces;
     return {
       currentCount: vendors.filter((vendor) => vendor.reviewStatus === 'current').length,
       dueSoonCount: vendors.filter((vendor) => vendor.reviewStatus === 'due_soon').length,
@@ -1258,35 +1253,32 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
 
   return (
     <>
+      <AdminSecurityTabHeader
+        title="Vendors"
+        description="Runtime vendor posture, governance review cadence, follow-up context, and linked controls."
+      />
+
       <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
-        <div className="rounded-lg border bg-card p-6">
-          <p className="text-sm font-medium text-muted-foreground">Tracked vendors</p>
-          <p className="mt-3 text-4xl font-semibold">{vendorSummary.totalCount}</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            First-class vendor governance records linked to controls.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-6">
-          <p className="text-sm font-medium text-muted-foreground">Current reviews</p>
-          <p className="mt-3 text-4xl font-semibold">{vendorSummary.currentCount}</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Vendors reviewed within the current 12-month cadence.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-6">
-          <p className="text-sm font-medium text-muted-foreground">Due soon</p>
-          <p className="mt-3 text-4xl font-semibold">{vendorSummary.dueSoonCount}</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Reviews approaching expiry but still current.
-          </p>
-        </div>
-        <div className="rounded-lg border bg-card p-6">
-          <p className="text-sm font-medium text-muted-foreground">Overdue</p>
-          <p className="mt-3 text-4xl font-semibold">{vendorSummary.overdueCount}</p>
-          <p className="mt-2 text-sm text-muted-foreground">
-            These block annual review finalization until renewed.
-          </p>
-        </div>
+        <AdminSecuritySummaryCard
+          title="Tracked vendors"
+          description="First-class vendor governance records linked to controls."
+          value={renderCardStatValue(vendorSummary.totalCount)}
+        />
+        <AdminSecuritySummaryCard
+          title="Current reviews"
+          description="Vendors reviewed within the current 12-month cadence."
+          value={renderCardStatValue(vendorSummary.currentCount)}
+        />
+        <AdminSecuritySummaryCard
+          title="Due soon"
+          description="Reviews approaching expiry but still current."
+          value={renderCardStatValue(vendorSummary.dueSoonCount)}
+        />
+        <AdminSecuritySummaryCard
+          title="Overdue"
+          description="These block annual review finalization until renewed."
+          value={renderCardStatValue(vendorSummary.overdueCount)}
+        />
       </div>
 
       <AdminSecurityVendorsTab
@@ -1322,7 +1314,7 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
             </SheetDescription>
           </SheetHeader>
           {selectedVendor === null && props.search.selectedVendor ? (
-            <div className="p-4 text-sm text-muted-foreground">Loading vendor detail…</div>
+            <DetailLoadingState label="Loading vendor detail" />
           ) : selectedVendor ? (
             (() => {
               const currentOwner =
@@ -1475,10 +1467,10 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
                         type="button"
                         variant="outline"
                         onClick={() => {
-                          navigateToOperation('review_run', selectedVendor.linkedFollowUpRunId!);
+                          navigateToReviews(selectedVendor.linkedFollowUpRunId ?? undefined);
                         }}
                       >
-                        Open follow-up
+                        Open follow-up in reviews
                       </Button>
                     ) : null}
                     <Button
@@ -1501,7 +1493,21 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
   );
 }
 
-export function AdminSecurityReviewsRoute() {
+function renderCardStatValue(value: number | undefined) {
+  if (value === undefined) {
+    return (
+      <>
+        <Spinner className="size-5" />
+        <span className="sr-only">Loading</span>
+      </>
+    );
+  }
+
+  return value;
+}
+
+export function AdminSecurityReviewsRoute(props: { search: SecurityReviewsSearch }) {
+  const navigate = useNavigate();
   const { showToast } = useToast();
   const { navigateToControl } = useSecurityNavigation();
   const refreshReviewRunAutomation = useAction(api.securityReviews.refreshReviewRunAutomation);
@@ -1532,6 +1538,21 @@ export function AdminSecurityReviewsRoute() {
       : 'skip',
   ) as ReviewRunDetail | null | undefined;
   const currentAnnualReviewDetail = currentAnnualReviewDetailQuery ?? localAnnualReviewDetail;
+  const selectedReviewRunDetail = useQuery(
+    api.securityReviews.getReviewRunDetail,
+    props.search.selectedReviewRun
+      ? { reviewRunId: props.search.selectedReviewRun as Id<'reviewRuns'> }
+      : 'skip',
+  ) as ReviewRunDetail | null | undefined;
+  const selectedReviewRunSummary = useMemo(() => {
+    if (!props.search.selectedReviewRun) {
+      return null;
+    }
+    if (currentAnnualReviewRun?.id === props.search.selectedReviewRun) {
+      return currentAnnualReviewRun;
+    }
+    return triggeredReviewRuns?.find((run) => run.id === props.search.selectedReviewRun) ?? null;
+  }, [currentAnnualReviewRun, props.search.selectedReviewRun, triggeredReviewRuns]);
   const [busyReviewRunAction, setBusyReviewRunAction] = useState<string | null>(null);
   const [busyReviewTaskAction, setBusyReviewTaskAction] = useState<string | null>(null);
   const [isPreparingAnnualReview, setIsPreparingAnnualReview] = useState(false);
@@ -1856,46 +1877,154 @@ export function AdminSecurityReviewsRoute() {
   );
 
   return (
-    <AdminSecurityReviewsTab
-      autoCollectedEvidenceLinks={autoCollectedEvidenceLinks}
-      busyReviewRunAction={busyReviewRunAction}
-      busyReviewTaskAction={busyReviewTaskAction}
-      currentAnnualReviewRun={currentAnnualReviewRun}
-      handleAttestTask={handleAttestTask}
-      handleCreateTriggeredReviewRun={handleCreateTriggeredReviewRun}
-      handleExceptionTask={handleExceptionTask}
-      handleFinalizeAnnualReview={handleFinalizeAnnualReview}
-      handleOpenReviewFollowUp={handleOpenReviewFollowUp}
-      handleRefreshAnnualReview={handleRefreshAnnualReview}
-      isPreparingAnnualReview={isPreparingAnnualReview}
-      navigateToControl={navigateToControl}
-      newTriggeredReviewTitle={newTriggeredReviewTitle}
-      newTriggeredReviewType={newTriggeredReviewType}
-      onChangeDocumentField={(taskId, field, value) => {
-        setReviewTaskDocuments((current) => ({
-          ...current,
-          [taskId]: {
-            label: current[taskId]?.label ?? '',
-            url: current[taskId]?.url ?? '',
-            version: current[taskId]?.version ?? '',
-            [field]: value,
-          },
-        }));
-      }}
-      onChangeNote={(taskId, value) => {
-        setReviewTaskNotes((current) => ({
-          ...current,
-          [taskId]: value,
-        }));
-      }}
-      reviewExceptionTasks={reviewExceptionTasks}
-      reviewFinalizeState={reviewFinalizeState}
-      reviewTaskDocuments={reviewTaskDocuments}
-      reviewTaskGroups={reviewTaskGroups}
-      reviewTaskNotes={reviewTaskNotes}
-      setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
-      setNewTriggeredReviewType={setNewTriggeredReviewType}
-      triggeredReviewRuns={triggeredReviewRuns}
-    />
+    <>
+      <AdminSecurityReviewsTab
+        autoCollectedEvidenceLinks={autoCollectedEvidenceLinks}
+        busyReviewRunAction={busyReviewRunAction}
+        busyReviewTaskAction={busyReviewTaskAction}
+        currentAnnualReviewRun={currentAnnualReviewRun}
+        handleAttestTask={handleAttestTask}
+        handleCreateTriggeredReviewRun={handleCreateTriggeredReviewRun}
+        handleExceptionTask={handleExceptionTask}
+        handleFinalizeAnnualReview={handleFinalizeAnnualReview}
+        handleOpenReviewFollowUp={handleOpenReviewFollowUp}
+        handleRefreshAnnualReview={handleRefreshAnnualReview}
+        isPreparingAnnualReview={isPreparingAnnualReview}
+        navigateToControl={navigateToControl}
+        newTriggeredReviewTitle={newTriggeredReviewTitle}
+        newTriggeredReviewType={newTriggeredReviewType}
+        onChangeDocumentField={(taskId, field, value) => {
+          setReviewTaskDocuments((current) => ({
+            ...current,
+            [taskId]: {
+              label: current[taskId]?.label ?? '',
+              url: current[taskId]?.url ?? '',
+              version: current[taskId]?.version ?? '',
+              [field]: value,
+            },
+          }));
+        }}
+        onChangeNote={(taskId, value) => {
+          setReviewTaskNotes((current) => ({
+            ...current,
+            [taskId]: value,
+          }));
+        }}
+        reviewExceptionTasks={reviewExceptionTasks}
+        reviewFinalizeState={reviewFinalizeState}
+        reviewTaskDocuments={reviewTaskDocuments}
+        reviewTaskGroups={reviewTaskGroups}
+        reviewTaskNotes={reviewTaskNotes}
+        setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
+        setNewTriggeredReviewType={setNewTriggeredReviewType}
+        triggeredReviewRuns={triggeredReviewRuns}
+      />
+
+      <Sheet
+        open={props.search.selectedReviewRun !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          void navigate({
+            search: {
+              selectedReviewRun: undefined,
+            },
+            to: getSecurityPath('reviews'),
+          });
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Review run detail</SheetTitle>
+            <SheetDescription>
+              Review the selected annual or triggered review run and the task set it owns.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedReviewRunDetail === undefined && props.search.selectedReviewRun ? (
+            <DetailLoadingState label="Loading review run detail" />
+          ) : selectedReviewRunDetail ? (
+            <div className="space-y-6 p-1">
+              <div className="space-y-2">
+                <h2 className="text-2xl font-semibold">
+                  {selectedReviewRunSummary?.title ?? selectedReviewRunDetail.id}
+                </h2>
+                <div className="text-sm text-muted-foreground">
+                  <p>
+                    {selectedReviewRunSummary?.kind ?? selectedReviewRunDetail.kind} ·{' '}
+                    {selectedReviewRunSummary?.status ?? selectedReviewRunDetail.status}
+                  </p>
+                  <p>
+                    Created{' '}
+                    {new Date(
+                      selectedReviewRunSummary?.createdAt ?? selectedReviewRunDetail.createdAt,
+                    ).toLocaleString()}
+                  </p>
+                  {selectedReviewRunSummary?.triggerType ? (
+                    <p>Trigger: {selectedReviewRunSummary.triggerType}</p>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Tasks</p>
+                {selectedReviewRunDetail.tasks.length ? (
+                  selectedReviewRunDetail.tasks.map((task) => (
+                    <div key={task.id} className="rounded-lg border p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium">{task.title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            {task.taskType} · {task.status}
+                          </p>
+                        </div>
+                        {task.vendor ? (
+                          <Badge variant="secondary">{task.vendor.title}</Badge>
+                        ) : null}
+                      </div>
+                      {task.description ? (
+                        <p className="mt-2 text-sm text-muted-foreground">{task.description}</p>
+                      ) : null}
+                      {task.controlLinks.length ? (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {task.controlLinks.map((link) => (
+                            <Button
+                              key={`${task.id}:${link.internalControlId}:${link.itemId}`}
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                navigateToControl(link.internalControlId);
+                              }}
+                            >
+                              {link.nist80053Id ?? link.internalControlId}
+                              {link.itemLabel ? ` · ${link.itemLabel}` : ''}
+                            </Button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    No tasks are attached to this run.
+                  </p>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+    </>
+  );
+}
+
+function DetailLoadingState({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-32 items-center justify-center p-4 text-sm text-muted-foreground">
+      <Spinner className="size-5" />
+      <span className="sr-only">{label}</span>
+    </div>
   );
 }

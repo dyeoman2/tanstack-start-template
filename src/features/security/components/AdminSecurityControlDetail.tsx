@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '~/components/ui/select';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
+import { Spinner } from '~/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { Textarea } from '~/components/ui/textarea';
 import {
@@ -192,7 +193,7 @@ export function AdminSecurityControlDetail(props: {
           />
         </DetailSection>
 
-        <DetailSection title="Linked operations">
+        <DetailSection title="Linked governance context">
           {control.linkedEntities.length ? (
             <div className="flex flex-wrap gap-2">
               {control.linkedEntities.map((entity) => (
@@ -830,7 +831,10 @@ function ChecklistItemActions(props: {
             <div className="space-y-3">
               <p className="text-sm font-medium">Activity</p>
               {evidenceActivity === undefined ? (
-                <p className="text-sm text-muted-foreground">Loading activity…</p>
+                <div className="flex min-h-20 items-center justify-center rounded-md border border-dashed bg-muted/20 text-sm text-muted-foreground">
+                  <Spinner className="size-5" />
+                  <span className="sr-only">Loading activity</span>
+                </div>
               ) : evidenceActivity.length > 0 ? (
                 <div className="space-y-2">
                   {evidenceActivity.map((event: SecurityChecklistEvidenceActivity) => (

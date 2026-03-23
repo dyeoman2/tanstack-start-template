@@ -1166,16 +1166,21 @@ const securityWorkspaceOverviewValidator = v.object({
     totalCount: v.number(),
   }),
 });
-const securityOperationsBoardValidator = v.object({
-  auditReadiness: auditReadinessSnapshotValidator,
-  currentAnnualReviewDetail: v.union(reviewRunDetailValidator, v.null()),
-  currentAnnualReviewRun: v.union(reviewRunSummaryValidator, v.null()),
-  evidenceReports: evidenceReportListValidator,
+const securityFindingsBoardValidator = v.object({
   findings: securityFindingListValidator,
+  summary: v.object({
+    openCount: v.number(),
+    reviewPendingCount: v.number(),
+    totalCount: v.number(),
+  }),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
-  triggeredReviewRuns: reviewRunSummaryListValidator,
-  vendorWorkspaces: vendorWorkspaceListValidator,
+});
+const securityReportsBoardValidator = v.object({
+  auditReadiness: auditReadinessSnapshotValidator,
+  evidenceReports: evidenceReportListValidator,
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
 });
 const securityWorkspaceMigrationResultValidator = v.object({
   patchedChecklistStatuses: v.number(),
@@ -1251,8 +1256,9 @@ export {
   securityFindingSourceTypeValidator,
   securityFindingStatusValidator,
   securityFindingTypeValidator,
-  securityOperationsBoardValidator,
+  securityFindingsBoardValidator,
   securityPostureSummaryValidator,
+  securityReportsBoardValidator,
   securityRelationshipObjectTypeValidator,
   securityRelationshipTypeValidator,
   securityScopeIdValidator,

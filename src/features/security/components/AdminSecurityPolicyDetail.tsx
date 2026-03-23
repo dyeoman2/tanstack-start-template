@@ -12,6 +12,7 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
+import { Spinner } from '~/components/ui/spinner';
 import {
   formatChecklistStatus,
   formatSupportStatus,
@@ -263,7 +264,12 @@ function PolicyMappedControlChecklist(props: { control: SecurityPolicyControlMap
 
   if (control === undefined) {
     if (props.control.platformChecklist.length === 0) {
-      return <p className="text-sm text-muted-foreground">Loading checklist…</p>;
+      return (
+        <div className="flex min-h-20 items-center justify-center rounded-md border border-dashed bg-muted/20 text-sm text-muted-foreground">
+          <Spinner className="size-5" />
+          <span className="sr-only">Loading checklist</span>
+        </div>
+      );
     }
 
     return (

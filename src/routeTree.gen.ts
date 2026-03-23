@@ -53,8 +53,9 @@ import { Route as AppOrganizationsSlugDomainsRouteImport } from './routes/app/or
 import { Route as AppOrganizationsSlugAuditRouteImport } from './routes/app/organizations/$slug/audit'
 import { Route as AppAdminSecurityVendorsRouteImport } from './routes/app/admin/security.vendors'
 import { Route as AppAdminSecurityReviewsRouteImport } from './routes/app/admin/security.reviews'
+import { Route as AppAdminSecurityReportsRouteImport } from './routes/app/admin/security.reports'
 import { Route as AppAdminSecurityPoliciesRouteImport } from './routes/app/admin/security.policies'
-import { Route as AppAdminSecurityOperationsRouteImport } from './routes/app/admin/security.operations'
+import { Route as AppAdminSecurityFindingsRouteImport } from './routes/app/admin/security.findings'
 import { Route as AppAdminSecurityControlsRouteImport } from './routes/app/admin/security.controls'
 
 const VerifyEmailPendingRoute = VerifyEmailPendingRouteImport.update({
@@ -284,16 +285,21 @@ const AppAdminSecurityReviewsRoute = AppAdminSecurityReviewsRouteImport.update({
   path: '/reviews',
   getParentRoute: () => AppAdminSecurityRoute,
 } as any)
+const AppAdminSecurityReportsRoute = AppAdminSecurityReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => AppAdminSecurityRoute,
+} as any)
 const AppAdminSecurityPoliciesRoute =
   AppAdminSecurityPoliciesRouteImport.update({
     id: '/policies',
     path: '/policies',
     getParentRoute: () => AppAdminSecurityRoute,
   } as any)
-const AppAdminSecurityOperationsRoute =
-  AppAdminSecurityOperationsRouteImport.update({
-    id: '/operations',
-    path: '/operations',
+const AppAdminSecurityFindingsRoute =
+  AppAdminSecurityFindingsRouteImport.update({
+    id: '/findings',
+    path: '/findings',
     getParentRoute: () => AppAdminSecurityRoute,
   } as any)
 const AppAdminSecurityControlsRoute =
@@ -339,8 +345,9 @@ export interface FileRoutesByFullPath {
   '/app/chat/': typeof AppChatIndexRoute
   '/app/organizations/': typeof AppOrganizationsIndexRoute
   '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
-  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/findings': typeof AppAdminSecurityFindingsRoute
   '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reports': typeof AppAdminSecurityReportsRoute
   '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/admin/security/vendors': typeof AppAdminSecurityVendorsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
@@ -384,8 +391,9 @@ export interface FileRoutesByTo {
   '/app/organizations': typeof AppOrganizationsIndexRoute
   '/app/chat': typeof AppChatIndexRoute
   '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
-  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/findings': typeof AppAdminSecurityFindingsRoute
   '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reports': typeof AppAdminSecurityReportsRoute
   '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/admin/security/vendors': typeof AppAdminSecurityVendorsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
@@ -434,8 +442,9 @@ export interface FileRoutesById {
   '/app/chat/': typeof AppChatIndexRoute
   '/app/organizations/': typeof AppOrganizationsIndexRoute
   '/app/admin/security/controls': typeof AppAdminSecurityControlsRoute
-  '/app/admin/security/operations': typeof AppAdminSecurityOperationsRoute
+  '/app/admin/security/findings': typeof AppAdminSecurityFindingsRoute
   '/app/admin/security/policies': typeof AppAdminSecurityPoliciesRoute
+  '/app/admin/security/reports': typeof AppAdminSecurityReportsRoute
   '/app/admin/security/reviews': typeof AppAdminSecurityReviewsRoute
   '/app/admin/security/vendors': typeof AppAdminSecurityVendorsRoute
   '/app/organizations/$slug/audit': typeof AppOrganizationsSlugAuditRoute
@@ -485,8 +494,9 @@ export interface FileRouteTypes {
     | '/app/chat/'
     | '/app/organizations/'
     | '/app/admin/security/controls'
-    | '/app/admin/security/operations'
+    | '/app/admin/security/findings'
     | '/app/admin/security/policies'
+    | '/app/admin/security/reports'
     | '/app/admin/security/reviews'
     | '/app/admin/security/vendors'
     | '/app/organizations/$slug/audit'
@@ -530,8 +540,9 @@ export interface FileRouteTypes {
     | '/app/organizations'
     | '/app/chat'
     | '/app/admin/security/controls'
-    | '/app/admin/security/operations'
+    | '/app/admin/security/findings'
     | '/app/admin/security/policies'
+    | '/app/admin/security/reports'
     | '/app/admin/security/reviews'
     | '/app/admin/security/vendors'
     | '/app/organizations/$slug/audit'
@@ -579,8 +590,9 @@ export interface FileRouteTypes {
     | '/app/chat/'
     | '/app/organizations/'
     | '/app/admin/security/controls'
-    | '/app/admin/security/operations'
+    | '/app/admin/security/findings'
     | '/app/admin/security/policies'
+    | '/app/admin/security/reports'
     | '/app/admin/security/reviews'
     | '/app/admin/security/vendors'
     | '/app/organizations/$slug/audit'
@@ -927,6 +939,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminSecurityReviewsRouteImport
       parentRoute: typeof AppAdminSecurityRoute
     }
+    '/app/admin/security/reports': {
+      id: '/app/admin/security/reports'
+      path: '/reports'
+      fullPath: '/app/admin/security/reports'
+      preLoaderRoute: typeof AppAdminSecurityReportsRouteImport
+      parentRoute: typeof AppAdminSecurityRoute
+    }
     '/app/admin/security/policies': {
       id: '/app/admin/security/policies'
       path: '/policies'
@@ -934,11 +953,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminSecurityPoliciesRouteImport
       parentRoute: typeof AppAdminSecurityRoute
     }
-    '/app/admin/security/operations': {
-      id: '/app/admin/security/operations'
-      path: '/operations'
-      fullPath: '/app/admin/security/operations'
-      preLoaderRoute: typeof AppAdminSecurityOperationsRouteImport
+    '/app/admin/security/findings': {
+      id: '/app/admin/security/findings'
+      path: '/findings'
+      fullPath: '/app/admin/security/findings'
+      preLoaderRoute: typeof AppAdminSecurityFindingsRouteImport
       parentRoute: typeof AppAdminSecurityRoute
     }
     '/app/admin/security/controls': {
@@ -953,8 +972,9 @@ declare module '@tanstack/react-router' {
 
 interface AppAdminSecurityRouteChildren {
   AppAdminSecurityControlsRoute: typeof AppAdminSecurityControlsRoute
-  AppAdminSecurityOperationsRoute: typeof AppAdminSecurityOperationsRoute
+  AppAdminSecurityFindingsRoute: typeof AppAdminSecurityFindingsRoute
   AppAdminSecurityPoliciesRoute: typeof AppAdminSecurityPoliciesRoute
+  AppAdminSecurityReportsRoute: typeof AppAdminSecurityReportsRoute
   AppAdminSecurityReviewsRoute: typeof AppAdminSecurityReviewsRoute
   AppAdminSecurityVendorsRoute: typeof AppAdminSecurityVendorsRoute
   AppAdminSecurityIndexRoute: typeof AppAdminSecurityIndexRoute
@@ -962,8 +982,9 @@ interface AppAdminSecurityRouteChildren {
 
 const AppAdminSecurityRouteChildren: AppAdminSecurityRouteChildren = {
   AppAdminSecurityControlsRoute: AppAdminSecurityControlsRoute,
-  AppAdminSecurityOperationsRoute: AppAdminSecurityOperationsRoute,
+  AppAdminSecurityFindingsRoute: AppAdminSecurityFindingsRoute,
   AppAdminSecurityPoliciesRoute: AppAdminSecurityPoliciesRoute,
+  AppAdminSecurityReportsRoute: AppAdminSecurityReportsRoute,
   AppAdminSecurityReviewsRoute: AppAdminSecurityReviewsRoute,
   AppAdminSecurityVendorsRoute: AppAdminSecurityVendorsRoute,
   AppAdminSecurityIndexRoute: AppAdminSecurityIndexRoute,

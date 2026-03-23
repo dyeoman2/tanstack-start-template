@@ -637,35 +637,16 @@ export type SecurityPolicyDetail = {
   title: string;
 } & SecurityScope;
 
-export type SecurityOperationsBoard = {
-  auditReadiness: AuditReadinessOverview;
-  currentAnnualReviewDetail: ReviewRunDetail | null;
-  currentAnnualReviewRun: ReviewRunSummary | null;
-  evidenceReports: EvidenceReportListItem[];
+export type SecurityFindingsBoard = {
   findings: SecurityFindingListItem[];
-  triggeredReviewRuns: ReviewRunSummary[];
-  vendorWorkspaces: VendorWorkspace[];
+  summary: {
+    openCount: number;
+    reviewPendingCount: number;
+    totalCount: number;
+  };
 } & SecurityScope;
 
-export type SecurityOperationDetail =
-  | {
-      kind: 'evidence_report';
-      id: Id<'evidenceReports'>;
-      title: string;
-      status: EvidenceReportDetail['reviewStatus'];
-      report: EvidenceReportDetail | EvidenceReportListItem;
-    }
-  | {
-      kind: 'finding';
-      id: SecurityFindingListItem['findingKey'];
-      title: string;
-      status: SecurityFindingListItem['disposition'];
-      finding: SecurityFindingListItem;
-    }
-  | {
-      kind: 'review_run';
-      id: ReviewRunSummary['id'];
-      title: string;
-      status: ReviewRunSummary['status'];
-      reviewRun: ReviewRunSummary;
-    };
+export type SecurityReportsBoard = {
+  auditReadiness: AuditReadinessOverview;
+  evidenceReports: EvidenceReportListItem[];
+} & SecurityScope;

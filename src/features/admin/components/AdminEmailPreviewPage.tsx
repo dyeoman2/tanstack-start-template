@@ -110,13 +110,21 @@ export function AdminEmailPreviewPage({
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Subject
               </p>
-              <p className="text-sm text-foreground">{preview?.subject ?? 'Loading subject...'}</p>
+              {preview?.subject ? (
+                <p className="text-sm text-foreground">{preview.subject}</p>
+              ) : (
+                <PreviewFieldSpinner label="Loading subject" />
+              )}
             </div>
             <div className="space-y-1">
               <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">
                 Preview text
               </p>
-              <p className="text-sm text-foreground">{preview?.preview ?? 'Loading preview...'}</p>
+              {preview?.preview ? (
+                <p className="text-sm text-foreground">{preview.preview}</p>
+              ) : (
+                <PreviewFieldSpinner label="Loading preview text" />
+              )}
             </div>
           </div>
 
@@ -137,6 +145,15 @@ export function AdminEmailPreviewPage({
           </div>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function PreviewFieldSpinner({ label }: { label: string }) {
+  return (
+    <div className="flex min-h-5 items-center">
+      <Spinner className="size-4" />
+      <span className="sr-only">{label}</span>
     </div>
   );
 }
