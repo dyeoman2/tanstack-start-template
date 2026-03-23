@@ -1,19 +1,26 @@
-import { api } from '@convex/_generated/api';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
 
-const { useSearchMock, navigateMock, useQueryMock, useActionMock, useMutationMock, showToastMock } =
-  vi.hoisted(() => ({
-    useSearchMock: vi.fn(),
-    navigateMock: vi.fn(),
-    useQueryMock: vi.fn(),
-    useActionMock: vi.fn(),
-    useMutationMock: vi.fn(),
-    showToastMock: vi.fn(),
-  }));
+const {
+  useSearchMock,
+  navigateMock,
+  useQueryMock,
+  useActionMock,
+  useMutationMock,
+  useConvexMock,
+  showToastMock,
+} = vi.hoisted(() => ({
+  useSearchMock: vi.fn(),
+  navigateMock: vi.fn(),
+  useQueryMock: vi.fn(),
+  useActionMock: vi.fn(),
+  useMutationMock: vi.fn(),
+  useConvexMock: vi.fn(),
+  showToastMock: vi.fn(),
+}));
 
 vi.mock('@tanstack/react-router', () => ({
   createFileRoute: () => (config: Record<string, unknown>) => ({
@@ -27,6 +34,7 @@ vi.mock('convex/react', () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useAction: (...args: unknown[]) => useActionMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useConvex: () => useConvexMock(),
 }));
 
 vi.mock('~/components/data-table', () => ({
@@ -241,6 +249,7 @@ function buildControl(
     evidenceReadiness: 'partial',
     hasExpiringSoonEvidence: false,
     lastReviewedAt: null,
+    linkedEntities: [],
     platformChecklist: [
       {
         completedAt: null,
@@ -251,8 +260,8 @@ function buildControl(
         itemId: 'item-access-review',
         label: 'Collect access review evidence',
         lastReviewedAt: null,
-        notes: null,
         owner: null,
+        operatorNotes: null,
         required: true,
         reviewSatisfaction: null,
         status: 'not_started',
@@ -260,6 +269,8 @@ function buildControl(
         verificationMethod: 'Review uploaded report',
       },
     ],
+    scopeId: 'provider',
+    scopeType: 'provider_global',
     ...overrides,
   };
 }
@@ -269,24 +280,78 @@ function buildEvidenceReport(overrides?: Partial<Record<string, unknown>>) {
     id: 'report-1',
     reportKind: 'security_posture',
     createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    scopeId: 'provider',
+    scopeType: 'provider_global',
     reviewStatus: 'pending',
     contentHash: 'hash-123',
     exportHash: null,
     exportManifestHash: null,
-    reviewNotes: null,
+    generatedByUserId: 'admin-user',
+    internalReviewNotes: null,
+    reviewedAt: null,
+    reviewedByUserId: null,
+    ...overrides,
+  };
+}
+
+function buildEvidenceReportDetail(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    contentHash: 'hash-123',
+    contentJson: '{"status":"persisted"}',
+    createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    exportBundleJson: null,
+    exportHash: null,
+    exportIntegritySummary: null,
+    exportManifestHash: 'manifest-hash-1',
+    exportManifestJson: '{"manifest":"ok"}',
+    exportedAt: null,
+    exportedByUserId: null,
+    generatedByUserId: 'admin-user',
+    id: 'report-1',
+    linkedTasks: [
+      {
+        controlLinks: [
+          {
+            controlTitle: 'Account Management',
+            internalControlId: 'ac-1',
+            itemId: 'item-access-review',
+            itemLabel: 'Collect access review evidence',
+            nist80053Id: 'AC-2',
+          },
+        ],
+        reviewRunId: 'review-run-1',
+        reviewRunKind: 'annual',
+        reviewRunStatus: 'ready',
+        reviewRunTitle: 'Annual Security Review 2026',
+        taskId: 'review-task-1',
+        taskStatus: 'ready',
+        taskTitle: 'Security posture reviewed',
+      },
+    ],
+    organizationId: 'org-1',
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    reportKind: 'security_posture',
+    internalReviewNotes: null,
+    reviewStatus: 'pending',
+    reviewedAt: null,
+    reviewedByDisplay: null,
     ...overrides,
   };
 }
 
 function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
   return {
+    customerSummary: null,
     description: 'Audit integrity failures require provider follow-up.',
     disposition: 'pending_review',
     findingKey: 'audit_integrity_failures',
     findingType: 'audit_integrity_failures',
     firstObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    internalReviewNotes: null,
     lastObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
-    reviewNotes: null,
+    scopeId: 'provider',
+    scopeType: 'provider_global',
     reviewedAt: null,
     reviewedByDisplay: null,
     severity: 'critical',
@@ -305,6 +370,8 @@ function buildReviewRunSummary(overrides?: Partial<Record<string, unknown>>) {
     finalizedAt: null,
     id: 'review-run-1',
     kind: 'annual',
+    scopeId: 'provider',
+    scopeType: 'provider_global',
     status: 'ready',
     taskCounts: {
       blocked: 0,
@@ -327,13 +394,23 @@ function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
     finalizedAt: null,
     id: 'review-run-1',
     kind: 'annual',
+    scopeId: 'provider',
+    scopeType: 'provider_global',
     sourceRecordId: null,
     sourceRecordType: null,
     status: 'ready',
     tasks: [
       {
         allowException: true,
-        controlLinks: [{ internalControlId: 'CTRL-AU-006', itemId: 'provider-review-procedure' }],
+        controlLinks: [
+          {
+            controlTitle: 'Audit Review Procedure',
+            internalControlId: 'CTRL-AU-006',
+            itemId: 'provider-review-procedure',
+            itemLabel: 'Provider review procedure',
+            nist80053Id: 'AU-6',
+          },
+        ],
         description: 'Review the audit review procedure and attest that it remains current.',
         evidenceLinks: [],
         freshnessWindowDays: 365,
@@ -351,7 +428,13 @@ function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
       {
         allowException: true,
         controlLinks: [
-          { internalControlId: 'CTRL-CA-002', itemId: 'provider-assessment-plan-documented' },
+          {
+            controlTitle: 'Assessment Planning',
+            internalControlId: 'CTRL-CA-002',
+            itemId: 'provider-assessment-plan-documented',
+            itemLabel: 'Provider assessment plan documented',
+            nist80053Id: 'CA-2',
+          },
         ],
         description: 'Attach or link the current control assessment plan and confirm its version.',
         evidenceLinks: [],
@@ -375,8 +458,106 @@ function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
   };
 }
 
+function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    allowedDataClasses: ['metadata'],
+    allowedEnvironments: ['production'],
+    approvalEnvVar: null,
+    approved: true,
+    approvedByDefault: true,
+    customerSummary: null,
+    displayName: 'Sentry',
+    internalReviewNotes: 'SOC 2 reviewed.',
+    linkedEntities: [],
+    linkedFollowUpRunId: null,
+    owner: 'Platform Security',
+    relatedControls: [
+      {
+        internalControlId: 'CTRL-SA-009',
+        itemId: 'external-services-inventory',
+        nist80053Id: 'SA-9',
+        title: 'External Services',
+      },
+    ],
+    reviewStatus: 'pending',
+    reviewedAt: null,
+    reviewedByDisplay: null,
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    vendor: 'sentry',
+    ...overrides,
+  };
+}
+
+function buildWorkspaceOverview(args?: {
+  auditReadiness?: unknown;
+  currentAnnualRun?: unknown;
+  findings?: unknown[];
+  controls?: unknown[];
+  summary?: unknown;
+  vendorWorkspaces?: unknown[];
+}) {
+  const findings = (args?.findings as
+    | Array<{ disposition: string; status: string }>
+    | undefined) ?? [buildSecurityFinding()];
+  const controls = (args?.controls as
+    | Array<{
+        evidenceReadiness: 'missing' | 'partial' | 'ready';
+        responsibility: 'customer' | 'platform' | 'shared-responsibility';
+      }>
+    | undefined) ?? [buildControl()];
+  const vendorWorkspaces =
+    (args?.vendorWorkspaces as Array<{ approved: boolean; reviewStatus: string }> | undefined) ??
+    [];
+
+  return {
+    auditReadiness: args?.auditReadiness ?? buildAuditReadiness(),
+    controlSummary: {
+      byEvidence: {
+        missing: controls.filter((control) => control.evidenceReadiness === 'missing').length,
+        partial: controls.filter((control) => control.evidenceReadiness === 'partial').length,
+        ready: controls.filter((control) => control.evidenceReadiness === 'ready').length,
+      },
+      byResponsibility: {
+        customer: controls.filter((control) => control.responsibility === 'customer').length,
+        platform: controls.filter((control) => control.responsibility === 'platform').length,
+        sharedResponsibility: controls.filter(
+          (control) => control.responsibility === 'shared-responsibility',
+        ).length,
+      },
+      totalControls: controls.length,
+    },
+    currentAnnualReviewRun: args?.currentAnnualRun ?? null,
+    findingSummary: {
+      openCount: findings.filter((finding) => finding.status === 'open').length,
+      totalCount: findings.length,
+      undispositionedCount: findings.filter((finding) => finding.disposition !== 'resolved').length,
+    },
+    postureSummary: args?.summary ?? buildSummary(),
+    queues: {
+      blockedReviewTasks: 0,
+      missingEvidenceControls: controls.filter((control) => control.evidenceReadiness === 'missing')
+        .length,
+      pendingVendorReviews: vendorWorkspaces.filter(
+        (vendor) => vendor.reviewStatus === 'pending' || vendor.reviewStatus === 'needs_follow_up',
+      ).length,
+      undispositionedFindings: findings.filter((finding) => finding.disposition !== 'resolved')
+        .length,
+    },
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    vendorSummary: {
+      approvedCount: vendorWorkspaces.filter((vendor) => vendor.approved).length,
+      needsFollowUpCount: vendorWorkspaces.filter(
+        (vendor) => vendor.reviewStatus === 'needs_follow_up',
+      ).length,
+      totalCount: vendorWorkspaces.length,
+    },
+  };
+}
+
 function renderRoute() {
-  return render(<AdminSecurityRoute />);
+  return render(<AdminSecurityRoute search={useSearchMock() as SearchState} />);
 }
 
 function mockSecurityQueries(args: {
@@ -384,10 +565,12 @@ function mockSecurityQueries(args: {
   controls?: unknown[];
   currentAnnualRun?: unknown;
   evidenceReports?: unknown[];
+  reportDetail?: unknown;
   findings?: unknown[];
   reviewDetail?: unknown;
   summary?: unknown;
   triggeredReviewRuns?: unknown[];
+  vendorWorkspaces?: unknown[];
 }) {
   useQueryMock.mockImplementation((query: unknown, queryArgs?: unknown) => {
     if (queryArgs === 'skip') {
@@ -397,22 +580,36 @@ function mockSecurityQueries(args: {
     const functionName = getFunctionName(query as Parameters<typeof getFunctionName>[0]);
 
     switch (functionName) {
-      case 'security:getSecurityPostureSummary':
-        return args.summary ?? buildSummary();
+      case 'security:getSecurityWorkspaceOverview':
+        return buildWorkspaceOverview(args);
       case 'security:listSecurityControlWorkspaces':
         return args.controls ?? [buildControl()];
+      case 'security:getSecurityControlWorkspaceDetail': {
+        const controls = (args.controls ?? [buildControl()]) as Array<Record<string, unknown>>;
+        const requestedControlId =
+          queryArgs && typeof queryArgs === 'object' && 'internalControlId' in queryArgs
+            ? queryArgs.internalControlId
+            : undefined;
+        return (
+          controls.find((control) => control.internalControlId === requestedControlId) ??
+          controls[0] ??
+          null
+        );
+      }
       case 'security:listEvidenceReports':
         return args.evidenceReports ?? [];
       case 'security:listSecurityFindings':
         return args.findings ?? [buildSecurityFinding()];
-      case 'security:getAuditReadinessOverview':
-        return args.auditReadiness ?? buildAuditReadiness();
+      case 'security:listVendorReviewWorkspaces':
+        return args.vendorWorkspaces ?? [];
+      case 'security:getEvidenceReportDetail':
+        return args.reportDetail ?? null;
       case 'security:getCurrentAnnualReviewRun':
         return args.currentAnnualRun ?? null;
-      case 'security:listTriggeredReviewRuns':
-        return args.triggeredReviewRuns ?? [];
       case 'security:getReviewRunDetail':
         return args.reviewDetail ?? null;
+      case 'security:listTriggeredReviewRuns':
+        return args.triggeredReviewRuns ?? [];
       default:
         return undefined;
     }
@@ -445,6 +642,10 @@ describe('Admin security route', () => {
     useActionMock.mockReset();
     useMutationMock.mockReset();
     useQueryMock.mockReset();
+    useConvexMock.mockReset();
+    useConvexMock.mockReturnValue({
+      query: vi.fn(),
+    });
   });
 
   it('generates evidence reports and submits trimmed review notes', async () => {
@@ -480,7 +681,7 @@ describe('Admin security route', () => {
         reportKind: 'security_posture',
       });
     });
-    expect(screen.getByText('{"status":"ok"}')).toBeInTheDocument();
+    expect(screen.getAllByText('{"status":"ok"}').length).toBeGreaterThan(0);
 
     await user.clear(screen.getByPlaceholderText('Reviewer notes'));
     await user.type(screen.getByPlaceholderText('Reviewer notes'), '  needs deeper review  ');
@@ -489,7 +690,7 @@ describe('Admin security route', () => {
     await waitFor(() => {
       expect(reviewEvidenceReportMock).toHaveBeenCalledWith({
         id: 'report-1',
-        reviewNotes: 'needs deeper review',
+        internalReviewNotes: 'needs deeper review',
         reviewStatus: 'needs_follow_up',
       });
     });
@@ -499,7 +700,7 @@ describe('Admin security route', () => {
     await waitFor(() => {
       expect(exportEvidenceReportMock).toHaveBeenCalledWith({ id: 'report-1' });
     });
-    expect(screen.getByText('{"status":"exported"}')).toBeInTheDocument();
+    expect(screen.getAllByText('{"status":"exported"}').length).toBeGreaterThan(0);
   });
 
   it('does not offer approval for seeded evidence', async () => {
@@ -528,8 +729,8 @@ describe('Admin security route', () => {
               itemId: 'item-access-review',
               label: 'Collect access review evidence',
               lastReviewedAt: null,
-              notes: null,
               owner: null,
+              operatorNotes: null,
               required: true,
               reviewSatisfaction: null,
               status: 'in_progress',
@@ -580,8 +781,8 @@ describe('Admin security route', () => {
               itemId: 'item-access-review',
               label: 'Collect access review evidence',
               lastReviewedAt: null,
-              notes: null,
               owner: null,
+              operatorNotes: null,
               required: true,
               reviewSatisfaction: null,
               status: 'in_progress',
@@ -658,6 +859,40 @@ describe('Admin security route', () => {
     expect(screen.getByText(/Manifest hash: manifest-hash-1/)).toBeInTheDocument();
   });
 
+  it('loads persisted report detail and control deep-links from the evidence queue', async () => {
+    const user = userEvent.setup();
+
+    mockSecurityQueries({
+      auditReadiness: buildAuditReadiness(),
+      controls: [buildControl()],
+      evidenceReports: [buildEvidenceReport()],
+      reportDetail: buildEvidenceReportDetail(),
+    });
+    mockSecurityActions({});
+    mockSecurityMutations({});
+
+    renderRoute();
+
+    await user.click(screen.getByRole('button', { name: /view details/i }));
+
+    expect(screen.getByText('Selected Report Detail')).toBeInTheDocument();
+    expect(screen.getByText('{"status":"persisted"}')).toBeInTheDocument();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: /ac-2 · collect access review evidence/i,
+      }),
+    );
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      search: expect.objectContaining({
+        selectedControl: 'ac-1',
+        tab: 'controls',
+      }),
+      to: '/app/admin/security',
+    });
+  });
+
   it('retains provider disposition and notes for security findings', async () => {
     const user = userEvent.setup();
     const reviewSecurityFindingMock = vi.fn().mockResolvedValue(undefined);
@@ -686,7 +921,85 @@ describe('Admin security route', () => {
       expect(reviewSecurityFindingMock).toHaveBeenCalledWith({
         disposition: 'investigating',
         findingKey: 'audit_integrity_failures',
-        reviewNotes: 'triage in progress',
+        internalReviewNotes: 'triage in progress',
+      });
+    });
+  });
+
+  it('opens finding follow-up reviews directly from the evidence queue', async () => {
+    const user = userEvent.setup();
+    const openSecurityFindingFollowUpMock = vi.fn().mockResolvedValue(undefined);
+
+    mockSecurityQueries({
+      auditReadiness: buildAuditReadiness(),
+      controls: [buildControl()],
+      evidenceReports: [buildEvidenceReport()],
+      findings: [buildSecurityFinding()],
+    });
+    mockSecurityActions({});
+    mockSecurityMutations({
+      'security:openSecurityFindingFollowUp': openSecurityFindingFollowUpMock,
+    });
+
+    renderRoute();
+
+    await user.type(screen.getByPlaceholderText('Finding review notes'), 'escalate to remediation');
+    await user.click(screen.getByRole('button', { name: /open follow-up/i }));
+
+    await waitFor(() => {
+      expect(openSecurityFindingFollowUpMock).toHaveBeenCalledWith({
+        findingKey: 'audit_integrity_failures',
+        note: 'escalate to remediation',
+      });
+    });
+  });
+
+  it('lets admins record partial evidence sufficiency from the control workspace', async () => {
+    const user = userEvent.setup();
+    const addEvidenceNoteMock = vi.fn().mockResolvedValue(undefined);
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'controls',
+      selectedControl: 'ac-1',
+    });
+    mockSecurityQueries({
+      auditReadiness: buildAuditReadiness(),
+      controls: [buildControl()],
+      evidenceReports: [],
+    });
+    mockSecurityActions({});
+    mockSecurityMutations({
+      'security:addSecurityControlEvidenceNote': addEvidenceNoteMock,
+    });
+
+    renderRoute();
+
+    await user.click(screen.getByRole('button', { name: /collect access review evidence/i }));
+    await user.click(screen.getByRole('button', { name: /add evidence/i }));
+    await user.click(screen.getByRole('button', { name: 'Note' }));
+    await user.type(screen.getByPlaceholderText('Note title'), 'Quarterly review summary');
+    await user.type(
+      screen.getByPlaceholderText('Paste reviewer note or summary'),
+      'Pending manager sign-off.',
+    );
+
+    await user.click(screen.getByRole('combobox', { name: /source/i }));
+    await user.click(await screen.findByText('Internal review'));
+    await user.click(screen.getByRole('combobox', { name: /sufficiency/i }));
+    await user.click(await screen.findByText('Partial'));
+    await user.click(screen.getByRole('button', { name: /attach note/i }));
+
+    await waitFor(() => {
+      expect(addEvidenceNoteMock).toHaveBeenCalledWith({
+        description: 'Pending manager sign-off.',
+        evidenceDate: expect.any(Number),
+        internalControlId: 'ac-1',
+        itemId: 'item-access-review',
+        reviewDueIntervalMonths: 12,
+        source: 'internal_review',
+        sufficiency: 'partial',
+        title: 'Quarterly review summary',
       });
     });
   });
@@ -695,15 +1008,13 @@ describe('Admin security route', () => {
     const user = userEvent.setup();
     const refreshReviewRunAutomationMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
     const finalizeReviewRunMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
-    const createTriggeredReviewRunMock = vi
-      .fn()
-      .mockResolvedValue(
-        buildReviewRunSummary({
-          id: 'triggered-review-1',
-          kind: 'triggered',
-          title: 'Manual follow-up',
-        }),
-      );
+    const createTriggeredReviewRunMock = vi.fn().mockResolvedValue(
+      buildReviewRunSummary({
+        id: 'triggered-review-1',
+        kind: 'triggered',
+        title: 'Manual follow-up',
+      }),
+    );
     const attestReviewTaskMock = vi.fn().mockResolvedValue(undefined);
 
     useSearchMock.mockReturnValue({
@@ -762,6 +1073,20 @@ describe('Admin security route', () => {
       });
     });
 
+    await user.click(
+      within(attestationSection as HTMLElement).getByRole('button', {
+        name: /au-6 · provider review procedure/i,
+      }),
+    );
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      search: expect.objectContaining({
+        selectedControl: 'CTRL-AU-006',
+        tab: 'controls',
+      }),
+      to: '/app/admin/security',
+    });
+
     await user.type(screen.getByPlaceholderText('Triggered review title'), 'Manual follow-up');
     await user.click(screen.getByRole('button', { name: /create run/i }));
 
@@ -769,6 +1094,74 @@ describe('Admin security route', () => {
       expect(createTriggeredReviewRunMock).toHaveBeenCalledWith({
         title: 'Manual follow-up',
         triggerType: 'manual_follow_up',
+      });
+    });
+  });
+
+  it('bootstraps the annual review exactly once when the reviews tab has no current run', async () => {
+    const ensureCurrentAnnualReviewRunMock = vi.fn().mockResolvedValue(buildReviewRunSummary());
+    const refreshReviewRunAutomationMock = vi.fn().mockResolvedValue(buildReviewRunDetail());
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'reviews',
+    });
+    mockSecurityQueries({
+      currentAnnualRun: null,
+      reviewDetail: null,
+      triggeredReviewRuns: [],
+    });
+    mockSecurityActions({
+      'security:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
+    });
+    mockSecurityMutations({
+      'security:ensureCurrentAnnualReviewRun': ensureCurrentAnnualReviewRunMock,
+    });
+
+    renderRoute();
+
+    await waitFor(() => {
+      expect(ensureCurrentAnnualReviewRunMock).toHaveBeenCalledTimes(1);
+    });
+    await waitFor(() => {
+      expect(refreshReviewRunAutomationMock).toHaveBeenCalledWith({
+        reviewRunId: 'review-run-1',
+      });
+    });
+  });
+
+  it('shows persisted vendor review overlays and saves follow-up decisions', async () => {
+    const user = userEvent.setup();
+    const reviewVendorWorkspaceMock = vi.fn().mockResolvedValue(buildVendorWorkspace());
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'vendors',
+    });
+    mockSecurityQueries({
+      auditReadiness: buildAuditReadiness(),
+      controls: [buildControl()],
+      vendorWorkspaces: [buildVendorWorkspace()],
+    });
+    mockSecurityActions({});
+    mockSecurityMutations({
+      'security:reviewVendorWorkspace': reviewVendorWorkspaceMock,
+    });
+
+    renderRoute();
+
+    await user.clear(screen.getByLabelText(/owner/i));
+    await user.type(screen.getByLabelText(/owner/i), 'Infra team');
+    await user.clear(screen.getByPlaceholderText('Vendor review notes'));
+    await user.type(screen.getByPlaceholderText('Vendor review notes'), 'Need updated DPA.');
+    await user.click(screen.getByRole('button', { name: /needs follow-up/i }));
+
+    await waitFor(() => {
+      expect(reviewVendorWorkspaceMock).toHaveBeenCalledWith({
+        internalReviewNotes: 'Need updated DPA.',
+        owner: 'Infra team',
+        reviewStatus: 'needs_follow_up',
+        vendorKey: 'sentry',
       });
     });
   });

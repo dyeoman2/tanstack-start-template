@@ -1,4 +1,4 @@
 interface:
-  display_name: "Design"
-  short_description: "Design routes that fit this repo."
-  default_prompt: "Use $design to design or restyle a route or component while preserving this repo UI patterns."
+  display_name: 'Design'
+  short_description: 'Design routes that fit this repo.'
+  default_prompt: 'Use $design to design or restyle a route or component while preserving this repo UI patterns.'

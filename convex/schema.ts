@@ -535,6 +535,8 @@ export default defineSchema({
   }).index('by_key', ['key']),
 
   securityFindings: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     findingKey: v.string(),
     findingType: v.union(
       v.literal('audit_integrity_failures'),
@@ -562,7 +564,9 @@ export default defineSchema({
     sourceRecordId: v.union(v.string(), v.null()),
     firstObservedAt: v.number(),
     lastObservedAt: v.number(),
-    reviewNotes: v.union(v.string(), v.null()),
+    reviewNotes: v.optional(v.union(v.string(), v.null())),
+    internalReviewNotes: v.optional(v.union(v.string(), v.null())),
+    customerSummary: v.optional(v.union(v.string(), v.null())),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),
     createdAt: v.number(),
@@ -573,6 +577,8 @@ export default defineSchema({
     .index('by_status_and_updated_at', ['status', 'updatedAt']),
 
   evidenceReports: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     organizationId: v.optional(v.string()),
     generatedByUserId: v.string(),
     reportKind: v.union(
@@ -601,13 +607,16 @@ export default defineSchema({
     ),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),
-    reviewNotes: v.union(v.string(), v.null()),
+    reviewNotes: v.optional(v.union(v.string(), v.null())),
+    internalReviewNotes: v.optional(v.union(v.string(), v.null())),
     createdAt: v.number(),
   })
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_created_at', ['createdAt']),
 
   exportArtifacts: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     artifactType: v.union(
       v.literal('audit_csv'),
       v.literal('directory_csv'),
@@ -629,8 +638,18 @@ export default defineSchema({
     .index('by_source_report_id', ['sourceReportId']),
 
   securityControlChecklistItems: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     internalControlId: v.string(),
     itemId: v.string(),
+    manualStatus: v.optional(
+      v.union(
+        v.literal('not_started'),
+        v.literal('in_progress'),
+        v.literal('done'),
+        v.literal('not_applicable'),
+      ),
+    ),
     status: v.optional(
       v.union(
         v.literal('not_started'),
@@ -641,6 +660,7 @@ export default defineSchema({
     ),
     owner: v.optional(v.string()),
     notes: v.optional(v.string()),
+    internalOperatorNotes: v.optional(v.string()),
     hiddenSeedEvidenceIds: v.optional(v.array(v.string())),
     archivedSeedEvidence: v.optional(
       v.array(
@@ -680,6 +700,8 @@ export default defineSchema({
     .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
 
   securityControlEvidence: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     internalControlId: v.string(),
     itemId: v.string(),
     evidenceType: v.union(
@@ -725,6 +747,8 @@ export default defineSchema({
     .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId']),
 
   securityControlEvidenceActivity: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     auditEventId: v.string(),
     createdAt: v.number(),
     actorUserId: v.union(v.string(), v.null()),
@@ -756,6 +780,8 @@ export default defineSchema({
     ]),
 
   reviewRuns: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     kind: v.union(v.literal('annual'), v.literal('triggered')),
     status: v.union(v.literal('ready'), v.literal('needs_attention'), v.literal('completed')),
     title: v.string(),
@@ -781,6 +807,8 @@ export default defineSchema({
     .index('by_dedupe_key', ['dedupeKey']),
 
   reviewTasks: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     reviewRunId: v.id('reviewRuns'),
     templateKey: v.string(),
     title: v.string(),
@@ -819,6 +847,8 @@ export default defineSchema({
     .index('by_review_run_id_and_template_key', ['reviewRunId', 'templateKey']),
 
   reviewTaskResults: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     reviewRunId: v.id('reviewRuns'),
     reviewTaskId: v.id('reviewTasks'),
     resultType: v.union(
@@ -843,6 +873,8 @@ export default defineSchema({
     .index('by_review_run_id_and_created_at', ['reviewRunId', 'createdAt']),
 
   reviewAttestations: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     reviewRunId: v.id('reviewRuns'),
     reviewTaskId: v.id('reviewTasks'),
     statementKey: v.string(),
@@ -858,6 +890,8 @@ export default defineSchema({
     .index('by_review_run_id_and_attested_at', ['reviewRunId', 'attestedAt']),
 
   reviewTaskEvidenceLinks: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     reviewRunId: v.id('reviewRuns'),
     reviewTaskId: v.id('reviewTasks'),
     sourceType: v.union(
@@ -866,6 +900,8 @@ export default defineSchema({
       v.literal('security_finding'),
       v.literal('backup_verification_report'),
       v.literal('external_document'),
+      v.literal('review_task'),
+      v.literal('vendor_review'),
     ),
     sourceId: v.string(),
     sourceLabel: v.optional(v.string()),
@@ -875,7 +911,73 @@ export default defineSchema({
     freshAt: v.optional(v.number()),
   })
     .index('by_review_task_id', ['reviewTaskId'])
-    .index('by_review_run_id_and_linked_at', ['reviewRunId', 'linkedAt']),
+    .index('by_review_run_id_and_linked_at', ['reviewRunId', 'linkedAt'])
+    .index('by_source_type_and_source_id', ['sourceType', 'sourceId']),
+
+  securityVendorReviews: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
+    owner: v.optional(v.string()),
+    reviewStatus: v.union(
+      v.literal('pending'),
+      v.literal('reviewed'),
+      v.literal('needs_follow_up'),
+    ),
+    reviewNotes: v.optional(v.union(v.string(), v.null())),
+    internalReviewNotes: v.optional(v.union(v.string(), v.null())),
+    customerSummary: v.optional(v.union(v.string(), v.null())),
+    reviewedAt: v.union(v.number(), v.null()),
+    reviewedByUserId: v.union(v.string(), v.null()),
+    linkedFollowUpRunId: v.optional(v.id('reviewRuns')),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_vendor_key', ['vendorKey'])
+    .index('by_review_status_and_updated_at', ['reviewStatus', 'updatedAt']),
+
+  securityRelationships: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    fromType: v.union(
+      v.literal('control'),
+      v.literal('checklist_item'),
+      v.literal('evidence'),
+      v.literal('finding'),
+      v.literal('vendor_review'),
+      v.literal('review_run'),
+      v.literal('review_task'),
+      v.literal('evidence_report'),
+    ),
+    fromId: v.string(),
+    toType: v.union(
+      v.literal('control'),
+      v.literal('checklist_item'),
+      v.literal('evidence'),
+      v.literal('finding'),
+      v.literal('vendor_review'),
+      v.literal('review_run'),
+      v.literal('review_task'),
+      v.literal('evidence_report'),
+    ),
+    toId: v.string(),
+    relationshipType: v.union(
+      v.literal('has_evidence'),
+      v.literal('tracks_finding'),
+      v.literal('tracks_vendor_review'),
+      v.literal('has_review_task'),
+      v.literal('has_report'),
+      v.literal('supports'),
+      v.literal('satisfies'),
+      v.literal('follow_up_for'),
+      v.literal('related_control'),
+    ),
+    createdAt: v.number(),
+    createdByUserId: v.string(),
+  })
+    .index('by_from', ['fromType', 'fromId'])
+    .index('by_to', ['toType', 'toId'])
+    .index('by_relationship_and_created_at', ['relationshipType', 'createdAt']),
 
   organizationAuditEvents: defineTable({
     auditEventId: v.string(),
@@ -923,6 +1025,8 @@ export default defineSchema({
     ]),
 
   retentionJobs: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     jobKind: v.union(
       v.literal('attachment_purge'),
       v.literal('quarantine_cleanup'),
@@ -937,6 +1041,8 @@ export default defineSchema({
     .index('by_created_at', ['createdAt']),
 
   backupVerificationReports: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
     drillId: v.string(),
     drillType: v.union(v.literal('operator_recorded'), v.literal('restore_verification')),
     sourceDataset: v.string(),

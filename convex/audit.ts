@@ -1041,6 +1041,10 @@ export const verifyAuditIntegrityInternal = internalAction({
       previousEventHash = log.eventHash;
     }
 
+    await ctx.runMutation(internal.security.syncCurrentSecurityFindingsInternal, {
+      actorUserId: 'system:audit-integrity',
+    });
+
     return {
       checked: orderedLogs.length,
       checkedAt,

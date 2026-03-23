@@ -1,4 +1,5 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { anyApi } from 'convex/server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 
 vi.mock('./auth/access', () => ({
@@ -18,6 +19,7 @@ vi.mock('./storagePlatform', () => ({
 
 let archiveSecurityControlEvidenceHandler: typeof import('./security').archiveSecurityControlEvidenceHandler;
 let buildExportManifestFn: typeof import('./security').buildExportManifest;
+let deleteSecurityRelationships: typeof import('./security').deleteSecurityRelationships;
 let exportEvidenceReportHandler: typeof import('./security').exportEvidenceReportHandler;
 let generateEvidenceReportHandler: typeof import('./security').generateEvidenceReportHandler;
 let getAuditReadinessSnapshotHandler: typeof import('./security').getAuditReadinessSnapshotHandler;
@@ -107,6 +109,8 @@ type TableMap = {
   securityControlChecklistItems: Map<DocId, ChecklistItemDoc>;
   securityControlEvidence: Map<DocId, SecurityEvidenceDoc>;
   securityControlEvidenceActivity: Map<DocId, EvidenceActivityDoc>;
+  securityFindings: Map<DocId, Record<string, unknown>>;
+  securityMetrics: Map<DocId, Record<string, unknown>>;
 };
 
 function clone<T>(value: T): T {
@@ -126,6 +130,8 @@ function createSecurityDb(seed?: {
     securityControlEvidenceActivity: new Map(
       (seed?.evidenceActivity ?? []).map((doc) => [doc._id, clone(doc)]),
     ),
+    securityFindings: new Map(),
+    securityMetrics: new Map(),
   };
   let insertCounter = 0;
 
@@ -151,7 +157,7 @@ function createSecurityDb(seed?: {
       }
       throw new Error(`Missing document for patch: ${id}`);
     },
-    query(table: keyof TableMap) {
+    query(table: string) {
       return {
         withIndex: (
           _indexName: string,
@@ -170,7 +176,8 @@ function createSecurityDb(seed?: {
             },
           };
           buildRange?.(q);
-          const matching = [...tables[table].values()].filter((doc) =>
+          const tableEntries = table in tables ? [...tables[table as keyof TableMap].values()] : [];
+          const matching = tableEntries.filter((doc) =>
             filters.every(
               ([field, expected]) => (doc as Record<string, unknown>)[field] === expected,
             ),
@@ -181,6 +188,19 @@ function createSecurityDb(seed?: {
             },
             async unique() {
               return clone(matching[0] ?? null);
+            },
+            order() {
+              return {
+                async first() {
+                  return clone(matching[0] ?? null);
+                },
+                async collect() {
+                  return clone(matching);
+                },
+              };
+            },
+            async collect() {
+              return clone(matching);
             },
           };
         },
@@ -233,6 +253,7 @@ beforeAll(async () => {
   const securityModule = await import('./security');
   archiveSecurityControlEvidenceHandler = securityModule.archiveSecurityControlEvidenceHandler;
   buildExportManifestFn = securityModule.buildExportManifest;
+  deleteSecurityRelationships = securityModule.deleteSecurityRelationships;
   exportEvidenceReportHandler = securityModule.exportEvidenceReportHandler;
   generateEvidenceReportHandler = securityModule.generateEvidenceReportHandler;
   getAuditReadinessSnapshotHandler = securityModule.getAuditReadinessSnapshotHandler;
@@ -262,6 +283,44 @@ beforeEach(() => {
 });
 
 describe('audit evidence helpers', () => {
+  it('ignores missing relationship rows during cleanup', async () => {
+    const deleteFn = vi.fn(async () => {
+      throw new Error('Delete on nonexistent document ID relationship-1');
+    });
+
+    const deleted = await deleteSecurityRelationships(
+      {
+        db: {
+          delete: deleteFn,
+          query: () => ({
+            withIndex: () => ({
+              collect: async () => [
+                {
+                  _id: 'relationship-1',
+                  fromId: 'task-1',
+                  fromType: 'review_task',
+                  relationshipType: 'supports',
+                  toId: 'source-1',
+                  toType: 'evidence_report',
+                },
+              ],
+            }),
+          }),
+        },
+      } as never,
+      {
+        fromId: 'task-1',
+        fromType: 'review_task',
+        relationshipType: 'supports',
+        toId: 'source-1',
+        toType: 'evidence_report',
+      },
+    );
+
+    expect(deleted).toBe(0);
+    expect(deleteFn).toHaveBeenCalledWith('relationship-1');
+  });
+
   it('builds deterministic export manifests for identical inputs', () => {
     const integritySummary = summarizeIntegrityCheckFn({
       checkedAt: Date.parse('2026-03-18T00:00:00.000Z'),
@@ -610,6 +669,7 @@ describe('audit evidence helpers', () => {
                       findingKey: 'audit_integrity_failures',
                       disposition: 'investigating',
                       firstObservedAt: 90,
+                      internalReviewNotes: 'triaging integrity break',
                       lastObservedAt: 95,
                       reviewNotes: 'triaging integrity break',
                       reviewedAt: 120,
@@ -638,6 +698,7 @@ describe('audit evidence helpers', () => {
     expect(result[0]).toMatchObject({
       disposition: 'investigating',
       findingKey: 'audit_integrity_failures',
+      internalReviewNotes: 'triaging integrity break',
       reviewedByDisplay: 'Admin User',
       severity: 'critical',
       status: 'open',
@@ -796,19 +857,24 @@ describe('audit evidence helpers', () => {
     const result = await reviewSecurityFindingHandler(ctx as never, {
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
-      reviewNotes: ' mitigated in current workflow ',
+      internalReviewNotes: ' mitigated in current workflow ',
     });
 
-    expect(inserted[0]).toMatchObject({
+    const reviewedInsert = inserted.find(
+      (entry) =>
+        entry.findingKey === 'document_scan_rejections' && entry.reviewedByUserId === 'admin-user',
+    );
+    expect(reviewedInsert).toMatchObject({
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
-      reviewNotes: 'mitigated in current workflow',
+      internalReviewNotes: 'mitigated in current workflow',
       reviewedByUserId: 'admin-user',
     });
     expect(patched).toHaveLength(0);
     expect(result).toMatchObject({
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
+      internalReviewNotes: 'mitigated in current workflow',
       reviewedByDisplay: 'Admin User',
     });
     vi.useRealTimers();
@@ -844,7 +910,6 @@ describe('audit evidence helpers', () => {
         telemetry: { sentryApproved: false, sentryEnabled: false },
         vendors: [],
       })
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce({
         latestBackupDrill: {
@@ -901,7 +966,11 @@ describe('audit evidence helpers', () => {
       limit: 250,
       verified: false,
     }));
-    const runMutation = vi.fn().mockResolvedValueOnce('report-1').mockResolvedValueOnce(null);
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce('report-1')
+      .mockResolvedValueOnce(null);
 
     const result = await generateEvidenceReportHandler(
       {
@@ -931,16 +1000,19 @@ describe('audit evidence helpers', () => {
         drillId: 'drill-1',
       }),
     });
-    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
+    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
       generatedByUserId: 'admin-user',
       organizationId: 'org-1',
       reportKind: 'audit_readiness',
     });
-    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
+    expect(runMutation.mock.calls[2]?.[1]).toMatchObject({
       eventType: 'evidence_report_generated',
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',
     });
+    expect(
+      runQuery.mock.calls.some((call) => call[0] === anyApi.security.listSecurityControlWorkspaces),
+    ).toBe(false);
     vi.useRealTimers();
   });
 
