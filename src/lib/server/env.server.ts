@@ -378,11 +378,7 @@ export function getBetterAuthSecret(): string {
 }
 
 export function getEmailVerificationEnforcedAt(): number {
-  const configuredValue =
-    readOptionalEnv('EMAIL_VERIFICATION_ENFORCED_AT') ??
-    readOptionalEnv('VITE_EMAIL_VERIFICATION_ENFORCED_AT') ??
-    readOptionalEnv('BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT') ??
-    readOptionalEnv('VITE_BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT');
+  const configuredValue = readOptionalEnv('EMAIL_VERIFICATION_ENFORCED_AT');
   const parsed = parseTimestampLike(configuredValue);
 
   return parsed ?? DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT;
@@ -459,12 +455,6 @@ function readOptionalServerEnv(name: string): string | null {
   return value ? value : null;
 }
 
-function readOptionalStorageEnv(canonicalName: string, legacyName?: string): string | null {
-  return (
-    readOptionalServerEnv(canonicalName) ?? (legacyName ? readOptionalServerEnv(legacyName) : null)
-  );
-}
-
 function parsePositiveInteger(value: string | null, name: string, fallback: number): number {
   if (value === null) {
     return fallback;
@@ -479,16 +469,7 @@ function parsePositiveInteger(value: string | null, name: string, fallback: numb
 }
 
 function readRequiredStorageEnv(name: string, mode: FileStorageBackendMode): string {
-  const value = readOptionalStorageEnv(
-    name,
-    name === 'AWS_S3_FILES_BUCKET'
-      ? 'S3_FILES_BUCKET'
-      : name === 'AWS_MALWARE_WEBHOOK_SHARED_SECRET'
-        ? 'MALWARE_WEBHOOK_SHARED_SECRET'
-        : name === 'AWS_FILE_SERVE_SIGNING_SECRET'
-          ? 'FILE_SERVE_SIGNING_SECRET'
-          : undefined,
-  );
+  const value = readOptionalServerEnv(name);
   if (!value) {
     throw new Error(`${name} environment variable is required for FILE_STORAGE_BACKEND=${mode}.`);
   }
@@ -514,47 +495,41 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
     awsRegion: readOptionalServerEnv('AWS_REGION'),
     backendMode,
     convexSiteUrl: readOptionalServerEnv('CONVEX_SITE_URL'),
-    fileServeSigningSecret: readOptionalStorageEnv(
-      'AWS_FILE_SERVE_SIGNING_SECRET',
-      'FILE_SERVE_SIGNING_SECRET',
-    ),
+    fileServeSigningSecret: readOptionalServerEnv('AWS_FILE_SERVE_SIGNING_SECRET'),
     fileUploadMaxBytes: parsePositiveInteger(
       readOptionalServerEnv('FILE_UPLOAD_MAX_BYTES'),
       'FILE_UPLOAD_MAX_BYTES',
       10 * 1024 * 1024,
     ),
     malwareScanSlaMs: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_MALWARE_SCAN_SLA_MS', 'MALWARE_SCAN_SLA_MS'),
+      readOptionalServerEnv('AWS_MALWARE_SCAN_SLA_MS'),
       'AWS_MALWARE_SCAN_SLA_MS',
       5 * 60 * 1000,
     ),
-    malwareWebhookSharedSecret: readOptionalStorageEnv(
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
-      'MALWARE_WEBHOOK_SHARED_SECRET',
-    ),
+    malwareWebhookSharedSecret: readOptionalServerEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
     mirrorRetryBaseDelayMs: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_MIRROR_RETRY_BASE_DELAY_MS', 'MIRROR_RETRY_BASE_DELAY_MS'),
+      readOptionalServerEnv('AWS_MIRROR_RETRY_BASE_DELAY_MS'),
       'AWS_MIRROR_RETRY_BASE_DELAY_MS',
       15 * 1000,
     ),
     mirrorRetryMaxDelayMs: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_MIRROR_RETRY_MAX_DELAY_MS', 'MIRROR_RETRY_MAX_DELAY_MS'),
+      readOptionalServerEnv('AWS_MIRROR_RETRY_MAX_DELAY_MS'),
       'AWS_MIRROR_RETRY_MAX_DELAY_MS',
       15 * 60 * 1000,
     ),
     s3DeleteMaxAttempts: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_S3_DELETE_MAX_ATTEMPTS', 'S3_DELETE_MAX_ATTEMPTS'),
+      readOptionalServerEnv('AWS_S3_DELETE_MAX_ATTEMPTS'),
       'AWS_S3_DELETE_MAX_ATTEMPTS',
       3,
     ),
-    s3FilesBucket: readOptionalStorageEnv('AWS_S3_FILES_BUCKET', 'S3_FILES_BUCKET'),
+    s3FilesBucket: readOptionalServerEnv('AWS_S3_FILES_BUCKET'),
     s3OrphanCleanupMaxScan: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_S3_ORPHAN_CLEANUP_MAX_SCAN', 'S3_ORPHAN_CLEANUP_MAX_SCAN'),
+      readOptionalServerEnv('AWS_S3_ORPHAN_CLEANUP_MAX_SCAN'),
       'AWS_S3_ORPHAN_CLEANUP_MAX_SCAN',
       100,
     ),
     s3OrphanCleanupMinAgeMs: parsePositiveInteger(
-      readOptionalStorageEnv('AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS', 'S3_ORPHAN_CLEANUP_MIN_AGE_MS'),
+      readOptionalServerEnv('AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS'),
       'AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS',
       24 * 60 * 60 * 1000,
     ),

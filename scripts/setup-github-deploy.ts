@@ -61,9 +61,7 @@ async function main() {
   requireCommands([{ cmd: 'git' }, { cmd: 'gh' }]);
   console.log('GitHub deploy environment setup');
   console.log('This configures the staging and production GitHub environments used by deploy.yml.');
-  console.log(
-    'It also writes the repo-level CONVEX_DEPLOY_KEY required by existing compatibility workflows.',
-  );
+  console.log('It also writes the repo-level CONVEX_DEPLOY_KEY required by the deploy workflows.');
   console.log('Safe to rerun: yes; existing environment values can be refreshed.\n');
 
   const { repo } = await configureGitHubDeployEnvironments({});

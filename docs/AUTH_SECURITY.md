@@ -12,7 +12,7 @@ This project enforces the regulated baseline we ship, distinguishing the control
 
 - Unverified email/password accounts are blocked from protected access by default.
 - Verification emails are sent on sign up and can be re-sent from `/verify-email-pending` if a user loses access.
-- Configure `EMAIL_VERIFICATION_ENFORCED_AT` (or `VITE_EMAIL_VERIFICATION_ENFORCED_AT`, with `BETTER_AUTH_EMAIL_VERIFICATION_ENFORCED_AT` for legacy tooling) only if you deliberately need a legacy grandfathering cutoff. The default in [`src/lib/shared/email-verification.ts`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/src/lib/shared/email-verification.ts) now enforces verification for all protected access.
+- Configure `EMAIL_VERIFICATION_ENFORCED_AT` only if you deliberately need a grandfathering cutoff. The default in [`src/lib/shared/email-verification.ts`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/src/lib/shared/email-verification.ts) enforces verification for all protected access.
 
 ### Rate Limiting
 

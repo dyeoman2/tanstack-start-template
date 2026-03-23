@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  getEmailVerificationEnforcedAt,
   getBetterAuthAllowedHosts,
   getBetterAuthSecret,
   getBetterAuthTrustedOrigins,
   getBetterAuthUrlForTooling,
+  getStorageRuntimeConfig,
   getRequiredBetterAuthUrl,
   isE2EPrincipalEmail,
   isSafeE2EAuthRuntime,
@@ -170,5 +172,21 @@ describe('Better Auth env helpers', () => {
 
     process.env.NODE_ENV = 'test';
     expect(isSafeE2EAuthRuntime()).toBe(true);
+  });
+
+  it('reads email verification enforcement only from the canonical env name', () => {
+    process.env.EMAIL_VERIFICATION_ENFORCED_AT = '2026-03-14T00:00:00.000Z';
+
+    expect(getEmailVerificationEnforcedAt()).toBe(Date.parse('2026-03-14T00:00:00.000Z'));
+  });
+
+  it('reads storage runtime settings from the AWS-prefixed env names', () => {
+    process.env.AWS_S3_FILES_BUCKET = 'canonical-bucket';
+    process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
+
+    const config = getStorageRuntimeConfig();
+
+    expect(config.s3FilesBucket).toBe('canonical-bucket');
+    expect(config.fileServeSigningSecret).toBe('canonical-secret');
   });
 });

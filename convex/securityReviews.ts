@@ -2,6 +2,7 @@ import { internalMutation, mutation, query, action } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
+import { siteAdminAction } from './auth/authorized';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
 import {
   ANNUAL_REVIEW_TASK_BLUEPRINTS,
@@ -437,7 +438,7 @@ export const storeReviewRunFinalization = internalMutation({
   },
 });
 
-export const refreshReviewRunAutomation = action({
+export const refreshReviewRunAutomation = siteAdminAction({
   args: {
     reviewRunId: v.id('reviewRuns'),
   },
@@ -445,7 +446,7 @@ export const refreshReviewRunAutomation = action({
   handler: refreshReviewRunAutomationHandler,
 });
 
-export const finalizeReviewRun = action({
+export const finalizeReviewRun = siteAdminAction({
   args: {
     reviewRunId: v.id('reviewRuns'),
   },

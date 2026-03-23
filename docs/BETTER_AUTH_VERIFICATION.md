@@ -20,7 +20,7 @@ The CLI uses [better-auth.cli.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-
 ## Versioning constraints
 
 - The Better Auth runtime packages in this repo may move ahead of the stable `@better-auth/cli` release line. Do not assume the CLI version must exactly equal the runtime package version.
-- Prefer the latest stable CLI release that supports the current runtime/plugin shape, and treat `pnpm verify:better-auth` as the compatibility gate.
+- Prefer the latest stable CLI release that supports the current runtime/plugin shape, and treat `pnpm verify:better-auth` as the verification gate.
 - Do not switch this repo to `npx @better-auth/cli@latest` or a beta/canary CLI without explicitly validating the Convex adapter workflow.
 
 ## Current integration notes

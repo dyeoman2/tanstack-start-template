@@ -632,9 +632,7 @@ async function main() {
     }
 
     console.log('\n🔐 Production deploy key setup');
-    console.log(
-      'CONVEX_DEPLOY_KEY is required for production deploys, CI/CD, and compatibility workflows.',
-    );
+    console.log('CONVEX_DEPLOY_KEY is required for production deploys and CI/CD workflows.');
     const productionConvexDeployKey = await promptForProductionConvexDeployKey(
       envFromFile.CONVEX_DEPLOY_KEY?.trim() || process.env.CONVEX_DEPLOY_KEY?.trim() || null,
     );

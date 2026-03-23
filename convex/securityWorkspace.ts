@@ -3,6 +3,7 @@ import type { Id } from './_generated/dataModel';
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
+import { siteAdminMutation, siteAdminQuery } from './auth/authorized';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
@@ -111,13 +112,13 @@ export const getLatestReleaseProvenanceEvidenceInternal = internalQuery({
   },
 });
 
-export const listSecurityFindings = query({
+export const listSecurityFindings = siteAdminQuery({
   args: {},
   returns: securityFindingListValidator,
   handler: listSecurityFindingsHandler,
 });
 
-export const reviewSecurityFinding = mutation({
+export const reviewSecurityFinding = siteAdminMutation({
   args: {
     customerSummary: v.optional(v.string()),
     disposition: securityFindingDispositionValidator,
@@ -367,7 +368,7 @@ export const reviewSecurityControlEvidence = mutation({
   },
 });
 
-export const archiveSecurityControlEvidence = mutation({
+export const archiveSecurityControlEvidence = siteAdminMutation({
   args: {
     evidenceId: v.string(),
     internalControlId: v.string(),
