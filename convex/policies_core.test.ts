@@ -108,8 +108,6 @@ describe('policy core contracts', () => {
           _id: 'policy-existing-1',
           contentHash: 'old-hash',
           createdAt: Date.parse('2026-01-01T00:00:00.000Z'),
-          customerSummary: 'Old customer summary',
-          internalNotes: 'Old notes',
           lastReviewedAt: Date.parse('2026-02-01T00:00:00.000Z'),
           nextReviewAt: Date.parse('2026-10-01T00:00:00.000Z'),
           owner: 'Old owner',
@@ -141,8 +139,6 @@ describe('policy core contracts', () => {
       catalog: [
         {
           contentHash: 'repo-hash-1',
-          customerSummary: catalogEntry!.customerSummary,
-          internalNotes: catalogEntry!.internalNotes,
           mappings: catalogEntry!.mappings,
           owner: catalogEntry!.owner,
           policyId: catalogEntry!.policyId,

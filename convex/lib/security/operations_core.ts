@@ -146,7 +146,9 @@ async function resolveSeedSiteAdminActor(
     .query('userProfiles')
     .withIndex('by_role_and_created_at', (q) => q.eq('role', 'admin'))
     .collect();
-  const siteAdminProfile = adminProfiles.find((profile) => profile.isSiteAdmin);
+  const siteAdminProfile = [...adminProfiles]
+    .filter((profile) => profile.isSiteAdmin)
+    .sort((left, right) => left.createdAt - right.createdAt)[0];
 
   if (!siteAdminProfile) {
     return {

@@ -24,6 +24,7 @@ import { Route as AppIndexRouteImport } from './routes/app/index'
 import { Route as InviteTokenRouteImport } from './routes/invite/$token'
 import { Route as AppProfileRouteImport } from './routes/app/profile'
 import { Route as ApiSentryExampleRouteImport } from './routes/api/sentry-example'
+import { Route as ApiSecurityPolicyPdfRouteImport } from './routes/api/security-policy-pdf'
 import { Route as ApiReadinessRouteImport } from './routes/api/readiness'
 import { Route as ApiParsePdfRouteImport } from './routes/api/parse-pdf'
 import { Route as ApiMetricsRouteImport } from './routes/api/metrics'
@@ -123,6 +124,11 @@ const AppProfileRoute = AppProfileRouteImport.update({
 const ApiSentryExampleRoute = ApiSentryExampleRouteImport.update({
   id: '/api/sentry-example',
   path: '/api/sentry-example',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiSecurityPolicyPdfRoute = ApiSecurityPolicyPdfRouteImport.update({
+  id: '/api/security-policy-pdf',
+  path: '/api/security-policy-pdf',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiReadinessRoute = ApiReadinessRouteImport.update({
@@ -274,6 +280,7 @@ export interface FileRoutesByFullPath {
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
   '/api/readiness': typeof ApiReadinessRoute
+  '/api/security-policy-pdf': typeof ApiSecurityPolicyPdfRoute
   '/api/sentry-example': typeof ApiSentryExampleRoute
   '/app/profile': typeof AppProfileRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -315,6 +322,7 @@ export interface FileRoutesByTo {
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
   '/api/readiness': typeof ApiReadinessRoute
+  '/api/security-policy-pdf': typeof ApiSecurityPolicyPdfRoute
   '/api/sentry-example': typeof ApiSentryExampleRoute
   '/app/profile': typeof AppProfileRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -356,6 +364,7 @@ export interface FileRoutesById {
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
   '/api/readiness': typeof ApiReadinessRoute
+  '/api/security-policy-pdf': typeof ApiSecurityPolicyPdfRoute
   '/api/sentry-example': typeof ApiSentryExampleRoute
   '/app/profile': typeof AppProfileRoute
   '/invite/$token': typeof InviteTokenRoute
@@ -400,6 +409,7 @@ export interface FileRouteTypes {
     | '/api/metrics'
     | '/api/parse-pdf'
     | '/api/readiness'
+    | '/api/security-policy-pdf'
     | '/api/sentry-example'
     | '/app/profile'
     | '/invite/$token'
@@ -441,6 +451,7 @@ export interface FileRouteTypes {
     | '/api/metrics'
     | '/api/parse-pdf'
     | '/api/readiness'
+    | '/api/security-policy-pdf'
     | '/api/sentry-example'
     | '/app/profile'
     | '/invite/$token'
@@ -481,6 +492,7 @@ export interface FileRouteTypes {
     | '/api/metrics'
     | '/api/parse-pdf'
     | '/api/readiness'
+    | '/api/security-policy-pdf'
     | '/api/sentry-example'
     | '/app/profile'
     | '/invite/$token'
@@ -524,6 +536,7 @@ export interface RootRouteChildren {
   ApiMetricsRoute: typeof ApiMetricsRoute
   ApiParsePdfRoute: typeof ApiParsePdfRoute
   ApiReadinessRoute: typeof ApiReadinessRoute
+  ApiSecurityPolicyPdfRoute: typeof ApiSecurityPolicyPdfRoute
   ApiSentryExampleRoute: typeof ApiSentryExampleRoute
   InviteTokenRoute: typeof InviteTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -636,6 +649,13 @@ declare module '@tanstack/react-router' {
       path: '/api/sentry-example'
       fullPath: '/api/sentry-example'
       preLoaderRoute: typeof ApiSentryExampleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/security-policy-pdf': {
+      id: '/api/security-policy-pdf'
+      path: '/api/security-policy-pdf'
+      fullPath: '/api/security-policy-pdf'
+      preLoaderRoute: typeof ApiSecurityPolicyPdfRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/readiness': {
@@ -880,6 +900,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiMetricsRoute: ApiMetricsRoute,
   ApiParsePdfRoute: ApiParsePdfRoute,
   ApiReadinessRoute: ApiReadinessRoute,
+  ApiSecurityPolicyPdfRoute: ApiSecurityPolicyPdfRoute,
   ApiSentryExampleRoute: ApiSentryExampleRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

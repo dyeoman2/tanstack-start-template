@@ -20,6 +20,12 @@ type SecurityPolicyGovernanceContext = {
     internalControlId: string;
     isPrimary: boolean;
     nist80053Id: string;
+    platformChecklist: Array<{
+      itemId: string;
+      label: string;
+      required: boolean;
+      support: SecuritySupport;
+    }>;
     responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
     support: SecuritySupport;
     title: string;

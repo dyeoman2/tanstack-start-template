@@ -48,10 +48,12 @@ import {
   EVIDENCE_SUFFICIENCY_OPTIONS,
 } from '~/features/security/constants';
 import {
-  formatChecklistStatus,
+  SecurityChecklistAccordionHeader,
+  SecurityChecklistItemReadOnlyContent,
+} from '~/features/security/components/SecurityChecklistReadOnly';
+import {
   formatControlResponsibility,
   formatEvidenceActivityEvent,
-  formatEvidenceDate,
   formatEvidenceLifecycleStatus,
   formatEvidenceReviewDueInterval,
   formatEvidenceReviewStatus,
@@ -59,11 +61,11 @@ import {
   formatEvidenceSufficiency,
   formatEvidenceTimestamp,
   formatHipaaMapping,
-  formatReviewRunStatus,
-  getChecklistStatusBadgeVariant,
+  formatSupportStatus,
   getEvidenceLifecycleBadgeVariant,
   getEvidenceReviewBadgeVariant,
   getEvidenceSufficiencyBadgeVariant,
+  getSupportBadgeVariant,
   getTodayDateInputValue,
   parseEvidenceDateInput,
 } from '~/features/security/formatters';
@@ -132,11 +134,22 @@ export function AdminSecurityControlDetail(props: {
   return (
     <>
       <SheetHeader className="border-b">
-        <SheetTitle>
-          {control.nist80053Id} {control.title}
-        </SheetTitle>
-        <SheetDescription>{control.familyTitle}</SheetDescription>
-        {control.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
+        <div className="flex items-start justify-between gap-4 pr-12">
+          <div className="space-y-1">
+            <SheetTitle>
+              {control.nist80053Id} {control.title}
+            </SheetTitle>
+            <SheetDescription>{control.familyTitle}</SheetDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant={getSupportBadgeVariant(control.support)}>
+              {formatSupportStatus(control.support)}
+            </Badge>
+            {control.hasExpiringSoonEvidence ? (
+              <Badge variant="secondary">Expiring soon</Badge>
+            ) : null}
+          </div>
+        </div>
       </SheetHeader>
 
       <div className="space-y-6 p-4">
@@ -299,7 +312,7 @@ function PlatformChecklistSection(props: {
   return (
     <Accordion type="multiple" className="rounded-md border">
       {props.control.platformChecklist.map((item) => (
-        <ChecklistAccordionItem
+        <ChecklistItemActions
           key={item.itemId}
           busyAction={props.busyAction}
           control={props.control}
@@ -318,7 +331,7 @@ function PlatformChecklistSection(props: {
   );
 }
 
-function ChecklistAccordionItem(props: {
+function ChecklistItemActions(props: {
   busyAction: string | null;
   control: SecurityControlWorkspace;
   item: SecurityChecklistItem;
@@ -388,7 +401,6 @@ function ChecklistAccordionItem(props: {
   const [sufficiency, setSufficiency] = useState<EvidenceSufficiency>('sufficient');
   const linkKey = `${control.internalControlId}:${item.itemId}:link`;
   const noteKey = `${control.internalControlId}:${item.itemId}:note`;
-  const activeEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active');
   const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
   const evidenceActivity = useQuery(
     api.securityWorkspace.listSecurityControlEvidenceActivity,
@@ -415,164 +427,67 @@ function ChecklistAccordionItem(props: {
   }, []);
 
   return (
-    <AccordionItem value={item.itemId} className="border-b last:border-b-0">
-      <AccordionTrigger className="px-5 py-4 text-left focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-border/70 data-[state=open]:bg-muted/20">
-        <div className="flex flex-1 items-center justify-between gap-4 pr-4">
-          <span className="text-sm font-medium">{item.label}</span>
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {!item.required ? <Badge variant="outline">Optional</Badge> : null}
-            {item.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
-            <Badge variant={getChecklistStatusBadgeVariant(item.support)}>
-              {formatChecklistStatus(item.support)}
-            </Badge>
-          </div>
-        </div>
-      </AccordionTrigger>
-      <AccordionContent className="space-y-4 px-4 pb-4">
-        <div className="space-y-3">
-          <p className="text-sm text-muted-foreground">{item.description}</p>
-          {item.reviewArtifact ? (
-            <div className="rounded-md border bg-muted/20 p-3 text-sm">
-              <p className="font-medium">{item.reviewArtifact.reviewTaskTitle}</p>
-              <p className="text-muted-foreground">
-                {item.reviewArtifact.reviewRunTitle} ·{' '}
-                {formatReviewRunStatus(item.reviewArtifact.reviewRunStatus)}
-              </p>
-              <p className="text-muted-foreground">
-                Satisfied {formatEvidenceTimestamp(item.reviewArtifact.satisfiedAt)}
-                {item.reviewArtifact.satisfiedByDisplay
-                  ? ` · ${item.reviewArtifact.satisfiedByDisplay}`
-                  : ''}
-              </p>
-              {item.reviewArtifact.relatedReports.length ? (
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {item.reviewArtifact.relatedReports.map((report) => (
-                    <Badge key={report.id} variant="outline">
-                      {report.reportKind} · {report.label}
-                    </Badge>
-                  ))}
-                </div>
-              ) : null}
-              <div className="mt-3">
-                <Button type="button" variant="outline" size="sm" onClick={props.onOpenReviews}>
-                  Open reviews
-                </Button>
-              </div>
-            </div>
-          ) : null}
-          <p className="text-sm font-medium">Evidence</p>
-        </div>
-
-        {activeEvidence.length ? (
-          <div className="space-y-3">
-            {activeEvidence.map((evidence) => (
-              <div key={evidence.id} className="space-y-3 rounded-md border px-3 py-2">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="min-w-0 flex-1 text-sm font-medium">{evidence.title}</p>
-                  <div className="flex items-center gap-2">
-                    {evidence.expiryStatus === 'expiring_soon' ? (
-                      <Badge variant="secondary">Expiring soon</Badge>
-                    ) : null}
-                    <Badge variant={getEvidenceSufficiencyBadgeVariant(evidence.sufficiency)}>
-                      {formatEvidenceSufficiency(evidence.sufficiency)}
-                    </Badge>
-                    <Badge variant={getEvidenceReviewBadgeVariant(evidence.reviewStatus)}>
-                      {formatEvidenceReviewStatus(evidence.reviewStatus)}
-                    </Badge>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon-sm"
-                          aria-label={`Evidence actions for ${evidence.title}`}
-                          title="Evidence actions"
-                          disabled={
-                            props.busyAction === `${evidence.id}:archive` ||
-                            props.busyAction === `${evidence.id}:renew`
-                          }
-                        >
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        {!evidence.id.includes(':seed:') && evidence.reviewStatus === 'pending' ? (
-                          <DropdownMenuItem
-                            disabled={props.busyAction === `${evidence.id}:review`}
-                            onSelect={() => {
-                              void props.onReviewEvidence({
-                                evidenceId: evidence.id,
-                              });
-                            }}
-                          >
-                            <Check className="size-4" />
-                            Approve
-                          </DropdownMenuItem>
-                        ) : null}
-                        <DropdownMenuItem onSelect={() => setPendingArchiveEvidence(evidence)}>
-                          <Archive className="size-4" />
-                          Archive
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setPendingRenewEvidence(evidence)}>
-                          <RefreshCw className="size-4" />
-                          Renew
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <p className="text-xs text-muted-foreground">
-                    {evidence.description ?? 'No additional description provided.'}
-                  </p>
-                  {evidence.url ? (
-                    <p className="truncate text-xs text-muted-foreground">{evidence.url}</p>
-                  ) : null}
-                  <div className="space-y-1 text-xs text-muted-foreground">
-                    {evidence.source ? (
-                      <p>
-                        <span className="font-medium text-foreground">Source:</span>{' '}
-                        {formatEvidenceSource(evidence.source)}
-                      </p>
-                    ) : null}
-                    {evidence.evidenceDate ? (
-                      <p>
-                        <span className="font-medium text-foreground">Evidence date:</span>{' '}
-                        {formatEvidenceDate(evidence.evidenceDate)}
-                      </p>
-                    ) : null}
-                    {evidence.validUntil ? (
-                      <p>
-                        <span className="font-medium text-foreground">Valid until:</span>{' '}
-                        {formatEvidenceDate(evidence.validUntil)}
-                      </p>
-                    ) : null}
-                    <p>
-                      <span className="font-medium text-foreground">Added:</span>{' '}
-                      {`${evidence.uploadedByDisplay ?? 'Unknown'} · ${formatEvidenceTimestamp(evidence.createdAt)}`}
-                    </p>
-                    <p>
-                      <span className="font-medium text-foreground">Reviewed:</span>{' '}
-                      {evidence.reviewedAt
-                        ? `${evidence.reviewedByDisplay ?? 'Not recorded'} · ${formatEvidenceTimestamp(evidence.reviewedAt)}`
-                        : 'Not reviewed'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {evidence.evidenceType !== 'note' ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void props.onOpenEvidence(evidence)}
+    <>
+      <AccordionItem value={item.itemId} className="border-b last:border-b-0">
+        <AccordionTrigger className="px-5 py-4 text-left focus-visible:border-transparent focus-visible:ring-1 focus-visible:ring-border/70 data-[state=open]:bg-muted/20">
+          <SecurityChecklistAccordionHeader item={item} />
+        </AccordionTrigger>
+        <AccordionContent className="px-4 pb-4">
+          <SecurityChecklistItemReadOnlyContent
+            item={item}
+            onOpenEvidence={props.onOpenEvidence}
+            onOpenReviews={props.onOpenReviews}
+            renderEvidenceActions={(evidence) => (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Evidence actions for ${evidence.title}`}
+                    title="Evidence actions"
+                    disabled={
+                      props.busyAction === `${evidence.id}:archive` ||
+                      props.busyAction === `${evidence.id}:renew`
+                    }
+                  >
+                    <MoreHorizontal className="size-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {!evidence.id.includes(':seed:') && evidence.reviewStatus === 'pending' ? (
+                    <DropdownMenuItem
+                      disabled={props.busyAction === `${evidence.id}:review`}
+                      onSelect={() => {
+                        void props.onReviewEvidence({
+                          evidenceId: evidence.id,
+                        });
+                      }}
                     >
-                      Open
-                    </Button>
+                      <Check className="size-4" />
+                      Approve
+                    </DropdownMenuItem>
                   ) : null}
-                </div>
-              </div>
-            ))}
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setPendingArchiveEvidence(evidence);
+                    }}
+                  >
+                    <Archive className="size-4" />
+                    Archive
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setPendingRenewEvidence(evidence);
+                    }}
+                  >
+                    <RefreshCw className="size-4" />
+                    Renew
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          >
             <div className="flex flex-wrap justify-start gap-2">
               <Button
                 type="button"
@@ -592,29 +507,9 @@ function ChecklistAccordionItem(props: {
                 Evidence history
               </Button>
             </div>
-          </div>
-        ) : (
-          <div className="flex flex-wrap justify-start gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsAddingProof(true)}
-            >
-              Add evidence
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setIsHistoryOpen(true)}
-            >
-              <History className="size-4" />
-              Evidence history
-            </Button>
-          </div>
-        )}
-      </AccordionContent>
+          </SecurityChecklistItemReadOnlyContent>
+        </AccordionContent>
+      </AccordionItem>
 
       <Dialog
         open={isAddingProof}
@@ -1029,7 +924,7 @@ function ChecklistAccordionItem(props: {
             });
         }}
       />
-    </AccordionItem>
+    </>
   );
 }
 

@@ -7,6 +7,7 @@ import type {
   SecurityChecklistEvidence,
   SecurityChecklistEvidenceActivity,
   SecurityChecklistItem,
+  SecurityPolicySummary,
   SecurityControlWorkspace,
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
@@ -121,6 +122,10 @@ export function formatSupportStatus(support: SecurityControlWorkspace['support']
     case 'missing':
       return 'Missing';
   }
+}
+
+export function formatPolicySupportProgress(policy: SecurityPolicySummary) {
+  return `${policy.mappedControlCountsBySupport.complete}/${policy.mappedControlCount}`;
 }
 
 export function getFindingSeverityBadgeVariant(

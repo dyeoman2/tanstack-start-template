@@ -58,8 +58,6 @@ export const syncSecurityPoliciesCatalogInternal = internalMutation({
     catalog: v.array(
       v.object({
         contentHash: v.string(),
-        customerSummary: v.string(),
-        internalNotes: v.union(v.string(), v.null()),
         mappings: v.array(
           v.object({
             internalControlId: v.string(),

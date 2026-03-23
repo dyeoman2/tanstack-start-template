@@ -476,6 +476,7 @@ export type ReviewTaskDetail = {
     internalControlId: string;
     isPrimary: boolean;
     nist80053Id: string;
+    platformChecklist: SecurityPolicyControlChecklistItem[];
     responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
     support: SecuritySupport;
     title: string;
@@ -566,8 +567,6 @@ export type SecurityWorkspaceOverview = {
 
 export type SecurityPolicySummary = {
   contentHash: string;
-  customerSummary: string | null;
-  internalNotes: string | null;
   lastReviewedAt: number | null;
   linkedAnnualReviewTask: {
     id: Id<'reviewTasks'>;
@@ -589,6 +588,11 @@ export type SecurityPolicySummary = {
   title: string;
 } & SecurityScope;
 
+export type SecurityPolicyControlChecklistItem = Pick<
+  SecurityChecklistItem,
+  'itemId' | 'label' | 'required' | 'support'
+>;
+
 export type SecurityPolicyControlMapping = {
   familyId: string;
   familyTitle: string;
@@ -596,6 +600,7 @@ export type SecurityPolicyControlMapping = {
   internalControlId: string;
   isPrimary: boolean;
   nist80053Id: string;
+  platformChecklist: SecurityPolicyControlChecklistItem[];
   responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
   support: SecuritySupport;
   title: string;
@@ -603,8 +608,6 @@ export type SecurityPolicyControlMapping = {
 
 export type SecurityPolicyDetail = {
   contentHash: string;
-  customerSummary: string | null;
-  internalNotes: string | null;
   lastReviewedAt: number | null;
   linkedAnnualReviewTask: SecurityPolicySummary['linkedAnnualReviewTask'];
   mappedControls: SecurityPolicyControlMapping[];
@@ -612,6 +615,7 @@ export type SecurityPolicyDetail = {
   owner: string;
   policyId: string;
   sourcePath: string;
+  sourceMarkdown: string | null;
   summary: string;
   support: SecurityPolicySupport;
   title: string;

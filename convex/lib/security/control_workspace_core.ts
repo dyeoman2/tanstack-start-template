@@ -738,7 +738,7 @@ async function _listSecurityControlWorkspaceRecords(
       title: control.title,
       familyId: control.familyId,
       familyTitle: control.familyTitle,
-      owner: control.owner,
+      owner: seededActor.displayName,
       priority: control.priority,
       responsibility: control.responsibility,
       implementationSummary: control.implementationSummary,

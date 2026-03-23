@@ -78,6 +78,10 @@ vi.mock('~/components/PageHeader', () => ({
   ),
 }));
 
+vi.mock('~/features/security/components/SecurityPolicyMarkdownRenderer', () => ({
+  SecurityPolicyMarkdownRenderer: ({ content }: { content: string }) => <div>{content}</div>,
+}));
+
 vi.mock('~/components/ui/toast', () => ({
   useToast: () => ({
     showToast: showToastMock,
@@ -283,8 +287,6 @@ function buildControl(
 function buildPolicySummary(overrides?: Partial<Record<string, unknown>>) {
   return {
     contentHash: 'policy-hash-1',
-    customerSummary: 'Customer-safe summary',
-    internalNotes: 'Internal note',
     lastReviewedAt: Date.parse('2026-03-18T08:00:00.000Z'),
     linkedAnnualReviewTask: {
       id: 'task-policy-1',
@@ -313,8 +315,6 @@ function buildPolicySummary(overrides?: Partial<Record<string, unknown>>) {
 function buildPolicyDetail(overrides?: Partial<Record<string, unknown>>) {
   return {
     contentHash: 'policy-hash-1',
-    customerSummary: 'Customer-safe summary',
-    internalNotes: 'Internal note',
     lastReviewedAt: Date.parse('2026-03-18T08:00:00.000Z'),
     linkedAnnualReviewTask: {
       id: 'task-policy-1',
@@ -340,6 +340,8 @@ function buildPolicyDetail(overrides?: Partial<Record<string, unknown>>) {
     scopeId: 'provider',
     scopeType: 'provider_global',
     sourcePath: 'docs/security-policies/access-control-policy.md',
+    sourceMarkdown:
+      '# Access Control Policy\n\n## Purpose\n\nDefines provider access requirements.\n',
     summary: 'Defines provider access requirements.',
     support: 'partial',
     title: 'Access Control Policy',
@@ -897,6 +899,98 @@ describe('Admin security route', () => {
     expect(
       screen.getByText('Policy support is derived only from these mapped control support states.'),
     ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /view policy/i })).toBeInTheDocument();
+  });
+
+  it('shows and downloads the bundled policy markdown source as pdf', async () => {
+    const user = userEvent.setup();
+    const createObjectURLMock = vi.fn(() => 'blob:policy-source');
+    const revokeObjectURLMock = vi.fn();
+    const clickMock = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(new Blob(['pdf-bytes'], { type: 'application/pdf' }), {
+        headers: {
+          'Content-Disposition': 'attachment; filename="access-control-policy-2026-03-23.pdf"',
+        },
+        status: 200,
+      }),
+    );
+    const originalFetch = global.fetch;
+    const originalCreateObjectURL = URL.createObjectURL;
+    const originalRevokeObjectURL = URL.revokeObjectURL;
+    const originalCreateElement = document.createElement.bind(document);
+    const createElementSpy = vi.spyOn(document, 'createElement');
+
+    global.fetch = fetchMock;
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: createObjectURLMock,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: revokeObjectURLMock,
+    });
+    createElementSpy.mockImplementation((tagName: string) => {
+      const element = originalCreateElement(tagName);
+      if (tagName === 'a') {
+        Object.defineProperty(element, 'click', {
+          configurable: true,
+          value: clickMock,
+        });
+      }
+      return element;
+    });
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'policies',
+      selectedPolicy: 'access-control',
+    });
+    mockSecurityQueries({
+      policies: [buildPolicySummary()],
+      policyDetail: buildPolicyDetail(),
+    });
+    mockSecurityActions({});
+
+    renderRoute();
+
+    await user.click(screen.getByRole('button', { name: /view policy/i }));
+    await user.click(screen.getByRole('button', { name: /download pdf/i }));
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/security-policy-pdf', {
+      body: JSON.stringify({
+        fileName: 'access-control-policy-2026-03-23.pdf',
+        markdownContent:
+          '# Access Control Policy\n\n## Purpose\n\nDefines provider access requirements.\n',
+        sourcePath: 'docs/security-policies/access-control-policy.md',
+        title: 'Access Control Policy',
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      method: 'POST',
+    });
+    expect(createObjectURLMock).toHaveBeenCalledTimes(1);
+    expect(clickMock).toHaveBeenCalledTimes(1);
+    expect(revokeObjectURLMock).toHaveBeenCalledWith('blob:policy-source');
+
+    const markdownDialog = screen.getByRole('dialog');
+    expect(within(markdownDialog).getAllByText(/Access Control Policy/).length).toBeGreaterThan(0);
+    expect(
+      within(markdownDialog).getByText(/Defines provider access requirements\./),
+    ).toBeInTheDocument();
+
+    Object.defineProperty(URL, 'createObjectURL', {
+      configurable: true,
+      value: originalCreateObjectURL,
+    });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectURL,
+    });
+    createElementSpy.mockRestore();
+    global.fetch = originalFetch;
   });
 
   it('approves non-seeded evidence from the evidence actions menu', async () => {
@@ -1149,7 +1243,7 @@ describe('Admin security route', () => {
     await user.click(screen.getByRole('combobox', { name: /source/i }));
     await user.click(await screen.findByText('Internal review'));
     await user.click(screen.getByRole('combobox', { name: /sufficiency/i }));
-    await user.click(await screen.findByText('Partial'));
+    await user.click(await screen.findByRole('option', { name: 'Partial' }));
     await user.click(screen.getByRole('button', { name: /attach note/i }));
 
     await waitFor(() => {

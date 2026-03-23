@@ -1,10 +1,11 @@
 import type { Doc, Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import { SECURITY_POLICY_DOCUMENTS } from '../../../src/lib/shared/compliance/security-policy-documents';
 import { SECURITY_POLICY_CATALOG } from '../../../src/lib/shared/compliance/security-policies';
 import { getAnnualReviewRunKey, getCurrentAnnualReviewYear, getSecurityScopeFields } from './core';
-import { addMonths } from './operations_core';
-import { listSecurityControlWorkspaceSummaryRecords } from './control_workspace_core';
+import { addMonths, resolveSeedSiteAdminActor } from './operations_core';
+import { listSecurityControlWorkspaceExportRecords } from './control_workspace_core';
 
 type SecuritySupport = 'missing' | 'partial' | 'complete';
 type SecurityPolicyLinkedAnnualReviewTask = {
@@ -19,14 +20,18 @@ type SecurityPolicyMappedControlRecord = {
   internalControlId: string;
   isPrimary: boolean;
   nist80053Id: string;
+  platformChecklist: Array<{
+    itemId: string;
+    label: string;
+    required: boolean;
+    support: SecuritySupport;
+  }>;
   responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
   support: SecuritySupport;
   title: string;
 };
 type SecurityPolicySummaryRecord = {
   contentHash: string;
-  customerSummary: string | null;
-  internalNotes: string | null;
   lastReviewedAt: number | null;
   linkedAnnualReviewTask: SecurityPolicyLinkedAnnualReviewTask | null;
   mappedControlCount: number;
@@ -43,8 +48,6 @@ type SecurityPolicySummaryRecord = {
 };
 type SecurityPolicyDetailRecord = {
   contentHash: string;
-  customerSummary: string | null;
-  internalNotes: string | null;
   lastReviewedAt: number | null;
   linkedAnnualReviewTask: SecurityPolicyLinkedAnnualReviewTask | null;
   mappedControls: SecurityPolicyMappedControlRecord[];
@@ -54,6 +57,7 @@ type SecurityPolicyDetailRecord = {
   scopeId: string;
   scopeType: 'provider_global';
   sourcePath: string;
+  sourceMarkdown: string | null;
   summary: string;
   support: SecuritySupport;
   title: string;
@@ -65,8 +69,6 @@ type SecurityPolicyReviewContextRecord = {
 
 type PolicyCatalogEntry = {
   contentHash: string;
-  customerSummary: string;
-  internalNotes: string | null;
   mappings: Array<{
     internalControlId: string;
     isPrimary: boolean;
@@ -80,7 +82,7 @@ type PolicyCatalogEntry = {
 
 // Policy source of truth contract:
 // - repo markdown + seeded catalog own prose-backed fields such as title, summary, sourcePath,
-//   contentHash, customerSummary, internalNotes, and seeded mappings
+//   contentHash and seeded mappings
 // - Convex owns policy review metadata such as lastReviewedAt / nextReviewAt
 // - repo sync overwrites repo-owned fields and preserves DB-owned review metadata
 
@@ -109,8 +111,6 @@ function buildPolicyRepoManagedPatch(policy: PolicyCatalogEntry, now: number) {
   return {
     ...getSecurityScopeFields(),
     contentHash: policy.contentHash,
-    customerSummary: policy.customerSummary,
-    internalNotes: policy.internalNotes,
     owner: policy.owner,
     policyId: policy.policyId,
     sourcePath: policy.sourcePath,
@@ -129,11 +129,26 @@ function buildPolicyReviewStatePatch(existing: Doc<'securityPolicies'> | undefin
 }
 
 function buildSecurityPolicyMappedControls(args: {
-  controlSummaries: Awaited<ReturnType<typeof listSecurityControlWorkspaceSummaryRecords>>;
+  controlRecords: Array<{
+    familyId: string;
+    familyTitle: string;
+    implementationSummary: string;
+    internalControlId: string;
+    nist80053Id: string;
+    platformChecklist: Array<{
+      itemId: string;
+      label: string;
+      required: boolean;
+      support: SecuritySupport;
+    }>;
+    responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
+    support: SecuritySupport;
+    title: string;
+  }>;
   mappings: Array<Doc<'securityPolicyControlMappings'>>;
 }): SecurityPolicyMappedControlRecord[] {
   const controlsById = new Map(
-    args.controlSummaries.map((control) => [control.internalControlId, control] as const),
+    args.controlRecords.map((control) => [control.internalControlId, control] as const),
   );
   return args.mappings
     .map((mapping) => {
@@ -146,6 +161,12 @@ function buildSecurityPolicyMappedControls(args: {
             internalControlId: control.internalControlId,
             isPrimary: mapping.isPrimary,
             nist80053Id: control.nist80053Id,
+            platformChecklist: control.platformChecklist.map((item) => ({
+              itemId: item.itemId,
+              label: item.label,
+              required: item.required,
+              support: item.support,
+            })),
             responsibility: control.responsibility,
             support: control.support,
             title: control.title,
@@ -166,12 +187,11 @@ function buildSecurityPolicyMappedControls(args: {
 function buildSecurityPolicySummaryRecord(args: {
   linkedAnnualReviewTask: SecurityPolicyLinkedAnnualReviewTask | null;
   mappedControls: SecurityPolicyMappedControlRecord[];
+  owner: string;
   policy: Doc<'securityPolicies'>;
 }): SecurityPolicySummaryRecord {
   return {
     contentHash: args.policy.contentHash,
-    customerSummary: args.policy.customerSummary ?? null,
-    internalNotes: args.policy.internalNotes ?? null,
     lastReviewedAt: args.policy.lastReviewedAt ?? null,
     linkedAnnualReviewTask: args.linkedAnnualReviewTask,
     mappedControlCount: args.mappedControls.length,
@@ -187,7 +207,7 @@ function buildSecurityPolicySummaryRecord(args: {
       },
     ),
     nextReviewAt: args.policy.nextReviewAt ?? null,
-    owner: args.policy.owner,
+    owner: args.owner,
     policyId: args.policy.policyId,
     sourcePath: args.policy.sourcePath,
     summary: args.policy.summary,
@@ -200,20 +220,20 @@ function buildSecurityPolicySummaryRecord(args: {
 function buildSecurityPolicyDetailRecord(args: {
   linkedAnnualReviewTask: SecurityPolicyLinkedAnnualReviewTask | null;
   mappedControls: SecurityPolicyMappedControlRecord[];
+  owner: string;
   policy: Doc<'securityPolicies'>;
   support: SecuritySupport;
 }): SecurityPolicyDetailRecord {
   return {
     contentHash: args.policy.contentHash,
-    customerSummary: args.policy.customerSummary ?? null,
-    internalNotes: args.policy.internalNotes ?? null,
     lastReviewedAt: args.policy.lastReviewedAt ?? null,
     linkedAnnualReviewTask: args.linkedAnnualReviewTask,
     mappedControls: args.mappedControls,
     nextReviewAt: args.policy.nextReviewAt ?? null,
-    owner: args.policy.owner,
+    owner: args.owner,
     policyId: args.policy.policyId,
     sourcePath: args.policy.sourcePath,
+    sourceMarkdown: SECURITY_POLICY_DOCUMENTS[args.policy.sourcePath] ?? null,
     summary: args.policy.summary,
     support: args.support,
     title: args.policy.title,
@@ -326,10 +346,11 @@ async function listSecurityPolicySummaryRecords(
       q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
     )
     .unique();
-  const [policies, mappings, controlSummaries, reviewTasks] = await Promise.all([
+  const [seededActor, policies, mappings, controlSummaries, reviewTasks] = await Promise.all([
+    resolveSeedSiteAdminActor(ctx),
     ctx.db.query('securityPolicies').collect(),
     ctx.db.query('securityPolicyControlMappings').collect(),
-    listSecurityControlWorkspaceSummaryRecords(ctx),
+    listSecurityControlWorkspaceExportRecords(ctx),
     currentAnnualRun
       ? ctx.db
           .query('reviewTasks')
@@ -359,7 +380,7 @@ async function listSecurityPolicySummaryRecords(
         left.internalControlId.localeCompare(right.internalControlId),
       );
       const mappedControls = buildSecurityPolicyMappedControls({
-        controlSummaries,
+        controlRecords: controlSummaries,
         mappings: policyMappings,
       });
       return buildSecurityPolicySummaryRecord({
@@ -367,6 +388,7 @@ async function listSecurityPolicySummaryRecords(
           reviewTaskByPolicyId.get(policy.policyId) ?? null,
         ),
         mappedControls,
+        owner: seededActor.displayName,
         policy,
       });
     });
@@ -382,7 +404,8 @@ async function getSecurityPolicyDetailRecord(
   if (!summary) {
     return null;
   }
-  const [policy, mappings, controlSummaries, currentAnnualRun] = await Promise.all([
+  const [seededActor, policy, mappings, controlSummaries, currentAnnualRun] = await Promise.all([
+    resolveSeedSiteAdminActor(ctx),
     ctx.db
       .query('securityPolicies')
       .withIndex('by_policy_id', (q) => q.eq('policyId', policyId))
@@ -391,7 +414,7 @@ async function getSecurityPolicyDetailRecord(
       .query('securityPolicyControlMappings')
       .withIndex('by_policy_id', (q) => q.eq('policyId', policyId))
       .collect(),
-    listSecurityControlWorkspaceSummaryRecords(ctx),
+    listSecurityControlWorkspaceExportRecords(ctx),
     ctx.db
       .query('reviewRuns')
       .withIndex('by_run_key', (q) =>
@@ -403,7 +426,7 @@ async function getSecurityPolicyDetailRecord(
     return null;
   }
   const mappedControls = buildSecurityPolicyMappedControls({
-    controlSummaries,
+    controlRecords: controlSummaries,
     mappings,
   });
 
@@ -421,6 +444,7 @@ async function getSecurityPolicyDetailRecord(
   return buildSecurityPolicyDetailRecord({
     linkedAnnualReviewTask,
     mappedControls,
+    owner: seededActor.displayName,
     policy,
     support: summary.support,
   });
@@ -432,7 +456,7 @@ async function listSecurityPolicyReviewContextRecords(
   const [policySummaries, mappings, controlSummaries] = await Promise.all([
     listSecurityPolicySummaryRecords(ctx),
     ctx.db.query('securityPolicyControlMappings').collect(),
-    listSecurityControlWorkspaceSummaryRecords(ctx),
+    listSecurityControlWorkspaceExportRecords(ctx),
   ]);
   const mappingsByPolicyId = mappings.reduce<
     Map<string, Array<Doc<'securityPolicyControlMappings'>>>
@@ -450,7 +474,7 @@ async function listSecurityPolicyReviewContextRecords(
       title: policySummary.title,
     },
     policyControls: buildSecurityPolicyMappedControls({
-      controlSummaries,
+      controlRecords: controlSummaries,
       mappings: mappingsByPolicyId.get(policySummary.policyId) ?? [],
     }),
   }));

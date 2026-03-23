@@ -1,8 +1,17 @@
 import type { Id } from '@convex/_generated/dataModel';
 import type { ColumnDef } from '@tanstack/react-table';
-import type { Dispatch, SetStateAction } from 'react';
 import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react';
+import {
+  createSortableHeader,
   DataTable,
+  formatTableDate,
   TableFilter,
   type TableFilterOption,
   TableSearch,
@@ -25,6 +34,7 @@ import { AdminSecuritySummaryCard } from '~/features/security/components/AdminSe
 import {
   formatFindingSeverity,
   formatFindingStatus,
+  formatPolicySupportProgress,
   formatReviewRunStatus,
   formatReviewTaskEvidenceSourceType,
   formatReviewTaskStatus,
@@ -103,6 +113,10 @@ type AutoCollectedEvidenceLink = {
   };
   taskTitle: string;
 };
+
+const POLICY_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+type PolicyTableSortField = 'title' | 'support' | 'owner' | 'mappedControlCount' | 'nextReviewAt';
 
 export function AdminSecurityOverviewTab(props: {
   controlSummary: ControlSummary;
@@ -212,6 +226,14 @@ export function AdminSecurityPoliciesTab(props: {
   onSyncPolicies: () => Promise<void>;
   policies: SecurityPolicySummary[] | undefined;
 }) {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [supportFilter, setSupportFilter] = useState<'all' | SecurityPolicySummary['support']>(
+    'all',
+  );
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<(typeof POLICY_PAGE_SIZE_OPTIONS)[number]>(10);
+  const [sortBy, setSortBy] = useState<PolicyTableSortField>('title');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const policies = props.policies ?? [];
   const counts = policies.reduce(
     (summary, policy) => {
@@ -224,6 +246,160 @@ export function AdminSecurityPoliciesTab(props: {
       partial: 0,
     },
   );
+  const supportOptions = useMemo<
+    Array<TableFilterOption<'all' | SecurityPolicySummary['support']>>
+  >(
+    () => [
+      { label: 'All support', value: 'all' },
+      { label: 'Complete', value: 'complete' },
+      { label: 'Partial', value: 'partial' },
+      { label: 'Missing', value: 'missing' },
+    ],
+    [],
+  );
+  const filteredPolicies = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase();
+
+    return policies.filter((policy) => {
+      if (supportFilter !== 'all' && policy.support !== supportFilter) {
+        return false;
+      }
+
+      if (query.length === 0) {
+        return true;
+      }
+
+      return [
+        policy.title,
+        policy.summary,
+        policy.owner,
+        policy.sourcePath,
+        policy.linkedAnnualReviewTask?.title ?? '',
+      ].some((value) => value.toLowerCase().includes(query));
+    });
+  }, [policies, searchTerm, supportFilter]);
+  const sortedPolicies = useMemo(() => {
+    const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+    const sorted = [...filteredPolicies];
+
+    sorted.sort((left, right) => {
+      let result = 0;
+
+      switch (sortBy) {
+        case 'title':
+          result = collator.compare(left.title, right.title);
+          break;
+        case 'support':
+          result = collator.compare(left.support, right.support);
+          break;
+        case 'owner':
+          result = collator.compare(left.owner, right.owner);
+          break;
+        case 'mappedControlCount':
+          result = left.mappedControlCount - right.mappedControlCount;
+          break;
+        case 'nextReviewAt': {
+          const leftTime = left.nextReviewAt ?? Number.MAX_SAFE_INTEGER;
+          const rightTime = right.nextReviewAt ?? Number.MAX_SAFE_INTEGER;
+          result = leftTime - rightTime;
+          break;
+        }
+      }
+
+      return sortOrder === 'asc' ? result : -result;
+    });
+
+    return sorted;
+  }, [filteredPolicies, sortBy, sortOrder]);
+  const totalPolicies = sortedPolicies.length;
+  const totalPages = totalPolicies === 0 ? 0 : Math.ceil(totalPolicies / pageSize);
+  const currentPage = totalPages === 0 ? 1 : Math.min(page, totalPages);
+  const paginatedPolicies = useMemo(() => {
+    const startIndex = (currentPage - 1) * pageSize;
+    return sortedPolicies.slice(startIndex, startIndex + pageSize);
+  }, [currentPage, pageSize, sortedPolicies]);
+  const policySearchParams = useMemo(
+    () => ({
+      page: currentPage,
+      pageSize,
+      sortBy,
+      sortOrder,
+    }),
+    [currentPage, pageSize, sortBy, sortOrder],
+  );
+  const policyPagination = useMemo(
+    () => ({
+      page: currentPage,
+      pageSize,
+      total: totalPolicies,
+      totalPages,
+    }),
+    [currentPage, pageSize, totalPages, totalPolicies],
+  );
+  const handlePolicySorting = useCallback(
+    (columnId: PolicyTableSortField) => {
+      setPage(1);
+      setSortBy(columnId);
+      setSortOrder((currentOrder) =>
+        sortBy === columnId ? (currentOrder === 'asc' ? 'desc' : 'asc') : 'asc',
+      );
+    },
+    [sortBy],
+  );
+  const policyColumns = useMemo<ColumnDef<SecurityPolicySummary, unknown>[]>(
+    () => [
+      {
+        accessorKey: 'title',
+        header: createSortableHeader('Policy', 'title', policySearchParams, handlePolicySorting),
+        cell: ({ row }) => <p className="py-1 font-medium">{row.original.title}</p>,
+      },
+      {
+        accessorKey: 'support',
+        header: createSortableHeader('Support', 'support', policySearchParams, handlePolicySorting),
+        cell: ({ row }) => {
+          const policy = row.original;
+
+          return (
+            <div className="py-1">
+              <Badge variant={getSupportBadgeVariant(policy.support)}>
+                {formatSupportStatus(policy.support)} {formatPolicySupportProgress(policy)}
+              </Badge>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: 'owner',
+        header: createSortableHeader('Owner', 'owner', policySearchParams, handlePolicySorting),
+        cell: ({ row }) => <p className="py-1 text-sm font-medium">{row.original.owner}</p>,
+      },
+      {
+        accessorKey: 'nextReviewAt',
+        header: createSortableHeader(
+          'Next Review Date',
+          'nextReviewAt',
+          policySearchParams,
+          handlePolicySorting,
+        ),
+        cell: ({ row }) => {
+          const policy = row.original;
+
+          return (
+            <p className="py-1 text-sm font-medium">
+              {policy.nextReviewAt ? formatTableDate(policy.nextReviewAt) : 'Unscheduled'}
+            </p>
+          );
+        },
+      },
+    ],
+    [handlePolicySorting, policySearchParams],
+  );
+
+  useEffect(() => {
+    if (page > currentPage) {
+      setPage(currentPage);
+    }
+  }, [currentPage, page]);
 
   return (
     <>
@@ -268,87 +444,59 @@ export function AdminSecurityPoliciesTab(props: {
         />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {props.policies === undefined ? (
-          <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              Loading policy catalog…
-            </CardContent>
-          </Card>
-        ) : policies.length > 0 ? (
-          policies.map((policy) => (
-            <Card key={policy.policyId}>
-              <CardHeader className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="space-y-1">
-                    <CardTitle>{policy.title}</CardTitle>
-                    <CardDescription>{policy.summary}</CardDescription>
-                  </div>
-                  <Badge variant={getSupportBadgeVariant(policy.support)}>
-                    {formatSupportStatus(policy.support)}
-                  </Badge>
-                </div>
-                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                  <span>Owner: {policy.owner}</span>
-                  <span>Mapped controls: {policy.mappedControlCount}</span>
-                  <span>
-                    Last reviewed:{' '}
-                    {policy.lastReviewedAt
-                      ? new Date(policy.lastReviewedAt).toLocaleDateString()
-                      : 'Not yet'}
-                  </span>
-                  <span>
-                    Next review:{' '}
-                    {policy.nextReviewAt
-                      ? new Date(policy.nextReviewAt).toLocaleDateString()
-                      : 'Unscheduled'}
-                  </span>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div className="rounded-md border p-3 text-sm">
-                    <p className="font-medium">Complete</p>
-                    <p className="text-muted-foreground">
-                      {policy.mappedControlCountsBySupport.complete}
-                    </p>
-                  </div>
-                  <div className="rounded-md border p-3 text-sm">
-                    <p className="font-medium">Partial</p>
-                    <p className="text-muted-foreground">
-                      {policy.mappedControlCountsBySupport.partial}
-                    </p>
-                  </div>
-                  <div className="rounded-md border p-3 text-sm">
-                    <p className="font-medium">Missing</p>
-                    <p className="text-muted-foreground">
-                      {policy.mappedControlCountsBySupport.missing}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-muted-foreground">{policy.sourcePath}</p>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      props.onOpenPolicy(policy.policyId);
-                    }}
-                  >
-                    View policy detail
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))
-        ) : (
-          <Card>
-            <CardContent className="p-6 text-sm text-muted-foreground">
-              No policy records are available yet.
-            </CardContent>
-          </Card>
-        )}
+      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+        <div className="inline-flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-2">
+          <p className="text-sm text-muted-foreground whitespace-nowrap">{totalPolicies} matches</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableFilter<'all' | SecurityPolicySummary['support']>
+              value={supportFilter}
+              options={supportOptions}
+              onValueChange={(value) => {
+                setSupportFilter(value);
+                setPage(1);
+              }}
+              className="shrink-0"
+              ariaLabel="Filter policies by support"
+            />
+          </div>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-end xl:justify-end xl:flex-1">
+          <TableSearch
+            initialValue={searchTerm}
+            onSearch={(value) => {
+              setSearchTerm(value);
+              setPage(1);
+            }}
+            placeholder="Search by policy, summary, owner, or source path"
+            isSearching={false}
+            className="min-w-[260px] sm:w-[360px] lg:w-[420px]"
+            ariaLabel="Search policies"
+          />
+        </div>
       </div>
+
+      <DataTable<SecurityPolicySummary, ColumnDef<SecurityPolicySummary, unknown>>
+        data={paginatedPolicies}
+        columns={policyColumns}
+        pagination={policyPagination}
+        searchParams={policySearchParams}
+        isLoading={props.policies === undefined}
+        onPageChange={setPage}
+        onPageSizeChange={(nextPageSize) => {
+          setPage(1);
+          setPageSize(
+            POLICY_PAGE_SIZE_OPTIONS.includes(
+              nextPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number],
+            )
+              ? (nextPageSize as (typeof POLICY_PAGE_SIZE_OPTIONS)[number])
+              : 10,
+          );
+        }}
+        onRowClick={(policy) => {
+          props.onOpenPolicy(policy.policyId);
+        }}
+        emptyMessage="No policies matched the current filters."
+      />
     </>
   );
 }

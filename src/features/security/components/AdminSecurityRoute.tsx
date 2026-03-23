@@ -1250,8 +1250,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       >
         <TabsList className="w-full justify-start overflow-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="policies">Policies</TabsTrigger>
+          <TabsTrigger value="controls">Controls</TabsTrigger>
           <TabsTrigger value="operations">Operations</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>

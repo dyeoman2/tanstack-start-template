@@ -87,6 +87,14 @@ const securityPolicyMappedControlValidator = v.object({
   internalControlId: v.string(),
   isPrimary: v.boolean(),
   nist80053Id: v.string(),
+  platformChecklist: v.array(
+    v.object({
+      itemId: v.string(),
+      label: v.string(),
+      required: v.boolean(),
+      support: securityPolicySupportValidator,
+    }),
+  ),
   responsibility: v.union(
     v.literal('platform'),
     v.literal('shared-responsibility'),
@@ -108,8 +116,6 @@ const securityPolicyLinkedReviewTaskValidator = v.object({
 });
 const securityPolicySummaryValidator = v.object({
   contentHash: v.string(),
-  customerSummary: v.union(v.string(), v.null()),
-  internalNotes: v.union(v.string(), v.null()),
   lastReviewedAt: v.union(v.number(), v.null()),
   linkedAnnualReviewTask: v.union(securityPolicyLinkedReviewTaskValidator, v.null()),
   mappedControlCount: v.number(),
@@ -130,8 +136,6 @@ const securityPolicySummaryValidator = v.object({
 });
 const securityPolicyDetailValidator = v.object({
   contentHash: v.string(),
-  customerSummary: v.union(v.string(), v.null()),
-  internalNotes: v.union(v.string(), v.null()),
   lastReviewedAt: v.union(v.number(), v.null()),
   linkedAnnualReviewTask: v.union(securityPolicyLinkedReviewTaskValidator, v.null()),
   mappedControls: v.array(securityPolicyMappedControlValidator),
@@ -141,6 +145,7 @@ const securityPolicyDetailValidator = v.object({
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
   sourcePath: v.string(),
+  sourceMarkdown: v.union(v.string(), v.null()),
   summary: v.string(),
   support: securityPolicySupportValidator,
   title: v.string(),

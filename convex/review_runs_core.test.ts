@@ -185,8 +185,6 @@ function buildPolicySeedRows() {
     owner: policy.owner,
     sourcePath: policy.sourcePath,
     contentHash: `hash-${policy.policyId}`,
-    customerSummary: policy.customerSummary,
-    internalNotes: policy.internalNotes,
     lastReviewedAt: now,
     nextReviewAt: now + 365 * 24 * 60 * 60 * 1000,
     createdAt: now,
