@@ -13,7 +13,7 @@ crons.interval(
 crons.interval(
   'cleanup expired regulated attachments',
   { hours: 6 },
-  internal.security.cleanupExpiredAttachments,
+  internal.securityOps.cleanupExpiredAttachments,
   {},
 );
 

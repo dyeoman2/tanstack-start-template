@@ -617,11 +617,11 @@ function mockSecurityQueries(args: {
     const functionName = getFunctionName(query as Parameters<typeof getFunctionName>[0]);
 
     switch (functionName) {
-      case 'security:getSecurityWorkspaceOverview':
+      case 'securityPosture:getSecurityWorkspaceOverview':
         return buildWorkspaceOverview(args);
-      case 'security:listSecurityControlWorkspaces':
+      case 'securityWorkspace:listSecurityControlWorkspaces':
         return args.controls ?? [buildControl()];
-      case 'security:getSecurityControlWorkspaceDetail': {
+      case 'securityWorkspace:getSecurityControlWorkspaceDetail': {
         const controls = (args.controls ?? [buildControl()]) as Array<Record<string, unknown>>;
         const requestedControlId =
           queryArgs && typeof queryArgs === 'object' && 'internalControlId' in queryArgs
@@ -633,15 +633,15 @@ function mockSecurityQueries(args: {
           null
         );
       }
-      case 'security:getSecurityOperationsBoard':
+      case 'securityPosture:getSecurityOperationsBoard':
         return buildOperationsBoard(args);
-      case 'security:getEvidenceReportDetail':
+      case 'securityReports:getEvidenceReportDetail':
         return args.reportDetail ?? null;
-      case 'security:getCurrentAnnualReviewRun':
+      case 'securityReviews:getCurrentAnnualReviewRun':
         return args.currentAnnualRun ?? null;
-      case 'security:getReviewRunDetail':
+      case 'securityReviews:getReviewRunDetail':
         return args.reviewDetail ?? null;
-      case 'security:listTriggeredReviewRuns':
+      case 'securityReviews:listTriggeredReviewRuns':
         return args.triggeredReviewRuns ?? [];
       default:
         return undefined;
@@ -698,11 +698,11 @@ describe('Admin security route', () => {
       auditReadiness: buildAuditReadiness(),
     });
     mockSecurityActions({
-      'security:generateEvidenceReport': generateEvidenceReportMock,
-      'security:exportEvidenceReport': exportEvidenceReportMock,
+      'securityReports:generateEvidenceReport': generateEvidenceReportMock,
+      'securityReports:exportEvidenceReport': exportEvidenceReportMock,
     });
     mockSecurityMutations({
-      'security:reviewEvidenceReport': reviewEvidenceReportMock,
+      'securityReports:reviewEvidenceReport': reviewEvidenceReportMock,
     });
 
     renderRoute();
@@ -832,7 +832,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'security:reviewSecurityControlEvidence': reviewControlEvidenceMock,
+      'securityWorkspace:reviewSecurityControlEvidence': reviewControlEvidenceMock,
     });
 
     renderRoute();
@@ -962,7 +962,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'security:reviewSecurityFinding': reviewSecurityFindingMock,
+      'securityWorkspace:reviewSecurityFinding': reviewSecurityFindingMock,
     });
 
     renderRoute();
@@ -996,7 +996,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'security:openSecurityFindingFollowUp': openSecurityFindingFollowUpMock,
+      'securityWorkspace:openSecurityFindingFollowUp': openSecurityFindingFollowUpMock,
     });
 
     renderRoute();
@@ -1029,7 +1029,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'security:addSecurityControlEvidenceNote': addEvidenceNoteMock,
+      'securityWorkspace:addSecurityControlEvidenceNote': addEvidenceNoteMock,
     });
 
     renderRoute();
@@ -1086,12 +1086,12 @@ describe('Admin security route', () => {
       triggeredReviewRuns: [],
     });
     mockSecurityActions({
-      'security:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
-      'security:finalizeReviewRun': finalizeReviewRunMock,
+      'securityReviews:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
+      'securityReviews:finalizeReviewRun': finalizeReviewRunMock,
     });
     mockSecurityMutations({
-      'security:createTriggeredReviewRun': createTriggeredReviewRunMock,
-      'security:attestReviewTask': attestReviewTaskMock,
+      'securityReviews:createTriggeredReviewRun': createTriggeredReviewRunMock,
+      'securityReviews:attestReviewTask': attestReviewTaskMock,
     });
 
     renderRoute();
@@ -1171,10 +1171,10 @@ describe('Admin security route', () => {
       triggeredReviewRuns: [],
     });
     mockSecurityActions({
-      'security:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
+      'securityReviews:refreshReviewRunAutomation': refreshReviewRunAutomationMock,
     });
     mockSecurityMutations({
-      'security:ensureCurrentAnnualReviewRun': ensureCurrentAnnualReviewRunMock,
+      'securityReviews:ensureCurrentAnnualReviewRun': ensureCurrentAnnualReviewRunMock,
     });
 
     renderRoute();
@@ -1204,7 +1204,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'security:reviewVendorWorkspace': reviewVendorWorkspaceMock,
+      'securityReports:reviewVendorWorkspace': reviewVendorWorkspaceMock,
     });
 
     renderRoute();

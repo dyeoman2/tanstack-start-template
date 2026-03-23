@@ -59,7 +59,7 @@ export const seed = internalAction({
         notes.push('Dry run enabled: the security control workspace reset was skipped.');
       } else {
         securityWorkspaceResetSummary = await ctx.runMutation(
-          internal.security.reseedSecurityControlWorkspaceForDevelopment,
+          internal.securityOps.reseedSecurityControlWorkspaceForDevelopment,
           {
             secret: getE2ETestSecret(),
           },

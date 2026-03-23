@@ -95,7 +95,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           });
 
           await createConvexAdminClient().mutation(
-            internal.security.recordDocumentScanEventInternal,
+            internal.securityOps.recordDocumentScanEventInternal,
             {
               details: inspection.details ?? null,
               fileName: file.name,

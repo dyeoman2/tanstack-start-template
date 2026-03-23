@@ -76,7 +76,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const [localSelectedReportId, setLocalSelectedReportId] = useState<Id<'evidenceReports'> | null>(
     null,
   );
-  const workspaceOverview = useQuery(api.security.getSecurityWorkspaceOverview, {}) as
+  const workspaceOverview = useQuery(api.securityPosture.getSecurityWorkspaceOverview, {}) as
     | SecurityWorkspaceOverview
     | undefined;
   const controlsTabActive = activeTab === 'controls';
@@ -89,15 +89,15 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     return localSelectedReportId;
   }, [localSelectedReportId, selectedOperationId, selectedOperationType]);
   const operationsBoard = useQuery(
-    api.security.getSecurityOperationsBoard,
+    api.securityPosture.getSecurityOperationsBoard,
     operationsTabActive ? {} : 'skip',
   ) as SecurityOperationsBoard | undefined;
   const controlWorkspaces = useQuery(
-    api.security.listSecurityControlWorkspaces,
+    api.securityWorkspace.listSecurityControlWorkspaces,
     controlsTabActive ? {} : 'skip',
   ) as SecurityControlWorkspaceSummary[] | undefined;
   const selectedControl = useQuery(
-    api.security.getSecurityControlWorkspaceDetail,
+    api.securityWorkspace.getSecurityControlWorkspaceDetail,
     controlsTabActive && selectedControlId ? { internalControlId: selectedControlId } : 'skip',
   ) as SecurityControlWorkspace | null | undefined;
   const evidenceReports = operationsBoard?.evidenceReports;
@@ -105,36 +105,42 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
   const summary = workspaceOverview?.postureSummary;
   const selectedReportDetail = useQuery(
-    api.security.getEvidenceReportDetail,
+    api.securityReports.getEvidenceReportDetail,
     operationsTabActive && selectedReportId ? { id: selectedReportId } : 'skip',
   ) as EvidenceReportDetail | null | undefined;
   const resolvedSelectedOperationType =
     selectedOperationType ?? (selectedReportId ? 'evidence_report' : undefined);
   const resolvedSelectedOperationId = selectedOperationId ?? selectedReportId ?? undefined;
   const auditReadiness = workspaceOverview?.auditReadiness;
-  const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
-  const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
-  const reviewEvidenceReport = useMutation(api.security.reviewEvidenceReport);
-  const reviewSecurityFinding = useMutation(api.security.reviewSecurityFinding);
-  const openSecurityFindingFollowUp = useMutation(api.security.openSecurityFindingFollowUp);
-  const reviewControlEvidence = useMutation(api.security.reviewSecurityControlEvidence);
-  const addEvidenceLink = useMutation(api.security.addSecurityControlEvidenceLink);
-  const addEvidenceNote = useMutation(api.security.addSecurityControlEvidenceNote);
-  const archiveControlEvidence = useMutation(api.security.archiveSecurityControlEvidence);
-  const createEvidenceUploadTarget = useAction(
-    api.security.createSecurityControlEvidenceUploadTarget,
+  const generateEvidenceReport = useAction(api.securityReports.generateEvidenceReport);
+  const exportEvidenceReport = useAction(api.securityReports.exportEvidenceReport);
+  const reviewEvidenceReport = useMutation(api.securityReports.reviewEvidenceReport);
+  const reviewSecurityFinding = useMutation(api.securityWorkspace.reviewSecurityFinding);
+  const openSecurityFindingFollowUp = useMutation(
+    api.securityWorkspace.openSecurityFindingFollowUp,
   );
-  const finalizeEvidenceUpload = useAction(api.security.finalizeSecurityControlEvidenceUpload);
-  const renewControlEvidence = useMutation(api.security.renewSecurityControlEvidence);
+  const reviewControlEvidence = useMutation(api.securityWorkspace.reviewSecurityControlEvidence);
+  const addEvidenceLink = useMutation(api.securityWorkspace.addSecurityControlEvidenceLink);
+  const addEvidenceNote = useMutation(api.securityWorkspace.addSecurityControlEvidenceNote);
+  const archiveControlEvidence = useMutation(api.securityWorkspace.archiveSecurityControlEvidence);
+  const createEvidenceUploadTarget = useAction(
+    api.securityWorkspace.createSecurityControlEvidenceUploadTarget,
+  );
+  const finalizeEvidenceUpload = useAction(
+    api.securityWorkspace.finalizeSecurityControlEvidenceUpload,
+  );
+  const renewControlEvidence = useMutation(api.securityWorkspace.renewSecurityControlEvidence);
   const createSignedServeUrl = useAction(api.fileServing.createSignedServeUrl);
-  const refreshReviewRunAutomation = useAction(api.security.refreshReviewRunAutomation);
-  const finalizeReviewRun = useAction(api.security.finalizeReviewRun);
-  const ensureCurrentAnnualReviewRun = useMutation(api.security.ensureCurrentAnnualReviewRun);
-  const createTriggeredReviewRun = useMutation(api.security.createTriggeredReviewRun);
-  const reviewVendorWorkspace = useMutation(api.security.reviewVendorWorkspace);
-  const attestReviewTask = useMutation(api.security.attestReviewTask);
-  const setReviewTaskException = useMutation(api.security.setReviewTaskException);
-  const openTriggeredFollowUp = useMutation(api.security.openTriggeredFollowUp);
+  const refreshReviewRunAutomation = useAction(api.securityReviews.refreshReviewRunAutomation);
+  const finalizeReviewRun = useAction(api.securityReviews.finalizeReviewRun);
+  const ensureCurrentAnnualReviewRun = useMutation(
+    api.securityReviews.ensureCurrentAnnualReviewRun,
+  );
+  const createTriggeredReviewRun = useMutation(api.securityReviews.createTriggeredReviewRun);
+  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
+  const attestReviewTask = useMutation(api.securityReviews.attestReviewTask);
+  const setReviewTaskException = useMutation(api.securityReviews.setReviewTaskException);
+  const openTriggeredFollowUp = useMutation(api.securityReviews.openTriggeredFollowUp);
   const [reportNotes, setReportNotes] = useState<Record<string, string>>({});
   const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
     {},
@@ -175,11 +181,11 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const controls = controlWorkspaces;
   const controlItems = useMemo(() => controls ?? [], [controls]);
   const currentAnnualReviewRunQuery = useQuery(
-    api.security.getCurrentAnnualReviewRun,
+    api.securityReviews.getCurrentAnnualReviewRun,
     reviewsTabActive ? {} : 'skip',
   ) as ReviewRunSummary | null | undefined;
   const triggeredReviewRuns = useQuery(
-    api.security.listTriggeredReviewRuns,
+    api.securityReviews.listTriggeredReviewRuns,
     reviewsTabActive ? {} : 'skip',
   ) as ReviewRunSummary[] | undefined;
   const currentAnnualReviewRun =
@@ -188,7 +194,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     currentAnnualReviewRunQuery ??
     localAnnualReviewRun;
   const currentAnnualReviewDetailQuery = useQuery(
-    api.security.getReviewRunDetail,
+    api.securityReviews.getReviewRunDetail,
     reviewsTabActive && currentAnnualReviewRun?.id
       ? { reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'> }
       : 'skip',
@@ -664,9 +670,12 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     setIsExportingControls(true);
 
     try {
-      const exportControls = (await convex.query(api.security.listSecurityControlWorkspaceExports, {
-        controlIds: sortedControls.map((control) => control.internalControlId),
-      })) as SecurityControlWorkspaceExport[];
+      const exportControls = (await convex.query(
+        api.securityWorkspace.listSecurityControlWorkspaceExports,
+        {
+          controlIds: sortedControls.map((control) => control.internalControlId),
+        },
+      )) as SecurityControlWorkspaceExport[];
       exportSecurityControlsCsv(exportControls);
       showToast('Control register exported.', 'success');
     } catch (error) {

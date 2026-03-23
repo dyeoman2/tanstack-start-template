@@ -824,7 +824,7 @@ export const createChatAttachmentFromUpload = action({
           status: 'accepted' as const,
         };
 
-    await ctx.runMutation(internal.security.recordDocumentScanEventInternal, {
+    await ctx.runMutation(internal.securityOps.recordDocumentScanEventInternal, {
       attachmentId,
       details: inspectionResult.details ?? null,
       fileName: validatedAttachment.normalizedName,

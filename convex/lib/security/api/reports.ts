@@ -350,7 +350,7 @@ export async function exportEvidenceReportHandler(
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-  const report = await ctx.runQuery(anyApi.security.getEvidenceReportInternal, {
+  const report = await ctx.runQuery(anyApi.securityReports.getEvidenceReportInternal, {
     id: args.id,
   });
   if (!report) {
@@ -400,7 +400,7 @@ export async function exportEvidenceReportHandler(
     manifestHash,
     reviewStatus: report.reviewStatus,
   });
-  const artifactId = await ctx.runMutation(anyApi.security.storeExportArtifact, {
+  const artifactId = await ctx.runMutation(anyApi.securityPosture.storeExportArtifact, {
     artifactType: 'evidence_report_export',
     exportedAt,
     exportedByUserId: currentUser.authUserId,
@@ -413,7 +413,7 @@ export async function exportEvidenceReportHandler(
     sourceReportId: args.id,
   });
 
-  await ctx.runMutation(anyApi.security.storeEvidenceReportExport, {
+  await ctx.runMutation(anyApi.securityReports.storeEvidenceReportExport, {
     id: args.id,
     exportBundleJson: exportBundle,
     exportHash,
@@ -520,7 +520,7 @@ export async function generateEvidenceReportHandler(
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-  await ctx.runMutation(anyApi.security.syncCurrentSecurityFindingsInternal, {
+  await ctx.runMutation(anyApi.securityOps.syncCurrentSecurityFindingsInternal, {
     actorUserId: currentUser.authUserId,
   });
   const reportKind = args.reportKind ?? 'security_posture';
@@ -528,13 +528,10 @@ export async function generateEvidenceReportHandler(
     reportKind === 'security_posture' ||
     reportKind === 'annual_review' ||
     reportKind === 'control_workspace_snapshot';
-  const summary = await ctx.runQuery(anyApi.security.getSecurityPostureSummary, {});
+  const summary = await ctx.runQuery(anyApi.securityPosture.getSecurityPostureSummary, {});
   const controlWorkspace = (
     needsControlWorkspace
-      ? await ctx.runQuery(
-          anyApi['lib/security/api/workspace'].listSecurityControlWorkspaceDetailsInternal,
-          {},
-        )
+      ? await ctx.runQuery(anyApi.securityWorkspace.listControlWorkspaceSnapshotInternal, {})
       : []
   ) as Array<{
     evidenceReadiness: 'missing' | 'partial' | 'ready';
@@ -565,7 +562,10 @@ export async function generateEvidenceReportHandler(
   const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
     limit: 250,
   });
-  const auditReadinessSnapshot = await ctx.runQuery(anyApi.security.getAuditReadinessSnapshot, {});
+  const auditReadinessSnapshot = await ctx.runQuery(
+    anyApi.securityPosture.getAuditReadinessSnapshot,
+    {},
+  );
   const currentOrganizationPolicies = currentUser.activeOrganizationId
     ? await ctx.runQuery(anyApi.organizationManagement.getOrganizationPoliciesInternal, {
         organizationId: currentUser.activeOrganizationId,
@@ -574,7 +574,7 @@ export async function generateEvidenceReportHandler(
   const vendorPosture = getVendorBoundarySnapshot();
   const vendorWorkspaces = (
     reportKind === 'vendor_posture_snapshot' || reportKind === 'annual_review'
-      ? await ctx.runQuery(anyApi.security.listVendorReviewWorkspaces, {})
+      ? await ctx.runQuery(anyApi.securityReports.listVendorReviewWorkspaces, {})
       : []
   ) as Array<{
     approved: boolean;
@@ -610,7 +610,7 @@ export async function generateEvidenceReportHandler(
   }>;
   const currentFindings = (
     reportKind === 'findings_snapshot' || reportKind === 'annual_review'
-      ? await ctx.runQuery(anyApi.security.listSecurityFindings, {})
+      ? await ctx.runQuery(anyApi.securityWorkspace.listSecurityFindings, {})
       : []
   ) as Array<{
     disposition:
@@ -740,7 +740,7 @@ export async function generateEvidenceReportHandler(
   const report = stringifyStable(reportPayload);
   const contentHash = await hashContent(report);
 
-  const id = await ctx.runMutation(anyApi.security.createEvidenceReport, {
+  const id = await ctx.runMutation(anyApi.securityPosture.createEvidenceReport, {
     contentJson: report,
     contentHash,
     generatedByUserId: currentUser.authUserId,
@@ -813,7 +813,7 @@ export const refreshReviewRunAutomation = action({
   returns: v.union(reviewRunDetailValidator, v.null()),
   handler: async (ctx, args) => {
     await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const detail = (await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+    const detail = (await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {
       reviewRunId: args.reviewRunId,
     })) as {
       id: Id<'reviewRuns'>;
@@ -833,7 +833,7 @@ export const refreshReviewRunAutomation = action({
       return detail;
     }
 
-    const auditReadiness = await ctx.runQuery(anyApi.security.getAuditReadinessOverview, {});
+    const auditReadiness = await ctx.runQuery(anyApi.securityPosture.getAuditReadinessOverview, {});
 
     for (const task of detail.tasks.filter((entry) => entry.taskType === 'automated_check')) {
       const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
@@ -859,11 +859,11 @@ export const refreshReviewRunAutomation = action({
         const report = await generateEvidenceReportHandler(ctx, {
           reportKind,
         });
-        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+        await ctx.runMutation(anyApi.securityReviews.replaceReviewTaskEvidenceLinksInternal, {
           reviewTaskId: task.id,
           sourceTypes: ['evidence_report'],
         });
-        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+        await ctx.runMutation(anyApi.securityReviews.upsertReviewTaskEvidenceLinkInternal, {
           freshAt: report.createdAt,
           reviewRunId: detail.id,
           reviewTaskId: task.id,
@@ -884,7 +884,7 @@ export const refreshReviewRunAutomation = action({
             freshnessWindowDays: task.freshnessWindowDays ?? undefined,
           },
         );
-        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+        await ctx.runMutation(anyApi.securityReviews.applyReviewTaskStateInternal, {
           actorUserId: 'system:automation',
           mode: 'automated_check',
           note: outcome.note,
@@ -899,12 +899,12 @@ export const refreshReviewRunAutomation = action({
 
       if (blueprint.automationKind === 'backup_verification') {
         const latestBackupDrill = auditReadiness.latestBackupDrill;
-        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+        await ctx.runMutation(anyApi.securityReviews.replaceReviewTaskEvidenceLinksInternal, {
           reviewTaskId: task.id,
           sourceTypes: ['backup_verification_report'],
         });
         if (!latestBackupDrill) {
-          await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+          await ctx.runMutation(anyApi.securityReviews.applyReviewTaskStateInternal, {
             actorUserId: 'system:automation',
             mode: 'automated_check',
             note: 'No backup verification evidence is currently recorded.',
@@ -917,7 +917,7 @@ export const refreshReviewRunAutomation = action({
           continue;
         }
 
-        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+        await ctx.runMutation(anyApi.securityReviews.upsertReviewTaskEvidenceLinkInternal, {
           freshAt: latestBackupDrill.checkedAt,
           reviewRunId: detail.id,
           reviewTaskId: task.id,
@@ -926,7 +926,7 @@ export const refreshReviewRunAutomation = action({
           sourceLabel: getAutomationEvidenceLabel(blueprint),
           sourceType: 'backup_verification_report',
         });
-        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+        await ctx.runMutation(anyApi.securityReviews.applyReviewTaskStateInternal, {
           actorUserId: 'system:automation',
           mode: 'automated_check',
           reviewTaskId: task.id,
@@ -939,12 +939,12 @@ export const refreshReviewRunAutomation = action({
       }
 
       if (blueprint.automationKind === 'release_provenance') {
-        await ctx.runMutation(anyApi.security.replaceReviewTaskEvidenceLinksInternal, {
+        await ctx.runMutation(anyApi.securityReviews.replaceReviewTaskEvidenceLinksInternal, {
           reviewTaskId: task.id,
           sourceTypes: ['security_control_evidence'],
         });
         const latestEvidence = (await ctx.runQuery(
-          anyApi.security.getLatestReleaseProvenanceEvidenceInternal,
+          anyApi.securityWorkspace.getLatestReleaseProvenanceEvidenceInternal,
           {},
         )) as {
           createdAt: number;
@@ -955,7 +955,7 @@ export const refreshReviewRunAutomation = action({
         } | null;
 
         if (!latestEvidence) {
-          await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+          await ctx.runMutation(anyApi.securityReviews.applyReviewTaskStateInternal, {
             actorUserId: 'system:automation',
             mode: 'automated_check',
             note: 'No release provenance evidence is currently linked.',
@@ -968,7 +968,7 @@ export const refreshReviewRunAutomation = action({
           continue;
         }
 
-        await ctx.runMutation(anyApi.security.upsertReviewTaskEvidenceLinkInternal, {
+        await ctx.runMutation(anyApi.securityReviews.upsertReviewTaskEvidenceLinkInternal, {
           freshAt: latestEvidence.reviewedAt ?? latestEvidence.createdAt,
           reviewRunId: detail.id,
           reviewTaskId: task.id,
@@ -977,7 +977,7 @@ export const refreshReviewRunAutomation = action({
           sourceLabel: latestEvidence.title,
           sourceType: 'security_control_evidence',
         });
-        await ctx.runMutation(anyApi.security.applyReviewTaskStateInternal, {
+        await ctx.runMutation(anyApi.securityReviews.applyReviewTaskStateInternal, {
           actorUserId: 'system:automation',
           mode: 'automated_check',
           note:
@@ -1002,7 +1002,7 @@ export const refreshReviewRunAutomation = action({
       }
     }
 
-    return await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+    return await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {
       reviewRunId: args.reviewRunId,
     });
   },
@@ -1015,7 +1015,7 @@ export const finalizeReviewRun = action({
   returns: v.union(reviewRunDetailValidator, v.null()),
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-    const detail = (await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+    const detail = (await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {
       reviewRunId: args.reviewRunId,
     })) as {
       id: Id<'reviewRuns'>;
@@ -1065,7 +1065,7 @@ export const finalizeReviewRun = action({
       if (!primaryReportLink) {
         throw new Error(`Finalize requires "${task.title}" to have a reviewed linked report.`);
       }
-      const report = await ctx.runQuery(anyApi.security.getEvidenceReportInternal, {
+      const report = await ctx.runQuery(anyApi.securityReports.getEvidenceReportInternal, {
         id: primaryReportLink.sourceId as Id<'evidenceReports'>,
       });
       if (!report || report.reviewStatus !== 'reviewed') {
@@ -1080,7 +1080,7 @@ export const finalizeReviewRun = action({
       generatedByUserId: currentUser.authUserId,
       reviewRun: detail,
     });
-    const reportId = await ctx.runMutation(anyApi.security.createEvidenceReport, {
+    const reportId = await ctx.runMutation(anyApi.securityPosture.createEvidenceReport, {
       contentJson: reportPayload,
       contentHash: await hashContent(reportPayload),
       generatedByUserId: currentUser.authUserId,
@@ -1090,7 +1090,7 @@ export const finalizeReviewRun = action({
     await exportEvidenceReportHandler(ctx, {
       id: reportId,
     });
-    await ctx.runMutation(anyApi.security.storeReviewRunFinalization, {
+    await ctx.runMutation(anyApi.securityReviews.storeReviewRunFinalization, {
       finalReportId: reportId,
       finalizedAt: createdAt,
       finalizedByUserId: currentUser.authUserId,
@@ -1115,7 +1115,7 @@ export const finalizeReviewRun = action({
       }),
     });
 
-    return await ctx.runQuery(anyApi.security.getReviewRunDetail, {
+    return await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {
       reviewRunId: args.reviewRunId,
     });
   },

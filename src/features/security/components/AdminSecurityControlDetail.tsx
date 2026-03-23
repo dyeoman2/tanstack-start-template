@@ -391,7 +391,7 @@ function ChecklistAccordionItem(props: {
   const activeEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active');
   const historyEvidence = item.evidence.filter((evidence) => evidence.lifecycleStatus !== 'active');
   const evidenceActivity = useQuery(
-    api.security.listSecurityControlEvidenceActivity,
+    api.securityWorkspace.listSecurityControlEvidenceActivity,
     isHistoryOpen
       ? {
           internalControlId: control.internalControlId,

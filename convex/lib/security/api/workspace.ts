@@ -211,15 +211,7 @@ export const listSecurityControlWorkspaceExports = query({
   },
 });
 
-export const listSecurityControlWorkspaceExportsInternal = internalQuery({
-  args: {},
-  returns: securityControlWorkspaceExportListValidator,
-  handler: async (ctx) => {
-    return await listSecurityControlWorkspaceExportRecords(ctx);
-  },
-});
-
-export const listSecurityControlWorkspaceDetailsInternal = internalQuery({
+export const listControlWorkspaceSnapshotInternal = internalQuery({
   args: {},
   returns: securityControlWorkspaceExportListValidator,
   handler: async (ctx) => {
@@ -1169,22 +1161,25 @@ export const finalizeSecurityControlEvidenceUpload = action({
       storageId: args.storageId,
     });
 
-    return await ctx.runMutation(internal.security.createSecurityControlEvidenceFileInternal, {
-      description: args.description?.trim() || undefined,
-      evidenceDate: args.evidenceDate,
-      fileName: args.fileName,
-      fileSize: args.fileSize,
-      internalControlId: args.internalControlId,
-      itemId: args.itemId,
-      mimeType: args.mimeType,
-      organizationId: currentUser.activeOrganizationId ?? undefined,
-      reviewDueIntervalMonths: args.reviewDueIntervalMonths,
-      storageId: args.storageId,
-      source: args.source,
-      sufficiency: args.sufficiency,
-      title: args.title.trim(),
-      uploadedByUserId: currentUser.authUserId,
-    });
+    return await ctx.runMutation(
+      internal.securityWorkspace.createSecurityControlEvidenceFileInternal,
+      {
+        description: args.description?.trim() || undefined,
+        evidenceDate: args.evidenceDate,
+        fileName: args.fileName,
+        fileSize: args.fileSize,
+        internalControlId: args.internalControlId,
+        itemId: args.itemId,
+        mimeType: args.mimeType,
+        organizationId: currentUser.activeOrganizationId ?? undefined,
+        reviewDueIntervalMonths: args.reviewDueIntervalMonths,
+        storageId: args.storageId,
+        source: args.source,
+        sufficiency: args.sufficiency,
+        title: args.title.trim(),
+        uploadedByUserId: currentUser.authUserId,
+      },
+    );
   },
 });
 

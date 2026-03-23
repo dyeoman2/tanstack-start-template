@@ -10,7 +10,7 @@ export const cleanupExpiredAttachments = internalAction({
   handler: async (ctx) => {
     const now = Date.now();
     const expiredAttachments = await ctx.runQuery(
-      internal.security.listExpiredAttachmentsInternal,
+      internal.securityOps.listExpiredAttachmentsInternal,
       {
         now,
       },
@@ -33,7 +33,7 @@ export const cleanupExpiredAttachments = internalAction({
       processedCount += 1;
     }
 
-    await ctx.runMutation(internal.security.recordRetentionJob, {
+    await ctx.runMutation(internal.securityOps.recordRetentionJob, {
       details: processedCount > 0 ? `Purged ${processedCount} expired attachments` : undefined,
       jobKind: 'attachment_purge',
       processedCount,

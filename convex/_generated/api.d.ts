@@ -42,7 +42,6 @@ import type * as lib_organizationAuditEvents from "../lib/organizationAuditEvent
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
 import type * as lib_organizationMembershipState from "../lib/organizationMembershipState.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
-import type * as lib_security_api from "../lib/security/api.js";
 import type * as lib_security_api_control_workspace_core from "../lib/security/api/control_workspace_core.js";
 import type * as lib_security_api_core from "../lib/security/api/core.js";
 import type * as lib_security_api_maintenance from "../lib/security/api/maintenance.js";
@@ -53,7 +52,6 @@ import type * as lib_security_api_review_runs from "../lib/security/api/review_r
 import type * as lib_security_api_review_runs_core from "../lib/security/api/review_runs_core.js";
 import type * as lib_security_api_validators from "../lib/security/api/validators.js";
 import type * as lib_security_api_workspace from "../lib/security/api/workspace.js";
-import type * as lib_security_index from "../lib/security/index.js";
 import type * as lib_security_securityEvidenceActivity from "../lib/security/securityEvidenceActivity.js";
 import type * as lib_security_securityReviewConfig from "../lib/security/securityReviewConfig.js";
 import type * as lib_security_securityWorkspaceOverview from "../lib/security/securityWorkspaceOverview.js";
@@ -67,7 +65,11 @@ import type * as organizationManagement from "../organizationManagement.js";
 import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
-import type * as security from "../security.js";
+import type * as securityOps from "../securityOps.js";
+import type * as securityPosture from "../securityPosture.js";
+import type * as securityReports from "../securityReports.js";
+import type * as securityReviews from "../securityReviews.js";
+import type * as securityWorkspace from "../securityWorkspace.js";
 import type * as seed_index from "../seed/index.js";
 import type * as storageCleanup from "../storageCleanup.js";
 import type * as storageCleanupData from "../storageCleanupData.js";
@@ -120,7 +122,6 @@ declare const fullApi: ApiFromModules<{
   "lib/organizationCleanup": typeof lib_organizationCleanup;
   "lib/organizationMembershipState": typeof lib_organizationMembershipState;
   "lib/returnValidators": typeof lib_returnValidators;
-  "lib/security/api": typeof lib_security_api;
   "lib/security/api/control_workspace_core": typeof lib_security_api_control_workspace_core;
   "lib/security/api/core": typeof lib_security_api_core;
   "lib/security/api/maintenance": typeof lib_security_api_maintenance;
@@ -131,7 +132,6 @@ declare const fullApi: ApiFromModules<{
   "lib/security/api/review_runs_core": typeof lib_security_api_review_runs_core;
   "lib/security/api/validators": typeof lib_security_api_validators;
   "lib/security/api/workspace": typeof lib_security_api_workspace;
-  "lib/security/index": typeof lib_security_index;
   "lib/security/securityEvidenceActivity": typeof lib_security_securityEvidenceActivity;
   "lib/security/securityReviewConfig": typeof lib_security_securityReviewConfig;
   "lib/security/securityWorkspaceOverview": typeof lib_security_securityWorkspaceOverview;
@@ -145,7 +145,11 @@ declare const fullApi: ApiFromModules<{
   playground: typeof playground;
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
-  security: typeof security;
+  securityOps: typeof securityOps;
+  securityPosture: typeof securityPosture;
+  securityReports: typeof securityReports;
+  securityReviews: typeof securityReviews;
+  securityWorkspace: typeof securityWorkspace;
   "seed/index": typeof seed_index;
   storageCleanup: typeof storageCleanup;
   storageCleanupData: typeof storageCleanupData;

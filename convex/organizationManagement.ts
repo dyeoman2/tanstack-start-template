@@ -3199,7 +3199,7 @@ export const exportOrganizationAuditCsv = action({
     });
     const manifestHash = await hashContent(manifest);
 
-    await ctx.runMutation(internal.security.storeExportArtifact, {
+    await ctx.runMutation(internal.securityPosture.storeExportArtifact, {
       artifactType: 'audit_csv',
       exportedAt,
       exportedByUserId: currentUser.authUserId,
@@ -3375,7 +3375,7 @@ export const exportOrganizationDirectoryCsv = action({
     });
     const manifestHash = await hashContent(manifest);
 
-    await ctx.runMutation(internal.security.storeExportArtifact, {
+    await ctx.runMutation(internal.securityPosture.storeExportArtifact, {
       artifactType: 'directory_csv',
       exportedAt,
       exportedByUserId: currentUser.authUserId,
