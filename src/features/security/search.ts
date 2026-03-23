@@ -24,4 +24,3 @@ export const securitySearchSchema = z.object({
 });
 
 export type SecuritySearch = z.infer<typeof securitySearchSchema>;
-export type SecurityTab = (typeof SECURITY_TABS)[number];

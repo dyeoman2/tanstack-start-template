@@ -1,9 +1,9 @@
-import type { Doc, Id } from '../../../_generated/dataModel';
-import type { MutationCtx, QueryCtx } from '../../../_generated/server';
-import { getVendorBoundarySnapshot } from '../../../../src/lib/server/vendor-boundary.server';
-import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
-import { ANNUAL_REVIEW_TASK_BLUEPRINTS } from '../securityReviewConfig';
-import type { ReviewTaskBlueprint } from '../securityReviewConfig';
+import type { Doc, Id } from '../../_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../../_generated/server';
+import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
+import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import { ANNUAL_REVIEW_TASK_BLUEPRINTS } from './securityReviewConfig';
+import type { ReviewTaskBlueprint } from './securityReviewConfig';
 import {
   addDays,
   buildVendorRelatedControls,
@@ -1072,50 +1072,7 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
     patchedChecklistStatuses += 1;
   }
 
-  const getLegacyReviewNotes = (record: object) => {
-    const value = Reflect.get(record, 'reviewNotes');
-    if (typeof value !== 'string') {
-      return null;
-    }
-    const trimmed = value.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  };
   let patchedReviewNotes = 0;
-  const [reports, findings, vendorReviewRows] = await Promise.all([
-    ctx.db.query('evidenceReports').collect(),
-    ctx.db.query('securityFindings').collect(),
-    ctx.db.query('securityVendorReviews').collect(),
-  ]);
-  for (const report of reports) {
-    const legacyReviewNotes = getLegacyReviewNotes(report);
-    if (legacyReviewNotes === null && Reflect.get(report, 'reviewNotes') === undefined) {
-      continue;
-    }
-    await ctx.db.patch(report._id, {
-      internalReviewNotes: report.internalReviewNotes ?? legacyReviewNotes,
-    });
-    patchedReviewNotes += 1;
-  }
-  for (const finding of findings) {
-    const legacyReviewNotes = getLegacyReviewNotes(finding);
-    if (legacyReviewNotes === null && Reflect.get(finding, 'reviewNotes') === undefined) {
-      continue;
-    }
-    await ctx.db.patch(finding._id, {
-      internalReviewNotes: finding.internalReviewNotes ?? legacyReviewNotes,
-    });
-    patchedReviewNotes += 1;
-  }
-  for (const vendorReview of vendorReviewRows) {
-    const legacyReviewNotes = getLegacyReviewNotes(vendorReview);
-    if (legacyReviewNotes === null && Reflect.get(vendorReview, 'reviewNotes') === undefined) {
-      continue;
-    }
-    await ctx.db.patch(vendorReview._id, {
-      internalReviewNotes: vendorReview.internalReviewNotes ?? legacyReviewNotes,
-    });
-    patchedReviewNotes += 1;
-  }
 
   const syncedVendorReviewRows = await syncVendorReviewOverlayRecords(ctx);
   const [evidenceRows, findingRows, reviewRuns, reviewTasks, evidenceLinks, vendorReviews] =

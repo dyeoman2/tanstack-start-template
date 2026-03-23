@@ -18,7 +18,7 @@ This template documents the implemented safeguards that ship out of the box and 
 ### Operational evidence
 
 - `/app/admin/security` exposes posture summaries for MFA coverage, scan outcomes, retention jobs, backup verification, and audit integrity; it is intended for internal walkthroughs, not third-party attestations.
-- `api.security.generateEvidenceReport` emits a structured evidence snapshot and persists it to `evidenceReports` so teams can package compliance-ready exports.
+- `api.securityReports.generateEvidenceReport` emits a structured evidence snapshot and persists it to `evidenceReports` so teams can package compliance-ready exports.
 - `retentionJobs`, `documentScanEvents`, and `backupVerificationReports` provide timestamped evidence records that operators should link with their deployment runbooks.
 
 ### Important limitations

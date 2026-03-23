@@ -1,12 +1,12 @@
-import type { Doc, Id } from '../../../_generated/dataModel';
-import type { MutationCtx } from '../../../_generated/server';
-import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
+import type { Doc, Id } from '../../_generated/dataModel';
+import type { MutationCtx } from '../../_generated/server';
+import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import {
   EXPORT_ARTIFACT_SCHEMA_VERSION,
   RELEASE_PROVENANCE_CONTROL_ID,
   RELEASE_PROVENANCE_ITEM_ID,
   VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR,
-} from '../securityReviewConfig';
+} from './securityReviewConfig';
 import { SECURITY_SCOPE_ID, SECURITY_SCOPE_TYPE } from './validators';
 
 function stringifyStable(value: unknown) {

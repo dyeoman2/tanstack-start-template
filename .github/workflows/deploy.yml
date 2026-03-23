@@ -684,7 +684,7 @@ jobs:
               url: $run_url
             }')
 
-          pnpm exec convex run security:createSecurityControlEvidenceLinkInternal "${convex_args}" --typecheck disable
+          pnpm exec convex run securityWorkspace:createSecurityControlEvidenceLinkInternal "${convex_args}" --typecheck disable
           echo "status=success" >> "$GITHUB_OUTPUT"
 
       - name: Set workspace report summary

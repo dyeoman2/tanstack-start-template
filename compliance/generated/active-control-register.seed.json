@@ -3444,7 +3444,7 @@
             "evidence": [
               {
                 "title": "Evidence report review metadata schema",
-                "description": "Schema describing reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields on evidence reports.",
+                "description": "Schema describing reviewStatus, reviewedAt, reviewedByUserId, internalReviewNotes, contentHash, and exportHash fields on evidence reports.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3611,7 +3611,7 @@
             "evidence": [
               {
                 "title": "Evidence report follow-up metadata schema",
-                "description": "Schema describing reviewStatus, reviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.",
+                "description": "Schema describing reviewStatus, internalReviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -4858,7 +4858,7 @@
               },
               {
                 "title": "Backup verification reporting workflow",
-                "description": "Workflow .github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/security.ts recordBackupVerification handling.",
+                "description": "Workflow .github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/securityOps.ts recordBackupVerification handling.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5279,7 +5279,7 @@
             "evidence": [
               {
                 "title": "Evidence review metadata schema",
-                "description": "Schema describing reviewStatus, reviewNotes, reviewedAt, reviewedByUserId, and evidence activity history for control evidence records.",
+                "description": "Schema describing reviewStatus, internalReviewNotes, reviewedAt, reviewedByUserId, and evidence activity history for control evidence records.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

@@ -843,7 +843,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Security posture aggregation',
-              'convex/security.ts aggregates MFA coverage, audit integrity, file inspection, retention, backup verification, and vendor posture for the site admin security workspace.',
+              'convex/securityPosture.ts aggregates MFA coverage, audit integrity, file inspection, retention, backup verification, and vendor posture for the site admin security workspace.',
             ),
             seededEvidence(
               'Site admin security posture UI',
@@ -1278,11 +1278,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report review storage',
-              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportIntegritySummary fields for evidenceReports.',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, internalReviewNotes, contentHash, and exportIntegritySummary fields for evidenceReports.',
             ),
             seededEvidence(
               'Evidence report review workflow',
-              'src/routes/app/admin/security.tsx and convex/security.ts allow reviewers to mark evidence reports reviewed or needs follow-up with notes.',
+              'src/routes/app/admin/security.tsx and convex/securityReports.ts allow reviewers to mark evidence reports reviewed or needs follow-up with notes.',
             ),
           ],
           'Security Operations',
@@ -1652,7 +1652,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Backup verification write path',
-              'convex/security.ts provides backup verification write handlers for persisting restore verification and operator-recorded drill evidence.',
+              'convex/securityOps.ts provides backup verification write handlers for persisting restore verification and operator-recorded drill evidence.',
             ),
           ],
           'Infrastructure Operations',
@@ -1672,7 +1672,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Restore drill audit events',
-              'convex/security.ts records backup restore drill completed and failed audit events when verification results are stored.',
+              'convex/securityOps.ts records backup restore drill completed and failed audit events when verification results are stored.',
             ),
             seededEvidence(
               'Site admin restore drill summary',
@@ -2008,12 +2008,12 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Restore drill record structure',
-              'convex/security.ts stores backup verification records with drill type, status, timestamps, restored item counts, summaries, and artifact hashes for later provider review.',
+              'convex/securityOps.ts stores backup verification records with drill type, status, timestamps, restored item counts, summaries, and artifact hashes for later provider review.',
               { sufficiency: 'sufficient' },
             ),
             seededEvidence(
               'Backup verification reporting workflow',
-              '.github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/security.ts recordBackupVerification handling.',
+              '.github/workflows/db-backup.yml reports backup and restore verification results into the control workspace through convex/securityOps.ts recordBackupVerification handling.',
               { sufficiency: 'sufficient' },
             ),
             seededEvidence(
@@ -2072,7 +2072,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence export support',
-              'src/routes/app/admin/security.tsx and convex/security.ts support evidence report generation and export.',
+              'src/routes/app/admin/security.tsx and convex/securityReports.ts support evidence report generation and export.',
             ),
           ],
           'Security Incident Response',
@@ -2092,7 +2092,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Integrity-linked evidence reports',
-              'convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
+              'convex/securityReports.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
             ),
           ],
           'Security Incident Response',
@@ -2169,7 +2169,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report generation and export',
-              'convex/security.ts generates and exports evidence reports with structured posture, audit, and integrity data for review.',
+              'convex/securityReports.ts generates and exports evidence reports with structured posture, audit, and integrity data for review.',
             ),
             seededEvidence(
               'Site admin evidence and readiness actions',
@@ -2198,11 +2198,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Integrity-linked evidence report metadata',
-              'convex/security.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
+              'convex/securityReports.ts stores contentHash, exportHash, exportIntegritySummary, and review metadata for generated evidence reports.',
             ),
             seededEvidence(
               'Evidence report review-state schema',
-              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields used to preserve incident-supporting context.',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, internalReviewNotes, contentHash, and exportHash fields used to preserve incident-supporting context.',
             ),
           ],
           'Security Incident Response',
@@ -2387,7 +2387,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Session transport configuration',
-              'convex/betterAuth/sharedOptions.ts enables secure cookies for HTTPS origins and convex/security.ts reports sessionExpiryHours, freshWindowMinutes, and temporaryLinkTtlMinutes.',
+              'convex/betterAuth/sharedOptions.ts enables secure cookies for HTTPS origins and convex/securityPosture.ts reports sessionExpiryHours, freshWindowMinutes, and temporaryLinkTtlMinutes.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2569,7 +2569,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Evidence and audit hashing',
-              'convex/security.ts and convex/audit.ts compute content, export, and audit event hashes to preserve integrity-linked records.',
+              'convex/securityReports.ts and convex/audit.ts compute content, export, and audit event hashes to preserve integrity-linked records.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2713,11 +2713,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Document scan event records',
-              'convex/schema.ts defines documentScanEvents and convex/security.ts reports their latest status, rejection counts, and quarantine counts.',
+              'convex/schema.ts defines documentScanEvents and convex/securityPosture.ts reports their latest status, rejection counts, and quarantine counts.',
             ),
             seededEvidence(
               'Retention job records',
-              'convex/schema.ts defines retentionJobs and convex/security.ts reports retention job posture for later operational review.',
+              'convex/schema.ts defines retentionJobs and convex/securityPosture.ts reports retention job posture for later operational review.',
             ),
             seededEvidence(
               'Audit integrity failure records',
@@ -2930,7 +2930,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Integrity-linked export workflow',
-              'convex/security.ts generates export bundles with content and export hashes, and src/routes/app/admin/security.tsx surfaces those values to reviewers.',
+              'convex/securityReports.ts generates export bundles with content and export hashes, and src/routes/app/admin/security.tsx surfaces those values to reviewers.',
             ),
             seededEvidence(
               'Release provenance record workflow',
@@ -2997,7 +2997,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Evidence and vendor audit events',
-              'convex/security.ts emits evidence_report_generated, evidence_report_exported, and evidence_report_reviewed while convex/agentChatActions.ts emits outbound vendor access events.',
+              'convex/securityReports.ts emits evidence_report_generated, evidence_report_exported, and evidence_report_reviewed while convex/agentChatActions.ts emits outbound vendor access events.',
             ),
           ],
           'Audit and Logging',
@@ -3522,7 +3522,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Site admin baseline summary',
-              'convex/security.ts includes baseline defaults, session policy, and verification posture in generated site-admin evidence data for review.',
+              'convex/securityPosture.ts includes baseline defaults, session policy, and verification posture in generated site-admin evidence data for review.',
             ),
             seededEvidence(
               'Site admin baseline UI summary',
@@ -3725,7 +3725,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Vendor posture query',
-              'convex/security.ts includes vendor posture from the vendor-boundary snapshot in the site-admin security workspace data.',
+              'convex/securityPosture.ts includes vendor posture from the vendor-boundary snapshot in the site-admin security workspace data.',
             ),
             seededEvidence(
               'Vendor posture site admin UI',
@@ -3854,7 +3854,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence export integrity metadata',
-              'convex/security.ts computes contentHash and exportHash values and stores exportIntegritySummary for evidence report exports.',
+              'convex/securityReports.ts computes contentHash and exportHash values and stores exportIntegritySummary for evidence report exports.',
             ),
             seededEvidence(
               'Signed release bundle workflow',
@@ -3900,7 +3900,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report generation action',
-              'convex/security.ts generates structured evidence reports from posture state, recent audit events, integrity checks, and control workspace data.',
+              'convex/securityReports.ts generates structured evidence reports from posture state, recent audit events, integrity checks, and control workspace data.',
             ),
             seededEvidence(
               'Site admin report generation UI',
@@ -3928,11 +3928,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report review metadata schema',
-              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, reviewNotes, contentHash, and exportHash fields on evidence reports.',
+              'convex/schema.ts defines reviewStatus, reviewedAt, reviewedByUserId, internalReviewNotes, contentHash, and exportHash fields on evidence reports.',
             ),
             seededEvidence(
               'Evidence report review mutation',
-              'convex/security.ts records review status and reviewer attribution for persisted evidence reports.',
+              'convex/securityReports.ts records review status and reviewer attribution for persisted evidence reports.',
             ),
             seededEvidence(
               'Site admin review workflow',
@@ -3956,7 +3956,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report export action',
-              'convex/security.ts packages report content, manifest data, contentHash, exportHash, and exportIntegritySummary for evidence report export.',
+              'convex/securityReports.ts packages report content, manifest data, contentHash, exportHash, and exportIntegritySummary for evidence report export.',
             ),
             seededEvidence(
               'Export artifact storage',
@@ -4041,11 +4041,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report follow-up metadata schema',
-              'convex/schema.ts defines reviewStatus, reviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.',
+              'convex/schema.ts defines reviewStatus, internalReviewNotes, reviewedAt, and reviewedByUserId on evidence reports, including the needs follow-up state.',
             ),
             seededEvidence(
               'Evidence report follow-up workflow',
-              'convex/security.ts persists reviewed or needs follow-up state with trimmed reviewer notes, and src/routes/app/admin/security.tsx exposes the review queue actions.',
+              'convex/securityReports.ts persists reviewed or needs follow-up state with trimmed reviewer notes, and src/routes/app/admin/security.tsx exposes the review queue actions.',
             ),
           ],
           'Security Assurance',
@@ -4065,7 +4065,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence activity storage and query path',
-              'convex/schema.ts defines security control evidence activity and convex/security.ts lists evidence activity history by control and checklist item.',
+              'convex/schema.ts defines security control evidence activity and convex/securityWorkspace.ts lists evidence activity history by control and checklist item.',
             ),
             seededEvidence(
               'Evidence activity history UI',
@@ -4090,12 +4090,12 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report follow-up workflow',
-              'convex/security.ts and src/routes/app/admin/security.tsx retain follow-up status and reviewer notes on evidence reports so providers can capture ownership or target-date context in action artifacts.',
+              'convex/securityReports.ts and src/routes/app/admin/security.tsx retain follow-up status and reviewer notes on evidence reports so providers can capture ownership or target-date context in action artifacts.',
               { sufficiency: 'sufficient' },
             ),
             seededEvidence(
               'Security control evidence attachment workflow',
-              'convex/security.ts and src/routes/app/admin/security.tsx allow site admins to attach, review, and retain security control evidence items with notes and history for follow-up tracking artifacts.',
+              'convex/securityWorkspace.ts and src/routes/app/admin/security.tsx allow site admins to attach, review, and retain security control evidence items with notes and history for follow-up tracking artifacts.',
               { sufficiency: 'sufficient' },
             ),
           ],
@@ -4149,7 +4149,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Security posture summary query',
-              'convex/security.ts aggregates posture signals for MFA coverage, backups, retention, scans, audit integrity, telemetry, and vendor posture.',
+              'convex/securityPosture.ts aggregates posture signals for MFA coverage, backups, retention, scans, audit integrity, telemetry, and vendor posture.',
             ),
             seededEvidence(
               'Admin summary dashboard',
@@ -4178,7 +4178,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Audit integrity monitoring signal',
-              'convex/security.ts counts audit_integrity_check_failed events and includes the result in the posture summary.',
+              'convex/securityPosture.ts counts audit_integrity_check_failed events and includes the result in the posture summary.',
             ),
             seededEvidence(
               'Release verification workflow',
@@ -4202,7 +4202,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence report generation action',
-              'convex/security.ts generates a structured evidence report from current posture state, recent audit events, integrity checks, and control workspace data.',
+              'convex/securityReports.ts generates a structured evidence report from current posture state, recent audit events, integrity checks, and control workspace data.',
             ),
             seededEvidence(
               'Evidence report UI workflow',
@@ -4448,7 +4448,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Site admin evidence upload and review flows',
-              'convex/security.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence for site admin controls.',
+              'convex/securityWorkspace.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence for site admin controls.',
             ),
           ],
           'Workforce Security',
@@ -4468,7 +4468,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           [
             seededEvidence(
               'Evidence review metadata schema',
-              'convex/schema.ts defines reviewStatus, reviewNotes, reviewedAt, reviewedByUserId, and evidence activity history for control evidence records.',
+              'convex/schema.ts defines reviewStatus, internalReviewNotes, reviewedAt, reviewedByUserId, and evidence activity history for control evidence records.',
             ),
             seededEvidence(
               'Evidence review and history UI',
@@ -4706,7 +4706,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Evidence review and export flows',
-              'convex/security.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence artifacts for provider controls.',
+              'convex/securityWorkspace.ts and src/routes/app/admin/security.tsx support attaching, reviewing, and exporting evidence artifacts for provider controls.',
             ),
           ],
           'Workforce Security',

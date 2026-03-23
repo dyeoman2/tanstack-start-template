@@ -1,7 +1,3 @@
-import {
-  type ControlResponsibility,
-  getControlResponsibilityDisplayLabel,
-} from '~/lib/shared/compliance/control-register';
 import type {
   EvidenceReviewDueIntervalMonths,
   EvidenceSource,
@@ -17,8 +13,12 @@ import type {
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
 } from '~/features/security/types';
+import {
+  type ControlResponsibility,
+  getControlResponsibilityDisplayLabel,
+} from '~/lib/shared/compliance/control-register';
 
-export function countReviewTasksByStatus(tasks: ReviewRunDetail['tasks']) {
+function countReviewTasksByStatus(tasks: ReviewRunDetail['tasks']) {
   return tasks.reduce(
     (counts, task) => {
       counts.total += 1;

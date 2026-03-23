@@ -1,7 +1,7 @@
-import type { Id } from '../../../_generated/dataModel';
-import type { QueryCtx } from '../../../_generated/server';
-import { getVendorBoundarySnapshot } from '../../../../src/lib/server/vendor-boundary.server';
-import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
+import type { Id } from '../../_generated/dataModel';
+import type { QueryCtx } from '../../_generated/server';
+import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
+import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { getSecurityScopeFields, hasActiveReviewSatisfaction } from './core';
 import {
   addMonths,

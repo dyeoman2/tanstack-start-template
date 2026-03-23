@@ -273,7 +273,7 @@ jobs:
               verificationMethod: "github-actions-convex-export-restore"
             }')
 
-          pnpm exec convex run security:recordBackupVerification "${convex_args}" --typecheck disable
+          pnpm exec convex run securityOps:recordBackupVerification "${convex_args}" --typecheck disable
           echo "status=success" >> "$GITHUB_OUTPUT"
         env:
           AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}

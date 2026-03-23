@@ -529,7 +529,7 @@ export default {
         type: 'problem',
         docs: {
           description:
-            'Require public handlers in convex/security.ts to use a recognized site-admin helper unless explicitly opted out.',
+            'Require public handlers in the top-level security Convex modules to use a recognized site-admin helper unless explicitly opted out.',
         },
         schema: [],
         messages: {
@@ -539,10 +539,18 @@ export default {
       },
       create(context) {
         const filename = context.filename ?? context.getFilename?.() ?? '';
-        if (
-          !filename.endsWith('/convex/security.ts') &&
-          !filename.endsWith('\\convex\\security.ts')
-        ) {
+        const isSecurityModule =
+          filename.endsWith('/convex/securityWorkspace.ts') ||
+          filename.endsWith('\\convex\\securityWorkspace.ts') ||
+          filename.endsWith('/convex/securityPosture.ts') ||
+          filename.endsWith('\\convex\\securityPosture.ts') ||
+          filename.endsWith('/convex/securityReports.ts') ||
+          filename.endsWith('\\convex\\securityReports.ts') ||
+          filename.endsWith('/convex/securityReviews.ts') ||
+          filename.endsWith('\\convex\\securityReviews.ts') ||
+          filename.endsWith('/convex/securityOps.ts') ||
+          filename.endsWith('\\convex\\securityOps.ts');
+        if (!isSecurityModule) {
           return {};
         }
 

@@ -55,7 +55,7 @@ Recommended for local self-hosted deploy validation inside the workflow:
 
 If the recommended test secrets are omitted, the workflow falls back to local development-style defaults where possible.
 
-The weekly DR workflow can also retain backup verification in the control workspace by calling `security:recordBackupVerification` with the existing `CONVEX_DEPLOY_KEY`, so no separate callback URL or shared-secret env var is required.
+The weekly DR workflow can also retain backup verification in the control workspace by calling `securityOps:recordBackupVerification` with the existing `CONVEX_DEPLOY_KEY`, so no separate callback URL or shared-secret env var is required.
 
 Required for the manual recovery workflow [dr-recover-deploy.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/dr-recover-deploy.yml):
 

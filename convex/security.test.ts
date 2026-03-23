@@ -17,24 +17,24 @@ vi.mock('./storagePlatform', () => ({
   createUploadTargetWithMode: vi.fn(),
 }));
 
-let archiveSecurityControlEvidenceHandler: typeof import('./securityWorkspace').archiveSecurityControlEvidenceHandler;
-let buildExportManifestFn: typeof import('./lib/security/api/core').buildExportManifest;
-let deleteSecurityRelationships: typeof import('./lib/security/api/core').deleteSecurityRelationships;
-let exportEvidenceReportHandler: typeof import('./securityReports').exportEvidenceReportHandler;
-let generateEvidenceReportHandler: typeof import('./securityReports').generateEvidenceReportHandler;
-let getAuditReadinessSnapshotHandler: typeof import('./securityPosture').getAuditReadinessSnapshotHandler;
-let _getSecurityPostureSummaryHandler: typeof import('./securityPosture').getSecurityPostureSummaryHandler;
-let listSecurityFindingsHandler: typeof import('./securityWorkspace').listSecurityFindingsHandler;
-let _listSecurityControlEvidenceActivityHandler: typeof import('./securityWorkspace').listSecurityControlEvidenceActivityHandler;
+let archiveSecurityControlEvidenceHandler: typeof import('./lib/security/workspace').archiveSecurityControlEvidenceHandler;
+let buildExportManifestFn: typeof import('./lib/security/core').buildExportManifest;
+let deleteSecurityRelationships: typeof import('./lib/security/core').deleteSecurityRelationships;
+let exportEvidenceReportHandler: typeof import('./lib/security/reports').exportEvidenceReportHandler;
+let generateEvidenceReportHandler: typeof import('./lib/security/reports').generateEvidenceReportHandler;
+let getAuditReadinessSnapshotHandler: typeof import('./lib/security/posture').getAuditReadinessSnapshotHandler;
+let _getSecurityPostureSummaryHandler: typeof import('./lib/security/posture').getSecurityPostureSummaryHandler;
+let listSecurityFindingsHandler: typeof import('./lib/security/workspace').listSecurityFindingsHandler;
+let _listSecurityControlEvidenceActivityHandler: typeof import('./lib/security/workspace').listSecurityControlEvidenceActivityHandler;
 let securityWorkspaceModuleRef: typeof import('./securityWorkspace');
 let securityPostureModuleRef: typeof import('./securityPosture');
 let securityReportsModuleRef: typeof import('./securityReports');
 let securityReviewsModuleRef: typeof import('./securityReviews');
 let securityOpsModuleRef: typeof import('./securityOps');
-let renewSecurityControlEvidenceHandler: typeof import('./securityWorkspace').renewSecurityControlEvidenceHandler;
-let recordBackupVerificationHandler: typeof import('./securityOps').recordBackupVerificationHandler;
-let reviewSecurityFindingHandler: typeof import('./securityWorkspace').reviewSecurityFindingHandler;
-let summarizeIntegrityCheckFn: typeof import('./lib/security/api/core').summarizeIntegrityCheck;
+let renewSecurityControlEvidenceHandler: typeof import('./lib/security/workspace').renewSecurityControlEvidenceHandler;
+let recordBackupVerificationHandler: typeof import('./lib/security/operations_core').recordBackupVerificationHandler;
+let reviewSecurityFindingHandler: typeof import('./lib/security/workspace').reviewSecurityFindingHandler;
+let summarizeIntegrityCheckFn: typeof import('./lib/security/core').summarizeIntegrityCheck;
 let getVerifiedCurrentSiteAdminUserFromActionOrThrowMock: ReturnType<typeof vi.fn>;
 let getVerifiedCurrentSiteAdminUserOrThrowMock: ReturnType<typeof vi.fn>;
 
@@ -255,33 +255,48 @@ beforeAll(async () => {
   getVerifiedCurrentSiteAdminUserOrThrowMock = vi.mocked(
     accessModule.getVerifiedCurrentSiteAdminUserOrThrow,
   );
-  const [workspaceModule, postureModule, reportsModule, reviewsModule, opsModule, coreModule] =
-    await Promise.all([
-      import('./securityWorkspace'),
-      import('./securityPosture'),
-      import('./securityReports'),
-      import('./securityReviews'),
-      import('./securityOps'),
-      import('./lib/security/api/core'),
-    ]);
+  const [
+    workspaceModule,
+    postureModule,
+    reportsModule,
+    reviewsModule,
+    opsModule,
+    workspaceHelperModule,
+    postureHelperModule,
+    reportsHelperModule,
+    opsHelperModule,
+    coreModule,
+  ] = await Promise.all([
+    import('./securityWorkspace'),
+    import('./securityPosture'),
+    import('./securityReports'),
+    import('./securityReviews'),
+    import('./securityOps'),
+    import('./lib/security/workspace'),
+    import('./lib/security/posture'),
+    import('./lib/security/reports'),
+    import('./lib/security/operations_core'),
+    import('./lib/security/core'),
+  ]);
   securityWorkspaceModuleRef = workspaceModule;
   securityPostureModuleRef = postureModule;
   securityReportsModuleRef = reportsModule;
   securityReviewsModuleRef = reviewsModule;
   securityOpsModuleRef = opsModule;
-  archiveSecurityControlEvidenceHandler = workspaceModule.archiveSecurityControlEvidenceHandler;
+  archiveSecurityControlEvidenceHandler =
+    workspaceHelperModule.archiveSecurityControlEvidenceHandler;
   buildExportManifestFn = coreModule.buildExportManifest;
   deleteSecurityRelationships = coreModule.deleteSecurityRelationships;
-  exportEvidenceReportHandler = reportsModule.exportEvidenceReportHandler;
-  generateEvidenceReportHandler = reportsModule.generateEvidenceReportHandler;
-  getAuditReadinessSnapshotHandler = postureModule.getAuditReadinessSnapshotHandler;
-  _getSecurityPostureSummaryHandler = postureModule.getSecurityPostureSummaryHandler;
-  listSecurityFindingsHandler = workspaceModule.listSecurityFindingsHandler;
+  exportEvidenceReportHandler = reportsHelperModule.exportEvidenceReportHandler;
+  generateEvidenceReportHandler = reportsHelperModule.generateEvidenceReportHandler;
+  getAuditReadinessSnapshotHandler = postureHelperModule.getAuditReadinessSnapshotHandler;
+  _getSecurityPostureSummaryHandler = postureHelperModule.getSecurityPostureSummaryHandler;
+  listSecurityFindingsHandler = workspaceHelperModule.listSecurityFindingsHandler;
   _listSecurityControlEvidenceActivityHandler =
-    workspaceModule.listSecurityControlEvidenceActivityHandler;
-  renewSecurityControlEvidenceHandler = workspaceModule.renewSecurityControlEvidenceHandler;
-  recordBackupVerificationHandler = opsModule.recordBackupVerificationHandler;
-  reviewSecurityFindingHandler = workspaceModule.reviewSecurityFindingHandler;
+    workspaceHelperModule.listSecurityControlEvidenceActivityHandler;
+  renewSecurityControlEvidenceHandler = workspaceHelperModule.renewSecurityControlEvidenceHandler;
+  recordBackupVerificationHandler = opsHelperModule.recordBackupVerificationHandler;
+  reviewSecurityFindingHandler = workspaceHelperModule.reviewSecurityFindingHandler;
   summarizeIntegrityCheckFn = coreModule.summarizeIntegrityCheck;
 });
 
@@ -697,7 +712,6 @@ describe('audit evidence helpers', () => {
                       firstObservedAt: 90,
                       internalReviewNotes: 'triaging integrity break',
                       lastObservedAt: 95,
-                      reviewNotes: 'triaging integrity break',
                       reviewedAt: 120,
                       reviewedByUserId: 'admin-user',
                     };
@@ -729,9 +743,11 @@ describe('audit evidence helpers', () => {
       severity: 'critical',
       status: 'open',
     });
-    expect(result.some((finding) => finding.findingKey === 'release_security_validation')).toBe(
-      true,
-    );
+    expect(
+      result.some(
+        (finding: (typeof result)[number]) => finding.findingKey === 'release_security_validation',
+      ),
+    ).toBe(true);
   });
 
   it('reads projected evidence activity rows before raw-audit fallback', async () => {

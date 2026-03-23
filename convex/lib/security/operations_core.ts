@@ -1,12 +1,11 @@
-import { internalMutation } from '../../../_generated/server';
-import type { MutationCtx, QueryCtx } from '../../../_generated/server';
-import { getVendorBoundarySnapshot } from '../../../../src/lib/server/vendor-boundary.server';
-import { ACTIVE_CONTROL_REGISTER } from '../../../../src/lib/shared/compliance/control-register';
-import { RELEASE_PROVENANCE_CONTROL_ID, RELEASE_PROVENANCE_ITEM_ID } from '../securityReviewConfig';
+import type { MutationCtx, QueryCtx } from '../../_generated/server';
+import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
+import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import { RELEASE_PROVENANCE_CONTROL_ID, RELEASE_PROVENANCE_ITEM_ID } from './securityReviewConfig';
 import {
   addControlToSecurityWorkspaceSummary,
   createEmptySecurityWorkspaceControlSummary,
-} from '../securityWorkspaceOverview';
+} from './securityWorkspaceOverview';
 import {
   getAnnualReviewRunKey,
   getCurrentAnnualReviewYear,
@@ -16,12 +15,7 @@ import {
   stringifyStable,
   upsertSecurityRelationship,
 } from './core';
-import {
-  SECURITY_METRICS_KEY,
-  backupVerificationDrillTypeValidator,
-  backupVerificationInitiatedByKindValidator,
-  backupVerificationTargetEnvironmentValidator,
-} from './validators';
+import { SECURITY_METRICS_KEY } from './validators';
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 
@@ -884,47 +878,6 @@ const documentScanEventArgs = {
   scannerEngine: v.string(),
 };
 
-export const recordDocumentScanEventInternal = internalMutation({
-  args: {
-    ...documentScanEventArgs,
-  },
-  returns: v.id('documentScanEvents'),
-  handler: async (ctx, args) => {
-    const recordId = await ctx.db.insert('documentScanEvents', {
-      ...args,
-      createdAt: Date.now(),
-      details: args.details ?? null,
-    });
-    await updateSecurityMetrics(ctx, {
-      resultStatus: args.resultStatus,
-      scannedAt: args.scannedAt,
-    });
-    await syncCurrentSecurityFindings(ctx, 'system:document-scan');
-    return recordId;
-  },
-});
-
-export const recordRetentionJob = internalMutation({
-  args: {
-    details: v.optional(v.string()),
-    jobKind: v.union(
-      v.literal('attachment_purge'),
-      v.literal('quarantine_cleanup'),
-      v.literal('audit_export_cleanup'),
-    ),
-    processedCount: v.number(),
-    status: v.union(v.literal('success'), v.literal('failure')),
-  },
-  returns: v.id('retentionJobs'),
-  handler: async (ctx, args) => {
-    return await ctx.db.insert('retentionJobs', {
-      ...getSecurityScopeFields(),
-      ...args,
-      createdAt: Date.now(),
-    });
-  },
-});
-
 export async function recordBackupVerificationHandler(
   ctx: MutationCtx,
   args: {
@@ -981,28 +934,6 @@ export async function recordBackupVerificationHandler(
 
   return recordId;
 }
-
-export const recordBackupVerification = internalMutation({
-  args: {
-    artifactContentJson: v.optional(v.union(v.string(), v.null())),
-    artifactHash: v.optional(v.union(v.string(), v.null())),
-    checkedAt: v.number(),
-    drillId: v.string(),
-    drillType: backupVerificationDrillTypeValidator,
-    evidenceSummary: v.string(),
-    failureReason: v.optional(v.union(v.string(), v.null())),
-    initiatedByKind: backupVerificationInitiatedByKindValidator,
-    initiatedByUserId: v.optional(v.union(v.string(), v.null())),
-    restoredItemCount: v.number(),
-    status: v.union(v.literal('success'), v.literal('failure')),
-    sourceDataset: v.string(),
-    summary: v.string(),
-    targetEnvironment: backupVerificationTargetEnvironmentValidator,
-    verificationMethod: v.string(),
-  },
-  returns: v.id('backupVerificationReports'),
-  handler: recordBackupVerificationHandler,
-});
 
 export {
   _getSecurityMetricsSnapshot,

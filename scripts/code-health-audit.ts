@@ -110,17 +110,17 @@ const AUTH_ALLOWLIST: Record<string, string> = {
     'Uses the internal current-chat context gate and persona ownership checks.',
   'convex/organizationDomains.ts:verifyOrganizationDomain':
     'Delegates to a guarded verification handler that validates organization membership.',
-  'convex/security.ts:getSecurityPostureSummary':
+  'convex/securityPosture.ts:getSecurityPostureSummary':
     'Delegates to a site-admin-only handler for security posture data.',
-  'convex/security.ts:listSecurityControlEvidenceActivity':
+  'convex/securityWorkspace.ts:listSecurityControlEvidenceActivity':
     'Delegates to a site-admin-only handler for evidence activity data.',
-  'convex/security.ts:renewSecurityControlEvidence':
+  'convex/securityWorkspace.ts:renewSecurityControlEvidence':
     'Delegates to a site-admin-only renewal handler for evidence records.',
-  'convex/security.ts:exportEvidenceReport':
+  'convex/securityReports.ts:exportEvidenceReport':
     'Delegates to a site-admin-only export handler for evidence reports.',
-  'convex/security.ts:generateEvidenceReport':
+  'convex/securityReports.ts:generateEvidenceReport':
     'Delegates to a site-admin-only generation handler for evidence reports.',
-  'convex/security.ts:reseedSecurityControlWorkspaceForDevelopment':
+  'convex/securityOps.ts:reseedSecurityControlWorkspaceForDevelopment':
     'Development-only reseed endpoint protected by the e2e shared secret.',
 };
 

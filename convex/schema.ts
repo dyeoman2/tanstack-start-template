@@ -565,7 +565,6 @@ export default defineSchema({
     firstObservedAt: v.number(),
     lastObservedAt: v.number(),
     internalReviewNotes: v.optional(v.union(v.string(), v.null())),
-    reviewNotes: v.optional(v.union(v.string(), v.null())),
     customerSummary: v.optional(v.union(v.string(), v.null())),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),
@@ -609,7 +608,6 @@ export default defineSchema({
     reviewedByUserId: v.union(v.string(), v.null()),
     customerSummary: v.optional(v.union(v.string(), v.null())),
     internalReviewNotes: v.optional(v.union(v.string(), v.null())),
-    reviewNotes: v.optional(v.union(v.string(), v.null())),
     createdAt: v.number(),
   })
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
@@ -926,7 +924,6 @@ export default defineSchema({
       v.literal('needs_follow_up'),
     ),
     internalReviewNotes: v.optional(v.union(v.string(), v.null())),
-    reviewNotes: v.optional(v.union(v.string(), v.null())),
     customerSummary: v.optional(v.union(v.string(), v.null())),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),

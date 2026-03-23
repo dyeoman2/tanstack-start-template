@@ -1,5 +1,5 @@
-import { components } from '../../../_generated/api';
-import type { MutationCtx } from '../../../_generated/server';
+import { components } from '../../_generated/api';
+import type { MutationCtx } from '../../_generated/server';
 import { v } from 'convex/values';
 
 const SECURITY_METRICS_KEY = 'global';
@@ -317,7 +317,6 @@ const evidenceReportRecordValidator = v.object({
   reviewedByUserId: v.union(v.string(), v.null()),
   customerSummary: v.optional(v.union(v.string(), v.null())),
   internalReviewNotes: v.optional(v.union(v.string(), v.null())),
-  reviewNotes: v.optional(v.union(v.string(), v.null())),
   createdAt: v.number(),
 });
 

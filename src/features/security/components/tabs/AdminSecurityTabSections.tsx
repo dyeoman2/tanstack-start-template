@@ -285,7 +285,10 @@ export function AdminSecurityControlsTab(props: {
               value={props.evidenceReadinessFilter}
               options={props.evidenceReadinessOptions}
               onValueChange={(value) => {
-                props.updateControlSearch({ evidenceReadiness: value, page: 1 });
+                props.updateControlSearch({
+                  evidenceReadiness: value,
+                  page: 1,
+                });
               }}
               className="shrink-0"
               ariaLabel="Filter controls by evidence readiness"
@@ -334,7 +337,7 @@ export function AdminSecurityControlsTab(props: {
   );
 }
 
-export function AdminSecurityEvidenceTab(props: {
+function AdminSecurityEvidenceTab(props: {
   auditReadiness: AuditReadinessOverview | undefined;
   auditReadinessSummary: {
     latestDrill: AuditReadinessOverview['latestBackupDrill'];
@@ -1194,7 +1197,7 @@ export function AdminSecurityReviewsTab(props: {
   );
 }
 
-export function AdminSecurityVendorsTab(props: {
+function AdminSecurityVendorsTab(props: {
   busyVendorKey: string | null;
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: () => void;
