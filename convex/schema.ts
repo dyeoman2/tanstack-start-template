@@ -641,22 +641,6 @@ export default defineSchema({
     scopeId: v.optional(v.string()),
     internalControlId: v.string(),
     itemId: v.string(),
-    manualStatus: v.optional(
-      v.union(
-        v.literal('not_started'),
-        v.literal('in_progress'),
-        v.literal('done'),
-        v.literal('not_applicable'),
-      ),
-    ),
-    status: v.optional(
-      v.union(
-        v.literal('not_started'),
-        v.literal('in_progress'),
-        v.literal('done'),
-        v.literal('not_applicable'),
-      ),
-    ),
     owner: v.optional(v.string()),
     notes: v.optional(v.string()),
     internalOperatorNotes: v.optional(v.string()),
@@ -738,7 +722,7 @@ export default defineSchema({
     ),
     reviewOriginSourceId: v.optional(v.string()),
     reviewOriginSourceLabel: v.optional(v.string()),
-    satisfiesThroughAt: v.optional(v.number()),
+    validUntil: v.optional(v.number()),
     sufficiency: v.union(v.literal('missing'), v.literal('partial'), v.literal('sufficient')),
     uploadedByUserId: v.string(),
     reviewStatus: v.optional(v.union(v.literal('pending'), v.literal('reviewed'))),

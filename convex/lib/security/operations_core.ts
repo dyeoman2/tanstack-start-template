@@ -18,40 +18,82 @@ import { SECURITY_METRICS_KEY } from './validators';
 import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 
-function deriveItemEvidenceSufficiency(
+const SEEDED_EVIDENCE_VALIDITY_MONTHS = 12 as const;
+
+function resolveEvidenceValidity(input: {
+  lifecycleStatus: 'active' | 'archived' | 'superseded';
+  reviewStatus: 'pending' | 'reviewed';
+  validUntil: number | null;
+}) {
+  if (input.validUntil === null) {
+    return {
+      countsForSupport: input.lifecycleStatus === 'active' && input.reviewStatus === 'reviewed',
+      expiryStatus: 'none' as const,
+    };
+  }
+
+  const now = Date.now();
+  if (input.validUntil < now) {
+    return {
+      countsForSupport: false,
+      expiryStatus: 'expired' as const,
+    };
+  }
+
+  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
+  return {
+    countsForSupport: input.lifecycleStatus === 'active' && input.reviewStatus === 'reviewed',
+    expiryStatus:
+      input.validUntil - now <= thirtyDaysMs ? ('expiring_soon' as const) : ('current' as const),
+  };
+}
+
+function resolveChecklistSupport(
   evidence: Array<{
     lifecycleStatus: 'active' | 'archived' | 'superseded';
     reviewStatus: 'pending' | 'reviewed';
     sufficiency: 'missing' | 'partial' | 'sufficient';
+    validUntil: number | null;
   }>,
 ) {
-  const reviewedEvidence = evidence.filter(
-    (item) => item.lifecycleStatus === 'active' && item.reviewStatus === 'reviewed',
+  const validReviewedEvidence = evidence.filter((item) => {
+    const validity = resolveEvidenceValidity(item);
+    return validity.countsForSupport;
+  });
+  const activePendingEvidence = evidence.filter(
+    (item) => item.lifecycleStatus === 'active' && item.reviewStatus !== 'reviewed',
   );
 
-  if (reviewedEvidence.some((item) => item.sufficiency === 'sufficient')) {
-    return 'sufficient' as const;
+  if (validReviewedEvidence.some((item) => item.sufficiency === 'sufficient')) {
+    return 'complete' as const;
   }
-  if (reviewedEvidence.some((item) => item.sufficiency === 'partial')) {
+  if (validReviewedEvidence.length > 0 || activePendingEvidence.length > 0) {
     return 'partial' as const;
   }
   return 'missing' as const;
 }
 
-function deriveChecklistItemStatus(
-  evidence: Array<{
-    lifecycleStatus: 'active' | 'archived' | 'superseded';
-    reviewStatus: 'pending' | 'reviewed';
-  }>,
-) {
-  const activeEvidence = evidence.filter((item) => item.lifecycleStatus === 'active');
-  if (activeEvidence.length === 0) {
-    return 'not_started' as const;
+function resolveEvidenceValidUntil(input: {
+  reviewedAt?: number | null;
+  reviewDueIntervalMonths?: 3 | 6 | 12 | null;
+  validUntil?: number | null;
+}) {
+  if (typeof input.validUntil === 'number') {
+    return input.validUntil;
   }
-  if (activeEvidence.every((item) => item.reviewStatus === 'reviewed')) {
-    return 'done' as const;
+  if (
+    typeof input.reviewedAt === 'number' &&
+    (input.reviewDueIntervalMonths === 3 ||
+      input.reviewDueIntervalMonths === 6 ||
+      input.reviewDueIntervalMonths === 12)
+  ) {
+    return addMonths(input.reviewedAt, input.reviewDueIntervalMonths);
   }
-  return 'in_progress' as const;
+  return null;
+}
+
+function resolveSeededEvidenceValidUntil(reviewedAt: number) {
+  return addMonths(reviewedAt, SEEDED_EVIDENCE_VALIDITY_MONTHS);
 }
 
 function addMonths(timestamp: number, months: 3 | 6 | 12): number {
@@ -60,25 +102,12 @@ function addMonths(timestamp: number, months: 3 | 6 | 12): number {
   return date.getTime();
 }
 
-function deriveEvidenceExpiryStatus(input: {
-  reviewDueAt: number | null;
-  reviewedAt: number | null;
-}) {
-  if (input.reviewDueAt === null || input.reviewedAt === null) {
-    return 'none' as const;
-  }
-
-  const now = Date.now();
-  if (input.reviewDueAt <= now) {
-    return 'current' as const;
-  }
-
-  const thirtyDaysMs = 30 * 24 * 60 * 60 * 1000;
-  if (input.reviewDueAt - now <= thirtyDaysMs) {
-    return 'expiring_soon' as const;
-  }
-
-  return 'current' as const;
+function deriveEvidenceExpiryStatus(input: { validUntil: number | null }) {
+  return resolveEvidenceValidity({
+    lifecycleStatus: 'active',
+    reviewStatus: 'reviewed',
+    validUntil: input.validUntil,
+  }).expiryStatus;
 }
 
 function getActorDisplayName(
@@ -587,12 +616,14 @@ async function buildSecurityWorkspaceVendorSummary(ctx: QueryCtx) {
 }
 
 async function buildSecurityWorkspaceControlSummary(ctx: QueryCtx) {
-  const [checklistItems, evidenceRows] = await Promise.all([
+  // Base control support is intentionally evidence-driven only. Findings, vendor posture,
+  // and review workflow state remain linked overlays and must not alter this rollup.
+  const [checklistRows, evidenceRows] = await Promise.all([
     ctx.db.query('securityControlChecklistItems').collect(),
     ctx.db.query('securityControlEvidence').collect(),
   ]);
   const checklistStateByKey = new Map(
-    checklistItems.map((item) => [`${item.internalControlId}:${item.itemId}`, item] as const),
+    checklistRows.map((item) => [`${item.internalControlId}:${item.itemId}`, item] as const),
   );
   const evidenceByKey = evidenceRows.reduce<Map<string, Array<(typeof evidenceRows)[number]>>>(
     (accumulator, evidence) => {
@@ -604,29 +635,30 @@ async function buildSecurityWorkspaceControlSummary(ctx: QueryCtx) {
     },
     new Map(),
   );
+  const seededReviewedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
   const controlSummary = ACTIVE_CONTROL_REGISTER.controls.reduce((summary, control) => {
     const platformChecklist = control.platformChecklistItems.map((item) => {
       const itemState = checklistStateByKey.get(`${control.internalControlId}:${item.itemId}`);
-      const evidence = (evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? []).map(
-        (entry) => ({
-          lifecycleStatus: entry.lifecycleStatus ?? ('active' as const),
-          reviewStatus:
-            entry.reviewStatus ?? (entry.reviewedAt ? ('reviewed' as const) : ('pending' as const)),
-        }),
-      );
-      const evidenceDerivedStatus = deriveChecklistItemStatus(evidence);
-      const manualStatus = itemState?.manualStatus ?? itemState?.status ?? null;
-      const status = manualStatus ?? evidenceDerivedStatus;
+      const evidence = buildNormalizedChecklistEvidence({
+        archivedSeedEvidence: itemState?.archivedSeedEvidence ?? null,
+        hiddenSeedEvidenceIds: itemState?.hiddenSeedEvidenceIds ?? null,
+        internalControlId: control.internalControlId,
+        itemId: item.itemId,
+        persistedEvidence: evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? [],
+        seededEvidence: item.seed.evidence,
+        seededReviewedAt,
+      });
+      const support = resolveChecklistSupport(evidence);
 
       return {
         evidence,
-        status,
+        support,
       };
     });
 
-    const evidenceReadiness = deriveEvidenceReadiness(platformChecklist);
+    const support = resolveControlSupport(platformChecklist);
     addControlToSecurityWorkspaceSummary(summary, {
-      evidenceReadiness,
+      support,
       responsibility: control.responsibility,
     });
     return summary;
@@ -634,7 +666,7 @@ async function buildSecurityWorkspaceControlSummary(ctx: QueryCtx) {
 
   return {
     controlSummary,
-    missingEvidenceControls: controlSummary.byEvidence.missing,
+    missingSupportControls: controlSummary.bySupport.missing,
   };
 }
 
@@ -778,30 +810,87 @@ function getSeededEvidenceEntry(internalControlId: string, itemId: string, evide
   };
 }
 
-function deriveEvidenceReadiness(
+function buildNormalizedChecklistEvidence(args: {
+  archivedSeedEvidence?: Array<{
+    evidenceId: string;
+    lifecycleStatus: 'archived' | 'superseded';
+  }> | null;
+  hiddenSeedEvidenceIds?: string[] | null;
+  internalControlId: string;
+  itemId: string;
+  persistedEvidence: Array<{
+    lifecycleStatus?: 'active' | 'archived' | 'superseded';
+    reviewStatus?: 'pending' | 'reviewed';
+    reviewedAt?: number | null;
+    reviewDueIntervalMonths?: 3 | 6 | 12 | null;
+    sufficiency: 'missing' | 'partial' | 'sufficient';
+    validUntil?: number | null;
+  }>;
+  seededEvidence: Array<{
+    sufficiency: 'missing' | 'partial' | 'sufficient';
+  }>;
+  seededReviewedAt: number;
+}) {
+  const hiddenSeedEvidenceIds = new Set(args.hiddenSeedEvidenceIds ?? []);
+  const archivedSeedEvidenceById = new Map(
+    (args.archivedSeedEvidence ?? []).map((entry) => [entry.evidenceId, entry] as const),
+  );
+  const seededValidUntil = resolveSeededEvidenceValidUntil(args.seededReviewedAt);
+  const activeSeededEvidence = args.seededEvidence
+    .map((entry, index) => ({
+      evidenceId: `${args.internalControlId}:${args.itemId}:seed:${index}`,
+      sufficiency: entry.sufficiency,
+    }))
+    .filter((entry) => !hiddenSeedEvidenceIds.has(entry.evidenceId))
+    .map((entry) => ({
+      lifecycleStatus: 'active' as const,
+      reviewStatus: 'reviewed' as const,
+      sufficiency: entry.sufficiency,
+      validUntil: seededValidUntil,
+    }));
+  const archivedSeededEvidence = Array.from(hiddenSeedEvidenceIds)
+    .map((evidenceId) => {
+      const seededEntry = getSeededEvidenceEntry(args.internalControlId, args.itemId, evidenceId);
+      if (!seededEntry) {
+        return null;
+      }
+      return {
+        lifecycleStatus:
+          archivedSeedEvidenceById.get(evidenceId)?.lifecycleStatus ?? ('archived' as const),
+        reviewStatus: 'reviewed' as const,
+        sufficiency: seededEntry.entry.sufficiency,
+        validUntil: seededValidUntil,
+      };
+    })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+  const persistedEvidence = args.persistedEvidence.map((entry) => ({
+    lifecycleStatus: entry.lifecycleStatus ?? ('active' as const),
+    reviewStatus:
+      entry.reviewStatus ?? (entry.reviewedAt ? ('reviewed' as const) : ('pending' as const)),
+    sufficiency: entry.sufficiency,
+    validUntil: resolveEvidenceValidUntil(entry),
+  }));
+
+  return [...activeSeededEvidence, ...persistedEvidence, ...archivedSeededEvidence];
+}
+
+function resolveControlSupport(
   items: Array<{
-    evidence: Array<{
-      lifecycleStatus: 'active' | 'archived' | 'superseded';
-    }>;
-    status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
+    support: 'missing' | 'partial' | 'complete';
   }>,
 ) {
-  const activeEvidenceCount = items.reduce((count, item) => {
-    return count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length;
-  }, 0);
-
-  if (activeEvidenceCount === 0) {
+  if (items.every((item) => item.support === 'missing')) {
     return 'missing' as const;
   }
-  if (items.length > 0 && items.every((item) => item.status === 'done')) {
-    return 'ready' as const;
+  if (items.every((item) => item.support === 'complete')) {
+    return 'complete' as const;
   }
   return 'partial' as const;
 }
 
 function hasExpiringSoonEvidence(
   evidence: Array<{
-    expiryStatus: 'none' | 'current' | 'expiring_soon';
+    expiryStatus: 'none' | 'current' | 'expiring_soon' | 'expired';
     lifecycleStatus: 'active' | 'archived' | 'superseded';
   }>,
 ) {
@@ -913,10 +1002,7 @@ export {
   buildSecurityWorkspaceVendorSummary,
   compareSecurityFindingSeverity,
   countQueryResults,
-  deriveChecklistItemStatus,
   deriveEvidenceExpiryStatus,
-  deriveEvidenceReadiness,
-  deriveItemEvidenceSufficiency,
   documentScanEventArgs,
   getActorDisplayName,
   getCurrentAnnualReviewRunRecord,
@@ -925,7 +1011,13 @@ export {
   hasExpiringSoonEvidence,
   listReviewTaskEvidenceLinksBySource,
   recordSecurityControlEvidenceAuditEvent,
+  resolveEvidenceValidUntil,
+  resolveChecklistSupport,
+  resolveControlSupport,
+  resolveEvidenceValidity,
+  resolveSeededEvidenceValidUntil,
   resolveSeedSiteAdminActor,
+  buildNormalizedChecklistEvidence,
   syncCurrentSecurityFindings,
   updateSecurityMetrics,
   upsertSecurityControlEvidenceActivity,

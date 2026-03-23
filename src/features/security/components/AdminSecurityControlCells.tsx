@@ -2,10 +2,10 @@ import { Badge } from '~/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '~/components/ui/tooltip';
 import {
   formatControlResponsibility,
-  formatEvidenceReadiness,
+  formatSupportStatus,
   formatHipaaMapping,
   getEvidenceProgress,
-  getEvidenceReadinessBadgeVariant,
+  getSupportBadgeVariant,
   getResponsibilityBadgeVariant,
 } from '~/features/security/formatters';
 import type { SecurityControlWorkspaceSummary } from '~/features/security/types';
@@ -89,16 +89,14 @@ export function AdminSecurityResponsibilityCell(props: {
   );
 }
 
-export function AdminSecurityEvidenceReadinessCell(props: {
-  control: SecurityControlWorkspaceSummary;
-}) {
+export function AdminSecuritySupportCell(props: { control: SecurityControlWorkspaceSummary }) {
   const { control } = props;
   const progress = getEvidenceProgress(control);
 
   return (
     <div className="space-y-2 py-1">
-      <Badge variant={getEvidenceReadinessBadgeVariant(control.evidenceReadiness)}>
-        {formatEvidenceReadiness(control.evidenceReadiness)} {progress.label}
+      <Badge variant={getSupportBadgeVariant(control.support)}>
+        {formatSupportStatus(control.support)} {progress.label}
       </Badge>
       {control.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
     </div>

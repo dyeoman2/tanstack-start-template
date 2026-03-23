@@ -4,15 +4,17 @@ import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-bounda
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { getSecurityScopeFields } from './core';
 import {
-  addMonths,
+  buildNormalizedChecklistEvidence,
   buildActorDisplayMap,
-  deriveChecklistItemStatus,
   deriveEvidenceExpiryStatus,
-  deriveEvidenceReadiness,
-  deriveItemEvidenceSufficiency,
   getActorDisplayName,
   getSeededEvidenceEntry,
   hasExpiringSoonEvidence,
+  resolveChecklistSupport,
+  resolveControlSupport,
+  resolveEvidenceValidUntil,
+  resolveEvidenceValidity,
+  resolveSeededEvidenceValidUntil,
   resolveSeedSiteAdminActor,
 } from './operations_core';
 
@@ -32,11 +34,11 @@ async function listSecurityControlWorkspaceSummaryRecords(ctx: QueryCtx) {
     customerResponsibilityNotes: control.customerResponsibilityNotes,
     controlStatement: control.controlStatement,
     mappings: control.mappings,
-    evidenceReadiness: control.evidenceReadiness,
+    support: control.support,
     hasExpiringSoonEvidence: control.hasExpiringSoonEvidence,
     lastReviewedAt: control.lastReviewedAt,
     checklistStats: {
-      completeCount: control.platformChecklist.filter((item) => item.status === 'done').length,
+      completeCount: control.platformChecklist.filter((item) => item.support === 'complete').length,
       totalCount: control.platformChecklist.length,
     },
     searchableText: [
@@ -47,7 +49,7 @@ async function listSecurityControlWorkspaceSummaryRecords(ctx: QueryCtx) {
       control.familyTitle,
       control.owner,
       control.responsibility ?? '',
-      control.evidenceReadiness,
+      control.support,
       control.customerResponsibilityNotes ?? '',
       ...control.platformChecklist.map((item) => item.label),
       ...control.platformChecklist.map((item) => item.operatorNotes ?? ''),
@@ -322,6 +324,7 @@ async function _listSecurityControlWorkspaceRecords(
     new Map(),
   );
   const seededReviewedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+  const seededValidUntil = resolveSeededEvidenceValidUntil(seededReviewedAt);
 
   return controls.map((control) => {
     type LinkedEntity = {
@@ -359,8 +362,9 @@ async function _listSecurityControlWorkspaceRecords(
           sizeBytes: null,
           evidenceDate: null,
           reviewDueIntervalMonths: null,
-          reviewDueAt: null,
-          expiryStatus: 'none' as const,
+          expiryStatus: deriveEvidenceExpiryStatus({
+            validUntil: seededValidUntil,
+          }),
           source: null,
           sufficiency: entry.sufficiency,
           lifecycleStatus: 'active' as const,
@@ -380,7 +384,7 @@ async function _listSecurityControlWorkspaceRecords(
           reviewOriginSourceType: null,
           reviewOriginSourceId: null,
           reviewOriginSourceLabel: null,
-          satisfiesThroughAt: null,
+          validUntil: seededValidUntil,
         }))
         .filter((entry) => !hiddenSeedEvidenceIds.has(entry.id));
       const archivedSeedEvidence = Array.from(hiddenSeedEvidenceIds)
@@ -406,8 +410,9 @@ async function _listSecurityControlWorkspaceRecords(
             sizeBytes: null,
             evidenceDate: null,
             reviewDueIntervalMonths: null,
-            reviewDueAt: null,
-            expiryStatus: 'none' as const,
+            expiryStatus: deriveEvidenceExpiryStatus({
+              validUntil: seededValidUntil,
+            }),
             source: null,
             sufficiency: seededEntry.entry.sufficiency,
             lifecycleStatus: archivedMetadata?.lifecycleStatus ?? ('archived' as const),
@@ -430,7 +435,7 @@ async function _listSecurityControlWorkspaceRecords(
             reviewOriginSourceType: null,
             reviewOriginSourceId: null,
             reviewOriginSourceLabel: null,
-            satisfiesThroughAt: null,
+            validUntil: seededValidUntil,
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -439,11 +444,11 @@ async function _listSecurityControlWorkspaceRecords(
       ).map((entry) => {
         const reviewDueIntervalMonths = entry.reviewDueIntervalMonths ?? null;
         const reviewedAt = entry.reviewedAt ?? null;
-        const reviewDueAt =
-          reviewedAt !== null && reviewDueIntervalMonths !== null
-            ? addMonths(reviewedAt, reviewDueIntervalMonths)
-            : null;
-
+        const validUntil = resolveEvidenceValidUntil({
+          reviewDueIntervalMonths,
+          reviewedAt,
+          validUntil: entry.validUntil ?? null,
+        });
         return {
           id: entry._id,
           title: entry.title,
@@ -456,10 +461,8 @@ async function _listSecurityControlWorkspaceRecords(
           sizeBytes: entry.sizeBytes ?? null,
           evidenceDate: entry.evidenceDate ?? null,
           reviewDueIntervalMonths,
-          reviewDueAt,
           expiryStatus: deriveEvidenceExpiryStatus({
-            reviewDueAt,
-            reviewedAt,
+            validUntil,
           }),
           source: entry.source ?? null,
           sufficiency: entry.sufficiency,
@@ -481,10 +484,19 @@ async function _listSecurityControlWorkspaceRecords(
           reviewOriginSourceType: entry.reviewOriginSourceType ?? null,
           reviewOriginSourceId: entry.reviewOriginSourceId ?? null,
           reviewOriginSourceLabel: entry.reviewOriginSourceLabel ?? null,
-          satisfiesThroughAt: entry.satisfiesThroughAt ?? null,
+          validUntil,
         };
       });
       const evidence = [...seededEvidence, ...persistedEvidence, ...archivedSeedEvidence];
+      const normalizedEvidence = buildNormalizedChecklistEvidence({
+        archivedSeedEvidence: itemState?.archivedSeedEvidence ?? null,
+        hiddenSeedEvidenceIds: itemState?.hiddenSeedEvidenceIds ?? null,
+        internalControlId: control.internalControlId,
+        itemId: item.itemId,
+        persistedEvidence: evidenceByKey.get(`${control.internalControlId}:${item.itemId}`) ?? [],
+        seededEvidence: item.seed.evidence,
+        seededReviewedAt,
+      });
       const reviewArtifactEvidence =
         [...persistedEvidence]
           .filter(
@@ -551,20 +563,22 @@ async function _listSecurityControlWorkspaceRecords(
               satisfiedByDisplay:
                 reviewArtifactEvidence.reviewedByDisplay ??
                 reviewArtifactEvidence.uploadedByDisplay,
-              satisfiedThroughAt: reviewArtifactEvidence.satisfiesThroughAt,
+              validUntil: reviewArtifactEvidence.validUntil,
             }
           : null;
-      const evidenceDerivedStatus = deriveChecklistItemStatus(evidence);
-      const manualStatus = itemState?.manualStatus ?? itemState?.status ?? null;
-      const derivedStatus = manualStatus ?? evidenceDerivedStatus;
+      const support = resolveChecklistSupport(normalizedEvidence);
       const itemHasExpiringSoonEvidence = hasExpiringSoonEvidence(evidence);
       const completedAt =
-        derivedStatus === 'done'
+        support === 'complete'
           ? [
               evidence
                 .filter(
                   (entry) =>
-                    entry.lifecycleStatus === 'active' && entry.reviewStatus === 'reviewed',
+                    resolveEvidenceValidity({
+                      lifecycleStatus: entry.lifecycleStatus,
+                      reviewStatus: entry.reviewStatus,
+                      validUntil: entry.validUntil,
+                    }).countsForSupport,
                 )
                 .reduce<number | null>((latest, entry) => {
                   const candidate = entry.reviewedAt ?? entry.createdAt;
@@ -578,7 +592,7 @@ async function _listSecurityControlWorkspaceRecords(
             }, null)
           : null;
       const lastReviewedAtCandidates = [
-        item.seed.evidence.length > 0 || derivedStatus !== 'not_started' ? seededReviewedAt : null,
+        item.seed.evidence.length > 0 || support !== 'missing' ? seededReviewedAt : null,
         completedAt,
         ...evidence.flatMap((entry) => [entry.reviewedAt, entry.createdAt, entry.archivedAt]),
         ...archivedSeedEvidence.map((entry) => entry.archivedAt),
@@ -597,19 +611,18 @@ async function _listSecurityControlWorkspaceRecords(
         verificationMethod: item.verificationMethod,
         required: item.required,
         suggestedEvidenceTypes: item.suggestedEvidenceTypes,
-        status: derivedStatus,
+        support,
         owner: itemState?.owner ?? item.seed.owner,
         operatorNotes: itemState?.internalOperatorNotes ?? itemState?.notes ?? item.seed.notes,
         completedAt,
         lastReviewedAt,
         evidence,
-        evidenceSufficiency: deriveItemEvidenceSufficiency(evidence),
         hasExpiringSoonEvidence: itemHasExpiringSoonEvidence,
         reviewArtifact,
       };
     });
 
-    const evidenceReadiness = deriveEvidenceReadiness(platformChecklist);
+    const support = resolveControlSupport(platformChecklist);
     const controlHasExpiringSoonEvidence = platformChecklist.some(
       (item) => item.hasExpiringSoonEvidence,
     );
@@ -738,7 +751,7 @@ async function _listSecurityControlWorkspaceRecords(
           text: null,
         })),
       },
-      evidenceReadiness,
+      support,
       hasExpiringSoonEvidence: controlHasExpiringSoonEvidence,
       linkedEntities,
       lastReviewedAt,

@@ -146,7 +146,7 @@ export const getSecurityWorkspaceOverview = query({
       postureSummary,
       queues: {
         blockedReviewTasks,
-        missingEvidenceControls: controlWorkspaceOverview.missingEvidenceControls,
+        missingSupportControls: controlWorkspaceOverview.missingSupportControls,
         pendingVendorReviews: vendorSummary.pendingVendorReviews,
         undispositionedFindings: findingSummary.undispositionedCount,
       },

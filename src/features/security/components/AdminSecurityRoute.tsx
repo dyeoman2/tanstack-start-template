@@ -17,7 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '~/components/ui/tabs';
 import { useToast } from '~/components/ui/toast';
 import {
   AdminSecurityControlCell,
-  AdminSecurityEvidenceReadinessCell,
+  AdminSecuritySupportCell,
   AdminSecurityFrameworkSummaryCell,
   AdminSecurityResponsibilityCell,
 } from '~/features/security/components/AdminSecurityControlCells';
@@ -71,7 +71,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     sortOrder,
     search: controlSearchTerm,
     responsibility: responsibilityFilter,
-    evidenceReadiness: evidenceReadinessFilter,
+    support: supportFilter,
     family: familyFilter,
     selectedControl: selectedControlId,
     selectedOperationId,
@@ -335,7 +335,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         } else if (control.responsibility) {
           summaryAccumulator.byResponsibility[control.responsibility] += 1;
         }
-        summaryAccumulator.byEvidence[control.evidenceReadiness] += 1;
+        summaryAccumulator.bySupport[control.support] += 1;
         return summaryAccumulator;
       },
       {
@@ -345,8 +345,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
           sharedResponsibility: 0,
           customer: 0,
         },
-        byEvidence: {
-          ready: 0,
+        bySupport: {
+          complete: 0,
           partial: 0,
           missing: 0,
         },
@@ -508,14 +508,14 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const {
     controlPagination,
     controlSearchParams,
-    evidenceReadinessOptions,
+    supportOptions,
     familyOptions,
     paginatedControls,
     responsibilityOptions,
     sortedControls,
   } = useSecurityControlTable({
     controls: controlItems,
-    evidenceReadinessFilter,
+    supportFilter,
     familyFilter,
     page,
     pageSize,
@@ -533,7 +533,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         sortOrder: 'asc' | 'desc';
         search: string;
         responsibility: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
-        evidenceReadiness: 'all' | SecurityControlWorkspaceSummary['evidenceReadiness'];
+        support: 'all' | SecurityControlWorkspaceSummary['support'];
         family: string;
         selectedControl: string | undefined;
         selectedOperationId: string | undefined;
@@ -650,14 +650,14 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         cell: ({ row }) => <AdminSecurityResponsibilityCell control={row.original} />,
       },
       {
-        accessorKey: 'evidence',
+        accessorKey: 'support',
         header: createSortableHeader(
-          'Evidence',
-          'evidence',
+          'Support',
+          'support',
           controlSearchParams,
           handleControlSorting,
         ),
-        cell: ({ row }) => <AdminSecurityEvidenceReadinessCell control={row.original} />,
+        cell: ({ row }) => <AdminSecuritySupportCell control={row.original} />,
       },
       {
         accessorKey: 'family',
@@ -1219,8 +1219,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             controlSearchParams={controlSearchParams}
             controlSearchTerm={controlSearchTerm}
             controlSummary={controlSummary}
-            evidenceReadinessFilter={evidenceReadinessFilter}
-            evidenceReadinessOptions={evidenceReadinessOptions}
+            supportFilter={supportFilter}
+            supportOptions={supportOptions}
             familyFilter={familyFilter}
             familyOptions={familyOptions}
             handleControlPageChange={handleControlPageChange}

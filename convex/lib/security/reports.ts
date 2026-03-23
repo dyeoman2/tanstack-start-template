@@ -173,7 +173,7 @@ export async function generateEvidenceReportHandler(
       ? await ctx.runQuery(anyApi.securityWorkspace.listControlWorkspaceSnapshotInternal, {})
       : []
   ) as Array<{
-    evidenceReadiness: 'missing' | 'partial' | 'ready';
+    support: 'missing' | 'partial' | 'complete';
     internalControlId: string;
     platformChecklist: Array<{
       evidence: Array<{
@@ -322,8 +322,8 @@ export async function generateEvidenceReportHandler(
                 generatedAt: new Date(createdAt).toISOString(),
                 generatedByUserId: currentUser.authUserId,
                 summary: {
-                  readyCount: controlWorkspace.filter(
-                    (control) => control.evidenceReadiness === 'ready',
+                  completeCount: controlWorkspace.filter(
+                    (control) => control.support === 'complete',
                   ).length,
                   totalCount: controlWorkspace.length,
                 },

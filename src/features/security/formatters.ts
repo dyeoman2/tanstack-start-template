@@ -86,11 +86,11 @@ export function getResponsibilityBadgeVariant(
   }
 }
 
-export function getEvidenceReadinessBadgeVariant(
-  readiness: SecurityControlWorkspace['evidenceReadiness'],
+export function getSupportBadgeVariant(
+  support: SecurityControlWorkspace['support'],
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
-  switch (readiness) {
-    case 'ready':
+  switch (support) {
+    case 'complete':
       return 'default';
     case 'partial':
       return 'outline';
@@ -100,23 +100,21 @@ export function getEvidenceReadinessBadgeVariant(
 }
 
 export function getChecklistStatusBadgeVariant(
-  status: SecurityChecklistItem['status'],
+  status: SecurityChecklistItem['support'],
 ): 'default' | 'destructive' | 'outline' | 'secondary' {
   switch (status) {
-    case 'done':
+    case 'complete':
       return 'default';
-    case 'in_progress':
+    case 'partial':
       return 'secondary';
-    case 'not_started':
-      return 'secondary';
-    case 'not_applicable':
+    case 'missing':
       return 'destructive';
   }
 }
 
-export function formatEvidenceReadiness(readiness: SecurityControlWorkspace['evidenceReadiness']) {
-  switch (readiness) {
-    case 'ready':
+export function formatSupportStatus(support: SecurityControlWorkspace['support']) {
+  switch (support) {
+    case 'complete':
       return 'Complete';
     case 'partial':
       return 'Partial';
@@ -278,7 +276,7 @@ export function getEvidenceProgress(
   }
 
   const checklistItems = control.platformChecklist;
-  const completeItems = checklistItems.filter((item) => item.status === 'done');
+  const completeItems = checklistItems.filter((item) => item.support === 'complete');
 
   return {
     completeCount: completeItems.length,
@@ -287,16 +285,14 @@ export function getEvidenceProgress(
   };
 }
 
-export function formatChecklistStatus(status: SecurityChecklistItem['status']) {
+export function formatChecklistStatus(status: SecurityChecklistItem['support']) {
   switch (status) {
-    case 'done':
+    case 'complete':
       return 'Completed';
-    case 'in_progress':
-      return 'Incomplete';
-    case 'not_started':
-      return 'Incomplete';
-    case 'not_applicable':
-      return 'Incomplete';
+    case 'partial':
+      return 'Partial';
+    case 'missing':
+      return 'Missing';
   }
 }
 

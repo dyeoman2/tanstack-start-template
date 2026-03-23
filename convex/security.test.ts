@@ -24,6 +24,7 @@ let exportEvidenceReportHandler: typeof import('./lib/security/reports').exportE
 let generateEvidenceReportHandler: typeof import('./lib/security/reports').generateEvidenceReportHandler;
 let getAuditReadinessSnapshotHandler: typeof import('./lib/security/posture').getAuditReadinessSnapshotHandler;
 let _getSecurityPostureSummaryHandler: typeof import('./lib/security/posture').getSecurityPostureSummaryHandler;
+let buildSecurityWorkspaceControlSummary: typeof import('./lib/security/operations_core').buildSecurityWorkspaceControlSummary;
 let listSecurityFindingsHandler: typeof import('./lib/security/workspace').listSecurityFindingsHandler;
 let _listSecurityControlEvidenceActivityHandler: typeof import('./lib/security/workspace').listSecurityControlEvidenceActivityHandler;
 let securityWorkspaceModuleRef: typeof import('./securityWorkspace');
@@ -44,7 +45,16 @@ type SecurityEvidenceDoc = {
   _id: DocId;
   internalControlId: string;
   itemId: string;
-  evidenceType: 'file' | 'link' | 'note' | 'system_snapshot';
+  evidenceType:
+    | 'file'
+    | 'link'
+    | 'note'
+    | 'system_snapshot'
+    | 'review_attestation'
+    | 'review_document'
+    | 'automated_review_result'
+    | 'follow_up_resolution'
+    | 'exception_record';
   title: string;
   description?: string;
   url?: string;
@@ -59,10 +69,16 @@ type SecurityEvidenceDoc = {
     | 'internal_review'
     | 'automated_system_check'
     | 'external_report'
-    | 'vendor_attestation';
+    | 'vendor_attestation'
+    | 'review_attestation'
+    | 'review_document'
+    | 'automated_review_result'
+    | 'follow_up_resolution'
+    | 'review_exception';
   sufficiency: 'missing' | 'partial' | 'sufficient';
   uploadedByUserId: string;
   reviewStatus?: 'pending' | 'reviewed';
+  validUntil?: number;
   lifecycleStatus?: 'active' | 'archived' | 'superseded';
   renewedFromEvidenceId?: string;
   replacedByEvidenceId?: string;
@@ -163,7 +179,11 @@ function createSecurityDb(seed?: {
       throw new Error(`Missing document for patch: ${id}`);
     },
     query(table: string) {
+      const tableEntries = table in tables ? [...tables[table as keyof TableMap].values()] : [];
       return {
+        async collect() {
+          return clone(tableEntries);
+        },
         withIndex: (
           _indexName: string,
           buildRange?: (q: {
@@ -181,7 +201,6 @@ function createSecurityDb(seed?: {
             },
           };
           buildRange?.(q);
-          const tableEntries = table in tables ? [...tables[table as keyof TableMap].values()] : [];
           const matching = tableEntries.filter((doc) =>
             filters.every(
               ([field, expected]) => (doc as Record<string, unknown>)[field] === expected,
@@ -291,6 +310,7 @@ beforeAll(async () => {
   generateEvidenceReportHandler = reportsHelperModule.generateEvidenceReportHandler;
   getAuditReadinessSnapshotHandler = postureHelperModule.getAuditReadinessSnapshotHandler;
   _getSecurityPostureSummaryHandler = postureHelperModule.getSecurityPostureSummaryHandler;
+  buildSecurityWorkspaceControlSummary = opsHelperModule.buildSecurityWorkspaceControlSummary;
   listSecurityFindingsHandler = workspaceHelperModule.listSecurityFindingsHandler;
   _listSecurityControlEvidenceActivityHandler =
     workspaceHelperModule.listSecurityControlEvidenceActivityHandler;
@@ -633,6 +653,132 @@ describe('audit evidence helpers', () => {
     });
     expect(result.auth.mfaEnabledUsers).toBe(2);
     expect(result.audit.integrityFailures).toBe(2);
+  });
+
+  it('counts current seeded evidence in the workspace control summary', async () => {
+    vi.useFakeTimers();
+    const generatedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+    vi.setSystemTime(new Date(generatedAt + 7 * 24 * 60 * 60 * 1000));
+    const { db } = createSecurityDb();
+
+    const summary = await buildSecurityWorkspaceControlSummary({ db } as never);
+
+    expect(
+      summary.controlSummary.bySupport.complete + summary.controlSummary.bySupport.partial,
+    ).toBeGreaterThan(0);
+    expect(summary.missingSupportControls).toBeLessThan(summary.controlSummary.totalControls);
+    vi.useRealTimers();
+  });
+
+  it('treats expired seeded evidence as missing support in the workspace summary', async () => {
+    vi.useFakeTimers();
+    const generatedAt = new Date(ACTIVE_CONTROL_REGISTER.generatedAt);
+    generatedAt.setMonth(generatedAt.getMonth() + 13);
+    vi.setSystemTime(generatedAt);
+    const { db } = createSecurityDb();
+
+    const summary = await buildSecurityWorkspaceControlSummary({ db } as never);
+
+    expect(summary.controlSummary.bySupport.complete).toBe(0);
+    expect(summary.controlSummary.bySupport.partial).toBe(0);
+    expect(summary.missingSupportControls).toBe(summary.controlSummary.totalControls);
+    vi.useRealTimers();
+  });
+
+  it('restores support through review-origin evidence after seeded evidence expires', async () => {
+    vi.useFakeTimers();
+    const seeded = findFirstSeedEvidence();
+    const generatedAt = new Date(ACTIVE_CONTROL_REGISTER.generatedAt);
+    generatedAt.setMonth(generatedAt.getMonth() + 13);
+    const now = generatedAt.getTime();
+    vi.setSystemTime(generatedAt);
+    const { db } = createSecurityDb({
+      evidence: [
+        {
+          _id: 'review-artifact-1',
+          internalControlId: seeded.controlId,
+          itemId: seeded.itemId,
+          evidenceType: 'review_attestation',
+          title: 'Annual attestation refresh',
+          sufficiency: 'sufficient',
+          source: 'review_attestation',
+          uploadedByUserId: 'admin-user',
+          reviewStatus: 'reviewed',
+          reviewedAt: now,
+          validUntil: now + 365 * 24 * 60 * 60 * 1000,
+          lifecycleStatus: 'active',
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    });
+
+    const summary = await buildSecurityWorkspaceControlSummary({ db } as never);
+
+    expect(
+      summary.controlSummary.bySupport.partial + summary.controlSummary.bySupport.complete,
+    ).toBeGreaterThan(0);
+    expect(summary.missingSupportControls).toBeLessThan(summary.controlSummary.totalControls);
+    vi.useRealTimers();
+  });
+
+  it('rolls a control to partial support when checklist items are mixed', async () => {
+    vi.useFakeTimers();
+    const seeded = findFirstSeedEvidence();
+    const generatedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+    vi.setSystemTime(new Date(generatedAt + 7 * 24 * 60 * 60 * 1000));
+    const control = ACTIVE_CONTROL_REGISTER.controls.find(
+      (entry) => entry.internalControlId === seeded.controlId,
+    );
+    expect(control).toBeTruthy();
+    expect(control?.platformChecklistItems.length).toBeGreaterThan(1);
+    const missingItem = control?.platformChecklistItems.find(
+      (item) => item.itemId !== seeded.itemId,
+    );
+    expect(missingItem).toBeTruthy();
+
+    const { db } = createSecurityDb({
+      checklistItems: [
+        {
+          _id: 'checklist-hide-seed',
+          internalControlId: seeded.controlId,
+          itemId: missingItem!.itemId,
+          hiddenSeedEvidenceIds: missingItem!.seed.evidence.map(
+            (_, index) => `${seeded.controlId}:${missingItem!.itemId}:seed:${index}`,
+          ),
+          archivedSeedEvidence: [],
+          createdAt: generatedAt,
+          updatedAt: generatedAt,
+        },
+      ],
+    });
+
+    const summary = await buildSecurityWorkspaceControlSummary({ db } as never);
+
+    expect(summary.controlSummary.bySupport.partial).toBeGreaterThan(0);
+    vi.useRealTimers();
+  });
+
+  it('keeps control support independent from findings, vendor state, and review overlays', async () => {
+    vi.useFakeTimers();
+    const generatedAt = Date.parse(ACTIVE_CONTROL_REGISTER.generatedAt);
+    vi.setSystemTime(new Date(generatedAt + 7 * 24 * 60 * 60 * 1000));
+    const { db } = createSecurityDb();
+    const guardedCtx = {
+      db: {
+        query(table: string) {
+          if (table !== 'securityControlChecklistItems' && table !== 'securityControlEvidence') {
+            throw new Error(`Unexpected overlay query in control support summary: ${table}`);
+          }
+          return db.query(table);
+        },
+      },
+    };
+
+    const summary = await buildSecurityWorkspaceControlSummary(guardedCtx as never);
+
+    expect(summary.controlSummary.totalControls).toBeGreaterThan(0);
+    vi.useRealTimers();
   });
 
   it('lists retained security findings with stored disposition context', async () => {

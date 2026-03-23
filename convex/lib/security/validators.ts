@@ -348,11 +348,10 @@ const evidenceReportListItemValidator = v.object({
 });
 
 const evidenceReportListValidator = v.array(evidenceReportListItemValidator);
-const checklistStatusValidator = v.union(
-  v.literal('not_started'),
-  v.literal('in_progress'),
-  v.literal('done'),
-  v.literal('not_applicable'),
+const supportStatusValidator = v.union(
+  v.literal('missing'),
+  v.literal('partial'),
+  v.literal('complete'),
 );
 const evidenceSufficiencyValidator = v.union(
   v.literal('missing'),
@@ -376,6 +375,7 @@ const evidenceExpiryStatusValidator = v.union(
   v.literal('none'),
   v.literal('current'),
   v.literal('expiring_soon'),
+  v.literal('expired'),
 );
 const evidenceTypeValidator = v.union(
   v.literal('file'),
@@ -420,7 +420,6 @@ const controlEvidenceValidator = v.object({
   renewedFromEvidenceId: v.union(v.string(), v.null()),
   replacedByEvidenceId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed')),
-  reviewDueAt: v.union(v.number(), v.null()),
   reviewDueIntervalMonths: v.union(evidenceReviewDueIntervalValidator, v.null()),
   reviewOriginReviewRunId: v.union(v.id('reviewRuns'), v.null()),
   reviewOriginReviewTaskId: v.union(v.id('reviewTasks'), v.null()),
@@ -441,7 +440,7 @@ const controlEvidenceValidator = v.object({
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByDisplay: v.union(v.string(), v.null()),
   sizeBytes: v.union(v.number(), v.null()),
-  satisfiesThroughAt: v.union(v.number(), v.null()),
+  validUntil: v.union(v.number(), v.null()),
   source: v.union(evidenceSourceValidator, v.null()),
   storageId: v.union(v.string(), v.null()),
   sufficiency: evidenceSufficiencyValidator,
@@ -468,7 +467,6 @@ const controlChecklistItemValidator = v.object({
   completedAt: v.union(v.number(), v.null()),
   description: v.string(),
   evidence: v.array(controlEvidenceValidator),
-  evidenceSufficiency: evidenceSufficiencyValidator,
   hasExpiringSoonEvidence: v.boolean(),
   itemId: v.string(),
   label: v.string(),
@@ -495,11 +493,11 @@ const controlChecklistItemValidator = v.object({
       reviewTaskTitle: v.string(),
       satisfiedAt: v.number(),
       satisfiedByDisplay: v.union(v.string(), v.null()),
-      satisfiedThroughAt: v.union(v.number(), v.null()),
+      validUntil: v.union(v.number(), v.null()),
     }),
     v.null(),
   ),
-  status: checklistStatusValidator,
+  support: supportStatusValidator,
   suggestedEvidenceTypes: v.array(suggestedEvidenceTypeValidator),
   verificationMethod: v.string(),
 });
@@ -520,7 +518,7 @@ const securityControlEvidenceActivityEventValidator = v.object({
 const securityControlWorkspaceValidator = v.object({
   controlStatement: v.string(),
   customerResponsibilityNotes: v.union(v.string(), v.null()),
-  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  support: supportStatusValidator,
   familyId: v.string(),
   familyTitle: v.string(),
   hasExpiringSoonEvidence: v.boolean(),
@@ -604,7 +602,7 @@ const securityControlWorkspaceValidator = v.object({
 const securityControlWorkspaceExportValidator = v.object({
   controlStatement: v.string(),
   customerResponsibilityNotes: v.union(v.string(), v.null()),
-  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  support: supportStatusValidator,
   familyId: v.string(),
   familyTitle: v.string(),
   hasExpiringSoonEvidence: v.boolean(),
@@ -691,7 +689,7 @@ const securityControlWorkspaceSummaryValidator = v.object({
   }),
   controlStatement: v.string(),
   customerResponsibilityNotes: v.union(v.string(), v.null()),
-  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  support: supportStatusValidator,
   familyId: v.string(),
   familyTitle: v.string(),
   hasExpiringSoonEvidence: v.boolean(),
@@ -1018,10 +1016,10 @@ const auditReadinessSnapshotValidator = v.object({
 const securityWorkspaceOverviewValidator = v.object({
   auditReadiness: auditReadinessSnapshotValidator,
   controlSummary: v.object({
-    byEvidence: v.object({
+    bySupport: v.object({
       missing: v.number(),
       partial: v.number(),
-      ready: v.number(),
+      complete: v.number(),
     }),
     byResponsibility: v.object({
       customer: v.number(),
@@ -1039,7 +1037,7 @@ const securityWorkspaceOverviewValidator = v.object({
   postureSummary: securityPostureSummaryValidator,
   queues: v.object({
     blockedReviewTasks: v.number(),
-    missingEvidenceControls: v.number(),
+    missingSupportControls: v.number(),
     pendingVendorReviews: v.number(),
     undispositionedFindings: v.number(),
   }),
@@ -1081,7 +1079,6 @@ export {
   backupVerificationDrillTypeValidator,
   backupVerificationInitiatedByKindValidator,
   backupVerificationTargetEnvironmentValidator,
-  checklistStatusValidator,
   controlChecklistItemValidator,
   controlEvidenceValidator,
   enforceSecurityEvidenceUploadRateLimit,
@@ -1110,6 +1107,7 @@ export {
   reviewOutcomeModeValidator,
   reviewTaskControlLinkValidator,
   reviewTaskControlReferenceValidator,
+  supportStatusValidator,
   reviewTaskEvidenceLinkValidator,
   reviewTaskEvidenceRoleValidator,
   reviewTaskEvidenceSourceTypeValidator,

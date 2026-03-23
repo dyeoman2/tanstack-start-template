@@ -16,6 +16,7 @@ import {
 } from './lib/security/control_workspace_core';
 import { getSecurityFindingControlLinks, getSecurityScopeFields } from './lib/security/core';
 import {
+  addMonths,
   buildCurrentSecurityFindings,
   getLatestReleaseProvenanceEvidence,
   recordSecurityControlEvidenceAuditEvent,
@@ -207,6 +208,7 @@ export const addSecurityControlEvidenceLink = mutation({
       source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
+      validUntil: undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -258,6 +260,7 @@ export const createSecurityControlEvidenceLinkInternal = internalMutation({
       source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: args.uploadedByUserId,
+      validUntil: undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -306,6 +309,7 @@ export const addSecurityControlEvidenceNote = mutation({
       source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
+      validUntil: undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -348,6 +352,12 @@ export const reviewSecurityControlEvidence = mutation({
       reviewStatus: args.reviewStatus,
       reviewedAt: args.reviewStatus === 'reviewed' ? now : undefined,
       reviewedByUserId: args.reviewStatus === 'reviewed' ? currentUser.authUserId : undefined,
+      validUntil:
+        args.reviewStatus === 'reviewed'
+          ? evidence.reviewDueIntervalMonths
+            ? addMonths(now, evidence.reviewDueIntervalMonths)
+            : undefined
+          : undefined,
       updatedAt: now,
     });
     if (args.reviewStatus === 'reviewed') {
@@ -518,6 +528,7 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
       source: args.source,
       sufficiency: args.sufficiency,
       uploadedByUserId: args.uploadedByUserId,
+      validUntil: undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,

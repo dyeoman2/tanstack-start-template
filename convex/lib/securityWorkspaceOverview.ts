@@ -1,11 +1,11 @@
-export type ControlEvidenceReadiness = 'missing' | 'partial' | 'ready';
+export type ControlSupport = 'missing' | 'partial' | 'complete';
 export type ControlResponsibility = 'customer' | 'platform' | 'shared-responsibility';
 
 export type SecurityWorkspaceControlSummary = {
-  byEvidence: {
+  bySupport: {
     missing: number;
     partial: number;
-    ready: number;
+    complete: number;
   };
   byResponsibility: {
     customer: number;
@@ -17,10 +17,10 @@ export type SecurityWorkspaceControlSummary = {
 
 export function createEmptySecurityWorkspaceControlSummary(): SecurityWorkspaceControlSummary {
   return {
-    byEvidence: {
+    bySupport: {
       missing: 0,
       partial: 0,
-      ready: 0,
+      complete: 0,
     },
     byResponsibility: {
       customer: 0,
@@ -34,12 +34,12 @@ export function createEmptySecurityWorkspaceControlSummary(): SecurityWorkspaceC
 export function addControlToSecurityWorkspaceSummary(
   summary: SecurityWorkspaceControlSummary,
   input: {
-    evidenceReadiness: ControlEvidenceReadiness;
+    support: ControlSupport;
     responsibility: ControlResponsibility | null;
   },
 ) {
   summary.totalControls += 1;
-  summary.byEvidence[input.evidenceReadiness] += 1;
+  summary.bySupport[input.support] += 1;
   if (input.responsibility === null) {
     return summary;
   }

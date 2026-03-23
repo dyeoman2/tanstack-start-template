@@ -422,8 +422,8 @@ function ChecklistAccordionItem(props: {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {!item.required ? <Badge variant="outline">Optional</Badge> : null}
             {item.hasExpiringSoonEvidence ? <Badge variant="secondary">Expiring soon</Badge> : null}
-            <Badge variant={getChecklistStatusBadgeVariant(item.status)}>
-              {formatChecklistStatus(item.status)}
+            <Badge variant={getChecklistStatusBadgeVariant(item.support)}>
+              {formatChecklistStatus(item.support)}
             </Badge>
           </div>
         </div>
@@ -541,10 +541,10 @@ function ChecklistAccordionItem(props: {
                         {formatEvidenceDate(evidence.evidenceDate)}
                       </p>
                     ) : null}
-                    {evidence.reviewDueAt ? (
+                    {evidence.validUntil ? (
                       <p>
-                        <span className="font-medium text-foreground">Review due:</span>{' '}
-                        {formatEvidenceDate(evidence.reviewDueAt)}
+                        <span className="font-medium text-foreground">Valid until:</span>{' '}
+                        {formatEvidenceDate(evidence.validUntil)}
                       </p>
                     ) : null}
                     <p>

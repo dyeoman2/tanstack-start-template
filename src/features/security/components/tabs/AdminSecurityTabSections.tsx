@@ -45,10 +45,10 @@ import type {
 import { ACTIVE_CONTROL_REGISTER } from '~/lib/shared/compliance/control-register';
 
 type ControlSummary = {
-  byEvidence: {
+  bySupport: {
     missing: number;
     partial: number;
-    ready: number;
+    complete: number;
   };
   byResponsibility: {
     customer: number;
@@ -219,10 +219,8 @@ export function AdminSecurityControlsTab(props: {
   };
   controlSearchTerm: string;
   controlSummary: ControlSummary;
-  evidenceReadinessFilter: 'all' | SecurityControlWorkspaceSummary['evidenceReadiness'];
-  evidenceReadinessOptions: Array<
-    TableFilterOption<'all' | SecurityControlWorkspaceSummary['evidenceReadiness']>
-  >;
+  supportFilter: 'all' | SecurityControlWorkspaceSummary['support'];
+  supportOptions: Array<TableFilterOption<'all' | SecurityControlWorkspaceSummary['support']>>;
   familyFilter: string;
   familyOptions: TableFilterOption<string>[];
   isExportingControls: boolean;
@@ -238,11 +236,11 @@ export function AdminSecurityControlsTab(props: {
   updateControlSearch: (updates: {
     page?: number;
     pageSize?: 10 | 20 | 50;
-    sortBy?: 'control' | 'evidence' | 'responsibility' | 'family';
+    sortBy?: 'control' | 'support' | 'responsibility' | 'family';
     sortOrder?: 'asc' | 'desc';
     search?: string;
     responsibility?: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
-    evidenceReadiness?: 'all' | SecurityControlWorkspaceSummary['evidenceReadiness'];
+    support?: 'all' | SecurityControlWorkspaceSummary['support'];
     family?: string;
     selectedControl?: string | undefined;
   }) => void;
@@ -281,17 +279,17 @@ export function AdminSecurityControlsTab(props: {
               className="shrink-0"
               ariaLabel="Filter controls by responsibility"
             />
-            <TableFilter<'all' | SecurityControlWorkspaceSummary['evidenceReadiness']>
-              value={props.evidenceReadinessFilter}
-              options={props.evidenceReadinessOptions}
+            <TableFilter<'all' | SecurityControlWorkspaceSummary['support']>
+              value={props.supportFilter}
+              options={props.supportOptions}
               onValueChange={(value) => {
                 props.updateControlSearch({
-                  evidenceReadiness: value,
+                  support: value,
                   page: 1,
                 });
               }}
               className="shrink-0"
-              ariaLabel="Filter controls by evidence readiness"
+              ariaLabel="Filter controls by support"
             />
           </div>
         </div>
@@ -872,8 +870,8 @@ export function AdminSecurityReviewsTab(props: {
             <div>
               <CardTitle>Current Annual Review</CardTitle>
               <CardDescription>
-                Review automation, required attestations, document links, and finalization for the
-                current annual cycle.
+                Revalidate the current evidence base, complete the required attestations and
+                document links, and finalize the annual review record for this cycle.
               </CardDescription>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -911,7 +909,7 @@ export function AdminSecurityReviewsTab(props: {
               <div className="grid gap-4 md:grid-cols-4">
                 <AdminSecuritySummaryCard
                   title="Status"
-                  description="Current annual review rollup."
+                  description="Current annual revalidation rollup."
                   value={formatReviewRunStatus(props.currentAnnualReviewRun.status)}
                 />
                 <AdminSecuritySummaryCard
@@ -952,7 +950,8 @@ export function AdminSecurityReviewsTab(props: {
 
               {props.reviewFinalizeState.canFinalize ? (
                 <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                  All required tasks are complete. The annual review can be finalized now.
+                  All required revalidation tasks are complete. The annual review can be finalized
+                  now.
                 </div>
               ) : (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
@@ -990,7 +989,7 @@ export function AdminSecurityReviewsTab(props: {
               />
               <AdminSecurityReviewTaskGroup
                 busyAction={props.busyReviewTaskAction}
-                description="Tasks that require a human attestation."
+                description="Tasks that require a human attestation to renew support for the current cycle."
                 documents={props.reviewTaskDocuments}
                 notes={props.reviewTaskNotes}
                 onAttestTask={props.handleAttestTask}
@@ -1004,7 +1003,7 @@ export function AdminSecurityReviewsTab(props: {
               />
               <AdminSecurityReviewTaskGroup
                 busyAction={props.busyReviewTaskAction}
-                description="Tasks that require a linked document and reviewer confirmation."
+                description="Tasks that require a linked document so the annual review can materialize fresh support evidence."
                 documents={props.reviewTaskDocuments}
                 notes={props.reviewTaskNotes}
                 onAttestTask={props.handleAttestTask}
@@ -1738,10 +1737,10 @@ function SecurityControlSummaryGrid(props: { controlSummary: ControlSummary }) {
         footer={`Generated ${new Date(ACTIVE_CONTROL_REGISTER.generatedAt).toLocaleDateString()}`}
       />
       <AdminSecuritySummaryCard
-        title="Complete Evidence"
-        description="Controls where every required checklist item has attached evidence."
-        value={`${props.controlSummary.byEvidence.ready}`}
-        footer={`${props.controlSummary.byEvidence.partial} partial controls`}
+        title="Complete Support"
+        description="Controls where every checklist item is fully supported by current evidence."
+        value={`${props.controlSummary.bySupport.complete}`}
+        footer={`${props.controlSummary.bySupport.partial} partial controls`}
       />
       <AdminSecuritySummaryCard
         title="Shared responsibility"
@@ -1753,7 +1752,7 @@ function SecurityControlSummaryGrid(props: { controlSummary: ControlSummary }) {
         title="Customer"
         description="Controls primarily fulfilled through customer-side governance or procedure."
         value={`${props.controlSummary.byResponsibility.customer}`}
-        footer={`${props.controlSummary.byEvidence.missing} missing evidence controls`}
+        footer={`${props.controlSummary.bySupport.missing} missing support controls`}
       />
     </div>
   );

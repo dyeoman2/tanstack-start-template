@@ -320,7 +320,7 @@ async function materializeReviewTaskSatisfactionEvidence(
         reviewStatus: 'reviewed',
         reviewedAt: args.satisfiedAt,
         reviewedByUserId: args.actorUserId,
-        satisfiesThroughAt: args.satisfiedThroughAt,
+        validUntil: args.satisfiedThroughAt,
         sizeBytes: undefined,
         source: metadata.source,
         storageId: undefined,
@@ -1219,108 +1219,8 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
     patchedScopeRecords += await patchSecurityScopeDefaults(ctx, tableName);
   }
 
-  const checklistItems = await ctx.db.query('securityControlChecklistItems').collect();
   let patchedChecklistStatuses = 0;
   let migratedReviewArtifacts = 0;
-  for (const checklistItem of checklistItems) {
-    if (checklistItem.manualStatus || !checklistItem.status) {
-      // Continue checking legacy satisfaction even when manual status is already set.
-    } else {
-      await ctx.db.patch(checklistItem._id, {
-        manualStatus: checklistItem.status,
-        updatedAt: Date.now(),
-      });
-      patchedChecklistStatuses += 1;
-    }
-
-    const legacyReviewSatisfaction = (
-      checklistItem as unknown as {
-        reviewSatisfaction?: {
-          mode?: 'automated_check' | 'attestation' | 'document_upload' | 'follow_up' | 'exception';
-          reviewTaskId?: Id<'reviewTasks'>;
-          satisfiedAt?: number;
-          satisfiedByUserId?: string;
-          satisfiedThroughAt?: number;
-        };
-      }
-    ).reviewSatisfaction;
-    if (!legacyReviewSatisfaction?.reviewTaskId) {
-      continue;
-    }
-
-    const legacyTask = await ctx.db.get(legacyReviewSatisfaction.reviewTaskId);
-    if (
-      !legacyTask ||
-      typeof legacyReviewSatisfaction.satisfiedAt !== 'number' ||
-      typeof legacyReviewSatisfaction.satisfiedThroughAt !== 'number'
-    ) {
-      await (
-        ctx.db.patch as unknown as (
-          id: Id<'securityControlChecklistItems'>,
-          value: Record<string, unknown>,
-        ) => Promise<void>
-      )(checklistItem._id, {
-        reviewSatisfaction: undefined,
-        updatedAt: Date.now(),
-      });
-      continue;
-    }
-
-    const existingArtifacts = await ctx.db
-      .query('securityControlEvidence')
-      .withIndex('by_internal_control_id_and_item_id', (q) =>
-        q
-          .eq('internalControlId', checklistItem.internalControlId)
-          .eq('itemId', checklistItem.itemId),
-      )
-      .collect();
-    const hasArtifact = existingArtifacts.some(
-      (entry) =>
-        entry.reviewOriginReviewTaskId === legacyTask._id &&
-        (entry.lifecycleStatus ?? 'active') === 'active',
-    );
-    if (!hasArtifact) {
-      const migrationResultId = await ctx.db.insert('reviewTaskResults', {
-        ...getSecurityScopeFields(),
-        actorUserId: legacyReviewSatisfaction.satisfiedByUserId ?? actorUserId,
-        createdAt: legacyReviewSatisfaction.satisfiedAt,
-        note: 'Migrated legacy checklist review satisfaction into evidence artifact.',
-        resultType: legacyTask.status === 'exception' ? 'exception_marked' : ('resolved' as const),
-        reviewRunId: legacyTask.reviewRunId,
-        reviewTaskId: legacyTask._id,
-        statusAfter: legacyTask.status,
-      });
-      await materializeReviewTaskSatisfactionEvidence(ctx, legacyTask, {
-        actorUserId: legacyReviewSatisfaction.satisfiedByUserId ?? actorUserId,
-        latestAttestationId: legacyTask.latestAttestationId,
-        mode:
-          legacyReviewSatisfaction.mode === 'follow_up'
-            ? 'follow_up'
-            : legacyReviewSatisfaction.mode === 'exception'
-              ? 'exception'
-              : legacyReviewSatisfaction.mode === 'automated_check'
-                ? 'automated_check'
-                : legacyReviewSatisfaction.mode === 'document_upload'
-                  ? 'document_upload'
-                  : 'attestation',
-        note: 'Migrated legacy checklist review satisfaction into evidence artifact.',
-        resultId: migrationResultId,
-        satisfiedAt: legacyReviewSatisfaction.satisfiedAt,
-        satisfiedThroughAt: legacyReviewSatisfaction.satisfiedThroughAt,
-      });
-      migratedReviewArtifacts += 1;
-    }
-
-    await (
-      ctx.db.patch as unknown as (
-        id: Id<'securityControlChecklistItems'>,
-        value: Record<string, unknown>,
-      ) => Promise<void>
-    )(checklistItem._id, {
-      reviewSatisfaction: undefined,
-      updatedAt: Date.now(),
-    });
-  }
 
   let patchedReviewNotes = 0;
 

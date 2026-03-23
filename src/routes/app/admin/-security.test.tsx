@@ -88,11 +88,11 @@ type SearchState = {
   tab: 'overview' | 'controls' | 'operations' | 'reviews';
   page: number;
   pageSize: 10 | 20 | 50;
-  sortBy: 'control' | 'evidence' | 'responsibility' | 'family';
+  sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
   search: string;
   responsibility: 'all' | 'platform' | 'shared-responsibility' | 'customer';
-  evidenceReadiness: 'all' | 'ready' | 'partial' | 'missing';
+  support: 'all' | 'complete' | 'partial' | 'missing';
   family: string;
   selectedControl?: string;
   selectedOperationId?: string;
@@ -107,7 +107,7 @@ const defaultSearch: SearchState = {
   sortOrder: 'asc',
   search: '',
   responsibility: 'all',
-  evidenceReadiness: 'all',
+  support: 'all',
   family: 'all',
   selectedControl: undefined,
   selectedOperationId: undefined,
@@ -211,7 +211,6 @@ function buildControlEvidence(overrides?: Partial<Record<string, unknown>>) {
     mimeType: null,
     renewedFromEvidenceId: null,
     replacedByEvidenceId: null,
-    reviewDueAt: Date.parse('2026-06-01T00:00:00.000Z'),
     reviewDueIntervalMonths: 3,
     reviewStatus: 'pending',
     reviewedAt: null,
@@ -223,6 +222,7 @@ function buildControlEvidence(overrides?: Partial<Record<string, unknown>>) {
     title: 'Access review packet',
     uploadedByDisplay: 'Casey',
     url: 'https://example.com/evidence/access-review',
+    validUntil: Date.parse('2026-06-01T00:00:00.000Z'),
     ...overrides,
   };
 }
@@ -250,7 +250,7 @@ function buildControl(
     responsibility: 'platform',
     customerResponsibilityNotes: null,
     title: 'Account Management',
-    evidenceReadiness: 'partial',
+    support: 'partial',
     hasExpiringSoonEvidence: false,
     lastReviewedAt: null,
     linkedEntities: [],
@@ -259,7 +259,7 @@ function buildControl(
         completedAt: null,
         description: 'Collect access review evidence.',
         evidence: [],
-        evidenceSufficiency: 'missing',
+        support: 'missing',
         hasExpiringSoonEvidence: false,
         itemId: 'item-access-review',
         label: 'Collect access review evidence',
@@ -268,7 +268,6 @@ function buildControl(
         operatorNotes: null,
         required: true,
         reviewArtifact: null,
-        status: 'not_started',
         suggestedEvidenceTypes: ['link', 'file'],
         verificationMethod: 'Review uploaded report',
       },
@@ -539,7 +538,7 @@ function buildWorkspaceOverview(args?: {
     | undefined) ?? [buildSecurityFinding()];
   const controls = (args?.controls as
     | Array<{
-        evidenceReadiness: 'missing' | 'partial' | 'ready';
+        support: 'missing' | 'partial' | 'complete';
         responsibility: 'customer' | 'platform' | 'shared-responsibility';
       }>
     | undefined) ?? [buildControl()];
@@ -550,10 +549,10 @@ function buildWorkspaceOverview(args?: {
   return {
     auditReadiness: args?.auditReadiness ?? buildAuditReadiness(),
     controlSummary: {
-      byEvidence: {
-        missing: controls.filter((control) => control.evidenceReadiness === 'missing').length,
-        partial: controls.filter((control) => control.evidenceReadiness === 'partial').length,
-        ready: controls.filter((control) => control.evidenceReadiness === 'ready').length,
+      bySupport: {
+        missing: controls.filter((control) => control.support === 'missing').length,
+        partial: controls.filter((control) => control.support === 'partial').length,
+        complete: controls.filter((control) => control.support === 'complete').length,
       },
       byResponsibility: {
         customer: controls.filter((control) => control.responsibility === 'customer').length,
@@ -573,8 +572,7 @@ function buildWorkspaceOverview(args?: {
     postureSummary: args?.summary ?? buildSummary(),
     queues: {
       blockedReviewTasks: 0,
-      missingEvidenceControls: controls.filter((control) => control.evidenceReadiness === 'missing')
-        .length,
+      missingSupportControls: controls.filter((control) => control.support === 'missing').length,
       pendingVendorReviews: vendorWorkspaces.filter(
         (vendor) => vendor.reviewStatus === 'pending' || vendor.reviewStatus === 'needs_follow_up',
       ).length,
@@ -760,7 +758,6 @@ describe('Admin security route', () => {
               completedAt: null,
               description: 'Collect access review evidence.',
               evidence: [seededEvidence],
-              evidenceSufficiency: 'partial',
               hasExpiringSoonEvidence: false,
               itemId: 'item-access-review',
               label: 'Collect access review evidence',
@@ -769,7 +766,7 @@ describe('Admin security route', () => {
               operatorNotes: null,
               required: true,
               reviewArtifact: null,
-              status: 'in_progress',
+              support: 'partial',
               suggestedEvidenceTypes: ['link', 'file'],
               verificationMethod: 'Review uploaded report',
             },
@@ -812,7 +809,6 @@ describe('Admin security route', () => {
               completedAt: null,
               description: 'Collect access review evidence.',
               evidence: [buildControlEvidence()],
-              evidenceSufficiency: 'partial',
               hasExpiringSoonEvidence: false,
               itemId: 'item-access-review',
               label: 'Collect access review evidence',
@@ -821,7 +817,7 @@ describe('Admin security route', () => {
               operatorNotes: null,
               required: true,
               reviewArtifact: null,
-              status: 'in_progress',
+              support: 'partial',
               suggestedEvidenceTypes: ['link', 'file'],
               verificationMethod: 'Review uploaded report',
             },

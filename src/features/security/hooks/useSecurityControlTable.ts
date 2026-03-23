@@ -5,13 +5,13 @@ import type { SecurityControlWorkspaceSummary } from '~/features/security/types'
 
 export function useSecurityControlTable(args: {
   controls: SecurityControlWorkspaceSummary[];
-  evidenceReadinessFilter: 'all' | SecurityControlWorkspaceSummary['evidenceReadiness'];
+  supportFilter: 'all' | SecurityControlWorkspaceSummary['support'];
   familyFilter: string;
   page: number;
   pageSize: number;
   responsibilityFilter: 'all' | NonNullable<SecurityControlWorkspaceSummary['responsibility']>;
   searchTerm: string;
-  sortBy: 'control' | 'evidence' | 'responsibility' | 'family';
+  sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
 }) {
   const familyOptions = useMemo<TableFilterOption<string>[]>(
@@ -47,12 +47,12 @@ export function useSecurityControlTable(args: {
     [],
   );
 
-  const evidenceReadinessOptions = useMemo<
-    TableFilterOption<'all' | SecurityControlWorkspaceSummary['evidenceReadiness']>[]
+  const supportOptions = useMemo<
+    TableFilterOption<'all' | SecurityControlWorkspaceSummary['support']>[]
   >(
     () => [
-      { label: 'All evidence', value: 'all' },
-      { label: 'Complete', value: 'ready' },
+      { label: 'All support', value: 'all' },
+      { label: 'Complete', value: 'complete' },
       { label: 'Partial', value: 'partial' },
       { label: 'Missing', value: 'missing' },
     ],
@@ -70,10 +70,7 @@ export function useSecurityControlTable(args: {
           return false;
         }
 
-        if (
-          args.evidenceReadinessFilter !== 'all' &&
-          control.evidenceReadiness !== args.evidenceReadinessFilter
-        ) {
+        if (args.supportFilter !== 'all' && control.support !== args.supportFilter) {
           return false;
         }
 
@@ -89,7 +86,7 @@ export function useSecurityControlTable(args: {
       }),
     [
       args.controls,
-      args.evidenceReadinessFilter,
+      args.supportFilter,
       args.familyFilter,
       normalizedControlSearchTerm,
       args.responsibilityFilter,
@@ -103,8 +100,8 @@ export function useSecurityControlTable(args: {
       let comparison = 0;
 
       switch (args.sortBy) {
-        case 'evidence':
-          comparison = left.evidenceReadiness.localeCompare(right.evidenceReadiness);
+        case 'support':
+          comparison = left.support.localeCompare(right.support);
           break;
         case 'responsibility':
           comparison = (left.responsibility ?? '').localeCompare(right.responsibility ?? '');
@@ -163,7 +160,7 @@ export function useSecurityControlTable(args: {
     controlPagination,
     controlSearchParams,
     currentControlPage,
-    evidenceReadinessOptions,
+    supportOptions,
     familyOptions,
     paginatedControls,
     responsibilityOptions,

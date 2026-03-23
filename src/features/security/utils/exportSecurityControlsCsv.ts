@@ -2,7 +2,7 @@ import Papa from 'papaparse';
 import {
   formatControlResponsibility,
   formatEvidenceLifecycleStatus,
-  formatEvidenceReadiness,
+  formatSupportStatus,
   formatEvidenceReviewStatus,
   formatHipaaMapping,
   getEvidenceProgress,
@@ -12,7 +12,7 @@ import type { SecurityControlWorkspaceExport } from '~/features/security/types';
 export function exportSecurityControlsCsv(controls: SecurityControlWorkspaceExport[]) {
   const csv = Papa.unparse(
     controls.map((control) => ({
-      evidenceStatus: formatEvidenceReadiness(control.evidenceReadiness),
+      supportStatus: formatSupportStatus(control.support),
       evidenceProgress: getEvidenceProgress(control).label,
       controlId: control.nist80053Id,
       title: control.title,
@@ -52,7 +52,7 @@ export function exportSecurityControlsCsv(controls: SecurityControlWorkspaceExpo
             ),
         )
         .join('; '),
-      checklistCompletion: `${control.platformChecklist.filter((item) => item.status === 'done').length}/${control.platformChecklist.length}`,
+      checklistCompletion: `${control.platformChecklist.filter((item) => item.support === 'complete').length}/${control.platformChecklist.length}`,
       evidenceCount: control.platformChecklist.reduce((count, item) => {
         return (
           count + item.evidence.filter((evidence) => evidence.lifecycleStatus === 'active').length

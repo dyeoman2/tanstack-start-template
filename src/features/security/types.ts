@@ -17,8 +17,9 @@ export type ReviewOriginEvidenceSource =
   | 'follow_up_resolution'
   | 'review_exception';
 export type StoredEvidenceSource = EvidenceSource | ReviewOriginEvidenceSource;
-export type EvidenceExpiryStatus = 'current' | 'expiring_soon' | 'none';
+export type EvidenceExpiryStatus = 'current' | 'expiring_soon' | 'expired' | 'none';
 export type EvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
+export type SecuritySupport = 'missing' | 'partial' | 'complete';
 export type SecurityEvidenceType =
   | 'file'
   | 'link'
@@ -83,7 +84,6 @@ export type SecurityChecklistEvidence = {
   mimeType: string | null;
   renewedFromEvidenceId: string | null;
   replacedByEvidenceId: string | null;
-  reviewDueAt: number | null;
   reviewDueIntervalMonths: EvidenceReviewDueIntervalMonths | null;
   reviewOriginReviewAttestationId: Id<'reviewAttestations'> | null;
   reviewOriginReviewRunId: Id<'reviewRuns'> | null;
@@ -103,7 +103,7 @@ export type SecurityChecklistEvidence = {
   reviewStatus: 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
-  satisfiesThroughAt: number | null;
+  validUntil: number | null;
   sizeBytes: number | null;
   source: StoredEvidenceSource | null;
   storageId: string | null;
@@ -182,7 +182,6 @@ export type SecurityChecklistItem = {
   completedAt: number | null;
   description: string;
   evidence: SecurityChecklistEvidence[];
-  evidenceSufficiency: 'missing' | 'partial' | 'sufficient';
   hasExpiringSoonEvidence: boolean;
   itemId: string;
   label: string;
@@ -206,9 +205,9 @@ export type SecurityChecklistItem = {
     reviewTaskTitle: string;
     satisfiedAt: number;
     satisfiedByDisplay: string | null;
-    satisfiedThroughAt: number | null;
+    validUntil: number | null;
   } | null;
-  status: 'done' | 'in_progress' | 'not_applicable' | 'not_started';
+  support: SecuritySupport;
   suggestedEvidenceTypes: ControlChecklistEvidenceType[];
   verificationMethod: string;
 };
@@ -217,7 +216,7 @@ export type SecurityControlWorkspaceDetail = Omit<
   ActiveControlRecord,
   'mappings' | 'platformChecklistItems'
 > & {
-  evidenceReadiness: 'missing' | 'partial' | 'ready';
+  support: SecuritySupport;
   hasExpiringSoonEvidence: boolean;
   lastReviewedAt: number | null;
   linkedEntities: LinkedEntitySummary[];
@@ -268,7 +267,7 @@ export type SecurityControlWorkspaceSummary = Omit<
     completeCount: number;
     totalCount: number;
   };
-  evidenceReadiness: 'missing' | 'partial' | 'ready';
+  support: SecuritySupport;
   hasExpiringSoonEvidence: boolean;
   lastReviewedAt: number | null;
   mappings: SecurityControlWorkspaceDetail['mappings'];
@@ -514,10 +513,10 @@ export type VendorWorkspace = {
 export type SecurityWorkspaceOverview = {
   auditReadiness: AuditReadinessOverview;
   controlSummary: {
-    byEvidence: {
+    bySupport: {
       missing: number;
       partial: number;
-      ready: number;
+      complete: number;
     };
     byResponsibility: {
       customer: number;
@@ -535,7 +534,7 @@ export type SecurityWorkspaceOverview = {
   postureSummary: SecurityPostureSummary;
   queues: {
     blockedReviewTasks: number;
-    missingEvidenceControls: number;
+    missingSupportControls: number;
     pendingVendorReviews: number;
     undispositionedFindings: number;
   };

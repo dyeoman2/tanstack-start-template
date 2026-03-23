@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import {
-  CONTROL_EVIDENCE_FILTER_VALUES,
+  CONTROL_SUPPORT_FILTER_VALUES,
   CONTROL_RESPONSIBILITY_FILTER_VALUES,
   CONTROL_TABLE_SORT_FIELDS,
   SECURITY_TABS,
@@ -14,7 +14,7 @@ export const securitySearchSchema = z.object({
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().default(''),
   responsibility: z.enum(CONTROL_RESPONSIBILITY_FILTER_VALUES).default('all'),
-  evidenceReadiness: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
+  support: z.enum(CONTROL_SUPPORT_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
   selectedControl: z.string().optional(),
   selectedOperationId: z.string().optional(),

@@ -2,7 +2,7 @@ export const SECURITY_TABS = ['overview', 'controls', 'operations', 'reviews'] a
 
 export const CONTROL_TABLE_SORT_FIELDS = [
   'control',
-  'evidence',
+  'support',
   'responsibility',
   'family',
 ] as const;
@@ -14,7 +14,7 @@ export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
   'customer',
 ] as const;
 
-export const CONTROL_EVIDENCE_FILTER_VALUES = ['all', 'ready', 'partial', 'missing'] as const;
+export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'missing'] as const;
 
 export const CONTROL_PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 export const EVIDENCE_REVIEW_DUE_OPTIONS = [3, 6, 12] as const;
