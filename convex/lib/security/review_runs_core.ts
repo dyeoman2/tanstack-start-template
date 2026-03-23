@@ -2,6 +2,7 @@ import type { Doc, Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import { listSecurityPolicyGovernanceContexts } from './governance_context';
 import { ANNUAL_REVIEW_TASK_BLUEPRINTS } from './securityReviewConfig';
 import type { ReviewTaskBlueprint } from './securityReviewConfig';
 import {
@@ -29,6 +30,10 @@ import {
 
 type ReviewRunDoc = Doc<'reviewRuns'>;
 type ReviewTaskDoc = Doc<'reviewTasks'>;
+
+function buildPolicyReviewTaskTemplateKey(policyId: string) {
+  return `annual:attest:policy:${policyId}`;
+}
 
 async function buildReviewRunSnapshot() {
   const snapshotJson = stringifyStable({
@@ -80,6 +85,72 @@ async function listReviewTasksByRunId(
     .collect();
 }
 
+function buildAnnualPolicyReviewTaskPatch(policy: Doc<'securityPolicies'>, now: number) {
+  return {
+    allowException: false,
+    controlLinks: [] as ReviewTaskDoc['controlLinks'],
+    description: `Review the ${policy.title} markdown source and attest that it remains current for the annual security review.`,
+    freshnessWindowDays: 365,
+    policyId: policy.policyId,
+    required: true,
+    taskType: 'attestation' as const,
+    title: `${policy.title} reviewed`,
+    updatedAt: now,
+  };
+}
+
+async function syncAnnualPolicyReviewTasks(
+  ctx: MutationCtx,
+  args: {
+    existingByTemplateKey: Map<string, ReviewTaskDoc>;
+    existingTasks: ReviewTaskDoc[];
+    reviewRunId: Id<'reviewRuns'>;
+  },
+) {
+  const policies = await ctx.db.query('securityPolicies').collect();
+  const now = Date.now();
+  const validPolicyTemplateKeys = new Set(
+    policies.map((policy) => buildPolicyReviewTaskTemplateKey(policy.policyId)),
+  );
+
+  await Promise.all(
+    policies.map(async (policy) => {
+      const templateKey = buildPolicyReviewTaskTemplateKey(policy.policyId);
+      const existing = args.existingByTemplateKey.get(templateKey);
+      const patch = buildAnnualPolicyReviewTaskPatch(policy, now);
+
+      if (existing) {
+        await ctx.db.patch(existing._id, patch);
+        return;
+      }
+
+      await ctx.db.insert('reviewTasks', {
+        ...patch,
+        latestAttestationId: undefined,
+        latestEvidenceLinkedAt: undefined,
+        latestNote: undefined,
+        latestResultId: undefined,
+        reviewRunId: args.reviewRunId,
+        satisfiedAt: undefined,
+        satisfiedThroughAt: undefined,
+        status: 'ready',
+        templateKey,
+        createdAt: now,
+      });
+    }),
+  );
+
+  await Promise.all(
+    args.existingTasks
+      .filter(
+        (task) =>
+          task.templateKey.startsWith('annual:attest:policy:') &&
+          !validPolicyTemplateKeys.has(task.templateKey),
+      )
+      .map((task) => ctx.db.delete(task._id)),
+  );
+}
+
 async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'reviewRuns'>) {
   const existingTasks = await listReviewTasksByRunId(ctx, reviewRunId);
   const existingByTemplateKey = new Map(
@@ -95,6 +166,7 @@ async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'review
         controlLinks: blueprint.controlLinks,
         description: blueprint.description,
         freshnessWindowDays: blueprint.freshnessWindowDays ?? undefined,
+        policyId: undefined,
         required: blueprint.required,
         taskType: blueprint.taskType,
         title: blueprint.title,
@@ -121,6 +193,12 @@ async function upsertAnnualReviewTasks(ctx: MutationCtx, reviewRunId: Id<'review
       });
     }),
   );
+
+  await syncAnnualPolicyReviewTasks(ctx, {
+    existingByTemplateKey,
+    existingTasks,
+    reviewRunId,
+  });
 }
 
 async function syncReviewRunStatus(ctx: MutationCtx, reviewRunId: Id<'reviewRuns'>) {
@@ -799,7 +877,7 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
     return null;
   }
 
-  const [tasks, evidenceLinks, attestations] = await Promise.all([
+  const [tasks, evidenceLinks, attestations, policyGovernanceContexts] = await Promise.all([
     listReviewTasksByRunId(ctx, reviewRunId),
     ctx.db
       .query('reviewTaskEvidenceLinks')
@@ -809,7 +887,11 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
       .query('reviewAttestations')
       .withIndex('by_review_run_id_and_attested_at', (q) => q.eq('reviewRunId', reviewRunId))
       .collect(),
+    run.kind === 'annual' ? listSecurityPolicyGovernanceContexts(ctx) : Promise.resolve([]),
   ]);
+  const policyGovernanceContextById = new Map(
+    policyGovernanceContexts.map((entry) => [entry.policy.policyId, entry] as const),
+  );
 
   const actorIds = Array.from(
     new Set([
@@ -846,6 +928,18 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
   const sortedTasks = [...tasks].sort((left, right) =>
     left.templateKey.localeCompare(right.templateKey),
   );
+  const buildReviewTaskPolicySummary = (task: ReviewTaskDoc) => {
+    if (!task.policyId) {
+      return null;
+    }
+    return policyGovernanceContextById.get(task.policyId)?.policy ?? null;
+  };
+  const buildReviewTaskPolicyControls = (task: ReviewTaskDoc) => {
+    if (!task.policyId) {
+      return [];
+    }
+    return policyGovernanceContextById.get(task.policyId)?.controls ?? [];
+  };
 
   return {
     createdAt: run.createdAt,
@@ -896,6 +990,8 @@ async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'reviewRuns'>
             }
           : null,
         latestNote: task.latestNote ?? null,
+        policy: buildReviewTaskPolicySummary(task),
+        policyControls: buildReviewTaskPolicyControls(task),
         required: task.required,
         satisfiedAt: task.satisfiedAt ?? null,
         satisfiedThroughAt: task.satisfiedThroughAt ?? null,
@@ -1013,6 +1109,7 @@ async function createTriggeredReviewRunRecord(
     latestEvidenceLinkedAt: undefined,
     latestNote: undefined,
     latestResultId: undefined,
+    policyId: undefined,
     required: true,
     reviewRunId: runId,
     satisfiedAt: undefined,
@@ -1638,6 +1735,7 @@ export {
   reconcileEvidenceReportLinkedTasks,
   removeReviewTaskEvidenceLinkRelationships,
   runSecurityWorkspaceMigration,
+  syncAnnualPolicyReviewTasks,
   syncReviewRunStatus,
   syncVendorReviewOverlayRecords,
   upsertAnnualReviewTasks,

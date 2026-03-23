@@ -88,6 +88,75 @@ The future policy layer should start from the same rule:
 - `policy.support` should roll up from mapped `control.support`
 - findings, vendor posture, and review state can be added later as linked overlays, not as the base support signal
 
+## Policy source of truth
+
+Policy support extends the same proof-backed model:
+
+`evidence(validUntil) -> checklist.support -> control.support -> policy.support`
+
+Policy ownership is split intentionally:
+
+- repo markdown is canonical policy prose
+- `securityPolicies` is canonical policy metadata and review state
+- `securityPolicyControlMappings` is canonical policy-to-control mapping state
+
+Repo sync is the only path that refreshes repo-owned policy fields from the seeded catalog:
+
+- `title`
+- `summary`
+- `sourcePath`
+- `contentHash`
+- `customerSummary`
+- `internalNotes`
+- seeded policy-control mappings
+
+Annual review owns policy review metadata:
+
+- `lastReviewedAt`
+- `nextReviewAt`
+
+Repo sync must preserve those review fields. Annual review updates them through policy attestation tasks.
+
+Current policy contract:
+
+- `policy.support` is derived only from mapped `control.support`
+- policy review tasks are attestation-only
+- policy review does not create checklist/control evidence
+- findings, vendor posture, and review workflow remain overlays, not policy support inputs
+
+## Governance terms
+
+These terms are now locked for the next governance phase:
+
+- `support` = proof-backed completeness derived from current evidence and rollups
+- `review` = formal governance attestation or revalidation workflow
+- `finding` = detected gap or issue linked to the governance graph
+- `vendor review` = governed third-party assessment state
+
+Important boundary:
+
+- findings do not change `control.support`
+- findings do not change `policy.support`
+- vendor review state does not change `control.support`
+- vendor review state does not change `policy.support`
+
+Those records affect posture, annual review outputs, and follow-up workflows. They do not replace proof-backed support.
+
+## Governance context seam
+
+The support engine remains the base truth path. Cross-object governance linking should now flow through a shared governance-context layer instead of being assembled ad hoc inside review or workspace modules.
+
+Current shared context includes:
+
+- policy object summaries
+- control-to-policy related context
+
+Future governance expansion should extend that seam with:
+
+- vendor context
+- finding context
+- annual review umbrella context
+
 ## Annual review
 
 Annual review is a revalidation workflow, not a parallel truth system.

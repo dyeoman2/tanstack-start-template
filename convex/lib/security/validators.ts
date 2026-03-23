@@ -47,6 +47,7 @@ const vendorRelatedControlValidator = v.object({
 const securityScopeTypeValidator = v.literal(SECURITY_SCOPE_TYPE);
 const securityScopeIdValidator = v.string();
 const securityRelationshipObjectTypeValidator = v.union(
+  v.literal('policy'),
   v.literal('control'),
   v.literal('checklist_item'),
   v.literal('evidence'),
@@ -74,6 +75,77 @@ const linkedEntitySummaryValidator = v.object({
   relationshipType: securityRelationshipTypeValidator,
   status: v.union(v.string(), v.null()),
 });
+const securityPolicySupportValidator = v.union(
+  v.literal('missing'),
+  v.literal('partial'),
+  v.literal('complete'),
+);
+const securityPolicyMappedControlValidator = v.object({
+  familyId: v.string(),
+  familyTitle: v.string(),
+  implementationSummary: v.optional(v.string()),
+  internalControlId: v.string(),
+  isPrimary: v.boolean(),
+  nist80053Id: v.string(),
+  responsibility: v.union(
+    v.literal('platform'),
+    v.literal('shared-responsibility'),
+    v.literal('customer'),
+    v.null(),
+  ),
+  support: securityPolicySupportValidator,
+  title: v.string(),
+});
+const securityPolicyLinkedReviewTaskValidator = v.object({
+  id: v.id('reviewTasks'),
+  status: v.union(
+    v.literal('ready'),
+    v.literal('completed'),
+    v.literal('exception'),
+    v.literal('blocked'),
+  ),
+  title: v.string(),
+});
+const securityPolicySummaryValidator = v.object({
+  contentHash: v.string(),
+  customerSummary: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  linkedAnnualReviewTask: v.union(securityPolicyLinkedReviewTaskValidator, v.null()),
+  mappedControlCount: v.number(),
+  mappedControlCountsBySupport: v.object({
+    complete: v.number(),
+    missing: v.number(),
+    partial: v.number(),
+  }),
+  nextReviewAt: v.union(v.number(), v.null()),
+  owner: v.string(),
+  policyId: v.string(),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  sourcePath: v.string(),
+  summary: v.string(),
+  support: securityPolicySupportValidator,
+  title: v.string(),
+});
+const securityPolicyDetailValidator = v.object({
+  contentHash: v.string(),
+  customerSummary: v.union(v.string(), v.null()),
+  internalNotes: v.union(v.string(), v.null()),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  linkedAnnualReviewTask: v.union(securityPolicyLinkedReviewTaskValidator, v.null()),
+  mappedControls: v.array(securityPolicyMappedControlValidator),
+  nextReviewAt: v.union(v.number(), v.null()),
+  owner: v.string(),
+  policyId: v.string(),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  sourcePath: v.string(),
+  summary: v.string(),
+  support: securityPolicySupportValidator,
+  title: v.string(),
+});
+const securityPolicySummaryListValidator = v.array(securityPolicySummaryValidator);
 const vendorWorkspaceValidator = v.object({
   allowedDataClasses: v.array(v.string()),
   allowedEnvironments: v.array(
@@ -858,6 +930,16 @@ const reviewTaskValidator = v.object({
   id: v.id('reviewTasks'),
   latestAttestation: v.union(reviewAttestationValidator, v.null()),
   latestNote: v.union(v.string(), v.null()),
+  policy: v.union(
+    v.object({
+      policyId: v.string(),
+      sourcePath: v.string(),
+      support: securityPolicySupportValidator,
+      title: v.string(),
+    }),
+    v.null(),
+  ),
+  policyControls: v.array(securityPolicyMappedControlValidator),
   required: v.boolean(),
   satisfiedAt: v.union(v.number(), v.null()),
   satisfiedThroughAt: v.union(v.number(), v.null()),
@@ -1116,6 +1198,9 @@ export {
   reviewTaskStatusValidator,
   reviewTaskTypeValidator,
   reviewTaskValidator,
+  securityPolicyDetailValidator,
+  securityPolicySummaryListValidator,
+  securityPolicySummaryValidator,
   securityControlEvidenceActivityEventValidator,
   securityControlEvidenceActivityListValidator,
   securityControlEvidenceAuditEventTypeValidator,
@@ -1139,6 +1224,7 @@ export {
   securityScopeTypeValidator,
   securityWorkspaceMigrationResultValidator,
   securityWorkspaceOverviewValidator,
+  securityPolicySupportValidator,
   suggestedEvidenceTypeValidator,
   validateSecurityEvidenceUploadInput,
   vendorKeyValidator,

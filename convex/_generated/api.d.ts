@@ -44,7 +44,9 @@ import type * as lib_organizationMembershipState from "../lib/organizationMember
 import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as lib_security_control_workspace_core from "../lib/security/control_workspace_core.js";
 import type * as lib_security_core from "../lib/security/core.js";
+import type * as lib_security_governance_context from "../lib/security/governance_context.js";
 import type * as lib_security_operations_core from "../lib/security/operations_core.js";
+import type * as lib_security_policies_core from "../lib/security/policies_core.js";
 import type * as lib_security_posture from "../lib/security/posture.js";
 import type * as lib_security_reports from "../lib/security/reports.js";
 import type * as lib_security_review_runs_core from "../lib/security/review_runs_core.js";
@@ -63,6 +65,8 @@ import type * as playground from "../playground.js";
 import type * as playgroundAdmin from "../playgroundAdmin.js";
 import type * as scimLifecycle from "../scimLifecycle.js";
 import type * as securityOps from "../securityOps.js";
+import type * as securityPolicies from "../securityPolicies.js";
+import type * as securityPoliciesNode from "../securityPoliciesNode.js";
 import type * as securityPosture from "../securityPosture.js";
 import type * as securityReports from "../securityReports.js";
 import type * as securityReviews from "../securityReviews.js";
@@ -121,7 +125,9 @@ declare const fullApi: ApiFromModules<{
   "lib/returnValidators": typeof lib_returnValidators;
   "lib/security/control_workspace_core": typeof lib_security_control_workspace_core;
   "lib/security/core": typeof lib_security_core;
+  "lib/security/governance_context": typeof lib_security_governance_context;
   "lib/security/operations_core": typeof lib_security_operations_core;
+  "lib/security/policies_core": typeof lib_security_policies_core;
   "lib/security/posture": typeof lib_security_posture;
   "lib/security/reports": typeof lib_security_reports;
   "lib/security/review_runs_core": typeof lib_security_review_runs_core;
@@ -140,6 +146,8 @@ declare const fullApi: ApiFromModules<{
   playgroundAdmin: typeof playgroundAdmin;
   scimLifecycle: typeof scimLifecycle;
   securityOps: typeof securityOps;
+  securityPolicies: typeof securityPolicies;
+  securityPoliciesNode: typeof securityPoliciesNode;
   securityPosture: typeof securityPosture;
   securityReports: typeof securityReports;
   securityReviews: typeof securityReviews;

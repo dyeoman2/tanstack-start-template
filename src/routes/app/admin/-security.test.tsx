@@ -85,7 +85,7 @@ vi.mock('~/components/ui/toast', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'operations' | 'reviews';
+  tab: 'overview' | 'controls' | 'policies' | 'operations' | 'reviews';
   page: number;
   pageSize: 10 | 20 | 50;
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
@@ -95,6 +95,7 @@ type SearchState = {
   support: 'all' | 'complete' | 'partial' | 'missing';
   family: string;
   selectedControl?: string;
+  selectedPolicy?: string;
   selectedOperationId?: string;
   selectedOperationType?: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run';
 };
@@ -110,6 +111,7 @@ const defaultSearch: SearchState = {
   support: 'all',
   family: 'all',
   selectedControl: undefined,
+  selectedPolicy: undefined,
   selectedOperationId: undefined,
   selectedOperationType: undefined,
 };
@@ -278,6 +280,73 @@ function buildControl(
   };
 }
 
+function buildPolicySummary(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    contentHash: 'policy-hash-1',
+    customerSummary: 'Customer-safe summary',
+    internalNotes: 'Internal note',
+    lastReviewedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    linkedAnnualReviewTask: {
+      id: 'task-policy-1',
+      status: 'ready',
+      title: 'Access Control Policy reviewed',
+    },
+    mappedControlCount: 3,
+    mappedControlCountsBySupport: {
+      complete: 2,
+      missing: 0,
+      partial: 1,
+    },
+    nextReviewAt: Date.parse('2027-03-18T08:00:00.000Z'),
+    owner: 'Security team',
+    policyId: 'access-control',
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    sourcePath: 'docs/security-policies/access-control-policy.md',
+    summary: 'Defines provider access requirements.',
+    support: 'partial',
+    title: 'Access Control Policy',
+    ...overrides,
+  };
+}
+
+function buildPolicyDetail(overrides?: Partial<Record<string, unknown>>) {
+  return {
+    contentHash: 'policy-hash-1',
+    customerSummary: 'Customer-safe summary',
+    internalNotes: 'Internal note',
+    lastReviewedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    linkedAnnualReviewTask: {
+      id: 'task-policy-1',
+      status: 'ready',
+      title: 'Access Control Policy reviewed',
+    },
+    mappedControls: [
+      {
+        familyId: 'AC',
+        familyTitle: 'Access Control',
+        implementationSummary: 'Role-based access is enforced.',
+        internalControlId: 'CTRL-AC-002',
+        isPrimary: true,
+        nist80053Id: 'AC-2',
+        responsibility: 'platform',
+        support: 'complete',
+        title: 'Account Management',
+      },
+    ],
+    nextReviewAt: Date.parse('2027-03-18T08:00:00.000Z'),
+    owner: 'Security team',
+    policyId: 'access-control',
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    sourcePath: 'docs/security-policies/access-control-policy.md',
+    summary: 'Defines provider access requirements.',
+    support: 'partial',
+    title: 'Access Control Policy',
+    ...overrides,
+  };
+}
+
 function buildEvidenceReport(overrides?: Partial<Record<string, unknown>>) {
   return {
     id: 'report-1',
@@ -431,6 +500,8 @@ function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
         id: 'review-task-1',
         latestAttestation: null,
         latestNote: null,
+        policy: null,
+        policyControls: [],
         required: true,
         satisfiedAt: null,
         satisfiedThroughAt: null,
@@ -456,6 +527,8 @@ function buildReviewRunDetail(overrides?: Partial<Record<string, unknown>>) {
         id: 'review-task-2',
         latestAttestation: null,
         latestNote: null,
+        policy: null,
+        policyControls: [],
         required: true,
         satisfiedAt: null,
         satisfiedThroughAt: null,
@@ -602,6 +675,8 @@ function mockSecurityQueries(args: {
   evidenceReports?: unknown[];
   reportDetail?: unknown;
   findings?: unknown[];
+  policies?: unknown[];
+  policyDetail?: unknown;
   reviewDetail?: unknown;
   summary?: unknown;
   triggeredReviewRuns?: unknown[];
@@ -631,6 +706,10 @@ function mockSecurityQueries(args: {
           null
         );
       }
+      case 'securityPolicies:listSecurityPolicies':
+        return args.policies ?? [buildPolicySummary()];
+      case 'securityPolicies:getSecurityPolicyDetail':
+        return args.policyDetail ?? buildPolicyDetail();
       case 'securityPosture:getSecurityOperationsBoard':
         return buildOperationsBoard(args);
       case 'securityReports:getEvidenceReportDetail':
@@ -790,6 +869,34 @@ describe('Admin security route', () => {
     expect(screen.queryByRole('menuitem', { name: /approve/i })).not.toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /archive/i })).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /renew/i })).toBeInTheDocument();
+  });
+
+  it('renders the policies tab and opens policy detail', async () => {
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'policies',
+      selectedPolicy: 'access-control',
+    });
+    mockSecurityQueries({
+      policies: [buildPolicySummary()],
+      policyDetail: buildPolicyDetail(),
+    });
+    mockSecurityActions({
+      'securityPolicies:syncSecurityPoliciesFromSeed': vi.fn().mockResolvedValue(undefined),
+    });
+
+    renderRoute();
+
+    expect(
+      screen.getByText(
+        'Governance layer backed by repo markdown, mapped controls, and annual policy attestations.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Access Control Policy').length).toBeGreaterThan(0);
+
+    expect(
+      screen.getByText('Policy support is derived only from these mapped control support states.'),
+    ).toBeInTheDocument();
   });
 
   it('approves non-seeded evidence from the evidence actions menu', async () => {

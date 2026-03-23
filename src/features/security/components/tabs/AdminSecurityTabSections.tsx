@@ -28,14 +28,17 @@ import {
   formatReviewRunStatus,
   formatReviewTaskEvidenceSourceType,
   formatReviewTaskStatus,
+  formatSupportStatus,
   getFindingSeverityBadgeVariant,
   getReviewRunStatusBadgeVariant,
+  getSupportBadgeVariant,
 } from '~/features/security/formatters';
 import type {
   AuditReadinessOverview,
   EvidenceReportListItem,
   ReviewRunSummary,
   ReviewTaskDetail,
+  SecurityPolicySummary,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
   SecurityOperationDetail,
@@ -199,6 +202,153 @@ export function AdminSecurityOverviewTab(props: {
       </div>
 
       <SecurityControlSummaryGrid controlSummary={props.controlSummary} />
+    </>
+  );
+}
+
+export function AdminSecurityPoliciesTab(props: {
+  busySync: boolean;
+  onOpenPolicy: (policyId: string) => void;
+  onSyncPolicies: () => Promise<void>;
+  policies: SecurityPolicySummary[] | undefined;
+}) {
+  const policies = props.policies ?? [];
+  const counts = policies.reduce(
+    (summary, policy) => {
+      summary[policy.support] += 1;
+      return summary;
+    },
+    {
+      complete: 0,
+      missing: 0,
+      partial: 0,
+    },
+  );
+
+  return (
+    <>
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+        <div className="space-y-1">
+          <h2 className="text-lg font-semibold">Policies</h2>
+          <p className="text-sm text-muted-foreground">
+            Governance layer backed by repo markdown, mapped controls, and annual policy
+            attestations.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          disabled={props.busySync}
+          onClick={() => {
+            void props.onSyncPolicies();
+          }}
+        >
+          {props.busySync ? 'Syncing…' : 'Sync policy catalog'}
+        </Button>
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-3">
+        <AdminSecuritySummaryCard
+          title="Policy Support"
+          description="Policies fully supported by mapped controls."
+          value={`${counts.complete}`}
+          footer={`${policies.length} total policies`}
+        />
+        <AdminSecuritySummaryCard
+          title="Partial Policies"
+          description="Policies with mixed mapped-control support."
+          value={`${counts.partial}`}
+          footer="Review these before annual attestation"
+        />
+        <AdminSecuritySummaryCard
+          title="Missing Policies"
+          description="Policies with no currently complete mapped-control support."
+          value={`${counts.missing}`}
+          footer="These need control remediation or refreshed evidence"
+        />
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        {props.policies === undefined ? (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              Loading policy catalog…
+            </CardContent>
+          </Card>
+        ) : policies.length > 0 ? (
+          policies.map((policy) => (
+            <Card key={policy.policyId}>
+              <CardHeader className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="space-y-1">
+                    <CardTitle>{policy.title}</CardTitle>
+                    <CardDescription>{policy.summary}</CardDescription>
+                  </div>
+                  <Badge variant={getSupportBadgeVariant(policy.support)}>
+                    {formatSupportStatus(policy.support)}
+                  </Badge>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                  <span>Owner: {policy.owner}</span>
+                  <span>Mapped controls: {policy.mappedControlCount}</span>
+                  <span>
+                    Last reviewed:{' '}
+                    {policy.lastReviewedAt
+                      ? new Date(policy.lastReviewedAt).toLocaleDateString()
+                      : 'Not yet'}
+                  </span>
+                  <span>
+                    Next review:{' '}
+                    {policy.nextReviewAt
+                      ? new Date(policy.nextReviewAt).toLocaleDateString()
+                      : 'Unscheduled'}
+                  </span>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-md border p-3 text-sm">
+                    <p className="font-medium">Complete</p>
+                    <p className="text-muted-foreground">
+                      {policy.mappedControlCountsBySupport.complete}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-3 text-sm">
+                    <p className="font-medium">Partial</p>
+                    <p className="text-muted-foreground">
+                      {policy.mappedControlCountsBySupport.partial}
+                    </p>
+                  </div>
+                  <div className="rounded-md border p-3 text-sm">
+                    <p className="font-medium">Missing</p>
+                    <p className="text-muted-foreground">
+                      {policy.mappedControlCountsBySupport.missing}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">{policy.sourcePath}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      props.onOpenPolicy(policy.policyId);
+                    }}
+                  >
+                    View policy detail
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))
+        ) : (
+          <Card>
+            <CardContent className="p-6 text-sm text-muted-foreground">
+              No policy records are available yet.
+            </CardContent>
+          </Card>
+        )}
+      </div>
     </>
   );
 }

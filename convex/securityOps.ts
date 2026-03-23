@@ -97,6 +97,8 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
     deletedEvidenceActivity: v.number(),
     deletedEvidenceReports: v.number(),
     deletedExportArtifacts: v.number(),
+    deletedPolicies: v.number(),
+    deletedPolicyControlMappings: v.number(),
   }),
   handler: async (ctx, args) => {
     if (args.secret !== getE2ETestSecret()) {
@@ -114,6 +116,8 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       reviewTaskResults,
       reviewAttestations,
       reviewTaskEvidenceLinks,
+      policies,
+      policyControlMappings,
     ] = await Promise.all([
       ctx.db.query('securityControlChecklistItems').collect(),
       ctx.db.query('securityControlEvidence').collect(),
@@ -125,6 +129,8 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       ctx.db.query('reviewTaskResults').collect(),
       ctx.db.query('reviewAttestations').collect(),
       ctx.db.query('reviewTaskEvidenceLinks').collect(),
+      ctx.db.query('securityPolicies').collect(),
+      ctx.db.query('securityPolicyControlMappings').collect(),
     ]);
 
     await Promise.all([
@@ -138,6 +144,8 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       ...reviewTaskResults.map((row) => ctx.db.delete(row._id)),
       ...reviewAttestations.map((row) => ctx.db.delete(row._id)),
       ...reviewTaskEvidenceLinks.map((row) => ctx.db.delete(row._id)),
+      ...policies.map((row) => ctx.db.delete(row._id)),
+      ...policyControlMappings.map((row) => ctx.db.delete(row._id)),
     ]);
 
     return {
@@ -152,6 +160,8 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       deletedEvidenceActivity: evidenceActivityRows.length,
       deletedEvidenceReports: evidenceReports.length,
       deletedExportArtifacts: exportArtifacts.length,
+      deletedPolicies: policies.length,
+      deletedPolicyControlMappings: policyControlMappings.length,
     };
   },
 });

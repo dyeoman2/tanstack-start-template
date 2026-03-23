@@ -188,6 +188,34 @@ export async function generateEvidenceReportHandler(
       itemId: string;
     }>;
   }>;
+  const policyWorkspace = (
+    reportKind === 'annual_review'
+      ? await ctx.runQuery(anyApi.securityPolicies.listSecurityPolicyExportsInternal, {})
+      : []
+  ) as Array<{
+    contentHash: string;
+    customerSummary: string | null;
+    internalNotes: string | null;
+    lastReviewedAt: number | null;
+    linkedAnnualReviewTask: {
+      id: Id<'reviewTasks'>;
+      status: 'ready' | 'completed' | 'exception' | 'blocked';
+      title: string;
+    } | null;
+    mappedControlCount: number;
+    mappedControlCountsBySupport: {
+      complete: number;
+      missing: number;
+      partial: number;
+    };
+    nextReviewAt: number | null;
+    owner: string;
+    policyId: string;
+    sourcePath: string;
+    summary: string;
+    support: 'missing' | 'partial' | 'complete';
+    title: string;
+  }>;
   const recentAuditLogs: Array<{
     createdAt: number;
     eventType: string;
@@ -334,6 +362,7 @@ export async function generateEvidenceReportHandler(
                   findings: currentFindings,
                   generatedAt: new Date(createdAt).toISOString(),
                   generatedByUserId: currentUser.authUserId,
+                  policies: policyWorkspace,
                   summary,
                   vendorBoundary: vendorWorkspaces,
                 }

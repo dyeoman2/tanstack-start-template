@@ -17,6 +17,7 @@ export const securitySearchSchema = z.object({
   support: z.enum(CONTROL_SUPPORT_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
   selectedControl: z.string().optional(),
+  selectedPolicy: z.string().optional(),
   selectedOperationId: z.string().optional(),
   selectedOperationType: z
     .enum(['evidence_report', 'finding', 'vendor_review', 'review_run'])

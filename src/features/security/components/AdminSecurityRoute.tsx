@@ -22,10 +22,12 @@ import {
   AdminSecurityResponsibilityCell,
 } from '~/features/security/components/AdminSecurityControlCells';
 import { AdminSecurityControlDetail } from '~/features/security/components/AdminSecurityControlDetail';
+import { AdminSecurityPolicyDetail } from '~/features/security/components/AdminSecurityPolicyDetail';
 import {
   AdminSecurityControlsTab,
   AdminSecurityOverviewTab,
   AdminSecurityOperationsTab,
+  AdminSecurityPoliciesTab,
   AdminSecurityReviewsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
 import {
@@ -44,6 +46,8 @@ import type {
   ReviewRunSummary,
   ReviewTaskDetail,
   SecurityChecklistEvidence,
+  SecurityPolicyDetail,
+  SecurityPolicySummary,
   SecurityControlWorkspace,
   SecurityControlWorkspaceExport,
   SecurityControlWorkspaceSummary,
@@ -74,6 +78,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     support: supportFilter,
     family: familyFilter,
     selectedControl: selectedControlId,
+    selectedPolicy: selectedPolicyId,
     selectedOperationId,
     selectedOperationType,
   } = props.search;
@@ -86,6 +91,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     | SecurityWorkspaceOverview
     | undefined;
   const controlsTabActive = activeTab === 'controls';
+  const policiesTabActive = activeTab === 'policies';
   const operationsTabActive = activeTab === 'operations';
   const reviewsTabActive = activeTab === 'reviews';
   const selectedReportId = useMemo(() => {
@@ -106,6 +112,14 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     api.securityWorkspace.getSecurityControlWorkspaceDetail,
     controlsTabActive && selectedControlId ? { internalControlId: selectedControlId } : 'skip',
   ) as SecurityControlWorkspace | null | undefined;
+  const policySummaries = useQuery(
+    api.securityPolicies.listSecurityPolicies,
+    policiesTabActive ? {} : 'skip',
+  ) as SecurityPolicySummary[] | undefined;
+  const selectedPolicy = useQuery(
+    api.securityPolicies.getSecurityPolicyDetail,
+    policiesTabActive && selectedPolicyId ? { policyId: selectedPolicyId } : 'skip',
+  ) as SecurityPolicyDetail | null | undefined;
   const evidenceReports = operationsBoard?.evidenceReports;
   const securityFindings = operationsBoard?.findings;
   const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
@@ -143,6 +157,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     api.securityReviews.ensureCurrentAnnualReviewRun,
   );
   const createTriggeredReviewRun = useMutation(api.securityReviews.createTriggeredReviewRun);
+  const syncSecurityPoliciesFromSeed = useAction(api.securityPolicies.syncSecurityPoliciesFromSeed);
   const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
   const attestReviewTask = useMutation(api.securityReviews.attestReviewTask);
   const setReviewTaskException = useMutation(api.securityReviews.setReviewTaskException);
@@ -182,6 +197,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     {},
   );
   const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
+  const [isSyncingPolicies, setIsSyncingPolicies] = useState(false);
   const reviewsInitializedRef = useRef(false);
   const reviewsRefreshedForRunRef = useRef<string | null>(null);
   const controls = controlWorkspaces;
@@ -564,7 +580,24 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
           selectedOperationId: undefined,
           selectedOperationType: undefined,
           selectedControl: internalControlId,
+          selectedPolicy: undefined,
           tab: 'controls',
+        },
+      });
+    },
+    [navigate, search],
+  );
+  const navigateToPolicy = useCallback(
+    (policyId: string) => {
+      void navigate({
+        to: '/app/admin/security',
+        search: {
+          ...search,
+          selectedControl: undefined,
+          selectedOperationId: undefined,
+          selectedOperationType: undefined,
+          selectedPolicy: policyId,
+          tab: 'policies',
         },
       });
     },
@@ -582,6 +615,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
           selectedControl: undefined,
           selectedOperationId: operationId,
           selectedOperationType: operationType,
+          selectedPolicy: undefined,
           tab: 'operations',
         },
       });
@@ -594,10 +628,22 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       search: {
         ...search,
         selectedControl: undefined,
+        selectedPolicy: undefined,
         tab: 'reviews',
       },
     });
   }, [navigate, search]);
+  const handleSyncPolicies = useCallback(async () => {
+    setIsSyncingPolicies(true);
+    try {
+      await syncSecurityPoliciesFromSeed({});
+      showToast('Policy catalog synced from repo markdown.', 'success');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Failed to sync policies.', 'error');
+    } finally {
+      setIsSyncingPolicies(false);
+    }
+  }, [showToast, syncSecurityPoliciesFromSeed]);
   const handleControlSorting = useCallback(
     (columnId: (typeof CONTROL_TABLE_SORT_FIELDS)[number]) => {
       updateControlSearch({
@@ -1194,6 +1240,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
               ...search,
               tab: value,
               selectedControl: value === 'controls' ? search.selectedControl : undefined,
+              selectedPolicy: value === 'policies' ? search.selectedPolicy : undefined,
               selectedOperationId: value === 'operations' ? search.selectedOperationId : undefined,
               selectedOperationType:
                 value === 'operations' ? search.selectedOperationType : undefined,
@@ -1204,6 +1251,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         <TabsList className="w-full justify-start overflow-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="controls">Controls</TabsTrigger>
+          <TabsTrigger value="policies">Policies</TabsTrigger>
           <TabsTrigger value="operations">Operations</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
@@ -1232,6 +1280,15 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             responsibilityOptions={responsibilityOptions}
             sortedControls={sortedControls}
             updateControlSearch={updateControlSearch}
+          />
+        </TabsContent>
+
+        <TabsContent value="policies" className="space-y-6">
+          <AdminSecurityPoliciesTab
+            busySync={isSyncingPolicies}
+            onOpenPolicy={navigateToPolicy}
+            onSyncPolicies={handleSyncPolicies}
+            policies={policySummaries}
           />
         </TabsContent>
 
@@ -1362,6 +1419,38 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
               onRenewEvidence={handleRenewEvidence}
               onUploadEvidenceFile={handleUploadEvidenceFile}
             />
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <Sheet
+        open={selectedPolicyId !== undefined}
+        onOpenChange={(open) => {
+          if (open) {
+            return;
+          }
+
+          void navigate({
+            to: '/app/admin/security',
+            search: {
+              ...search,
+              selectedPolicy: undefined,
+              tab: 'policies',
+            },
+          });
+        }}
+      >
+        <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Security policy detail</SheetTitle>
+            <SheetDescription>
+              Review the selected policy, its mapped controls, and annual review linkage.
+            </SheetDescription>
+          </SheetHeader>
+          {selectedPolicy === undefined && selectedPolicyId ? (
+            <div className="p-4 text-sm text-muted-foreground">Loading policy detail…</div>
+          ) : selectedPolicy ? (
+            <AdminSecurityPolicyDetail onOpenControl={navigateToControl} policy={selectedPolicy} />
           ) : null}
         </SheetContent>
       </Sheet>

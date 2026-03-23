@@ -775,6 +775,38 @@ export default defineSchema({
       'createdAt',
     ]),
 
+  securityPolicies: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    policyId: v.string(),
+    title: v.string(),
+    summary: v.string(),
+    owner: v.string(),
+    sourcePath: v.string(),
+    contentHash: v.string(),
+    customerSummary: v.optional(v.union(v.string(), v.null())),
+    internalNotes: v.optional(v.union(v.string(), v.null())),
+    lastReviewedAt: v.optional(v.number()),
+    nextReviewAt: v.optional(v.number()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_policy_id', ['policyId'])
+    .index('by_updated_at', ['updatedAt']),
+
+  securityPolicyControlMappings: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    policyId: v.string(),
+    internalControlId: v.string(),
+    isPrimary: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index('by_policy_id', ['policyId'])
+    .index('by_internal_control_id', ['internalControlId'])
+    .index('by_policy_id_and_internal_control_id', ['policyId', 'internalControlId']),
+
   reviewRuns: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
@@ -807,6 +839,7 @@ export default defineSchema({
     scopeId: v.optional(v.string()),
     reviewRunId: v.id('reviewRuns'),
     templateKey: v.string(),
+    policyId: v.optional(v.string()),
     title: v.string(),
     description: v.string(),
     taskType: v.union(

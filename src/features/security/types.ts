@@ -20,6 +20,7 @@ export type StoredEvidenceSource = EvidenceSource | ReviewOriginEvidenceSource;
 export type EvidenceExpiryStatus = 'current' | 'expiring_soon' | 'expired' | 'none';
 export type EvidenceSufficiency = 'missing' | 'partial' | 'sufficient';
 export type SecuritySupport = 'missing' | 'partial' | 'complete';
+export type SecurityPolicySupport = SecuritySupport;
 export type SecurityEvidenceType =
   | 'file'
   | 'link'
@@ -48,6 +49,7 @@ export type SecurityScope = {
 export type LinkedEntitySummary = {
   entityId: string;
   entityType:
+    | 'policy'
     | 'control'
     | 'checklist_item'
     | 'evidence'
@@ -461,6 +463,23 @@ export type ReviewTaskDetail = {
     attestedByDisplay: string | null;
   } | null;
   latestNote: string | null;
+  policy: {
+    policyId: string;
+    sourcePath: string;
+    support: SecurityPolicySupport;
+    title: string;
+  } | null;
+  policyControls: Array<{
+    familyId: string;
+    familyTitle: string;
+    implementationSummary?: string;
+    internalControlId: string;
+    isPrimary: boolean;
+    nist80053Id: string;
+    responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
+    support: SecuritySupport;
+    title: string;
+  }>;
   required: boolean;
   satisfiedAt: number | null;
   satisfiedThroughAt: number | null;
@@ -543,6 +562,59 @@ export type SecurityWorkspaceOverview = {
     needsFollowUpCount: number;
     totalCount: number;
   };
+} & SecurityScope;
+
+export type SecurityPolicySummary = {
+  contentHash: string;
+  customerSummary: string | null;
+  internalNotes: string | null;
+  lastReviewedAt: number | null;
+  linkedAnnualReviewTask: {
+    id: Id<'reviewTasks'>;
+    status: 'ready' | 'completed' | 'exception' | 'blocked';
+    title: string;
+  } | null;
+  mappedControlCount: number;
+  mappedControlCountsBySupport: {
+    complete: number;
+    missing: number;
+    partial: number;
+  };
+  nextReviewAt: number | null;
+  owner: string;
+  policyId: string;
+  sourcePath: string;
+  summary: string;
+  support: SecurityPolicySupport;
+  title: string;
+} & SecurityScope;
+
+export type SecurityPolicyControlMapping = {
+  familyId: string;
+  familyTitle: string;
+  implementationSummary?: string;
+  internalControlId: string;
+  isPrimary: boolean;
+  nist80053Id: string;
+  responsibility: 'customer' | 'platform' | 'shared-responsibility' | null;
+  support: SecuritySupport;
+  title: string;
+};
+
+export type SecurityPolicyDetail = {
+  contentHash: string;
+  customerSummary: string | null;
+  internalNotes: string | null;
+  lastReviewedAt: number | null;
+  linkedAnnualReviewTask: SecurityPolicySummary['linkedAnnualReviewTask'];
+  mappedControls: SecurityPolicyControlMapping[];
+  nextReviewAt: number | null;
+  owner: string;
+  policyId: string;
+  sourcePath: string;
+  summary: string;
+  support: SecurityPolicySupport;
+  title: string;
 } & SecurityScope;
 
 export type SecurityOperationsBoard = {

@@ -43,6 +43,14 @@ import {
   reviewTaskStatusValidator,
 } from './lib/security/validators';
 
+function buildPolicyReviewDatePatch(args: { reviewedAt: number; validUntil: number }) {
+  return {
+    lastReviewedAt: args.reviewedAt,
+    nextReviewAt: args.validUntil,
+    updatedAt: args.reviewedAt,
+  };
+}
+
 export const getCurrentAnnualReviewRun = query({
   args: {},
   returns: v.union(reviewRunSummaryValidator, v.null()),
@@ -292,7 +300,18 @@ export const attestReviewTask = mutation({
     const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
       (entry) => entry.templateKey === task.templateKey,
     );
-    if (!blueprint || blueprint.statementKey === null || blueprint.statementText === null) {
+    const linkedPolicy = task.policyId
+      ? await ctx.db
+          .query('securityPolicies')
+          .withIndex('by_policy_id', (q) => q.eq('policyId', task.policyId as string))
+          .unique()
+      : null;
+    const statementKey =
+      blueprint?.statementKey ?? (linkedPolicy ? `policy:${linkedPolicy.policyId}:current` : null);
+    const statementText =
+      blueprint?.statementText ??
+      (linkedPolicy ? `I reviewed the ${linkedPolicy.title} policy and it remains current.` : null);
+    if (statementKey === null || statementText === null) {
       throw new Error('This task does not support attestation.');
     }
 
@@ -324,8 +343,8 @@ export const attestReviewTask = mutation({
       documentVersion: args.documentVersion?.trim() || undefined,
       reviewRunId: task.reviewRunId,
       reviewTaskId: task._id,
-      statementKey: blueprint.statementKey,
-      statementText: blueprint.statementText,
+      statementKey,
+      statementText,
     });
 
     const satisfiedThroughAt = addDays(
@@ -343,6 +362,15 @@ export const attestReviewTask = mutation({
       satisfiedThroughAt,
       status: 'completed',
     });
+    if (linkedPolicy) {
+      await ctx.db.patch(
+        linkedPolicy._id,
+        buildPolicyReviewDatePatch({
+          reviewedAt: now,
+          validUntil: satisfiedThroughAt,
+        }),
+      );
+    }
     return null;
   },
 });
@@ -469,3 +497,5 @@ export const finalizeReviewRun = siteAdminAction({
   returns: v.union(reviewRunDetailValidator, v.null()),
   handler: finalizeReviewRunHandler,
 });
+
+export { buildPolicyReviewDatePatch };

@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { applyReviewTaskState } from './lib/security/review_runs_core';
+import { SECURITY_POLICY_CATALOG } from '../src/lib/shared/compliance/security-policies';
+import {
+  applyReviewTaskState,
+  buildReviewRunDetail,
+  syncAnnualPolicyReviewTasks,
+} from './lib/security/review_runs_core';
 
 type DocId = string;
 
@@ -14,6 +19,10 @@ type ReviewTableMap = {
   securityFindings: Map<DocId, Record<string, unknown>>;
   securityMetrics: Map<DocId, Record<string, unknown>>;
   securityRelationships: Map<DocId, Record<string, unknown>>;
+  securityPolicies: Map<DocId, Record<string, unknown>>;
+  securityPolicyControlMappings: Map<DocId, Record<string, unknown>>;
+  securityControlChecklistItems: Map<DocId, Record<string, unknown>>;
+  userProfiles: Map<DocId, Record<string, unknown>>;
 };
 
 function clone<T>(value: T): T {
@@ -50,6 +59,16 @@ function createReviewMutationCtx(
     securityRelationships: new Map(
       (seed?.securityRelationships ?? []).map((doc) => [doc._id as string, clone(doc)]),
     ),
+    securityPolicies: new Map(
+      (seed?.securityPolicies ?? []).map((doc) => [doc._id as string, clone(doc)]),
+    ),
+    securityPolicyControlMappings: new Map(
+      (seed?.securityPolicyControlMappings ?? []).map((doc) => [doc._id as string, clone(doc)]),
+    ),
+    securityControlChecklistItems: new Map(
+      (seed?.securityControlChecklistItems ?? []).map((doc) => [doc._id as string, clone(doc)]),
+    ),
+    userProfiles: new Map((seed?.userProfiles ?? []).map((doc) => [doc._id as string, clone(doc)])),
   };
   let insertCounter = 0;
 
@@ -84,6 +103,14 @@ function createReviewMutationCtx(
         return;
       }
       throw new Error(`Missing document for patch: ${id}`);
+    },
+    async delete(id: string) {
+      for (const table of Object.values(tables)) {
+        if (table.delete(id)) {
+          return;
+        }
+      }
+      throw new Error(`Missing document for delete: ${id}`);
     },
     query(table: string) {
       return {
@@ -148,11 +175,54 @@ function createReviewMutationCtx(
   };
 }
 
+function buildPolicySeedRows() {
+  const now = Date.parse('2026-03-23T00:00:00.000Z');
+  return SECURITY_POLICY_CATALOG.map((policy, index) => ({
+    _id: `policy-${index + 1}`,
+    policyId: policy.policyId,
+    title: policy.title,
+    summary: policy.summary,
+    owner: policy.owner,
+    sourcePath: policy.sourcePath,
+    contentHash: `hash-${policy.policyId}`,
+    customerSummary: policy.customerSummary,
+    internalNotes: policy.internalNotes,
+    lastReviewedAt: now,
+    nextReviewAt: now + 365 * 24 * 60 * 60 * 1000,
+    createdAt: now,
+    updatedAt: now,
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+  }));
+}
+
+function buildPolicyMappingSeedRows() {
+  const now = Date.parse('2026-03-23T00:00:00.000Z');
+  return SECURITY_POLICY_CATALOG.flatMap((policy) =>
+    policy.mappings.map((mapping, index) => ({
+      _id: `${policy.policyId}-mapping-${index + 1}`,
+      createdAt: now,
+      internalControlId: mapping.internalControlId,
+      isPrimary: mapping.isPrimary,
+      policyId: policy.policyId,
+      scopeId: 'provider',
+      scopeType: 'provider_global',
+      updatedAt: now,
+    })),
+  );
+}
+
 function buildBaseSeed(overrides?: {
   attestation?: Record<string, unknown>;
   reviewTaskEvidenceLinks?: Record<string, unknown>[];
   securityControlEvidence?: Record<string, unknown>[];
-}) {
+}): {
+  reviewAttestations: Record<string, unknown>[];
+  reviewRuns: Record<string, unknown>[];
+  reviewTaskEvidenceLinks: Record<string, unknown>[];
+  reviewTasks: Record<string, unknown>[];
+  securityControlEvidence: Record<string, unknown>[];
+} {
   return {
     reviewRuns: [
       {
@@ -316,5 +386,211 @@ describe('review outcome evidence materialization', () => {
       lifecycleStatus: 'superseded',
       reviewOriginReviewTaskId: 'review-task-1',
     });
+  });
+
+  it('does not create checklist or control evidence for policy attestation tasks', async () => {
+    const seed = buildBaseSeed();
+    seed.reviewTasks = [
+      {
+        ...seed.reviewTasks[0],
+        _id: 'review-task-policy-1',
+        controlLinks: [],
+        policyId: 'access-control',
+        templateKey: 'annual:attest:policy:access-control',
+        title: 'Access Control Policy reviewed',
+      },
+    ];
+    const { ctx, tables } = createReviewMutationCtx(seed);
+
+    await applyReviewTaskState(ctx as never, {
+      actorUserId: 'admin-user',
+      mode: 'attestation',
+      resultType: 'attested',
+      reviewTaskId: 'review-task-policy-1' as never,
+      satisfiedAt: Date.parse('2026-03-23T09:00:00.000Z'),
+      satisfiedThroughAt: Date.parse('2027-03-23T09:00:00.000Z'),
+      status: 'completed',
+    });
+
+    expect([...tables.securityControlEvidence.values()]).toHaveLength(0);
+    expect([...tables.securityControlEvidenceActivity.values()]).toHaveLength(0);
+  });
+});
+
+describe('policy review orchestration contracts', () => {
+  it('creates deterministic attestation tasks for policies and removes stale policy tasks', async () => {
+    const staleTemplateKey = 'annual:attest:policy:retired-policy';
+    const { ctx, tables } = createReviewMutationCtx({
+      reviewTasks: [
+        {
+          _id: 'policy-task-existing',
+          allowException: false,
+          controlLinks: [],
+          description: 'Old policy description',
+          freshnessWindowDays: 90,
+          latestAttestationId: null,
+          latestEvidenceLinkedAt: null,
+          latestNote: null,
+          latestResultId: null,
+          policyId: 'access-control',
+          required: true,
+          reviewRunId: 'review-run-1',
+          satisfiedAt: null,
+          satisfiedThroughAt: null,
+          status: 'ready',
+          taskType: 'attestation',
+          templateKey: 'annual:attest:policy:access-control',
+          title: 'Old access title',
+          updatedAt: Date.parse('2026-03-22T00:00:00.000Z'),
+        },
+        {
+          _id: 'policy-task-stale',
+          allowException: false,
+          controlLinks: [],
+          description: 'Retired policy',
+          freshnessWindowDays: 365,
+          latestAttestationId: null,
+          latestEvidenceLinkedAt: null,
+          latestNote: null,
+          latestResultId: null,
+          policyId: 'retired-policy',
+          required: true,
+          reviewRunId: 'review-run-1',
+          satisfiedAt: null,
+          satisfiedThroughAt: null,
+          status: 'ready',
+          taskType: 'attestation',
+          templateKey: staleTemplateKey,
+          title: 'Retired policy reviewed',
+          updatedAt: Date.parse('2026-03-22T00:00:00.000Z'),
+        },
+      ],
+      securityPolicies: buildPolicySeedRows(),
+    });
+
+    const existingTasks = [...tables.reviewTasks.values()];
+    const existingByTemplateKey = new Map(
+      existingTasks.map((task) => [String(task.templateKey), task] as const),
+    );
+
+    await syncAnnualPolicyReviewTasks(ctx as never, {
+      existingByTemplateKey: existingByTemplateKey as never,
+      existingTasks: existingTasks as never,
+      reviewRunId: 'review-run-1' as never,
+    });
+
+    const accessTask = [...tables.reviewTasks.values()].find(
+      (task) => task.templateKey === 'annual:attest:policy:access-control',
+    );
+    expect(accessTask).toMatchObject({
+      controlLinks: [],
+      policyId: 'access-control',
+      required: true,
+      taskType: 'attestation',
+      templateKey: 'annual:attest:policy:access-control',
+    });
+    expect(accessTask?.title).toBe('Access Control Policy reviewed');
+    expect(accessTask?.description).toContain('Access Control Policy');
+    expect(
+      [...tables.reviewTasks.values()].some((task) => task.templateKey === staleTemplateKey),
+    ).toBe(false);
+  });
+
+  it('builds review detail with policy context for policy tasks and none for non-policy tasks', async () => {
+    const annualRunId = 'review-run-1';
+    const policyRow = buildPolicySeedRows().find((policy) => policy.policyId === 'access-control');
+    expect(policyRow).toBeTruthy();
+    const policyMappings = buildPolicyMappingSeedRows().filter(
+      (mapping) => mapping.policyId === 'access-control',
+    );
+    const policyTaskId = 'review-task-policy-1';
+    const nonPolicyTaskId = 'review-task-control-1';
+    const primaryMappedControl = policyMappings[0]?.internalControlId;
+    expect(primaryMappedControl).toBeTruthy();
+
+    const { ctx } = createReviewMutationCtx({
+      reviewRuns: [
+        {
+          _id: annualRunId,
+          createdAt: Date.parse('2026-03-23T00:00:00.000Z'),
+          kind: 'annual',
+          runKey: 'annual:2026',
+          scopeId: 'provider',
+          scopeType: 'provider_global',
+          snapshotHash: 'snapshot-hash',
+          snapshotJson: '{}',
+          status: 'ready',
+          title: 'Annual Security Review 2026',
+          updatedAt: Date.parse('2026-03-23T00:00:00.000Z'),
+          year: 2026,
+        },
+      ],
+      reviewTasks: [
+        {
+          _id: nonPolicyTaskId,
+          allowException: true,
+          controlLinks: [
+            {
+              internalControlId: primaryMappedControl,
+              itemId: 'provider-review-procedure',
+            },
+          ],
+          description: 'Review supporting control evidence.',
+          freshnessWindowDays: 365,
+          latestAttestationId: null,
+          latestEvidenceLinkedAt: null,
+          latestNote: null,
+          latestResultId: null,
+          required: true,
+          reviewRunId: annualRunId,
+          satisfiedAt: null,
+          satisfiedThroughAt: null,
+          status: 'ready',
+          taskType: 'attestation',
+          templateKey: 'annual:attest:control-check',
+          title: 'Control reviewed',
+          updatedAt: Date.parse('2026-03-23T00:00:00.000Z'),
+        },
+        {
+          _id: policyTaskId,
+          allowException: false,
+          controlLinks: [],
+          description: 'Review policy markdown.',
+          freshnessWindowDays: 365,
+          latestAttestationId: null,
+          latestEvidenceLinkedAt: null,
+          latestNote: null,
+          latestResultId: null,
+          policyId: 'access-control',
+          required: true,
+          reviewRunId: annualRunId,
+          satisfiedAt: null,
+          satisfiedThroughAt: null,
+          status: 'ready',
+          taskType: 'attestation',
+          templateKey: 'annual:attest:policy:access-control',
+          title: 'Access Control Policy reviewed',
+          updatedAt: Date.parse('2026-03-23T00:00:00.000Z'),
+        },
+      ],
+      securityPolicies: policyRow ? [policyRow] : [],
+      securityPolicyControlMappings: policyMappings,
+    });
+
+    const detail = await buildReviewRunDetail(ctx as never, annualRunId as never);
+
+    expect(detail).not.toBeNull();
+    const policyTask = detail?.tasks.find((task) => task.id === policyTaskId);
+    expect(policyTask?.policy).toMatchObject({
+      policyId: 'access-control',
+      sourcePath: policyRow?.sourcePath,
+      title: 'Access Control Policy',
+    });
+    expect(policyTask?.policyControls.length).toBeGreaterThan(0);
+    expect(policyTask?.policyControls[0]?.internalControlId).toBe(primaryMappedControl);
+
+    const nonPolicyTask = detail?.tasks.find((task) => task.id === nonPolicyTaskId);
+    expect(nonPolicyTask?.policy).toBeNull();
+    expect(nonPolicyTask?.policyControls).toEqual([]);
   });
 });

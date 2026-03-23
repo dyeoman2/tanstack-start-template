@@ -11,6 +11,8 @@ const securityWorkspaceResetSummaryValidator = v.object({
   deletedEvidenceActivity: v.number(),
   deletedEvidenceReports: v.number(),
   deletedExportArtifacts: v.number(),
+  deletedPolicies: v.number(),
+  deletedPolicyControlMappings: v.number(),
 });
 
 type SecurityWorkspaceResetSummary = {
@@ -20,6 +22,8 @@ type SecurityWorkspaceResetSummary = {
   deletedEvidenceActivity: number;
   deletedEvidenceReports: number;
   deletedExportArtifacts: number;
+  deletedPolicies: number;
+  deletedPolicyControlMappings: number;
 };
 
 type SeedResult = {
@@ -68,6 +72,17 @@ export const seed = internalAction({
           'Security control workspace overrides were cleared so the seeded control register is the active source of truth again.',
         );
       }
+    }
+
+    if (dryRun) {
+      notes.push('Dry run enabled: policy metadata sync from repo markdown was skipped.');
+    } else {
+      await ctx.runAction(internal.securityPoliciesNode.syncSecurityPoliciesFromSeedInternal, {
+        actorUserId: 'system:seed',
+      });
+      notes.push(
+        'Security policy metadata and control mappings were synced from repo-backed markdown.',
+      );
     }
 
     return {

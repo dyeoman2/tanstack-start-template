@@ -138,6 +138,39 @@ export function AdminSecurityReviewTaskGroup(props: {
                       </div>
                     ) : null}
 
+                    {task.policy ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Linked policy</p>
+                        <div className="rounded-md border p-3 text-sm">
+                          <p className="font-medium">{task.policy.title}</p>
+                          <p className="text-muted-foreground">
+                            {task.policy.sourcePath} · {task.policy.support}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {task.policyControls.length ? (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium">Mapped controls under this policy</p>
+                        <div className="flex flex-wrap gap-2">
+                          {task.policyControls.map((control) => (
+                            <Button
+                              key={`${task.id}:${control.internalControlId}`}
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                props.onOpenControl(control.internalControlId);
+                              }}
+                            >
+                              {control.nist80053Id} · {control.support}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {task.taskType === 'document_upload' ? (
                       <div className="grid gap-3 md:grid-cols-3">
                         <Input
