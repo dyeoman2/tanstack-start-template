@@ -18,10 +18,9 @@ import {
 import { AdminSecurityControlDetail } from '~/features/security/components/AdminSecurityControlDetail';
 import {
   AdminSecurityControlsTab,
-  AdminSecurityEvidenceTab,
   AdminSecurityOverviewTab,
+  AdminSecurityOperationsTab,
   AdminSecurityReviewsTab,
-  AdminSecurityVendorsTab,
 } from '~/features/security/components/tabs/AdminSecurityTabSections';
 import {
   CONTROL_PAGE_SIZE_OPTIONS,
@@ -34,7 +33,6 @@ import type { SecuritySearch } from '~/features/security/search';
 import type {
   EvidenceReviewDueIntervalMonths,
   EvidenceReportDetail,
-  EvidenceReportListItem,
   EvidenceSource,
   ReviewRunDetail,
   ReviewRunSummary,
@@ -43,6 +41,8 @@ import type {
   SecurityControlWorkspace,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
+  SecurityOperationDetail,
+  SecurityOperationsBoard,
   SecurityWorkspaceOverview,
   VendorWorkspace,
 } from '~/features/security/types';
@@ -67,17 +67,30 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     evidenceReadiness: evidenceReadinessFilter,
     family: familyFilter,
     selectedControl: selectedControlId,
+    selectedOperationId,
+    selectedOperationType,
   } = props.search;
   const { showToast } = useToast();
   const [report, setReport] = useState<string | null>(null);
-  const [selectedReportId, setSelectedReportId] = useState<Id<'evidenceReports'> | null>(null);
+  const [localSelectedReportId, setLocalSelectedReportId] = useState<Id<'evidenceReports'> | null>(
+    null,
+  );
   const workspaceOverview = useQuery(api.security.getSecurityWorkspaceOverview, {}) as
     | SecurityWorkspaceOverview
     | undefined;
   const controlsTabActive = activeTab === 'controls';
-  const evidenceTabActive = activeTab === 'evidence';
-  const vendorsTabActive = activeTab === 'vendors';
+  const operationsTabActive = activeTab === 'operations';
   const reviewsTabActive = activeTab === 'reviews';
+  const selectedReportId = useMemo(() => {
+    if (selectedOperationType === 'evidence_report' && selectedOperationId) {
+      return selectedOperationId as Id<'evidenceReports'>;
+    }
+    return localSelectedReportId;
+  }, [localSelectedReportId, selectedOperationId, selectedOperationType]);
+  const operationsBoard = useQuery(
+    api.security.getSecurityOperationsBoard,
+    operationsTabActive ? {} : 'skip',
+  ) as SecurityOperationsBoard | undefined;
   const controlWorkspaces = useQuery(
     api.security.listSecurityControlWorkspaces,
     controlsTabActive ? {} : 'skip',
@@ -86,23 +99,17 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     api.security.getSecurityControlWorkspaceDetail,
     controlsTabActive && selectedControlId ? { internalControlId: selectedControlId } : 'skip',
   ) as SecurityControlWorkspace | null | undefined;
-  const evidenceReports = useQuery(
-    api.security.listEvidenceReports,
-    evidenceTabActive ? { limit: 20 } : 'skip',
-  ) as EvidenceReportListItem[] | undefined;
-  const securityFindings = useQuery(
-    api.security.listSecurityFindings,
-    evidenceTabActive ? {} : 'skip',
-  ) as SecurityFindingListItem[] | undefined;
-  const vendorWorkspaces = useQuery(
-    api.security.listVendorReviewWorkspaces,
-    vendorsTabActive ? {} : 'skip',
-  ) as VendorWorkspace[] | undefined;
+  const evidenceReports = operationsBoard?.evidenceReports;
+  const securityFindings = operationsBoard?.findings;
+  const vendorWorkspaces = operationsBoard?.vendorWorkspaces;
   const summary = workspaceOverview?.postureSummary;
   const selectedReportDetail = useQuery(
     api.security.getEvidenceReportDetail,
-    evidenceTabActive && selectedReportId ? { id: selectedReportId } : 'skip',
+    operationsTabActive && selectedReportId ? { id: selectedReportId } : 'skip',
   ) as EvidenceReportDetail | null | undefined;
+  const resolvedSelectedOperationType =
+    selectedOperationType ?? (selectedReportId ? 'evidence_report' : undefined);
+  const resolvedSelectedOperationId = selectedOperationId ?? selectedReportId ?? undefined;
   const auditReadiness = workspaceOverview?.auditReadiness;
   const generateEvidenceReport = useAction(api.security.generateEvidenceReport);
   const exportEvidenceReport = useAction(api.security.exportEvidenceReport);
@@ -128,7 +135,13 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const setReviewTaskException = useMutation(api.security.setReviewTaskException);
   const openTriggeredFollowUp = useMutation(api.security.openTriggeredFollowUp);
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({});
+  const [reportCustomerSummaries, setReportCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
   const [findingNotes, setFindingNotes] = useState<Record<string, string>>({});
+  const [findingCustomerSummaries, setFindingCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
   const [findingDispositions, setFindingDispositions] = useState<
     Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
   >({});
@@ -152,6 +165,9 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   const [newTriggeredReviewTitle, setNewTriggeredReviewTitle] = useState('');
   const [newTriggeredReviewType, setNewTriggeredReviewType] = useState('manual_follow_up');
   const [vendorNotes, setVendorNotes] = useState<Record<string, string>>({});
+  const [vendorCustomerSummaries, setVendorCustomerSummaries] = useState<Record<string, string>>(
+    {},
+  );
   const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
   const reviewsInitializedRef = useRef(false);
   const reviewsRefreshedForRunRef = useRef<string | null>(null);
@@ -167,6 +183,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
   ) as ReviewRunSummary[] | undefined;
   const currentAnnualReviewRun =
     workspaceOverview?.currentAnnualReviewRun ??
+    operationsBoard?.currentAnnualReviewRun ??
     currentAnnualReviewRunQuery ??
     localAnnualReviewRun;
   const currentAnnualReviewDetailQuery = useQuery(
@@ -175,7 +192,89 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       ? { reviewRunId: currentAnnualReviewRun.id as Id<'reviewRuns'> }
       : 'skip',
   ) as ReviewRunDetail | null | undefined;
-  const currentAnnualReviewDetail = currentAnnualReviewDetailQuery ?? localAnnualReviewDetail;
+  const currentAnnualReviewDetail =
+    currentAnnualReviewDetailQuery ??
+    operationsBoard?.currentAnnualReviewDetail ??
+    localAnnualReviewDetail;
+  const triggeredReviewRunItems = triggeredReviewRuns ?? operationsBoard?.triggeredReviewRuns;
+  const selectedOperationDetail = useMemo<SecurityOperationDetail | null>(() => {
+    if (!resolvedSelectedOperationId || !resolvedSelectedOperationType) {
+      return null;
+    }
+
+    switch (resolvedSelectedOperationType) {
+      case 'evidence_report': {
+        const report =
+          (selectedReportDetail ?? null) ||
+          evidenceReports?.find((entry) => entry.id === resolvedSelectedOperationId);
+        if (!report) {
+          return null;
+        }
+        return {
+          kind: 'evidence_report',
+          id: resolvedSelectedOperationId as Id<'evidenceReports'>,
+          title: `${report.reportKind} report`,
+          status: report.reviewStatus,
+          report,
+        };
+      }
+      case 'finding': {
+        const finding = securityFindings?.find(
+          (entry) => entry.findingKey === resolvedSelectedOperationId,
+        );
+        if (!finding) {
+          return null;
+        }
+        return {
+          kind: 'finding',
+          id: finding.findingKey,
+          title: finding.title,
+          status: finding.disposition,
+          finding,
+        };
+      }
+      case 'vendor_review': {
+        const vendorReview = vendorWorkspaces?.find(
+          (entry) => entry.vendor === resolvedSelectedOperationId,
+        );
+        if (!vendorReview) {
+          return null;
+        }
+        return {
+          kind: 'vendor_review',
+          id: vendorReview.vendor,
+          title: vendorReview.displayName,
+          status: vendorReview.reviewStatus,
+          vendorReview,
+        };
+      }
+      case 'review_run': {
+        const reviewRun = triggeredReviewRunItems?.find(
+          (entry) => entry.id === resolvedSelectedOperationId,
+        );
+        if (!reviewRun) {
+          return null;
+        }
+        return {
+          kind: 'review_run',
+          id: reviewRun.id,
+          title: reviewRun.title,
+          status: reviewRun.status,
+          reviewRun,
+        };
+      }
+      default:
+        return null;
+    }
+  }, [
+    evidenceReports,
+    securityFindings,
+    selectedReportDetail,
+    triggeredReviewRunItems,
+    vendorWorkspaces,
+    resolvedSelectedOperationId,
+    resolvedSelectedOperationType,
+  ]);
   const auditReadinessSummary = useMemo(() => {
     const latestDrill = auditReadiness?.latestBackupDrill ?? null;
     const staleDrill =
@@ -424,6 +523,13 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         evidenceReadiness: 'all' | SecurityControlWorkspaceSummary['evidenceReadiness'];
         family: string;
         selectedControl: string | undefined;
+        selectedOperationId: string | undefined;
+        selectedOperationType:
+          | 'evidence_report'
+          | 'finding'
+          | 'vendor_review'
+          | 'review_run'
+          | undefined;
       }>,
     ) => {
       void navigate({
@@ -442,8 +548,28 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         to: '/app/admin/security',
         search: {
           ...search,
+          selectedOperationId: undefined,
+          selectedOperationType: undefined,
           selectedControl: internalControlId,
           tab: 'controls',
+        },
+      });
+    },
+    [navigate, search],
+  );
+  const navigateToOperation = useCallback(
+    (
+      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
+      operationId: string,
+    ) => {
+      void navigate({
+        to: '/app/admin/security',
+        search: {
+          ...search,
+          selectedControl: undefined,
+          selectedOperationId: operationId,
+          selectedOperationType: operationType,
+          tab: 'operations',
         },
       });
     },
@@ -454,6 +580,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       to: '/app/admin/security',
       search: {
         ...search,
+        selectedControl: undefined,
         tab: 'reviews',
       },
     });
@@ -559,9 +686,27 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     }
   }, [convex, showToast, sortedControls]);
 
-  const handleOpenReportDetail = useCallback((reportId: Id<'evidenceReports'>) => {
-    setSelectedReportId(reportId);
-  }, []);
+  const handleOpenReportDetail = useCallback(
+    (reportId: Id<'evidenceReports'>) => {
+      setLocalSelectedReportId(reportId);
+      navigateToOperation('evidence_report', reportId);
+    },
+    [navigateToOperation],
+  );
+  const handleSelectOperation = useCallback(
+    (
+      operationType: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run',
+      operationId: string,
+    ) => {
+      if (operationType === 'evidence_report') {
+        setLocalSelectedReportId(operationId as Id<'evidenceReports'>);
+      } else {
+        setLocalSelectedReportId(null);
+      }
+      navigateToOperation(operationType, operationId);
+    },
+    [navigateToOperation],
+  );
 
   const handleAddEvidenceLink = useCallback(
     async (args: {
@@ -749,7 +894,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     try {
       const generated = await generateEvidenceReport({ reportKind });
       setReport(generated.report);
-      setSelectedReportId(generated.id);
+      setLocalSelectedReportId(generated.id);
+      navigateToOperation('evidence_report', generated.id);
     } finally {
       setIsGenerating(false);
     }
@@ -762,8 +908,9 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     setBusyReportAction(`${id}:${reviewStatus}`);
     try {
       await reviewEvidenceReport({
+        customerSummary: reportCustomerSummaries[id]?.trim() || undefined,
         id,
-        internalReviewNotes: reviewNotes[id]?.trim() || undefined,
+        internalNotes: reviewNotes[id]?.trim() || undefined,
         reviewStatus,
       });
     } finally {
@@ -776,7 +923,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     try {
       const exported = await exportEvidenceReport({ id });
       setReport(exported.report);
-      setSelectedReportId(id);
+      setLocalSelectedReportId(id);
+      navigateToOperation('evidence_report', id);
     } finally {
       setBusyReportAction(null);
     }
@@ -787,9 +935,10 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       setBusyFindingKey(findingKey);
       try {
         await reviewSecurityFinding({
+          customerSummary: findingCustomerSummaries[findingKey]?.trim() || undefined,
           disposition: findingDispositions[findingKey] ?? 'pending_review',
           findingKey,
-          internalReviewNotes: findingNotes[findingKey]?.trim() || undefined,
+          internalNotes: findingNotes[findingKey]?.trim() || undefined,
         });
         showToast('Security finding review saved.', 'success');
       } catch (error) {
@@ -801,7 +950,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         setBusyFindingKey(null);
       }
     },
-    [findingDispositions, findingNotes, reviewSecurityFinding, showToast],
+    [findingCustomerSummaries, findingDispositions, findingNotes, reviewSecurityFinding, showToast],
   );
   const handleOpenFindingFollowUp = useCallback(
     async (finding: SecurityFindingListItem) => {
@@ -828,7 +977,8 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
       setBusyVendorKey(vendor.vendor);
       try {
         await reviewVendorWorkspace({
-          internalReviewNotes: vendorNotes[vendor.vendor]?.trim() || undefined,
+          customerSummary: vendorCustomerSummaries[vendor.vendor]?.trim() || undefined,
+          internalNotes: vendorNotes[vendor.vendor]?.trim() || undefined,
           owner: vendorOwners[vendor.vendor]?.trim() || undefined,
           reviewStatus,
           vendorKey: vendor.vendor,
@@ -843,7 +993,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         setBusyVendorKey(null);
       }
     },
-    [reviewVendorWorkspace, showToast, vendorNotes, vendorOwners],
+    [reviewVendorWorkspace, showToast, vendorCustomerSummaries, vendorNotes, vendorOwners],
   );
 
   const handleRefreshAnnualReview = useCallback(async () => {
@@ -994,6 +1144,27 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
     },
     [openTriggeredFollowUp, reviewTaskNotes, showToast],
   );
+  const handleOpenLinkedEntity = useCallback(
+    (entity: SecurityControlWorkspace['linkedEntities'][number]) => {
+      switch (entity.entityType) {
+        case 'control':
+          navigateToControl(entity.entityId);
+          return;
+        case 'review_run':
+        case 'review_task':
+          navigateToReviews();
+          return;
+        case 'evidence_report':
+        case 'finding':
+        case 'vendor_review':
+          navigateToOperation(entity.entityType, entity.entityId);
+          return;
+        default:
+          return;
+      }
+    },
+    [navigateToControl, navigateToOperation, navigateToReviews],
+  );
 
   return (
     <div className="space-y-6">
@@ -1015,6 +1186,9 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
               ...search,
               tab: value,
               selectedControl: value === 'controls' ? search.selectedControl : undefined,
+              selectedOperationId: value === 'operations' ? search.selectedOperationId : undefined,
+              selectedOperationType:
+                value === 'operations' ? search.selectedOperationType : undefined,
             },
           });
         }}
@@ -1022,8 +1196,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
         <TabsList className="w-full justify-start overflow-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="controls">Controls</TabsTrigger>
-          <TabsTrigger value="evidence">Evidence</TabsTrigger>
-          <TabsTrigger value="vendors">Vendors</TabsTrigger>
+          <TabsTrigger value="operations">Operations</TabsTrigger>
           <TabsTrigger value="reviews">Reviews</TabsTrigger>
         </TabsList>
 
@@ -1054,13 +1227,15 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
           />
         </TabsContent>
 
-        <TabsContent value="evidence" className="space-y-6">
-          <AdminSecurityEvidenceTab
+        <TabsContent value="operations" className="space-y-6">
+          <AdminSecurityOperationsTab
             auditReadiness={auditReadiness}
             auditReadinessSummary={auditReadinessSummary}
             busyFindingKey={busyFindingKey}
             busyReportAction={busyReportAction}
+            busyVendorKey={busyVendorKey}
             evidenceReports={evidenceReports}
+            findingCustomerSummaries={findingCustomerSummaries}
             findingDispositions={findingDispositions}
             findingNotes={findingNotes}
             findingSummary={findingSummary}
@@ -1070,18 +1245,32 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             handleOpenReportDetail={handleOpenReportDetail}
             handleReviewFinding={handleReviewFinding}
             handleReviewReport={handleReviewReport}
+            handleReviewVendor={handleReviewVendor}
             isGenerating={isGenerating}
             navigateToControl={navigateToControl}
             navigateToReviews={navigateToReviews}
             report={report}
+            reportCustomerSummaries={reportCustomerSummaries}
             restoreDrillFooter={restoreDrillFooter}
             reviewNotes={reviewNotes}
             securityFindings={securityFindings}
-            selectedReportDetail={selectedReportDetail}
-            selectedReportId={selectedReportId}
+            selectedOperationDetail={selectedOperationDetail}
+            selectedOperationId={resolvedSelectedOperationId}
+            selectedOperationType={resolvedSelectedOperationType}
+            onSelectOperation={handleSelectOperation}
+            setFindingCustomerSummaries={setFindingCustomerSummaries}
             setFindingDispositions={setFindingDispositions}
             setFindingNotes={setFindingNotes}
+            setReportCustomerSummaries={setReportCustomerSummaries}
             setReviewNotes={setReviewNotes}
+            setVendorCustomerSummaries={setVendorCustomerSummaries}
+            setVendorNotes={setVendorNotes}
+            setVendorOwners={setVendorOwners}
+            triggeredReviewRuns={triggeredReviewRunItems}
+            vendorCustomerSummaries={vendorCustomerSummaries}
+            vendorNotes={vendorNotes}
+            vendorOwners={vendorOwners}
+            vendorWorkspaces={vendorWorkspaces}
           />
         </TabsContent>
 
@@ -1125,21 +1314,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
             reviewTaskNotes={reviewTaskNotes}
             setNewTriggeredReviewTitle={setNewTriggeredReviewTitle}
             setNewTriggeredReviewType={setNewTriggeredReviewType}
-            triggeredReviewRuns={triggeredReviewRuns}
-          />
-        </TabsContent>
-
-        <TabsContent value="vendors">
-          <AdminSecurityVendorsTab
-            busyVendorKey={busyVendorKey}
-            handleReviewVendor={handleReviewVendor}
-            navigateToControl={navigateToControl}
-            navigateToReviews={navigateToReviews}
-            setVendorNotes={setVendorNotes}
-            setVendorOwners={setVendorOwners}
-            vendorNotes={vendorNotes}
-            vendorOwners={vendorOwners}
-            vendorWorkspaces={vendorWorkspaces}
+            triggeredReviewRuns={triggeredReviewRunItems}
           />
         </TabsContent>
       </Tabs>
@@ -1165,6 +1340,7 @@ export function AdminSecurityRoute(props: { search: SecuritySearch }) {
               onAddEvidenceNote={handleAddEvidenceNote}
               onArchiveEvidence={handleArchiveEvidence}
               onOpenEvidence={handleOpenEvidence}
+              onOpenLinkedEntity={handleOpenLinkedEntity}
               onOpenReviews={navigateToReviews}
               onReviewEvidence={handleReviewEvidence}
               onRenewEvidence={handleRenewEvidence}

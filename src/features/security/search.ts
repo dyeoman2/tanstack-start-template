@@ -17,6 +17,10 @@ export const securitySearchSchema = z.object({
   evidenceReadiness: z.enum(CONTROL_EVIDENCE_FILTER_VALUES).default('all'),
   family: z.string().default('all'),
   selectedControl: z.string().optional(),
+  selectedOperationId: z.string().optional(),
+  selectedOperationType: z
+    .enum(['evidence_report', 'finding', 'vendor_review', 'review_run'])
+    .optional(),
 });
 
 export type SecuritySearch = z.infer<typeof securitySearchSchema>;

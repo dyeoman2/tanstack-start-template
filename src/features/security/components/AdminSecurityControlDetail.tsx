@@ -107,6 +107,7 @@ export function AdminSecurityControlDetail(props: {
     itemId: string;
   }) => Promise<void>;
   onOpenEvidence: (evidence: SecurityChecklistEvidence) => Promise<void>;
+  onOpenLinkedEntity: (entity: SecurityControlWorkspace['linkedEntities'][number]) => void;
   onOpenReviews: () => void;
   onReviewEvidence: (args: { evidenceId: string }) => Promise<void>;
   onRenewEvidence: (args: {
@@ -182,10 +183,18 @@ export function AdminSecurityControlDetail(props: {
           {control.linkedEntities.length ? (
             <div className="flex flex-wrap gap-2">
               {control.linkedEntities.map((entity) => (
-                <Badge key={`${entity.entityType}:${entity.entityId}`} variant="outline">
+                <Button
+                  key={`${entity.entityType}:${entity.entityId}`}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    props.onOpenLinkedEntity(entity);
+                  }}
+                >
                   {entity.label}
                   {entity.status ? ` · ${entity.status.replaceAll('_', ' ')}` : ''}
-                </Badge>
+                </Button>
               ))}
             </div>
           ) : (

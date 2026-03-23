@@ -85,7 +85,7 @@ vi.mock('~/components/ui/toast', () => ({
 }));
 
 type SearchState = {
-  tab: 'overview' | 'controls' | 'evidence' | 'vendors' | 'reviews';
+  tab: 'overview' | 'controls' | 'operations' | 'reviews';
   page: number;
   pageSize: 10 | 20 | 50;
   sortBy: 'control' | 'evidence' | 'responsibility' | 'family';
@@ -95,10 +95,12 @@ type SearchState = {
   evidenceReadiness: 'all' | 'ready' | 'partial' | 'missing';
   family: string;
   selectedControl?: string;
+  selectedOperationId?: string;
+  selectedOperationType?: 'evidence_report' | 'finding' | 'vendor_review' | 'review_run';
 };
 
 const defaultSearch: SearchState = {
-  tab: 'evidence',
+  tab: 'operations',
   page: 1,
   pageSize: 10,
   sortBy: 'control',
@@ -108,6 +110,8 @@ const defaultSearch: SearchState = {
   evidenceReadiness: 'all',
   family: 'all',
   selectedControl: undefined,
+  selectedOperationId: undefined,
+  selectedOperationType: undefined,
 };
 
 function buildSummary() {
@@ -287,7 +291,8 @@ function buildEvidenceReport(overrides?: Partial<Record<string, unknown>>) {
     exportHash: null,
     exportManifestHash: null,
     generatedByUserId: 'admin-user',
-    internalReviewNotes: null,
+    customerSummary: null,
+    internalNotes: null,
     reviewedAt: null,
     reviewedByUserId: null,
     ...overrides,
@@ -332,7 +337,8 @@ function buildEvidenceReportDetail(overrides?: Partial<Record<string, unknown>>)
     scopeId: 'provider',
     scopeType: 'provider_global',
     reportKind: 'security_posture',
-    internalReviewNotes: null,
+    customerSummary: null,
+    internalNotes: null,
     reviewStatus: 'pending',
     reviewedAt: null,
     reviewedByDisplay: null,
@@ -348,8 +354,17 @@ function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
     findingKey: 'audit_integrity_failures',
     findingType: 'audit_integrity_failures',
     firstObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
-    internalReviewNotes: null,
+    internalNotes: null,
     lastObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    relatedControls: [
+      {
+        internalControlId: 'CTRL-AU-006',
+        itemId: 'provider-review-procedure',
+        itemLabel: 'Provider review procedure',
+        nist80053Id: 'AU-6',
+        title: 'Audit Review Procedure',
+      },
+    ],
     scopeId: 'provider',
     scopeType: 'provider_global',
     reviewedAt: null,
@@ -467,7 +482,7 @@ function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
     approvedByDefault: true,
     customerSummary: null,
     displayName: 'Sentry',
-    internalReviewNotes: 'SOC 2 reviewed.',
+    internalNotes: 'SOC 2 reviewed.',
     linkedEntities: [],
     linkedFollowUpRunId: null,
     owner: 'Platform Security',
@@ -486,6 +501,28 @@ function buildVendorWorkspace(overrides?: Partial<Record<string, unknown>>) {
     scopeType: 'provider_global',
     vendor: 'sentry',
     ...overrides,
+  };
+}
+
+function buildOperationsBoard(args: {
+  auditReadiness?: unknown;
+  currentAnnualRun?: unknown;
+  evidenceReports?: unknown[];
+  findings?: unknown[];
+  reviewDetail?: unknown;
+  triggeredReviewRuns?: unknown[];
+  vendorWorkspaces?: unknown[];
+}) {
+  return {
+    auditReadiness: args.auditReadiness ?? buildAuditReadiness(),
+    currentAnnualReviewDetail: args.reviewDetail ?? null,
+    currentAnnualReviewRun: args.currentAnnualRun ?? null,
+    evidenceReports: args.evidenceReports ?? [],
+    findings: args.findings ?? [buildSecurityFinding()],
+    scopeId: 'provider',
+    scopeType: 'provider_global',
+    triggeredReviewRuns: args.triggeredReviewRuns ?? [],
+    vendorWorkspaces: args.vendorWorkspaces ?? [],
   };
 }
 
@@ -596,12 +633,8 @@ function mockSecurityQueries(args: {
           null
         );
       }
-      case 'security:listEvidenceReports':
-        return args.evidenceReports ?? [];
-      case 'security:listSecurityFindings':
-        return args.findings ?? [buildSecurityFinding()];
-      case 'security:listVendorReviewWorkspaces':
-        return args.vendorWorkspaces ?? [];
+      case 'security:getSecurityOperationsBoard':
+        return buildOperationsBoard(args);
       case 'security:getEvidenceReportDetail':
         return args.reportDetail ?? null;
       case 'security:getCurrentAnnualReviewRun':
@@ -683,14 +716,17 @@ describe('Admin security route', () => {
     });
     expect(screen.getAllByText('{"status":"ok"}').length).toBeGreaterThan(0);
 
-    await user.clear(screen.getByPlaceholderText('Reviewer notes'));
-    await user.type(screen.getByPlaceholderText('Reviewer notes'), '  needs deeper review  ');
+    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
+    const reportInternalNotesField = internalNoteFields[internalNoteFields.length - 1];
+    expect(reportInternalNotesField).toBeDefined();
+    await user.clear(reportInternalNotesField!);
+    await user.type(reportInternalNotesField!, '  needs deeper review  ');
     await user.click(screen.getByRole('button', { name: /needs follow-up/i }));
 
     await waitFor(() => {
       expect(reviewEvidenceReportMock).toHaveBeenCalledWith({
         id: 'report-1',
-        internalReviewNotes: 'needs deeper review',
+        internalNotes: 'needs deeper review',
         reviewStatus: 'needs_follow_up',
       });
     });
@@ -816,7 +852,7 @@ describe('Admin security route', () => {
     expect(showToastMock).toHaveBeenCalledWith('Evidence marked as reviewed.', 'success');
   });
 
-  it('surfaces audit readiness signals and manifest hashes in the evidence tab', () => {
+  it('surfaces audit readiness signals and manifest hashes in the operations tab', () => {
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness({
         metadataGaps: [
@@ -859,7 +895,7 @@ describe('Admin security route', () => {
     expect(screen.getByText(/Manifest hash: manifest-hash-1/)).toBeInTheDocument();
   });
 
-  it('loads persisted report detail and control deep-links from the evidence queue', async () => {
+  it('loads persisted report detail and control deep-links from the operations queue', async () => {
     const user = userEvent.setup();
 
     mockSecurityQueries({
@@ -871,11 +907,32 @@ describe('Admin security route', () => {
     mockSecurityActions({});
     mockSecurityMutations({});
 
-    renderRoute();
+    const view = renderRoute();
 
-    await user.click(screen.getByRole('button', { name: /view details/i }));
+    const reportRow = screen
+      .getByText(/security_posture/i)
+      .closest('[data-selected]') as HTMLElement | null;
+    expect(reportRow).not.toBeNull();
 
-    expect(screen.getByText('Selected Report Detail')).toBeInTheDocument();
+    await user.click(within(reportRow!).getByRole('button', { name: /view details/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      search: expect.objectContaining({
+        selectedOperationId: 'report-1',
+        selectedOperationType: 'evidence_report',
+        tab: 'operations',
+      }),
+      to: '/app/admin/security',
+    });
+
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      selectedOperationId: 'report-1',
+      selectedOperationType: 'evidence_report',
+    });
+    view.rerender(<AdminSecurityRoute search={useSearchMock() as SearchState} />);
+
+    expect(screen.getByText('Selected Operation')).toBeInTheDocument();
     expect(screen.getByText('{"status":"persisted"}')).toBeInTheDocument();
 
     await user.click(
@@ -910,7 +967,8 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.type(screen.getByPlaceholderText('Finding review notes'), 'triage in progress');
+    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
+    await user.type(internalNoteFields[0]!, 'triage in progress');
     await user.click(
       screen.getByRole('combobox', { name: /disposition for audit integrity monitoring/i }),
     );
@@ -921,12 +979,12 @@ describe('Admin security route', () => {
       expect(reviewSecurityFindingMock).toHaveBeenCalledWith({
         disposition: 'investigating',
         findingKey: 'audit_integrity_failures',
-        internalReviewNotes: 'triage in progress',
+        internalNotes: 'triage in progress',
       });
     });
   });
 
-  it('opens finding follow-up reviews directly from the evidence queue', async () => {
+  it('opens finding follow-up reviews directly from the operations queue', async () => {
     const user = userEvent.setup();
     const openSecurityFindingFollowUpMock = vi.fn().mockResolvedValue(undefined);
 
@@ -943,7 +1001,8 @@ describe('Admin security route', () => {
 
     renderRoute();
 
-    await user.type(screen.getByPlaceholderText('Finding review notes'), 'escalate to remediation');
+    const internalNoteFields = screen.getAllByPlaceholderText('Internal notes');
+    await user.type(internalNoteFields[0]!, 'escalate to remediation');
     await user.click(screen.getByRole('button', { name: /open follow-up/i }));
 
     await waitFor(() => {
@@ -1136,7 +1195,7 @@ describe('Admin security route', () => {
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
-      tab: 'vendors',
+      tab: 'operations',
     });
     mockSecurityQueries({
       auditReadiness: buildAuditReadiness(),
@@ -1152,13 +1211,17 @@ describe('Admin security route', () => {
 
     await user.clear(screen.getByLabelText(/owner/i));
     await user.type(screen.getByLabelText(/owner/i), 'Infra team');
-    await user.clear(screen.getByPlaceholderText('Vendor review notes'));
-    await user.type(screen.getByPlaceholderText('Vendor review notes'), 'Need updated DPA.');
+    const vendorInternalNotesFields = screen.getAllByPlaceholderText('Internal notes');
+    const vendorInternalNotesField =
+      vendorInternalNotesFields[vendorInternalNotesFields.length - 1];
+    expect(vendorInternalNotesField).toBeDefined();
+    await user.clear(vendorInternalNotesField!);
+    await user.type(vendorInternalNotesField!, 'Need updated DPA.');
     await user.click(screen.getByRole('button', { name: /needs follow-up/i }));
 
     await waitFor(() => {
       expect(reviewVendorWorkspaceMock).toHaveBeenCalledWith({
-        internalReviewNotes: 'Need updated DPA.',
+        internalNotes: 'Need updated DPA.',
         owner: 'Infra team',
         reviewStatus: 'needs_follow_up',
         vendorKey: 'sentry',

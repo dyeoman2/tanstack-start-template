@@ -33,12 +33,12 @@ import {
 } from '~/features/security/formatters';
 import type {
   AuditReadinessOverview,
-  EvidenceReportDetail,
   EvidenceReportListItem,
   ReviewRunSummary,
   ReviewTaskDetail,
   SecurityControlWorkspaceSummary,
   SecurityFindingListItem,
+  SecurityOperationDetail,
   SecurityPostureSummary,
   VendorWorkspace,
 } from '~/features/security/types';
@@ -351,18 +351,20 @@ export function AdminSecurityEvidenceTab(props: {
     SecurityFindingListItem['findingKey'],
     SecurityFindingListItem['disposition']
   >;
+  findingCustomerSummaries: Record<string, string>;
   findingNotes: Record<string, string>;
   findingSummary: FindingSummary;
   isGenerating: boolean;
   report: string | null;
+  reportCustomerSummaries: Record<string, string>;
   restoreDrillFooter: string;
   reviewNotes: Record<string, string>;
   securityFindings: SecurityFindingListItem[] | undefined;
-  selectedReportDetail: EvidenceReportDetail | null | undefined;
   selectedReportId: Id<'evidenceReports'> | null;
   handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
   handleOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
   handleOpenReportDetail: (reportId: Id<'evidenceReports'>) => void;
+  handleOpenFindingDetail: (findingKey: SecurityFindingListItem['findingKey']) => void;
   handleReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
   handleReviewReport: (
     id: Id<'evidenceReports'>,
@@ -376,7 +378,9 @@ export function AdminSecurityEvidenceTab(props: {
       Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
     >
   >;
+  setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setReviewNotes: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
   return (
@@ -622,6 +626,16 @@ export function AdminSecurityEvidenceTab(props: {
                     </Select>
                     <Button
                       type="button"
+                      variant="outline"
+                      disabled={props.busyFindingKey !== null}
+                      onClick={() => {
+                        props.handleOpenFindingDetail(finding.findingKey);
+                      }}
+                    >
+                      View details
+                    </Button>
+                    <Button
+                      type="button"
                       disabled={props.busyFindingKey !== null}
                       onClick={() => {
                         void props.handleReviewFinding(finding.findingKey);
@@ -644,17 +658,56 @@ export function AdminSecurityEvidenceTab(props: {
                   </div>
                 </div>
                 <Textarea
-                  value={
-                    props.findingNotes[finding.findingKey] ?? finding.internalReviewNotes ?? ''
-                  }
+                  value={props.findingNotes[finding.findingKey] ?? finding.internalNotes ?? ''}
                   onChange={(event) => {
                     props.setFindingNotes((current) => ({
                       ...current,
                       [finding.findingKey]: event.target.value,
                     }));
                   }}
-                  placeholder="Finding review notes"
+                  placeholder="Internal notes"
                 />
+                <Textarea
+                  value={
+                    props.findingCustomerSummaries[finding.findingKey] ??
+                    finding.customerSummary ??
+                    ''
+                  }
+                  onChange={(event) => {
+                    props.setFindingCustomerSummaries((current) => ({
+                      ...current,
+                      [finding.findingKey]: event.target.value,
+                    }));
+                  }}
+                  placeholder="Customer-facing summary"
+                />
+                {finding.relatedControls.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {finding.relatedControls.map((control) => (
+                      <Button
+                        key={`${finding.findingKey}:${control.internalControlId}:${control.itemId ?? 'none'}`}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          props.navigateToControl(control.internalControlId);
+                        }}
+                      >
+                        {control.nist80053Id} · {control.title}
+                      </Button>
+                    ))}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        props.navigateToReviews();
+                      }}
+                    >
+                      Open reviews
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ))
           ) : (
@@ -748,95 +801,30 @@ export function AdminSecurityEvidenceTab(props: {
                   </div>
                 </div>
                 <Textarea
-                  value={props.reviewNotes[item.id] ?? item.internalReviewNotes ?? ''}
+                  value={props.reviewNotes[item.id] ?? item.internalNotes ?? ''}
                   onChange={(event) => {
                     props.setReviewNotes((current) => ({
                       ...current,
                       [item.id]: event.target.value,
                     }));
                   }}
-                  placeholder="Reviewer notes"
+                  placeholder="Internal notes"
+                />
+                <Textarea
+                  value={props.reportCustomerSummaries[item.id] ?? item.customerSummary ?? ''}
+                  onChange={(event) => {
+                    props.setReportCustomerSummaries((current) => ({
+                      ...current,
+                      [item.id]: event.target.value,
+                    }));
+                  }}
+                  placeholder="Customer-facing summary"
                 />
               </div>
             ))
           ) : (
             <p className="text-sm text-muted-foreground">No evidence reports generated yet.</p>
           )}
-          {props.selectedReportId ? (
-            <Card className="border-dashed">
-              <CardHeader>
-                <CardTitle>Selected Report Detail</CardTitle>
-                <CardDescription>
-                  Persisted report content, export metadata, and linked review tasks.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {props.selectedReportDetail ? (
-                  <>
-                    <div className="space-y-1 text-sm text-muted-foreground">
-                      <p>
-                        {props.selectedReportDetail.reportKind} ·{' '}
-                        {new Date(props.selectedReportDetail.createdAt).toLocaleString()}
-                      </p>
-                      <p>Content hash: {props.selectedReportDetail.contentHash}</p>
-                      <p>Review: {props.selectedReportDetail.reviewStatus}</p>
-                      {props.selectedReportDetail.exportManifestHash ? (
-                        <p>Manifest hash: {props.selectedReportDetail.exportManifestHash}</p>
-                      ) : null}
-                    </div>
-                    {props.selectedReportDetail.linkedTasks.length ? (
-                      <div className="space-y-3">
-                        <p className="text-sm font-medium">Linked review tasks</p>
-                        {props.selectedReportDetail.linkedTasks.map((task) => (
-                          <div key={task.taskId} className="rounded-md border p-3 text-sm">
-                            <p className="font-medium">{task.taskTitle}</p>
-                            <p className="text-muted-foreground">
-                              {task.reviewRunTitle} · {formatReviewRunStatus(task.reviewRunStatus)}
-                            </p>
-                            <div className="mt-2 flex flex-wrap gap-2">
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  props.navigateToReviews();
-                                }}
-                              >
-                                Open reviews
-                              </Button>
-                              {task.controlLinks.map((link) => (
-                                <Button
-                                  key={`${task.taskId}:${link.internalControlId}:${link.itemId}`}
-                                  type="button"
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => {
-                                    props.navigateToControl(link.internalControlId);
-                                  }}
-                                >
-                                  {link.nist80053Id ?? link.internalControlId}
-                                  {link.itemLabel ? ` · ${link.itemLabel}` : ''}
-                                </Button>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-                    <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-                      {props.selectedReportDetail.contentJson}
-                    </pre>
-                  </>
-                ) : props.report ? (
-                  <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
-                    {props.report}
-                  </pre>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Loading report detail…</p>
-                )}
-              </CardContent>
-            </Card>
-          ) : null}
         </CardContent>
       </Card>
     </>
@@ -1210,6 +1198,9 @@ export function AdminSecurityVendorsTab(props: {
   busyVendorKey: string | null;
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: () => void;
+  onSelectVendor: (vendorKey: VendorWorkspace['vendor']) => void;
+  onSelectReviewRun: (reviewRunId: ReviewRunSummary['id']) => void;
+  vendorCustomerSummaries: Record<string, string>;
   vendorNotes: Record<string, string>;
   vendorOwners: Record<string, string>;
   vendorWorkspaces: VendorWorkspace[] | undefined;
@@ -1217,6 +1208,7 @@ export function AdminSecurityVendorsTab(props: {
     vendor: VendorWorkspace,
     reviewStatus: VendorWorkspace['reviewStatus'],
   ) => Promise<void>;
+  setVendorCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorNotes: Dispatch<SetStateAction<Record<string, string>>>;
   setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
 }) {
@@ -1316,16 +1308,35 @@ export function AdminSecurityVendorsTab(props: {
 
             <div className="mt-4 space-y-2">
               <Textarea
-                value={props.vendorNotes[vendor.vendor] ?? vendor.internalReviewNotes ?? ''}
+                value={props.vendorNotes[vendor.vendor] ?? vendor.internalNotes ?? ''}
                 onChange={(event) => {
                   props.setVendorNotes((current) => ({
                     ...current,
                     [vendor.vendor]: event.target.value,
                   }));
                 }}
-                placeholder="Vendor review notes"
+                placeholder="Internal notes"
+              />
+              <Textarea
+                value={props.vendorCustomerSummaries[vendor.vendor] ?? vendor.customerSummary ?? ''}
+                onChange={(event) => {
+                  props.setVendorCustomerSummaries((current) => ({
+                    ...current,
+                    [vendor.vendor]: event.target.value,
+                  }));
+                }}
+                placeholder="Customer-facing summary"
               />
               <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    props.onSelectVendor(vendor.vendor);
+                  }}
+                >
+                  View details
+                </Button>
                 <Button
                   type="button"
                   disabled={props.busyVendorKey !== null}
@@ -1350,6 +1361,17 @@ export function AdminSecurityVendorsTab(props: {
                     type="button"
                     variant="outline"
                     onClick={() => {
+                      props.onSelectReviewRun(vendor.linkedFollowUpRunId!);
+                    }}
+                  >
+                    View follow-up
+                  </Button>
+                ) : null}
+                {vendor.linkedFollowUpRunId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
                       props.navigateToReviews();
                     }}
                   >
@@ -1362,6 +1384,344 @@ export function AdminSecurityVendorsTab(props: {
         )) ?? <p className="text-sm text-muted-foreground">Loading vendor posture…</p>}
       </CardContent>
     </Card>
+  );
+}
+
+export function AdminSecurityOperationsTab(props: {
+  auditReadiness: AuditReadinessOverview | undefined;
+  auditReadinessSummary: {
+    latestDrill: AuditReadinessOverview['latestBackupDrill'];
+    latestManifestHash: string | null;
+    metadataGapCount: number;
+    recentDeniedCount: number;
+    recentExportCount: number;
+    staleDrill: boolean;
+  };
+  busyFindingKey: string | null;
+  busyReportAction: string | null;
+  busyVendorKey: string | null;
+  evidenceReports: EvidenceReportListItem[] | undefined;
+  findingCustomerSummaries: Record<string, string>;
+  findingDispositions: Record<
+    SecurityFindingListItem['findingKey'],
+    SecurityFindingListItem['disposition']
+  >;
+  findingNotes: Record<string, string>;
+  findingSummary: FindingSummary;
+  isGenerating: boolean;
+  report: string | null;
+  reportCustomerSummaries: Record<string, string>;
+  restoreDrillFooter: string;
+  reviewNotes: Record<string, string>;
+  securityFindings: SecurityFindingListItem[] | undefined;
+  selectedOperationDetail: SecurityOperationDetail | null;
+  selectedOperationId: string | undefined;
+  selectedOperationType: SecurityOperationDetail['kind'] | undefined;
+  triggeredReviewRuns: ReviewRunSummary[] | undefined;
+  vendorCustomerSummaries: Record<string, string>;
+  vendorNotes: Record<string, string>;
+  vendorOwners: Record<string, string>;
+  vendorWorkspaces: VendorWorkspace[] | undefined;
+  handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
+  handleOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
+  handleOpenReportDetail: (reportId: Id<'evidenceReports'>) => void;
+  onSelectOperation: (operationType: SecurityOperationDetail['kind'], operationId: string) => void;
+  handleReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
+  handleReviewReport: (
+    id: Id<'evidenceReports'>,
+    reviewStatus: 'needs_follow_up' | 'reviewed',
+  ) => Promise<void>;
+  handleExportReport: (id: Id<'evidenceReports'>) => Promise<void>;
+  handleReviewVendor: (
+    vendor: VendorWorkspace,
+    reviewStatus: VendorWorkspace['reviewStatus'],
+  ) => Promise<void>;
+  navigateToControl: (internalControlId: string) => void;
+  navigateToReviews: () => void;
+  setFindingCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
+  setFindingDispositions: Dispatch<
+    SetStateAction<
+      Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
+    >
+  >;
+  setFindingNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setReportCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
+  setReviewNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setVendorCustomerSummaries: Dispatch<SetStateAction<Record<string, string>>>;
+  setVendorNotes: Dispatch<SetStateAction<Record<string, string>>>;
+  setVendorOwners: Dispatch<SetStateAction<Record<string, string>>>;
+}) {
+  return (
+    <>
+      <AdminSecurityEvidenceTab
+        auditReadiness={props.auditReadiness}
+        auditReadinessSummary={props.auditReadinessSummary}
+        busyFindingKey={props.busyFindingKey}
+        busyReportAction={props.busyReportAction}
+        evidenceReports={props.evidenceReports}
+        findingCustomerSummaries={props.findingCustomerSummaries}
+        findingDispositions={props.findingDispositions}
+        findingNotes={props.findingNotes}
+        findingSummary={props.findingSummary}
+        handleExportReport={props.handleExportReport}
+        handleGenerateReport={props.handleGenerateReport}
+        handleOpenFindingFollowUp={props.handleOpenFindingFollowUp}
+        handleOpenFindingDetail={(findingKey) => {
+          props.onSelectOperation('finding', findingKey);
+        }}
+        handleOpenReportDetail={props.handleOpenReportDetail}
+        handleReviewFinding={props.handleReviewFinding}
+        handleReviewReport={props.handleReviewReport}
+        isGenerating={props.isGenerating}
+        navigateToControl={props.navigateToControl}
+        navigateToReviews={props.navigateToReviews}
+        report={props.report}
+        reportCustomerSummaries={props.reportCustomerSummaries}
+        restoreDrillFooter={props.restoreDrillFooter}
+        reviewNotes={props.reviewNotes}
+        securityFindings={props.securityFindings}
+        selectedReportId={
+          props.selectedOperationType === 'evidence_report'
+            ? (props.selectedOperationId as Id<'evidenceReports'>)
+            : null
+        }
+        setFindingCustomerSummaries={props.setFindingCustomerSummaries}
+        setFindingDispositions={props.setFindingDispositions}
+        setFindingNotes={props.setFindingNotes}
+        setReportCustomerSummaries={props.setReportCustomerSummaries}
+        setReviewNotes={props.setReviewNotes}
+      />
+
+      {props.selectedOperationId && props.selectedOperationType ? (
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>Selected Operation</CardTitle>
+            <CardDescription>
+              Linked detail for the currently selected report, finding, vendor review, or follow-up
+              run.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {props.selectedOperationDetail ? (
+              props.selectedOperationDetail.kind === 'evidence_report' ? (
+                <>
+                  <div className="space-y-1 text-sm text-muted-foreground">
+                    <p>
+                      {props.selectedOperationDetail.report.reportKind} ·{' '}
+                      {new Date(props.selectedOperationDetail.report.createdAt).toLocaleString()}
+                    </p>
+                    <p>Content hash: {props.selectedOperationDetail.report.contentHash}</p>
+                    <p>Review: {props.selectedOperationDetail.report.reviewStatus}</p>
+                    {'exportManifestHash' in props.selectedOperationDetail.report &&
+                    props.selectedOperationDetail.report.exportManifestHash ? (
+                      <p>
+                        Manifest hash: {props.selectedOperationDetail.report.exportManifestHash}
+                      </p>
+                    ) : null}
+                  </div>
+                  {'linkedTasks' in props.selectedOperationDetail.report &&
+                  props.selectedOperationDetail.report.linkedTasks.length ? (
+                    <div className="space-y-3">
+                      <p className="text-sm font-medium">Linked review tasks</p>
+                      {props.selectedOperationDetail.report.linkedTasks.map((task) => (
+                        <div key={task.taskId} className="rounded-md border p-3 text-sm">
+                          <p className="font-medium">{task.taskTitle}</p>
+                          <p className="text-muted-foreground">
+                            {task.reviewRunTitle} · {formatReviewRunStatus(task.reviewRunStatus)}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                props.navigateToReviews();
+                              }}
+                            >
+                              Open reviews
+                            </Button>
+                            {task.controlLinks.map((link) => (
+                              <Button
+                                key={`${task.taskId}:${link.internalControlId}:${link.itemId}`}
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  props.navigateToControl(link.internalControlId);
+                                }}
+                              >
+                                {link.nist80053Id ?? link.internalControlId}
+                                {link.itemLabel ? ` · ${link.itemLabel}` : ''}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {'contentJson' in props.selectedOperationDetail.report ? (
+                    <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
+                      {props.selectedOperationDetail.report.contentJson}
+                    </pre>
+                  ) : props.report ? (
+                    <pre className="max-h-[28rem] overflow-auto rounded-md border bg-muted/30 p-4 text-xs">
+                      {props.report}
+                    </pre>
+                  ) : null}
+                </>
+              ) : props.selectedOperationDetail.kind === 'finding' ? (
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    {props.selectedOperationDetail.finding.title}
+                  </p>
+                  <p>{props.selectedOperationDetail.finding.description}</p>
+                  <p>
+                    {formatFindingSeverity(props.selectedOperationDetail.finding.severity)} ·{' '}
+                    {formatFindingStatus(props.selectedOperationDetail.finding.status)}
+                  </p>
+                  <p>Disposition: {props.selectedOperationDetail.finding.disposition}</p>
+                  <p>Source: {props.selectedOperationDetail.finding.sourceLabel}</p>
+                </div>
+              ) : props.selectedOperationDetail.kind === 'vendor_review' ? (
+                (() => {
+                  const vendorReview = props.selectedOperationDetail.vendorReview;
+                  return (
+                    <div className="space-y-2 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">{vendorReview.displayName}</p>
+                      <p>Review: {vendorReview.reviewStatus}</p>
+                      <p>Data classes: {vendorReview.allowedDataClasses.join(', ')}</p>
+                      <p>Environments: {vendorReview.allowedEnvironments.join(', ')}</p>
+                      {vendorReview.linkedFollowUpRunId ? (
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              props.onSelectOperation(
+                                'review_run',
+                                vendorReview.linkedFollowUpRunId!,
+                              );
+                            }}
+                          >
+                            View follow-up
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              props.navigateToReviews();
+                            }}
+                          >
+                            Open reviews
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="space-y-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">
+                    {props.selectedOperationDetail.reviewRun.title}
+                  </p>
+                  <p>
+                    Status: {formatReviewRunStatus(props.selectedOperationDetail.reviewRun.status)}
+                  </p>
+                  <p>
+                    {props.selectedOperationDetail.reviewRun.triggerType ?? 'manual follow-up'} ·{' '}
+                    {new Date(props.selectedOperationDetail.reviewRun.createdAt).toLocaleString()}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      props.navigateToReviews();
+                    }}
+                  >
+                    Open reviews
+                  </Button>
+                </div>
+              )
+            ) : (
+              <p className="text-sm text-muted-foreground">Loading operation detail…</p>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Follow-Up Runs</CardTitle>
+          <CardDescription>
+            Triggered follow-up reviews opened from reports, findings, and vendor reviews.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {props.triggeredReviewRuns?.length ? (
+            props.triggeredReviewRuns.map((run) => (
+              <div key={run.id} className="rounded-lg border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium">{run.title}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {run.triggerType ?? 'manual follow-up'} · Created{' '}
+                      {new Date(run.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Badge variant={getReviewRunStatusBadgeVariant(run.status)}>
+                      {formatReviewRunStatus(run.status)}
+                    </Badge>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        props.onSelectOperation('review_run', run.id);
+                      }}
+                    >
+                      View details
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        props.navigateToReviews();
+                      }}
+                    >
+                      Open reviews
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              No triggered follow-up runs are currently open.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      <AdminSecurityVendorsTab
+        busyVendorKey={props.busyVendorKey}
+        handleReviewVendor={props.handleReviewVendor}
+        navigateToControl={props.navigateToControl}
+        navigateToReviews={props.navigateToReviews}
+        onSelectReviewRun={(reviewRunId) => {
+          props.onSelectOperation('review_run', reviewRunId);
+        }}
+        onSelectVendor={(vendorKey) => {
+          props.onSelectOperation('vendor_review', vendorKey);
+        }}
+        setVendorCustomerSummaries={props.setVendorCustomerSummaries}
+        setVendorNotes={props.setVendorNotes}
+        setVendorOwners={props.setVendorOwners}
+        vendorCustomerSummaries={props.vendorCustomerSummaries}
+        vendorNotes={props.vendorNotes}
+        vendorOwners={props.vendorOwners}
+        vendorWorkspaces={props.vendorWorkspaces}
+      />
+    </>
   );
 }
 

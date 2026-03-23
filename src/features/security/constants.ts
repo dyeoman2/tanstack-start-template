@@ -1,4 +1,4 @@
-export const SECURITY_TABS = ['overview', 'controls', 'evidence', 'vendors', 'reviews'] as const;
+export const SECURITY_TABS = ['overview', 'controls', 'operations', 'reviews'] as const;
 
 export const CONTROL_TABLE_SORT_FIELDS = [
   'control',

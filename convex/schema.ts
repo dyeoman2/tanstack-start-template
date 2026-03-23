@@ -607,6 +607,7 @@ export default defineSchema({
     ),
     reviewedAt: v.union(v.number(), v.null()),
     reviewedByUserId: v.union(v.string(), v.null()),
+    customerSummary: v.optional(v.union(v.string(), v.null())),
     reviewNotes: v.optional(v.union(v.string(), v.null())),
     internalReviewNotes: v.optional(v.union(v.string(), v.null())),
     createdAt: v.number(),

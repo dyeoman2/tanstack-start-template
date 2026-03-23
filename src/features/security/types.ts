@@ -21,6 +21,11 @@ export type EvidenceReportKind =
   | 'vendor_posture_snapshot'
   | 'control_workspace_snapshot';
 export type VendorKey = 'openrouter' | 'resend' | 'sentry';
+export type SecurityScopeType = 'provider_global';
+export type SecurityScope = {
+  scopeId: string;
+  scopeType: SecurityScopeType;
+};
 
 export type LinkedEntitySummary = {
   entityId: string;
@@ -217,9 +222,7 @@ export type SecurityControlWorkspace = Omit<
     }>;
   };
   platformChecklist: SecurityChecklistItem[];
-  scopeId: string;
-  scopeType: 'provider_global';
-};
+} & SecurityScope;
 
 export type SecurityControlWorkspaceSummary = Omit<
   ActiveControlRecord,
@@ -234,7 +237,7 @@ export type SecurityControlWorkspaceSummary = Omit<
   lastReviewedAt: number | null;
   mappings: SecurityControlWorkspace['mappings'];
   searchableText: string;
-};
+} & SecurityScope;
 
 export type AuditReadinessOverview = {
   latestBackupDrill: {
@@ -283,9 +286,8 @@ export type EvidenceReportListItem = {
   id: Id<'evidenceReports'>;
   createdAt: number;
   generatedByUserId: string;
-  internalReviewNotes: string | null;
-  scopeId: string;
-  scopeType: 'provider_global';
+  customerSummary: string | null;
+  internalNotes: string | null;
   reportKind: EvidenceReportKind;
   contentHash: string;
   exportHash: string | null;
@@ -295,7 +297,7 @@ export type EvidenceReportListItem = {
   reviewStatus: 'needs_follow_up' | 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByUserId: string | null;
-};
+} & SecurityScope;
 
 export type EvidenceReportDetail = {
   contentHash: string;
@@ -327,14 +329,13 @@ export type EvidenceReportDetail = {
     taskTitle: string;
   }>;
   organizationId: string | null;
-  scopeId: string;
-  scopeType: 'provider_global';
   reportKind: EvidenceReportKind;
-  internalReviewNotes: string | null;
+  customerSummary: string | null;
+  internalNotes: string | null;
   reviewStatus: 'needs_follow_up' | 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
-};
+} & SecurityScope;
 
 export type SecurityFindingListItem = {
   customerSummary: string | null;
@@ -347,10 +348,15 @@ export type SecurityFindingListItem = {
     | 'document_scan_rejections'
     | 'release_security_validation';
   firstObservedAt: number;
-  internalReviewNotes: string | null;
+  internalNotes: string | null;
   lastObservedAt: number;
-  scopeId: string;
-  scopeType: 'provider_global';
+  relatedControls: Array<{
+    internalControlId: string;
+    itemId: string | null;
+    itemLabel: string | null;
+    nist80053Id: string;
+    title: string;
+  }>;
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
   severity: 'critical' | 'info' | 'warning';
@@ -359,15 +365,13 @@ export type SecurityFindingListItem = {
   sourceType: 'audit_log' | 'security_control_evidence' | 'security_metric';
   status: 'open' | 'resolved';
   title: string;
-};
+} & SecurityScope;
 
 export type ReviewRunSummary = {
   createdAt: number;
   finalizedAt: number | null;
   id: string;
   kind: 'annual' | 'triggered';
-  scopeId: string;
-  scopeType: 'provider_global';
   status: 'ready' | 'needs_attention' | 'completed';
   taskCounts: {
     blocked: number;
@@ -379,7 +383,7 @@ export type ReviewRunSummary = {
   title: string;
   triggerType: string | null;
   year: number | null;
-};
+} & SecurityScope;
 
 export type ReviewTaskEvidenceLink = {
   freshAt: number | null;
@@ -437,8 +441,6 @@ export type ReviewRunDetail = {
   finalizedAt: number | null;
   id: string;
   kind: 'annual' | 'triggered';
-  scopeId: string;
-  scopeType: 'provider_global';
   sourceRecordId: string | null;
   sourceRecordType: string | null;
   status: 'ready' | 'needs_attention' | 'completed';
@@ -446,7 +448,7 @@ export type ReviewRunDetail = {
   title: string;
   triggerType: string | null;
   year: number | null;
-};
+} & SecurityScope;
 
 export type VendorWorkspace = {
   allowedDataClasses: string[];
@@ -466,14 +468,12 @@ export type VendorWorkspace = {
     nist80053Id: string;
     title: string;
   }>;
-  internalReviewNotes: string | null;
+  internalNotes: string | null;
   reviewStatus: 'pending' | 'reviewed' | 'needs_follow_up';
   reviewedAt: number | null;
   reviewedByDisplay: string | null;
-  scopeId: string;
-  scopeType: 'provider_global';
   vendor: VendorKey;
-};
+} & SecurityScope;
 
 export type SecurityWorkspaceOverview = {
   auditReadiness: AuditReadinessOverview;
@@ -503,11 +503,49 @@ export type SecurityWorkspaceOverview = {
     pendingVendorReviews: number;
     undispositionedFindings: number;
   };
-  scopeId: string;
-  scopeType: 'provider_global';
   vendorSummary: {
     approvedCount: number;
     needsFollowUpCount: number;
     totalCount: number;
   };
-};
+} & SecurityScope;
+
+export type SecurityOperationsBoard = {
+  auditReadiness: AuditReadinessOverview;
+  currentAnnualReviewDetail: ReviewRunDetail | null;
+  currentAnnualReviewRun: ReviewRunSummary | null;
+  evidenceReports: EvidenceReportListItem[];
+  findings: SecurityFindingListItem[];
+  triggeredReviewRuns: ReviewRunSummary[];
+  vendorWorkspaces: VendorWorkspace[];
+} & SecurityScope;
+
+export type SecurityOperationDetail =
+  | {
+      kind: 'evidence_report';
+      id: Id<'evidenceReports'>;
+      title: string;
+      status: EvidenceReportDetail['reviewStatus'];
+      report: EvidenceReportDetail | EvidenceReportListItem;
+    }
+  | {
+      kind: 'finding';
+      id: SecurityFindingListItem['findingKey'];
+      title: string;
+      status: SecurityFindingListItem['disposition'];
+      finding: SecurityFindingListItem;
+    }
+  | {
+      kind: 'vendor_review';
+      id: VendorWorkspace['vendor'];
+      title: string;
+      status: VendorWorkspace['reviewStatus'];
+      vendorReview: VendorWorkspace;
+    }
+  | {
+      kind: 'review_run';
+      id: ReviewRunSummary['id'];
+      title: string;
+      status: ReviewRunSummary['status'];
+      reviewRun: ReviewRunSummary;
+    };

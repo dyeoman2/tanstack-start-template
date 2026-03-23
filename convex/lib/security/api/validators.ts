@@ -1,0 +1,1038 @@
+import { components } from '../../../_generated/api';
+import type { MutationCtx } from '../../../_generated/server';
+import { v } from 'convex/values';
+
+const SECURITY_METRICS_KEY = 'global';
+const SECURITY_SCOPE_TYPE = 'provider_global' as const;
+const SECURITY_SCOPE_ID = 'provider' as const;
+const MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT = {
+  bucket: 'security:evidence-upload-target',
+  config: {
+    kind: 'token bucket' as const,
+    rate: 12,
+    period: 15 * 60 * 1000,
+    capacity: 12,
+  },
+};
+
+const vendorKeyValidator = v.union(
+  v.literal('openrouter'),
+  v.literal('resend'),
+  v.literal('sentry'),
+);
+const vendorRuntimePostureValidator = v.object({
+  allowedDataClasses: v.array(v.string()),
+  allowedEnvironments: v.array(
+    v.union(v.literal('development'), v.literal('production'), v.literal('test')),
+  ),
+  approvalEnvVar: v.union(v.string(), v.null()),
+  approved: v.boolean(),
+  approvedByDefault: v.boolean(),
+  displayName: v.string(),
+  vendor: vendorKeyValidator,
+});
+const vendorReviewStatusValidator = v.union(
+  v.literal('pending'),
+  v.literal('reviewed'),
+  v.literal('needs_follow_up'),
+);
+const vendorRelatedControlValidator = v.object({
+  internalControlId: v.string(),
+  itemId: v.union(v.string(), v.null()),
+  itemLabel: v.union(v.string(), v.null()),
+  nist80053Id: v.string(),
+  title: v.string(),
+});
+const securityScopeTypeValidator = v.literal(SECURITY_SCOPE_TYPE);
+const securityScopeIdValidator = v.string();
+const securityRelationshipObjectTypeValidator = v.union(
+  v.literal('control'),
+  v.literal('checklist_item'),
+  v.literal('evidence'),
+  v.literal('finding'),
+  v.literal('vendor_review'),
+  v.literal('review_run'),
+  v.literal('review_task'),
+  v.literal('evidence_report'),
+);
+const securityRelationshipTypeValidator = v.union(
+  v.literal('has_evidence'),
+  v.literal('tracks_finding'),
+  v.literal('tracks_vendor_review'),
+  v.literal('has_review_task'),
+  v.literal('has_report'),
+  v.literal('supports'),
+  v.literal('satisfies'),
+  v.literal('follow_up_for'),
+  v.literal('related_control'),
+);
+const linkedEntitySummaryValidator = v.object({
+  entityId: v.string(),
+  entityType: securityRelationshipObjectTypeValidator,
+  label: v.string(),
+  relationshipType: securityRelationshipTypeValidator,
+  status: v.union(v.string(), v.null()),
+});
+const vendorWorkspaceValidator = v.object({
+  allowedDataClasses: v.array(v.string()),
+  allowedEnvironments: v.array(
+    v.union(v.literal('development'), v.literal('production'), v.literal('test')),
+  ),
+  approvalEnvVar: v.union(v.string(), v.null()),
+  approved: v.boolean(),
+  approvedByDefault: v.boolean(),
+  displayName: v.string(),
+  linkedFollowUpRunId: v.union(v.id('reviewRuns'), v.null()),
+  linkedEntities: v.array(linkedEntitySummaryValidator),
+  owner: v.union(v.string(), v.null()),
+  relatedControls: v.array(vendorRelatedControlValidator),
+  customerSummary: v.union(v.string(), v.null()),
+  internalReviewNotes: v.union(v.string(), v.null()),
+  reviewStatus: vendorReviewStatusValidator,
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByDisplay: v.union(v.string(), v.null()),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  vendor: vendorKeyValidator,
+});
+const vendorWorkspaceListValidator = v.array(vendorWorkspaceValidator);
+
+const securityPostureSummaryValidator = v.object({
+  audit: v.object({
+    integrityFailures: v.number(),
+    lastEventAt: v.union(v.number(), v.null()),
+  }),
+  auth: v.object({
+    emailVerificationRequired: v.boolean(),
+    mfaCoveragePercent: v.number(),
+    mfaEnabledUsers: v.number(),
+    passkeyEnabledUsers: v.number(),
+    totalUsers: v.number(),
+  }),
+  backups: v.object({
+    lastCheckedAt: v.union(v.number(), v.null()),
+    lastStatus: v.union(v.literal('success'), v.literal('failure'), v.null()),
+  }),
+  retention: v.object({
+    lastJobAt: v.union(v.number(), v.null()),
+    lastJobStatus: v.union(v.literal('success'), v.literal('failure'), v.null()),
+  }),
+  scanner: v.object({
+    lastScanAt: v.union(v.number(), v.null()),
+    quarantinedCount: v.number(),
+    rejectedCount: v.number(),
+    totalScans: v.number(),
+  }),
+  sessions: v.object({
+    freshWindowMinutes: v.number(),
+    sessionExpiryHours: v.number(),
+    temporaryLinkTtlMinutes: v.number(),
+  }),
+  telemetry: v.object({
+    sentryApproved: v.boolean(),
+    sentryEnabled: v.boolean(),
+  }),
+  vendors: v.array(vendorRuntimePostureValidator),
+});
+
+const securityFindingTypeValidator = v.union(
+  v.literal('audit_integrity_failures'),
+  v.literal('document_scan_quarantines'),
+  v.literal('document_scan_rejections'),
+  v.literal('release_security_validation'),
+);
+const securityFindingSeverityValidator = v.union(
+  v.literal('info'),
+  v.literal('warning'),
+  v.literal('critical'),
+);
+const securityFindingStatusValidator = v.union(v.literal('open'), v.literal('resolved'));
+const securityFindingDispositionValidator = v.union(
+  v.literal('pending_review'),
+  v.literal('investigating'),
+  v.literal('accepted_risk'),
+  v.literal('false_positive'),
+  v.literal('resolved'),
+);
+const securityFindingSourceTypeValidator = v.union(
+  v.literal('audit_log'),
+  v.literal('security_metric'),
+  v.literal('security_control_evidence'),
+);
+const securityFindingListItemValidator = v.object({
+  customerSummary: v.union(v.string(), v.null()),
+  description: v.string(),
+  disposition: securityFindingDispositionValidator,
+  findingKey: v.string(),
+  findingType: securityFindingTypeValidator,
+  firstObservedAt: v.number(),
+  internalReviewNotes: v.union(v.string(), v.null()),
+  lastObservedAt: v.number(),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByDisplay: v.union(v.string(), v.null()),
+  severity: securityFindingSeverityValidator,
+  sourceLabel: v.string(),
+  sourceRecordId: v.union(v.string(), v.null()),
+  sourceType: securityFindingSourceTypeValidator,
+  status: securityFindingStatusValidator,
+  title: v.string(),
+});
+const securityFindingListValidator = v.array(securityFindingListItemValidator);
+
+const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
+  'application/json',
+  'application/pdf',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'image/gif',
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'text/csv',
+  'text/markdown',
+  'text/plain',
+]);
+
+const SECURITY_EVIDENCE_ALLOWED_EXTENSIONS = new Set([
+  '.csv',
+  '.gif',
+  '.jpeg',
+  '.jpg',
+  '.json',
+  '.md',
+  '.pdf',
+  '.png',
+  '.txt',
+  '.webp',
+  '.xlsx',
+]);
+
+function getLowercaseFileExtension(fileName: string) {
+  const normalized = fileName.trim().toLowerCase();
+  const extensionIndex = normalized.lastIndexOf('.');
+  return extensionIndex === -1 ? '' : normalized.slice(extensionIndex);
+}
+
+function validateSecurityEvidenceUploadInput(args: {
+  contentType: string;
+  fileName: string;
+  fileSize: number;
+}) {
+  const normalizedName = args.fileName.trim();
+  if (!normalizedName) {
+    throw new Error('Evidence file name is required.');
+  }
+
+  if (!Number.isFinite(args.fileSize) || args.fileSize <= 0) {
+    throw new Error('Evidence file must be larger than 0 bytes.');
+  }
+
+  if (args.fileSize > MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES) {
+    throw new Error('Evidence file exceeds the 25MB server-side limit.');
+  }
+
+  const normalizedMimeType = args.contentType.trim().toLowerCase();
+  const extension = getLowercaseFileExtension(normalizedName);
+  const allowedByMime =
+    normalizedMimeType.length > 0 && SECURITY_EVIDENCE_ALLOWED_MIME_TYPES.has(normalizedMimeType);
+  const allowedByExtension =
+    extension.length > 0 && SECURITY_EVIDENCE_ALLOWED_EXTENSIONS.has(extension);
+
+  if (!allowedByMime && !allowedByExtension) {
+    throw new Error('Evidence file type is not allowed for this workflow.');
+  }
+}
+
+async function enforceSecurityEvidenceUploadRateLimit(
+  ctx:
+    | Pick<MutationCtx, 'runMutation'>
+    | {
+        runMutation: (
+          ...args: Parameters<MutationCtx['runMutation']>
+        ) => ReturnType<MutationCtx['runMutation']>;
+      },
+  actorUserId: string,
+) {
+  const result = await ctx.runMutation(components.rateLimiter.lib.rateLimit, {
+    name: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.bucket,
+    key: actorUserId,
+    config: SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT.config,
+  });
+
+  if (!result.ok) {
+    throw new Error('Too many evidence upload requests. Please try again later.');
+  }
+}
+
+const evidenceReportValidator = v.object({
+  createdAt: v.number(),
+  exportHash: v.union(v.string(), v.null()),
+  id: v.id('evidenceReports'),
+  report: v.string(),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
+  ),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+});
+
+const evidenceReportRecordValidator = v.object({
+  _id: v.id('evidenceReports'),
+  _creationTime: v.number(),
+  scopeId: v.optional(v.string()),
+  scopeType: v.optional(securityScopeTypeValidator),
+  organizationId: v.optional(v.string()),
+  generatedByUserId: v.string(),
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
+  ),
+  contentJson: v.string(),
+  contentHash: v.string(),
+  exportBundleJson: v.optional(v.string()),
+  exportHash: v.optional(v.string()),
+  exportIntegritySummary: v.optional(v.string()),
+  exportManifestJson: v.optional(v.string()),
+  exportManifestHash: v.optional(v.string()),
+  latestExportArtifactId: v.optional(v.id('exportArtifacts')),
+  exportedAt: v.union(v.number(), v.null()),
+  exportedByUserId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByUserId: v.union(v.string(), v.null()),
+  reviewNotes: v.optional(v.union(v.string(), v.null())),
+  internalReviewNotes: v.optional(v.union(v.string(), v.null())),
+  createdAt: v.number(),
+});
+
+const evidenceReportListItemValidator = v.object({
+  id: v.id('evidenceReports'),
+  createdAt: v.number(),
+  generatedByUserId: v.string(),
+  internalReviewNotes: v.union(v.string(), v.null()),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  reportKind: v.union(
+    v.literal('security_posture'),
+    v.literal('audit_integrity'),
+    v.literal('audit_readiness'),
+    v.literal('annual_review'),
+    v.literal('findings_snapshot'),
+    v.literal('vendor_posture_snapshot'),
+    v.literal('control_workspace_snapshot'),
+  ),
+  contentHash: v.string(),
+  exportHash: v.union(v.string(), v.null()),
+  exportManifestHash: v.union(v.string(), v.null()),
+  exportedAt: v.union(v.number(), v.null()),
+  exportedByUserId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByUserId: v.union(v.string(), v.null()),
+});
+
+const evidenceReportListValidator = v.array(evidenceReportListItemValidator);
+const checklistStatusValidator = v.union(
+  v.literal('not_started'),
+  v.literal('in_progress'),
+  v.literal('done'),
+  v.literal('not_applicable'),
+);
+const evidenceSufficiencyValidator = v.union(
+  v.literal('missing'),
+  v.literal('partial'),
+  v.literal('sufficient'),
+);
+const evidenceReviewDueIntervalValidator = v.union(v.literal(3), v.literal(6), v.literal(12));
+const evidenceSourceValidator = v.union(
+  v.literal('manual_upload'),
+  v.literal('internal_review'),
+  v.literal('automated_system_check'),
+  v.literal('external_report'),
+  v.literal('vendor_attestation'),
+);
+const evidenceExpiryStatusValidator = v.union(
+  v.literal('none'),
+  v.literal('current'),
+  v.literal('expiring_soon'),
+);
+const evidenceTypeValidator = v.union(
+  v.literal('file'),
+  v.literal('link'),
+  v.literal('note'),
+  v.literal('system_snapshot'),
+);
+const securityControlEvidenceAuditEventTypeValidator = v.union(
+  v.literal('security_control_evidence_created'),
+  v.literal('security_control_evidence_reviewed'),
+  v.literal('security_control_evidence_archived'),
+  v.literal('security_control_evidence_renewed'),
+);
+const evidenceLifecycleStatusValidator = v.union(
+  v.literal('active'),
+  v.literal('archived'),
+  v.literal('superseded'),
+);
+const suggestedEvidenceTypeValidator = v.union(
+  v.literal('file'),
+  v.literal('link'),
+  v.literal('note'),
+  v.literal('system'),
+);
+const controlEvidenceValidator = v.object({
+  createdAt: v.number(),
+  description: v.union(v.string(), v.null()),
+  evidenceType: evidenceTypeValidator,
+  fileName: v.union(v.string(), v.null()),
+  id: v.string(),
+  lifecycleStatus: evidenceLifecycleStatusValidator,
+  mimeType: v.union(v.string(), v.null()),
+  archivedAt: v.union(v.number(), v.null()),
+  archivedByDisplay: v.union(v.string(), v.null()),
+  evidenceDate: v.union(v.number(), v.null()),
+  expiryStatus: evidenceExpiryStatusValidator,
+  renewedFromEvidenceId: v.union(v.string(), v.null()),
+  replacedByEvidenceId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed')),
+  reviewDueAt: v.union(v.number(), v.null()),
+  reviewDueIntervalMonths: v.union(evidenceReviewDueIntervalValidator, v.null()),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByDisplay: v.union(v.string(), v.null()),
+  sizeBytes: v.union(v.number(), v.null()),
+  source: v.union(evidenceSourceValidator, v.null()),
+  storageId: v.union(v.string(), v.null()),
+  sufficiency: evidenceSufficiencyValidator,
+  title: v.string(),
+  uploadedByDisplay: v.union(v.string(), v.null()),
+  url: v.union(v.string(), v.null()),
+});
+const evidenceReportKindValidator = v.union(
+  v.literal('security_posture'),
+  v.literal('audit_integrity'),
+  v.literal('audit_readiness'),
+  v.literal('annual_review'),
+  v.literal('findings_snapshot'),
+  v.literal('vendor_posture_snapshot'),
+  v.literal('control_workspace_snapshot'),
+);
+const reviewRunKindValidator = v.union(v.literal('annual'), v.literal('triggered'));
+const reviewRunStatusValidator = v.union(
+  v.literal('ready'),
+  v.literal('needs_attention'),
+  v.literal('completed'),
+);
+const controlChecklistItemValidator = v.object({
+  completedAt: v.union(v.number(), v.null()),
+  description: v.string(),
+  evidence: v.array(controlEvidenceValidator),
+  evidenceSufficiency: evidenceSufficiencyValidator,
+  hasExpiringSoonEvidence: v.boolean(),
+  itemId: v.string(),
+  label: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  owner: v.union(v.string(), v.null()),
+  operatorNotes: v.union(v.string(), v.null()),
+  required: v.boolean(),
+  reviewSatisfaction: v.union(
+    v.object({
+      mode: v.union(
+        v.literal('automated_check'),
+        v.literal('attestation'),
+        v.literal('document_upload'),
+        v.literal('follow_up'),
+        v.literal('exception'),
+      ),
+      relatedReports: v.array(
+        v.object({
+          id: v.id('evidenceReports'),
+          label: v.string(),
+          reportKind: evidenceReportKindValidator,
+        }),
+      ),
+      reviewRunId: v.id('reviewRuns'),
+      reviewRunKind: reviewRunKindValidator,
+      reviewRunStatus: reviewRunStatusValidator,
+      reviewRunTitle: v.string(),
+      reviewTaskId: v.id('reviewTasks'),
+      reviewTaskTitle: v.string(),
+      satisfiedAt: v.number(),
+      satisfiedByDisplay: v.union(v.string(), v.null()),
+      satisfiedThroughAt: v.number(),
+    }),
+    v.null(),
+  ),
+  status: checklistStatusValidator,
+  suggestedEvidenceTypes: v.array(suggestedEvidenceTypeValidator),
+  verificationMethod: v.string(),
+});
+const securityControlEvidenceActivityEventValidator = v.object({
+  id: v.string(),
+  eventType: securityControlEvidenceAuditEventTypeValidator,
+  actorDisplay: v.union(v.string(), v.null()),
+  createdAt: v.number(),
+  evidenceId: v.string(),
+  evidenceTitle: v.string(),
+  itemId: v.string(),
+  internalControlId: v.string(),
+  lifecycleStatus: v.union(evidenceLifecycleStatusValidator, v.null()),
+  renewedFromEvidenceId: v.union(v.string(), v.null()),
+  replacedByEvidenceId: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.null()),
+});
+const securityControlWorkspaceValidator = v.object({
+  controlStatement: v.string(),
+  customerResponsibilityNotes: v.union(v.string(), v.null()),
+  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  familyId: v.string(),
+  familyTitle: v.string(),
+  hasExpiringSoonEvidence: v.boolean(),
+  implementationSummary: v.string(),
+  internalControlId: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  linkedEntities: v.array(linkedEntitySummaryValidator),
+  mappings: v.object({
+    csf20: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        subcategoryId: v.string(),
+      }),
+    ),
+    hipaa: v.array(
+      v.object({
+        citation: v.string(),
+        implementationSpecification: v.union(
+          v.literal('addressable'),
+          v.literal('required'),
+          v.null(),
+        ),
+        text: v.union(v.string(), v.null()),
+        title: v.union(v.string(), v.null()),
+        type: v.union(
+          v.literal('implementation_specification'),
+          v.literal('section'),
+          v.literal('standard'),
+          v.literal('subsection'),
+          v.null(),
+        ),
+      }),
+    ),
+    nist80066: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        mappingType: v.union(
+          v.literal('key-activity'),
+          v.literal('relationship'),
+          v.literal('sample-question'),
+          v.null(),
+        ),
+        referenceId: v.string(),
+      }),
+    ),
+    soc2: v.array(
+      v.object({
+        criterionId: v.string(),
+        group: v.union(
+          v.literal('availability'),
+          v.literal('common-criteria'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+        ),
+        label: v.union(v.string(), v.null()),
+        trustServiceCategory: v.union(
+          v.literal('availability'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+          v.literal('security'),
+        ),
+      }),
+    ),
+  }),
+  nist80053Id: v.string(),
+  owner: v.string(),
+  platformChecklist: v.array(controlChecklistItemValidator),
+  priority: v.union(v.literal('p0'), v.literal('p1'), v.literal('p2')),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  responsibility: v.union(
+    v.literal('platform'),
+    v.literal('shared-responsibility'),
+    v.literal('customer'),
+    v.null(),
+  ),
+  title: v.string(),
+});
+const securityControlWorkspaceSummaryValidator = v.object({
+  checklistStats: v.object({
+    completeCount: v.number(),
+    totalCount: v.number(),
+  }),
+  controlStatement: v.string(),
+  customerResponsibilityNotes: v.union(v.string(), v.null()),
+  evidenceReadiness: v.union(v.literal('ready'), v.literal('partial'), v.literal('missing')),
+  familyId: v.string(),
+  familyTitle: v.string(),
+  hasExpiringSoonEvidence: v.boolean(),
+  implementationSummary: v.string(),
+  internalControlId: v.string(),
+  lastReviewedAt: v.union(v.number(), v.null()),
+  mappings: v.object({
+    csf20: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        subcategoryId: v.string(),
+      }),
+    ),
+    hipaa: v.array(
+      v.object({
+        citation: v.string(),
+        implementationSpecification: v.union(
+          v.literal('addressable'),
+          v.literal('required'),
+          v.null(),
+        ),
+        text: v.union(v.string(), v.null()),
+        title: v.union(v.string(), v.null()),
+        type: v.union(
+          v.literal('implementation_specification'),
+          v.literal('section'),
+          v.literal('standard'),
+          v.literal('subsection'),
+          v.null(),
+        ),
+      }),
+    ),
+    nist80066: v.array(
+      v.object({
+        label: v.union(v.string(), v.null()),
+        mappingType: v.union(
+          v.literal('key-activity'),
+          v.literal('relationship'),
+          v.literal('sample-question'),
+          v.null(),
+        ),
+        referenceId: v.string(),
+      }),
+    ),
+    soc2: v.array(
+      v.object({
+        criterionId: v.string(),
+        group: v.union(
+          v.literal('availability'),
+          v.literal('common-criteria'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+        ),
+        label: v.union(v.string(), v.null()),
+        trustServiceCategory: v.union(
+          v.literal('availability'),
+          v.literal('confidentiality'),
+          v.literal('privacy'),
+          v.literal('processing-integrity'),
+          v.literal('security'),
+        ),
+      }),
+    ),
+  }),
+  nist80053Id: v.string(),
+  owner: v.string(),
+  priority: v.union(v.literal('p0'), v.literal('p1'), v.literal('p2')),
+  responsibility: v.union(
+    v.literal('platform'),
+    v.literal('shared-responsibility'),
+    v.literal('customer'),
+    v.null(),
+  ),
+  searchableText: v.string(),
+  title: v.string(),
+});
+const securityControlWorkspaceSummaryListValidator = v.array(
+  securityControlWorkspaceSummaryValidator,
+);
+const releaseProvenanceEvidenceSummaryValidator = v.object({
+  createdAt: v.number(),
+  id: v.string(),
+  lifecycleStatus: evidenceLifecycleStatusValidator,
+  reviewedAt: v.union(v.number(), v.null()),
+  sufficiency: evidenceSufficiencyValidator,
+  title: v.string(),
+});
+const securityControlEvidenceActivityListValidator = v.array(
+  securityControlEvidenceActivityEventValidator,
+);
+const reviewTaskTypeValidator = v.union(
+  v.literal('automated_check'),
+  v.literal('attestation'),
+  v.literal('document_upload'),
+  v.literal('follow_up'),
+);
+const reviewTaskStatusValidator = v.union(
+  v.literal('ready'),
+  v.literal('completed'),
+  v.literal('exception'),
+  v.literal('blocked'),
+);
+const reviewTaskResultTypeValidator = v.union(
+  v.literal('automated_check'),
+  v.literal('attested'),
+  v.literal('document_linked'),
+  v.literal('exception_marked'),
+  v.literal('follow_up_opened'),
+  v.literal('resolved'),
+);
+const reviewSatisfactionModeValidator = v.union(reviewTaskTypeValidator, v.literal('exception'));
+const reviewTaskEvidenceSourceTypeValidator = v.union(
+  v.literal('security_control_evidence'),
+  v.literal('evidence_report'),
+  v.literal('security_finding'),
+  v.literal('backup_verification_report'),
+  v.literal('external_document'),
+  v.literal('review_task'),
+  v.literal('vendor_review'),
+);
+const reviewTaskEvidenceRoleValidator = v.union(
+  v.literal('primary'),
+  v.literal('supporting'),
+  v.literal('blocking'),
+);
+const reviewTaskControlLinkValidator = v.object({
+  controlTitle: v.union(v.string(), v.null()),
+  internalControlId: v.string(),
+  itemId: v.string(),
+  itemLabel: v.union(v.string(), v.null()),
+  nist80053Id: v.union(v.string(), v.null()),
+});
+const reviewTaskControlReferenceValidator = v.object({
+  internalControlId: v.string(),
+  itemId: v.string(),
+});
+const reviewTaskEvidenceLinkValidator = v.object({
+  id: v.id('reviewTaskEvidenceLinks'),
+  freshAt: v.union(v.number(), v.null()),
+  linkedAt: v.number(),
+  linkedByDisplay: v.union(v.string(), v.null()),
+  role: reviewTaskEvidenceRoleValidator,
+  sourceId: v.string(),
+  sourceLabel: v.string(),
+  sourceType: reviewTaskEvidenceSourceTypeValidator,
+});
+const reviewAttestationValidator = v.object({
+  documentLabel: v.union(v.string(), v.null()),
+  documentUrl: v.union(v.string(), v.null()),
+  documentVersion: v.union(v.string(), v.null()),
+  statementKey: v.string(),
+  statementText: v.string(),
+  attestedAt: v.number(),
+  attestedByDisplay: v.union(v.string(), v.null()),
+});
+const reviewTaskValidator = v.object({
+  allowException: v.boolean(),
+  controlLinks: v.array(reviewTaskControlLinkValidator),
+  description: v.string(),
+  evidenceLinks: v.array(reviewTaskEvidenceLinkValidator),
+  freshnessWindowDays: v.union(v.number(), v.null()),
+  id: v.id('reviewTasks'),
+  latestAttestation: v.union(reviewAttestationValidator, v.null()),
+  latestNote: v.union(v.string(), v.null()),
+  required: v.boolean(),
+  satisfiedAt: v.union(v.number(), v.null()),
+  satisfiedThroughAt: v.union(v.number(), v.null()),
+  status: reviewTaskStatusValidator,
+  taskType: reviewTaskTypeValidator,
+  templateKey: v.string(),
+  title: v.string(),
+});
+const reviewRunSummaryValidator = v.object({
+  createdAt: v.number(),
+  finalizedAt: v.union(v.number(), v.null()),
+  id: v.id('reviewRuns'),
+  kind: reviewRunKindValidator,
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  status: reviewRunStatusValidator,
+  taskCounts: v.object({
+    blocked: v.number(),
+    completed: v.number(),
+    exception: v.number(),
+    ready: v.number(),
+    total: v.number(),
+  }),
+  title: v.string(),
+  triggerType: v.union(v.string(), v.null()),
+  year: v.union(v.number(), v.null()),
+});
+const reviewTaskLinkedSummaryValidator = v.object({
+  controlLinks: v.array(reviewTaskControlLinkValidator),
+  reviewRunId: v.id('reviewRuns'),
+  reviewRunKind: reviewRunKindValidator,
+  reviewRunStatus: reviewRunStatusValidator,
+  reviewRunTitle: v.string(),
+  taskId: v.id('reviewTasks'),
+  taskStatus: reviewTaskStatusValidator,
+  taskTitle: v.string(),
+});
+const evidenceReportDetailValidator = v.object({
+  contentHash: v.string(),
+  contentJson: v.string(),
+  createdAt: v.number(),
+  exportBundleJson: v.union(v.string(), v.null()),
+  exportHash: v.union(v.string(), v.null()),
+  exportIntegritySummary: v.union(v.string(), v.null()),
+  exportManifestHash: v.union(v.string(), v.null()),
+  exportManifestJson: v.union(v.string(), v.null()),
+  exportedAt: v.union(v.number(), v.null()),
+  exportedByUserId: v.union(v.string(), v.null()),
+  generatedByUserId: v.string(),
+  id: v.id('evidenceReports'),
+  linkedTasks: v.array(reviewTaskLinkedSummaryValidator),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  organizationId: v.union(v.string(), v.null()),
+  reportKind: evidenceReportKindValidator,
+  internalReviewNotes: v.union(v.string(), v.null()),
+  reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
+  reviewedAt: v.union(v.number(), v.null()),
+  reviewedByDisplay: v.union(v.string(), v.null()),
+});
+const reviewRunDetailValidator = v.object({
+  createdAt: v.number(),
+  finalReportId: v.union(v.id('evidenceReports'), v.null()),
+  finalizedAt: v.union(v.number(), v.null()),
+  id: v.id('reviewRuns'),
+  kind: reviewRunKindValidator,
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  sourceRecordId: v.union(v.string(), v.null()),
+  sourceRecordType: v.union(v.string(), v.null()),
+  status: reviewRunStatusValidator,
+  tasks: v.array(reviewTaskValidator),
+  title: v.string(),
+  triggerType: v.union(v.string(), v.null()),
+  year: v.union(v.number(), v.null()),
+});
+const reviewRunSummaryListValidator = v.array(reviewRunSummaryValidator);
+const exportArtifactTypeValidator = v.union(
+  v.literal('audit_csv'),
+  v.literal('directory_csv'),
+  v.literal('evidence_report_export'),
+);
+const backupVerificationTargetEnvironmentValidator = v.union(
+  v.literal('development'),
+  v.literal('production'),
+  v.literal('test'),
+);
+const backupVerificationDrillTypeValidator = v.union(
+  v.literal('operator_recorded'),
+  v.literal('restore_verification'),
+);
+const backupVerificationInitiatedByKindValidator = v.union(v.literal('system'), v.literal('user'));
+const auditReadinessSnapshotValidator = v.object({
+  latestBackupDrill: v.union(
+    v.object({
+      artifactHash: v.union(v.string(), v.null()),
+      checkedAt: v.number(),
+      drillId: v.string(),
+      drillType: backupVerificationDrillTypeValidator,
+      failureReason: v.union(v.string(), v.null()),
+      initiatedByKind: backupVerificationInitiatedByKindValidator,
+      initiatedByUserId: v.union(v.string(), v.null()),
+      restoredItemCount: v.number(),
+      scopeId: securityScopeIdValidator,
+      scopeType: securityScopeTypeValidator,
+      sourceDataset: v.string(),
+      status: v.union(v.literal('success'), v.literal('failure')),
+      targetEnvironment: backupVerificationTargetEnvironmentValidator,
+      verificationMethod: v.string(),
+    }),
+    v.null(),
+  ),
+  latestRetentionJob: v.union(
+    v.object({
+      createdAt: v.number(),
+      details: v.optional(v.string()),
+      jobKind: v.union(
+        v.literal('attachment_purge'),
+        v.literal('quarantine_cleanup'),
+        v.literal('audit_export_cleanup'),
+      ),
+      processedCount: v.number(),
+      scopeId: securityScopeIdValidator,
+      scopeType: securityScopeTypeValidator,
+      status: v.union(v.literal('success'), v.literal('failure')),
+    }),
+    v.null(),
+  ),
+  metadataGaps: v.array(
+    v.object({
+      createdAt: v.number(),
+      eventType: v.string(),
+      id: v.string(),
+      resourceId: v.union(v.string(), v.null()),
+    }),
+  ),
+  recentDeniedActions: v.array(
+    v.object({
+      createdAt: v.number(),
+      eventType: v.string(),
+      id: v.string(),
+      metadata: v.union(v.string(), v.null()),
+      organizationId: v.union(v.string(), v.null()),
+    }),
+  ),
+  recentExports: v.array(
+    v.object({
+      artifactType: exportArtifactTypeValidator,
+      exportedAt: v.number(),
+      manifestHash: v.string(),
+      sourceReportId: v.union(v.id('evidenceReports'), v.null()),
+    }),
+  ),
+});
+const securityWorkspaceOverviewValidator = v.object({
+  auditReadiness: auditReadinessSnapshotValidator,
+  controlSummary: v.object({
+    byEvidence: v.object({
+      missing: v.number(),
+      partial: v.number(),
+      ready: v.number(),
+    }),
+    byResponsibility: v.object({
+      customer: v.number(),
+      platform: v.number(),
+      sharedResponsibility: v.number(),
+    }),
+    totalControls: v.number(),
+  }),
+  currentAnnualReviewRun: v.union(reviewRunSummaryValidator, v.null()),
+  findingSummary: v.object({
+    openCount: v.number(),
+    totalCount: v.number(),
+    undispositionedCount: v.number(),
+  }),
+  postureSummary: securityPostureSummaryValidator,
+  queues: v.object({
+    blockedReviewTasks: v.number(),
+    missingEvidenceControls: v.number(),
+    pendingVendorReviews: v.number(),
+    undispositionedFindings: v.number(),
+  }),
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  vendorSummary: v.object({
+    approvedCount: v.number(),
+    needsFollowUpCount: v.number(),
+    totalCount: v.number(),
+  }),
+});
+const securityOperationsBoardValidator = v.object({
+  auditReadiness: auditReadinessSnapshotValidator,
+  currentAnnualReviewDetail: v.union(reviewRunDetailValidator, v.null()),
+  currentAnnualReviewRun: v.union(reviewRunSummaryValidator, v.null()),
+  evidenceReports: evidenceReportListValidator,
+  findings: securityFindingListValidator,
+  scopeId: securityScopeIdValidator,
+  scopeType: securityScopeTypeValidator,
+  triggeredReviewRuns: reviewRunSummaryListValidator,
+  vendorWorkspaces: vendorWorkspaceListValidator,
+});
+const securityWorkspaceMigrationResultValidator = v.object({
+  patchedChecklistStatuses: v.number(),
+  patchedScopeRecords: v.number(),
+  syncedVendorReviewRows: v.number(),
+});
+
+export {
+  MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES,
+  SECURITY_EVIDENCE_ALLOWED_EXTENSIONS,
+  SECURITY_EVIDENCE_ALLOWED_MIME_TYPES,
+  SECURITY_EVIDENCE_UPLOAD_RATE_LIMIT,
+  SECURITY_METRICS_KEY,
+  SECURITY_SCOPE_ID,
+  SECURITY_SCOPE_TYPE,
+  auditReadinessSnapshotValidator,
+  backupVerificationDrillTypeValidator,
+  backupVerificationInitiatedByKindValidator,
+  backupVerificationTargetEnvironmentValidator,
+  checklistStatusValidator,
+  controlChecklistItemValidator,
+  controlEvidenceValidator,
+  enforceSecurityEvidenceUploadRateLimit,
+  evidenceExpiryStatusValidator,
+  evidenceLifecycleStatusValidator,
+  evidenceReportDetailValidator,
+  evidenceReportKindValidator,
+  evidenceReportListItemValidator,
+  evidenceReportListValidator,
+  evidenceReportRecordValidator,
+  evidenceReportValidator,
+  evidenceReviewDueIntervalValidator,
+  evidenceSourceValidator,
+  evidenceSufficiencyValidator,
+  evidenceTypeValidator,
+  exportArtifactTypeValidator,
+  getLowercaseFileExtension,
+  linkedEntitySummaryValidator,
+  releaseProvenanceEvidenceSummaryValidator,
+  reviewAttestationValidator,
+  reviewRunDetailValidator,
+  reviewRunKindValidator,
+  reviewRunStatusValidator,
+  reviewRunSummaryListValidator,
+  reviewRunSummaryValidator,
+  reviewSatisfactionModeValidator,
+  reviewTaskControlLinkValidator,
+  reviewTaskControlReferenceValidator,
+  reviewTaskEvidenceLinkValidator,
+  reviewTaskEvidenceRoleValidator,
+  reviewTaskEvidenceSourceTypeValidator,
+  reviewTaskLinkedSummaryValidator,
+  reviewTaskResultTypeValidator,
+  reviewTaskStatusValidator,
+  reviewTaskTypeValidator,
+  reviewTaskValidator,
+  securityControlEvidenceActivityEventValidator,
+  securityControlEvidenceActivityListValidator,
+  securityControlEvidenceAuditEventTypeValidator,
+  securityControlWorkspaceSummaryListValidator,
+  securityControlWorkspaceSummaryValidator,
+  securityControlWorkspaceValidator,
+  securityFindingDispositionValidator,
+  securityFindingListItemValidator,
+  securityFindingListValidator,
+  securityFindingSeverityValidator,
+  securityFindingSourceTypeValidator,
+  securityFindingStatusValidator,
+  securityFindingTypeValidator,
+  securityOperationsBoardValidator,
+  securityPostureSummaryValidator,
+  securityRelationshipObjectTypeValidator,
+  securityRelationshipTypeValidator,
+  securityScopeIdValidator,
+  securityScopeTypeValidator,
+  securityWorkspaceMigrationResultValidator,
+  securityWorkspaceOverviewValidator,
+  suggestedEvidenceTypeValidator,
+  validateSecurityEvidenceUploadInput,
+  vendorKeyValidator,
+  vendorRelatedControlValidator,
+  vendorReviewStatusValidator,
+  vendorRuntimePostureValidator,
+  vendorWorkspaceListValidator,
+  vendorWorkspaceValidator,
+};
