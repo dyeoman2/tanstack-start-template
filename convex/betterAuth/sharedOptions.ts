@@ -409,13 +409,6 @@ export function createSharedBetterAuthOptions(
             userId: ctx.context.session.user.id,
           });
         }
-
-        if (ctx.path.startsWith('/scim/v2/Users/') && ctx.method === 'DELETE') {
-          throw new APIError('FORBIDDEN', {
-            message:
-              'Direct Better Auth SCIM deletion is disabled; use the org-scoped lifecycle handler.',
-          });
-        }
       }),
       after: createAuthMiddleware(async (ctx) => {
         await handleSessionEnrichmentAfterHook(callbacks, ctx);

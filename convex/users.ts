@@ -4,7 +4,6 @@ import {
   type BetterAuthAdapterUserDoc,
   normalizeAdapterFindManyResult,
 } from '../src/lib/server/better-auth/adapter-utils';
-import { getEmailVerificationEnforcedAt } from '../src/lib/server/env.server';
 import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
 import { evaluateAuthPolicy } from '../src/lib/shared/auth-policy';
 import { isEmailVerificationRequiredForUser } from '../src/lib/shared/email-verification';
@@ -1146,7 +1145,6 @@ export const getCurrentUserProfile = query({
         requiresEmailVerification: isEmailVerificationRequiredForUser({
           createdAt,
           emailVerified,
-          enforcedAt: getEmailVerificationEnforcedAt(),
         }),
         createdAt,
         updatedAt: toTimestampOrFallback(authUser.updatedAt, 0),

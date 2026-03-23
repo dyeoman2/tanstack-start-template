@@ -4,14 +4,10 @@
 
 SCIM user creation and update are enabled.
 
-SCIM user deletion and `PATCH active=false` now use an org-scoped lifecycle shim in
+SCIM user deletion plus `PATCH active=false` and `PATCH active=true` now use the org-scoped lifecycle path in
 [src/routes/api/auth/$.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/src/routes/api/auth/$.ts)
 and
 [convex/auth.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/convex/auth.ts).
-
-The Better Auth SCIM plugin's built-in delete path remains blocked in
-[convex/betterAuth/sharedOptions.ts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/convex/betterAuth/sharedOptions.ts)
-as a fallback so requests do not fall through to global user deletion.
 
 ## Goal
 
@@ -76,15 +72,14 @@ Each event should include:
 - normalized email when present
 - reason or error details when applicable
 
-## Preconditions Before Removing The Fallback Block
+## Supported Lifecycle Contract
 
-Do not remove the Better Auth fallback DELETE block until all of the following are true:
+Org-scoped SCIM lifecycle handling is the supported contract for this codebase:
 
-- Org-scoped deprovision behavior is implemented.
-- Reactivation is idempotent and tested.
-- Active-org/session cleanup is implemented.
-- Audit events are emitted for success and failure.
-- End-to-end tests cover create, update, deactivate, repeat deactivate, and reprovision.
+- `DELETE /scim/v2/Users/:id` deprovisions one organization membership only.
+- `PATCH active=false` deprovisions one organization membership only.
+- `PATCH active=true` restores the organization membership without recreating the global user.
+- Session cleanup and audit emission happen in the Convex lifecycle handler, not in Better Auth's global delete path.
 
 ## Test Cases
 

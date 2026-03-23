@@ -1,4 +1,4 @@
-import { internalMutation, mutation, query, action } from './_generated/server';
+import { internalMutation, mutation, query } from './_generated/server';
 import type { QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';

@@ -15,7 +15,6 @@ import {
   SITE_ADMIN_ORGANIZATION_ACCESS,
   VIEW_ORGANIZATION_ACCESS,
 } from '../../src/features/organizations/lib/organization-permissions';
-import { getEmailVerificationEnforcedAt } from '../../src/lib/server/env.server';
 import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
 import {
   type AuthAssuranceState,
@@ -272,7 +271,6 @@ function requiresVerifiedEmail(authUser: BetterAuthUserRecord): boolean {
   return isEmailVerificationRequiredForUser({
     createdAt: authUser.createdAt,
     emailVerified: authUser.emailVerified,
-    enforcedAt: getEmailVerificationEnforcedAt(),
   });
 }
 
@@ -948,7 +946,6 @@ export async function buildCurrentUserProfile(
     requiresEmailVerification: isEmailVerificationRequiredForUser({
       createdAt,
       emailVerified,
-      enforcedAt: getEmailVerificationEnforcedAt(),
     }),
     createdAt,
     updatedAt: toMillis(user.authUser.updatedAt),

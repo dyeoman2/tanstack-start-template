@@ -1,5 +1,3 @@
-export const DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT = 0;
-
 export function parseTimestampLike(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -28,14 +26,9 @@ export function parseTimestampLike(value: unknown): number | null {
   return null;
 }
 
-export function resolveEmailVerificationEnforcedAt(configuredValue?: unknown): number {
-  return parseTimestampLike(configuredValue) ?? DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT;
-}
-
 export function isEmailVerificationRequiredForUser(args: {
   createdAt?: unknown;
   emailVerified?: boolean;
-  enforcedAt?: number;
 }): boolean {
   if (args.emailVerified === true) {
     return false;
@@ -46,6 +39,5 @@ export function isEmailVerificationRequiredForUser(args: {
     return false;
   }
 
-  const enforcedAt = args.enforcedAt ?? DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT;
-  return createdAt >= enforcedAt;
+  return createdAt >= 0;
 }

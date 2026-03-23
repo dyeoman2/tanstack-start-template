@@ -96,7 +96,7 @@ describe('createSharedBetterAuthOptions', () => {
     expect(options.advanced?.defaultCookieAttributes?.secure).toBe(true);
   });
 
-  it('keeps development rate limiting disabled even when the legacy disable flag is set', () => {
+  it('keeps development rate limiting disabled even when the explicit disable flag is set', () => {
     process.env.BETTER_AUTH_DISABLE_RATE_LIMIT = 'true';
 
     const options = createOptions();

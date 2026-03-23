@@ -3,10 +3,7 @@
  * Provides automatic inference of common environment variables.
  */
 
-import {
-  DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT,
-  parseTimestampLike,
-} from '../shared/email-verification';
+import { parseTimestampLike } from '../shared/email-verification';
 
 const TEST_BETTER_AUTH_SECRET = 'test-better-auth-secret-abcdefghijklmnopqrstuvwxyz';
 const TEST_BETTER_AUTH_URL = 'http://127.0.0.1:3000';
@@ -375,13 +372,6 @@ export function getBetterAuthSecret(): string {
   }
 
   return secret;
-}
-
-export function getEmailVerificationEnforcedAt(): number {
-  const configuredValue = readOptionalEnv('EMAIL_VERIFICATION_ENFORCED_AT');
-  const parsed = parseTimestampLike(configuredValue);
-
-  return parsed ?? DEFAULT_EMAIL_VERIFICATION_ENFORCED_AT;
 }
 
 export type E2EPrincipalType = 'user' | 'admin';
