@@ -698,7 +698,7 @@ describe('audit evidence helpers', () => {
     expect(result[0]).toMatchObject({
       disposition: 'investigating',
       findingKey: 'audit_integrity_failures',
-      internalNotes: 'triaging integrity break',
+      internalReviewNotes: 'triaging integrity break',
       reviewedByDisplay: 'Admin User',
       severity: 'critical',
       status: 'open',
@@ -874,7 +874,7 @@ describe('audit evidence helpers', () => {
     expect(result).toMatchObject({
       disposition: 'resolved',
       findingKey: 'document_scan_rejections',
-      internalNotes: 'mitigated in current workflow',
+      internalReviewNotes: 'mitigated in current workflow',
       reviewedByDisplay: 'Admin User',
     });
     vi.useRealTimers();
