@@ -183,14 +183,33 @@ describe('policy core contracts', () => {
         vendorStatus: 'current',
       },
     ];
-    const mixedControls: Array<{ support: 'missing' | 'partial' } & Record<string, unknown>> = [
+    const noCompleteControls: Array<{ support: 'missing' | 'partial' } & Record<string, unknown>> =
+      [
+        { support: 'missing', findingSeverity: 'none' },
+        { support: 'partial', vendorStatus: 'overdue' },
+      ];
+    const mixedControls: Array<
+      { support: 'complete' | 'missing' | 'partial' } & Record<string, unknown>
+    > = [
+      { support: 'complete', reviewStatus: 'ready' },
       { support: 'missing', findingSeverity: 'none' },
       { support: 'partial', vendorStatus: 'overdue' },
     ];
 
     expect(resolvePolicySupport(completeControls)).toBe('complete');
 
+    expect(resolvePolicySupport(noCompleteControls)).toBe('missing');
+
     expect(resolvePolicySupport(mixedControls)).toBe('partial');
+  });
+
+  it('treats policies without any fully supported mapped controls as missing', () => {
+    const partialOnlyControls: Array<{ support: 'partial' } & Record<string, unknown>> = [
+      { support: 'partial', vendorStatus: 'overdue' },
+      { support: 'partial', reviewStatus: 'ready' },
+    ];
+
+    expect(resolvePolicySupport(partialOnlyControls)).toBe('missing');
   });
 
   it('builds review-date updates for policy attestations without touching support state', () => {

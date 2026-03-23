@@ -12,10 +12,19 @@ import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '~/components/ui/dialog';
 import { SheetDescription, SheetHeader, SheetTitle } from '~/components/ui/sheet';
+import {
+  formatChecklistStatus,
+  formatSupportStatus,
+  getChecklistStatusBadgeVariant,
+  getSupportBadgeVariant,
+} from '~/features/security/formatters';
 import { SecurityChecklistReadOnlySection } from '~/features/security/components/SecurityChecklistReadOnly';
-import { formatSupportStatus, getSupportBadgeVariant } from '~/features/security/formatters';
 import { SecurityPolicyMarkdownRenderer } from '~/features/security/components/SecurityPolicyMarkdownRenderer';
-import type { SecurityControlWorkspace, SecurityPolicyDetail } from '~/features/security/types';
+import type {
+  SecurityControlWorkspace,
+  SecurityPolicyControlMapping,
+  SecurityPolicyDetail,
+} from '~/features/security/types';
 
 export function AdminSecurityPolicyDetail(props: {
   onOpenControl: (internalControlId: string) => void;
@@ -172,7 +181,7 @@ export function AdminSecurityPolicyDetail(props: {
                     </p>
                     <div className="space-y-3">
                       <p className="text-sm font-medium">Checklist</p>
-                      <PolicyMappedControlChecklist internalControlId={control.internalControlId} />
+                      <PolicyMappedControlChecklist control={control} />
                     </div>
                     <div>
                       <Button
@@ -247,13 +256,31 @@ function getFileNameFromDisposition(
   return matches?.[1] || fallbackFileName;
 }
 
-function PolicyMappedControlChecklist(props: { internalControlId: string }) {
+function PolicyMappedControlChecklist(props: { control: SecurityPolicyControlMapping }) {
   const control = useQuery(api.securityWorkspace.getSecurityControlWorkspaceDetail, {
-    internalControlId: props.internalControlId,
+    internalControlId: props.control.internalControlId,
   }) as SecurityControlWorkspace | null | undefined;
 
   if (control === undefined) {
-    return <p className="text-sm text-muted-foreground">Loading checklist…</p>;
+    if (props.control.platformChecklist.length === 0) {
+      return <p className="text-sm text-muted-foreground">Loading checklist…</p>;
+    }
+
+    return (
+      <div className="space-y-2 rounded-md border">
+        {props.control.platformChecklist.map((item) => (
+          <div
+            key={`${props.control.internalControlId}:${item.itemId}`}
+            className="flex items-center justify-between gap-3 border-b px-3 py-2 last:border-b-0"
+          >
+            <p className="text-sm">{item.label}</p>
+            <Badge variant={getChecklistStatusBadgeVariant(item.support)}>
+              {formatChecklistStatus(item.support)}
+            </Badge>
+          </div>
+        ))}
+      </div>
+    );
   }
 
   if (control === null) {

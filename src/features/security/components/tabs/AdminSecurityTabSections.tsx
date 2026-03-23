@@ -234,7 +234,7 @@ export function AdminSecurityPoliciesTab(props: {
   const [pageSize, setPageSize] = useState<(typeof POLICY_PAGE_SIZE_OPTIONS)[number]>(10);
   const [sortBy, setSortBy] = useState<PolicyTableSortField>('title');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const policies = props.policies ?? [];
+  const policies = useMemo(() => props.policies ?? [], [props.policies]);
   const counts = policies.reduce(
     (summary, policy) => {
       summary[policy.support] += 1;

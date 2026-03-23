@@ -66,6 +66,16 @@ type SecurityPolicyReviewContextRecord = {
   policy: Pick<SecurityPolicySummaryRecord, 'policyId' | 'sourcePath' | 'support' | 'title'>;
   policyControls: SecurityPolicyMappedControlRecord[];
 };
+type SecurityControlRecordForPolicy = Awaited<
+  ReturnType<typeof listSecurityControlWorkspaceExportRecords>
+>[number];
+type SecurityPolicyReadModelState = {
+  controlRecords: SecurityControlRecordForPolicy[];
+  mappings: Array<Doc<'securityPolicyControlMappings'>>;
+  owner: string;
+  policies: Array<Doc<'securityPolicies'>>;
+  reviewTasks: Array<Doc<'reviewTasks'>>;
+};
 
 type PolicyCatalogEntry = {
   contentHash: string;
@@ -93,7 +103,7 @@ function resolvePolicySupport(controls: Array<{ support: SecuritySupport }>): Se
   if (controls.every((control) => control.support === 'complete')) {
     return 'complete';
   }
-  if (controls.every((control) => control.support === 'missing')) {
+  if (!controls.some((control) => control.support === 'complete')) {
     return 'missing';
   }
   return 'partial';
@@ -337,28 +347,8 @@ function buildPolicyLinkedAnnualReviewTask(
   };
 }
 
-async function listSecurityPolicySummaryRecords(
-  ctx: QueryCtx,
-): Promise<SecurityPolicySummaryRecord[]> {
-  const currentAnnualRun = await ctx.db
-    .query('reviewRuns')
-    .withIndex('by_run_key', (q) =>
-      q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
-    )
-    .unique();
-  const [seededActor, policies, mappings, controlSummaries, reviewTasks] = await Promise.all([
-    resolveSeedSiteAdminActor(ctx),
-    ctx.db.query('securityPolicies').collect(),
-    ctx.db.query('securityPolicyControlMappings').collect(),
-    listSecurityControlWorkspaceExportRecords(ctx),
-    currentAnnualRun
-      ? ctx.db
-          .query('reviewTasks')
-          .withIndex('by_review_run_id', (q) => q.eq('reviewRunId', currentAnnualRun._id))
-          .collect()
-      : Promise.resolve([] as Array<Doc<'reviewTasks'>>),
-  ]);
-  const mappingsByPolicyId = mappings.reduce<Map<string, Array<(typeof mappings)[number]>>>(
+function groupPolicyMappingsByPolicyId(mappings: Array<Doc<'securityPolicyControlMappings'>>) {
+  return mappings.reduce<Map<string, Array<Doc<'securityPolicyControlMappings'>>>>(
     (accumulator, mapping) => {
       const current = accumulator.get(mapping.policyId) ?? [];
       current.push(mapping);
@@ -367,20 +357,30 @@ async function listSecurityPolicySummaryRecords(
     },
     new Map(),
   );
-  const reviewTaskByPolicyId = new Map(
+}
+
+function groupPolicyReviewTasksByPolicyId(reviewTasks: Array<Doc<'reviewTasks'>>) {
+  return new Map(
     reviewTasks
       .filter((task) => typeof task.policyId === 'string' && task.policyId.length > 0)
       .map((task) => [task.policyId as string, task] as const),
   );
+}
 
-  return [...policies]
+function buildSecurityPolicySummaryRecordsFromState(
+  state: SecurityPolicyReadModelState,
+): SecurityPolicySummaryRecord[] {
+  const mappingsByPolicyId = groupPolicyMappingsByPolicyId(state.mappings);
+  const reviewTaskByPolicyId = groupPolicyReviewTasksByPolicyId(state.reviewTasks);
+
+  return [...state.policies]
     .sort((left, right) => left.title.localeCompare(right.title))
     .map((policy) => {
       const policyMappings = (mappingsByPolicyId.get(policy.policyId) ?? []).sort((left, right) =>
         left.internalControlId.localeCompare(right.internalControlId),
       );
       const mappedControls = buildSecurityPolicyMappedControls({
-        controlRecords: controlSummaries,
+        controlRecords: state.controlRecords,
         mappings: policyMappings,
       });
       return buildSecurityPolicySummaryRecord({
@@ -388,63 +388,92 @@ async function listSecurityPolicySummaryRecords(
           reviewTaskByPolicyId.get(policy.policyId) ?? null,
         ),
         mappedControls,
-        owner: seededActor.displayName,
+        owner: state.owner,
         policy,
       });
     });
+}
+
+async function loadSecurityPolicyReadModelState(
+  ctx: QueryCtx,
+  options?: {
+    policyId?: string;
+    includeReviewTasks?: boolean;
+  },
+): Promise<SecurityPolicyReadModelState> {
+  const currentAnnualRun =
+    options?.includeReviewTasks === false
+      ? null
+      : await ctx.db
+          .query('reviewRuns')
+          .withIndex('by_run_key', (q) =>
+            q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
+          )
+          .unique();
+  const [seededActor, policies, mappings, controlRecords, reviewTasks] = await Promise.all([
+    resolveSeedSiteAdminActor(ctx),
+    options?.policyId
+      ? ctx.db
+          .query('securityPolicies')
+          .withIndex('by_policy_id', (q) => q.eq('policyId', options.policyId as string))
+          .collect()
+      : ctx.db.query('securityPolicies').collect(),
+    options?.policyId
+      ? ctx.db
+          .query('securityPolicyControlMappings')
+          .withIndex('by_policy_id', (q) => q.eq('policyId', options.policyId as string))
+          .collect()
+      : ctx.db.query('securityPolicyControlMappings').collect(),
+    listSecurityControlWorkspaceExportRecords(ctx),
+    currentAnnualRun
+      ? ctx.db
+          .query('reviewTasks')
+          .withIndex('by_review_run_id', (q) => q.eq('reviewRunId', currentAnnualRun._id))
+          .collect()
+      : Promise.resolve([] as Array<Doc<'reviewTasks'>>),
+  ]);
+
+  return {
+    controlRecords,
+    mappings,
+    owner: seededActor.displayName,
+    policies,
+    reviewTasks,
+  };
+}
+
+async function listSecurityPolicySummaryRecords(
+  ctx: QueryCtx,
+): Promise<SecurityPolicySummaryRecord[]> {
+  const state = await loadSecurityPolicyReadModelState(ctx);
+  return buildSecurityPolicySummaryRecordsFromState(state);
 }
 
 async function getSecurityPolicyDetailRecord(
   ctx: QueryCtx,
   policyId: string,
 ): Promise<SecurityPolicyDetailRecord | null> {
-  const [summary] = (await listSecurityPolicySummaryRecords(ctx)).filter(
-    (policy) => policy.policyId === policyId,
-  );
-  if (!summary) {
-    return null;
-  }
-  const [seededActor, policy, mappings, controlSummaries, currentAnnualRun] = await Promise.all([
-    resolveSeedSiteAdminActor(ctx),
-    ctx.db
-      .query('securityPolicies')
-      .withIndex('by_policy_id', (q) => q.eq('policyId', policyId))
-      .unique(),
-    ctx.db
-      .query('securityPolicyControlMappings')
-      .withIndex('by_policy_id', (q) => q.eq('policyId', policyId))
-      .collect(),
-    listSecurityControlWorkspaceExportRecords(ctx),
-    ctx.db
-      .query('reviewRuns')
-      .withIndex('by_run_key', (q) =>
-        q.eq('runKey', getAnnualReviewRunKey(getCurrentAnnualReviewYear())),
-      )
-      .unique(),
-  ]);
+  const state = await loadSecurityPolicyReadModelState(ctx, { policyId });
+  const [policy] = state.policies;
   if (!policy) {
     return null;
   }
-  const mappedControls = buildSecurityPolicyMappedControls({
-    controlRecords: controlSummaries,
-    mappings,
-  });
-
-  let linkedAnnualReviewTask: SecurityPolicyLinkedAnnualReviewTask | null = null;
-
-  if (currentAnnualRun) {
-    const reviewTask = await ctx.db
-      .query('reviewTasks')
-      .withIndex('by_review_run_id', (q) => q.eq('reviewRunId', currentAnnualRun._id))
-      .collect()
-      .then((tasks) => tasks.find((task) => task.policyId === policyId) ?? null);
-    linkedAnnualReviewTask = buildPolicyLinkedAnnualReviewTask(reviewTask);
+  const [summary] = buildSecurityPolicySummaryRecordsFromState(state);
+  if (!summary) {
+    return null;
   }
+  const mappedControls = buildSecurityPolicyMappedControls({
+    controlRecords: state.controlRecords,
+    mappings: state.mappings,
+  });
+  const linkedAnnualReviewTask = buildPolicyLinkedAnnualReviewTask(
+    groupPolicyReviewTasksByPolicyId(state.reviewTasks).get(policyId) ?? null,
+  );
 
   return buildSecurityPolicyDetailRecord({
     linkedAnnualReviewTask,
     mappedControls,
-    owner: seededActor.displayName,
+    owner: state.owner,
     policy,
     support: summary.support,
   });
@@ -453,19 +482,9 @@ async function getSecurityPolicyDetailRecord(
 async function listSecurityPolicyReviewContextRecords(
   ctx: QueryCtx,
 ): Promise<SecurityPolicyReviewContextRecord[]> {
-  const [policySummaries, mappings, controlSummaries] = await Promise.all([
-    listSecurityPolicySummaryRecords(ctx),
-    ctx.db.query('securityPolicyControlMappings').collect(),
-    listSecurityControlWorkspaceExportRecords(ctx),
-  ]);
-  const mappingsByPolicyId = mappings.reduce<
-    Map<string, Array<Doc<'securityPolicyControlMappings'>>>
-  >((accumulator, mapping) => {
-    const current = accumulator.get(mapping.policyId) ?? [];
-    current.push(mapping);
-    accumulator.set(mapping.policyId, current);
-    return accumulator;
-  }, new Map());
+  const state = await loadSecurityPolicyReadModelState(ctx);
+  const policySummaries = buildSecurityPolicySummaryRecordsFromState(state);
+  const mappingsByPolicyId = groupPolicyMappingsByPolicyId(state.mappings);
   return policySummaries.map((policySummary) => ({
     policy: {
       policyId: policySummary.policyId,
@@ -474,7 +493,7 @@ async function listSecurityPolicyReviewContextRecords(
       title: policySummary.title,
     },
     policyControls: buildSecurityPolicyMappedControls({
-      controlRecords: controlSummaries,
+      controlRecords: state.controlRecords,
       mappings: mappingsByPolicyId.get(policySummary.policyId) ?? [],
     }),
   }));
