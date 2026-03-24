@@ -120,7 +120,7 @@ const AUTH_ALLOWLIST: Record<string, string> = {
     'Delegates to a site-admin-only export handler for evidence reports.',
   'convex/securityReports.ts:generateEvidenceReport':
     'Delegates to a site-admin-only generation handler for evidence reports.',
-  'convex/securityOps.ts:reseedSecurityControlWorkspaceForDevelopment':
+  'convex/securityOps.ts:resetSecurityControlWorkspaceForDevelopment':
     'Development-only reseed endpoint protected by the e2e shared secret.',
 };
 

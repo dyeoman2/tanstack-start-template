@@ -275,19 +275,6 @@ export function extractAssistantText(messages: Array<{ role: string; content: un
     .join('');
 }
 
-export async function getAttachmentPreviewUrl(
-  ctx: ActionCtx | QueryCtx | MutationCtx,
-  attachment: ChatAttachmentDoc,
-) {
-  if (attachment.kind !== 'image' || !attachment.storageId || !('storage' in ctx)) {
-    return null;
-  }
-
-  return await ctx.storage.getUrl(
-    attachment.rawStorageId ?? (attachment.storageId as Id<'_storage'>),
-  );
-}
-
 export function getThreadSortKey(thread: Pick<ChatThreadDoc, 'pinned' | 'updatedAt'>) {
   return `${thread.pinned ? '0' : '1'}:${String(-thread.updatedAt).padStart(16, '0')}`;
 }

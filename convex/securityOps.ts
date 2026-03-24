@@ -193,7 +193,7 @@ export const deleteSecurityWorkspaceTableBatchForDevelopment = internalMutation(
   },
 });
 
-export const reseedSecurityControlWorkspaceForDevelopment = internalAction({
+export const resetSecurityControlWorkspaceForDevelopment = internalAction({
   args: {
     secret: v.string(),
   },

@@ -160,11 +160,7 @@ export async function loadStoredFileBlobWithMode(
   });
 
   if (!lifecycle) {
-    const blob = await asStorageReader(ctx.storage).get(asConvexStorageId(args.storageId));
-    if (!blob) {
-      throw new Error('Stored file was not found.');
-    }
-    return blob;
+    throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
   }
 
   const readiness = getStorageReadiness(lifecycle);
@@ -335,8 +331,7 @@ export async function resolveFileUrlWithMode(
   });
 
   if (!lifecycle) {
-    const url = await asStorageReader(ctx.storage).getUrl(asConvexStorageId(args.storageId));
-    return { storageId: args.storageId, url };
+    throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
   }
 
   if (lifecycle.backendMode === 'convex') {
@@ -374,8 +369,7 @@ export async function deleteStoredFileWithMode(ctx: ActionCtx, args: DeleteStore
   });
 
   if (!lifecycle) {
-    await ctx.storage.delete(asConvexStorageId(args.storageId)).catch(() => undefined);
-    return;
+    throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
   }
 
   if (lifecycle.backendMode === 'convex') {
