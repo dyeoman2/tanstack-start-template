@@ -8,7 +8,6 @@ import {
   getSecurityRelationshipObjectTypeFromEvidenceSourceType,
   getSecurityRelationshipObjectTypeFromSourceRecordType,
   getSecurityScopeFields,
-  normalizeReviewTaskEvidenceSourceType,
   upsertSecurityRelationship,
 } from './core';
 import {
@@ -215,8 +214,7 @@ async function materializeReviewTaskSatisfactionEvidence(
         reviewOriginReviewTaskResultId: args.resultId,
         reviewOriginSourceId: primarySource?.sourceId,
         reviewOriginSourceLabel: primarySource?.sourceLabel,
-        reviewOriginSourceType:
-          normalizeReviewTaskEvidenceSourceType(primarySource?.sourceType) ?? undefined,
+        reviewOriginSourceType: primarySource?.sourceType,
         reviewStatus: 'reviewed',
         reviewedAt: args.satisfiedAt,
         reviewedByUserId: args.actorUserId,
@@ -291,12 +289,7 @@ async function removeReviewTaskEvidenceLinkRelationships(
   },
 ) {
   const { link, reviewTask } = args;
-  const normalizedSourceType = normalizeReviewTaskEvidenceSourceType(link.sourceType);
-  if (!normalizedSourceType) {
-    return;
-  }
-  const sourceObjectType =
-    getSecurityRelationshipObjectTypeFromEvidenceSourceType(normalizedSourceType);
+  const sourceObjectType = getSecurityRelationshipObjectTypeFromEvidenceSourceType(link.sourceType);
   if (!sourceObjectType) {
     return;
   }
@@ -309,14 +302,14 @@ async function removeReviewTaskEvidenceLinkRelationships(
     (entry) =>
       entry._id !== link._id &&
       entry.sourceId === link.sourceId &&
-      normalizeReviewTaskEvidenceSourceType(entry.sourceType) === normalizedSourceType,
+      entry.sourceType === link.sourceType,
   );
 
   if (!hasSameSourceOnTask) {
     await deleteSecurityRelationships(ctx, {
       fromId: reviewTask._id,
       fromType: 'review_task',
-      relationshipType: normalizedSourceType === 'evidence_report' ? 'satisfies' : 'supports',
+      relationshipType: link.sourceType === 'evidence_report' ? 'satisfies' : 'supports',
       toId: link.sourceId,
       toType: sourceObjectType,
     });
@@ -329,13 +322,13 @@ async function removeReviewTaskEvidenceLinkRelationships(
     });
   }
 
-  if (normalizedSourceType !== 'evidence_report' && normalizedSourceType !== 'vendor') {
+  if (link.sourceType !== 'evidence_report' && link.sourceType !== 'vendor') {
     return;
   }
 
   const sourceLinks = await listReviewTaskEvidenceLinksBySource(ctx, {
     sourceId: link.sourceId,
-    sourceType: normalizedSourceType,
+    sourceType: link.sourceType,
   });
   const otherLinkedTasks = await Promise.all(
     sourceLinks
@@ -359,7 +352,7 @@ async function removeReviewTaskEvidenceLinkRelationships(
         return;
       }
 
-      if (normalizedSourceType === 'evidence_report') {
+      if (link.sourceType === 'evidence_report') {
         await deleteSecurityRelationships(ctx, {
           fromId: controlLink.internalControlId,
           fromType: 'control',
@@ -479,8 +472,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
       | 'backup_verification_report'
       | 'external_document'
       | 'review_task'
-      | 'vendor'
-      | 'vendor_review';
+      | 'vendor';
   },
 ) {
   const now = Date.now();
@@ -496,8 +488,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
   ).find(
     (link) =>
       link.sourceId === args.sourceId &&
-      normalizeReviewTaskEvidenceSourceType(link.sourceType) ===
-        normalizeReviewTaskEvidenceSourceType(args.sourceType) &&
+      link.sourceType === args.sourceType &&
       link.role === args.role,
   );
 
@@ -508,18 +499,15 @@ async function upsertReviewTaskEvidenceLinkRecord(
       linkedByUserId: args.linkedByUserId,
       sourceLabel: args.sourceLabel,
     });
-    const normalizedSourceType = normalizeReviewTaskEvidenceSourceType(args.sourceType);
-    if (!normalizedSourceType) {
-      return existing._id;
-    }
-    const sourceObjectType =
-      getSecurityRelationshipObjectTypeFromEvidenceSourceType(normalizedSourceType);
+    const sourceObjectType = getSecurityRelationshipObjectTypeFromEvidenceSourceType(
+      args.sourceType,
+    );
     if (sourceObjectType) {
       await upsertSecurityRelationship(ctx, {
         createdByUserId: args.linkedByUserId ?? 'system:security-graph',
         fromId: task._id,
         fromType: 'review_task',
-        relationshipType: normalizedSourceType === 'evidence_report' ? 'satisfies' : 'supports',
+        relationshipType: args.sourceType === 'evidence_report' ? 'satisfies' : 'supports',
         toId: args.sourceId,
         toType: sourceObjectType,
       });
@@ -532,7 +520,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
         toType: 'review_task',
       });
       for (const controlLink of task.controlLinks) {
-        if (normalizedSourceType === 'evidence_report') {
+        if (args.sourceType === 'evidence_report') {
           await upsertSecurityRelationship(ctx, {
             createdByUserId: args.linkedByUserId ?? 'system:security-graph',
             fromId: controlLink.internalControlId,
@@ -550,7 +538,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
             toType: 'evidence_report',
           });
         }
-        if (normalizedSourceType === 'vendor') {
+        if (args.sourceType === 'vendor') {
           await upsertSecurityRelationship(ctx, {
             createdByUserId: args.linkedByUserId ?? 'system:security-graph',
             fromId: controlLink.internalControlId,
@@ -577,18 +565,13 @@ async function upsertReviewTaskEvidenceLinkRecord(
     sourceLabel: args.sourceLabel,
     sourceType: args.sourceType,
   });
-  const normalizedSourceType = normalizeReviewTaskEvidenceSourceType(args.sourceType);
-  if (!normalizedSourceType) {
-    return linkId;
-  }
-  const sourceObjectType =
-    getSecurityRelationshipObjectTypeFromEvidenceSourceType(normalizedSourceType);
+  const sourceObjectType = getSecurityRelationshipObjectTypeFromEvidenceSourceType(args.sourceType);
   if (sourceObjectType) {
     await upsertSecurityRelationship(ctx, {
       createdByUserId: args.linkedByUserId ?? 'system:security-graph',
       fromId: task._id,
       fromType: 'review_task',
-      relationshipType: normalizedSourceType === 'evidence_report' ? 'satisfies' : 'supports',
+      relationshipType: args.sourceType === 'evidence_report' ? 'satisfies' : 'supports',
       toId: args.sourceId,
       toType: sourceObjectType,
     });
@@ -601,7 +584,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
       toType: 'review_task',
     });
     for (const controlLink of task.controlLinks) {
-      if (normalizedSourceType === 'evidence_report') {
+      if (args.sourceType === 'evidence_report') {
         await upsertSecurityRelationship(ctx, {
           createdByUserId: args.linkedByUserId ?? 'system:security-graph',
           fromId: controlLink.internalControlId,
@@ -619,7 +602,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
           toType: 'evidence_report',
         });
       }
-      if (normalizedSourceType === 'vendor') {
+      if (args.sourceType === 'vendor') {
         await upsertSecurityRelationship(ctx, {
           createdByUserId: args.linkedByUserId ?? 'system:security-graph',
           fromId: controlLink.internalControlId,
@@ -645,7 +628,6 @@ async function clearReviewTaskEvidenceLinksBySourceType(
     | 'external_document'
     | 'review_task'
     | 'vendor'
-    | 'vendor_review'
   >,
 ) {
   if (sourceTypes.length === 0) {
@@ -662,13 +644,7 @@ async function clearReviewTaskEvidenceLinksBySourceType(
     .withIndex('by_review_task_id', (q) => q.eq('reviewTaskId', reviewTaskId))
     .collect();
 
-  for (const link of existingLinks.filter((entry) =>
-    sourceTypes.some(
-      (sourceType) =>
-        normalizeReviewTaskEvidenceSourceType(sourceType) ===
-        normalizeReviewTaskEvidenceSourceType(entry.sourceType),
-    ),
-  )) {
+  for (const link of existingLinks.filter((entry) => sourceTypes.includes(entry.sourceType))) {
     await removeReviewTaskEvidenceLinkRelationships(ctx, {
       link,
       reviewTask,
@@ -696,8 +672,7 @@ async function createTriggeredReviewRunRecord(
         | 'backup_verification_report'
         | 'external_document'
         | 'review_task'
-        | 'vendor'
-        | 'vendor_review';
+        | 'vendor';
     };
     title: string;
     triggerType: string;

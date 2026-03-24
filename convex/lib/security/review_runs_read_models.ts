@@ -2,11 +2,7 @@ import type { Doc, Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
 import { listSecurityPolicyGovernanceContexts } from './governance_context';
 import type { ReviewTaskBlueprint } from './securityReviewConfig';
-import {
-  normalizeReviewTaskEvidenceSourceType,
-  normalizeSecurityScope,
-  resolveControlLinkMetadata,
-} from './core';
+import { normalizeSecurityScope, resolveControlLinkMetadata } from './core';
 import {
   buildActorDisplayMap,
   buildCurrentSecurityFindings,
@@ -208,7 +204,7 @@ export async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'revie
             role: link.role,
             sourceId: link.sourceId,
             sourceLabel: link.sourceLabel ?? link.sourceId,
-            sourceType: normalizeReviewTaskEvidenceSourceType(link.sourceType) ?? 'vendor',
+            sourceType: link.sourceType,
           })),
         freshnessWindowDays: task.freshnessWindowDays ?? null,
         id: task._id,

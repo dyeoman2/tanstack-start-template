@@ -53,7 +53,6 @@ const securityRelationshipObjectTypeValidator = v.union(
   v.literal('evidence'),
   v.literal('finding'),
   v.literal('vendor'),
-  v.literal('vendor_review'),
   v.literal('review_run'),
   v.literal('review_task'),
   v.literal('evidence_report'),
@@ -62,7 +61,6 @@ const securityRelationshipTypeValidator = v.union(
   v.literal('has_evidence'),
   v.literal('tracks_finding'),
   v.literal('tracks_vendor'),
-  v.literal('tracks_vendor_review'),
   v.literal('has_review_task'),
   v.literal('has_report'),
   v.literal('supports'),
@@ -908,7 +906,6 @@ const reviewTaskEvidenceSourceTypeValidator = v.union(
   v.literal('external_document'),
   v.literal('review_task'),
   v.literal('vendor'),
-  v.literal('vendor_review'),
 );
 const reviewTaskEvidenceRoleValidator = v.union(
   v.literal('primary'),

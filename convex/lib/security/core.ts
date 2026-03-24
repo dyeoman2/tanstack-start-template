@@ -66,7 +66,6 @@ type SecurityRelationshipObjectType =
   | 'evidence'
   | 'finding'
   | 'vendor'
-  | 'vendor_review'
   | 'review_run'
   | 'review_task'
   | 'evidence_report';
@@ -75,50 +74,12 @@ type SecurityRelationshipType =
   | 'has_evidence'
   | 'tracks_finding'
   | 'tracks_vendor'
-  | 'tracks_vendor_review'
   | 'has_review_task'
   | 'has_report'
   | 'supports'
   | 'satisfies'
   | 'follow_up_for'
   | 'related_control';
-
-function normalizeSecurityRelationshipObjectType(
-  objectType: SecurityRelationshipObjectType | null | undefined,
-): Exclude<SecurityRelationshipObjectType, 'vendor_review'> | null {
-  if (!objectType) {
-    return null;
-  }
-  return objectType === 'vendor_review' ? 'vendor' : objectType;
-}
-
-function normalizeSecurityRelationshipType(
-  relationshipType: SecurityRelationshipType | null | undefined,
-): Exclude<SecurityRelationshipType, 'tracks_vendor_review'> | null {
-  if (!relationshipType) {
-    return null;
-  }
-  return relationshipType === 'tracks_vendor_review' ? 'tracks_vendor' : relationshipType;
-}
-
-function normalizeReviewTaskEvidenceSourceType(
-  sourceType:
-    | 'security_control_evidence'
-    | 'evidence_report'
-    | 'security_finding'
-    | 'backup_verification_report'
-    | 'external_document'
-    | 'review_task'
-    | 'vendor'
-    | 'vendor_review'
-    | null
-    | undefined,
-) {
-  if (!sourceType) {
-    return null;
-  }
-  return sourceType === 'vendor_review' ? 'vendor' : sourceType;
-}
 
 async function upsertSecurityRelationship(
   ctx: Pick<MutationCtx, 'db'>,
@@ -328,7 +289,6 @@ function getSecurityRelationshipObjectTypeFromSourceRecordType(
     case 'review_task':
       return 'review_task';
     case 'vendor':
-    case 'vendor_review':
       return 'vendor';
     default:
       return null;
@@ -343,8 +303,7 @@ function getSecurityRelationshipObjectTypeFromEvidenceSourceType(
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
-    | 'vendor'
-    | 'vendor_review',
+    | 'vendor',
 ): SecurityRelationshipObjectType | null {
   switch (sourceType) {
     case 'security_control_evidence':
@@ -356,7 +315,6 @@ function getSecurityRelationshipObjectTypeFromEvidenceSourceType(
     case 'review_task':
       return 'review_task';
     case 'vendor':
-    case 'vendor_review':
       return 'vendor';
     default:
       return null;
@@ -484,9 +442,6 @@ export {
   getAnnualReviewRunKey,
   getAnnualReviewRunTitle,
   getCurrentAnnualReviewYear,
-  normalizeReviewTaskEvidenceSourceType,
-  normalizeSecurityRelationshipObjectType,
-  normalizeSecurityRelationshipType,
   getSecurityFindingControlLinks,
   getSecurityRelationshipObjectTypeFromEvidenceSourceType,
   getSecurityRelationshipObjectTypeFromSourceRecordType,

@@ -104,6 +104,8 @@ const AUTH_ALLOWLIST: Record<string, string> = {
     'Authenticated bootstrap action that hydrates the current user context after login.',
   'convex/auth.ts:resolvePasswordResetEmail':
     'Password-reset bridge action used after token verification during reset completion.',
+  'convex/auth.ts:handleScimOrganizationLifecycle':
+    'Public SCIM lifecycle endpoint authenticates with the SCIM bearer token inside its shared implementation.',
   'convex/agentChat.ts:generateChatAttachmentUploadTarget':
     'Uses the internal current-chat context gate before issuing upload targets.',
   'convex/agentChat.ts:deletePersona':

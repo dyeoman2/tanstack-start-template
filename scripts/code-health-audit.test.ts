@@ -56,6 +56,25 @@ describe('code health auth audit', () => {
     });
   });
 
+  it('classifies SCIM lifecycle bridge as allowlisted', () => {
+    const [record] = scanConvexFunctionsFromSource(
+      `
+        export const handleScimOrganizationLifecycle = action({
+          args: {},
+          returns: v.null(),
+          handler: async (ctx) => {
+            return ctx;
+          },
+        });
+      `,
+      'convex/auth.ts',
+    );
+
+    expect(classifyConvexFunction(record)).toMatchObject({
+      classification: 'allowlisted-public',
+    });
+  });
+
   it('fails unprotected public functions', () => {
     const [record] = scanConvexFunctionsFromSource(
       `

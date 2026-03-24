@@ -5,9 +5,6 @@ import {
   getSecurityRelationshipObjectTypeFromEvidenceSourceType,
   getSecurityRelationshipObjectTypeFromSourceRecordType,
   getVendorRelatedControlLinks,
-  normalizeReviewTaskEvidenceSourceType,
-  normalizeSecurityRelationshipObjectType,
-  normalizeSecurityRelationshipType,
   patchSecurityScopeDefaults,
   upsertSecurityRelationship,
 } from './core';
@@ -53,7 +50,6 @@ export async function runSecurityWorkspaceMigration(
     ) => Promise<Doc<'reviewTaskEvidenceLinks'>['_id']>;
   },
 ) {
-  let normalizedLegacyVendorCompatibilityRows = 0;
   const scopeTables = [
     'securityFindings',
     'evidenceReports',
@@ -75,43 +71,6 @@ export async function runSecurityWorkspaceMigration(
   let patchedScopeRecords = 0;
   for (const tableName of scopeTables) {
     patchedScopeRecords += await patchSecurityScopeDefaults(ctx, tableName);
-  }
-
-  const [relationshipRows, reviewTaskEvidenceLinks] = await Promise.all([
-    ctx.db.query('securityRelationships').collect(),
-    ctx.db.query('reviewTaskEvidenceLinks').collect(),
-  ]);
-
-  for (const relationship of relationshipRows) {
-    const normalizedFromType = normalizeSecurityRelationshipObjectType(relationship.fromType);
-    const normalizedToType = normalizeSecurityRelationshipObjectType(relationship.toType);
-    const normalizedRelationshipType = normalizeSecurityRelationshipType(
-      relationship.relationshipType,
-    );
-    if (
-      normalizedFromType === relationship.fromType &&
-      normalizedToType === relationship.toType &&
-      normalizedRelationshipType === relationship.relationshipType
-    ) {
-      continue;
-    }
-    await ctx.db.patch(relationship._id, {
-      fromType: normalizedFromType ?? relationship.fromType,
-      relationshipType: normalizedRelationshipType ?? relationship.relationshipType,
-      toType: normalizedToType ?? relationship.toType,
-    });
-    normalizedLegacyVendorCompatibilityRows += 1;
-  }
-
-  for (const link of reviewTaskEvidenceLinks) {
-    const normalizedSourceType = normalizeReviewTaskEvidenceSourceType(link.sourceType);
-    if (normalizedSourceType === link.sourceType || !normalizedSourceType) {
-      continue;
-    }
-    await ctx.db.patch(link._id, {
-      sourceType: normalizedSourceType,
-    });
-    normalizedLegacyVendorCompatibilityRows += 1;
   }
 
   const patchedChecklistStatuses = 0;
@@ -290,7 +249,6 @@ export async function runSecurityWorkspaceMigration(
 
   return {
     migratedReviewArtifacts,
-    normalizedLegacyVendorCompatibilityRows,
     patchedChecklistStatuses,
     patchedReviewNotes,
     patchedScopeRecords,

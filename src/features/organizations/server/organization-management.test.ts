@@ -50,9 +50,11 @@ vi.mock('@convex/_generated/api', () => ({
     },
     organizationManagement: {
       deactivateOrganizationMember: 'deactivateOrganizationMember',
+      executePreparedOrganizationCleanup: 'executePreparedOrganizationCleanup',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
       recordOrganizationBulkAuditEvents: 'recordOrganizationBulkAuditEvents',
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
+      prepareOrganizationCleanup: 'prepareOrganizationCleanup',
       reactivateOrganizationMember: 'reactivateOrganizationMember',
       suspendOrganizationMember: 'suspendOrganizationMember',
       updateOrganizationPolicies: 'updateOrganizationPolicies',
@@ -412,6 +414,7 @@ describe('organization management server functions', () => {
   });
 
   it('refreshes user context after member removal and organization deletion', async () => {
+    fetchAuthMutationMock.mockResolvedValueOnce({ cleanupRequestId: 'cleanup_1' });
     fetchAuthActionMock.mockResolvedValue({ organizationId: 'org_next' });
 
     await removeOrganizationMemberServerFn({
@@ -444,11 +447,14 @@ describe('organization management server functions', () => {
       expect.any(Function),
     );
     expect(deleteBetterAuthOrganizationMock).toHaveBeenCalledWith('org_1', expect.any(Function));
-    expect(adminActionMock).toHaveBeenCalledWith('cleanupOrganizationDataInternal', {
+    expect(fetchAuthMutationMock).toHaveBeenNthCalledWith(1, 'prepareOrganizationCleanup', {
       organizationId: 'org_1',
     });
     expect(fetchAuthActionMock).toHaveBeenNthCalledWith(1, 'ensureCurrentUserContext', {});
-    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(2, 'ensureCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(2, 'executePreparedOrganizationCleanup', {
+      cleanupRequestId: 'cleanup_1',
+    });
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(3, 'ensureCurrentUserContext', {});
   });
 
   it('calls the Better Auth invitation cancel endpoint', async () => {

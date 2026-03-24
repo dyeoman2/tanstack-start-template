@@ -1,6 +1,5 @@
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
-import { normalizeReviewTaskEvidenceSourceType } from './core';
 import { RELEASE_PROVENANCE_CONTROL_ID, RELEASE_PROVENANCE_ITEM_ID } from './securityReviewConfig';
 import {
   addControlToSecurityWorkspaceSummary,
@@ -194,24 +193,15 @@ async function listReviewTaskEvidenceLinksBySource(
       | 'backup_verification_report'
       | 'external_document'
       | 'review_task'
-      | 'vendor'
-      | 'vendor_review';
+      | 'vendor';
   },
 ) {
-  const normalizedSourceType = normalizeReviewTaskEvidenceSourceType(args.sourceType);
-  const sourceTypes =
-    normalizedSourceType === 'vendor' ? (['vendor', 'vendor_review'] as const) : [args.sourceType];
-  const rows = await Promise.all(
-    sourceTypes.map(async (sourceType) => {
-      return await ctx.db
-        .query('reviewTaskEvidenceLinks')
-        .withIndex('by_source_type_and_source_id', (q) =>
-          q.eq('sourceType', sourceType).eq('sourceId', args.sourceId),
-        )
-        .collect();
-    }),
-  );
-  return rows.flat();
+  return await ctx.db
+    .query('reviewTaskEvidenceLinks')
+    .withIndex('by_source_type_and_source_id', (q) =>
+      q.eq('sourceType', args.sourceType).eq('sourceId', args.sourceId),
+    )
+    .collect();
 }
 
 async function getLatestReleaseProvenanceEvidence(

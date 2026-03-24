@@ -239,7 +239,6 @@ export const runSecurityWorkspaceMigrationNow = mutation({
   args: {},
   returns: v.object({
     migratedReviewArtifacts: v.number(),
-    normalizedLegacyVendorCompatibilityRows: v.number(),
     patchedChecklistStatuses: v.number(),
     patchedReviewNotes: v.number(),
     patchedScopeRecords: v.number(),

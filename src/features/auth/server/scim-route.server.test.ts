@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { handleScimOrganizationLifecycleRequest } from './scim-route.server';
 
-const { clientActionMock, createConvexAdminClientMock } = vi.hoisted(() => ({
+const { clientActionMock, createConvexPublicClientMock } = vi.hoisted(() => ({
   clientActionMock: vi.fn(),
-  createConvexAdminClientMock: vi.fn(() => ({
+  createConvexPublicClientMock: vi.fn(() => ({
     action: clientActionMock,
   })),
 }));
 
 vi.mock('~/lib/server/convex-admin.server', () => ({
-  createConvexAdminClient: createConvexAdminClientMock,
+  createConvexPublicClient: createConvexPublicClientMock,
 }));
 
 describe('handleScimOrganizationLifecycleRequest', () => {
@@ -39,7 +39,7 @@ describe('handleScimOrganizationLifecycleRequest', () => {
     const response = await handleScimOrganizationLifecycleRequest(request);
 
     expect(response).toBeNull();
-    expect(createConvexAdminClientMock).not.toHaveBeenCalled();
+    expect(createConvexPublicClientMock).not.toHaveBeenCalled();
   });
 
   it('handles PATCH requests that deactivate a user', async () => {
@@ -70,7 +70,7 @@ describe('handleScimOrganizationLifecycleRequest', () => {
 
     const response = await handleScimOrganizationLifecycleRequest(request);
 
-    expect(createConvexAdminClientMock).toHaveBeenCalled();
+    expect(createConvexPublicClientMock).toHaveBeenCalled();
     expect(clientActionMock).toHaveBeenCalledWith(expect.anything(), {
       authorizationHeader: 'Bearer test-token',
       baseUrl: 'http://localhost:3000/api/auth',
@@ -107,7 +107,7 @@ describe('handleScimOrganizationLifecycleRequest', () => {
 
     const response = await handleScimOrganizationLifecycleRequest(request);
 
-    expect(createConvexAdminClientMock).toHaveBeenCalled();
+    expect(createConvexPublicClientMock).toHaveBeenCalled();
     expect(clientActionMock).toHaveBeenCalledWith(expect.anything(), {
       authorizationHeader: 'Bearer test-token',
       baseUrl: 'http://localhost:3000/api/auth',

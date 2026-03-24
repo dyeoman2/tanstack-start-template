@@ -1,35 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { actionMock, handleServerErrorMock } = vi.hoisted(() => ({
-  actionMock: vi.fn(),
+const { fetchAuthActionMock, handleServerErrorMock } = vi.hoisted(() => ({
+  fetchAuthActionMock: vi.fn(),
   handleServerErrorMock: vi.fn((error: unknown) => error),
 }));
 
 vi.mock('@tanstack/react-start', () => ({
-  createServerFn: () => ({
-    inputValidator() {
-      return this;
-    },
-    handler: (handler: (...args: unknown[]) => unknown) => handler,
-  }),
+  createServerFn: () => {
+    let validator: {
+      parse: (input: unknown) => unknown;
+    } | null = null;
+
+    return {
+      inputValidator(nextValidator: { parse: (input: unknown) => unknown }) {
+        validator = nextValidator;
+        return this;
+      },
+      handler(handler: (input: { data: unknown }) => unknown) {
+        return (input: { data: unknown }) => {
+          const data = validator ? validator.parse(input.data) : input.data;
+          return handler({ ...input, data });
+        };
+      },
+    };
+  },
 }));
 
 vi.mock('@convex/_generated/api', () => ({
   api: {
-    users: {},
-  },
-  internal: {
     users: {
-      bootstrapUserContext: 'bootstrapUserContext',
-      rollbackBootstrapUserContext: 'rollbackBootstrapUserContext',
+      bootstrapCurrentUserContext: 'bootstrapCurrentUserContext',
+      rollbackCurrentUserBootstrapContext: 'rollbackCurrentUserBootstrapContext',
     },
   },
 }));
 
-vi.mock('~/lib/server/convex-admin.server', () => ({
-  createConvexAdminClient: () => ({
-    action: actionMock,
-  }),
+vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
+  convexAuthReactStart: {
+    fetchAuthAction: fetchAuthActionMock,
+  },
 }));
 
 vi.mock('~/lib/server/error-utils.server', () => ({
@@ -44,18 +53,13 @@ describe('bootstrapSignedUpUserServerFn', () => {
   });
 
   it('assigns the first signed up user the admin role', async () => {
-    actionMock.mockResolvedValue({ found: true, assignedRole: 'admin' });
+    fetchAuthActionMock.mockResolvedValue({ found: true, assignedRole: 'admin' });
 
     const result = await bootstrapSignedUpUserServerFn({
       data: { authUserId: 'user_1', email: 'admin@example.com' },
     });
 
-    expect(actionMock).toHaveBeenCalledWith('bootstrapUserContext', {
-      authUserId: 'user_1',
-      email: 'admin@example.com',
-      createdAt: expect.any(Number),
-      updatedAt: expect.any(Number),
-    });
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('bootstrapCurrentUserContext', {});
     expect(result).toEqual({
       success: true,
       isFirstUser: true,
@@ -65,7 +69,9 @@ describe('bootstrapSignedUpUserServerFn', () => {
 
   it('rolls back the auth user when bootstrap fails', async () => {
     const bootstrapError = new Error('bootstrap failed');
-    actionMock.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({ success: true });
+    fetchAuthActionMock.mockRejectedValueOnce(bootstrapError).mockResolvedValueOnce({
+      success: true,
+    });
 
     await expect(
       bootstrapSignedUpUserServerFn({
@@ -73,25 +79,21 @@ describe('bootstrapSignedUpUserServerFn', () => {
       }),
     ).rejects.toBe(bootstrapError);
 
-    expect(actionMock).toHaveBeenNthCalledWith(1, 'bootstrapUserContext', {
-      authUserId: 'user_2',
-      email: 'user@example.com',
-      createdAt: expect.any(Number),
-      updatedAt: expect.any(Number),
-    });
-    expect(actionMock).toHaveBeenNthCalledWith(2, 'rollbackBootstrapUserContext', {
-      authUserId: 'user_2',
-      email: 'user@example.com',
-    });
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(1, 'bootstrapCurrentUserContext', {});
+    expect(fetchAuthActionMock).toHaveBeenNthCalledWith(
+      2,
+      'rollbackCurrentUserBootstrapContext',
+      {},
+    );
   });
 
   it('fails closed when the signup payload is invalid', async () => {
-    await expect(
+    expect(() =>
       bootstrapSignedUpUserServerFn({
         data: { authUserId: '', email: 'user3@example.com' },
       }),
-    ).rejects.toThrow('Authenticated signup context is unavailable');
+    ).toThrow('Too small');
 
-    expect(actionMock).not.toHaveBeenCalled();
+    expect(fetchAuthActionMock).not.toHaveBeenCalled();
   });
 });
