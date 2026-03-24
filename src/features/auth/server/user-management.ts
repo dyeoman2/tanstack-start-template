@@ -1,9 +1,8 @@
-import { internal } from '@convex/_generated/api';
+import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
+import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import { handleServerError } from '~/lib/server/error-utils.server';
-import { assertUserId } from '~/lib/shared/user-id';
 
 const bootstrapSignedUpUserSchema = z.object({
   authUserId: z.string().trim().min(1),
@@ -12,19 +11,11 @@ const bootstrapSignedUpUserSchema = z.object({
 
 export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' })
   .inputValidator(bootstrapSignedUpUserSchema)
-  .handler(async ({ data }) => {
-    const authUserId = assertUserId(data.authUserId, 'Authenticated signup context is unavailable');
-    const email = data.email;
-
+  .handler(async () => {
     try {
-      const bootstrapResult = await createConvexAdminClient().action(
-        internal.users.bootstrapUserContext,
-        {
-          authUserId,
-          email,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        },
+      const bootstrapResult = await convexAuthReactStart.fetchAuthAction(
+        api.users.bootstrapCurrentUserContext,
+        {},
       );
 
       if (!bootstrapResult.found) {
@@ -46,10 +37,10 @@ export const bootstrapSignedUpUserServerFn = createServerFn({ method: 'POST' })
       };
     } catch (error) {
       try {
-        await createConvexAdminClient().action(internal.users.rollbackBootstrapUserContext, {
-          authUserId,
-          email,
-        });
+        await convexAuthReactStart.fetchAuthAction(
+          api.users.rollbackCurrentUserBootstrapContext,
+          {},
+        );
       } catch {
         // Preserve the original bootstrap error; rollback is best-effort.
       }

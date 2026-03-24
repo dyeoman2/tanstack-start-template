@@ -12,6 +12,7 @@ const WORKER_PATH = join(
 const WORKER_URL = pathToFileURL(WORKER_PATH).href;
 const CANVAS_MODULE_NAME = '@napi-rs/canvas';
 const PDF_PARSE_MODULE_NAME = 'pdf-parse';
+const PDF_PARSE_TIMEOUT_MS = 30_000;
 
 let isWorkerConfigured = false;
 
@@ -28,6 +29,25 @@ export type ParsedPdfResult = {
   images: ParsedPdfImage[];
   pages: number;
 };
+
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      reject(new Error(message));
+    }, timeoutMs);
+
+    promise.then(
+      (value) => {
+        clearTimeout(timeoutId);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeoutId);
+        reject(error);
+      },
+    );
+  });
+}
 
 export async function parsePdfBlob(blob: Blob): Promise<ParsedPdfResult> {
   if (typeof globalThis.DOMMatrix === 'undefined') {
@@ -50,8 +70,11 @@ export async function parsePdfBlob(blob: Blob): Promise<ParsedPdfResult> {
   });
 
   try {
-    const textResult = await parser.getText();
-    const imageResult = await parser.getImage({ imageThreshold: 50 });
+    const [textResult, imageResult] = await withTimeout(
+      Promise.all([parser.getText(), parser.getImage({ imageThreshold: 50 })]),
+      PDF_PARSE_TIMEOUT_MS,
+      'PDF parsing timed out.',
+    );
 
     return {
       content: textResult.text,

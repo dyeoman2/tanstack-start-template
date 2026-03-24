@@ -27,6 +27,7 @@ import {
   getCurrentAuthUserOrNull,
   getCurrentAuthUserOrThrow,
   getCurrentUserOrNull,
+  getVerifiedCurrentUserFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
@@ -45,6 +46,7 @@ import { buildPersistedOnboardingState as buildPersistedOnboardingStateBase } fr
 import {
   bootstrapUserContextResultValidator,
   currentAppUserValidator,
+  internalCurrentAppUserValidator,
   currentUserProfileValidator,
   ensureUserContextResultValidator,
   successTrueValidator,
@@ -838,6 +840,28 @@ export const bootstrapUserContext = internalAction({
   },
 });
 
+export const bootstrapCurrentUserContext = action({
+  args: {},
+  returns: bootstrapUserContextResultValidator,
+  handler: async (ctx): Promise<BootstrapUserContextResult> => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const email =
+      typeof user.authUser.email === 'string' ? user.authUser.email.trim().toLowerCase() : '';
+    if (!email) {
+      return {
+        found: false,
+      };
+    }
+
+    return await ctx.runAction(internal.users.bootstrapUserContext, {
+      authUserId: user.authUserId,
+      createdAt: Date.now(),
+      email,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
 export const rollbackBootstrapUserContext = internalAction({
   args: {
     authUserId: v.string(),
@@ -946,6 +970,24 @@ export const rollbackBootstrapUserContext = internalAction({
     await ctx.runMutation(internal.users.deleteUserContextRecords, userContextRecords);
 
     return { success: true };
+  },
+});
+
+export const rollbackCurrentUserBootstrapContext = action({
+  args: {},
+  returns: successTrueValidator,
+  handler: async (ctx): Promise<{ success: true }> => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const email =
+      typeof user.authUser.email === 'string' ? user.authUser.email.trim().toLowerCase() : '';
+    if (!email) {
+      return { success: true };
+    }
+
+    return await ctx.runAction(internal.users.rollbackBootstrapUserContext, {
+      authUserId: user.authUserId,
+      email,
+    });
   },
 });
 
@@ -1165,6 +1207,14 @@ export const getCurrentUserProfile = query({
 export const getCurrentAppUser = query({
   args: {},
   returns: v.union(currentAppUserValidator, v.null()),
+  handler: async (ctx) => {
+    return await getCurrentUserOrNull(ctx);
+  },
+});
+
+export const getCurrentAppUserInternal = internalQuery({
+  args: {},
+  returns: v.union(internalCurrentAppUserValidator, v.null()),
   handler: async (ctx) => {
     return await getCurrentUserOrNull(ctx);
   },

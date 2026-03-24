@@ -1,8 +1,15 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import userEvent from '@testing-library/user-event';
+import { AdminSecurityControlsRoute } from '~/features/security/components/routes/AdminSecurityControlsRoute';
+import { AdminSecurityFindingsRoute } from '~/features/security/components/routes/AdminSecurityFindingsRoute';
+import { AdminSecurityOverviewRoute } from '~/features/security/components/routes/AdminSecurityOverviewRoute';
+import { AdminSecurityPoliciesRoute } from '~/features/security/components/routes/AdminSecurityPoliciesRoute';
+import { AdminSecurityReportsRoute } from '~/features/security/components/routes/AdminSecurityReportsRoute';
+import { AdminSecurityReviewsRoute } from '~/features/security/components/routes/AdminSecurityReviewsRoute';
+import { AdminSecurityPageShell } from '~/features/security/components/routes/AdminSecurityShell';
+import { AdminSecurityVendorsRoute } from '~/features/security/components/routes/AdminSecurityVendorsRoute';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
 
 const {
   useSearchMock,
@@ -117,6 +124,10 @@ type SearchState = {
     | 'control_workspace_snapshot';
   reportReviewStatus?: 'all' | 'needs_follow_up' | 'pending' | 'reviewed';
   reportSearch?: string;
+  policySearch?: string;
+  policySortBy?: 'title' | 'support' | 'owner' | 'mappedControlCount' | 'nextReviewAt';
+  policySortOrder?: 'asc' | 'desc';
+  policySupport?: 'all' | 'complete' | 'partial' | 'missing';
   search: string;
   responsibility: 'all' | 'platform' | 'shared-responsibility' | 'customer';
   support: 'all' | 'complete' | 'partial' | 'missing';
@@ -135,6 +146,10 @@ const defaultSearch: SearchState = {
   findingSearch: '',
   findingSeverity: 'all',
   findingStatus: 'all',
+  policySearch: '',
+  policySortBy: 'title',
+  policySortOrder: 'asc',
+  policySupport: 'all',
   reportKind: 'all',
   reportReviewStatus: 'all',
   reportSearch: '',
@@ -703,7 +718,73 @@ function buildWorkspaceOverview(args?: {
 }
 
 function renderRoute() {
-  return render(<AdminSecurityRoute search={useSearchMock() as SearchState} />);
+  const search = useSearchMock() as SearchState;
+  const activeTab = search.tab;
+
+  return render(
+    <AdminSecurityPageShell activeTab={activeTab}>
+      {activeTab === 'overview' ? <AdminSecurityOverviewRoute /> : null}
+      {activeTab === 'controls' ? (
+        <AdminSecurityControlsRoute
+          search={{
+            family: search.family,
+            responsibility: search.responsibility,
+            search: search.search,
+            selectedControl: search.selectedControl,
+            sortBy: search.sortBy,
+            sortOrder: search.sortOrder,
+            support: search.support,
+          }}
+        />
+      ) : null}
+      {activeTab === 'policies' ? (
+        <AdminSecurityPoliciesRoute
+          search={{
+            policySearch: search.policySearch ?? '',
+            policySortBy: search.policySortBy ?? 'title',
+            policySortOrder: search.policySortOrder ?? 'asc',
+            policySupport: search.policySupport ?? 'all',
+            selectedPolicy: search.selectedPolicy,
+          }}
+        />
+      ) : null}
+      {activeTab === 'vendors' ? (
+        <AdminSecurityVendorsRoute
+          search={{
+            selectedVendor: search.selectedVendor,
+          }}
+        />
+      ) : null}
+      {activeTab === 'findings' ? (
+        <AdminSecurityFindingsRoute
+          search={{
+            findingDisposition: search.findingDisposition ?? 'all',
+            findingSearch: search.findingSearch ?? '',
+            findingSeverity: search.findingSeverity ?? 'all',
+            findingStatus: search.findingStatus ?? 'all',
+            selectedFinding: search.selectedFinding,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reports' ? (
+        <AdminSecurityReportsRoute
+          search={{
+            reportKind: search.reportKind ?? 'all',
+            reportReviewStatus: search.reportReviewStatus ?? 'all',
+            reportSearch: search.reportSearch ?? '',
+            selectedReport: search.selectedReport,
+          }}
+        />
+      ) : null}
+      {activeTab === 'reviews' ? (
+        <AdminSecurityReviewsRoute
+          search={{
+            selectedReviewRun: search.selectedReviewRun,
+          }}
+        />
+      ) : null}
+    </AdminSecurityPageShell>,
+  );
 }
 
 function mockSecurityQueries(args: {
@@ -1161,7 +1242,18 @@ describe('Admin security route', () => {
       ...defaultSearch,
       selectedReport: 'report-1',
     });
-    view.rerender(<AdminSecurityRoute search={useSearchMock() as SearchState} />);
+    view.rerender(
+      <AdminSecurityPageShell activeTab="reports">
+        <AdminSecurityReportsRoute
+          search={{
+            reportKind: 'all',
+            reportReviewStatus: 'all',
+            reportSearch: '',
+            selectedReport: (useSearchMock() as SearchState).selectedReport,
+          }}
+        />
+      </AdminSecurityPageShell>,
+    );
 
     expect(screen.getByText('Linked review tasks')).toBeInTheDocument();
     expect(screen.getByText('{"status":"persisted"}')).toBeInTheDocument();

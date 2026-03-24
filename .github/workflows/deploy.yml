@@ -15,6 +15,7 @@ concurrency:
 permissions:
   contents: read
   id-token: write
+  pull-requests: read
 
 defaults:
   run:
@@ -32,7 +33,7 @@ jobs:
 
       - name: Filter changed paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             cli_smoke:
@@ -51,8 +52,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -78,8 +77,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -104,8 +101,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -159,8 +154,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -183,8 +176,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -207,8 +198,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -233,8 +222,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -269,8 +256,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -416,8 +401,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -488,8 +471,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -589,8 +570,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10.32.0
 
       - name: Setup Node
         uses: actions/setup-node@v6

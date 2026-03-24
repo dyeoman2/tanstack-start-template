@@ -5,6 +5,7 @@ import { internal } from './_generated/api';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { siteAdminAction } from './auth/authorized';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
+import { throwConvexError } from './auth/errors';
 import {
   ANNUAL_REVIEW_TASK_BLUEPRINTS,
   ANNUAL_REVIEW_TASK_FRESHNESS_DAYS,
@@ -238,6 +239,7 @@ export const runSecurityWorkspaceMigrationNow = mutation({
   args: {},
   returns: v.object({
     migratedReviewArtifacts: v.number(),
+    normalizedLegacyVendorCompatibilityRows: v.number(),
     patchedChecklistStatuses: v.number(),
     patchedReviewNotes: v.number(),
     patchedScopeRecords: v.number(),
@@ -263,7 +265,7 @@ export const linkReviewTaskEvidence = mutation({
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const task = await ctx.db.get(args.reviewTaskId);
     if (!task) {
-      throw new Error('Review task not found.');
+      throwConvexError('NOT_FOUND', 'Review task not found.');
     }
     const linkId = await upsertReviewTaskEvidenceLinkRecord(ctx, {
       freshAt: args.freshAt,
@@ -297,7 +299,7 @@ export const attestReviewTask = mutation({
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const task = await ctx.db.get(args.reviewTaskId);
     if (!task) {
-      throw new Error('Review task not found.');
+      throwConvexError('NOT_FOUND', 'Review task not found.');
     }
     const blueprint = ANNUAL_REVIEW_TASK_BLUEPRINTS.find(
       (entry) => entry.templateKey === task.templateKey,
@@ -336,7 +338,7 @@ export const attestReviewTask = mutation({
     const resolvedStatementKey = statementKey ?? vendorStatementKey ?? findingsStatementKey;
     const resolvedStatementText = statementText ?? vendorStatementText ?? findingsStatementText;
     if (resolvedStatementKey === null || resolvedStatementText === null) {
-      throw new Error('This task does not support attestation.');
+      throwConvexError('VALIDATION', 'This task does not support attestation.');
     }
 
     if (task.templateKey === 'annual:attest:findings-review') {
@@ -360,7 +362,8 @@ export const attestReviewTask = mutation({
           (finding.disposition === 'pending_review' || finding.disposition === 'investigating'),
       );
       if (unresolvedCritical.length > 0) {
-        throw new Error(
+        throwConvexError(
+          'VALIDATION',
           'Critical open findings must be resolved or dispositioned before attesting.',
         );
       }
@@ -370,7 +373,10 @@ export const attestReviewTask = mutation({
       const documentLabel = args.documentLabel?.trim() ?? '';
       const documentUrl = args.documentUrl?.trim() ?? '';
       if (!documentLabel || !documentUrl) {
-        throw new Error('Document-upload tasks require both a document label and URL.');
+        throwConvexError(
+          'VALIDATION',
+          'Document-upload tasks require both a document label and URL.',
+        );
       }
       await upsertReviewTaskEvidenceLinkRecord(ctx, {
         linkedByUserId: currentUser.authUserId,
@@ -443,14 +449,14 @@ export const setReviewTaskException = mutation({
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const task = await ctx.db.get(args.reviewTaskId);
     if (!task) {
-      throw new Error('Review task not found.');
+      throwConvexError('NOT_FOUND', 'Review task not found.');
     }
     if (!task.allowException) {
-      throw new Error('This task does not allow exceptions.');
+      throwConvexError('VALIDATION', 'This task does not allow exceptions.');
     }
     const trimmedNote = args.note.trim();
     if (!trimmedNote) {
-      throw new Error('Exception note is required.');
+      throwConvexError('VALIDATION', 'Exception note is required.');
     }
     const now = Date.now();
     await applyReviewTaskState(ctx, {
@@ -480,7 +486,7 @@ export const openTriggeredFollowUp = mutation({
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const task = await ctx.db.get(args.reviewTaskId);
     if (!task) {
-      throw new Error('Review task not found.');
+      throwConvexError('NOT_FOUND', 'Review task not found.');
     }
     const runId = await createTriggeredReviewRunRecord(ctx, {
       actorUserId: currentUser.authUserId,
@@ -499,7 +505,7 @@ export const openTriggeredFollowUp = mutation({
     });
     const run = await ctx.db.get(runId);
     if (!run) {
-      throw new Error('Follow-up review run not found after create.');
+      throwConvexError('NOT_FOUND', 'Follow-up review run not found after create.');
     }
     const summary = await buildReviewRunSummary(ctx as unknown as QueryCtx, run);
 

@@ -55,10 +55,18 @@ export const Route = createFileRoute('/api/parse-pdf')({
       },
       POST: async ({ request }) => {
         const requestId = crypto.randomUUID();
+        let currentProfile:
+          | Awaited<
+              ReturnType<
+                typeof convexAuthReactStart.fetchAuthQuery<typeof api.users.getCurrentUserProfile>
+              >
+            >
+          | null
+          | undefined;
         let organizationId: string | undefined;
 
         try {
-          const currentProfile = await convexAuthReactStart.fetchAuthQuery(
+          currentProfile = await convexAuthReactStart.fetchAuthQuery(
             api.users.getCurrentUserProfile,
             {},
           );
@@ -87,9 +95,9 @@ export const Route = createFileRoute('/api/parse-pdf')({
 
             await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
               eventType: 'pdf_parse_requested',
-              metadata: {
+              metadata: JSON.stringify({
                 storageId,
-              },
+              }),
               organizationId,
               outcome: 'success',
               requestId,
@@ -119,10 +127,10 @@ export const Route = createFileRoute('/api/parse-pdf')({
           const file = fileValue;
           await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
             eventType: 'pdf_parse_requested',
-            metadata: {
+            metadata: JSON.stringify({
               mimeType: file.type,
               sizeBytes: file.size,
-            },
+            }),
             organizationId,
             outcome: 'success',
             requestId,
@@ -192,10 +200,10 @@ export const Route = createFileRoute('/api/parse-pdf')({
 
           await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
             eventType: 'pdf_parse_succeeded',
-            metadata: {
+            metadata: JSON.stringify({
               imageCount: parsed.images.length,
               pageCount: parsed.pages,
-            },
+            }),
             organizationId,
             outcome: 'success',
             requestId,
@@ -216,9 +224,9 @@ export const Route = createFileRoute('/api/parse-pdf')({
           await convexAuthReactStart
             .fetchAuthAction(api.audit.recordClientAuditEvent, {
               eventType: 'pdf_parse_failed',
-              metadata: {
+              metadata: JSON.stringify({
                 error: getErrorMessage(error),
-              },
+              }),
               organizationId,
               outcome: 'failure',
               requestId,

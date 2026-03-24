@@ -2,19 +2,19 @@ import type { Doc, Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
-import { addMonths, getSecurityScopeFields, normalizeSecurityScope } from './core';
+import {
+  addMonths,
+  getSecurityScopeFields,
+  normalizeSecurityRelationshipObjectType,
+  normalizeSecurityRelationshipType,
+  normalizeSecurityScope,
+} from './core';
 import { VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR } from './securityReviewConfig';
 
 const VENDOR_REVIEW_CADENCE_MONTHS = 12;
 const VENDOR_REVIEW_DUE_SOON_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 type VendorKey = 'openrouter' | 'resend' | 'sentry';
-
-function normalizeVendorRelationshipObjectType(
-  objectType: Doc<'securityRelationships'>['fromType'],
-) {
-  return objectType === 'vendor_review' ? 'vendor' : objectType;
-}
 
 function buildAnnualVendorReviewTaskTemplateKey(vendorKey: VendorKey) {
   return `annual:attest:vendor:${vendorKey}`;
@@ -114,7 +114,7 @@ async function syncSecurityVendorRecords(ctx: MutationCtx) {
     const linkedRelationships = relationships.filter(
       (relationship) =>
         relationship.fromId === existingVendor.vendorKey &&
-        (relationship.fromType === 'vendor' || relationship.fromType === 'vendor_review'),
+        normalizeSecurityRelationshipObjectType(relationship.fromType) === 'vendor',
     );
     const hasHistory =
       linkedReviewTasks.length > 0 ||
@@ -239,7 +239,11 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
   );
   const relationshipsByFromKey = relationships.reduce<Map<string, typeof relationships>>(
     (accumulator, relationship) => {
-      const key = `${normalizeVendorRelationshipObjectType(relationship.fromType)}:${relationship.fromId}`;
+      const normalizedFromType = normalizeSecurityRelationshipObjectType(relationship.fromType);
+      if (!normalizedFromType) {
+        return accumulator;
+      }
+      const key = `${normalizedFromType}:${relationship.fromId}`;
       const current = accumulator.get(key) ?? [];
       current.push(relationship);
       accumulator.set(key, current);
@@ -296,7 +300,8 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
             entityId: relationship.toId,
             entityType: relationship.toType,
             label: run.title,
-            relationshipType: relationship.relationshipType,
+            relationshipType:
+              normalizeSecurityRelationshipType(relationship.relationshipType) ?? 'follow_up_for',
             status: run.status,
           };
         }

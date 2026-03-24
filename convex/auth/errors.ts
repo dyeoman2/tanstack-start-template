@@ -5,7 +5,8 @@ export type AuthErrorCode =
   | 'FORBIDDEN'
   | 'ADMIN_REQUIRED'
   | 'NOT_FOUND'
-  | 'VALIDATION';
+  | 'VALIDATION'
+  | 'RATE_LIMITED';
 
 export function throwConvexError(code: AuthErrorCode, message: string): never {
   throw new ConvexError({ code, message });

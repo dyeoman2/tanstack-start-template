@@ -28,6 +28,17 @@ function sortModels<
   });
 }
 
+export function filterVisibleModels(
+  models: ChatModelCatalogEntry[],
+  isSiteAdmin: boolean,
+): ChatModelCatalogEntry[] {
+  if (isSiteAdmin) {
+    return models;
+  }
+
+  return models.filter((model) => model.access === 'public');
+}
+
 async function getActiveCatalogModels(ctx: QueryCtx) {
   const activeModels = await ctx.db
     .query('aiModelCatalog')
@@ -55,9 +66,10 @@ export const listAvailableChatModels = query({
       internal.chatModels.listActiveChatModelsInternal,
       {},
     );
+    const visibleModels = filterVisibleModels(activeModels, isSiteAdmin);
 
     return sortModels(
-      activeModels.map((model: ChatModelCatalogEntry) => toChatModelOption(model, isSiteAdmin)),
+      visibleModels.map((model: ChatModelCatalogEntry) => toChatModelOption(model, isSiteAdmin)),
     );
   },
 });

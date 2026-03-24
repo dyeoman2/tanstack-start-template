@@ -2,7 +2,7 @@ import type { Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
-import { getSecurityScopeFields } from './core';
+import { getSecurityScopeFields, normalizeSecurityRelationshipType } from './core';
 import {
   buildNormalizedChecklistEvidence,
   buildActorDisplayMap,
@@ -639,7 +639,8 @@ async function _listSecurityControlWorkspaceRecords(
           ...(relationshipsByFromKey.get(`control:${control.internalControlId}`) ?? []).flatMap(
             (relationship: (typeof allRelationships)[number]): LinkedEntity[] => {
               switch (relationship.toType) {
-                case 'vendor': {
+                case 'vendor':
+                case 'vendor_review': {
                   const vendorRecord = vendorByKey.get(
                     relationship.toId as 'openrouter' | 'resend' | 'sentry',
                   );
@@ -654,7 +655,9 @@ async function _listSecurityControlWorkspaceRecords(
                       entityId: relationship.toId,
                       entityType: 'vendor',
                       label: vendorRuntime.displayName,
-                      relationshipType: relationship.relationshipType,
+                      relationshipType:
+                        normalizeSecurityRelationshipType(relationship.relationshipType) ??
+                        'tracks_vendor',
                       status:
                         vendorRecord !== undefined
                           ? deriveVendorReviewStatus({
@@ -674,7 +677,9 @@ async function _listSecurityControlWorkspaceRecords(
                       entityId: relationship.toId,
                       entityType: relationship.toType,
                       label: finding.title,
-                      relationshipType: relationship.relationshipType,
+                      relationshipType:
+                        normalizeSecurityRelationshipType(relationship.relationshipType) ??
+                        'tracks_finding',
                       status: finding.disposition,
                     },
                   ];
@@ -689,7 +694,9 @@ async function _listSecurityControlWorkspaceRecords(
                       entityId: relationship.toId,
                       entityType: relationship.toType,
                       label: task.title,
-                      relationshipType: relationship.relationshipType,
+                      relationshipType:
+                        normalizeSecurityRelationshipType(relationship.relationshipType) ??
+                        'has_review_task',
                       status: task.status,
                     },
                   ];
@@ -704,7 +711,9 @@ async function _listSecurityControlWorkspaceRecords(
                       entityId: relationship.toId,
                       entityType: relationship.toType,
                       label: report.reportKind,
-                      relationshipType: relationship.relationshipType,
+                      relationshipType:
+                        normalizeSecurityRelationshipType(relationship.relationshipType) ??
+                        'has_report',
                       status: report.reviewStatus,
                     },
                   ];
@@ -719,7 +728,9 @@ async function _listSecurityControlWorkspaceRecords(
                       entityId: relationship.toId,
                       entityType: relationship.toType,
                       label: evidence.title,
-                      relationshipType: relationship.relationshipType,
+                      relationshipType:
+                        normalizeSecurityRelationshipType(relationship.relationshipType) ??
+                        'has_evidence',
                       status: evidence.reviewStatus ?? 'pending',
                     },
                   ];

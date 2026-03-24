@@ -32,6 +32,13 @@ const AUDIT_FETCH_BATCH_SIZE = 128;
 const SECURITY_EXPORT_BATCH_SIZE = 100;
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
+const CLIENT_AUDIT_RATE_LIMIT = {
+  kind: 'fixed window' as const,
+  rate: 30,
+  period: 60 * 1000,
+  capacity: 30,
+};
+const MAX_CLIENT_AUDIT_METADATA_BYTES = 4 * 1024;
 const CLIENT_AUDIT_EVENT_TYPES = new Set<string>([
   'admin_user_sessions_viewed',
   'pdf_parse_failed',
@@ -247,6 +254,159 @@ function parseMetadata(metadata: string | undefined) {
   } catch {
     return metadata;
   }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
+}
+
+function validateClientAuditMetadataShape(eventType: string, metadata: unknown) {
+  if (metadata === undefined) {
+    return;
+  }
+
+  if (!isPlainRecord(metadata)) {
+    throwConvexError('VALIDATION', 'Client audit metadata must be a plain object.');
+  }
+
+  switch (eventType) {
+    case 'pdf_parse_requested': {
+      const allowedKeys = new Set(['storageId', 'mimeType', 'sizeBytes']);
+      for (const key of Object.keys(metadata)) {
+        if (!allowedKeys.has(key)) {
+          throwConvexError('VALIDATION', `Unsupported pdf_parse_requested metadata field: ${key}`);
+        }
+      }
+      if (
+        metadata.storageId !== undefined &&
+        (typeof metadata.storageId !== 'string' || metadata.storageId.trim().length === 0)
+      ) {
+        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.storageId must be a string.');
+      }
+      if (
+        metadata.mimeType !== undefined &&
+        (typeof metadata.mimeType !== 'string' || metadata.mimeType.trim().length === 0)
+      ) {
+        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.mimeType must be a string.');
+      }
+      if (
+        metadata.sizeBytes !== undefined &&
+        (typeof metadata.sizeBytes !== 'number' ||
+          !Number.isFinite(metadata.sizeBytes) ||
+          metadata.sizeBytes < 0)
+      ) {
+        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.sizeBytes must be a number.');
+      }
+      return;
+    }
+    case 'pdf_parse_succeeded': {
+      const allowedKeys = new Set(['imageCount', 'pageCount']);
+      for (const key of Object.keys(metadata)) {
+        if (!allowedKeys.has(key)) {
+          throwConvexError('VALIDATION', `Unsupported pdf_parse_succeeded metadata field: ${key}`);
+        }
+      }
+      if (
+        typeof metadata.imageCount !== 'number' ||
+        !Number.isFinite(metadata.imageCount) ||
+        metadata.imageCount < 0
+      ) {
+        throwConvexError('VALIDATION', 'pdf_parse_succeeded metadata.imageCount is required.');
+      }
+      if (
+        typeof metadata.pageCount !== 'number' ||
+        !Number.isFinite(metadata.pageCount) ||
+        metadata.pageCount < 0
+      ) {
+        throwConvexError('VALIDATION', 'pdf_parse_succeeded metadata.pageCount is required.');
+      }
+      return;
+    }
+    case 'pdf_parse_failed': {
+      const allowedKeys = new Set(['error']);
+      for (const key of Object.keys(metadata)) {
+        if (!allowedKeys.has(key)) {
+          throwConvexError('VALIDATION', `Unsupported pdf_parse_failed metadata field: ${key}`);
+        }
+      }
+      if (typeof metadata.error !== 'string' || metadata.error.trim().length === 0) {
+        throwConvexError('VALIDATION', 'pdf_parse_failed metadata.error is required.');
+      }
+      return;
+    }
+    case 'admin_user_sessions_viewed': {
+      const allowedKeys = new Set(['sessionIds', 'targetUserId']);
+      for (const key of Object.keys(metadata)) {
+        if (!allowedKeys.has(key)) {
+          throwConvexError(
+            'VALIDATION',
+            `Unsupported admin_user_sessions_viewed metadata field: ${key}`,
+          );
+        }
+      }
+      if (metadata.sessionIds !== undefined && !isStringArray(metadata.sessionIds)) {
+        throwConvexError(
+          'VALIDATION',
+          'admin_user_sessions_viewed metadata.sessionIds must be an array of strings.',
+        );
+      }
+      if (
+        metadata.targetUserId !== undefined &&
+        (typeof metadata.targetUserId !== 'string' || metadata.targetUserId.trim().length === 0)
+      ) {
+        throwConvexError(
+          'VALIDATION',
+          'admin_user_sessions_viewed metadata.targetUserId must be a string.',
+        );
+      }
+      return;
+    }
+    default:
+      throwConvexError('VALIDATION', `Unsupported client audit event type: ${eventType}`);
+  }
+}
+
+export function normalizeClientAuditMetadata(eventType: string, metadata: unknown) {
+  if (metadata === undefined) {
+    return undefined;
+  }
+
+  const parsed =
+    typeof metadata === 'string'
+      ? (() => {
+          try {
+            return JSON.parse(metadata) as unknown;
+          } catch {
+            throwConvexError('VALIDATION', 'Client audit metadata must be valid JSON.');
+          }
+        })()
+      : metadata;
+
+  validateClientAuditMetadataShape(eventType, parsed);
+
+  const serialized = JSON.stringify(parsed);
+  if (!serialized) {
+    return undefined;
+  }
+
+  const metadataBytes = new TextEncoder().encode(serialized).length;
+  if (metadataBytes > MAX_CLIENT_AUDIT_METADATA_BYTES) {
+    throwConvexError(
+      'VALIDATION',
+      `Client audit metadata must be ${MAX_CLIENT_AUDIT_METADATA_BYTES} bytes or smaller.`,
+    );
+  }
+
+  return serialized;
 }
 
 function requireMetadataObject(eventType: string, metadata: unknown) {
@@ -743,6 +903,21 @@ export const recordClientAuditEvent = action({
       throwConvexError('VALIDATION', `Unsupported client audit event type: ${args.eventType}`);
     }
 
+    const rateLimitResult = await ctx.runAction(internal.auth.rateLimitAction, {
+      name: 'clientAuditEvent',
+      key: `clientAuditEvent:${user.authUserId}`,
+      config: CLIENT_AUDIT_RATE_LIMIT,
+    });
+    if (!rateLimitResult.ok) {
+      throwConvexError(
+        'RATE_LIMITED',
+        `Client audit rate limit exceeded. Try again in ${Math.max(
+          1,
+          Math.ceil((rateLimitResult.retryAfter ?? 0) / 1000),
+        )} seconds.`,
+      );
+    }
+
     if (args.eventType === 'admin_user_sessions_viewed' && !user.isSiteAdmin) {
       throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
     }
@@ -754,6 +929,8 @@ export const recordClientAuditEvent = action({
         sourceSurface: args.sourceSurface ?? 'audit.client',
       });
     }
+
+    const metadata = normalizeClientAuditMetadata(args.eventType, args.metadata);
 
     await ctx.runMutation(internal.audit.insertAuditLog, {
       eventType: args.eventType,
@@ -773,7 +950,7 @@ export const recordClientAuditEvent = action({
       resourceId: args.resourceId,
       resourceLabel: args.resourceLabel,
       sourceSurface: args.sourceSurface,
-      metadata: args.metadata ? JSON.stringify(args.metadata) : undefined,
+      metadata,
     });
     return null;
   },

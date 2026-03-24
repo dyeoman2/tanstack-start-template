@@ -51,6 +51,9 @@ import type * as lib_security_policies_core from "../lib/security/policies_core.
 import type * as lib_security_posture from "../lib/security/posture.js";
 import type * as lib_security_reports from "../lib/security/reports.js";
 import type * as lib_security_review_runs_core from "../lib/security/review_runs_core.js";
+import type * as lib_security_review_runs_migrations from "../lib/security/review_runs_migrations.js";
+import type * as lib_security_review_runs_read_models from "../lib/security/review_runs_read_models.js";
+import type * as lib_security_review_runs_task_sync from "../lib/security/review_runs_task_sync.js";
 import type * as lib_security_securityEvidenceActivity from "../lib/security/securityEvidenceActivity.js";
 import type * as lib_security_securityReviewConfig from "../lib/security/securityReviewConfig.js";
 import type * as lib_security_securityWorkspaceOverview from "../lib/security/securityWorkspaceOverview.js";
@@ -134,6 +137,9 @@ declare const fullApi: ApiFromModules<{
   "lib/security/posture": typeof lib_security_posture;
   "lib/security/reports": typeof lib_security_reports;
   "lib/security/review_runs_core": typeof lib_security_review_runs_core;
+  "lib/security/review_runs_migrations": typeof lib_security_review_runs_migrations;
+  "lib/security/review_runs_read_models": typeof lib_security_review_runs_read_models;
+  "lib/security/review_runs_task_sync": typeof lib_security_review_runs_task_sync;
   "lib/security/securityEvidenceActivity": typeof lib_security_securityEvidenceActivity;
   "lib/security/securityReviewConfig": typeof lib_security_securityReviewConfig;
   "lib/security/securityWorkspaceOverview": typeof lib_security_securityWorkspaceOverview;

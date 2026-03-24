@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { AdminSecurityFindingsRoute } from '~/features/security/components/AdminSecurityRoute';
+import { AdminSecurityFindingsRoute } from '~/features/security/components/routes/AdminSecurityFindingsRoute';
 import { securityFindingsSearchSchema } from '~/features/security/search';
 
 export const Route = createFileRoute('/app/admin/security/findings')({

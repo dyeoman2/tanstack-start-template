@@ -155,6 +155,19 @@ export const authSessionValidator = v.object({
   enterpriseProtocol: v.optional(v.union(v.string(), v.null())),
 });
 
+export const publicAuthSessionValidator = v.object({
+  id: v.optional(v.string()),
+  expiresAt: v.optional(v.number()),
+  createdAt: v.optional(v.number()),
+  updatedAt: v.optional(v.number()),
+  impersonatedBy: v.optional(v.union(v.string(), v.null())),
+  activeOrganizationId: v.optional(v.union(v.string(), v.null())),
+  authMethod: v.optional(v.union(v.string(), v.null())),
+  enterpriseOrganizationId: v.optional(v.union(v.string(), v.null())),
+  enterpriseProviderKey: v.optional(v.union(v.string(), v.null())),
+  enterpriseProtocol: v.optional(v.union(v.string(), v.null())),
+});
+
 export const betterAuthMemberValidator = v.object({
   _id: v.optional(v.string()),
   _creationTime: v.optional(v.number()),
@@ -841,6 +854,19 @@ export const currentUserProfileValidator = v.object({
 });
 
 export const currentAppUserValidator = v.object({
+  _id: v.id('users'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  lastActiveOrganizationId: v.string(),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+  activeOrganizationId: v.union(v.string(), v.null()),
+  authSession: v.union(publicAuthSessionValidator, v.null()),
+  authUser: authUserValidator,
+  isSiteAdmin: v.boolean(),
+});
+
+export const internalCurrentAppUserValidator = v.object({
   _id: v.id('users'),
   _creationTime: v.number(),
   authUserId: v.string(),

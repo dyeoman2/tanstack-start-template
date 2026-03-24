@@ -17,12 +17,12 @@ vi.mock('../../../src/lib/server/vendor-boundary.server', () => ({
 import { getSecurityRelationshipObjectTypeFromSourceRecordType } from './core';
 import { buildVendorWorkspaceRows } from './vendors_core';
 
-describe('vendor relationship compatibility', () => {
-  it('maps legacy vendor review source records to vendor relationships', () => {
-    expect(getSecurityRelationshipObjectTypeFromSourceRecordType('vendor_review')).toBe('vendor');
+describe('vendor workspaces', () => {
+  it('maps vendor source records to vendor relationships', () => {
+    expect(getSecurityRelationshipObjectTypeFromSourceRecordType('vendor')).toBe('vendor');
   });
 
-  it('surfaces legacy vendor_review links in vendor workspaces', async () => {
+  it('surfaces vendor follow-up review links in vendor workspaces', async () => {
     const reviewRun = {
       _id: 'run-1',
       createdAt: 100,
@@ -33,7 +33,35 @@ describe('vendor relationship compatibility', () => {
       db: {
         get: vi.fn(async (id: string) => (id === reviewRun._id ? reviewRun : null)),
         query: (table: string) => {
-          if (table === 'securityVendors' || table === 'securityVendorControlMappings') {
+          if (table === 'securityVendors') {
+            return {
+              collect: async () => [
+                {
+                  _id: 'vendor-1',
+                  _creationTime: 1,
+                  allowedDataClasses: ['error telemetry'],
+                  allowedEnvironments: ['production'],
+                  approvalEnvVar: null,
+                  approved: true,
+                  approvedByDefault: true,
+                  createdAt: 1,
+                  linkedFollowUpRunId: 'run-1',
+                  nextReviewAt: null,
+                  lastReviewedAt: null,
+                  owner: null,
+                  organizationId: null,
+                  scopeId: 'security',
+                  scopeType: 'provider_global',
+                  summary: null,
+                  title: 'Sentry',
+                  updatedAt: 1,
+                  vendorKey: 'sentry',
+                },
+              ],
+            };
+          }
+
+          if (table === 'securityVendorControlMappings') {
             return {
               collect: async () => [],
             };
@@ -48,8 +76,9 @@ describe('vendor relationship compatibility', () => {
                   createdAt: 100,
                   createdByUserId: 'admin-user',
                   fromId: 'sentry',
-                  fromType: 'vendor_review' as const,
+                  fromType: 'vendor' as const,
                   relationshipType: 'follow_up_for' as const,
+                  organizationId: null,
                   scopeId: 'security',
                   scopeType: 'provider_global' as const,
                   toId: reviewRun._id,

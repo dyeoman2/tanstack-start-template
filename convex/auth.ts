@@ -213,6 +213,14 @@ const scimLifecycleResponseValidator = v.object({
   status: v.number(),
 });
 
+type ScimLifecycleActionArgs = {
+  authorizationHeader: string;
+  baseUrl: string;
+  bodyJson?: string;
+  operation: 'delete' | 'patch' | 'post' | 'put';
+  userId?: string;
+};
+
 const betterAuthActionResultValidator = <
   TValidator extends
     | ReturnType<typeof v.object>
@@ -3154,6 +3162,333 @@ export const deleteOrganizationScimProviderServer = action({
   },
 });
 
+async function handleScimOrganizationLifecycleImpl(ctx: ActionCtx, args: ScimLifecycleActionArgs) {
+  const scimContext = await resolveScimProviderFromAuthorizationHeader(
+    ctx,
+    args.authorizationHeader,
+  );
+  if (!scimContext) {
+    return {
+      handled: true,
+      status: 401,
+      location: null,
+      body: createScimErrorBody(401, 'Invalid SCIM token'),
+    };
+  }
+
+  if (!scimContext.organizationId) {
+    return {
+      handled: true,
+      status: 400,
+      location: null,
+      body: createScimErrorBody(400, 'Organization-scoped SCIM token required'),
+    };
+  }
+
+  const organizationId = scimContext.organizationId;
+
+  const recordScimAuditEvent = async (input: {
+    eventType: string;
+    identifier?: string;
+    metadata?: Record<string, unknown>;
+    userId?: string;
+  }) => {
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      createdAt: Date.now(),
+      eventType: input.eventType,
+      identifier: input.identifier,
+      metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
+      organizationId,
+      userId: input.userId,
+    });
+  };
+
+  const resolveUserRecord = async (userId: string | undefined) => {
+    if (!userId) {
+      return null;
+    }
+
+    return (await fetchBetterAuthUsersByIds(ctx, [userId]))[0] ?? null;
+  };
+
+  const deprovisionMembership = async (userId: string | undefined) => {
+    if (!userId) {
+      return;
+    }
+
+    const user = await resolveUserRecord(userId);
+    const membership = await findBetterAuthMember(ctx, organizationId, userId);
+    if (!membership) {
+      return;
+    }
+
+    try {
+      await deleteBetterAuthMemberRecord(ctx as CtxWithRequiredRunMutation, membership._id);
+      await ctx.runMutation(
+        internal.scimLifecycle.markOrganizationMembershipDeactivatedForUserInternal,
+        {
+          membershipId: membership._id,
+          organizationId,
+          reason: 'SCIM deprovisioned membership',
+          userId,
+        },
+      );
+      await syncActiveOrganizationForUserSessions(ctx as unknown as CtxWithRunMutation, userId, {
+        removedOrganizationId: organizationId,
+      });
+      await clearEnterpriseOrganizationForUserSessions(
+        ctx as unknown as CtxWithRunMutation,
+        userId,
+        organizationId,
+      );
+      await recordScimAuditEvent({
+        eventType: 'scim_member_deprovisioned',
+        identifier: user?.email?.toLowerCase(),
+        metadata: {
+          actorType: 'scim',
+          providerId: scimContext.providerId,
+          targetMembershipId: membership._id,
+          targetUserId: userId,
+        },
+        userId,
+      });
+    } catch (error) {
+      await recordScimAuditEvent({
+        eventType: 'scim_member_deprovision_failed',
+        identifier: user?.email?.toLowerCase(),
+        metadata: {
+          actorType: 'scim',
+          error: error instanceof Error ? error.message : 'Unknown SCIM deprovision error',
+          providerId: scimContext.providerId,
+          targetMembershipId: membership._id,
+          targetUserId: userId,
+        },
+        userId,
+      });
+      throw error;
+    }
+  };
+
+  const ensureMembership = async (input: {
+    payload?: ParsedScimUserPayload | null;
+    userId?: string;
+  }) => {
+    const existingAccount = input.payload?.accountId
+      ? await findBetterAuthAccountByAccountIdAndProviderId(
+          ctx,
+          input.payload.accountId,
+          scimContext.providerId,
+        )
+      : input.userId
+        ? await findBetterAuthAccountByUserIdAndProviderId(
+            ctx,
+            input.userId,
+            scimContext.providerId,
+          )
+        : null;
+
+    if (!existingAccount) {
+      return null;
+    }
+
+    const user = (await fetchBetterAuthUsersByIds(ctx, [existingAccount.userId]))[0] ?? null;
+    if (!user) {
+      return null;
+    }
+
+    const existingMembership = await findBetterAuthMember(
+      ctx,
+      organizationId,
+      existingAccount.userId,
+    );
+
+    if (!existingMembership) {
+      const existingState = await getOrganizationMembershipStateByOrganizationUser(
+        ctx,
+        organizationId,
+        existingAccount.userId,
+      );
+      await createBetterAuthMember(ctx as CtxWithRequiredRunMutation, {
+        organizationId,
+        userId: existingAccount.userId,
+        role: 'member',
+        createdAt: Date.now(),
+      });
+      await ctx.runMutation(
+        internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal,
+        {
+          organizationId,
+          userId: existingAccount.userId,
+        },
+      );
+      await recordScimAuditEvent({
+        eventType: 'scim_member_reactivated',
+        identifier: user.email?.toLowerCase(),
+        metadata: {
+          actorType: 'scim',
+          previousStatus: existingState?.status ?? null,
+          providerId: scimContext.providerId,
+          targetUserId: existingAccount.userId,
+        },
+        userId: existingAccount.userId,
+      });
+    }
+
+    if (input.payload) {
+      await Promise.all([
+        updateBetterAuthUserRecord(
+          ctx as CtxWithRequiredRunMutation,
+          user._id ?? existingAccount.userId,
+          {
+            email: input.payload.email,
+            name: input.payload.name,
+          },
+        ),
+        updateBetterAuthAccountRecord(ctx as CtxWithRequiredRunMutation, existingAccount._id, {
+          accountId: input.payload.accountId,
+        }),
+      ]);
+    }
+
+    const nextUser = input.payload
+      ? {
+          ...user,
+          email: input.payload.email,
+          name: input.payload.name,
+        }
+      : user;
+    const nextAccount = input.payload
+      ? {
+          ...existingAccount,
+          accountId: input.payload.accountId,
+        }
+      : existingAccount;
+
+    return {
+      account: nextAccount,
+      hadMembership: existingMembership !== null,
+      user: nextUser,
+    };
+  };
+
+  if (args.operation === 'delete') {
+    await deprovisionMembership(args.userId);
+    return {
+      handled: true,
+      status: 204,
+      location: null,
+      body: null,
+    };
+  }
+
+  if (args.operation === 'patch') {
+    const patch = parseScimPatchOperations(args.bodyJson);
+    if (!patch || patch.active === null) {
+      return {
+        handled: false,
+        status: 200,
+        location: null,
+        body: null,
+      };
+    }
+
+    if (patch.active === false) {
+      await deprovisionMembership(args.userId);
+      return {
+        handled: true,
+        status: 204,
+        location: null,
+        body: null,
+      };
+    }
+
+    await ensureMembership({
+      userId: args.userId,
+    });
+
+    return {
+      handled: !patch.hasNonActiveChanges,
+      status: 204,
+      location: null,
+      body: null,
+    };
+  }
+
+  if (args.operation === 'put') {
+    const ensured = await ensureMembership({
+      userId: args.userId,
+    });
+
+    if (!ensured || ensured.hadMembership) {
+      return {
+        handled: false,
+        status: 200,
+        location: null,
+        body: null,
+      };
+    }
+
+    return {
+      handled: false,
+      status: 200,
+      location: null,
+      body: null,
+    };
+  }
+
+  const payload = parseScimUserPayload(args.bodyJson);
+  if (!payload) {
+    return {
+      handled: false,
+      status: 200,
+      location: null,
+      body: null,
+    };
+  }
+
+  const ensured = await ensureMembership({
+    payload,
+  });
+  if (!ensured || ensured.hadMembership) {
+    return {
+      handled: false,
+      status: 200,
+      location: null,
+      body: null,
+    };
+  }
+
+  const resource = createScimUserResource(args.baseUrl, {
+    accountId: ensured.account.accountId,
+    createdAt: ensured.user.createdAt,
+    email: ensured.user.email,
+    name: ensured.user.name ?? ensured.user.email,
+    updatedAt: ensured.user.updatedAt,
+    userId: ensured.user._id ?? ensured.user.id ?? ensured.account.userId,
+  });
+
+  return {
+    handled: true,
+    status: 201,
+    location: resource.meta.location,
+    body: JSON.stringify(resource),
+  };
+}
+
+export const handleScimOrganizationLifecycle = action({
+  args: {
+    authorizationHeader: v.string(),
+    baseUrl: v.string(),
+    bodyJson: v.optional(v.string()),
+    operation: scimLifecycleOperationValidator,
+    userId: v.optional(v.string()),
+  },
+  returns: scimLifecycleResponseValidator,
+  handler: async (ctx, args) => {
+    return await handleScimOrganizationLifecycleImpl(ctx, args);
+  },
+});
+
 export const handleScimOrganizationLifecycleInternal = internalAction({
   args: {
     authorizationHeader: v.string(),
@@ -3164,316 +3499,7 @@ export const handleScimOrganizationLifecycleInternal = internalAction({
   },
   returns: scimLifecycleResponseValidator,
   handler: async (ctx, args) => {
-    const scimContext = await resolveScimProviderFromAuthorizationHeader(
-      ctx,
-      args.authorizationHeader,
-    );
-    if (!scimContext) {
-      return {
-        handled: true,
-        status: 401,
-        location: null,
-        body: createScimErrorBody(401, 'Invalid SCIM token'),
-      };
-    }
-
-    if (!scimContext.organizationId) {
-      return {
-        handled: true,
-        status: 400,
-        location: null,
-        body: createScimErrorBody(400, 'Organization-scoped SCIM token required'),
-      };
-    }
-
-    const organizationId = scimContext.organizationId;
-
-    const recordScimAuditEvent = async (input: {
-      eventType: string;
-      identifier?: string;
-      metadata?: Record<string, unknown>;
-      userId?: string;
-    }) => {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
-        createdAt: Date.now(),
-        eventType: input.eventType,
-        identifier: input.identifier,
-        metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
-        organizationId,
-        userId: input.userId,
-      });
-    };
-
-    const resolveUserRecord = async (userId: string | undefined) => {
-      if (!userId) {
-        return null;
-      }
-
-      return (await fetchBetterAuthUsersByIds(ctx, [userId]))[0] ?? null;
-    };
-
-    const deprovisionMembership = async (userId: string | undefined) => {
-      if (!userId) {
-        return;
-      }
-
-      const user = await resolveUserRecord(userId);
-      const membership = await findBetterAuthMember(ctx, organizationId, userId);
-      if (!membership) {
-        return;
-      }
-
-      try {
-        await deleteBetterAuthMemberRecord(ctx as CtxWithRequiredRunMutation, membership._id);
-        await ctx.runMutation(
-          internal.scimLifecycle.markOrganizationMembershipDeactivatedForUserInternal,
-          {
-            membershipId: membership._id,
-            organizationId,
-            reason: 'SCIM deprovisioned membership',
-            userId,
-          },
-        );
-        await syncActiveOrganizationForUserSessions(ctx as unknown as CtxWithRunMutation, userId, {
-          removedOrganizationId: organizationId,
-        });
-        await clearEnterpriseOrganizationForUserSessions(
-          ctx as unknown as CtxWithRunMutation,
-          userId,
-          organizationId,
-        );
-        await recordScimAuditEvent({
-          eventType: 'scim_member_deprovisioned',
-          identifier: user?.email?.toLowerCase(),
-          metadata: {
-            actorType: 'scim',
-            providerId: scimContext.providerId,
-            targetMembershipId: membership._id,
-            targetUserId: userId,
-          },
-          userId,
-        });
-      } catch (error) {
-        await recordScimAuditEvent({
-          eventType: 'scim_member_deprovision_failed',
-          identifier: user?.email?.toLowerCase(),
-          metadata: {
-            actorType: 'scim',
-            error: error instanceof Error ? error.message : 'Unknown SCIM deprovision error',
-            providerId: scimContext.providerId,
-            targetMembershipId: membership._id,
-            targetUserId: userId,
-          },
-          userId,
-        });
-        throw error;
-      }
-    };
-
-    const ensureMembership = async (input: {
-      payload?: ParsedScimUserPayload | null;
-      userId?: string;
-    }) => {
-      const existingAccount = input.payload?.accountId
-        ? await findBetterAuthAccountByAccountIdAndProviderId(
-            ctx,
-            input.payload.accountId,
-            scimContext.providerId,
-          )
-        : input.userId
-          ? await findBetterAuthAccountByUserIdAndProviderId(
-              ctx,
-              input.userId,
-              scimContext.providerId,
-            )
-          : null;
-
-      if (!existingAccount) {
-        return null;
-      }
-
-      const user = (await fetchBetterAuthUsersByIds(ctx, [existingAccount.userId]))[0] ?? null;
-      if (!user) {
-        return null;
-      }
-
-      const existingMembership = await findBetterAuthMember(
-        ctx,
-        organizationId,
-        existingAccount.userId,
-      );
-
-      if (!existingMembership) {
-        const existingState = await getOrganizationMembershipStateByOrganizationUser(
-          ctx,
-          organizationId,
-          existingAccount.userId,
-        );
-        await createBetterAuthMember(ctx as CtxWithRequiredRunMutation, {
-          organizationId,
-          userId: existingAccount.userId,
-          role: 'member',
-          createdAt: Date.now(),
-        });
-        await ctx.runMutation(
-          internal.scimLifecycle.clearOrganizationMembershipStatesForUserInternal,
-          {
-            organizationId,
-            userId: existingAccount.userId,
-          },
-        );
-        await recordScimAuditEvent({
-          eventType: 'scim_member_reactivated',
-          identifier: user.email?.toLowerCase(),
-          metadata: {
-            actorType: 'scim',
-            previousStatus: existingState?.status ?? null,
-            providerId: scimContext.providerId,
-            targetUserId: existingAccount.userId,
-          },
-          userId: existingAccount.userId,
-        });
-      }
-
-      if (input.payload) {
-        await Promise.all([
-          updateBetterAuthUserRecord(
-            ctx as CtxWithRequiredRunMutation,
-            user._id ?? existingAccount.userId,
-            {
-              email: input.payload.email,
-              name: input.payload.name,
-            },
-          ),
-          updateBetterAuthAccountRecord(ctx as CtxWithRequiredRunMutation, existingAccount._id, {
-            accountId: input.payload.accountId,
-          }),
-        ]);
-      }
-
-      const nextUser = input.payload
-        ? {
-            ...user,
-            email: input.payload.email,
-            name: input.payload.name,
-          }
-        : user;
-      const nextAccount = input.payload
-        ? {
-            ...existingAccount,
-            accountId: input.payload.accountId,
-          }
-        : existingAccount;
-
-      return {
-        account: nextAccount,
-        hadMembership: existingMembership !== null,
-        user: nextUser,
-      };
-    };
-
-    if (args.operation === 'delete') {
-      await deprovisionMembership(args.userId);
-      return {
-        handled: true,
-        status: 204,
-        location: null,
-        body: null,
-      };
-    }
-
-    if (args.operation === 'patch') {
-      const patch = parseScimPatchOperations(args.bodyJson);
-      if (!patch || patch.active === null) {
-        return {
-          handled: false,
-          status: 200,
-          location: null,
-          body: null,
-        };
-      }
-
-      if (patch.active === false) {
-        await deprovisionMembership(args.userId);
-        return {
-          handled: true,
-          status: 204,
-          location: null,
-          body: null,
-        };
-      }
-
-      await ensureMembership({
-        userId: args.userId,
-      });
-
-      return {
-        handled: !patch.hasNonActiveChanges,
-        status: 204,
-        location: null,
-        body: null,
-      };
-    }
-
-    if (args.operation === 'put') {
-      const ensured = await ensureMembership({
-        userId: args.userId,
-      });
-
-      if (!ensured || ensured.hadMembership) {
-        return {
-          handled: false,
-          status: 200,
-          location: null,
-          body: null,
-        };
-      }
-
-      return {
-        handled: false,
-        status: 200,
-        location: null,
-        body: null,
-      };
-    }
-
-    const payload = parseScimUserPayload(args.bodyJson);
-    if (!payload) {
-      return {
-        handled: false,
-        status: 200,
-        location: null,
-        body: null,
-      };
-    }
-
-    const ensured = await ensureMembership({
-      payload,
-    });
-    if (!ensured || ensured.hadMembership) {
-      return {
-        handled: false,
-        status: 200,
-        location: null,
-        body: null,
-      };
-    }
-
-    const resource = createScimUserResource(args.baseUrl, {
-      accountId: ensured.account.accountId,
-      createdAt: ensured.user.createdAt,
-      email: ensured.user.email,
-      name: ensured.user.name ?? ensured.user.email,
-      updatedAt: ensured.user.updatedAt,
-      userId: ensured.user._id ?? ensured.user.id ?? ensured.account.userId,
-    });
-
-    return {
-      handled: true,
-      status: 201,
-      location: resource.meta.location,
-      body: JSON.stringify(resource),
-    };
+    return await handleScimOrganizationLifecycleImpl(ctx, args);
   },
 });
 

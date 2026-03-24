@@ -1,4 +1,4 @@
-import { api, internal } from '@convex/_generated/api';
+import { api } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import { requireAuth } from '~/features/auth/server/auth-guards';
@@ -16,7 +16,6 @@ import {
   updateBetterAuthOrganization,
   updateBetterAuthOrganizationMemberRole,
 } from '~/lib/server/better-auth/api';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 import { REGULATED_ORGANIZATION_POLICY_DEFAULTS } from '~/lib/shared/security-baseline';
 
@@ -136,6 +135,7 @@ type OrganizationWriteAction =
   | 'deactivate-member'
   | 'reactivate-member'
   | 'cancel-invitation'
+  | 'manage-scim'
   | 'update-settings'
   | 'delete-organization';
 
@@ -359,7 +359,7 @@ export const generateOrganizationScimTokenServerFn = createServerFn({ method: 'P
     try {
       await requireAuth();
       await requireOrganizationWriteAccess({
-        action: 'update-settings',
+        action: 'manage-scim',
         organizationId: data.organizationId,
       });
 
@@ -377,7 +377,7 @@ export const deleteOrganizationScimProviderServerFn = createServerFn({ method: '
     try {
       await requireAuth();
       await requireOrganizationWriteAccess({
-        action: 'update-settings',
+        action: 'manage-scim',
         organizationId: data.organizationId,
       });
 
@@ -567,6 +567,12 @@ export const deleteOrganizationServerFn = createServerFn({ method: 'POST' })
         action: 'delete-organization',
         organizationId: data.organizationId,
       });
+      const cleanupPreparation = await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.prepareOrganizationCleanup,
+        {
+          organizationId: data.organizationId,
+        },
+      );
 
       const response = await deleteBetterAuthOrganization(
         data.organizationId,
@@ -575,10 +581,10 @@ export const deleteOrganizationServerFn = createServerFn({ method: 'POST' })
       );
 
       try {
-        await createConvexAdminClient().action(
-          internal.organizationManagement.cleanupOrganizationDataInternal,
+        await convexAuthReactStart.fetchAuthAction(
+          api.organizationManagement.executePreparedOrganizationCleanup,
           {
-            organizationId: data.organizationId,
+            cleanupRequestId: cleanupPreparation.cleanupRequestId,
           },
         );
       } catch (error) {

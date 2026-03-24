@@ -17,7 +17,7 @@ import {
   getAuthorizedChatModel,
 } from '../../src/lib/shared/chat-models';
 import type { Doc, Id } from '../_generated/dataModel';
-import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
+import type { MutationCtx, QueryCtx } from '../_generated/server';
 
 export type ChatThreadDoc = Doc<'chatThreads'>;
 export type ChatAttachmentDoc = Doc<'chatAttachments'>;

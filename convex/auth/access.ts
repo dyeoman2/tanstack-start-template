@@ -26,7 +26,7 @@ import {
 } from '../../src/lib/shared/auth-policy';
 import { isEmailVerificationRequiredForUser } from '../../src/lib/shared/email-verification';
 import { assertUserId } from '../../src/lib/shared/user-id';
-import { components } from '../_generated/api';
+import { components, internal } from '../_generated/api';
 import type { Doc } from '../_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from '../_generated/server';
 import { query } from '../_generated/server';
@@ -139,6 +139,21 @@ const organizationPermissionValidator = v.union(
 );
 
 function serializeOrganizationPermissionDecision(decision: OrganizationPermissionDecision) {
+  const authSession = decision.user.authSession
+    ? {
+        id: decision.user.authSession.id,
+        expiresAt: decision.user.authSession.expiresAt,
+        createdAt: decision.user.authSession.createdAt,
+        updatedAt: decision.user.authSession.updatedAt,
+        impersonatedBy: decision.user.authSession.impersonatedBy,
+        activeOrganizationId: decision.user.authSession.activeOrganizationId,
+        authMethod: decision.user.authSession.authMethod,
+        enterpriseOrganizationId: decision.user.authSession.enterpriseOrganizationId,
+        enterpriseProviderKey: decision.user.authSession.enterpriseProviderKey,
+        enterpriseProtocol: decision.user.authSession.enterpriseProtocol,
+      }
+    : null;
+
   return {
     ...decision,
     membership: decision.membership
@@ -147,6 +162,10 @@ function serializeOrganizationPermissionDecision(decision: OrganizationPermissio
           createdAt: toMillis(decision.membership.createdAt),
         }
       : null,
+    user: {
+      ...decision.user,
+      authSession,
+    },
   };
 }
 
@@ -154,6 +173,10 @@ function getPermissionStepUpRequirement(
   permission: OrganizationPermission,
 ): StepUpRequirement | null {
   switch (permission) {
+    case 'manageDomains':
+      return STEP_UP_REQUIREMENTS.organizationAdmin;
+    case 'manageMembers':
+      return STEP_UP_REQUIREMENTS.organizationAdmin;
     case 'managePolicies':
       return STEP_UP_REQUIREMENTS.organizationAdmin;
     case 'exportAudit':
@@ -527,7 +550,10 @@ export async function getVerifiedCurrentUserOrThrow(
 export async function getVerifiedCurrentUserFromActionOrThrow(
   ctx: ActionCtx,
 ): Promise<CurrentUser> {
-  const user = (await ctx.runQuery(anyApi.users.getCurrentAppUser, {})) as CurrentUser | null;
+  const user = (await ctx.runQuery(
+    internal.users.getCurrentAppUserInternal,
+    {},
+  )) as CurrentUser | null;
   if (!user) {
     throwConvexError('UNAUTHENTICATED', 'User context not initialized');
   }

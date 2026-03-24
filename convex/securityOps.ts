@@ -10,8 +10,8 @@ import {
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { getE2ETestSecret } from '../src/lib/server/env.server';
-import { getSecurityScopeFields } from './lib/security/core';
 import { getVerifiedCurrentUserOrThrow, requireOrganizationPermission } from './auth/access';
+import { getSecurityScopeFields } from './lib/security/core';
 import {
   documentScanEventArgs,
   recordBackupVerificationHandler,
@@ -307,6 +307,7 @@ export const recordDocumentScanEvent = mutation({
     await requireOrganizationPermission(ctx, {
       organizationId: args.organizationId,
       permission: 'viewOrganization',
+      sourceSurface: 'security.document_scan_event',
     });
 
     return await insertDocumentScanEvent(ctx, {

@@ -18,10 +18,12 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
+import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
 import {
   applyAlwaysOnRegulatedBaseline,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
+import { evaluateFreshSession } from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
@@ -35,6 +37,7 @@ import {
 } from './_generated/server';
 import {
   checkOrganizationAccess,
+  getVerifiedCurrentUserFromActionOrThrow,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
   requireOrganizationPermission,
@@ -93,6 +96,19 @@ type OrganizationAuditEventRecord = Doc<'organizationAuditEvents'>;
 type OrganizationAuditEventViewSource =
   | OrganizationAuditEventRecord
   | NonNullable<ReturnType<typeof buildOrganizationAuditProjection>>;
+type OrganizationCleanupRequestRecord = {
+  completedAt: number | null;
+  createdAt: number;
+  expiresAt: number;
+  organizationId: string;
+  requestedByUserId: string;
+};
+type OrganizationCleanupResult = {
+  success: boolean;
+  deletedThreads: number;
+  deletedStandaloneAttachments: number;
+  deletedPersonas: number;
+};
 const EXPORT_ARTIFACT_SCHEMA_VERSION = '2026-03-18.audit-evidence.v1';
 
 type OrganizationAccessContext = {
@@ -180,7 +196,21 @@ const organizationPoliciesValidator = v.object({
   temporaryLinkTtlMinutes: v.number(),
   webSearchAllowed: v.boolean(),
 });
+const organizationCleanupRequestValidator = v.object({
+  organizationId: v.string(),
+  requestedByUserId: v.string(),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  completedAt: v.union(v.number(), v.null()),
+});
+const organizationCleanupResultValidator = v.object({
+  success: v.boolean(),
+  deletedThreads: v.number(),
+  deletedStandaloneAttachments: v.number(),
+  deletedPersonas: v.number(),
+});
 const ORGANIZATION_CLEANUP_BATCH_SIZE = 128;
+const ORGANIZATION_CLEANUP_REQUEST_TTL_MS = 10 * 60 * 1000;
 const SELF_SERVE_ORGANIZATION_LIMIT = 2;
 const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'organization_created',
@@ -1852,6 +1882,7 @@ export const getOrganizationWriteAccess = query({
       v.literal('deactivate-member'),
       v.literal('reactivate-member'),
       v.literal('cancel-invitation'),
+      v.literal('manage-scim'),
       v.literal('update-settings'),
       v.literal('delete-organization'),
     ),
@@ -1880,6 +1911,28 @@ export const getOrganizationWriteAccess = query({
       isSiteAdmin: user.isSiteAdmin,
       membershipRole: _access.view ? viewerMembership?.role : null,
     });
+    const requiresRecentStepUp =
+      args.action === 'update-member-role' ||
+      args.action === 'remove-member' ||
+      args.action === 'suspend-member' ||
+      args.action === 'deactivate-member' ||
+      args.action === 'reactivate-member' ||
+      args.action === 'manage-scim' ||
+      args.action === 'delete-organization';
+    if (
+      requiresRecentStepUp &&
+      !evaluateFreshSession({
+        createdAt: user.authSession?.createdAt,
+        updatedAt: user.authSession?.updatedAt,
+        recentStepUpWindowMs: getRecentStepUpWindowMs(),
+      }).satisfied
+    ) {
+      return {
+        allowed: false as const,
+        reason: 'Recent step-up authentication is required',
+      };
+    }
+
     if (args.action === 'invite') {
       const availableInviteRoles = getAvailableInviteRoles(viewerRole);
       if (availableInviteRoles.length === 0) {
@@ -1911,7 +1964,11 @@ export const getOrganizationWriteAccess = query({
           };
     }
 
-    if (args.action === 'cancel-invitation' || args.action === 'update-settings') {
+    if (
+      args.action === 'cancel-invitation' ||
+      args.action === 'manage-scim' ||
+      args.action === 'update-settings'
+    ) {
       return canManageOrganization(viewerRole)
         ? { allowed: true as const }
         : {
@@ -3585,17 +3642,87 @@ export const deleteOrganizationPersonasBatch = internalMutation({
   },
 });
 
-export const cleanupOrganizationDataInternal = internalAction({
+export const prepareOrganizationCleanup = mutation({
   args: {
     organizationId: v.string(),
   },
   returns: v.object({
-    success: v.boolean(),
-    deletedThreads: v.number(),
-    deletedStandaloneAttachments: v.number(),
-    deletedPersonas: v.number(),
+    cleanupRequestId: v.id('organizationCleanupRequests'),
+    expiresAt: v.number(),
   }),
   handler: async (ctx, args) => {
+    const access = await ctx.runQuery(anyApi.organizationManagement.getOrganizationWriteAccess, {
+      organizationId: args.organizationId,
+      action: 'delete-organization',
+    });
+    if (!access.allowed) {
+      throwConvexError('FORBIDDEN', access.reason);
+    }
+
+    const user = await getVerifiedCurrentUserOrThrow(ctx);
+    const createdAt = Date.now();
+    const expiresAt = createdAt + ORGANIZATION_CLEANUP_REQUEST_TTL_MS;
+    const cleanupRequestId = await ctx.db.insert('organizationCleanupRequests', {
+      organizationId: args.organizationId,
+      requestedByUserId: user.authUserId,
+      createdAt,
+      expiresAt,
+      completedAt: null,
+    });
+
+    return {
+      cleanupRequestId,
+      expiresAt,
+    };
+  },
+});
+
+export const getOrganizationCleanupRequestInternal = internalQuery({
+  args: {
+    cleanupRequestId: v.id('organizationCleanupRequests'),
+  },
+  returns: v.union(organizationCleanupRequestValidator, v.null()),
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.cleanupRequestId);
+    if (!request) {
+      return null;
+    }
+
+    return {
+      organizationId: request.organizationId,
+      requestedByUserId: request.requestedByUserId,
+      createdAt: request.createdAt,
+      expiresAt: request.expiresAt,
+      completedAt: request.completedAt,
+    };
+  },
+});
+
+export const markOrganizationCleanupRequestCompletedInternal = internalMutation({
+  args: {
+    cleanupRequestId: v.id('organizationCleanupRequests'),
+    completedAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.cleanupRequestId);
+    if (!request || request.completedAt !== null) {
+      return null;
+    }
+
+    await ctx.db.patch(args.cleanupRequestId, {
+      completedAt: args.completedAt,
+    });
+    return null;
+  },
+});
+
+export const cleanupOrganizationDataInternal = internalAction({
+  args: {
+    organizationId: v.string(),
+  },
+  returns: organizationCleanupResultValidator,
+  handler: async (ctx, args): Promise<OrganizationCleanupResult> => {
     let deletedThreads = 0;
     let deletedStandaloneAttachments = 0;
     let deletedPersonas = 0;
@@ -3662,5 +3789,58 @@ export const cleanupOrganizationDataInternal = internalAction({
       deletedStandaloneAttachments,
       deletedPersonas,
     };
+  },
+});
+
+export const executePreparedOrganizationCleanup = action({
+  args: {
+    cleanupRequestId: v.id('organizationCleanupRequests'),
+  },
+  returns: organizationCleanupResultValidator,
+  handler: async (ctx, args): Promise<OrganizationCleanupResult> => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const request = (await ctx.runQuery(
+      internal.organizationManagement.getOrganizationCleanupRequestInternal,
+      {
+        cleanupRequestId: args.cleanupRequestId,
+      },
+    )) as OrganizationCleanupRequestRecord | null;
+    if (!request) {
+      throw new Error('Organization cleanup request not found');
+    }
+
+    if (request.completedAt !== null) {
+      throw new Error('Organization cleanup request has already been completed');
+    }
+
+    if (request.expiresAt < Date.now()) {
+      throw new Error('Organization cleanup request has expired');
+    }
+
+    if (request.requestedByUserId !== user.authUserId) {
+      throwConvexError('FORBIDDEN', 'Organization cleanup request belongs to a different user');
+    }
+
+    const organization = await findBetterAuthOrganizationById(ctx, request.organizationId);
+    if (organization) {
+      throw new Error('Delete the Better Auth organization before running app cleanup');
+    }
+
+    const result = await ctx.runAction(
+      internal.organizationManagement.cleanupOrganizationDataInternal,
+      {
+        organizationId: request.organizationId,
+      },
+    );
+
+    await ctx.runMutation(
+      internal.organizationManagement.markOrganizationCleanupRequestCompletedInternal,
+      {
+        cleanupRequestId: args.cleanupRequestId,
+        completedAt: Date.now(),
+      },
+    );
+
+    return result;
   },
 });

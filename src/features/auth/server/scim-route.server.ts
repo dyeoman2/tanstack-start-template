@@ -1,5 +1,5 @@
-import { internal } from '@convex/_generated/api';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
+import { api } from '@convex/_generated/api';
+import { createConvexPublicClient } from '~/lib/server/convex-admin.server';
 
 const SCIM_USER_COLLECTION_PATH = '/api/auth/scim/v2/Users';
 
@@ -116,8 +116,8 @@ export async function handleScimOrganizationLifecycleRequest(request: Request) {
     return null;
   }
 
-  const convex = createConvexAdminClient();
-  const result = await convex.action(internal.auth.handleScimOrganizationLifecycleInternal, {
+  const convex = createConvexPublicClient();
+  const result = await convex.action(api.auth.handleScimOrganizationLifecycle, {
     authorizationHeader,
     baseUrl: getScimAuthBaseUrl(request),
     ...(bodyJson ? { bodyJson } : {}),

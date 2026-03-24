@@ -11,6 +11,7 @@ import {
   getVerifiedCurrentSiteAdminUserOrThrow,
   requireStepUpFromActionOrThrow,
 } from './auth/access';
+import { throwConvexError } from './auth/errors';
 import { createUploadTargetWithMode } from './storagePlatform';
 import {
   getSecurityControlWorkspaceRecord,
@@ -58,7 +59,7 @@ function assertFreshEvidenceAdminSessionOrThrow(
   currentUser: Awaited<ReturnType<typeof getVerifiedCurrentSiteAdminUserOrThrow>>,
 ) {
   if (currentUser.authSession?.impersonatedBy) {
-    throw new Error('Impersonated sessions cannot manage evidence.');
+    throwConvexError('FORBIDDEN', 'Impersonated sessions cannot manage evidence.');
   }
 
   const freshness = evaluateFreshSession({
@@ -69,7 +70,7 @@ function assertFreshEvidenceAdminSessionOrThrow(
   });
 
   if (!freshness.satisfied) {
-    throw new Error('Recent step-up authentication is required.');
+    throwConvexError('FORBIDDEN', 'Recent step-up authentication is required.');
   }
 }
 
@@ -172,7 +173,7 @@ export const openSecurityFindingFollowUp = mutation({
       (entry) => entry.findingKey === args.findingKey,
     );
     if (!finding) {
-      throw new Error('Security finding not found.');
+      throwConvexError('NOT_FOUND', 'Security finding not found.');
     }
 
     const runId = await createTriggeredReviewRunRecord(ctx, {
@@ -192,7 +193,7 @@ export const openSecurityFindingFollowUp = mutation({
     });
     const run = await ctx.db.get(runId);
     if (!run) {
-      throw new Error('Security finding follow-up run not found after create.');
+      throwConvexError('NOT_FOUND', 'Security finding follow-up run not found after create.');
     }
 
     return await buildReviewRunSummary(ctx as unknown as QueryCtx, run);
@@ -371,10 +372,10 @@ export const reviewSecurityControlEvidence = mutation({
     assertFreshEvidenceAdminSessionOrThrow(currentUser);
     const evidence = await ctx.db.get(args.evidenceId);
     if (!evidence) {
-      throw new Error('Evidence not found.');
+      throwConvexError('NOT_FOUND', 'Evidence not found.');
     }
     if ((evidence.lifecycleStatus ?? 'active') !== 'active') {
-      throw new Error('Only active evidence can be reviewed.');
+      throwConvexError('VALIDATION', 'Only active evidence can be reviewed.');
     }
 
     const now = Date.now();

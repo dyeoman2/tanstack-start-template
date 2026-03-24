@@ -18,6 +18,7 @@ const FILE_ACCESS_TICKET_MAX_TTL_MINUTES = 15;
 const FILE_ACCESS_TICKET_MIN_TTL_MINUTES = 1;
 const FILE_DOWNLOAD_PRESIGN_EXPIRY_SECONDS = 60;
 type FileServingCtx = Pick<ActionCtx, 'runMutation' | 'runQuery'>;
+type FileAccessPurpose = 'external_share' | 'interactive_open';
 type IssuedFileAccessUrl = {
   expiresAt: number;
   storageId: string;
@@ -117,6 +118,23 @@ async function resolveTemporaryLinkTtlMinutes(
   return clampTemporaryLinkTtlMinutes(policy.temporaryLinkTtlMinutes);
 }
 
+async function isAttachmentSharingAllowed(
+  ctx: ActionCtx,
+  organizationId: string | null | undefined,
+): Promise<boolean> {
+  if (!organizationId) {
+    return true;
+  }
+
+  const policy = (await ctx.runQuery(
+    internal.organizationManagement.getOrganizationPoliciesInternal,
+    {
+      organizationId,
+    },
+  )) as { attachmentSharingAllowed: boolean };
+  return policy.attachmentSharingAllowed;
+}
+
 async function recordFileAccessAuditEvent(
   ctx: FileServingCtx,
   args: {
@@ -190,7 +208,7 @@ async function resolveServeRedirect(ctx: FileServingCtx, storageId: string) {
 export async function issueFileAccessUrlForCurrentUser(
   ctx: ActionCtx,
   args: {
-    purpose: string;
+    purpose: FileAccessPurpose;
     sourceSurface: string;
     storageId: string;
   },
@@ -218,6 +236,31 @@ export async function issueFileAccessUrlForCurrentUser(
   if (!issuedFromSessionId) {
     throw new ConvexError('Current session could not be resolved.');
   }
+  const organizationId = lifecycle?.organizationId ?? access.organizationId ?? null;
+  if (
+    args.purpose === 'external_share' &&
+    !(await isAttachmentSharingAllowed(ctx, organizationId))
+  ) {
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'authorization_denied',
+      metadata: JSON.stringify({
+        policy: 'attachmentSharingAllowed',
+        purpose: args.purpose,
+        storageId: args.storageId,
+      }),
+      organizationId: organizationId ?? undefined,
+      outcome: 'failure',
+      resourceId: args.storageId,
+      resourceLabel: lifecycle?.originalFileName ?? undefined,
+      resourceType: lifecycle?.sourceType ?? 'stored_file',
+      sessionId: issuedFromSessionId,
+      severity: 'warning',
+      sourceSurface: args.sourceSurface,
+      userId: currentUser.authUserId,
+    });
+    throw new ConvexError('Attachment sharing is disabled by organization policy.');
+  }
   const issuedFromIpAddress =
     typeof currentUser.authSession?.ipAddress === 'string' &&
     currentUser.authSession.ipAddress.trim()
@@ -228,10 +271,7 @@ export async function issueFileAccessUrlForCurrentUser(
     currentUser.authSession.userAgent.trim()
       ? currentUser.authSession.userAgent.trim()
       : 'unavailable';
-  const ttlMinutes = await resolveTemporaryLinkTtlMinutes(
-    ctx,
-    lifecycle?.organizationId ?? access.organizationId ?? null,
-  );
+  const ttlMinutes = await resolveTemporaryLinkTtlMinutes(ctx, organizationId);
   const expiresAt = Date.now() + ttlMinutes * 60 * 1000;
   const ticketId = crypto.randomUUID();
   const signature = await createFileAccessTicketSignature(ticketId, expiresAt);
@@ -241,7 +281,7 @@ export async function issueFileAccessUrlForCurrentUser(
     ipAddress: issuedFromIpAddress,
     issuedFromSessionId,
     issuedToUserId: currentUser.authUserId,
-    organizationId: lifecycle?.organizationId ?? access.organizationId ?? null,
+    organizationId,
     purpose: args.purpose,
     sourceSurface: args.sourceSurface,
     storageId: args.storageId,
@@ -258,7 +298,7 @@ export async function issueFileAccessUrlForCurrentUser(
       purpose: args.purpose,
       ticketId,
     },
-    organizationId: lifecycle?.organizationId ?? access.organizationId ?? null,
+    organizationId,
     outcome: 'success',
     resourceId: args.storageId,
     resourceLabel: lifecycle?.originalFileName ?? null,

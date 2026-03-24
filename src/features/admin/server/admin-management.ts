@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { api } from '@convex/_generated/api';
+import { api, internal } from '@convex/_generated/api';
 import { createServerFn } from '@tanstack/react-start';
 import { z } from 'zod';
 import {
@@ -11,6 +11,7 @@ import { requireAdmin } from '~/features/auth/server/auth-guards';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
 import type { UserRole } from '~/features/auth/types';
 import { USER_ROLES } from '~/features/auth/types';
+import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import {
   type BetterAuthAdminListUsersResult,
   type BetterAuthAdminUser,
@@ -558,21 +559,24 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
   .inputValidator(userIdSchema)
   .handler(async ({ data }) => {
     try {
-      await requireAdmin();
+      const { user } = await requireAdmin();
       const response = await listBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
         normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
-      await convexAuthReactStart.fetchAuthAction(api.audit.recordClientAuditEvent, {
+      await createConvexAdminClient().mutation(internal.audit.insertAuditLog, {
+        actorUserId: user.id,
         eventType: 'admin_user_sessions_viewed',
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'user_session',
-        resourceId: data.userId,
-        sourceSurface: 'admin.user_sessions',
-        metadata: {
+        metadata: JSON.stringify({
           targetUserId: data.userId,
           sessionCount: response.sessions.length,
-        },
+        }),
+        outcome: 'success',
+        resourceId: data.userId,
+        resourceType: 'user_session',
+        severity: 'info',
+        sourceSurface: 'admin.user_sessions',
+        targetUserId: data.userId,
+        userId: user.id,
       });
 
       return response.sessions.map(normalizeAdminSession);

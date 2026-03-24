@@ -32,6 +32,7 @@ import {
 } from './lib/security/validators';
 import { anyApi } from 'convex/server';
 import type { Doc } from './_generated/dataModel';
+import { throwConvexError } from './auth/errors';
 
 function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
   return {
@@ -118,7 +119,7 @@ export const reviewEvidenceReport = mutation({
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const report = await ctx.db.get(args.id);
     if (!report) {
-      throw new Error('Evidence report not found');
+      throwConvexError('NOT_FOUND', 'Evidence report not found');
     }
 
     const reviewedAt = Date.now();
@@ -169,7 +170,7 @@ export const reviewEvidenceReport = mutation({
 
     const updated = await ctx.db.get(args.id);
     if (!updated) {
-      throw new Error('Evidence report not found after update');
+      throwConvexError('NOT_FOUND', 'Evidence report not found after update');
     }
 
     await reconcileEvidenceReportLinkedTasks(ctx, {
@@ -248,7 +249,7 @@ export const reviewSecurityVendor = mutation({
     const workspaces = await buildVendorWorkspaceRows(ctx);
     const updated = workspaces.find((workspace) => workspace.vendor === args.vendorKey);
     if (!updated) {
-      throw new Error('Vendor workspace not found after review update.');
+      throwConvexError('NOT_FOUND', 'Vendor workspace not found after review update.');
     }
     return updated;
   },

@@ -33,6 +33,45 @@ const parsedPdfImageValidator = v.object({
   width: v.number(),
 });
 
+const PDF_PARSE_ENQUEUE_RATE_LIMIT = {
+  kind: 'token bucket' as const,
+  rate: 10,
+  period: 5 * 60 * 1000,
+  capacity: 10,
+};
+
+const PDF_PARSE_STATUS_RATE_LIMIT = {
+  kind: 'fixed window' as const,
+  rate: 60,
+  period: 60 * 1000,
+  capacity: 60,
+};
+
+async function enforcePdfParseActionRateLimit(
+  ctx: Pick<ActionCtx, 'runAction'>,
+  args: {
+    authUserId: string;
+    limiter: typeof PDF_PARSE_ENQUEUE_RATE_LIMIT | typeof PDF_PARSE_STATUS_RATE_LIMIT;
+    name: string;
+    subject: string;
+  },
+) {
+  const result = await ctx.runAction(internal.auth.rateLimitAction, {
+    name: args.name,
+    key: `${args.name}:${args.authUserId}`,
+    config: args.limiter,
+  });
+
+  if (!result.ok) {
+    throw new ConvexError(
+      `${args.subject} rate limit exceeded. Try again in ${Math.max(
+        1,
+        Math.ceil((result.retryAfter ?? 0) / 1000),
+      )} seconds.`,
+    );
+  }
+}
+
 async function getPdfParseJob(
   ctx: Pick<ActionCtx, 'runQuery'>,
   storageId: string,
@@ -210,6 +249,12 @@ export const enqueuePdfParseJob = action({
   }),
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    await enforcePdfParseActionRateLimit(ctx, {
+      authUserId: user.authUserId,
+      limiter: PDF_PARSE_ENQUEUE_RATE_LIMIT,
+      name: 'pdfParse',
+      subject: 'PDF parsing',
+    });
     await requireStorageReadAccessFromActionOrThrow(ctx, {
       sourceSurface: 'api.parse_pdf',
       storageId: args.storageId,
@@ -268,6 +313,13 @@ export const getPdfParseJobStatus = action({
     storageId: v.string(),
   }),
   handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    await enforcePdfParseActionRateLimit(ctx, {
+      authUserId: user.authUserId,
+      limiter: PDF_PARSE_STATUS_RATE_LIMIT,
+      name: 'pdfParseStatus',
+      subject: 'PDF parse status lookup',
+    });
     await requireStorageReadAccessFromActionOrThrow(ctx, {
       sourceSurface: 'api.parse_pdf',
       storageId: args.storageId,

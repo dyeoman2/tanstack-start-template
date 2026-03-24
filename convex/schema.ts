@@ -253,6 +253,17 @@ export default defineSchema({
     .index('by_organization_id_and_user_id', ['organizationId', 'userId'])
     .index('by_organization_id_and_status', ['organizationId', 'status']),
 
+  organizationCleanupRequests: defineTable({
+    organizationId: v.string(),
+    requestedByUserId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    completedAt: v.union(v.number(), v.null()),
+  })
+    .index('by_organization_id', ['organizationId'])
+    .index('by_requested_by_user_id', ['requestedByUserId'])
+    .index('by_expires_at', ['expiresAt']),
+
   dashboardStats: defineTable({
     key: v.string(),
     totalUsers: v.number(),
@@ -1004,6 +1015,7 @@ export default defineSchema({
       v.literal('external_document'),
       v.literal('review_task'),
       v.literal('vendor'),
+      v.literal('vendor_review'),
     ),
     sourceId: v.string(),
     sourceLabel: v.optional(v.string()),
@@ -1047,6 +1059,7 @@ export default defineSchema({
       v.literal('has_evidence'),
       v.literal('tracks_finding'),
       v.literal('tracks_vendor'),
+      v.literal('tracks_vendor_review'),
       v.literal('has_review_task'),
       v.literal('has_report'),
       v.literal('supports'),

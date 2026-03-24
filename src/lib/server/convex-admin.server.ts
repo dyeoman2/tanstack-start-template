@@ -32,7 +32,7 @@ export function createConvexPublicClient() {
   });
 }
 
-export function createConvexAdminClient() {
+export function createConvexAdminClient(): InternalConvexHttpClient {
   const client = createConvexPublicClient() as unknown as InternalConvexHttpClient;
   client.setAdminAuth(getRequiredServerEnv('CONVEX_DEPLOY_KEY'));
   return client;
