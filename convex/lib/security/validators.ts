@@ -953,10 +953,12 @@ const reviewTaskValidator = v.object({
   latestNote: v.union(v.string(), v.null()),
   policy: v.union(
     v.object({
+      id: v.string(),
       policyId: v.string(),
       sourcePath: v.string(),
       support: securityPolicySupportValidator,
       title: v.string(),
+      type: v.literal('policy'),
     }),
     v.null(),
   ),

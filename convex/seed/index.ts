@@ -11,8 +11,15 @@ const securityWorkspaceResetSummaryValidator = v.object({
   deletedEvidenceActivity: v.number(),
   deletedEvidenceReports: v.number(),
   deletedExportArtifacts: v.number(),
+  deletedReviewAttestations: v.number(),
+  deletedReviewRuns: v.number(),
+  deletedReviewTaskEvidenceLinks: v.number(),
+  deletedReviewTaskResults: v.number(),
+  deletedReviewTasks: v.number(),
   deletedPolicies: v.number(),
   deletedPolicyControlMappings: v.number(),
+  deletedVendorControlMappings: v.number(),
+  deletedVendors: v.number(),
 });
 
 type SecurityWorkspaceResetSummary = {
@@ -22,8 +29,15 @@ type SecurityWorkspaceResetSummary = {
   deletedEvidenceActivity: number;
   deletedEvidenceReports: number;
   deletedExportArtifacts: number;
+  deletedReviewAttestations: number;
+  deletedReviewRuns: number;
+  deletedReviewTaskEvidenceLinks: number;
+  deletedReviewTaskResults: number;
+  deletedReviewTasks: number;
   deletedPolicies: number;
   deletedPolicyControlMappings: number;
+  deletedVendorControlMappings: number;
+  deletedVendors: number;
 };
 
 type SeedResult = {
