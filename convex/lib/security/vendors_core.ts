@@ -3,12 +3,18 @@ import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { addMonths, getSecurityScopeFields, normalizeSecurityScope } from './core';
-import { VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR } from '../securityReviewConfig';
+import { VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR } from './securityReviewConfig';
 
 const VENDOR_REVIEW_CADENCE_MONTHS = 12;
 const VENDOR_REVIEW_DUE_SOON_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 
 type VendorKey = 'openrouter' | 'resend' | 'sentry';
+
+function normalizeVendorRelationshipObjectType(
+  objectType: Doc<'securityRelationships'>['fromType'],
+) {
+  return objectType === 'vendor_review' ? 'vendor' : objectType;
+}
 
 function buildAnnualVendorReviewTaskTemplateKey(vendorKey: VendorKey) {
   return `annual:attest:vendor:${vendorKey}`;
@@ -53,23 +59,21 @@ async function resolveDefaultSecurityOwner(
 }
 
 async function syncSecurityVendorRecords(ctx: MutationCtx) {
-  const [runtimeVendors, existingVendors, legacyVendorReviews, defaultOwner] = await Promise.all([
+  const [runtimeVendors, existingVendors, defaultOwner, relationships] = await Promise.all([
     Promise.resolve(getVendorBoundarySnapshot()),
     ctx.db.query('securityVendors').collect(),
-    ctx.db.query('securityVendorReviews').collect(),
     resolveDefaultSecurityOwner(ctx),
+    ctx.db.query('securityRelationships').collect(),
   ]);
+  const activeVendorKeys = new Set(runtimeVendors.map((vendor) => vendor.vendor));
   const existingByKey = new Map(existingVendors.map((row) => [row.vendorKey, row] as const));
-  const legacyByKey = new Map(legacyVendorReviews.map((row) => [row.vendorKey, row] as const));
   const now = Date.now();
 
   for (const runtimeVendor of runtimeVendors) {
     const existing = existingByKey.get(runtimeVendor.vendor);
-    const legacy = legacyByKey.get(runtimeVendor.vendor);
-    const legacyLastReviewedAt = legacy?.reviewedAt ?? null;
     const patch = {
-      owner: existing?.owner ?? legacy?.owner ?? defaultOwner,
-      summary: existing?.summary ?? legacy?.customerSummary ?? legacy?.internalReviewNotes ?? null,
+      owner: existing?.owner ?? defaultOwner,
+      summary: existing?.summary ?? null,
       title: runtimeVendor.displayName,
       updatedAt: now,
     };
@@ -82,18 +86,55 @@ async function syncSecurityVendorRecords(ctx: MutationCtx) {
     await ctx.db.insert('securityVendors', {
       ...getSecurityScopeFields(),
       createdAt: now,
-      lastReviewedAt: legacyLastReviewedAt,
-      linkedFollowUpRunId: legacy?.linkedFollowUpRunId ?? undefined,
-      nextReviewAt: resolveVendorNextReviewAt(legacyLastReviewedAt),
+      lastReviewedAt: null,
+      linkedFollowUpRunId: undefined,
+      nextReviewAt: null,
       vendorKey: runtimeVendor.vendor,
       ...patch,
     });
+  }
+
+  for (const existingVendor of existingVendors) {
+    if (activeVendorKeys.has(existingVendor.vendorKey)) {
+      continue;
+    }
+
+    const [linkedReviewTasks, linkedEvidenceLinks] = await Promise.all([
+      ctx.db
+        .query('reviewTasks')
+        .collect()
+        .then((rows) => rows.filter((row) => row.vendorKey === existingVendor.vendorKey)),
+      ctx.db
+        .query('reviewTaskEvidenceLinks')
+        .withIndex('by_source_type_and_source_id', (q) =>
+          q.eq('sourceType', 'vendor').eq('sourceId', existingVendor.vendorKey),
+        )
+        .collect(),
+    ]);
+    const linkedRelationships = relationships.filter(
+      (relationship) =>
+        relationship.fromId === existingVendor.vendorKey &&
+        (relationship.fromType === 'vendor' || relationship.fromType === 'vendor_review'),
+    );
+    const hasHistory =
+      linkedReviewTasks.length > 0 ||
+      linkedEvidenceLinks.length > 0 ||
+      linkedRelationships.length > 0 ||
+      typeof existingVendor.linkedFollowUpRunId === 'string';
+
+    if (hasHistory) {
+      continue;
+    }
+
+    await ctx.db.delete(existingVendor._id);
   }
 }
 
 async function syncSecurityVendorControlMappings(ctx: MutationCtx) {
   const existing = await ctx.db.query('securityVendorControlMappings').collect();
-  const existingKeys = new Set(existing.map((row) => `${row.vendorKey}:${row.internalControlId}`));
+  const existingByKey = new Map<string, (typeof existing)[number]>(
+    existing.map((row) => [`${row.vendorKey}:${row.internalControlId}`, row] as const),
+  );
   const desired = getVendorBoundarySnapshot().flatMap((vendor) => {
     const controlIds = new Set(
       VENDOR_RELATED_CONTROL_LINKS_BY_VENDOR[vendor.vendor].map((link) => link.internalControlId),
@@ -103,10 +144,13 @@ async function syncSecurityVendorControlMappings(ctx: MutationCtx) {
       vendorKey: vendor.vendor,
     }));
   });
+  const desiredKeys = new Set(
+    desired.map((mapping) => `${mapping.vendorKey}:${mapping.internalControlId}` as string),
+  );
   const now = Date.now();
   for (const mapping of desired) {
     const key = `${mapping.vendorKey}:${mapping.internalControlId}`;
-    if (existingKeys.has(key)) {
+    if (existingByKey.has(key)) {
       continue;
     }
     await ctx.db.insert('securityVendorControlMappings', {
@@ -115,6 +159,14 @@ async function syncSecurityVendorControlMappings(ctx: MutationCtx) {
       internalControlId: mapping.internalControlId,
       vendorKey: mapping.vendorKey,
     });
+  }
+
+  for (const existingMapping of existing) {
+    const key = `${existingMapping.vendorKey}:${existingMapping.internalControlId}`;
+    if (desiredKeys.has(key)) {
+      continue;
+    }
+    await ctx.db.delete(existingMapping._id);
   }
 }
 
@@ -187,7 +239,7 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
   );
   const relationshipsByFromKey = relationships.reduce<Map<string, typeof relationships>>(
     (accumulator, relationship) => {
-      const key = `${relationship.fromType}:${relationship.fromId}`;
+      const key = `${normalizeVendorRelationshipObjectType(relationship.fromType)}:${relationship.fromId}`;
       const current = accumulator.get(key) ?? [];
       current.push(relationship);
       accumulator.set(key, current);
@@ -233,7 +285,7 @@ async function buildVendorWorkspaceRows(ctx: QueryCtx) {
         };
       });
     const linkedAnnualReviewTask = annualTaskByVendorKey.get(vendor.vendorKey);
-    const linkedEntities = (relationshipsByFromKey.get(`vendor_review:${vendor.vendorKey}`) ?? [])
+    const linkedEntities = (relationshipsByFromKey.get(`vendor:${vendor.vendorKey}`) ?? [])
       .map((relationship) => {
         if (relationship.toType === 'review_run') {
           const run = reviewRunById.get(relationship.toId as Id<'reviewRuns'>);

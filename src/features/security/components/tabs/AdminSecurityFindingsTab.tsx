@@ -6,6 +6,7 @@ import {
 } from '~/components/ui/accordion';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
+import { Input } from '~/components/ui/input';
 import {
   Select,
   SelectContent,
@@ -57,6 +58,10 @@ function getFindingDispositionBadgeVariant(
 
 export function AdminSecurityFindingsTab(props: {
   busyFindingKey: string | null;
+  findingDispositionFilter: 'all' | SecurityFindingListItem['disposition'];
+  findingSearch: string;
+  findingSeverityFilter: 'all' | SecurityFindingListItem['severity'];
+  findingStatusFilter: 'all' | SecurityFindingListItem['status'];
   findingCustomerSummaries: Record<string, string>;
   findingDispositions: Record<
     SecurityFindingListItem['findingKey'],
@@ -71,6 +76,10 @@ export function AdminSecurityFindingsTab(props: {
   };
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: (selectedReviewRun?: string) => void;
+  onChangeFindingDispositionFilter: (value: 'all' | SecurityFindingListItem['disposition']) => void;
+  onChangeFindingSearch: (value: string) => void;
+  onChangeFindingSeverityFilter: (value: 'all' | SecurityFindingListItem['severity']) => void;
+  onChangeFindingStatusFilter: (value: 'all' | SecurityFindingListItem['status']) => void;
   onOpenFinding: (findingKey: SecurityFindingListItem['findingKey']) => void;
   onOpenFindingFollowUp: (finding: SecurityFindingListItem) => Promise<void>;
   onReviewFinding: (findingKey: SecurityFindingListItem['findingKey']) => Promise<void>;
@@ -105,6 +114,67 @@ export function AdminSecurityFindingsTab(props: {
           description="Findings without a recorded decision."
           value={renderCardStatValue(props.summary.reviewPendingCount)}
         />
+      </div>
+
+      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(3,minmax(0,0.7fr))]">
+        <Input
+          value={props.findingSearch}
+          onChange={(event) => {
+            props.onChangeFindingSearch(event.target.value);
+          }}
+          placeholder="Search findings by title, source, notes, or summary"
+          aria-label="Search findings"
+          className="bg-background"
+        />
+        <Select
+          value={props.findingStatusFilter}
+          onValueChange={(value: 'all' | SecurityFindingListItem['status']) => {
+            props.onChangeFindingStatusFilter(value);
+          }}
+        >
+          <SelectTrigger aria-label="Filter findings by status" className="bg-background">
+            <SelectValue placeholder="All statuses" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="open">Open</SelectItem>
+            <SelectItem value="resolved">Resolved</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={props.findingDispositionFilter}
+          onValueChange={(value: 'all' | SecurityFindingListItem['disposition']) => {
+            props.onChangeFindingDispositionFilter(value);
+          }}
+        >
+          <SelectTrigger aria-label="Filter findings by disposition" className="bg-background">
+            <SelectValue placeholder="All dispositions" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All dispositions</SelectItem>
+            <SelectItem value="pending_review">Pending review</SelectItem>
+            <SelectItem value="investigating">Investigating</SelectItem>
+            <SelectItem value="accepted_risk">Accepted risk</SelectItem>
+            <SelectItem value="false_positive">False positive</SelectItem>
+            <SelectItem value="resolved">Resolved</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={props.findingSeverityFilter}
+          onValueChange={(value: 'all' | SecurityFindingListItem['severity']) => {
+            props.onChangeFindingSeverityFilter(value);
+          }}
+        >
+          <SelectTrigger aria-label="Filter findings by severity" className="bg-background">
+            <SelectValue placeholder="All severities" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All severities</SelectItem>
+            <SelectItem value="critical">Critical</SelectItem>
+            <SelectItem value="warning">Warning</SelectItem>
+            <SelectItem value="info">Info</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-4">
@@ -175,6 +245,16 @@ export function AdminSecurityFindingsTab(props: {
                             </p>
                             <p className="mt-1 text-foreground">
                               {isDirty ? 'Unsaved edits' : 'Saved'}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] font-medium uppercase tracking-[0.14em]">
+                              Follow-up
+                            </p>
+                            <p className="mt-1 text-foreground">
+                              {finding.latestLinkedReviewRun
+                                ? finding.latestLinkedReviewRun.title
+                                : 'Not linked'}
                             </p>
                           </div>
                         </div>
@@ -297,6 +377,15 @@ export function AdminSecurityFindingsTab(props: {
                           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                             Actions
                           </p>
+                          {finding.latestLinkedReviewRun ? (
+                            <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                              Linked follow-up:{' '}
+                              <span className="font-medium text-foreground">
+                                {finding.latestLinkedReviewRun.title}
+                              </span>{' '}
+                              ({finding.latestLinkedReviewRun.status})
+                            </div>
+                          ) : null}
                           <div className="flex flex-col gap-2">
                             <Button
                               type="button"
@@ -316,12 +405,18 @@ export function AdminSecurityFindingsTab(props: {
                               variant="outline"
                               disabled={props.busyFindingKey !== null}
                               onClick={() => {
+                                if (finding.latestLinkedReviewRun) {
+                                  props.navigateToReviews(finding.latestLinkedReviewRun.id);
+                                  return;
+                                }
                                 void props.onOpenFindingFollowUp(finding);
                               }}
                             >
                               {props.busyFindingKey === finding.findingKey
                                 ? 'Opening…'
-                                : 'Open follow-up in reviews'}
+                                : finding.latestLinkedReviewRun
+                                  ? 'Open linked follow-up'
+                                  : 'Open follow-up in reviews'}
                             </Button>
                             <Button
                               type="button"

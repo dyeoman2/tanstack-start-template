@@ -52,7 +52,7 @@ const securityRelationshipObjectTypeValidator = v.union(
   v.literal('checklist_item'),
   v.literal('evidence'),
   v.literal('finding'),
-  v.literal('vendor_review'),
+  v.literal('vendor'),
   v.literal('review_run'),
   v.literal('review_task'),
   v.literal('evidence_report'),
@@ -60,7 +60,7 @@ const securityRelationshipObjectTypeValidator = v.union(
 const securityRelationshipTypeValidator = v.union(
   v.literal('has_evidence'),
   v.literal('tracks_finding'),
-  v.literal('tracks_vendor_review'),
+  v.literal('tracks_vendor'),
   v.literal('has_review_task'),
   v.literal('has_report'),
   v.literal('supports'),
@@ -258,6 +258,14 @@ const securityFindingListItemValidator = v.object({
   firstObservedAt: v.number(),
   internalNotes: v.union(v.string(), v.null()),
   lastObservedAt: v.number(),
+  latestLinkedReviewRun: v.union(
+    v.object({
+      id: v.id('reviewRuns'),
+      status: v.union(v.literal('ready'), v.literal('needs_attention'), v.literal('completed')),
+      title: v.string(),
+    }),
+    v.null(),
+  ),
   relatedControls: v.array(vendorRelatedControlValidator),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
@@ -273,7 +281,6 @@ const securityFindingListItemValidator = v.object({
 const securityFindingListValidator = v.array(securityFindingListItemValidator);
 
 const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
-  'application/json',
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'image/gif',
@@ -281,7 +288,6 @@ const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
   'image/png',
   'image/webp',
   'text/csv',
-  'text/markdown',
   'text/plain',
 ]);
 
@@ -290,8 +296,6 @@ const SECURITY_EVIDENCE_ALLOWED_EXTENSIONS = new Set([
   '.gif',
   '.jpeg',
   '.jpg',
-  '.json',
-  '.md',
   '.pdf',
   '.png',
   '.txt',
@@ -523,7 +527,7 @@ const controlEvidenceValidator = v.object({
     v.literal('backup_verification_report'),
     v.literal('external_document'),
     v.literal('review_task'),
-    v.literal('vendor_review'),
+    v.literal('vendor'),
     v.null(),
   ),
   reviewedAt: v.union(v.number(), v.null()),
@@ -901,7 +905,7 @@ const reviewTaskEvidenceSourceTypeValidator = v.union(
   v.literal('backup_verification_report'),
   v.literal('external_document'),
   v.literal('review_task'),
-  v.literal('vendor_review'),
+  v.literal('vendor'),
 );
 const reviewTaskEvidenceRoleValidator = v.union(
   v.literal('primary'),

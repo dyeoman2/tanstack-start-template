@@ -6,6 +6,7 @@ const MAX_PDF_SIZE = 10 * 1024 * 1024;
 const MAX_SPREADSHEET_SIZE = 10 * 1024 * 1024;
 const MAX_SPREADSHEET_SHEETS = 10;
 const MAX_SPREADSHEET_ROWS = 5_000;
+const MAX_SPREADSHEET_CELLS = 50_000;
 
 function formatRowsAsTable(rows: unknown[][], addSeparatorAfterHeader = true) {
   let content = '';
@@ -137,13 +138,21 @@ async function parseExcel(file: File): Promise<ParsedFile> {
 
   let content = `[Excel File: ${file.name}]\n\n`;
   let totalRows = 0;
+  let totalCells = 0;
 
   for (const [index, sheetName] of sheetNames.entries()) {
     const rows = await readXlsxFile(file, { sheet: sheetName });
     totalRows += rows.length;
+    totalCells += rows.reduce((count, row) => count + row.length, 0);
 
     if (totalRows > MAX_SPREADSHEET_ROWS) {
       throw new Error(`Spreadsheet has too many rows. Maximum allowed is ${MAX_SPREADSHEET_ROWS}.`);
+    }
+
+    if (totalCells > MAX_SPREADSHEET_CELLS) {
+      throw new Error(
+        `Spreadsheet has too many cells. Maximum allowed is ${MAX_SPREADSHEET_CELLS}.`,
+      );
     }
 
     const normalizedRows = normalizeRows(rows);

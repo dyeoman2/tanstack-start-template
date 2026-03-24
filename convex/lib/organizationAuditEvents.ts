@@ -142,6 +142,12 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Chat attachment deleted';
     case 'attachment_access_url_issued':
       return 'Attachment access URL issued';
+    case 'file_access_ticket_issued':
+      return 'File access ticket issued';
+    case 'file_access_redeemed':
+      return 'File access redeemed';
+    case 'file_access_redeem_failed':
+      return 'File access redeem failed';
     case 'pdf_parse_requested':
       return 'PDF parse requested';
     case 'pdf_parse_succeeded':
@@ -168,6 +174,8 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Backup restore drill completed';
     case 'backup_restore_drill_failed':
       return 'Backup restore drill failed';
+    case 'admin_step_up_challenged':
+      return 'Admin step-up challenged';
     default:
       return eventType;
   }

@@ -241,7 +241,7 @@ export async function generateEvidenceReportHandler(
   const vendorPosture = getVendorBoundarySnapshot();
   const vendorWorkspaces = (
     reportKind === 'vendor_posture_snapshot' || reportKind === 'annual_review'
-      ? await ctx.runQuery(anyApi.securityReports.listVendorReviewWorkspaces, {})
+      ? await ctx.runQuery(anyApi.securityReports.listSecurityVendors, {})
       : []
   ) as Array<{
     approved: boolean;
@@ -676,7 +676,7 @@ export async function finalizeReviewRunHandler(
           | 'backup_verification_report'
           | 'external_document'
           | 'review_task'
-          | 'vendor_review';
+          | 'vendor';
       }>;
       required: boolean;
       status: 'ready' | 'completed' | 'exception' | 'blocked';

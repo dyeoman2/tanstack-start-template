@@ -372,7 +372,7 @@ export default defineSchema({
     mimeType: v.string(),
     sizeBytes: v.number(),
     rawStorageId: v.optional(v.id('_storage')),
-    extractedTextStorageId: v.optional(v.id('_storage')),
+    extractedTextStorageId: v.optional(v.string()),
     agentFileId: v.optional(v.string()),
     promptSummary: v.string(),
     status: chatAttachmentStatusValidator,
@@ -416,7 +416,7 @@ export default defineSchema({
     requestedByUserId: v.string(),
     status: pdfParseJobStatusValidator,
     errorMessage: v.optional(v.string()),
-    resultStorageId: v.optional(v.id('_storage')),
+    resultStorageId: v.optional(v.string()),
     completedAt: v.optional(v.number()),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -430,6 +430,8 @@ export default defineSchema({
     updatedAt: v.number(),
     deletedAt: v.optional(v.number()),
     storageId: v.string(),
+    parentStorageId: v.optional(v.string()),
+    organizationId: v.optional(v.string()),
     sourceType: v.string(),
     sourceId: v.string(),
     backendMode: storageBackendModeValidator,
@@ -455,11 +457,31 @@ export default defineSchema({
     uploadedById: v.optional(v.id('users')),
   })
     .index('by_storageId', ['storageId'])
+    .index('by_parentStorageId', ['parentStorageId'])
+    .index('by_organizationId', ['organizationId'])
     .index('by_source', ['sourceType', 'sourceId'])
     .index('by_s3Key', ['canonicalBucket', 'canonicalKey'])
     .index('by_mirrorDeadlineAt', ['mirrorDeadlineAt'])
     .index('by_malwareStatus', ['malwareStatus'])
     .index('by_deletedAt', ['deletedAt']),
+
+  fileAccessTickets: defineTable({
+    ticketId: v.string(),
+    storageId: v.string(),
+    organizationId: v.union(v.string(), v.null()),
+    issuedToUserId: v.string(),
+    issuedFromSessionId: v.union(v.string(), v.null()),
+    purpose: v.string(),
+    sourceSurface: v.string(),
+    expiresAt: v.number(),
+    redeemedAt: v.optional(v.number()),
+    createdAt: v.number(),
+    ipAddress: v.union(v.string(), v.null()),
+    userAgent: v.union(v.string(), v.null()),
+  })
+    .index('by_ticketId', ['ticketId'])
+    .index('by_storageId_and_createdAt', ['storageId', 'createdAt'])
+    .index('by_expiresAt', ['expiresAt']),
 
   storageLifecycleEvents: defineTable({
     storageLifecycleId: v.id('storageLifecycle'),
@@ -739,7 +761,7 @@ export default defineSchema({
         v.literal('backup_verification_report'),
         v.literal('external_document'),
         v.literal('review_task'),
-        v.literal('vendor_review'),
+        v.literal('vendor'),
       ),
     ),
     reviewOriginSourceId: v.optional(v.string()),
@@ -981,7 +1003,7 @@ export default defineSchema({
       v.literal('backup_verification_report'),
       v.literal('external_document'),
       v.literal('review_task'),
-      v.literal('vendor_review'),
+      v.literal('vendor'),
     ),
     sourceId: v.string(),
     sourceLabel: v.optional(v.string()),
@@ -994,27 +1016,6 @@ export default defineSchema({
     .index('by_review_run_id_and_linked_at', ['reviewRunId', 'linkedAt'])
     .index('by_source_type_and_source_id', ['sourceType', 'sourceId']),
 
-  securityVendorReviews: defineTable({
-    scopeType: v.optional(v.literal('provider_global')),
-    scopeId: v.optional(v.string()),
-    vendorKey: v.union(v.literal('openrouter'), v.literal('resend'), v.literal('sentry')),
-    owner: v.optional(v.string()),
-    reviewStatus: v.union(
-      v.literal('pending'),
-      v.literal('reviewed'),
-      v.literal('needs_follow_up'),
-    ),
-    internalReviewNotes: v.optional(v.union(v.string(), v.null())),
-    customerSummary: v.optional(v.union(v.string(), v.null())),
-    reviewedAt: v.union(v.number(), v.null()),
-    reviewedByUserId: v.union(v.string(), v.null()),
-    linkedFollowUpRunId: v.optional(v.id('reviewRuns')),
-    createdAt: v.number(),
-    updatedAt: v.number(),
-  })
-    .index('by_vendor_key', ['vendorKey'])
-    .index('by_review_status_and_updated_at', ['reviewStatus', 'updatedAt']),
-
   securityRelationships: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
@@ -1023,6 +1024,7 @@ export default defineSchema({
       v.literal('checklist_item'),
       v.literal('evidence'),
       v.literal('finding'),
+      v.literal('vendor'),
       v.literal('vendor_review'),
       v.literal('review_run'),
       v.literal('review_task'),
@@ -1034,6 +1036,7 @@ export default defineSchema({
       v.literal('checklist_item'),
       v.literal('evidence'),
       v.literal('finding'),
+      v.literal('vendor'),
       v.literal('vendor_review'),
       v.literal('review_run'),
       v.literal('review_task'),
@@ -1043,7 +1046,7 @@ export default defineSchema({
     relationshipType: v.union(
       v.literal('has_evidence'),
       v.literal('tracks_finding'),
-      v.literal('tracks_vendor_review'),
+      v.literal('tracks_vendor'),
       v.literal('has_review_task'),
       v.literal('has_report'),
       v.literal('supports'),

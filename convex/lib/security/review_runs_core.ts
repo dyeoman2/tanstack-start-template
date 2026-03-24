@@ -655,7 +655,7 @@ async function removeReviewTaskEvidenceLinkRelationships(
     });
   }
 
-  if (link.sourceType !== 'evidence_report' && link.sourceType !== 'vendor_review') {
+  if (link.sourceType !== 'evidence_report' && link.sourceType !== 'vendor') {
     return;
   }
 
@@ -706,9 +706,9 @@ async function removeReviewTaskEvidenceLinkRelationships(
       await deleteSecurityRelationships(ctx, {
         fromId: controlLink.internalControlId,
         fromType: 'control',
-        relationshipType: 'tracks_vendor_review',
+        relationshipType: 'tracks_vendor',
         toId: link.sourceId,
-        toType: 'vendor_review',
+        toType: 'vendor',
       });
     }),
   );
@@ -805,7 +805,7 @@ async function upsertReviewTaskEvidenceLinkRecord(
       | 'backup_verification_report'
       | 'external_document'
       | 'review_task'
-      | 'vendor_review';
+      | 'vendor';
   },
 ) {
   const now = Date.now();
@@ -871,14 +871,14 @@ async function upsertReviewTaskEvidenceLinkRecord(
             toType: 'evidence_report',
           });
         }
-        if (args.sourceType === 'vendor_review') {
+        if (args.sourceType === 'vendor') {
           await upsertSecurityRelationship(ctx, {
             createdByUserId: args.linkedByUserId ?? 'system:security-graph',
             fromId: controlLink.internalControlId,
             fromType: 'control',
-            relationshipType: 'tracks_vendor_review',
+            relationshipType: 'tracks_vendor',
             toId: args.sourceId,
-            toType: 'vendor_review',
+            toType: 'vendor',
           });
         }
       }
@@ -935,14 +935,14 @@ async function upsertReviewTaskEvidenceLinkRecord(
           toType: 'evidence_report',
         });
       }
-      if (args.sourceType === 'vendor_review') {
+      if (args.sourceType === 'vendor') {
         await upsertSecurityRelationship(ctx, {
           createdByUserId: args.linkedByUserId ?? 'system:security-graph',
           fromId: controlLink.internalControlId,
           fromType: 'control',
-          relationshipType: 'tracks_vendor_review',
+          relationshipType: 'tracks_vendor',
           toId: args.sourceId,
-          toType: 'vendor_review',
+          toType: 'vendor',
         });
       }
     }
@@ -960,7 +960,7 @@ async function clearReviewTaskEvidenceLinksBySourceType(
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
-    | 'vendor_review'
+    | 'vendor'
   >,
 ) {
   if (sourceTypes.length === 0) {
@@ -1230,7 +1230,7 @@ async function createTriggeredReviewRunRecord(
         | 'backup_verification_report'
         | 'external_document'
         | 'review_task'
-        | 'vendor_review';
+        | 'vendor';
     };
     title: string;
     triggerType: string;
@@ -1373,7 +1373,7 @@ async function createTriggeredReviewRunRecord(
   return runId;
 }
 
-async function syncVendorReviewOverlayRecords(ctx: MutationCtx) {
+async function syncSecurityVendorWorkspaceRecords(ctx: MutationCtx) {
   await syncSecurityVendorRecords(ctx);
   await syncSecurityVendorControlMappings(ctx);
   return 0;
@@ -1398,7 +1398,6 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
     'reviewTaskEvidenceLinks',
     'securityVendors',
     'securityVendorControlMappings',
-    'securityVendorReviews',
     'retentionJobs',
     'backupVerificationReports',
     'securityRelationships',
@@ -1413,15 +1412,15 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
 
   let patchedReviewNotes = 0;
 
-  const syncedVendorReviewRows = await syncVendorReviewOverlayRecords(ctx);
-  const [evidenceRows, findingRows, reviewRuns, reviewTasks, evidenceLinks, vendorReviews] =
+  const syncedVendorRows = await syncSecurityVendorWorkspaceRecords(ctx);
+  const [evidenceRows, findingRows, reviewRuns, reviewTasks, evidenceLinks, vendors] =
     await Promise.all([
       ctx.db.query('securityControlEvidence').collect(),
       ctx.db.query('securityFindings').collect(),
       ctx.db.query('reviewRuns').collect(),
       ctx.db.query('reviewTasks').collect(),
       ctx.db.query('reviewTaskEvidenceLinks').collect(),
-      ctx.db.query('securityVendorReviews').collect(),
+      ctx.db.query('securityVendors').collect(),
     ]);
 
   const reviewTaskById = new Map(reviewTasks.map((task) => [task._id, task] as const));
@@ -1522,25 +1521,25 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
           toType: 'evidence_report',
         });
       }
-      if (link.sourceType === 'vendor_review') {
+      if (link.sourceType === 'vendor') {
         await upsertSecurityRelationship(ctx, {
           createdByUserId: actorUserId,
           fromId: controlLink.internalControlId,
           fromType: 'control',
-          relationshipType: 'tracks_vendor_review',
+          relationshipType: 'tracks_vendor',
           toId: link.sourceId,
-          toType: 'vendor_review',
+          toType: 'vendor',
         });
       }
     }
   }
 
-  for (const vendorReview of vendorReviews) {
-    for (const controlLink of getVendorRelatedControlLinks(vendorReview.vendorKey)) {
+  for (const vendor of vendors) {
+    for (const controlLink of getVendorRelatedControlLinks(vendor.vendorKey)) {
       await upsertSecurityRelationship(ctx, {
         createdByUserId: actorUserId,
-        fromId: vendorReview.vendorKey,
-        fromType: 'vendor_review',
+        fromId: vendor.vendorKey,
+        fromType: 'vendor',
         relationshipType: 'related_control',
         toId: controlLink.internalControlId,
         toType: 'control',
@@ -1549,18 +1548,18 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
         createdByUserId: actorUserId,
         fromId: controlLink.internalControlId,
         fromType: 'control',
-        relationshipType: 'tracks_vendor_review',
-        toId: vendorReview.vendorKey,
-        toType: 'vendor_review',
+        relationshipType: 'tracks_vendor',
+        toId: vendor.vendorKey,
+        toType: 'vendor',
       });
     }
-    if (vendorReview.linkedFollowUpRunId) {
+    if (vendor.linkedFollowUpRunId) {
       await upsertSecurityRelationship(ctx, {
         createdByUserId: actorUserId,
-        fromId: vendorReview.vendorKey,
-        fromType: 'vendor_review',
+        fromId: vendor.vendorKey,
+        fromType: 'vendor',
         relationshipType: 'follow_up_for',
-        toId: vendorReview.linkedFollowUpRunId,
+        toId: vendor.linkedFollowUpRunId,
         toType: 'review_run',
       });
     }
@@ -1588,7 +1587,7 @@ async function runSecurityWorkspaceMigration(ctx: MutationCtx, actorUserId: stri
     patchedChecklistStatuses,
     patchedReviewNotes,
     patchedScopeRecords,
-    syncedVendorReviewRows,
+    syncedVendorRows,
   };
 }
 
@@ -1808,9 +1807,9 @@ export {
   reconcileEvidenceReportLinkedTasks,
   removeReviewTaskEvidenceLinkRelationships,
   runSecurityWorkspaceMigration,
+  syncSecurityVendorWorkspaceRecords,
   syncAnnualPolicyReviewTasks,
   syncReviewRunStatus,
-  syncVendorReviewOverlayRecords,
   upsertAnnualReviewTasks,
   upsertReviewTaskEvidenceLinkRecord,
 };

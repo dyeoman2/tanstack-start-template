@@ -11,6 +11,7 @@ import {
   buildVendorWorkspaceRows,
   resolveDefaultSecurityOwner,
   resolveVendorNextReviewAt,
+  syncSecurityVendorControlMappings,
   syncSecurityVendorRecords,
 } from './lib/security/vendors_core';
 import { exportEvidenceReportHandler, generateEvidenceReportHandler } from './lib/security/reports';
@@ -180,7 +181,7 @@ export const reviewEvidenceReport = mutation({
   },
 });
 
-export const listVendorReviewWorkspaces = query({
+export const listSecurityVendors = query({
   args: {},
   returns: vendorWorkspaceListValidator,
   handler: async (ctx) => {
@@ -189,17 +190,18 @@ export const listVendorReviewWorkspaces = query({
   },
 });
 
-export const syncVendorReviewRecords = mutation({
+export const syncSecurityVendors = mutation({
   args: {},
   returns: v.number(),
   handler: async (ctx) => {
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     await syncSecurityVendorRecords(ctx);
+    await syncSecurityVendorControlMappings(ctx);
     return 0;
   },
 });
 
-export const reviewVendorWorkspace = mutation({
+export const reviewSecurityVendor = mutation({
   args: {
     owner: v.optional(v.string()),
     summary: v.optional(v.string()),

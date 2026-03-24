@@ -159,12 +159,64 @@ function getPermissionStepUpRequirement(
     case 'exportAudit':
       return STEP_UP_REQUIREMENTS.auditExport;
     case 'manageEvidence':
-      return STEP_UP_REQUIREMENTS.auditExport;
+      return STEP_UP_REQUIREMENTS.organizationAdmin;
     case 'issueAttachmentAccessUrl':
       return STEP_UP_REQUIREMENTS.attachmentAccess;
     default:
       return null;
   }
+}
+
+async function resolveChatAttachmentStorageAccess(
+  ctx: QueryCtx,
+  args: {
+    organizationId: string | null;
+    storageId: string;
+    user: CurrentUser;
+  },
+): Promise<StorageReadAccessResult> {
+  const attachment = await ctx.db
+    .query('chatAttachments')
+    .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
+    .unique();
+
+  if (!attachment || attachment.deletedAt) {
+    return {
+      allowed: false,
+      organizationId: args.organizationId,
+      permission: 'issueAttachmentAccessUrl' as const,
+      reason: 'Attachment not found',
+    };
+  }
+
+  const decision = await buildOrganizationPermissionDecision(ctx, {
+    organizationId: args.organizationId ?? attachment.organizationId,
+    permission: 'issueAttachmentAccessUrl',
+  });
+  if ('code' in decision) {
+    return {
+      allowed: false,
+      organizationId: args.organizationId ?? attachment.organizationId,
+      permission: 'issueAttachmentAccessUrl' as const,
+      reason: decision.reason,
+    };
+  }
+
+  if (!args.user.isSiteAdmin && attachment.userId !== args.user.authUserId) {
+    return {
+      allowed: false,
+      organizationId: args.organizationId ?? attachment.organizationId,
+      permission: 'issueAttachmentAccessUrl' as const,
+      reason: 'Attachment access denied',
+    };
+  }
+
+  return {
+    allowed: true,
+    organizationId: args.organizationId ?? attachment.organizationId,
+    permission: 'issueAttachmentAccessUrl' as const,
+    reason: null,
+  };
 }
 
 function requiresEnterpriseSatisfied(permission: OrganizationPermission) {
@@ -1206,112 +1258,97 @@ export const resolveStorageReadAccess = query({
   }),
   handler: async (ctx, args): Promise<StorageReadAccessResult> => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
-    const lifecycle = await ctx.db
-      .query('storageLifecycle')
-      .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
-      .first();
+    const resolveLifecycleAccess = async (
+      storageId: string,
+      visited = new Set<string>(),
+    ): Promise<StorageReadAccessResult> => {
+      if (visited.has(storageId)) {
+        return {
+          allowed: false,
+          organizationId: user.activeOrganizationId,
+          permission: null,
+          reason: 'Stored file access lineage is invalid',
+        };
+      }
+      visited.add(storageId);
 
-    if (!lifecycle) {
-      return {
-        allowed: false,
-        organizationId: null,
-        permission: null,
-        reason: 'Stored file not found',
-      };
-    }
+      const lifecycle = await ctx.db
+        .query('storageLifecycle')
+        .withIndex('by_storageId', (query) => query.eq('storageId', storageId))
+        .first();
 
-    if (lifecycle.sourceType === 'chat_attachment') {
-      const attachment = await ctx.db
-        .query('chatAttachments')
-        .withIndex('by_storageId', (query) => query.eq('storageId', args.storageId))
-        .unique();
-      if (!attachment || attachment.deletedAt) {
+      if (!lifecycle) {
         return {
           allowed: false,
           organizationId: null,
-          permission: 'issueAttachmentAccessUrl' as const,
-          reason: 'Attachment not found',
+          permission: null,
+          reason: 'Stored file not found',
         };
       }
 
-      const decision = await buildOrganizationPermissionDecision(ctx, {
-        organizationId: attachment.organizationId,
-        permission: 'issueAttachmentAccessUrl',
-      });
-      if ('code' in decision) {
-        return {
-          allowed: false,
-          organizationId: attachment.organizationId,
-          permission: 'issueAttachmentAccessUrl' as const,
-          reason: decision.reason,
-        };
+      if (lifecycle.parentStorageId) {
+        return await resolveLifecycleAccess(lifecycle.parentStorageId, visited);
       }
 
-      if (!user.isSiteAdmin && attachment.userId !== user.authUserId) {
+      if (lifecycle.sourceType === 'chat_attachment') {
+        return await resolveChatAttachmentStorageAccess(ctx, {
+          organizationId: lifecycle.organizationId ?? null,
+          storageId: lifecycle.storageId,
+          user,
+        });
+      }
+
+      if (lifecycle.sourceType === 'security_control_evidence') {
+        const assurance = await resolveUserAuthAssuranceState(ctx, user);
+        const authPolicy = evaluateAuthPolicy({
+          assurance,
+          recentStepUpWindowMs: getRecentStepUpWindowMs(),
+          requirement: getPermissionStepUpRequirement('manageEvidence'),
+        });
+
+        if (!user.isSiteAdmin) {
+          return {
+            allowed: false,
+            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+            permission: 'manageEvidence' as const,
+            reason: 'Site admin access required',
+          };
+        }
+
+        if (authPolicy.requiresMfaSetup) {
+          return {
+            allowed: false,
+            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+            permission: 'manageEvidence' as const,
+            reason: 'Multi-factor authentication is required for site admin access',
+          };
+        }
+
+        if (!authPolicy.stepUp.satisfied) {
+          return {
+            allowed: false,
+            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+            permission: 'manageEvidence' as const,
+            reason: 'Recent step-up authentication is required',
+          };
+        }
+
         return {
-          allowed: false,
-          organizationId: attachment.organizationId,
-          permission: 'issueAttachmentAccessUrl' as const,
-          reason: 'Attachment access denied',
+          allowed: true,
+          organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+          permission: 'manageEvidence' as const,
+          reason: null,
         };
       }
 
       return {
-        allowed: true,
-        organizationId: attachment.organizationId,
-        permission: 'issueAttachmentAccessUrl' as const,
-        reason: null,
+        allowed: false,
+        organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+        permission: null,
+        reason: 'Stored file access is not available for this resource type',
       };
-    }
-
-    if (lifecycle.sourceType === 'security_control_evidence') {
-      const assurance = await resolveUserAuthAssuranceState(ctx, user);
-      const authPolicy = evaluateAuthPolicy({
-        assurance,
-        recentStepUpWindowMs: getRecentStepUpWindowMs(),
-        requirement: getPermissionStepUpRequirement('manageEvidence'),
-      });
-
-      if (!user.isSiteAdmin) {
-        return {
-          allowed: false,
-          organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence' as const,
-          reason: 'Site admin access required',
-        };
-      }
-
-      if (authPolicy.requiresMfaSetup) {
-        return {
-          allowed: false,
-          organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence' as const,
-          reason: 'Multi-factor authentication is required for site admin access',
-        };
-      }
-
-      if (!authPolicy.stepUp.satisfied) {
-        return {
-          allowed: false,
-          organizationId: user.activeOrganizationId,
-          permission: 'manageEvidence' as const,
-          reason: 'Recent step-up authentication is required',
-        };
-      }
-
-      return {
-        allowed: true,
-        organizationId: user.activeOrganizationId,
-        permission: 'manageEvidence' as const,
-        reason: null,
-      };
-    }
-
-    return {
-      allowed: false,
-      organizationId: user.activeOrganizationId,
-      permission: null,
-      reason: 'Stored file access is not available for this resource type',
     };
+
+    return await resolveLifecycleAccess(args.storageId);
   },
 });

@@ -873,6 +873,12 @@ describe('audit evidence helpers', () => {
               };
             }
 
+            if (table === 'securityRelationships') {
+              return {
+                collect: async () => [],
+              };
+            }
+
             throw new Error(`Unexpected query table: ${table}`);
           },
         }),
@@ -937,6 +943,12 @@ describe('audit evidence helpers', () => {
             if (table === 'userProfiles') {
               return {
                 first: async () => ({ name: 'Admin User', email: 'admin@example.com' }),
+              };
+            }
+
+            if (table === 'securityRelationships') {
+              return {
+                collect: async () => [],
               };
             }
 
@@ -1033,6 +1045,12 @@ describe('audit evidence helpers', () => {
             if (table === 'userProfiles') {
               return {
                 first: async () => ({ name: 'Admin User', email: 'admin@example.com' }),
+              };
+            }
+
+            if (table === 'securityRelationships') {
+              return {
+                collect: async () => [],
               };
             }
 

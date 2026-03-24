@@ -1,7 +1,8 @@
 import type { ParsedFile } from '~/features/chat/lib/file-parser';
 import type { ChatAttachmentKind, ChatComposerPart } from '~/features/chat/types';
 
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'];
+const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const SUPPORTED_DOCUMENT_MIME_TYPES = [
   'text/plain',
   'text/csv',
@@ -15,8 +16,6 @@ const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
   ['.png', 'image/png'],
   ['.gif', 'image/gif'],
   ['.webp', 'image/webp'],
-  ['.heic', 'image/heic'],
-  ['.heif', 'image/heif'],
   ['.txt', 'text/plain'],
   ['.csv', 'text/csv'],
   ['.pdf', 'application/pdf'],
@@ -28,7 +27,11 @@ export type UploadedDocument = ParsedFile;
 
 function isImageFile(file: File) {
   const fileName = file.name.toLowerCase();
-  return file.type.startsWith('image/') || IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext));
+  const fileType = file.type.toLowerCase();
+  return (
+    SUPPORTED_IMAGE_MIME_TYPES.includes(fileType) ||
+    IMAGE_EXTENSIONS.some((ext) => fileName.endsWith(ext))
+  );
 }
 
 export function isDocumentFile(file: File) {

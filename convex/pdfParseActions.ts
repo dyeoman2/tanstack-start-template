@@ -2,14 +2,18 @@
 
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc, Id } from './_generated/dataModel';
+import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
 import {
   getVerifiedCurrentUserFromActionOrThrow,
   requireStorageReadAccessFromActionOrThrow,
 } from './auth/access';
-import { getS3Object } from './lib/storageS3';
+import {
+  deleteStoredFileWithMode,
+  loadStoredFileBlobWithMode,
+  storeDerivedFileWithMode,
+} from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
 import { parsePdfBlob } from '../src/lib/server/pdf-parse.server';
 
@@ -29,10 +33,6 @@ const parsedPdfImageValidator = v.object({
   width: v.number(),
 });
 
-function asConvexStorageId(storageId: string) {
-  return storageId as Id<'_storage'>;
-}
-
 async function getPdfParseJob(
   ctx: Pick<ActionCtx, 'runQuery'>,
   storageId: string,
@@ -49,7 +49,7 @@ async function patchPdfParseJob(
     errorMessage?: string | null;
     organizationId: string;
     requestedByUserId: string;
-    resultStorageId?: Id<'_storage'> | null;
+    resultStorageId?: string | null;
     status: 'failed' | 'processing' | 'quarantined' | 'queued' | 'ready';
     storageId: string;
     updatedAt: number;
@@ -60,46 +60,12 @@ async function patchPdfParseJob(
 
 async function loadPdfSourceBlob(
   ctx: ActionCtx,
-  lifecycle: Pick<
-    Doc<'storageLifecycle'>,
-    'backendMode' | 'canonicalBucket' | 'canonicalKey' | 'storageId'
-  >,
+  lifecycle: Pick<Doc<'storageLifecycle'>, 'storageId'>,
 ) {
-  if (lifecycle.backendMode === 's3-primary') {
-    if (!lifecycle.canonicalBucket || !lifecycle.canonicalKey) {
-      throw new ConvexError('Stored file does not have an S3 backing object.');
-    }
-    const object = await getS3Object({
-      bucket: lifecycle.canonicalBucket,
-      key: lifecycle.canonicalKey,
-    });
-    const body = object.Body;
-    if (!body) {
-      throw new ConvexError('Stored file was not found.');
-    }
-    if (body instanceof Blob) {
-      return body;
-    }
-    if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
-      const bytes = await (
-        body as { transformToByteArray: () => Promise<Uint8Array> }
-      ).transformToByteArray();
-      const copy = new Uint8Array(bytes.byteLength);
-      copy.set(bytes);
-      return new Blob([copy], { type: 'application/pdf' });
-    }
-    if (typeof body === 'object' && body !== null && 'transformToString' in body) {
-      const text = await (body as { transformToString: () => Promise<string> }).transformToString();
-      return new Blob([text], { type: 'application/pdf' });
-    }
-    throw new ConvexError('Stored file body could not be converted to a blob.');
-  }
-
-  const blob = await ctx.storage.get(asConvexStorageId(lifecycle.storageId));
-  if (!blob) {
-    throw new ConvexError('Stored file was not found.');
-  }
-  return blob;
+  return await loadStoredFileBlobWithMode(ctx, {
+    fallbackMimeType: 'application/pdf',
+    storageId: lifecycle.storageId,
+  });
 }
 
 export const processPendingPdfParseJobInternal = internalAction({
@@ -159,12 +125,20 @@ export const processPendingPdfParseJobInternal = internalAction({
     try {
       const blob = await loadPdfSourceBlob(ctx, lifecycle);
       const parsed = await parsePdfBlob(blob);
-      const resultStorageId = await ctx.storage.store(
-        new Blob([JSON.stringify(parsed)], { type: 'application/json' }),
-      );
+      const resultFile = await storeDerivedFileWithMode(ctx, {
+        blob: new Blob([JSON.stringify(parsed)], { type: 'application/json' }),
+        fileName: `${lifecycle.originalFileName}.parsed.json`,
+        mimeType: 'application/json',
+        organizationId: lifecycle.organizationId ?? job.organizationId,
+        parentStorageId: args.storageId,
+        sourceId: args.storageId,
+        sourceType: 'pdf_parse_result',
+      });
 
       if (job.resultStorageId) {
-        await ctx.storage.delete(job.resultStorageId);
+        await deleteStoredFileWithMode(ctx, {
+          storageId: job.resultStorageId,
+        });
       }
 
       await patchPdfParseJob(ctx, {
@@ -172,7 +146,7 @@ export const processPendingPdfParseJobInternal = internalAction({
         errorMessage: null,
         organizationId: job.organizationId,
         requestedByUserId: job.requestedByUserId,
-        resultStorageId,
+        resultStorageId: resultFile.storageId,
         status: 'ready',
         storageId: args.storageId,
         updatedAt: Date.now(),
@@ -256,7 +230,7 @@ export const enqueuePdfParseJob = action({
           ? Date.now()
           : null,
       errorMessage: readiness.reason === 'quarantined' ? readiness.message : null,
-      organizationId: user.activeOrganizationId ?? 'unknown',
+      organizationId: lifecycle.organizationId ?? user.activeOrganizationId ?? 'unknown',
       requestedByUserId: user.authUserId,
       resultStorageId: null,
       status: readiness.reason === 'quarantined' ? 'quarantined' : 'queued',
@@ -312,10 +286,10 @@ export const getPdfParseJobStatus = action({
       };
     }
 
-    const resultBlob = await ctx.storage.get(job.resultStorageId);
-    if (!resultBlob) {
-      throw new ConvexError('PDF parse result not found.');
-    }
+    const resultBlob = await loadStoredFileBlobWithMode(ctx, {
+      fallbackMimeType: 'application/json',
+      storageId: job.resultStorageId,
+    });
 
     const parsed = JSON.parse(await resultBlob.text()) as {
       content: string;

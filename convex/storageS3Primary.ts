@@ -3,17 +3,32 @@
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
+import { issueFileAccessUrlForCurrentUser } from './fileServing';
 import { createPresignedS3Url, deleteS3Object, headS3Object } from './lib/storageS3';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
 
-export function buildDeterministicStorageKey(storageId: string) {
-  return `team/global/storage/${storageId}`;
+function toStoragePathSegment(value: string) {
+  return value.trim().replace(/[^a-zA-Z0-9._-]+/g, '-');
+}
+
+export function buildDeterministicStorageKey(args: {
+  organizationId?: string | null;
+  sourceType: string;
+  storageId: string;
+}) {
+  const scopePrefix = args.organizationId
+    ? `org/${toStoragePathSegment(args.organizationId)}`
+    : 'site-admin';
+
+  return `${scopePrefix}/${toStoragePathSegment(args.sourceType)}/${args.storageId}`;
 }
 
 export async function generateS3PrimaryUploadTarget(args: {
   contentType: string;
   fileName: string;
   fileSize: number;
+  organizationId?: string | null;
+  sourceType: string;
   storageId: string;
 }): Promise<UploadTargetResult> {
   const runtimeConfig = getStorageRuntimeConfig();
@@ -21,7 +36,11 @@ export async function generateS3PrimaryUploadTarget(args: {
   if (!bucket) {
     throw new Error('AWS_S3_FILES_BUCKET environment variable is required for S3-backed storage.');
   }
-  const key = buildDeterministicStorageKey(args.storageId);
+  const key = buildDeterministicStorageKey({
+    organizationId: args.organizationId,
+    sourceType: args.sourceType,
+    storageId: args.storageId,
+  });
   const presigned = await createPresignedS3Url({
     bucket,
     contentType: args.contentType,
@@ -48,7 +67,11 @@ export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUplo
     throw new Error('AWS_S3_FILES_BUCKET environment variable is required for S3-backed storage.');
   }
 
-  const key = buildDeterministicStorageKey(args.storageId);
+  const key = buildDeterministicStorageKey({
+    organizationId: args.organizationId,
+    sourceType: args.sourceType,
+    storageId: args.storageId,
+  });
   const head = await headS3Object({ bucket, key });
 
   await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
@@ -60,6 +83,7 @@ export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUplo
     malwareStatus: 'PENDING',
     mimeType: args.mimeType,
     mirrorDeadlineAt: Date.now() + runtimeConfig.malwareScanSlaMs,
+    organizationId: args.organizationId,
     originalFileName: args.fileName,
     sourceId: args.sourceId,
     sourceType: args.sourceType,
@@ -81,7 +105,9 @@ export async function resolveS3PrimaryUrl(ctx: ActionCtx, args: ResolveFileUrlAr
     return null;
   }
 
-  const signedServeUrl = await ctx.runAction(internal.fileServing.createSignedServeUrlInternal, {
+  const signedServeUrl = await issueFileAccessUrlForCurrentUser(ctx, {
+    purpose: 'interactive_open',
+    sourceSurface: 'storage.s3_primary_url',
     storageId: args.storageId,
   });
   return signedServeUrl.url;

@@ -56,6 +56,7 @@ export type CreateUploadTargetArgs = {
   contentType: string;
   fileName: string;
   fileSize: number;
+  organizationId?: string | null;
   sourceId?: string;
   sourceType: string;
 };
@@ -73,6 +74,8 @@ export type UploadTargetResult = {
 export type FinalizeUploadArgs = {
   backendMode: StorageBackendMode;
   storageId: string;
+  parentStorageId?: string;
+  organizationId?: string | null;
   sourceId: string;
   sourceType: string;
   fileName: string;
@@ -110,6 +113,8 @@ export type StorageLifecycleRecord = {
   mirrorLastError?: string;
   mirrorStatus?: MirrorStatus;
   mirrorVersionId?: string;
+  parentStorageId?: string;
+  organizationId?: string;
   originalFileName: string;
   quarantinedAt?: number;
   quarantineReason?: QuarantineReason;

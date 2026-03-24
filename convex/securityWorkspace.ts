@@ -1,12 +1,15 @@
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
-import type { QueryCtx } from './_generated/server';
+import type { MutationCtx, QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
+import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
+import { evaluateFreshSession, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { siteAdminMutation, siteAdminQuery } from './auth/authorized';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentSiteAdminUserOrThrow,
+  requireStepUpFromActionOrThrow,
 } from './auth/access';
 import { createUploadTargetWithMode } from './storagePlatform';
 import {
@@ -28,6 +31,7 @@ import {
 } from './lib/security/review_runs_core';
 import {
   archiveSecurityControlEvidenceHandler,
+  buildSecurityFindingListRecords,
   listSecurityControlEvidenceActivityHandler,
   listSecurityFindingsHandler,
   renewSecurityControlEvidenceHandler,
@@ -49,6 +53,25 @@ import {
   reviewRunSummaryValidator,
   validateSecurityEvidenceUploadInput,
 } from './lib/security/validators';
+
+function assertFreshEvidenceAdminSessionOrThrow(
+  currentUser: Awaited<ReturnType<typeof getVerifiedCurrentSiteAdminUserOrThrow>>,
+) {
+  if (currentUser.authSession?.impersonatedBy) {
+    throw new Error('Impersonated sessions cannot manage evidence.');
+  }
+
+  const freshness = evaluateFreshSession({
+    createdAt: currentUser.authSession?.createdAt,
+    updatedAt: currentUser.authSession?.updatedAt,
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+    requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+  });
+
+  if (!freshness.satisfied) {
+    throw new Error('Recent step-up authentication is required.');
+  }
+}
 
 export const listSecurityControlWorkspaces = query({
   args: {},
@@ -122,55 +145,7 @@ export const listSecurityFindings = siteAdminQuery({
 export const listSecurityFindingsInternal = internalQuery({
   args: {},
   returns: securityFindingListValidator,
-  handler: async (ctx) => {
-    const currentFindings = await buildCurrentSecurityFindings(ctx);
-    const storedFindingEntries = await Promise.all(
-      currentFindings.map(async (finding) => {
-        const record = await ctx.db
-          .query('securityFindings')
-          .withIndex('by_finding_key', (q) => q.eq('findingKey', finding.findingKey))
-          .unique();
-        return [finding.findingKey, record] as const;
-      }),
-    );
-    const storedFindingByKey = new Map(storedFindingEntries);
-
-    return currentFindings.map((finding) => {
-      const record = storedFindingByKey.get(finding.findingKey) ?? null;
-      return {
-        customerSummary: record?.customerSummary ?? null,
-        description: finding.description,
-        disposition: record?.disposition ?? ('pending_review' as const),
-        findingKey: finding.findingKey,
-        findingType: finding.findingType,
-        firstObservedAt: record
-          ? Math.min(record.firstObservedAt, finding.firstObservedAt)
-          : finding.firstObservedAt,
-        internalNotes: record?.internalReviewNotes ?? null,
-        lastObservedAt: Math.max(
-          record?.lastObservedAt ?? finding.lastObservedAt,
-          finding.lastObservedAt,
-        ),
-        relatedControls: getSecurityFindingControlLinks(finding.findingType).map((controlLink) => ({
-          internalControlId: controlLink.internalControlId,
-          itemId: controlLink.itemId,
-          itemLabel: null,
-          nist80053Id: controlLink.internalControlId,
-          title: controlLink.internalControlId,
-        })),
-        scopeId: getSecurityScopeFields().scopeId,
-        scopeType: getSecurityScopeFields().scopeType,
-        reviewedAt: record?.reviewedAt ?? null,
-        reviewedByDisplay: null,
-        severity: finding.severity,
-        sourceLabel: finding.sourceLabel,
-        sourceRecordId: finding.sourceRecordId,
-        sourceType: finding.sourceType,
-        status: finding.status,
-        title: finding.title,
-      };
-    });
-  },
+  handler: async (ctx) => await buildSecurityFindingListRecords(ctx as QueryCtx),
 });
 
 export const reviewSecurityFinding = siteAdminMutation({
@@ -393,6 +368,7 @@ export const reviewSecurityControlEvidence = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    assertFreshEvidenceAdminSessionOrThrow(currentUser);
     const evidence = await ctx.db.get(args.evidenceId);
     if (!evidence) {
       throw new Error('Evidence not found.');
@@ -439,7 +415,11 @@ export const archiveSecurityControlEvidence = siteAdminMutation({
     itemId: v.string(),
   },
   returns: v.null(),
-  handler: archiveSecurityControlEvidenceHandler,
+  handler: async (ctx, args) => {
+    assertFreshEvidenceAdminSessionOrThrow(ctx.user);
+    await archiveSecurityControlEvidenceHandler(ctx as MutationCtx, args);
+    return null;
+  },
 });
 
 export const renewSecurityControlEvidence = mutation({
@@ -449,7 +429,11 @@ export const renewSecurityControlEvidence = mutation({
     itemId: v.string(),
   },
   returns: v.id('securityControlEvidence'),
-  handler: renewSecurityControlEvidenceHandler,
+  handler: async (ctx, args) => {
+    const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+    assertFreshEvidenceAdminSessionOrThrow(currentUser);
+    return await renewSecurityControlEvidenceHandler(ctx, args);
+  },
 });
 
 export const createSecurityControlEvidenceUploadTarget = action({
@@ -472,12 +456,14 @@ export const createSecurityControlEvidenceUploadTarget = action({
   }),
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.organizationAdmin);
     validateSecurityEvidenceUploadInput(args);
     await enforceSecurityEvidenceUploadRateLimit(ctx, currentUser.authUserId);
     const target = await createUploadTargetWithMode(ctx, {
       contentType: args.contentType,
       fileName: args.fileName,
       fileSize: args.fileSize,
+      organizationId: currentUser.activeOrganizationId ?? null,
       sourceId: `${args.internalControlId}:${args.itemId}`,
       sourceType: 'security_control_evidence',
     });
@@ -514,11 +500,13 @@ export const finalizeSecurityControlEvidenceUpload = action({
   returns: v.id('securityControlEvidence'),
   handler: async (ctx, args): Promise<Id<'securityControlEvidence'>> => {
     const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+    await requireStepUpFromActionOrThrow(ctx, STEP_UP_REQUIREMENTS.organizationAdmin);
     await ctx.runAction(internal.storagePlatform.finalizeUploadInternal, {
       backendMode: args.backendMode,
       fileName: args.fileName,
       fileSize: args.fileSize,
       mimeType: args.mimeType,
+      organizationId: currentUser.activeOrganizationId ?? null,
       sourceId: `${args.internalControlId}:${args.itemId}`,
       sourceType: 'security_control_evidence',
       storageId: args.storageId,

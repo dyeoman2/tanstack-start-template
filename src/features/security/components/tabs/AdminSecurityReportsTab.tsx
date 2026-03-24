@@ -8,6 +8,14 @@ import {
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Input } from '~/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '~/components/ui/select';
 import { Spinner } from '~/components/ui/spinner';
 import { Textarea } from '~/components/ui/textarea';
 import { formatTableDate } from '~/components/data-table';
@@ -60,9 +68,15 @@ export function AdminSecurityReportsTab(props: {
   busyReportAction: string | null;
   evidenceReports: EvidenceReportListItem[] | undefined;
   isGenerating: boolean;
+  onChangeReportKind: (value: 'all' | EvidenceReportListItem['reportKind']) => void;
+  onChangeReportReviewStatus: (value: 'all' | EvidenceReportListItem['reviewStatus']) => void;
+  onChangeReportSearch: (value: string) => void;
   report: string | null;
   reportCustomerSummaries: Record<string, string>;
+  reportKindFilter: 'all' | EvidenceReportListItem['reportKind'];
   reportNotes: Record<string, string>;
+  reportReviewStatusFilter: 'all' | EvidenceReportListItem['reviewStatus'];
+  reportSearch: string;
   restoreDrillFooter: string | undefined;
   handleExportReport: (id: Id<'evidenceReports'>) => Promise<void>;
   handleGenerateReport: (reportKind?: 'audit_readiness' | 'security_posture') => Promise<void>;
@@ -259,6 +273,56 @@ export function AdminSecurityReportsTab(props: {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(2,minmax(0,0.8fr))]">
+            <Input
+              value={props.reportSearch}
+              onChange={(event) => {
+                props.onChangeReportSearch(event.target.value);
+              }}
+              placeholder="Search reports by kind, notes, or customer summary"
+              aria-label="Search reports"
+              className="bg-background"
+            />
+            <Select
+              value={props.reportReviewStatusFilter}
+              onValueChange={(value: 'all' | EvidenceReportListItem['reviewStatus']) => {
+                props.onChangeReportReviewStatus(value);
+              }}
+            >
+              <SelectTrigger aria-label="Filter reports by review status" className="bg-background">
+                <SelectValue placeholder="All review states" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All review states</SelectItem>
+                <SelectItem value="pending">Pending review</SelectItem>
+                <SelectItem value="reviewed">Reviewed</SelectItem>
+                <SelectItem value="needs_follow_up">Needs follow-up</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select
+              value={props.reportKindFilter}
+              onValueChange={(value: 'all' | EvidenceReportListItem['reportKind']) => {
+                props.onChangeReportKind(value);
+              }}
+            >
+              <SelectTrigger aria-label="Filter reports by kind" className="bg-background">
+                <SelectValue placeholder="All report kinds" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All report kinds</SelectItem>
+                <SelectItem value="security_posture">Security posture</SelectItem>
+                <SelectItem value="audit_integrity">Audit integrity</SelectItem>
+                <SelectItem value="audit_readiness">Audit readiness</SelectItem>
+                <SelectItem value="annual_review">Annual review</SelectItem>
+                <SelectItem value="findings_snapshot">Findings snapshot</SelectItem>
+                <SelectItem value="vendor_posture_snapshot">Vendor posture snapshot</SelectItem>
+                <SelectItem value="control_workspace_snapshot">
+                  Control workspace snapshot
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 md:grid-cols-3">
             <div className="rounded-lg bg-background px-4 py-3">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">

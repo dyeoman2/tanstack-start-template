@@ -249,6 +249,18 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
     'Recent step-up protections showing step-up requirements for audit exports and fresh-session redirects for sensitive actions.',
   ],
   [
+    'Privileged admin step-up enforcement',
+    'Administrative auth protections requiring a recent step-up session before user management, impersonation, and session-management actions proceed.',
+  ],
+  [
+    'Fresh evidence review protection',
+    'Site admin evidence-management workflows requiring a fresh privileged session before evidence review, archival, or renewal actions proceed.',
+  ],
+  [
+    'Evidence management fresh-session enforcement',
+    'Site admin evidence-management workflows requiring a fresh privileged session before evidence review, archival, or renewal actions proceed.',
+  ],
+  [
     'MFA and fresh-session enforcement',
     'Authentication enforcement showing MFA, passkey, and fresh-session requirements before privileged or regulated access proceeds.',
   ],
@@ -315,6 +327,50 @@ const EVIDENCE_DESCRIPTION_REWRITES = new Map<string, string>([
   [
     'Signed release bundle workflow',
     'Workflow for creating and verifying a signed source bundle artifact set for later review.',
+  ],
+  [
+    'Disaster recovery HTTPS listener configuration',
+    'Disaster recovery load-balancer configuration showing the ACM-backed HTTPS listener and permanent HTTP-to-HTTPS redirect used for external entry points.',
+  ],
+  [
+    'Disaster recovery runtime secret injection',
+    'Disaster recovery task configuration showing database and application secrets injected from managed secret stores at runtime instead of being embedded as plaintext deployment values.',
+  ],
+  [
+    'Authenticated file access ticket flow',
+    'Protected file-access workflow issuing HMAC-backed tickets and verifying them before the same authenticated session can redeem a short-lived download redirect.',
+  ],
+  [
+    'Customer file storage KMS configuration',
+    'Managed file-storage configuration showing a customer-managed KMS key with rotation enabled and bound to the protected files bucket.',
+  ],
+  [
+    'Disaster recovery backup KMS configuration',
+    'Disaster recovery backup configuration showing a separate customer-managed KMS key with rotation enabled for backup objects.',
+  ],
+  [
+    'KMS-backed managed storage configuration',
+    'Managed file-storage configuration showing customer-managed KMS encryption, blocked public access, and enforced SSL transport for protected files.',
+  ],
+  [
+    'Authenticated protected file access',
+    'Protected file-access workflow using one-time HMAC-backed ticket signatures and same-session authenticated redemption before issuing a short-lived download redirect.',
+  ],
+  [
+    'Protected file bucket configuration',
+    'Managed file bucket configuration showing blocked public access, customer-managed KMS encryption, enforced SSL transport, server access logging, object-ownership enforcement, and versioning for protected storage.',
+  ],
+  [
+    'Lifecycle-managed tenant storage records',
+    'Stored-file lifecycle records retaining tenant binding, deterministic object keys, and parent-child lineage for derived artifacts so access checks and deletion follow the managed storage record.',
+  ],
+  [
+    'Managed storage readiness gating',
+    'Stored-file readiness logic blocking reads while malware scans are pending and denying access to quarantined files.',
+  ],
+  [
+    'Derived artifact containment propagation',
+    'Storage lifecycle workflows propagating clean, quarantine, and deletion state from a source file to lifecycle-managed derived artifacts.',
   ],
   [
     'Release provenance record workflow',
@@ -1172,11 +1228,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Audit event types cover authentication, organization, attachment, and evidence-report activity.',
+          'Audit event types cover authentication, organization, administrative step-up challenges, protected file access, attachment inspection, and evidence-report activity.',
           [
             seededEvidence(
               'Audit event inventory',
-              'src/lib/shared/auth-audit.ts defines a broad set of security-relevant audit event types.',
+              'Audit event inventory listing authentication, membership, protected file access, administrative step-up, attachment-inspection, and evidence-report event types retained for later review.',
             ),
           ],
           'Audit and Logging',
@@ -1386,6 +1442,30 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
           'Authentication',
         ),
       },
+      {
+        itemId: 'fresh-session-step-up',
+        label: 'Sensitive protected actions require a recent authenticated session',
+        description:
+          'Sensitive protected actions should require a recent authenticated session in addition to baseline sign-in and MFA protections.',
+        verificationMethod: 'Step-up protection review',
+        required: true,
+        suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Privileged admin routes, evidence-management actions, and regulated step-up checks require a recent authenticated session before they proceed.',
+          [
+            seededEvidence(
+              'Privileged admin step-up enforcement',
+              'Administrative auth route and action protections require a recent step-up session before user management, impersonation, and session-management actions proceed.',
+            ),
+            seededEvidence(
+              'Fresh evidence review protection',
+              'Site admin evidence review, archive, and renewal workflows require a fresh privileged session before security-control evidence state can be changed.',
+            ),
+          ],
+          'Authentication',
+        ),
+      },
     ],
     customerResponsibilityNotes:
       'Customer organizations are responsible for identity proofing, MFA policy decisions, user enrollment expectations, and account lifecycle governance.',
@@ -1481,15 +1561,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The platform provides current-user and site-admin session revocation paths that support containment after suspected credential compromise.',
+          'The platform provides current-user and fresh-session-gated site-admin session revocation paths that support containment after suspected credential compromise.',
           [
             seededEvidence(
               'Administrative session revocation workflow',
-              'Administrative user-session review includes revoke-one and revoke-all actions for active sessions associated with a managed user.',
+              'Administrative user-session review includes revoke-one and revoke-all actions for active sessions associated with a managed user after privileged re-verification.',
             ),
             seededEvidence(
               'Sensitive session revocation endpoints',
-              'Auth configuration includes explicit revoke-session and revoke-all-sessions routes with server-side rate limiting for security-sensitive session invalidation.',
+              'Authentication route protections require recent step-up for privileged session-revocation endpoints and retain server-side rate limits for security-sensitive invalidation flows.',
             ),
           ],
           'Authentication',
@@ -2345,7 +2425,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-8',
     internalControlId: 'CTRL-SC-008',
     implementationSummary:
-      'This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective through HTTPS-oriented auth configuration, trusted-origin checks, and secure session transport settings, while certificate lifecycle and edge enforcement evidence remain outside this repo-backed workspace.',
+      'This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective through HTTPS-oriented auth configuration, trusted-origin checks, secure session transport settings, and HTTPS-only disaster-recovery edge listeners with HTTP-to-HTTPS redirect, while certificate lifecycle procedure evidence remains outside this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -2383,11 +2463,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Session cookies are configured for secure transport on HTTPS origins and short-lived auth settings support controlled session handling.',
+          'Session cookies are configured for secure transport on HTTPS origins, and temporary file access links remain short-lived within the regulated transport posture.',
           [
             seededEvidence(
               'Session transport configuration',
-              'convex/betterAuth/sharedOptions.ts enables secure cookies for HTTPS origins and convex/securityPosture.ts reports sessionExpiryHours, freshWindowMinutes, and temporaryLinkTtlMinutes.',
+              'Session transport configuration showing secure cookies for HTTPS origins together with session-expiry, freshness-window, and temporary-link lifetime settings used for controlled transport handling.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2395,16 +2475,21 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
       },
       {
         itemId: 'certificate-operations',
-        label: 'Certificate and edge operations are documented',
+        label: 'HTTPS edge listener configuration is retained',
         description:
-          'The hosted platform must retain evidence for certificate lifecycle management and edge enforcement.',
+          'The hosted platform should retain deployment evidence showing HTTPS listeners, certificate attachment, and HTTP-to-HTTPS redirect behavior for public entry points.',
         verificationMethod: 'Infrastructure evidence review',
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'Certificate lifecycle management and edge enforcement artifacts are not stored in the repo-backed control workspace yet.',
-          [],
+          'done',
+          'Disaster recovery deployment configuration retains an ACM-backed HTTPS listener and permanent HTTP-to-HTTPS redirect for public entry points.',
+          [
+            seededEvidence(
+              'Disaster recovery HTTPS listener configuration',
+              'Disaster recovery load-balancer configuration showing the public ACM-backed HTTPS listener and permanent HTTP-to-HTTPS redirect used for external entry points.',
+            ),
+          ],
           'Infrastructure and Platform Security',
         ),
       },
@@ -2416,7 +2501,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-12',
     internalControlId: 'CTRL-SC-012',
     implementationSummary:
-      'This control addresses cryptographic key and secret management for signing and verification paths used by the hosted service. The platform enforces required runtime secrets for authentication and signed file or webhook flows, and it uses those configured secrets for HMAC-based protection, but secret generation, secure custody, rotation, and KMS or HSM controls remain deployment-owned and are not fully evidenced in this workspace.',
+      'This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, and it provisions customer-managed KMS keys for protected file and backup storage, but secret generation, secure custody, rotation procedures, and broader deployment key governance remain only partially evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -2436,15 +2521,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The repo fails closed when required auth and signing secrets are missing from protected runtime paths.',
+          'Protected runtime paths fail closed when required auth, signing, and runtime secrets are missing or invalid.',
           [
             seededEvidence(
               'Better Auth secret validation',
-              'src/lib/server/env.server.ts requires BETTER_AUTH_SECRET outside tests and enforces minimum secret expectations before auth can start.',
+              'Authentication runtime validation requiring the Better Auth secret and minimum secret expectations before protected authentication paths start outside tests.',
             ),
             seededEvidence(
               'Storage signing secret validation',
-              'src/lib/server/env.server.ts reads signing secrets while convex/fileServing.ts and convex/storageWebhook.ts throw when required signing secrets are not configured.',
+              'Protected file-serving and malware-webhook workflows reject startup or request processing when the configured signing secrets are missing.',
+            ),
+            seededEvidence(
+              'Disaster recovery runtime secret injection',
+              'Disaster recovery task configuration injects database and application secrets from managed secret stores at runtime instead of constructing plaintext secret values in deployment templates.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2460,15 +2549,40 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Configured secrets are used in HMAC-based file-serving and webhook-verification flows.',
+          'Configured secrets are used in authenticated file-ticket signing and webhook-verification flows.',
           [
             seededEvidence(
-              'Signed file-serving flow',
-              'convex/fileServing.ts imports an HMAC key from the configured file-serving secret and signs or verifies protected file serve URLs.',
+              'Authenticated file access ticket flow',
+              'Protected file access issues HMAC-backed tickets and verifies those signatures before the same authenticated session can redeem a short-lived download redirect.',
             ),
             seededEvidence(
               'Webhook signature verification',
-              'convex/storageWebhook.ts signs and verifies GuardDuty webhook payloads with the configured shared secret, and infra/aws-cdk/lambda/guardduty-forwarder.mjs generates the forwarding signature.',
+              'Webhook verification flow signs and validates GuardDuty malware payloads with the configured shared secret before findings are accepted.',
+            ),
+          ],
+          'Infrastructure and Platform Security',
+        ),
+      },
+      {
+        itemId: 'managed-storage-keys-provisioned-and-rotated',
+        label:
+          'Managed storage keys are provisioned and rotated for protected file and backup storage',
+        description:
+          'Managed file and backup storage should use customer-managed encryption keys with rotation enabled for hosted-service data.',
+        verificationMethod: 'Storage key configuration review',
+        required: true,
+        suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
+        seed: seededChecklist(
+          'done',
+          'Customer file storage and disaster-recovery backups use customer-managed KMS keys with rotation enabled.',
+          [
+            seededEvidence(
+              'Customer file storage KMS configuration',
+              'Managed file-storage infrastructure provisions a customer-managed KMS key with rotation enabled and binds it to the protected files bucket.',
+            ),
+            seededEvidence(
+              'Disaster recovery backup KMS configuration',
+              'Disaster recovery backup infrastructure provisions a separate customer-managed KMS key with rotation enabled for backup objects.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2497,7 +2611,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-13',
     internalControlId: 'CTRL-SC-013',
     implementationSummary:
-      'This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the repo-backed platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, managed encrypted file storage, and cryptographic signing or hashing for protected file access and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this repo-backed workspace.',
+      'This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, and cryptographic signing or hashing for authenticated file redemption and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -2541,11 +2655,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The managed S3 storage stack uses server-side encryption and enforces SSL for hosted file storage.',
+          'The managed S3 storage stack uses customer-managed KMS encryption and enforces SSL for hosted file storage.',
           [
             seededEvidence(
-              'Encrypted managed storage configuration',
-              'infra/aws-cdk/lib/malware-scan-stack.cts provisions the files bucket with S3-managed encryption, blocked public access, and enforceSSL.',
+              'KMS-backed managed storage configuration',
+              'Managed file-storage configuration provisions the files bucket with customer-managed KMS encryption, blocked public access, and enforced SSL transport.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2561,15 +2675,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The platform uses HMAC-backed signed file access plus SHA-256-based hashing for audit and evidence integrity workflows.',
+          'The platform uses HMAC-backed authenticated file-ticket redemption plus SHA-256-based hashing for audit and evidence integrity workflows.',
           [
             seededEvidence(
-              'Signed protected file access',
-              'convex/fileServing.ts creates and verifies HMAC-backed signatures for protected file-serving URLs.',
+              'Authenticated protected file access',
+              'Protected file access uses one-time HMAC-backed ticket signatures and same-session authenticated redemption before a short-lived object download redirect is issued.',
             ),
             seededEvidence(
               'Evidence and audit hashing',
-              'convex/securityReports.ts and convex/audit.ts compute content, export, and audit event hashes to preserve integrity-linked records.',
+              'Evidence export and audit record workflows compute content, export, and event hashes so integrity-linked records can be reviewed later.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -2598,7 +2712,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-28',
     internalControlId: 'CTRL-SC-028',
     implementationSummary:
-      'This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through managed encrypted storage, blocked public access, and controlled file access for data managed within the service boundary.',
+      'This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through customer-managed KMS encryption, blocked public access, tenant-scoped managed object keys, lifecycle-managed derived artifacts, and authenticated controlled file access for data managed within the service boundary.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -2616,11 +2730,11 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'link', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Managed storage configuration enforces blocked public access, server-side encryption, and versioning for protected data at rest.',
+          'Managed storage configuration enforces blocked public access, customer-managed KMS encryption, access logging, and versioning for protected data at rest.',
           [
             seededEvidence(
-              'Encrypted S3 storage configuration',
-              'infra/aws-cdk/lib/malware-scan-stack.cts provisions an S3 bucket with BLOCK_ALL public access, S3-managed encryption, enforceSSL, object ownership enforcement, and versioning.',
+              'Protected file bucket configuration',
+              'Managed file bucket configuration showing blocked public access, customer-managed KMS encryption, enforced SSL transport, server access logging, object-ownership enforcement, and versioning for protected storage.',
             ),
           ],
           'Data Protection',
@@ -2636,11 +2750,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Protected files are served through controlled signed paths instead of open storage object access.',
+          'Protected files and derived artifacts are stored under lifecycle-managed records and served only through authenticated ticket redemption rather than open object access.',
           [
             seededEvidence(
               'Controlled protected file access',
-              'convex/storagePlatform.ts and convex/fileServing.ts route protected file access through signed serve paths instead of direct open object reads.',
+              'Managed file-serving workflow issues one-time signed tickets, requires authenticated same-session redemption, and only then issues a short-lived object download redirect.',
+            ),
+            seededEvidence(
+              'Lifecycle-managed tenant storage records',
+              'Stored-file lifecycle records retain tenant binding, deterministic object keys, and parent-child lineage for derived artifacts so access checks and deletion follow the managed storage record.',
             ),
           ],
           'Data Protection',
@@ -2801,15 +2919,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Site-admin access requires MFA or passkeys, and sensitive actions can require recent step-up verification.',
+          'Site-admin access requires MFA or passkeys, and privileged admin user-management, impersonation, session-management, and evidence-management actions require recent step-up verification.',
           [
             seededEvidence(
               'MFA enforcement for site-admin access',
-              'convex/auth/access.ts and src/features/auth/server/auth-guards.ts reject site-admin access when MFA or passkey requirements are not satisfied.',
+              'Site admin access protections reject privileged administrative access when MFA or passkey requirements are not satisfied.',
             ),
             seededEvidence(
-              'Recent step-up protections',
-              'src/lib/shared/security-baseline.ts requires step-up for audit exports and src/features/auth/server/auth-guards.ts redirects users through the fresh-session flow when needed.',
+              'Privileged admin step-up enforcement',
+              'Administrative auth route and action protections require recent step-up before user management, impersonation, and session-revocation actions proceed.',
+            ),
+            seededEvidence(
+              'Evidence management fresh-session enforcement',
+              'Site admin evidence review, archive, and renewal workflows require a fresh privileged session before control evidence state can be changed.',
             ),
           ],
         ),
@@ -3348,7 +3470,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SI-3',
     internalControlId: 'CTRL-SI-003',
     implementationSummary:
-      'This control ensures files entering protected workflows are inspected for unsafe characteristics and contained when suspicious or infected conditions are detected. The platform supports that objective through built-in file inspection, quarantine and rejection paths, malware-finding ingestion, and downstream containment actions on affected files.',
+      'This control ensures files entering protected workflows are inspected, gated behind malware readiness, and contained when suspicious or infected conditions are detected. The platform supports that objective through built-in file inspection, quarantine and rejection paths, malware-finding ingestion, unreadable pending-scan states, and downstream containment actions on affected source and derived files.',
     coverage: 'covered' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -3368,15 +3490,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Uploaded files are inspected for type, size, and signature mismatches before protected workflows accept them.',
+          'Uploaded files are inspected for allowed type, size, and signature mismatches before protected workflows accept them.',
           [
             seededEvidence(
               'Built-in file inspection pipeline',
-              'src/lib/server/file-inspection.server.ts validates file kind, size limits, and signature matches before returning accepted status.',
+              'File-inspection workflow applying allowed-format checks, size limits, and signature validation before uploads are accepted into protected workflows.',
             ),
             seededEvidence(
               'Attachment scan event recording',
-              'convex/agentChatActions.ts records document scan events for inspected attachments before downstream chat workflows continue.',
+              'Document-scan event recording retains inspection outcomes for uploaded attachments before downstream chat workflows continue.',
             ),
           ],
           'File and Content Security',
@@ -3392,15 +3514,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Signature mismatches are quarantined, unsupported files are rejected, and malware findings trigger quarantine.',
+          'Unsafe files are rejected or quarantined, pending-scan files remain unreadable, and derived artifacts inherit quarantine or unreadable state from the source file.',
           [
             seededEvidence(
               'Quarantine and rejection decisions',
-              'src/lib/server/file-inspection.server.ts returns quarantined or rejected results for unsafe file conditions.',
+              'File-inspection decisions returning quarantined or rejected outcomes when uploads fail format, signature, or safety checks.',
             ),
             seededEvidence(
-              'Attachment quarantine mutation flow',
-              'convex/agentChatActions.ts marks affected attachments quarantined or rejected and records the reason for later review.',
+              'Managed storage readiness gating',
+              'Stored-file readiness checks block reads while malware scans are pending and deny access to quarantined files.',
+            ),
+            seededEvidence(
+              'Derived artifact containment propagation',
+              'Storage lifecycle workflows propagate clean, quarantine, and deletion state from a source file to lifecycle-managed derived artifacts.',
             ),
           ],
           'File and Content Security',
@@ -3416,19 +3542,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system', 'link'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'GuardDuty malware findings are verified, recorded, and used to mark files infected and quarantine them.',
+          'GuardDuty malware findings are verified, recorded, and used to quarantine affected source files and their lifecycle-managed descendants.',
           [
             seededEvidence(
               'Signed GuardDuty webhook verification',
-              'convex/storageWebhook.ts verifies webhook signatures and timestamps before applying GuardDuty malware findings.',
+              'Webhook verification workflow validating signed GuardDuty malware payloads and timestamps before findings are accepted.',
             ),
             seededEvidence(
               'Malware finding persistence',
-              'convex/schema.ts stores malware status, finding IDs, and quarantine timestamps on storageLifecycle records used for containment and review.',
+              'Storage lifecycle records retaining malware status, finding identifiers, quarantine timestamps, and related containment state for affected files.',
             ),
             seededEvidence(
               'Malware scanning infrastructure',
-              'infra/aws-cdk/lib/malware-scan-stack.cts provisions the GuardDuty malware protection plan, result forwarding Lambda, and protected S3 bucket.',
+              'Managed malware-scanning infrastructure showing the protected files bucket, GuardDuty malware protection plan, and result-forwarding components used for document scanning.',
             ),
           ],
           'File and Content Security',

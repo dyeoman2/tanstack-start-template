@@ -103,7 +103,7 @@ type AutoCollectedEvidenceLink = {
       | 'backup_verification_report'
       | 'external_document'
       | 'review_task'
-      | 'vendor_review';
+      | 'vendor';
   };
   taskTitle: string;
 };

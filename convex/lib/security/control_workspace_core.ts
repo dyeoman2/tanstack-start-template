@@ -322,7 +322,7 @@ async function _listSecurityControlWorkspaceRecords(
   return controls.map((control) => {
     type LinkedEntity = {
       entityId: string;
-      entityType: 'evidence' | 'evidence_report' | 'finding' | 'review_task' | 'vendor_review';
+      entityType: 'evidence' | 'evidence_report' | 'finding' | 'review_task' | 'vendor';
       label: string;
       relationshipType:
         | 'follow_up_for'
@@ -333,7 +333,7 @@ async function _listSecurityControlWorkspaceRecords(
         | 'satisfies'
         | 'supports'
         | 'tracks_finding'
-        | 'tracks_vendor_review';
+        | 'tracks_vendor';
       status: string | null;
     };
     const platformChecklist = control.platformChecklistItems.map((item) => {
@@ -639,7 +639,7 @@ async function _listSecurityControlWorkspaceRecords(
           ...(relationshipsByFromKey.get(`control:${control.internalControlId}`) ?? []).flatMap(
             (relationship: (typeof allRelationships)[number]): LinkedEntity[] => {
               switch (relationship.toType) {
-                case 'vendor_review': {
+                case 'vendor': {
                   const vendorRecord = vendorByKey.get(
                     relationship.toId as 'openrouter' | 'resend' | 'sentry',
                   );
@@ -652,7 +652,7 @@ async function _listSecurityControlWorkspaceRecords(
                   return [
                     {
                       entityId: relationship.toId,
-                      entityType: relationship.toType,
+                      entityType: 'vendor',
                       label: vendorRuntime.displayName,
                       relationshipType: relationship.relationshipType,
                       status:
@@ -740,9 +740,9 @@ async function _listSecurityControlWorkspaceRecords(
               return [
                 {
                   entityId: mapping.vendorKey,
-                  entityType: 'vendor_review',
+                  entityType: 'vendor',
                   label: vendorRuntime.displayName,
-                  relationshipType: 'tracks_vendor_review',
+                  relationshipType: 'tracks_vendor',
                   status:
                     vendorRecord !== undefined
                       ? deriveVendorReviewStatus({

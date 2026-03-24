@@ -827,7 +827,7 @@ export function OrganizationAuditPage({
     }
 
     const verifiedDomainCount = domainsResponse.domains.filter(
-      (domain) => domain.status === 'verified',
+      (domain: (typeof domainsResponse.domains)[number]) => domain.status === 'verified',
     ).length;
 
     return {
@@ -1329,7 +1329,7 @@ export function OrganizationAuditPage({
           </div>
         </div>
 
-        <DataTable
+        <DataTable<OrganizationAuditRow>
           data={tableRows}
           columns={columns}
           pagination={
@@ -1351,7 +1351,7 @@ export function OrganizationAuditPage({
           loadingSkeleton={
             <div className="flex min-h-48 items-center justify-center text-sm text-muted-foreground">
               <Spinner className="size-5" />
-              <span className="sr-only">Loading audit history</span>
+              <span>Loading audit history...</span>
             </div>
           }
         />

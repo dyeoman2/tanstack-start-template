@@ -27,6 +27,7 @@ export async function finalizeS3MirrorUpload(ctx: ActionCtx, args: FinalizeUploa
     mimeType: args.mimeType,
     mirrorDeadlineAt: Date.now() + runtimeConfig.malwareScanSlaMs,
     mirrorStatus: 'PENDING',
+    organizationId: args.organizationId,
     originalFileName: args.fileName,
     sourceId: args.sourceId,
     sourceType: args.sourceType,
@@ -62,7 +63,11 @@ export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: st
     throw new ConvexError(`Convex blob not found for storageId=${args.storageId}.`);
   }
 
-  const key = buildDeterministicStorageKey(args.storageId);
+  const key = buildDeterministicStorageKey({
+    organizationId: lifecycle.organizationId ?? null,
+    sourceType: lifecycle.sourceType,
+    storageId: args.storageId,
+  });
   const content = toUint8Array(await blob.arrayBuffer());
   const result = await putS3Object({
     body: content,
@@ -127,12 +132,18 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
     return;
   }
 
-  const listed = await listS3Objects({
-    bucket,
-    maxKeys: runtimeConfig.s3OrphanCleanupMaxScan,
-    prefix: 'team/global/storage/',
-  });
-  const contents = listed.Contents ?? [];
+  const contents = (
+    await Promise.all(
+      ['org/', 'site-admin/'].map(async (prefix) => {
+        const listed = await listS3Objects({
+          bucket,
+          maxKeys: runtimeConfig.s3OrphanCleanupMaxScan,
+          prefix,
+        });
+        return listed.Contents ?? [];
+      }),
+    )
+  ).flat();
   const cutoff = Date.now() - runtimeConfig.s3OrphanCleanupMinAgeMs;
 
   for (const object of contents) {

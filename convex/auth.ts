@@ -16,6 +16,7 @@ import {
   getBetterAuthSecret,
   isGoogleWorkspaceOAuthConfigured,
 } from '../src/lib/server/env.server';
+import { STEP_UP_REQUIREMENTS, type StepUpRequirement } from '../src/lib/shared/auth-policy';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -24,6 +25,7 @@ import { action, internalAction } from './_generated/server';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
   getVerifiedCurrentUserFromActionOrThrow,
+  requireStepUpFromActionOrThrow,
 } from './auth/access';
 import {
   assertScimManagementAccess,
@@ -642,6 +644,90 @@ async function enforceActorScopedServerAuthRateLimit(
       ...(scope ? { scope } : {}),
     }),
   );
+}
+
+async function recordAdminStepUpChallenge(
+  ctx: ActionCtx,
+  args: {
+    reason: string;
+    requirement: StepUpRequirement;
+    resourceId: string;
+    resourceLabel?: string | null;
+    resourceType: 'auth_admin_action' | 'auth_admin_route';
+    sessionId?: string | null;
+    sourceSurface: string;
+    targetUserId?: string | null;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: currentUser.authUserId,
+    eventType: 'admin_step_up_challenged',
+    metadata: JSON.stringify({
+      reason: args.reason,
+      requirement: args.requirement,
+      targetUserId: args.targetUserId ?? null,
+    }),
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    outcome: 'failure',
+    resourceId: args.resourceId,
+    resourceLabel: args.resourceLabel ?? undefined,
+    resourceType: args.resourceType,
+    sessionId: args.sessionId ?? currentUser.authSession?.id ?? undefined,
+    severity: 'warning',
+    sourceSurface: args.sourceSurface,
+    userId: currentUser.authUserId,
+  });
+}
+
+async function assertPrivilegedAdminActionAccess(
+  ctx: ActionCtx,
+  args: {
+    reason: string;
+    requirement: StepUpRequirement;
+    resourceId: string;
+    resourceLabel?: string | null;
+    sourceSurface: string;
+    targetUserId?: string | null;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
+
+  if (currentUser.authSession?.impersonatedBy) {
+    const message = 'Impersonated sessions cannot perform privileged admin actions.';
+    await recordAdminStepUpChallenge(ctx, {
+      reason: message,
+      requirement: args.requirement,
+      resourceId: args.resourceId,
+      resourceLabel: args.resourceLabel,
+      resourceType: 'auth_admin_action',
+      sessionId: currentUser.authSession.id,
+      sourceSurface: args.sourceSurface,
+      targetUserId: args.targetUserId,
+    });
+    throw new APIError('FORBIDDEN', {
+      message,
+    });
+  }
+
+  try {
+    await requireStepUpFromActionOrThrow(ctx, args.requirement);
+    return currentUser;
+  } catch {
+    await recordAdminStepUpChallenge(ctx, {
+      reason: args.reason,
+      requirement: args.requirement,
+      resourceId: args.resourceId,
+      resourceLabel: args.resourceLabel,
+      resourceType: 'auth_admin_action',
+      sessionId: currentUser.authSession?.id ?? null,
+      sourceSurface: args.sourceSurface,
+      targetUserId: args.targetUserId,
+    });
+    throw new APIError('FORBIDDEN', {
+      message: args.reason,
+    });
+  }
 }
 
 async function enforceCurrentUserScopedServerAuthRateLimit(
@@ -1745,6 +1831,33 @@ export const createAuth = (
         userId,
       });
     },
+    recordAdminStepUpChallenge: async ({
+      path,
+      reason,
+      requirement,
+      resourceId,
+      sessionId,
+      userId,
+    }) => {
+      await recordAuditEvent({
+        actorUserId: userId,
+        createdAt: Date.now(),
+        eventType: 'admin_step_up_challenged',
+        metadata: JSON.stringify({
+          path,
+          reason,
+          requirement,
+        }),
+        organizationId: undefined,
+        outcome: 'failure',
+        resourceId: resourceId ?? path,
+        resourceType: 'auth_admin_route',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: `better_auth${path}`,
+        userId,
+      });
+    },
     assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {
       await assertScimManagementAccess(ctx, {
         organizationId,
@@ -2177,6 +2290,13 @@ export const adminListUsers = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before viewing the user directory.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: 'user-directory',
+        resourceLabel: 'User directory',
+        sourceSurface: 'auth.admin.list_users',
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminListUsers');
       const response = await auth.api.listUsers({
         headers,
@@ -2203,6 +2323,14 @@ export const adminGetUser = action({
   returns: betterAuthActionResultValidator(betterAuthAdminUserValidator),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before viewing another user record.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.id,
+        resourceLabel: 'User record',
+        sourceSurface: 'auth.admin.get_user',
+        targetUserId: args.id,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminGetUser', args.id);
       const response = await auth.api.getUser({
         headers,
@@ -2228,6 +2356,13 @@ export const adminCreateUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before creating a user.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.email,
+        resourceLabel: 'User create',
+        sourceSurface: 'auth.admin.create_user',
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminCreateUser', args.email);
       const response = await auth.api.createUser({
         body: args,
@@ -2253,6 +2388,14 @@ export const adminUpdateUser = action({
   returns: betterAuthActionResultValidator(betterAuthAdminUserValidator),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before updating another user.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User update',
+        sourceSurface: 'auth.admin.update_user',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminUpdateUser', args.userId);
       const response = await auth.api.adminUpdateUser({
         body: args,
@@ -2276,6 +2419,14 @@ export const adminSetRole = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before changing a user role.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User role change',
+        sourceSurface: 'auth.admin.set_role',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminSetRole', args.userId);
       const response = await auth.api.setRole({
         body: args,
@@ -2302,6 +2453,14 @@ export const adminBanUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before banning a user.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User ban',
+        sourceSurface: 'auth.admin.ban_user',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminBanUser', args.userId);
       const response = await auth.api.banUser({
         body: args,
@@ -2326,6 +2485,14 @@ export const adminUnbanUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before unbanning a user.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User unban',
+        sourceSurface: 'auth.admin.unban_user',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminUnbanUser', args.userId);
       const response = await auth.api.unbanUser({
         body: args,
@@ -2350,6 +2517,14 @@ export const adminListUserSessions = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: "Verify your account again before viewing another user's sessions.",
+        requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User sessions',
+        sourceSurface: 'auth.admin.list_user_sessions',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminListUserSessions', args.userId);
       const response = await auth.api.listUserSessions({
         body: args,
@@ -2374,6 +2549,13 @@ export const adminRevokeUserSession = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before revoking a user session.',
+        requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+        resourceId: args.sessionId,
+        resourceLabel: 'User session revoke',
+        sourceSurface: 'auth.admin.revoke_user_session',
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminRevokeUserSession', args.sessionId);
       const sessionRecord = (await ctx.runQuery(components.betterAuth.adapter.findOne, {
         model: 'session',
@@ -2469,6 +2651,14 @@ export const adminRevokeUserSessions = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before revoking all user sessions.',
+        requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User session revoke all',
+        sourceSurface: 'auth.admin.revoke_user_sessions',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminRevokeUserSessions', args.userId);
       return await auth.api.revokeUserSessions({
         body: args,
@@ -2489,6 +2679,14 @@ export const adminRemoveUser = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before deleting a user.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User delete',
+        sourceSurface: 'auth.admin.remove_user',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminRemoveUser', args.userId);
       return await auth.api.removeUser({
         body: args,
@@ -2510,6 +2708,14 @@ export const adminSetUserPassword = action({
   ),
   handler: async (ctx, args) => {
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
+      await assertPrivilegedAdminActionAccess(ctx, {
+        reason: 'Verify your account again before resetting a user password.',
+        requirement: STEP_UP_REQUIREMENTS.userAdministration,
+        resourceId: args.userId,
+        resourceLabel: 'User password reset',
+        sourceSurface: 'auth.admin.set_user_password',
+        targetUserId: args.userId,
+      });
       await enforceActorScopedServerAuthRateLimit(ctx, 'adminSetUserPassword', args.userId);
       return await auth.api.setUserPassword({
         body: args,

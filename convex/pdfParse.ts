@@ -28,7 +28,7 @@ export const upsertPdfParseJobInternal = internalMutation({
     errorMessage: v.optional(v.union(v.string(), v.null())),
     organizationId: v.string(),
     requestedByUserId: v.string(),
-    resultStorageId: v.optional(v.union(v.id('_storage'), v.null())),
+    resultStorageId: v.optional(v.union(v.string(), v.null())),
     status: pdfParseJobStatusValidator,
     storageId: v.string(),
     updatedAt: v.number(),

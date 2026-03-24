@@ -241,7 +241,7 @@ export const runSecurityWorkspaceMigrationNow = mutation({
     patchedChecklistStatuses: v.number(),
     patchedReviewNotes: v.number(),
     patchedScopeRecords: v.number(),
-    syncedVendorReviewRows: v.number(),
+    syncedVendorRows: v.number(),
   }),
   handler: async (ctx) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);

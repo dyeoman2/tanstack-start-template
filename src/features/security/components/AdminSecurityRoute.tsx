@@ -55,7 +55,6 @@ import {
 } from '~/features/security/formatters';
 import { useSecurityControlTable } from '~/features/security/hooks/useSecurityControlTable';
 import type {
-  SecurityCompatSearch,
   SecurityControlsSearch,
   SecurityFindingsSearch,
   SecurityPoliciesSearch,
@@ -85,47 +84,6 @@ import type {
 } from '~/features/security/types';
 import { exportSecurityControlsCsv } from '~/features/security/utils/exportSecurityControlsCsv';
 import { uploadFileWithTarget } from '~/features/security/utils/upload';
-
-function getCompatSearchForTab(tab: SecurityTab, search: SecurityCompatSearch) {
-  switch (tab) {
-    case 'controls':
-      return {
-        family: search.family,
-        responsibility: search.responsibility,
-        search: search.search,
-        selectedControl: search.selectedControl,
-        sortBy: search.sortBy,
-        sortOrder: search.sortOrder,
-        support: search.support,
-      };
-    case 'policies':
-      return {
-        policySearch: search.policySearch,
-        policySortBy: search.policySortBy,
-        policySortOrder: search.policySortOrder,
-        policySupport: search.policySupport,
-        selectedPolicy: search.selectedPolicy,
-      };
-    case 'findings':
-      return {
-        selectedFinding: search.selectedFinding,
-      };
-    case 'reports':
-      return {
-        selectedReport: search.selectedReport,
-      };
-    case 'vendors':
-      return {
-        selectedVendor: search.selectedVendor,
-      };
-    case 'reviews':
-      return {
-        selectedReviewRun: search.selectedReviewRun,
-      };
-    case 'overview':
-      return {};
-  }
-}
 
 function SecurityPageShell(props: { activeTab: SecurityTab; children: React.ReactNode }) {
   const navigate = useNavigate();
@@ -165,30 +123,8 @@ function SecurityPageShell(props: { activeTab: SecurityTab; children: React.Reac
   );
 }
 
-export function AdminSecurityLayout(props: {
-  children: React.ReactNode;
-  search: SecurityCompatSearch;
-}) {
-  const navigate = useNavigate();
+export function AdminSecurityLayout(props: { children: React.ReactNode }) {
   const location = useLocation();
-
-  useEffect(() => {
-    if (location.pathname !== getSecurityPath('overview')) {
-      return;
-    }
-
-    if (!props.search.tab || props.search.tab === 'overview') {
-      return;
-    }
-
-    const nextTab = isSecurityTab(props.search.tab ?? '') ? props.search.tab : 'overview';
-
-    void navigate({
-      replace: true,
-      search: getCompatSearchForTab(nextTab, props.search),
-      to: getSecurityPath(nextTab),
-    });
-  }, [location.pathname, navigate, props.search]);
 
   const activeTab = useMemo<SecurityTab>(() => {
     const pathname = location.pathname;
@@ -612,7 +548,7 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
         case 'finding':
           navigateToFinding(entity.entityId);
           return;
-        case 'vendor_review':
+        case 'vendor':
           navigateToVendor(entity.entityId as VendorWorkspace['vendor']);
           return;
         default:
@@ -684,15 +620,24 @@ export function AdminSecurityControlsRoute(props: { search: SecurityControlsSear
 }
 
 export function AdminSecurityRoute(props: {
-  search: SecurityCompatSearch & {
+  search: {
     family?: string;
+    findingDisposition?: SecurityFindingsSearch['findingDisposition'];
+    findingSearch?: string;
+    findingSeverity?: SecurityFindingsSearch['findingSeverity'];
+    findingStatus?: SecurityFindingsSearch['findingStatus'];
     policySearch?: string;
     policySortBy?: (typeof POLICY_TABLE_SORT_FIELDS)[number];
     policySortOrder?: 'asc' | 'desc';
     policySupport?: 'all' | 'complete' | 'partial' | 'missing';
+    reportKind?: SecurityReportsSearch['reportKind'];
+    reportReviewStatus?: SecurityReportsSearch['reportReviewStatus'];
+    reportSearch?: string;
     responsibility?: 'all' | 'platform' | 'shared-responsibility' | 'customer';
     search?: string;
+    selectedControl?: string;
     selectedFinding?: string;
+    selectedPolicy?: string;
     selectedReport?: string;
     selectedReviewRun?: string;
     selectedVendor?: string;
@@ -741,6 +686,10 @@ export function AdminSecurityRoute(props: {
       {activeTab === 'findings' ? (
         <AdminSecurityFindingsRoute
           search={{
+            findingDisposition: props.search.findingDisposition ?? 'all',
+            findingSearch: props.search.findingSearch ?? '',
+            findingSeverity: props.search.findingSeverity ?? 'all',
+            findingStatus: props.search.findingStatus ?? 'all',
             selectedFinding: props.search.selectedFinding,
           }}
         />
@@ -748,6 +697,9 @@ export function AdminSecurityRoute(props: {
       {activeTab === 'reports' ? (
         <AdminSecurityReportsRoute
           search={{
+            reportKind: props.search.reportKind ?? 'all',
+            reportReviewStatus: props.search.reportReviewStatus ?? 'all',
+            reportSearch: props.search.reportSearch ?? '',
             selectedReport: props.search.selectedReport,
           }}
         />
@@ -880,22 +832,71 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
     Record<SecurityFindingListItem['findingKey'], SecurityFindingListItem['disposition']>
   >({});
   const [busyFindingKey, setBusyFindingKey] = useState<string | null>(null);
-  const findings = findingsBoard?.findings;
+  const allFindings = findingsBoard?.findings;
+  const findings = useMemo(() => {
+    const rows = allFindings;
+    if (!rows) {
+      return rows;
+    }
+
+    const searchTerm = props.search.findingSearch.trim().toLowerCase();
+    return rows.filter((finding) => {
+      if (props.search.findingStatus !== 'all' && finding.status !== props.search.findingStatus) {
+        return false;
+      }
+      if (
+        props.search.findingDisposition !== 'all' &&
+        finding.disposition !== props.search.findingDisposition
+      ) {
+        return false;
+      }
+      if (
+        props.search.findingSeverity !== 'all' &&
+        finding.severity !== props.search.findingSeverity
+      ) {
+        return false;
+      }
+      if (!searchTerm) {
+        return true;
+      }
+
+      const haystack = [
+        finding.title,
+        finding.description,
+        finding.sourceLabel,
+        finding.internalNotes ?? '',
+        finding.customerSummary ?? '',
+        finding.relatedControls
+          .map((control) => `${control.nist80053Id} ${control.title}`)
+          .join(' '),
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }, [
+    allFindings,
+    props.search.findingDisposition,
+    props.search.findingSearch,
+    props.search.findingSeverity,
+    props.search.findingStatus,
+  ]);
   const selectedFinding = useMemo(
-    () => findings?.find((entry) => entry.findingKey === props.search.selectedFinding) ?? null,
-    [findings, props.search.selectedFinding],
+    () => allFindings?.find((entry) => entry.findingKey === props.search.selectedFinding) ?? null,
+    [allFindings, props.search.selectedFinding],
   );
 
   const updateFindingSearch = useCallback(
-    (selectedFinding: string | undefined) => {
+    (nextSearch: Partial<SecurityFindingsSearch>) => {
       void navigate({
         search: {
-          selectedFinding,
+          ...props.search,
+          ...nextSearch,
         },
         to: getSecurityPath('findings'),
       });
     },
-    [navigate],
+    [navigate, props.search],
   );
 
   const handleReviewFinding = useCallback(
@@ -947,14 +948,30 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
     <>
       <AdminSecurityFindingsTab
         busyFindingKey={busyFindingKey}
+        findingDispositionFilter={props.search.findingDisposition}
+        findingSearch={props.search.findingSearch}
+        findingSeverityFilter={props.search.findingSeverity}
+        findingStatusFilter={props.search.findingStatus}
         findingCustomerSummaries={findingCustomerSummaries}
         findingDispositions={findingDispositions}
         findingNotes={findingNotes}
         findings={findings}
         navigateToControl={navigateToControl}
         navigateToReviews={navigateToReviews}
+        onChangeFindingDispositionFilter={(findingDisposition) => {
+          updateFindingSearch({ findingDisposition });
+        }}
+        onChangeFindingSearch={(findingSearch) => {
+          updateFindingSearch({ findingSearch });
+        }}
+        onChangeFindingSeverityFilter={(findingSeverity) => {
+          updateFindingSearch({ findingSeverity });
+        }}
+        onChangeFindingStatusFilter={(findingStatus) => {
+          updateFindingSearch({ findingStatus });
+        }}
         onOpenFinding={(findingKey) => {
-          updateFindingSearch(findingKey);
+          updateFindingSearch({ selectedFinding: findingKey });
         }}
         onOpenFindingFollowUp={handleOpenFindingFollowUp}
         onReviewFinding={handleReviewFinding}
@@ -976,7 +993,7 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
             return;
           }
 
-          updateFindingSearch(undefined);
+          updateFindingSearch({ selectedFinding: undefined });
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
@@ -992,8 +1009,8 @@ export function AdminSecurityFindingsRoute(props: { search: SecurityFindingsSear
             <AdminSecurityFindingDetail
               finding={selectedFinding}
               onOpenControl={navigateToControl}
-              onOpenReviews={() => {
-                navigateToReviews();
+              onOpenReviews={(selectedReviewRun) => {
+                navigateToReviews(selectedReviewRun);
               }}
             />
           ) : null}
@@ -1019,6 +1036,43 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const [busyReportAction, setBusyReportAction] = useState<string | null>(null);
+  const allReports = reportsBoard?.evidenceReports;
+  const filteredReports = useMemo(() => {
+    const rows = allReports;
+    if (!rows) {
+      return rows;
+    }
+
+    const searchTerm = props.search.reportSearch.trim().toLowerCase();
+    return rows.filter((reportItem) => {
+      if (
+        props.search.reportReviewStatus !== 'all' &&
+        reportItem.reviewStatus !== props.search.reportReviewStatus
+      ) {
+        return false;
+      }
+      if (props.search.reportKind !== 'all' && reportItem.reportKind !== props.search.reportKind) {
+        return false;
+      }
+      if (!searchTerm) {
+        return true;
+      }
+
+      const haystack = [
+        reportItem.reportKind,
+        reportItem.customerSummary ?? '',
+        reportItem.internalNotes ?? '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      return haystack.includes(searchTerm);
+    });
+  }, [
+    allReports,
+    props.search.reportKind,
+    props.search.reportReviewStatus,
+    props.search.reportSearch,
+  ]);
   const selectedReportDetail = useQuery(
     api.securityReports.getEvidenceReportDetail,
     props.search.selectedReport
@@ -1029,11 +1083,8 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
     if (selectedReportDetail) {
       return selectedReportDetail;
     }
-    return (
-      reportsBoard?.evidenceReports.find((entry) => entry.id === props.search.selectedReport) ??
-      null
-    );
-  }, [props.search.selectedReport, reportsBoard?.evidenceReports, selectedReportDetail]);
+    return allReports?.find((entry) => entry.id === props.search.selectedReport) ?? null;
+  }, [allReports, props.search.selectedReport, selectedReportDetail]);
   const auditReadiness = reportsBoard?.auditReadiness;
   const auditReadinessSummary = useMemo(() => {
     if (auditReadiness === undefined) {
@@ -1070,15 +1121,16 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
           : 'No drill evidence recorded';
 
   const updateReportSearch = useCallback(
-    (selectedReport: string | undefined) => {
+    (nextSearch: Partial<SecurityReportsSearch>) => {
       void navigate({
         search: {
-          selectedReport,
+          ...props.search,
+          ...nextSearch,
         },
         to: getSecurityPath('reports'),
       });
     },
-    [navigate],
+    [navigate, props.search],
   );
 
   const handleGenerateReport = useCallback(
@@ -1087,7 +1139,7 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
       try {
         const generated = await generateEvidenceReport({ reportKind });
         setReport(generated.report);
-        updateReportSearch(generated.id);
+        updateReportSearch({ selectedReport: generated.id });
       } finally {
         setIsGenerating(false);
       }
@@ -1118,7 +1170,7 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
       try {
         const exported = await exportEvidenceReport({ id });
         setReport(exported.report);
-        updateReportSearch(id);
+        updateReportSearch({ selectedReport: id });
       } finally {
         setBusyReportAction(null);
       }
@@ -1132,17 +1184,29 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
         auditReadiness={auditReadiness}
         auditReadinessSummary={auditReadinessSummary}
         busyReportAction={busyReportAction}
-        evidenceReports={reportsBoard?.evidenceReports}
+        evidenceReports={filteredReports}
         handleExportReport={handleExportReport}
         handleGenerateReport={handleGenerateReport}
+        onChangeReportKind={(reportKind) => {
+          updateReportSearch({ reportKind });
+        }}
+        onChangeReportReviewStatus={(reportReviewStatus) => {
+          updateReportSearch({ reportReviewStatus });
+        }}
+        onChangeReportSearch={(reportSearch) => {
+          updateReportSearch({ reportSearch });
+        }}
         handleOpenReportDetail={(reportId) => {
-          updateReportSearch(reportId);
+          updateReportSearch({ selectedReport: reportId });
         }}
         handleReviewReport={handleReviewReport}
         isGenerating={isGenerating}
         report={report}
         reportCustomerSummaries={reportCustomerSummaries}
+        reportKindFilter={props.search.reportKind}
         reportNotes={reportNotes}
+        reportReviewStatusFilter={props.search.reportReviewStatus}
+        reportSearch={props.search.reportSearch}
         restoreDrillFooter={restoreDrillFooter}
         setReportCustomerSummaries={setReportCustomerSummaries}
         setReportNotes={setReportNotes}
@@ -1155,7 +1219,7 @@ export function AdminSecurityReportsRoute(props: { search: SecurityReportsSearch
             return;
           }
 
-          updateReportSearch(undefined);
+          updateReportSearch({ selectedReport: undefined });
         }}
       >
         <SheetContent side="right" className="w-full overflow-y-auto sm:max-w-2xl">
@@ -1187,10 +1251,10 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
   const navigate = useNavigate();
   const { showToast } = useToast();
   const { navigateToControl, navigateToReviews } = useSecurityNavigation();
-  const vendorWorkspaces = useQuery(api.securityReports.listVendorReviewWorkspaces, {}) as
+  const vendorWorkspaces = useQuery(api.securityReports.listSecurityVendors, {}) as
     | VendorWorkspace[]
     | undefined;
-  const reviewVendorWorkspace = useMutation(api.securityReports.reviewVendorWorkspace);
+  const reviewSecurityVendor = useMutation(api.securityReports.reviewSecurityVendor);
   const [vendorSummaries, setVendorSummaries] = useState<Record<string, string>>({});
   const [vendorOwners, setVendorOwners] = useState<Record<string, string>>({});
   const [busyVendorKey, setBusyVendorKey] = useState<string | null>(null);
@@ -1233,7 +1297,7 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
     async (vendor: VendorWorkspace) => {
       setBusyVendorKey(vendor.vendor);
       try {
-        await reviewVendorWorkspace({
+        await reviewSecurityVendor({
           owner: vendorOwners[vendor.vendor]?.trim() || undefined,
           summary: vendorSummaries[vendor.vendor]?.trim() || undefined,
           vendorKey: vendor.vendor,
@@ -1248,7 +1312,7 @@ export function AdminSecurityVendorsRoute(props: { search: SecurityVendorsSearch
         setBusyVendorKey(null);
       }
     },
-    [reviewVendorWorkspace, showToast, vendorOwners, vendorSummaries],
+    [reviewSecurityVendor, showToast, vendorOwners, vendorSummaries],
   );
 
   return (

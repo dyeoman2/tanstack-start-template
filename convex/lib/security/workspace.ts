@@ -41,6 +41,117 @@ function getSecurityFindingRelatedControls(
   });
 }
 
+async function buildSecurityFindingListRecords(ctx: QueryCtx) {
+  const [currentFindings, relationships] = await Promise.all([
+    buildCurrentSecurityFindings(ctx),
+    ctx.db
+      .query('securityRelationships')
+      .withIndex('by_from', (q) => q.eq('fromType', 'finding'))
+      .collect(),
+  ]);
+  const storedFindingEntries = await Promise.all(
+    currentFindings.map(async (finding) => {
+      const record = await ctx.db
+        .query('securityFindings')
+        .withIndex('by_finding_key', (q) => q.eq('findingKey', finding.findingKey))
+        .unique();
+      return [finding.findingKey, record] as const;
+    }),
+  );
+  const storedFindingByKey = new Map(storedFindingEntries);
+  const reviewedByIds = Array.from(
+    new Set(
+      storedFindingEntries
+        .map(([, record]) => record?.reviewedByUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
+  );
+  const followUpRelationships = relationships.filter(
+    (relationship) =>
+      relationship.relationshipType === 'follow_up_for' && relationship.toType === 'review_run',
+  );
+  const reviewRunIds = Array.from(
+    new Set(followUpRelationships.map((relationship) => relationship.toId as Id<'reviewRuns'>)),
+  );
+  const [reviewedByProfiles, reviewRuns] = await Promise.all([
+    Promise.all(
+      reviewedByIds.map(async (authUserId) => {
+        const profile = await ctx.db
+          .query('userProfiles')
+          .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
+          .first();
+        return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
+      }),
+    ),
+    Promise.all(reviewRunIds.map(async (reviewRunId) => await ctx.db.get(reviewRunId))),
+  ]);
+  const reviewedByDisplayById = new Map(reviewedByProfiles);
+  const reviewRunById = new Map(
+    reviewRuns
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
+      .map((entry) => [entry._id, entry] as const),
+  );
+  const latestFollowUpByFindingKey = followUpRelationships.reduce<
+    Map<
+      string,
+      {
+        id: Id<'reviewRuns'>;
+        status: 'ready' | 'needs_attention' | 'completed';
+        title: string;
+      }
+    >
+  >((accumulator, relationship) => {
+    const reviewRun = reviewRunById.get(relationship.toId as Id<'reviewRuns'>);
+    if (!reviewRun) {
+      return accumulator;
+    }
+    const existing = accumulator.get(relationship.fromId);
+    if (existing && reviewRun.createdAt <= reviewRunById.get(existing.id)!.createdAt) {
+      return accumulator;
+    }
+    accumulator.set(relationship.fromId, {
+      id: reviewRun._id,
+      status: reviewRun.status,
+      title: reviewRun.title,
+    });
+    return accumulator;
+  }, new Map());
+
+  return currentFindings.map((finding) => {
+    const record = storedFindingByKey.get(finding.findingKey) ?? null;
+    return {
+      customerSummary: record?.customerSummary ?? null,
+      description: finding.description,
+      disposition: record?.disposition ?? ('pending_review' as const),
+      findingKey: finding.findingKey,
+      findingType: finding.findingType,
+      firstObservedAt: record
+        ? Math.min(record.firstObservedAt, finding.firstObservedAt)
+        : finding.firstObservedAt,
+      internalNotes: record?.internalReviewNotes ?? null,
+      lastObservedAt: Math.max(
+        record?.lastObservedAt ?? finding.lastObservedAt,
+        finding.lastObservedAt,
+      ),
+      latestLinkedReviewRun: latestFollowUpByFindingKey.get(finding.findingKey) ?? null,
+      relatedControls: getSecurityFindingRelatedControls(finding.findingType),
+      scopeId: normalizeSecurityScope(record ?? {}).scopeId,
+      scopeType: normalizeSecurityScope(record ?? {}).scopeType,
+      reviewedAt: record?.reviewedAt ?? null,
+      reviewedByDisplay: getActorDisplayName(
+        reviewedByDisplayById,
+        record?.reviewedByUserId ?? undefined,
+      ),
+      severity: finding.severity,
+      sourceLabel: finding.sourceLabel,
+      sourceRecordId: finding.sourceRecordId,
+      sourceType: finding.sourceType,
+      status: finding.status,
+      title: finding.title,
+    };
+  });
+}
+
 export async function listSecurityControlEvidenceActivityHandler(
   ctx: QueryCtx,
   args: {
@@ -136,67 +247,7 @@ export async function listSecurityControlEvidenceActivityHandler(
 
 export async function listSecurityFindingsHandler(ctx: QueryCtx) {
   await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-  const currentFindings = await buildCurrentSecurityFindings(ctx);
-  const storedFindingEntries = await Promise.all(
-    currentFindings.map(async (finding) => {
-      const record = await ctx.db
-        .query('securityFindings')
-        .withIndex('by_finding_key', (q) => q.eq('findingKey', finding.findingKey))
-        .unique();
-      return [finding.findingKey, record] as const;
-    }),
-  );
-  const storedFindingByKey = new Map(storedFindingEntries);
-  const reviewedByIds = Array.from(
-    new Set(
-      storedFindingEntries
-        .map(([, record]) => record?.reviewedByUserId)
-        .filter((value): value is string => typeof value === 'string' && value.length > 0),
-    ),
-  );
-  const reviewedByProfiles = await Promise.all(
-    reviewedByIds.map(async (authUserId) => {
-      const profile = await ctx.db
-        .query('userProfiles')
-        .withIndex('by_auth_user_id', (q) => q.eq('authUserId', authUserId))
-        .first();
-      return [authUserId, profile?.name?.trim() || profile?.email?.trim() || null] as const;
-    }),
-  );
-  const reviewedByDisplayById = new Map(reviewedByProfiles);
-
-  return currentFindings.map((finding) => {
-    const record = storedFindingByKey.get(finding.findingKey) ?? null;
-    return {
-      customerSummary: record?.customerSummary ?? null,
-      description: finding.description,
-      disposition: record?.disposition ?? ('pending_review' as const),
-      findingKey: finding.findingKey,
-      findingType: finding.findingType,
-      firstObservedAt: record
-        ? Math.min(record.firstObservedAt, finding.firstObservedAt)
-        : finding.firstObservedAt,
-      internalNotes: record?.internalReviewNotes ?? null,
-      lastObservedAt: Math.max(
-        record?.lastObservedAt ?? finding.lastObservedAt,
-        finding.lastObservedAt,
-      ),
-      relatedControls: getSecurityFindingRelatedControls(finding.findingType),
-      scopeId: normalizeSecurityScope(record ?? {}).scopeId,
-      scopeType: normalizeSecurityScope(record ?? {}).scopeType,
-      reviewedAt: record?.reviewedAt ?? null,
-      reviewedByDisplay: getActorDisplayName(
-        reviewedByDisplayById,
-        record?.reviewedByUserId ?? undefined,
-      ),
-      severity: finding.severity,
-      sourceLabel: finding.sourceLabel,
-      sourceRecordId: finding.sourceRecordId,
-      sourceType: finding.sourceType,
-      status: finding.status,
-      title: finding.title,
-    };
-  });
+  return await buildSecurityFindingListRecords(ctx);
 }
 
 export async function reviewSecurityFindingHandler(
@@ -291,6 +342,16 @@ export async function reviewSecurityFindingHandler(
     .query('userProfiles')
     .withIndex('by_auth_user_id', (q) => q.eq('authUserId', currentUser.authUserId))
     .first();
+  const updatedFinding = (await buildSecurityFindingListRecords(ctx as QueryCtx)).find(
+    (entry) => entry.findingKey === finding.findingKey,
+  );
+  if (
+    updatedFinding &&
+    updatedFinding.disposition === args.disposition &&
+    updatedFinding.internalNotes === internalNotes
+  ) {
+    return updatedFinding;
+  }
 
   return {
     customerSummary: args.customerSummary?.trim() || null,
@@ -301,10 +362,11 @@ export async function reviewSecurityFindingHandler(
     firstObservedAt: existing
       ? Math.min(existing.firstObservedAt, finding.firstObservedAt)
       : finding.firstObservedAt,
+    internalNotes,
     lastObservedAt: existing
       ? Math.max(existing.lastObservedAt, finding.lastObservedAt)
       : finding.lastObservedAt,
-    internalNotes,
+    latestLinkedReviewRun: null,
     relatedControls: getSecurityFindingRelatedControls(finding.findingType),
     scopeId: normalizeSecurityScope(existing ?? {}).scopeId,
     scopeType: normalizeSecurityScope(existing ?? {}).scopeType,
@@ -321,6 +383,8 @@ export async function reviewSecurityFindingHandler(
     title: finding.title,
   };
 }
+
+export { buildSecurityFindingListRecords };
 
 export async function archiveSecurityControlEvidenceHandler(
   ctx: MutationCtx,

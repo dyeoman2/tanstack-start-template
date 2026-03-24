@@ -26,6 +26,7 @@ import type * as dashboardStats from "../dashboardStats.js";
 import type * as e2e from "../e2e.js";
 import type * as emailTemplates from "../emailTemplates.js";
 import type * as emails from "../emails.js";
+import type * as fileAccessTickets from "../fileAccessTickets.js";
 import type * as fileServing from "../fileServing.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
@@ -56,9 +57,6 @@ import type * as lib_security_securityWorkspaceOverview from "../lib/security/se
 import type * as lib_security_validators from "../lib/security/validators.js";
 import type * as lib_security_vendors_core from "../lib/security/vendors_core.js";
 import type * as lib_security_workspace from "../lib/security/workspace.js";
-import type * as lib_securityEvidenceActivity from "../lib/securityEvidenceActivity.js";
-import type * as lib_securityReviewConfig from "../lib/securityReviewConfig.js";
-import type * as lib_securityWorkspaceOverview from "../lib/securityWorkspaceOverview.js";
 import type * as lib_storageS3 from "../lib/storageS3.js";
 import type * as organizationDomains from "../organizationDomains.js";
 import type * as organizationManagement from "../organizationManagement.js";
@@ -111,6 +109,7 @@ declare const fullApi: ApiFromModules<{
   e2e: typeof e2e;
   emailTemplates: typeof emailTemplates;
   emails: typeof emails;
+  fileAccessTickets: typeof fileAccessTickets;
   fileServing: typeof fileServing;
   health: typeof health;
   http: typeof http;
@@ -141,9 +140,6 @@ declare const fullApi: ApiFromModules<{
   "lib/security/validators": typeof lib_security_validators;
   "lib/security/vendors_core": typeof lib_security_vendors_core;
   "lib/security/workspace": typeof lib_security_workspace;
-  "lib/securityEvidenceActivity": typeof lib_securityEvidenceActivity;
-  "lib/securityReviewConfig": typeof lib_securityReviewConfig;
-  "lib/securityWorkspaceOverview": typeof lib_securityWorkspaceOverview;
   "lib/storageS3": typeof lib_storageS3;
   organizationDomains: typeof organizationDomains;
   organizationManagement: typeof organizationManagement;

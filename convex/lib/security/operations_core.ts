@@ -193,7 +193,7 @@ async function listReviewTaskEvidenceLinksBySource(
       | 'backup_verification_report'
       | 'external_document'
       | 'review_task'
-      | 'vendor_review';
+      | 'vendor';
   },
 ) {
   return await ctx.db

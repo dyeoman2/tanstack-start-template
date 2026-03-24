@@ -630,7 +630,7 @@ export const createAttachmentInternal = internalMutation({
     mimeType: v.string(),
     sizeBytes: v.number(),
     rawStorageId: v.optional(v.id('_storage')),
-    extractedTextStorageId: v.optional(v.id('_storage')),
+    extractedTextStorageId: v.optional(v.string()),
     agentFileId: v.optional(v.string()),
     promptSummary: v.string(),
     status: v.union(
@@ -731,7 +731,7 @@ export const updateAttachmentInternal = internalMutation({
     patch: v.object({
       threadId: v.optional(v.union(v.id('chatThreads'), v.null())),
       agentMessageId: v.optional(v.union(v.string(), v.null())),
-      extractedTextStorageId: v.optional(v.union(v.id('_storage'), v.null())),
+      extractedTextStorageId: v.optional(v.union(v.string(), v.null())),
       agentFileId: v.optional(v.union(v.string(), v.null())),
       promptSummary: v.optional(v.string()),
       status: v.optional(
@@ -2018,6 +2018,7 @@ export const generateChatAttachmentUploadTarget = action({
       contentType: args.mimeType,
       fileName: args.fileName.trim(),
       fileSize: args.sizeBytes,
+      organizationId: viewer.organizationId,
       sourceId: `pending:${token}`,
       sourceType: 'chat_attachment',
     });

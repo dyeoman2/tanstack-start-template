@@ -16,7 +16,11 @@ import {
   shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
 import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
-import { evaluateFreshSession } from '../../src/lib/shared/auth-policy';
+import {
+  evaluateFreshSession,
+  STEP_UP_REQUIREMENTS,
+  type StepUpRequirement,
+} from '../../src/lib/shared/auth-policy';
 import {
   adminAccessControl,
   adminRole,
@@ -66,6 +70,14 @@ type SharedBetterAuthCallbacks = {
     protocol: 'oidc';
     providerKey: 'google-workspace' | 'entra' | 'okta';
   } | null>;
+  recordAdminStepUpChallenge?: (input: {
+    path: string;
+    reason: string;
+    requirement: StepUpRequirement;
+    resourceId?: string;
+    sessionId?: string;
+    userId?: string;
+  }) => Promise<void>;
   sendInvitationEmail: NonNullable<OrganizationPluginOptions['sendInvitationEmail']>;
   sendResetPassword: NonNullable<BetterAuthEmailAndPasswordOptions['sendResetPassword']>;
   sendVerificationEmail: NonNullable<BetterAuthEmailVerificationOptions['sendVerificationEmail']>;
@@ -88,6 +100,85 @@ const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
 const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey']);
 const CALLBACK_AUTH_PATH_PREFIXES = ['/callback/', '/oauth2/callback/'] as const;
+const ADMIN_STEP_UP_ROUTE_CONFIG = {
+  '/admin/list-users': {
+    message: 'Verify your account again before viewing the user directory.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'limit',
+  },
+  '/admin/get-user': {
+    message: 'Verify your account again before viewing another user record.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'id',
+  },
+  '/admin/create-user': {
+    message: 'Verify your account again before creating a user.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'email',
+  },
+  '/admin/update-user': {
+    message: 'Verify your account again before updating another user.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/set-role': {
+    message: 'Verify your account again before changing a user role.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/ban-user': {
+    message: 'Verify your account again before banning a user.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/unban-user': {
+    message: 'Verify your account again before unbanning a user.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/remove-user': {
+    message: 'Verify your account again before deleting a user.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/set-user-password': {
+    message: 'Verify your account again before resetting a user password.',
+    requirement: STEP_UP_REQUIREMENTS.userAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/impersonate-user': {
+    message: 'Verify your account again before impersonating another user.',
+    requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/stop-impersonating': {
+    message: 'Verify your account again before stopping impersonation.',
+    requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+    resourceField: 'sessionId',
+  },
+  '/admin/list-user-sessions': {
+    message: "Verify your account again before viewing another user's sessions.",
+    requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+    resourceField: 'userId',
+  },
+  '/admin/revoke-user-session': {
+    message: 'Verify your account again before revoking a user session.',
+    requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+    resourceField: 'sessionId',
+  },
+  '/admin/revoke-user-sessions': {
+    message: 'Verify your account again before revoking all user sessions.',
+    requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
+    resourceField: 'userId',
+  },
+} as const satisfies Record<
+  string,
+  {
+    message: string;
+    requirement: StepUpRequirement;
+    resourceField: string;
+  }
+>;
 
 type SessionAuthMethodResolution =
   | {
@@ -173,6 +264,42 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
     // Convex auth refresh, and tab reloads. Database-backed rate limiting here causes
     // avoidable optimistic concurrency conflicts in Convex and can disrupt auth flows.
     '/convex/token': false,
+    '/admin/list-users': {
+      window: 15 * 60,
+      max: 30,
+    },
+    '/admin/get-user': {
+      window: 15 * 60,
+      max: 30,
+    },
+    '/admin/create-user': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/update-user': {
+      window: 15 * 60,
+      max: 20,
+    },
+    '/admin/set-role': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/ban-user': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/unban-user': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/remove-user': {
+      window: 15 * 60,
+      max: 10,
+    },
+    '/admin/set-user-password': {
+      window: 15 * 60,
+      max: 10,
+    },
     '/admin/impersonate-user': {
       window: 15 * 60,
       max: 10,
@@ -216,6 +343,60 @@ function assertFreshSessionForChangeEmail(
 
   throw new APIError('FORBIDDEN', {
     message: 'Verify your account again before changing your sign-in email address.',
+  });
+}
+
+async function assertProtectedAdminRouteSession(
+  callbacks: Pick<SharedBetterAuthCallbacks, 'recordAdminStepUpChallenge'>,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const routeConfig =
+    ADMIN_STEP_UP_ROUTE_CONFIG[ctx.path as keyof typeof ADMIN_STEP_UP_ROUTE_CONFIG];
+  if (!routeConfig) {
+    return;
+  }
+
+  const currentSession = ctx.context.session?.session;
+  const actorUserId = ctx.context.session?.user?.id;
+  const resourceId =
+    getStringField(ctx.body, routeConfig.resourceField) ??
+    getStringField(ctx.query, routeConfig.resourceField);
+
+  if (currentSession?.impersonatedBy) {
+    await callbacks.recordAdminStepUpChallenge?.({
+      path: ctx.path,
+      reason: 'Impersonated sessions cannot perform privileged admin actions.',
+      requirement: routeConfig.requirement,
+      resourceId,
+      sessionId: currentSession.id,
+      userId: actorUserId,
+    });
+    throw new APIError('FORBIDDEN', {
+      message: 'Impersonated sessions cannot perform privileged admin actions.',
+    });
+  }
+
+  const freshness = evaluateFreshSession({
+    createdAt: currentSession?.createdAt,
+    updatedAt: currentSession?.updatedAt,
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+    requirement: routeConfig.requirement,
+  });
+
+  if (freshness.satisfied) {
+    return;
+  }
+
+  await callbacks.recordAdminStepUpChallenge?.({
+    path: ctx.path,
+    reason: routeConfig.message,
+    requirement: routeConfig.requirement,
+    resourceId,
+    sessionId: currentSession?.id,
+    userId: actorUserId,
+  });
+  throw new APIError('FORBIDDEN', {
+    message: routeConfig.message,
   });
 }
 
@@ -389,6 +570,7 @@ export function createSharedBetterAuthOptions(
         }
 
         assertFreshSessionForChangeEmail(ctx);
+        await assertProtectedAdminRouteSession(callbacks, ctx);
 
         if (
           callbacks.assertSCIMManagementAccess &&

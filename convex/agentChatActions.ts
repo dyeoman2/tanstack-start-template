@@ -30,7 +30,11 @@ import {
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { getS3Object } from './lib/storageS3';
-import { finalizeUploadWithMode, resolveFileUrlWithMode } from './storagePlatform';
+import {
+  finalizeUploadWithMode,
+  resolveFileUrlWithMode,
+  storeDerivedFileWithMode,
+} from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
 import { buildDeterministicStorageKey } from './storageS3Primary';
 
@@ -775,7 +779,11 @@ export const createChatAttachmentFromUpload = action({
             }
             const object = await getS3Object({
               bucket,
-              key: buildDeterministicStorageKey(args.storageId),
+              key: buildDeterministicStorageKey({
+                organizationId,
+                sourceType: 'chat_attachment',
+                storageId: args.storageId,
+              }),
             });
             return await toBlob(object.Body, args.mimeType);
           })()
@@ -963,6 +971,7 @@ export const createChatAttachmentFromUpload = action({
         fileName: validatedAttachment.normalizedName,
         fileSize: validatedAttachment.sizeBytes,
         mimeType: validatedAttachment.mimeType,
+        organizationId,
         sourceId: attachmentId,
         sourceType: 'chat_attachment',
         storageId: args.storageId,
@@ -1079,19 +1088,20 @@ export const processPendingChatAttachmentInternal = internalAction({
       const stored = await storeFile(ctx, components.agent, blob, {
         filename: attachment.name,
       });
-      let extractedTextStorageId: Id<'_storage'> | undefined;
-      let promptSummary = attachment.promptSummary;
+      let extractedTextStorageId: string | undefined;
 
       if (attachment.kind === 'document') {
         const extractedText = await extractDocumentText(blob, attachment.name, attachment.mimeType);
-        extractedTextStorageId = await ctx.storage.store(
-          new Blob([extractedText], { type: 'text/plain' }),
-        );
-        promptSummary = buildAttachmentPromptSummary({
-          kind: attachment.kind,
-          name: attachment.name,
-          text: extractedText,
+        const derivedTextFile = await storeDerivedFileWithMode(ctx, {
+          blob: new Blob([extractedText], { type: 'text/plain' }),
+          fileName: `${attachment.name}.extracted.txt`,
+          mimeType: 'text/plain',
+          organizationId: attachment.organizationId,
+          parentStorageId: attachment.storageId,
+          sourceId: attachment._id,
+          sourceType: 'chat_attachment_extracted_text',
         });
+        extractedTextStorageId = derivedTextFile.storageId;
       }
 
       await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
@@ -1100,7 +1110,10 @@ export const processPendingChatAttachmentInternal = internalAction({
           extractedTextStorageId: extractedTextStorageId ?? null,
           agentFileId: stored.file.fileId,
           errorMessage: null,
-          promptSummary,
+          promptSummary: buildAttachmentPromptSummary({
+            kind: attachment.kind,
+            name: attachment.name,
+          }),
           status: 'ready',
           updatedAt: Date.now(),
         },

@@ -40,6 +40,32 @@ export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
 ] as const;
 
 export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'missing'] as const;
+export const FINDING_STATUS_FILTER_VALUES = ['all', 'open', 'resolved'] as const;
+export const FINDING_DISPOSITION_FILTER_VALUES = [
+  'all',
+  'pending_review',
+  'investigating',
+  'accepted_risk',
+  'false_positive',
+  'resolved',
+] as const;
+export const FINDING_SEVERITY_FILTER_VALUES = ['all', 'critical', 'warning', 'info'] as const;
+export const REPORT_REVIEW_STATUS_FILTER_VALUES = [
+  'all',
+  'pending',
+  'reviewed',
+  'needs_follow_up',
+] as const;
+export const REPORT_KIND_FILTER_VALUES = [
+  'all',
+  'security_posture',
+  'audit_integrity',
+  'audit_readiness',
+  'annual_review',
+  'findings_snapshot',
+  'vendor_posture_snapshot',
+  'control_workspace_snapshot',
+] as const;
 export const EVIDENCE_REVIEW_DUE_OPTIONS = [3, 6, 12] as const;
 export const EVIDENCE_SOURCE_OPTIONS = [
   'manual_upload',

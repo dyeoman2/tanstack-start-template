@@ -262,8 +262,8 @@ export function formatReviewTaskEvidenceSourceType(
       return 'Control evidence';
     case 'security_finding':
       return 'Security finding';
-    case 'vendor_review':
-      return 'Vendor review';
+    case 'vendor':
+      return 'Vendor';
   }
 }
 

@@ -151,6 +151,38 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
     ],
   ],
   [
+    'file_access_ticket_issued',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'file_access_redeemed',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'file_access_redeem_failed',
+    ['organizationId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'admin_step_up_challenged',
+    ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
     'admin_user_sessions_viewed',
     ['actorUserId', 'outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],

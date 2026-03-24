@@ -65,7 +65,7 @@ type SecurityRelationshipObjectType =
   | 'checklist_item'
   | 'evidence'
   | 'finding'
-  | 'vendor_review'
+  | 'vendor'
   | 'review_run'
   | 'review_task'
   | 'evidence_report';
@@ -73,7 +73,7 @@ type SecurityRelationshipObjectType =
 type SecurityRelationshipType =
   | 'has_evidence'
   | 'tracks_finding'
-  | 'tracks_vendor_review'
+  | 'tracks_vendor'
   | 'has_review_task'
   | 'has_report'
   | 'supports'
@@ -229,7 +229,6 @@ async function patchSecurityScopeDefaults(
     | 'reviewTaskEvidenceLinks'
     | 'securityVendors'
     | 'securityVendorControlMappings'
-    | 'securityVendorReviews'
     | 'retentionJobs'
     | 'backupVerificationReports'
     | 'securityRelationships',
@@ -289,8 +288,9 @@ function getSecurityRelationshipObjectTypeFromSourceRecordType(
       return 'finding';
     case 'review_task':
       return 'review_task';
+    case 'vendor':
     case 'vendor_review':
-      return 'vendor_review';
+      return 'vendor';
     default:
       return null;
   }
@@ -304,7 +304,7 @@ function getSecurityRelationshipObjectTypeFromEvidenceSourceType(
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
-    | 'vendor_review',
+    | 'vendor',
 ): SecurityRelationshipObjectType | null {
   switch (sourceType) {
     case 'security_control_evidence':
@@ -315,8 +315,8 @@ function getSecurityRelationshipObjectTypeFromEvidenceSourceType(
       return 'finding';
     case 'review_task':
       return 'review_task';
-    case 'vendor_review':
-      return 'vendor_review';
+    case 'vendor':
+      return 'vendor';
     default:
       return null;
   }

@@ -1,6 +1,7 @@
 // @ts-nocheck
 const cdk = require('aws-cdk-lib');
 const iam = require('aws-cdk-lib/aws-iam');
+const kms = require('aws-cdk-lib/aws-kms');
 const s3 = require('aws-cdk-lib/aws-s3');
 
 /**
@@ -26,11 +27,18 @@ class DrBackupStack extends cdk.Stack {
     const retentionDays = props.retentionDays ?? 90;
     const iaTransitionDays = props.iaTransitionDays ?? 30;
     const projectSlug = props.projectSlug ?? 'tanstack-start-template';
+    const backupBucketKey = new kms.Key(this, 'ConvexDrBackupBucketKey', {
+      alias: `alias/${projectSlug}-dr-backups`,
+      description: 'KMS key for disaster recovery backups',
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
 
     const backupBucket = new s3.Bucket(this, 'ConvexDrBackupBucket', {
       blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
       bucketName: props.bucketName,
-      encryption: s3.BucketEncryption.S3_MANAGED,
+      encryption: s3.BucketEncryption.KMS,
+      encryptionKey: backupBucketKey,
       enforceSSL: true,
       lifecycleRules: [
         {
@@ -61,9 +69,13 @@ class DrBackupStack extends cdk.Stack {
         resources: [backupBucket.bucketArn, backupBucket.arnForObjects('*')],
       }),
     );
+    backupBucketKey.grantEncryptDecrypt(ciUser);
 
     new cdk.CfnOutput(this, 'DrBackupBucketName', {
       value: backupBucket.bucketName,
+    });
+    new cdk.CfnOutput(this, 'DrBackupBucketKeyArn', {
+      value: backupBucketKey.keyArn,
     });
     new cdk.CfnOutput(this, 'DrBackupCiUserName', {
       value: ciUser.userName,

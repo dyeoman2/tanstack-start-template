@@ -1,6 +1,7 @@
 // @ts-nocheck
 const { randomBytes } = require('node:crypto');
 const cdk = require('aws-cdk-lib');
+const acm = require('aws-cdk-lib/aws-certificatemanager');
 const ec2 = require('aws-cdk-lib/aws-ec2');
 const ecs = require('aws-cdk-lib/aws-ecs');
 const elbv2 = require('aws-cdk-lib/aws-elasticloadbalancingv2');
@@ -13,15 +14,18 @@ const secretsmanager = require('aws-cdk-lib/aws-secretsmanager');
  *   auroraMaxAcu?: number;
  *   auroraMinAcu?: number;
  *   backendSubdomain?: string;
+ *   certificateArn?: string;
  *   convexImage?: string;
  *   cpu?: number;
  *   domain?: string;
  *   env?: import('aws-cdk-lib').Environment;
+ *   enableExecuteCommand?: boolean;
  *   frontendSubdomain?: string;
  *   hostnameStrategy?: 'custom-domain' | 'provider-hostnames';
  *   instanceSecretHex?: string;
  *   memoryMiB?: number;
  *   projectSlug?: string;
+ *   rdsCaBundlePath?: string;
  *   siteSubdomain?: string;
  * }} DrEcsStackProps
  */
@@ -46,10 +50,41 @@ class DrEcsStack extends cdk.Stack {
     const frontendFqdn = props.domain ? `${frontendSubdomain}.${props.domain}` : '';
     const convexImage = props.convexImage ?? 'ghcr.io/get-convex/convex-backend:latest';
     const instanceName = 'postgres';
+    const enableExecuteCommand = props.enableExecuteCommand ?? false;
+    const certificateArn = props.certificateArn;
+    const rdsCaBundlePath = props.rdsCaBundlePath ?? '/etc/ssl/certs/rds/global-bundle.pem';
+
+    if (!certificateArn) {
+      throw new Error('DrEcsStack requires certificateArn for HTTPS listeners.');
+    }
+
+    if (hostnameStrategy !== 'custom-domain') {
+      throw new Error(
+        'DrEcsStack requires hostnameStrategy="custom-domain" for hardened deployments.',
+      );
+    }
+
+    if (!props.domain) {
+      throw new Error('DrEcsStack requires domain for hardened custom-domain deployments.');
+    }
 
     const vpc = new ec2.Vpc(this, 'DrVpc', {
       maxAzs: 2,
-      natGateways: 0,
+      natGateways: 1,
+      subnetConfiguration: [
+        {
+          name: 'public',
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+        {
+          name: 'private-app',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        },
+        {
+          name: 'private-db',
+          subnetType: ec2.SubnetType.PRIVATE_ISOLATED,
+        },
+      ],
     });
 
     const dbSecurityGroup = new ec2.SecurityGroup(this, 'DbSecurityGroup', {
@@ -97,7 +132,7 @@ class DrEcsStack extends cdk.Stack {
       serverlessV2MaxCapacity: props.auroraMaxAcu ?? 4,
       writer: rds.ClusterInstance.serverlessV2('Writer'),
       vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
       credentials: rds.Credentials.fromSecret(dbCredentials),
       parameterGroup,
       securityGroups: [dbSecurityGroup],
@@ -106,14 +141,6 @@ class DrEcsStack extends cdk.Stack {
       backup: { retention: cdk.Duration.days(7) },
       cloudwatchLogsExports: ['postgresql'],
     });
-
-    const databaseUrl = cdk.Fn.join('', [
-      'postgresql://convex_admin:',
-      dbCredentials.secretValueFromJson('password').unsafeUnwrap(),
-      '@',
-      dbCluster.clusterEndpoint.hostname,
-      ':5432',
-    ]);
 
     const cluster = new ecs.Cluster(this, 'DrEcsCluster', { vpc });
     const taskDef = new ecs.FargateTaskDefinition(this, 'ConvexTaskDef', {
@@ -127,14 +154,14 @@ class DrEcsStack extends cdk.Stack {
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 
-    const caFilePath = '/tmp/rds-combined-ca-bundle.pem';
+    const caFilePath = rdsCaBundlePath;
     const container = taskDef.addContainer('convex-backend', {
       image: ecs.ContainerImage.fromRegistry(convexImage),
       logging: ecs.LogDrivers.awsLogs({ logGroup, streamPrefix: 'convex' }),
       entryPoint: ['/bin/sh', '-c'],
       command: [
         [
-          `curl -sf -o ${caFilePath} https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem`,
+          'export POSTGRES_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}"',
           'exec ./run_backend.sh',
         ].join(' && '),
       ],
@@ -143,9 +170,14 @@ class DrEcsStack extends cdk.Stack {
           hostnameStrategy === 'provider-hostnames' ? '' : `https://${backendFqdn}`,
         CONVEX_SITE_ORIGIN: hostnameStrategy === 'provider-hostnames' ? '' : `https://${siteFqdn}`,
         INSTANCE_NAME: instanceName,
-        INSTANCE_SECRET: instanceSecret.secretValue.unsafeUnwrap(),
         PG_CA_FILE: caFilePath,
-        POSTGRES_URL: databaseUrl,
+        POSTGRES_HOST: dbCluster.clusterEndpoint.hostname,
+        POSTGRES_PORT: '5432',
+      },
+      secrets: {
+        INSTANCE_SECRET: ecs.Secret.fromSecretsManager(instanceSecret),
+        POSTGRES_PASSWORD: ecs.Secret.fromSecretsManager(dbCredentials, 'password'),
+        POSTGRES_USER: ecs.Secret.fromSecretsManager(dbCredentials, 'username'),
       },
       healthCheck: {
         command: ['CMD-SHELL', 'curl -sf http://localhost:3210/version || exit 1'],
@@ -167,31 +199,38 @@ class DrEcsStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
-    const httpListener = alb.addListener('Http', {
+    const certificate = acm.Certificate.fromCertificateArn(
+      this,
+      'DrAlbCertificate',
+      certificateArn,
+    );
+    const redirectHttpListener = alb.addListener('HttpRedirect', {
       port: 80,
       protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultAction: elbv2.ListenerAction.redirect({
+        permanent: true,
+        port: '443',
+        protocol: 'HTTPS',
+      }),
     });
-
-    const siteListener =
-      hostnameStrategy === 'provider-hostnames'
-        ? alb.addListener('SiteHttp', {
-            port: 3211,
-            protocol: elbv2.ApplicationProtocol.HTTP,
-          })
-        : null;
+    const httpsListener = alb.addListener('Https', {
+      certificates: [certificate],
+      port: 443,
+      protocol: elbv2.ApplicationProtocol.HTTPS,
+    });
 
     const service = new ecs.FargateService(this, 'ConvexService', {
       cluster,
       taskDefinition: taskDef,
-      assignPublicIp: true,
+      assignPublicIp: false,
       desiredCount: 1,
       minHealthyPercent: 0,
       securityGroups: [serviceSg],
-      vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
-      enableExecuteCommand: true,
+      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+      enableExecuteCommand,
     });
 
-    httpListener.addTargets('ConvexBackend', {
+    httpsListener.addTargets('ConvexBackend', {
       port: 3210,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [
@@ -208,60 +247,29 @@ class DrEcsStack extends cdk.Stack {
       },
     });
 
-    if (hostnameStrategy === 'custom-domain') {
-      httpListener.addTargets('ConvexSite', {
-        port: 3211,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        targets: [
-          service.loadBalancerTarget({
-            containerName: container.containerName,
-            containerPort: 3211,
-          }),
-        ],
-        conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
-        priority: 10,
-        healthCheck: {
-          path: '/',
-          interval: cdk.Duration.seconds(30),
-          healthyThresholdCount: 2,
-          unhealthyThresholdCount: 5,
-          healthyHttpCodes: '200-499',
-        },
-      });
-    } else if (siteListener) {
-      siteListener.addTargets('ConvexSiteProviderHostnames', {
-        port: 3211,
-        protocol: elbv2.ApplicationProtocol.HTTP,
-        targets: [
-          service.loadBalancerTarget({
-            containerName: container.containerName,
-            containerPort: 3211,
-          }),
-        ],
-        healthCheck: {
-          path: '/',
-          interval: cdk.Duration.seconds(30),
-          healthyThresholdCount: 2,
-          unhealthyThresholdCount: 5,
-          healthyHttpCodes: '200-499',
-        },
-      });
-    }
+    httpsListener.addTargets('ConvexSite', {
+      port: 3211,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      targets: [
+        service.loadBalancerTarget({
+          containerName: container.containerName,
+          containerPort: 3211,
+        }),
+      ],
+      conditions: [elbv2.ListenerCondition.hostHeaders([siteFqdn])],
+      priority: 10,
+      healthCheck: {
+        path: '/',
+        interval: cdk.Duration.seconds(30),
+        healthyThresholdCount: 2,
+        unhealthyThresholdCount: 5,
+        healthyHttpCodes: '200-499',
+      },
+    });
 
-    const backendUrl =
-      hostnameStrategy === 'provider-hostnames'
-        ? `http://${alb.loadBalancerDnsName}`
-        : `https://${backendFqdn}`;
-    const siteUrl =
-      hostnameStrategy === 'provider-hostnames'
-        ? `http://${alb.loadBalancerDnsName}:3211`
-        : `https://${siteFqdn}`;
-    const frontendUrl = hostnameStrategy === 'provider-hostnames' ? '' : `https://${frontendFqdn}`;
-
-    if (hostnameStrategy === 'provider-hostnames') {
-      container.addEnvironment('CONVEX_CLOUD_ORIGIN', backendUrl);
-      container.addEnvironment('CONVEX_SITE_ORIGIN', siteUrl);
-    }
+    const backendUrl = `https://${backendFqdn}`;
+    const siteUrl = `https://${siteFqdn}`;
+    const frontendUrl = `https://${frontendFqdn}`;
 
     new cdk.CfnOutput(this, 'AuroraEndpoint', {
       value: dbCluster.clusterEndpoint.hostname,
@@ -283,6 +291,12 @@ class DrEcsStack extends cdk.Stack {
     });
     new cdk.CfnOutput(this, 'AlbDnsName', {
       value: alb.loadBalancerDnsName,
+    });
+    new cdk.CfnOutput(this, 'HttpRedirectListenerArn', {
+      value: redirectHttpListener.listenerArn,
+    });
+    new cdk.CfnOutput(this, 'HttpsListenerArn', {
+      value: httpsListener.listenerArn,
     });
     new cdk.CfnOutput(this, 'EcsClusterName', {
       value: cluster.clusterName,

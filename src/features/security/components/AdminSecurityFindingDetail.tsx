@@ -25,7 +25,7 @@ function formatFindingDisposition(disposition: SecurityFindingListItem['disposit
 export function AdminSecurityFindingDetail(props: {
   finding: SecurityFindingListItem;
   onOpenControl: (internalControlId: string) => void;
-  onOpenReviews: () => void;
+  onOpenReviews: (selectedReviewRun?: string) => void;
 }) {
   return (
     <div className="space-y-6 p-1">
@@ -67,6 +67,12 @@ export function AdminSecurityFindingDetail(props: {
           <p className="text-sm">
             {props.finding.customerSummary ?? 'No customer summary recorded.'}
           </p>
+          <p className="text-sm font-medium text-muted-foreground">Linked follow-up</p>
+          <p className="text-sm">
+            {props.finding.latestLinkedReviewRun
+              ? `${props.finding.latestLinkedReviewRun.title} (${props.finding.latestLinkedReviewRun.status})`
+              : 'No follow-up run linked yet.'}
+          </p>
         </div>
       </div>
 
@@ -100,11 +106,22 @@ export function AdminSecurityFindingDetail(props: {
           type="button"
           variant="outline"
           onClick={() => {
-            props.onOpenReviews();
+            props.onOpenReviews(props.finding.latestLinkedReviewRun?.id);
           }}
         >
-          Open reviews
+          {props.finding.latestLinkedReviewRun ? 'Open linked follow-up' : 'Open reviews'}
         </Button>
+        {props.finding.latestLinkedReviewRun ? (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              props.onOpenReviews();
+            }}
+          >
+            Open all reviews
+          </Button>
+        ) : null}
       </div>
     </div>
   );

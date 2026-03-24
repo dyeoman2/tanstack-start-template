@@ -52,13 +52,9 @@ function resolveKnownKind(mimeType: string, fileName: string): AllowedFileKind |
 
   if (
     normalizedMimeType === 'text/csv' ||
-    normalizedMimeType === 'application/json' ||
-    normalizedMimeType === 'text/markdown' ||
     normalizedMimeType === 'text/plain' ||
     normalizedMimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
     normalizedFileName.endsWith('.csv') ||
-    normalizedFileName.endsWith('.json') ||
-    normalizedFileName.endsWith('.md') ||
     normalizedFileName.endsWith('.txt') ||
     normalizedFileName.endsWith('.xlsx')
   ) {

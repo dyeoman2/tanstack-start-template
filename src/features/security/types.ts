@@ -54,7 +54,7 @@ export type LinkedEntitySummary = {
     | 'checklist_item'
     | 'evidence'
     | 'finding'
-    | 'vendor_review'
+    | 'vendor'
     | 'review_run'
     | 'review_task'
     | 'evidence_report';
@@ -68,7 +68,7 @@ export type LinkedEntitySummary = {
     | 'satisfies'
     | 'supports'
     | 'tracks_finding'
-    | 'tracks_vendor_review';
+    | 'tracks_vendor';
   status: string | null;
 };
 
@@ -100,7 +100,7 @@ export type SecurityChecklistEvidence = {
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
-    | 'vendor_review'
+    | 'vendor'
     | null;
   reviewStatus: 'pending' | 'reviewed';
   reviewedAt: number | null;
@@ -387,6 +387,11 @@ export type SecurityFindingListItem = {
   firstObservedAt: number;
   internalNotes: string | null;
   lastObservedAt: number;
+  latestLinkedReviewRun: {
+    id: Id<'reviewRuns'>;
+    status: 'ready' | 'needs_attention' | 'completed';
+    title: string;
+  } | null;
   relatedControls: Array<{
     internalControlId: string;
     itemId: string | null;
@@ -437,7 +442,7 @@ export type ReviewTaskEvidenceLink = {
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
-    | 'vendor_review';
+    | 'vendor';
 };
 
 export type ReviewTaskDetail = {

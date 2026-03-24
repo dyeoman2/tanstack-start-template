@@ -2,7 +2,7 @@ import { httpRouter } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
 import { resend } from './emails';
-import { resolveServeRedirect, verifyFileServeSignature } from './fileServing';
+import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
 import {
   applyGuardDutyFinding,
@@ -11,6 +11,16 @@ import {
 } from './storageWebhook';
 
 const http = httpRouter();
+
+type BetterAuthHttpSession = {
+  session?: {
+    id?: string | null;
+    userId?: string | null;
+  } | null;
+  user?: {
+    id?: string | null;
+  } | null;
+} | null;
 
 authComponent.registerRoutes(
   http,
@@ -55,18 +65,89 @@ http.route({
   method: 'GET',
   handler: httpAction(async (ctx, request) => {
     const url = new URL(request.url);
+    const ticketId = url.searchParams.get('ticket');
     const storageId = url.searchParams.get('id');
     const expiresAtParam = url.searchParams.get('exp');
     const signature = url.searchParams.get('sig');
+    const ipAddress = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+    const userAgent = request.headers.get('user-agent');
 
-    if (!storageId || !expiresAtParam || !signature) {
+    if (!expiresAtParam || !signature || (!ticketId && !storageId)) {
       return new Response('Missing required file serve parameters.', { status: 400 });
     }
 
     const expiresAt = Number.parseInt(expiresAtParam, 10);
-    await verifyFileServeSignature(storageId, signature, expiresAt);
-    const redirect = await resolveServeRedirect(ctx, storageId);
-    return Response.redirect(redirect.url, 302);
+    if (ticketId) {
+      const auth = createAuth(ctx);
+      const sessionResult = (await auth.api.getSession({
+        headers: request.headers,
+        query: {
+          disableCookieCache: true,
+        },
+      })) as BetterAuthHttpSession;
+      const authenticatedSessionId =
+        typeof sessionResult?.session?.id === 'string' ? sessionResult.session.id : null;
+      const authenticatedUserId =
+        typeof sessionResult?.session?.userId === 'string'
+          ? sessionResult.session.userId
+          : typeof sessionResult?.user?.id === 'string'
+            ? sessionResult.user.id
+            : null;
+
+      if (!authenticatedSessionId || !authenticatedUserId) {
+        await recordFileAccessRedeemFailure(ctx, {
+          authenticatedSessionId,
+          authenticatedUserId,
+          errorMessage: 'Authentication required to redeem a file access ticket.',
+          expiresAt,
+          requestIpAddress: ipAddress,
+          requestUserAgent: userAgent,
+          ticketId,
+        }).catch(() => undefined);
+
+        return new Response('Authentication required to redeem a file access ticket.', {
+          status: 401,
+        });
+      }
+
+      try {
+        const redirect = await redeemFileAccessTicketOrThrow(ctx, {
+          authenticatedSessionId,
+          authenticatedUserId,
+          expiresAt,
+          requestIpAddress: ipAddress,
+          requestUserAgent: userAgent,
+          signature,
+          ticketId,
+        });
+        return Response.redirect(redirect.url, 302);
+      } catch (error) {
+        await recordFileAccessRedeemFailure(ctx, {
+          authenticatedSessionId,
+          authenticatedUserId,
+          errorMessage:
+            error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
+          expiresAt,
+          requestIpAddress: ipAddress,
+          requestUserAgent: userAgent,
+          ticketId,
+        }).catch(() => undefined);
+
+        return new Response(
+          error instanceof Error ? error.message : 'Failed to redeem file access ticket.',
+          { status: 403 },
+        );
+      }
+    }
+
+    if (!storageId) {
+      return new Response('Missing required file serve parameters.', { status: 400 });
+    }
+
+    return new Response(
+      'Legacy file links are no longer supported. Request a fresh download link.',
+      { status: 410 },
+    );
   }),
 });
 

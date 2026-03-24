@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-22T07:45:54.421Z",
+  "generatedAt": "2026-03-24T20:44:16.306Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -447,7 +447,7 @@
           "seed": {
             "status": "done",
             "owner": "Identity and Access Management",
-            "notes": "Site-admin access requires MFA or passkeys, and sensitive actions can require recent step-up verification.",
+            "notes": "Site-admin access requires MFA or passkeys, and privileged admin user-management, impersonation, session-management, and evidence-management actions require recent step-up verification.",
             "evidence": [
               {
                 "title": "MFA enforcement for site admin access",
@@ -457,8 +457,15 @@
                 "url": null
               },
               {
-                "title": "Recent step-up protections",
-                "description": "Recent step-up protections showing step-up requirements for audit exports and fresh-session redirects for sensitive actions.",
+                "title": "Privileged admin step-up enforcement",
+                "description": "Administrative auth protections requiring a recent step-up session before user management, impersonation, and session-management actions proceed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Evidence management fresh-session enforcement",
+                "description": "Site admin evidence-management workflows requiring a fresh privileged session before evidence review, archival, or renewal actions proceed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -716,7 +723,7 @@
           "seed": {
             "status": "done",
             "owner": "Audit and Logging",
-            "notes": "Audit event types cover authentication, organization, attachment, and evidence-report activity.",
+            "notes": "Audit event types cover authentication, organization, administrative step-up challenges, protected file access, attachment inspection, and evidence-report activity.",
             "evidence": [
               {
                 "title": "Audit event inventory",
@@ -1239,6 +1246,38 @@
               }
             ]
           }
+        },
+        {
+          "itemId": "fresh-session-step-up",
+          "label": "Sensitive protected actions require a recent authenticated session",
+          "description": "Sensitive protected actions should require a recent authenticated session in addition to baseline sign-in and MFA protections.",
+          "verificationMethod": "Step-up protection review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "system",
+            "file"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Authentication",
+            "notes": "Privileged admin routes, evidence-management actions, and regulated step-up checks require a recent authenticated session before they proceed.",
+            "evidence": [
+              {
+                "title": "Privileged admin step-up enforcement",
+                "description": "Administrative auth protections requiring a recent step-up session before user management, impersonation, and session-management actions proceed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Fresh evidence review protection",
+                "description": "Site admin evidence-management workflows requiring a fresh privileged session before evidence review, archival, or renewal actions proceed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
         }
       ],
       "owner": "Authentication",
@@ -1297,7 +1336,7 @@
       "title": "Protection of Information at Rest",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through managed encrypted storage, blocked public access, and controlled file access for data managed within the service boundary.",
+      "implementationSummary": "This control ensures information stored within the service boundary is protected against unauthorized access or alteration at rest. The platform addresses that objective through customer-managed KMS encryption, blocked public access, tenant-scoped managed object keys, lifecycle-managed derived artifacts, and authenticated controlled file access for data managed within the service boundary.",
       "controlStatement": "Protection of Information at Rest is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1315,11 +1354,11 @@
           "seed": {
             "status": "done",
             "owner": "Data Protection",
-            "notes": "Managed storage configuration enforces blocked public access, server-side encryption, and versioning for protected data at rest.",
+            "notes": "Managed storage configuration enforces blocked public access, customer-managed KMS encryption, access logging, and versioning for protected data at rest.",
             "evidence": [
               {
-                "title": "Encrypted S3 storage configuration",
-                "description": "Encrypted S3 storage configuration provisions an S3 bucket with BLOCK_ALL public access, S3-managed encryption, enforceSSL, object ownership enforcement, and versioning.",
+                "title": "Protected file bucket configuration",
+                "description": "Managed file bucket configuration showing blocked public access, customer-managed KMS encryption, enforced SSL transport, server access logging, object-ownership enforcement, and versioning for protected storage.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1340,11 +1379,18 @@
           "seed": {
             "status": "done",
             "owner": "Data Protection",
-            "notes": "Protected files are served through controlled signed paths instead of open storage object access.",
+            "notes": "Protected files and derived artifacts are stored under lifecycle-managed records and served only through authenticated ticket redemption rather than open object access.",
             "evidence": [
               {
                 "title": "Controlled protected file access",
-                "description": "Controlled protected file access route protected file access through signed serve paths instead of direct open object reads.",
+                "description": "Controlled protected file access Managed file-serving workflow issues one-time signed tickets, requires authenticated same-session redemption, and only then issues a short-lived object download redirect.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Lifecycle-managed tenant storage records",
+                "description": "Stored-file lifecycle records retaining tenant binding, deterministic object keys, and parent-child lineage for derived artifacts so access checks and deletion follow the managed storage record.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1563,7 +1609,7 @@
       "title": "Malicious Code Protection",
       "familyId": "SI",
       "familyTitle": "System and Information Integrity",
-      "implementationSummary": "This control ensures files entering protected workflows are inspected for unsafe characteristics and contained when suspicious or infected conditions are detected. The platform supports that objective through built-in file inspection, quarantine and rejection paths, malware-finding ingestion, and downstream containment actions on affected files.",
+      "implementationSummary": "This control ensures files entering protected workflows are inspected, gated behind malware readiness, and contained when suspicious or infected conditions are detected. The platform supports that objective through built-in file inspection, quarantine and rejection paths, malware-finding ingestion, unreadable pending-scan states, and downstream containment actions on affected source and derived files.",
       "controlStatement": "Implement {{ insert: param, si-03_odp.01 }} malicious code protection mechanisms at system entry and exit points to detect and eradicate malicious code; Automatically update malicious code protection mechanisms as new releases are available in accordance with organizational configuration management policy and procedures; Configure malicious code protection mechanisms to: Perform periodic scans of the system {{ insert: param, si-03_odp.02 }} and real-time scans of files from external sources at {{ insert: param, si-03_odp.03 }} as the files are downloaded, opened, or executed in accordance with organizational policy; and {{ insert: param, si-03_odp.04 }} ; and send alert to {{ insert: param, si-03_odp.06 }} in response to malicious code detection; and Address the receipt of false positives during malicious code detection and eradication and the resulting potential impact on the availability of the system.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -1580,11 +1626,11 @@
           "seed": {
             "status": "done",
             "owner": "File and Content Security",
-            "notes": "Uploaded files are inspected for type, size, and signature mismatches before protected workflows accept them.",
+            "notes": "Uploaded files are inspected for allowed type, size, and signature mismatches before protected workflows accept them.",
             "evidence": [
               {
                 "title": "Built-in file inspection pipeline",
-                "description": "Workflow validating file kind, size limits, and signature matches before returning accepted status.",
+                "description": "Workflow File-inspection workflow applying allowed-format checks, size limits, and signature validation before uploads are accepted into protected workflows.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1612,18 +1658,25 @@
           "seed": {
             "status": "done",
             "owner": "File and Content Security",
-            "notes": "Signature mismatches are quarantined, unsupported files are rejected, and malware findings trigger quarantine.",
+            "notes": "Unsafe files are rejected or quarantined, pending-scan files remain unreadable, and derived artifacts inherit quarantine or unreadable state from the source file.",
             "evidence": [
               {
                 "title": "Quarantine and rejection decisions",
-                "description": "Quarantine and rejection decisions returns quarantined or rejected results for unsafe file conditions.",
+                "description": "Quarantine and rejection decisions File-inspection decisions returning quarantined or rejected outcomes when uploads fail format, signature, or safety checks.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
-                "title": "Attachment quarantine mutation flow",
-                "description": "Workflow marks affected attachments quarantined or rejected and records the reason for later review.",
+                "title": "Managed storage readiness gating",
+                "description": "Stored-file readiness logic blocking reads while malware scans are pending and denying access to quarantined files.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Derived artifact containment propagation",
+                "description": "Storage lifecycle workflows propagating clean, quarantine, and deletion state from a source file to lifecycle-managed derived artifacts.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1645,11 +1698,11 @@
           "seed": {
             "status": "done",
             "owner": "File and Content Security",
-            "notes": "GuardDuty malware findings are verified, recorded, and used to mark files infected and quarantine them.",
+            "notes": "GuardDuty malware findings are verified, recorded, and used to quarantine affected source files and their lifecycle-managed descendants.",
             "evidence": [
               {
                 "title": "Signed GuardDuty webhook verification",
-                "description": "Signed GuardDuty webhook verification verifies webhook signatures and timestamps before applying GuardDuty malware findings.",
+                "description": "Signed GuardDuty webhook verification Webhook verification workflow validating signed GuardDuty malware payloads and timestamps before findings are accepted.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1663,7 +1716,7 @@
               },
               {
                 "title": "Malware scanning infrastructure",
-                "description": "Schema provisions the GuardDuty malware protection plan, result forwarding Lambda, and protected S3 bucket.",
+                "description": "Schema Managed malware-scanning infrastructure showing the protected files bucket, GuardDuty malware protection plan, and result-forwarding components used for document scanning.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2540,7 +2593,7 @@
       "title": "Transmission Confidentiality and Integrity",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective through HTTPS-oriented auth configuration, trusted-origin checks, and secure session transport settings, while certificate lifecycle and edge enforcement evidence remain outside this workspace.",
+      "implementationSummary": "This control ensures information transmitted by the service is protected against unauthorized disclosure or modification in transit. The platform addresses that objective through HTTPS-oriented auth configuration, trusted-origin checks, secure session transport settings, and HTTPS-only disaster-recovery edge listeners with HTTP-to-HTTPS redirect, while certificate lifecycle procedure evidence remains outside this workspace.",
       "controlStatement": "Transmission Confidentiality and Integrity is tracked as an active control in the platform register.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -2582,7 +2635,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Session cookies are configured for secure transport on HTTPS origins and short-lived auth settings support controlled session handling.",
+            "notes": "Session cookies are configured for secure transport on HTTPS origins, and temporary file access links remain short-lived within the regulated transport posture.",
             "evidence": [
               {
                 "title": "Session transport configuration",
@@ -2596,8 +2649,8 @@
         },
         {
           "itemId": "certificate-operations",
-          "label": "Certificate and edge operations are documented",
-          "description": "The hosted platform must retain evidence for certificate lifecycle management and edge enforcement.",
+          "label": "HTTPS edge listener configuration is retained",
+          "description": "The hosted platform should retain deployment evidence showing HTTPS listeners, certificate attachment, and HTTP-to-HTTPS redirect behavior for public entry points.",
           "verificationMethod": "Infrastructure evidence review",
           "required": true,
           "suggestedEvidenceTypes": [
@@ -2606,10 +2659,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Certificate lifecycle management and edge enforcement artifacts are not stored in the control workspace yet.",
-            "evidence": []
+            "notes": "Disaster recovery deployment configuration retains an ACM-backed HTTPS listener and permanent HTTP-to-HTTPS redirect for public entry points.",
+            "evidence": [
+              {
+                "title": "Disaster recovery HTTPS listener configuration",
+                "description": "Disaster recovery load-balancer configuration showing the ACM-backed HTTPS listener and permanent HTTP-to-HTTPS redirect used for external entry points.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -2934,18 +2995,18 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "The platform provides current-user and site admin session revocation paths that support containment after suspected credential compromise.",
+            "notes": "The platform provides current-user and fresh-session-gated site admin session revocation paths that support containment after suspected credential compromise.",
             "evidence": [
               {
                 "title": "Administrative session revocation workflow",
-                "description": "Workflow Administrative user-session review includes revoke-one and revoke-all actions for active sessions associated with a managed user.",
+                "description": "Workflow Administrative user-session review includes revoke-one and revoke-all actions for active sessions associated with a managed user after privileged re-verification.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Sensitive session revocation endpoints",
-                "description": "Sensitive session revocation endpoints Auth configuration includes explicit revoke-session and revoke-all-sessions routes with server-side rate limiting for security-sensitive session invalidation.",
+                "description": "Sensitive session revocation endpoints Authentication route protections require recent step-up for privileged session-revocation endpoints and retain server-side rate limits for security-sensitive invalidation flows.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5799,7 +5860,7 @@
       "title": "Cryptographic Key Establishment and Management",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control addresses cryptographic key and secret management for signing and verification paths used by the hosted service. The platform enforces required runtime secrets for authentication and signed file or webhook flows, and it uses those configured secrets for HMAC-based protection, but secret generation, secure custody, rotation, and KMS or HSM controls remain deployment-owned and are not fully evidenced in this workspace.",
+      "implementationSummary": "This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, and it provisions customer-managed KMS keys for protected file and backup storage, but secret generation, secure custody, rotation procedures, and broader deployment key governance remain only partially evidenced in this workspace.",
       "controlStatement": "Cryptographic Key Establishment and Management is tracked as an active control in the platform register.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5816,7 +5877,7 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The repo fails closed when required auth and signing secrets are missing from protected runtime paths.",
+            "notes": "Protected runtime paths fail closed when required auth, signing, and runtime secrets are missing or invalid.",
             "evidence": [
               {
                 "title": "Better Auth secret validation",
@@ -5828,6 +5889,13 @@
               {
                 "title": "Storage signing secret validation",
                 "description": "Storage signing secret validation showing required signing-secret checks before protected file serving and webhook processing proceed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery runtime secret injection",
+                "description": "Disaster recovery task configuration showing database and application secrets injected from managed secret stores at runtime instead of being embedded as plaintext deployment values.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5848,11 +5916,11 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "Configured secrets are used in HMAC-based file-serving and webhook-verification flows.",
+            "notes": "Configured secrets are used in authenticated file-ticket signing and webhook-verification flows.",
             "evidence": [
               {
-                "title": "Signed file-serving flow",
-                "description": "Signed file-serving workflow showing HMAC-backed signing and verification used for protected file access.",
+                "title": "Authenticated file access ticket flow",
+                "description": "Protected file-access workflow issuing HMAC-backed tickets and verifying them before the same authenticated session can redeem a short-lived download redirect.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5860,6 +5928,38 @@
               {
                 "title": "Webhook signature verification",
                 "description": "Webhook signature verification flow showing signed GuardDuty payload validation before malware findings are accepted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
+          }
+        },
+        {
+          "itemId": "managed-storage-keys-provisioned-and-rotated",
+          "label": "Managed storage keys are provisioned and rotated for protected file and backup storage",
+          "description": "Managed file and backup storage should use customer-managed encryption keys with rotation enabled for hosted-service data.",
+          "verificationMethod": "Storage key configuration review",
+          "required": true,
+          "suggestedEvidenceTypes": [
+            "file",
+            "system"
+          ],
+          "seed": {
+            "status": "done",
+            "owner": "Infrastructure and Platform Security",
+            "notes": "Customer file storage and disaster-recovery backups use customer-managed KMS keys with rotation enabled.",
+            "evidence": [
+              {
+                "title": "Customer file storage KMS configuration",
+                "description": "Managed file-storage configuration showing a customer-managed KMS key with rotation enabled and bound to the protected files bucket.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Disaster recovery backup KMS configuration",
+                "description": "Disaster recovery backup configuration showing a separate customer-managed KMS key with rotation enabled for backup objects.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5914,7 +6014,7 @@
       "title": "Cryptographic Protection",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, managed encrypted file storage, and cryptographic signing or hashing for protected file access and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this workspace.",
+      "implementationSummary": "This control ensures the hosted service applies cryptographic protections to sensitive transport, storage, session, and integrity-sensitive workflows where the platform evidence shows those protections. The platform currently evidences HTTPS-oriented auth configuration, secure session cookies, encrypted OAuth token handling, customer-managed KMS protection for managed file storage, and cryptographic signing or hashing for authenticated file redemption and exported evidence. Selection of approved cryptographic standards, module validation, and broader deployment key governance remain outside this workspace.",
       "controlStatement": "Determine the {{ insert: param, sc-13_odp.01 }} ; and Implement the following types of cryptography required for each specified cryptographic use: {{ insert: param, sc-13_odp.02 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5963,11 +6063,11 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The managed S3 storage stack uses server-side encryption and enforces SSL for hosted file storage.",
+            "notes": "The managed S3 storage stack uses customer-managed KMS encryption and enforces SSL for hosted file storage.",
             "evidence": [
               {
-                "title": "Encrypted managed storage configuration",
-                "description": "Encrypted managed storage configuration provisions the files bucket with S3-managed encryption, blocked public access, and enforceSSL.",
+                "title": "KMS-backed managed storage configuration",
+                "description": "Managed file-storage configuration showing customer-managed KMS encryption, blocked public access, and enforced SSL transport for protected files.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -5988,18 +6088,18 @@
           "seed": {
             "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The platform uses HMAC-backed signed file access plus SHA-256-based hashing for audit and evidence integrity workflows.",
+            "notes": "The platform uses HMAC-backed authenticated file-ticket redemption plus SHA-256-based hashing for audit and evidence integrity workflows.",
             "evidence": [
               {
-                "title": "Signed protected file access",
-                "description": "Signed protected file access creating and verifying HMAC-backed signatures for protected file-serving URLs.",
+                "title": "Authenticated protected file access",
+                "description": "Protected file-access workflow using one-time HMAC-backed ticket signatures and same-session authenticated redemption before issuing a short-lived download redirect.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Evidence and audit hashing",
-                "description": "Evidence and audit hashing compute content, export, and audit event hashes to preserve integrity-linked records.",
+                "description": "Evidence and audit hashing Evidence export and audit record workflows compute content, export, and event hashes so integrity-linked records can be reviewed later.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

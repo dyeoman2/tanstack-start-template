@@ -35,6 +35,8 @@ const lifecyclePatchValidator = v.object({
   mirrorLastError: v.optional(v.union(v.string(), v.null())),
   mirrorStatus: v.optional(v.union(mirrorStatusValidator, v.null())),
   mirrorVersionId: v.optional(v.union(v.string(), v.null())),
+  parentStorageId: v.optional(v.union(v.string(), v.null())),
+  organizationId: v.optional(v.union(v.string(), v.null())),
   originalFileName: v.optional(v.string()),
   quarantinedAt: v.optional(v.union(v.number(), v.null())),
   quarantineReason: v.optional(v.union(quarantineReasonValidator, v.null())),
@@ -88,6 +90,16 @@ export async function getLifecycleByS3Key(
     .unique();
 }
 
+export async function listLifecycleByParentStorageId(
+  ctx: LifecycleCtx,
+  parentStorageId: string,
+): Promise<StorageLifecycleDoc[]> {
+  return await ctx.db
+    .query('storageLifecycle')
+    .withIndex('by_parentStorageId', (q) => q.eq('parentStorageId', parentStorageId))
+    .collect();
+}
+
 export async function appendLifecycleEvent(
   ctx: MutationCtx,
   args: {
@@ -131,6 +143,8 @@ export async function upsertLifecycle(
     mirrorKey?: string;
     mirrorStatus?: StorageLifecycleDoc['mirrorStatus'];
     mirrorVersionId?: string;
+    parentStorageId?: string | null;
+    organizationId?: string | null;
     originalFileName: string;
     sourceId: string;
     sourceType: string;
@@ -155,6 +169,8 @@ export async function upsertLifecycle(
       mirrorKey: args.mirrorKey ?? existing.mirrorKey,
       mirrorStatus: args.mirrorStatus ?? existing.mirrorStatus,
       mirrorVersionId: args.mirrorVersionId ?? existing.mirrorVersionId,
+      parentStorageId: args.parentStorageId ?? existing.parentStorageId,
+      organizationId: args.organizationId ?? existing.organizationId,
       originalFileName: args.originalFileName,
       sourceId: args.sourceId,
       sourceType: args.sourceType,
@@ -181,6 +197,8 @@ export async function upsertLifecycle(
     mirrorLastError: undefined,
     mirrorStatus: args.mirrorStatus,
     mirrorVersionId: args.mirrorVersionId,
+    parentStorageId: nullableToOptional(args.parentStorageId),
+    organizationId: nullableToOptional(args.organizationId),
     originalFileName: args.originalFileName,
     quarantinedAt: undefined,
     quarantineReason: undefined,
@@ -214,6 +232,8 @@ async function applyLifecyclePatch(
       mirrorLastError?: string | null;
       mirrorStatus?: StorageLifecycleDoc['mirrorStatus'] | null;
       mirrorVersionId?: string | null;
+      parentStorageId?: string | null;
+      organizationId?: string | null;
       originalFileName?: string;
       quarantinedAt?: number | null;
       quarantineReason?: StorageLifecycleDoc['quarantineReason'] | null;
@@ -300,6 +320,14 @@ async function applyLifecyclePatch(
       args.patch.mirrorVersionId !== undefined
         ? nullableToOptional(args.patch.mirrorVersionId)
         : lifecycle.mirrorVersionId,
+    parentStorageId:
+      args.patch.parentStorageId !== undefined
+        ? nullableToOptional(args.patch.parentStorageId)
+        : lifecycle.parentStorageId,
+    organizationId:
+      args.patch.organizationId !== undefined
+        ? nullableToOptional(args.patch.organizationId)
+        : lifecycle.organizationId,
     originalFileName: args.patch.originalFileName ?? lifecycle.originalFileName,
     quarantinedAt:
       args.patch.quarantinedAt !== undefined
@@ -348,6 +376,14 @@ export const getByS3Key = internalQuery({
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     return await getLifecycleByS3Key(ctx, args.bucket, args.key);
+  },
+});
+
+export const listByParentStorageIdInternal = internalQuery({
+  args: { parentStorageId: v.string() },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    return await listLifecycleByParentStorageId(ctx, args.parentStorageId);
   },
 });
 
@@ -432,6 +468,8 @@ export const upsertLifecycleInternal = internalMutation({
     mirrorKey: v.optional(v.string()),
     mirrorStatus: v.optional(mirrorStatusValidator),
     mirrorVersionId: v.optional(v.string()),
+    parentStorageId: v.optional(v.union(v.string(), v.null())),
+    organizationId: v.optional(v.union(v.string(), v.null())),
     originalFileName: v.string(),
     sourceId: v.string(),
     sourceType: v.string(),
@@ -464,10 +502,42 @@ export const appendLifecycleEventInternal = internalMutation({
   },
 });
 
+async function patchDescendantLifecycleState(
+  ctx: MutationCtx,
+  args: {
+    parentStorageId: string;
+    patch: {
+      malwareDetectedAt?: number | null;
+      malwareFindingId?: string | null;
+      malwareScannedAt?: number | null;
+      malwareStatus?: StorageLifecycleDoc['malwareStatus'] | null;
+      quarantinedAt?: number | null;
+      quarantineReason?: StorageLifecycleDoc['quarantineReason'] | null;
+      updatedAt: number;
+    };
+  },
+) {
+  const children = await listLifecycleByParentStorageId(ctx, args.parentStorageId);
+  for (const child of children) {
+    if (child.deletedAt) {
+      continue;
+    }
+    await applyLifecyclePatch(ctx, {
+      patch: args.patch,
+      storageId: child.storageId,
+    });
+    await patchDescendantLifecycleState(ctx, {
+      parentStorageId: child.storageId,
+      patch: args.patch,
+    });
+  }
+}
+
 export const markCleanInternal = internalMutation({
   args: { scannedAt: v.number(), storageId: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
+    const now = Date.now();
     await applyLifecyclePatch(ctx, {
       patch: {
         malwareDetectedAt: null,
@@ -476,9 +546,21 @@ export const markCleanInternal = internalMutation({
         malwareStatus: 'CLEAN',
         quarantinedAt: null,
         quarantineReason: null,
-        updatedAt: Date.now(),
+        updatedAt: now,
       },
       storageId: args.storageId,
+    });
+    await patchDescendantLifecycleState(ctx, {
+      parentStorageId: args.storageId,
+      patch: {
+        malwareDetectedAt: null,
+        malwareFindingId: null,
+        malwareScannedAt: args.scannedAt,
+        malwareStatus: 'CLEAN',
+        quarantinedAt: null,
+        quarantineReason: null,
+        updatedAt: now,
+      },
     });
     await appendLifecycleEvent(ctx, {
       actionResult: 'success',
@@ -506,6 +588,18 @@ export const markInfectedInternal = internalMutation({
       },
       storageId: args.storageId,
     });
+    await patchDescendantLifecycleState(ctx, {
+      parentStorageId: args.storageId,
+      patch: {
+        malwareDetectedAt: args.scannedAt,
+        malwareFindingId: args.findingId,
+        malwareScannedAt: args.scannedAt,
+        malwareStatus: 'INFECTED',
+        quarantinedAt: now,
+        quarantineReason: 'INFECTED',
+        updatedAt: now,
+      },
+    });
     await appendLifecycleEvent(ctx, {
       actionResult: 'failure',
       details: args.findingId,
@@ -529,6 +623,15 @@ export const markDeadlineMissedInternal = internalMutation({
         updatedAt: now,
       },
       storageId: args.storageId,
+    });
+    await patchDescendantLifecycleState(ctx, {
+      parentStorageId: args.storageId,
+      patch: {
+        malwareStatus: 'QUARANTINED_UNSCANNED',
+        quarantinedAt: now,
+        quarantineReason: 'QUARANTINED_UNSCANNED',
+        updatedAt: now,
+      },
     });
     await appendLifecycleEvent(ctx, {
       actionResult: 'failure',

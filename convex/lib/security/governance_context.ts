@@ -1,7 +1,7 @@
 import type { QueryCtx } from '../../_generated/server';
 import { listSecurityPolicyReviewContextRecords } from './policies_core';
 
-type SecurityGovernanceObjectType = 'control' | 'finding' | 'policy' | 'vendor_review';
+type SecurityGovernanceObjectType = 'control' | 'finding' | 'policy' | 'vendor';
 type SecuritySupport = 'missing' | 'partial' | 'complete';
 
 type SecurityGovernanceObjectSummary = {

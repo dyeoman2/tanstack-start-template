@@ -82,6 +82,7 @@ const organizationPoliciesSchema = z.object({
     .number()
     .int()
     .positive()
+    .max(15)
     .default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.temporaryLinkTtlMinutes),
   webSearchAllowed: z.boolean().default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.webSearchAllowed),
 });

@@ -3,29 +3,14 @@ import {
   CONTROL_SUPPORT_FILTER_VALUES,
   CONTROL_RESPONSIBILITY_FILTER_VALUES,
   CONTROL_TABLE_SORT_FIELDS,
+  FINDING_DISPOSITION_FILTER_VALUES,
+  FINDING_SEVERITY_FILTER_VALUES,
+  FINDING_STATUS_FILTER_VALUES,
   POLICY_TABLE_SORT_FIELDS,
+  REPORT_KIND_FILTER_VALUES,
+  REPORT_REVIEW_STATUS_FILTER_VALUES,
   SECURITY_TABS,
 } from '~/features/security/constants';
-
-export const securityCompatSearchSchema = z.object({
-  tab: z.enum(SECURITY_TABS).optional(),
-  sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).optional(),
-  policySortBy: z.enum(POLICY_TABLE_SORT_FIELDS).optional(),
-  sortOrder: z.enum(['asc', 'desc']).optional(),
-  policySortOrder: z.enum(['asc', 'desc']).optional(),
-  search: z.string().optional(),
-  policySearch: z.string().optional(),
-  responsibility: z.enum(CONTROL_RESPONSIBILITY_FILTER_VALUES).optional(),
-  support: z.enum(CONTROL_SUPPORT_FILTER_VALUES).optional(),
-  policySupport: z.enum(CONTROL_SUPPORT_FILTER_VALUES).optional(),
-  family: z.string().optional(),
-  selectedControl: z.string().optional(),
-  selectedPolicy: z.string().optional(),
-  selectedFinding: z.string().optional(),
-  selectedReport: z.string().optional(),
-  selectedReviewRun: z.string().optional(),
-  selectedVendor: z.string().optional(),
-});
 
 export const securityControlsSearchSchema = z.object({
   sortBy: z.enum(CONTROL_TABLE_SORT_FIELDS).default('control'),
@@ -46,10 +31,17 @@ export const securityPoliciesSearchSchema = z.object({
 });
 
 export const securityFindingsSearchSchema = z.object({
+  findingDisposition: z.enum(FINDING_DISPOSITION_FILTER_VALUES).default('all'),
+  findingSearch: z.string().default(''),
+  findingSeverity: z.enum(FINDING_SEVERITY_FILTER_VALUES).default('all'),
+  findingStatus: z.enum(FINDING_STATUS_FILTER_VALUES).default('all'),
   selectedFinding: z.string().optional(),
 });
 
 export const securityReportsSearchSchema = z.object({
+  reportKind: z.enum(REPORT_KIND_FILTER_VALUES).default('all'),
+  reportReviewStatus: z.enum(REPORT_REVIEW_STATUS_FILTER_VALUES).default('all'),
+  reportSearch: z.string().default(''),
   selectedReport: z.string().optional(),
 });
 
@@ -62,7 +54,6 @@ export const securityReviewsSearchSchema = z.object({
 });
 
 export type SecurityTab = (typeof SECURITY_TABS)[number];
-export type SecurityCompatSearch = z.infer<typeof securityCompatSearchSchema>;
 export type SecurityControlsSearch = z.infer<typeof securityControlsSearchSchema>;
 export type SecurityPoliciesSearch = z.infer<typeof securityPoliciesSearchSchema>;
 export type SecurityFindingsSearch = z.infer<typeof securityFindingsSearchSchema>;

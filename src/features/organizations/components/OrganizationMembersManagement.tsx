@@ -444,18 +444,22 @@ export function OrganizationMembersManagement({
     [selectedRoleMember],
   );
   const selectedRows = useMemo(
-    () => rowItems.filter((row) => selectedRowIds.has(row.id)),
+    () => rowItems.filter((row: OrganizationDirectoryRow) => selectedRowIds.has(row.id)),
     [rowItems, selectedRowIds],
   );
   const selectedMembers = selectedRows.filter(
-    (row): row is Extract<OrganizationDirectoryRow, { kind: 'member' }> => row.kind === 'member',
+    (row: OrganizationDirectoryRow): row is Extract<OrganizationDirectoryRow, { kind: 'member' }> =>
+      row.kind === 'member',
   );
   const selectedInvites = selectedRows.filter(
-    (row): row is Extract<OrganizationDirectoryRow, { kind: 'invite' }> => row.kind === 'invite',
+    (row: OrganizationDirectoryRow): row is Extract<OrganizationDirectoryRow, { kind: 'invite' }> =>
+      row.kind === 'invite',
   );
 
   const toggleAllRows = (checked: boolean) => {
-    setSelectedRowIds(checked ? new Set(rowItems.map((row) => row.id)) : new Set());
+    setSelectedRowIds(
+      checked ? new Set(rowItems.map((row: OrganizationDirectoryRow) => row.id)) : new Set(),
+    );
   };
 
   const toggleRow = (rowId: string, checked: boolean) => {
@@ -486,12 +490,12 @@ export function OrganizationMembersManagement({
         data: {
           organizationId: directory.organization.id,
           action,
-          invitations: selectedInvites.map((invitation) => ({
+          invitations: selectedInvites.map((invitation: (typeof selectedInvites)[number]) => ({
             invitationId: invitation.invitationId,
             email: invitation.email,
             role: invitation.role,
           })),
-          members: selectedMembers.map((member) => ({
+          members: selectedMembers.map((member: (typeof selectedMembers)[number]) => ({
             membershipId: member.membershipId,
             email: member.email,
             role: member.role,

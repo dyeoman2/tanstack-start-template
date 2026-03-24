@@ -24,6 +24,41 @@ import {
   backupVerificationTargetEnvironmentValidator,
 } from './lib/security/validators';
 
+const SECURITY_WORKSPACE_RESEED_BATCH_SIZE = 8;
+
+type SecurityWorkspaceResetTable =
+  | 'securityControlChecklistItems'
+  | 'securityControlEvidence'
+  | 'securityControlEvidenceActivity'
+  | 'evidenceReports'
+  | 'exportArtifacts'
+  | 'reviewRuns'
+  | 'reviewTasks'
+  | 'reviewTaskResults'
+  | 'reviewAttestations'
+  | 'reviewTaskEvidenceLinks'
+  | 'securityPolicies'
+  | 'securityPolicyControlMappings'
+  | 'securityVendors'
+  | 'securityVendorControlMappings';
+
+const SECURITY_WORKSPACE_RESET_TABLES: readonly SecurityWorkspaceResetTable[] = [
+  'securityControlChecklistItems',
+  'securityControlEvidence',
+  'securityControlEvidenceActivity',
+  'evidenceReports',
+  'exportArtifacts',
+  'reviewRuns',
+  'reviewTasks',
+  'reviewTaskResults',
+  'reviewAttestations',
+  'reviewTaskEvidenceLinks',
+  'securityPolicies',
+  'securityPolicyControlMappings',
+  'securityVendors',
+  'securityVendorControlMappings',
+];
+
 async function insertDocumentScanEvent(
   ctx: MutationCtx,
   args: {
@@ -66,13 +101,14 @@ export const cleanupExpiredAttachments = internalAction({
     let processedCount = 0;
 
     for (const attachment of expiredAttachments) {
-      if (attachment.extractedTextStorageId) {
-        await ctx.storage.delete(attachment.extractedTextStorageId);
-      }
-
       await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
         storageId: attachment.storageId,
       });
+      if (attachment.extractedTextStorageId) {
+        await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
+          storageId: attachment.extractedTextStorageId,
+        });
+      }
 
       await ctx.runMutation(internal.agentChat.deleteAttachmentStorageInternal, {
         attachmentId: attachment._id,
@@ -98,7 +134,7 @@ export const listExpiredAttachmentsInternal = internalQuery({
   returns: v.array(
     v.object({
       _id: v.id('chatAttachments'),
-      extractedTextStorageId: v.optional(v.id('_storage')),
+      extractedTextStorageId: v.optional(v.string()),
       storageId: v.string(),
     }),
   ),
@@ -116,7 +152,48 @@ export const listExpiredAttachmentsInternal = internalQuery({
   },
 });
 
-export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
+export const deleteSecurityWorkspaceTableBatchForDevelopment = internalMutation({
+  args: {
+    secret: v.string(),
+    tableName: v.union(
+      v.literal('securityControlChecklistItems'),
+      v.literal('securityControlEvidence'),
+      v.literal('securityControlEvidenceActivity'),
+      v.literal('evidenceReports'),
+      v.literal('exportArtifacts'),
+      v.literal('reviewRuns'),
+      v.literal('reviewTasks'),
+      v.literal('reviewTaskResults'),
+      v.literal('reviewAttestations'),
+      v.literal('reviewTaskEvidenceLinks'),
+      v.literal('securityPolicies'),
+      v.literal('securityPolicyControlMappings'),
+      v.literal('securityVendors'),
+      v.literal('securityVendorControlMappings'),
+    ),
+  },
+  returns: v.object({
+    deletedCount: v.number(),
+    hasMore: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    if (args.secret !== getE2ETestSecret()) {
+      throw new Error('Invalid reseed secret.');
+    }
+
+    const batch = await ctx.db.query(args.tableName).take(SECURITY_WORKSPACE_RESEED_BATCH_SIZE);
+    for (const row of batch) {
+      await ctx.db.delete(row._id);
+    }
+
+    return {
+      deletedCount: batch.length,
+      hasMore: batch.length === SECURITY_WORKSPACE_RESEED_BATCH_SIZE,
+    };
+  },
+});
+
+export const reseedSecurityControlWorkspaceForDevelopment = internalAction({
   args: {
     secret: v.string(),
   },
@@ -142,71 +219,55 @@ export const reseedSecurityControlWorkspaceForDevelopment = internalMutation({
       throw new Error('Invalid reseed secret.');
     }
 
-    const [
-      checklistItems,
-      evidenceRows,
-      evidenceActivityRows,
-      evidenceReports,
-      exportArtifacts,
-      reviewRuns,
-      reviewTasks,
-      reviewTaskResults,
-      reviewAttestations,
-      reviewTaskEvidenceLinks,
-      policies,
-      policyControlMappings,
-      vendors,
-      vendorControlMappings,
-    ] = await Promise.all([
-      ctx.db.query('securityControlChecklistItems').collect(),
-      ctx.db.query('securityControlEvidence').collect(),
-      ctx.db.query('securityControlEvidenceActivity').collect(),
-      ctx.db.query('evidenceReports').collect(),
-      ctx.db.query('exportArtifacts').collect(),
-      ctx.db.query('reviewRuns').collect(),
-      ctx.db.query('reviewTasks').collect(),
-      ctx.db.query('reviewTaskResults').collect(),
-      ctx.db.query('reviewAttestations').collect(),
-      ctx.db.query('reviewTaskEvidenceLinks').collect(),
-      ctx.db.query('securityPolicies').collect(),
-      ctx.db.query('securityPolicyControlMappings').collect(),
-      ctx.db.query('securityVendors').collect(),
-      ctx.db.query('securityVendorControlMappings').collect(),
-    ]);
+    const deletedCounts: Record<SecurityWorkspaceResetTable, number> = {
+      evidenceReports: 0,
+      exportArtifacts: 0,
+      reviewAttestations: 0,
+      reviewRuns: 0,
+      reviewTaskEvidenceLinks: 0,
+      reviewTaskResults: 0,
+      reviewTasks: 0,
+      securityControlChecklistItems: 0,
+      securityControlEvidence: 0,
+      securityControlEvidenceActivity: 0,
+      securityPolicies: 0,
+      securityPolicyControlMappings: 0,
+      securityVendorControlMappings: 0,
+      securityVendors: 0,
+    };
 
-    await Promise.all([
-      ...checklistItems.map((row) => ctx.db.delete(row._id)),
-      ...evidenceRows.map((row) => ctx.db.delete(row._id)),
-      ...evidenceActivityRows.map((row) => ctx.db.delete(row._id)),
-      ...evidenceReports.map((row) => ctx.db.delete(row._id)),
-      ...exportArtifacts.map((row) => ctx.db.delete(row._id)),
-      ...reviewRuns.map((row) => ctx.db.delete(row._id)),
-      ...reviewTasks.map((row) => ctx.db.delete(row._id)),
-      ...reviewTaskResults.map((row) => ctx.db.delete(row._id)),
-      ...reviewAttestations.map((row) => ctx.db.delete(row._id)),
-      ...reviewTaskEvidenceLinks.map((row) => ctx.db.delete(row._id)),
-      ...policies.map((row) => ctx.db.delete(row._id)),
-      ...policyControlMappings.map((row) => ctx.db.delete(row._id)),
-      ...vendors.map((row) => ctx.db.delete(row._id)),
-      ...vendorControlMappings.map((row) => ctx.db.delete(row._id)),
-    ]);
+    for (const tableName of SECURITY_WORKSPACE_RESET_TABLES) {
+      while (true) {
+        const result = await ctx.runMutation(
+          internal.securityOps.deleteSecurityWorkspaceTableBatchForDevelopment,
+          {
+            secret: args.secret,
+            tableName,
+          },
+        );
+        deletedCounts[tableName] += result.deletedCount;
+        if (!result.hasMore) {
+          break;
+        }
+      }
+    }
 
     return {
       activeSeedControlCount: ACTIVE_CONTROL_REGISTER.controls.length,
-      deletedReviewAttestations: reviewAttestations.length,
-      deletedReviewRuns: reviewRuns.length,
-      deletedReviewTaskEvidenceLinks: reviewTaskEvidenceLinks.length,
-      deletedReviewTaskResults: reviewTaskResults.length,
-      deletedReviewTasks: reviewTasks.length,
-      deletedChecklistItems: checklistItems.length,
-      deletedEvidence: evidenceRows.length,
-      deletedEvidenceActivity: evidenceActivityRows.length,
-      deletedEvidenceReports: evidenceReports.length,
-      deletedExportArtifacts: exportArtifacts.length,
-      deletedPolicies: policies.length,
-      deletedPolicyControlMappings: policyControlMappings.length,
-      deletedVendorControlMappings: vendorControlMappings.length,
-      deletedVendors: vendors.length,
+      deletedReviewAttestations: deletedCounts.reviewAttestations,
+      deletedReviewRuns: deletedCounts.reviewRuns,
+      deletedReviewTaskEvidenceLinks: deletedCounts.reviewTaskEvidenceLinks,
+      deletedReviewTaskResults: deletedCounts.reviewTaskResults,
+      deletedReviewTasks: deletedCounts.reviewTasks,
+      deletedChecklistItems: deletedCounts.securityControlChecklistItems,
+      deletedEvidence: deletedCounts.securityControlEvidence,
+      deletedEvidenceActivity: deletedCounts.securityControlEvidenceActivity,
+      deletedEvidenceReports: deletedCounts.evidenceReports,
+      deletedExportArtifacts: deletedCounts.exportArtifacts,
+      deletedPolicies: deletedCounts.securityPolicies,
+      deletedPolicyControlMappings: deletedCounts.securityPolicyControlMappings,
+      deletedVendorControlMappings: deletedCounts.securityVendorControlMappings,
+      deletedVendors: deletedCounts.securityVendors,
     };
   },
 });

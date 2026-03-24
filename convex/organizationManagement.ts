@@ -223,6 +223,9 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'chat_attachment_quarantined',
   'chat_attachment_deleted',
   'attachment_access_url_issued',
+  'file_access_ticket_issued',
+  'file_access_redeemed',
+  'file_access_redeem_failed',
   'pdf_parse_requested',
   'pdf_parse_succeeded',
   'pdf_parse_failed',
@@ -241,6 +244,7 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'outbound_vendor_access_used',
   'mfa_enrollment_enforced',
   'email_verification_enforced',
+  'admin_step_up_challenged',
   'step_up_challenge_required',
   'step_up_challenge_completed',
   'backup_restore_drill_completed',
@@ -279,6 +283,9 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'chat_attachment_quarantined',
   'chat_attachment_deleted',
   'attachment_access_url_issued',
+  'file_access_ticket_issued',
+  'file_access_redeemed',
+  'file_access_redeem_failed',
   'pdf_parse_requested',
   'pdf_parse_succeeded',
   'pdf_parse_failed',
@@ -297,6 +304,7 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'outbound_vendor_access_used',
   'mfa_enrollment_enforced',
   'email_verification_enforced',
+  'admin_step_up_challenged',
   'step_up_challenge_required',
   'step_up_challenge_completed',
   'backup_restore_drill_completed',
@@ -1698,6 +1706,10 @@ export const updateOrganizationPolicies = mutation({
       throwConvexError('VALIDATION', 'Temporary link TTL must be at least 1 minute');
     }
 
+    if (args.temporaryLinkTtlMinutes > 15) {
+      throwConvexError('VALIDATION', 'Temporary link TTL must be 15 minutes or less');
+    }
+
     if (
       args.enterpriseAuthMode !== 'off' &&
       (!args.enterpriseProviderKey || !args.enterpriseProtocol)
@@ -2874,6 +2886,9 @@ export const listOrganizationAuditEvents = query({
       v.literal('chat_attachment_quarantined'),
       v.literal('chat_attachment_deleted'),
       v.literal('attachment_access_url_issued'),
+      v.literal('file_access_ticket_issued'),
+      v.literal('file_access_redeemed'),
+      v.literal('file_access_redeem_failed'),
       v.literal('pdf_parse_requested'),
       v.literal('pdf_parse_succeeded'),
       v.literal('pdf_parse_failed'),
@@ -2881,6 +2896,7 @@ export const listOrganizationAuditEvents = query({
       v.literal('chat_run_failed'),
       v.literal('chat_web_search_used'),
       v.literal('audit_integrity_check_failed'),
+      v.literal('admin_step_up_challenged'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),
@@ -3128,6 +3144,9 @@ export const exportOrganizationAuditCsv = action({
       v.literal('chat_attachment_quarantined'),
       v.literal('chat_attachment_deleted'),
       v.literal('attachment_access_url_issued'),
+      v.literal('file_access_ticket_issued'),
+      v.literal('file_access_redeemed'),
+      v.literal('file_access_redeem_failed'),
       v.literal('pdf_parse_requested'),
       v.literal('pdf_parse_succeeded'),
       v.literal('pdf_parse_failed'),
@@ -3135,6 +3154,7 @@ export const exportOrganizationAuditCsv = action({
       v.literal('chat_run_failed'),
       v.literal('chat_web_search_used'),
       v.literal('audit_integrity_check_failed'),
+      v.literal('admin_step_up_challenged'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),
@@ -3501,30 +3521,49 @@ export const listOrganizationThreadsBatch = internalQuery({
   },
 });
 
-export const deleteOrganizationStandaloneAttachmentsBatch = internalMutation({
+export const listOrganizationStandaloneAttachmentsBatch = internalQuery({
   args: {
     organizationId: v.string(),
     limit: v.number(),
   },
-  returns: v.number(),
+  returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    const standaloneAttachments = await listStandaloneAttachmentsForOrganization(ctx, args);
-    await Promise.all(
-      standaloneAttachments.map(async (attachment) => {
-        if (attachment.rawStorageId) {
-          await ctx.storage.delete(attachment.rawStorageId);
-        }
-
-        if (attachment.extractedTextStorageId) {
-          await ctx.storage.delete(attachment.extractedTextStorageId);
-        }
-
-        await ctx.db.delete(attachment._id);
-      }),
-    );
-    return standaloneAttachments.length;
+    return await listStandaloneAttachmentsForOrganization(ctx, args);
   },
 });
+
+export const deleteOrganizationStandaloneAttachmentsBatch: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      organizationId: v.string(),
+      limit: v.number(),
+    },
+    returns: v.number(),
+    handler: async (ctx, args): Promise<number> => {
+      const standaloneAttachments = (await ctx.runQuery(
+        anyApi.organizationManagement.listOrganizationStandaloneAttachmentsBatch,
+        args,
+      )) as Array<{
+        _id: Id<'chatAttachments'>;
+        extractedTextStorageId?: string;
+        storageId: string;
+      }>;
+      for (const attachment of standaloneAttachments) {
+        await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
+          storageId: attachment.storageId,
+        });
+        if (attachment.extractedTextStorageId) {
+          await ctx.runAction(internal.storagePlatform.deleteStoredFileInternal, {
+            storageId: attachment.extractedTextStorageId,
+          });
+        }
+        await ctx.runMutation(internal.agentChat.deleteAttachmentStorageInternal, {
+          attachmentId: attachment._id,
+        });
+      }
+      return standaloneAttachments.length;
+    },
+  });
 
 export const deleteOrganizationPersonasBatch = internalMutation({
   args: {
@@ -3586,7 +3625,7 @@ export const cleanupOrganizationDataInternal = internalAction({
     }
 
     while (true) {
-      const deletedCount = await ctx.runMutation(
+      const deletedCount = await ctx.runAction(
         internal.organizationManagement.deleteOrganizationStandaloneAttachmentsBatch,
         {
           organizationId: args.organizationId,

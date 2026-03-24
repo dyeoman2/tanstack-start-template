@@ -2,10 +2,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import {
-  AdminSecurityLayout,
-  AdminSecurityRoute,
-} from '~/features/security/components/AdminSecurityRoute';
+import { AdminSecurityRoute } from '~/features/security/components/AdminSecurityRoute';
 
 const {
   useSearchMock,
@@ -97,8 +94,29 @@ vi.mock('~/components/ui/toast', () => ({
 
 type SearchState = {
   tab: 'overview' | 'controls' | 'policies' | 'vendors' | 'findings' | 'reports' | 'reviews';
+  findingDisposition?:
+    | 'all'
+    | 'accepted_risk'
+    | 'false_positive'
+    | 'investigating'
+    | 'pending_review'
+    | 'resolved';
+  findingSearch?: string;
+  findingSeverity?: 'all' | 'critical' | 'warning' | 'info';
+  findingStatus?: 'all' | 'open' | 'resolved';
   sortBy: 'control' | 'support' | 'responsibility' | 'family';
   sortOrder: 'asc' | 'desc';
+  reportKind?:
+    | 'all'
+    | 'security_posture'
+    | 'audit_integrity'
+    | 'audit_readiness'
+    | 'annual_review'
+    | 'findings_snapshot'
+    | 'vendor_posture_snapshot'
+    | 'control_workspace_snapshot';
+  reportReviewStatus?: 'all' | 'needs_follow_up' | 'pending' | 'reviewed';
+  reportSearch?: string;
   search: string;
   responsibility: 'all' | 'platform' | 'shared-responsibility' | 'customer';
   support: 'all' | 'complete' | 'partial' | 'missing';
@@ -113,6 +131,13 @@ type SearchState = {
 
 const defaultSearch: SearchState = {
   tab: 'reports',
+  findingDisposition: 'all',
+  findingSearch: '',
+  findingSeverity: 'all',
+  findingStatus: 'all',
+  reportKind: 'all',
+  reportReviewStatus: 'all',
+  reportSearch: '',
   sortBy: 'control',
   sortOrder: 'asc',
   search: '',
@@ -433,6 +458,7 @@ function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
     firstObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
     internalNotes: null,
     lastObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    latestLinkedReviewRun: null,
     relatedControls: [
       {
         internalControlId: 'CTRL-AU-006',
@@ -728,7 +754,7 @@ function mockSecurityQueries(args: {
         return buildReportsBoard(args);
       case 'securityReports:getEvidenceReportDetail':
         return args.reportDetail ?? null;
-      case 'securityReports:listVendorReviewWorkspaces':
+      case 'securityReports:listSecurityVendors':
         return args.vendorWorkspaces ?? [buildVendorWorkspace()];
       case 'securityReviews:getCurrentAnnualReviewRun':
         return args.currentAnnualRun ?? null;
@@ -971,19 +997,22 @@ describe('Admin security route', () => {
 
     await user.click(screen.getByRole('button', { name: /view policy/i }));
     await user.click(screen.getByRole('button', { name: /download pdf/i }));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [requestUrl, requestInit] = fetchMock.mock.calls[0] ?? [];
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/security-policy-pdf', {
-      body: JSON.stringify({
-        fileName: 'access-control-policy-2026-03-23.pdf',
-        markdownContent:
-          '# Access Control Policy\n\n## Purpose\n\nDefines provider access requirements.\n',
-        sourcePath: 'docs/security-policies/access-control-policy.md',
-        title: 'Access Control Policy',
-      }),
+    expect(requestUrl).toBe('/api/security-policy-pdf');
+    expect(requestInit).toMatchObject({
       headers: {
         'Content-Type': 'application/json',
       },
       method: 'POST',
+    });
+    expect(JSON.parse(String(requestInit?.body))).toMatchObject({
+      fileName: expect.stringMatching(/^access-control-policy-\d{4}-\d{2}-\d{2}\.pdf$/),
+      markdownContent:
+        '# Access Control Policy\n\n## Purpose\n\nDefines provider access requirements.\n',
+      sourcePath: 'docs/security-policies/access-control-policy.md',
+      title: 'Access Control Policy',
     });
     expect(createObjectURLMock).toHaveBeenCalledTimes(1);
     expect(clickMock).toHaveBeenCalledTimes(1);
@@ -1400,44 +1429,9 @@ describe('Admin security route', () => {
     });
   });
 
-  it('redirects legacy tab search params to the dedicated tab routes', async () => {
-    useLocationMock.mockReturnValue({ pathname: '/app/admin/security' });
-
-    render(
-      <AdminSecurityLayout
-        search={{
-          search: 'access',
-          selectedControl: 'ac-1',
-          sortBy: 'support',
-          sortOrder: 'desc',
-          support: 'partial',
-          tab: 'controls',
-        }}
-      >
-        <div>child</div>
-      </AdminSecurityLayout>,
-    );
-
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        replace: true,
-        search: {
-          family: undefined,
-          responsibility: undefined,
-          search: 'access',
-          selectedControl: 'ac-1',
-          sortBy: 'support',
-          sortOrder: 'desc',
-          support: 'partial',
-        },
-        to: '/app/admin/security/controls',
-      });
-    });
-  });
-
   it('shows persisted vendor review overlays and saves follow-up decisions', async () => {
     const user = userEvent.setup();
-    const reviewVendorWorkspaceMock = vi.fn().mockResolvedValue(buildVendorWorkspace());
+    const reviewSecurityVendorMock = vi.fn().mockResolvedValue(buildVendorWorkspace());
 
     useSearchMock.mockReturnValue({
       ...defaultSearch,
@@ -1450,7 +1444,7 @@ describe('Admin security route', () => {
     });
     mockSecurityActions({});
     mockSecurityMutations({
-      'securityReports:reviewVendorWorkspace': reviewVendorWorkspaceMock,
+      'securityReports:reviewSecurityVendor': reviewSecurityVendorMock,
     });
 
     renderRoute();
@@ -1467,7 +1461,7 @@ describe('Admin security route', () => {
     await user.click(screen.getAllByRole('button', { name: /save changes/i }).at(-1)!);
 
     await waitFor(() => {
-      expect(reviewVendorWorkspaceMock).toHaveBeenCalledWith({
+      expect(reviewSecurityVendorMock).toHaveBeenCalledWith({
         owner: 'Infra team',
         summary: 'Need updated DPA.',
         vendorKey: 'sentry',
