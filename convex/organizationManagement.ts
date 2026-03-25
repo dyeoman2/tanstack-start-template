@@ -1,6 +1,6 @@
-import type { PaginationResult } from 'convex/server';
+import type { DefaultArgsForOptionalValidator, PaginationResult } from 'convex/server';
 import { anyApi } from 'convex/server';
-import { v } from 'convex/values';
+import { v, type PropertyValidators } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
   canChangeMemberRole,
@@ -85,8 +85,16 @@ import {
   organizationEnterpriseProviderKeyValidator,
   organizationInvitePolicyValidator,
   organizationMemberStatusValidator,
+  organizationPermissionValidator,
   organizationSettingsValidator,
+  organizationSupportAccessGrantRowValidator,
+  organizationSupportAccessSettingsValidator,
 } from './lib/returnValidators';
+import {
+  organizationSupportAccessScopeValidator,
+  resolveOrganizationEnterpriseAccess,
+  type OrganizationSupportAccessScope,
+} from './lib/enterpriseAccess';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -179,6 +187,28 @@ type OrganizationPolicies = {
   temporaryLinkTtlMinutes: number;
   webSearchAllowed: boolean;
 };
+type OrganizationSupportAccessGrantRow = {
+  id: Id<'organizationSupportAccessGrants'>;
+  createdAt: number;
+  expiresAt: number;
+  grantedByEmail: string | null;
+  grantedByName: string | null;
+  grantedByUserId: string;
+  reason: string;
+  revokedAt: number | null;
+  revokedByEmail: string | null;
+  revokedByName: string | null;
+  revokedByUserId: string | null;
+  scope: OrganizationSupportAccessScope;
+  siteAdminEmail: string;
+  siteAdminName: string | null;
+  siteAdminUserId: string;
+};
+type OrganizationSupportAccessSiteAdminOption = {
+  authUserId: string;
+  email: string;
+  name: string | null;
+};
 const organizationPoliciesValidator = v.object({
   invitePolicy: organizationInvitePolicyValidator,
   verifiedDomainsOnly: v.boolean(),
@@ -196,6 +226,7 @@ const organizationPoliciesValidator = v.object({
   temporaryLinkTtlMinutes: v.number(),
   webSearchAllowed: v.boolean(),
 });
+const ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_TTL_MS = 8 * 60 * 60 * 1000;
 const organizationCleanupRequestValidator = v.object({
   organizationId: v.string(),
   requestedByUserId: v.string(),
@@ -241,6 +272,9 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
+  'support_access_granted',
+  'support_access_revoked',
+  'support_access_used',
   'authorization_denied',
   'admin_user_sessions_viewed',
   'directory_exported',
@@ -287,6 +321,9 @@ const ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES = new Set([
   'scim_member_deprovision_failed',
 ]);
 const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
+  'support_access_granted',
+  'support_access_revoked',
+  'support_access_used',
   'authorization_denied',
   'admin_user_sessions_viewed',
   'directory_exported',
@@ -748,75 +785,104 @@ async function getOrganizationVerifiedDomains(ctx: QueryCtx | MutationCtx, organ
     .map((domain) => domain.normalizedDomain);
 }
 
+async function getUserProfilesByAuthUserIds(ctx: QueryCtx | MutationCtx, authUserIds: string[]) {
+  const uniqueIds = Array.from(new Set(authUserIds.filter((value) => value.trim().length > 0)));
+  const profiles = await Promise.all(
+    uniqueIds.map((authUserId) =>
+      ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (query) => query.eq('authUserId', authUserId))
+        .unique(),
+    ),
+  );
+
+  return new Map(
+    profiles
+      .filter((profile): profile is NonNullable<(typeof profiles)[number]> => profile !== null)
+      .map((profile) => [profile.authUserId, profile] as const),
+  );
+}
+
+async function listSiteAdminOptions(ctx: QueryCtx, _organizationId: string) {
+  const profiles = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_role', (query) => query.eq('role', 'admin'))
+    .collect();
+
+  return profiles
+    .filter((profile) => profile.isSiteAdmin && !profile.banned)
+    .sort((left, right) => left.email.localeCompare(right.email))
+    .map(
+      (profile) =>
+        ({
+          authUserId: profile.authUserId,
+          email: profile.email,
+          name: profile.name,
+        }) satisfies OrganizationSupportAccessSiteAdminOption,
+    );
+}
+
+async function buildOrganizationSupportAccessGrantRows(
+  ctx: QueryCtx | MutationCtx,
+  grants: Array<Doc<'organizationSupportAccessGrants'>>,
+) {
+  const profileMap = await getUserProfilesByAuthUserIds(
+    ctx,
+    grants.flatMap((grant) => [
+      grant.siteAdminUserId,
+      grant.grantedByUserId,
+      grant.revokedByUserId ?? '',
+    ]),
+  );
+
+  return grants
+    .sort((left, right) => right.createdAt - left.createdAt)
+    .map((grant) => {
+      const siteAdminProfile = profileMap.get(grant.siteAdminUserId);
+      const grantedByProfile = profileMap.get(grant.grantedByUserId);
+      const revokedByProfile = grant.revokedByUserId
+        ? profileMap.get(grant.revokedByUserId)
+        : undefined;
+
+      return {
+        id: grant._id,
+        createdAt: grant.createdAt,
+        expiresAt: grant.expiresAt,
+        grantedByEmail: grantedByProfile?.email ?? null,
+        grantedByName: grantedByProfile?.name ?? null,
+        grantedByUserId: grant.grantedByUserId,
+        reason: grant.reason,
+        revokedAt: grant.revokedAt,
+        revokedByEmail: revokedByProfile?.email ?? null,
+        revokedByName: revokedByProfile?.name ?? null,
+        revokedByUserId: grant.revokedByUserId,
+        scope: grant.scope,
+        siteAdminEmail: siteAdminProfile?.email ?? grant.siteAdminUserId,
+        siteAdminName: siteAdminProfile?.name ?? null,
+        siteAdminUserId: grant.siteAdminUserId,
+      } satisfies OrganizationSupportAccessGrantRow;
+    });
+}
+
 async function getOrganizationEnterpriseAccessForUser(
   ctx: QueryCtx | MutationCtx,
   input: {
     organizationId: string;
+    permission?: string | null;
     user: Awaited<ReturnType<typeof getVerifiedCurrentUserOrThrow>>;
     policies?: OrganizationPolicies;
   },
 ) {
   const policies = input.policies ?? (await getOrganizationPolicies(ctx, input.organizationId));
-  if (policies.enterpriseAuthMode !== 'required') {
-    return {
-      allowed: true,
-      reason: null,
-      requiresEnterpriseAuth: false,
-      providerKey: policies.enterpriseProviderKey,
-      enterpriseAuthMode: policies.enterpriseAuthMode,
-    } as const;
-  }
+  const membership = await findBetterAuthMember(ctx, input.organizationId, input.user.authUserId);
 
-  if (input.user.isSiteAdmin) {
-    return {
-      allowed: true,
-      reason: null,
-      requiresEnterpriseAuth: true,
-      providerKey: policies.enterpriseProviderKey,
-      enterpriseAuthMode: policies.enterpriseAuthMode,
-    } as const;
-  }
-
-  const email = typeof input.user.authUser.email === 'string' ? input.user.authUser.email : '';
-  const emailDomain = normalizeEmailDomain(email);
-  const verifiedDomains = await getOrganizationVerifiedDomains(ctx, input.organizationId);
-  const matchesManagedDomain = verifiedDomains.includes(emailDomain);
-  if (!matchesManagedDomain) {
-    return {
-      allowed: true,
-      reason: null,
-      requiresEnterpriseAuth: true,
-      providerKey: policies.enterpriseProviderKey,
-      enterpriseAuthMode: policies.enterpriseAuthMode,
-    } as const;
-  }
-
-  if (policies.allowBreakGlassPasswordLogin) {
-    const membership = await findBetterAuthMember(ctx, input.organizationId, input.user.authUserId);
-    if (membership?.role === 'owner') {
-      return {
-        allowed: true,
-        reason: null,
-        requiresEnterpriseAuth: true,
-        providerKey: policies.enterpriseProviderKey,
-        enterpriseAuthMode: policies.enterpriseAuthMode,
-      } as const;
-    }
-  }
-
-  const session = input.user.authSession;
-  const hasMatchingEnterpriseSession =
-    session?.authMethod === 'enterprise' &&
-    session.enterpriseOrganizationId === input.organizationId &&
-    session.enterpriseProviderKey === policies.enterpriseProviderKey;
-
-  return {
-    allowed: hasMatchingEnterpriseSession,
-    reason: hasMatchingEnterpriseSession ? null : 'This organization requires enterprise sign-in',
-    requiresEnterpriseAuth: true,
-    providerKey: policies.enterpriseProviderKey,
-    enterpriseAuthMode: policies.enterpriseAuthMode,
-  } as const;
+  return await resolveOrganizationEnterpriseAccess(ctx, {
+    membership,
+    organizationId: input.organizationId,
+    permission: input.permission,
+    policies,
+    user: input.user,
+  });
 }
 
 function auditEventMatchesSearch(
@@ -1599,14 +1665,84 @@ export const getOrganizationEnterpriseAuthSettings = query({
 export const getOrganizationEnterpriseAccess = query({
   args: {
     organizationId: v.string(),
+    permission: v.optional(organizationPermissionValidator),
   },
   returns: organizationEnterpriseAccessResultValidator,
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     return await getOrganizationEnterpriseAccessForUser(ctx, {
       organizationId: args.organizationId,
+      permission: args.permission,
       user,
     });
+  },
+});
+
+export const getOrganizationEnterpriseAccessBySlug = query({
+  args: {
+    slug: v.string(),
+    permission: v.optional(organizationPermissionValidator),
+  },
+  returns: v.union(organizationEnterpriseAccessResultValidator, v.null()),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+    if (!context || !context.access.view) {
+      return null;
+    }
+
+    const organizationId = context.organization._id ?? context.organization.id;
+    if (!organizationId) {
+      throw new Error('Organization is missing an id');
+    }
+
+    const policies = await getOrganizationPolicies(ctx, organizationId);
+    return await getOrganizationEnterpriseAccessForUser(ctx, {
+      organizationId,
+      permission: args.permission,
+      policies,
+      user: context.user,
+    });
+  },
+});
+
+export const getOrganizationSupportAccessSettings = query({
+  args: {
+    slug: v.string(),
+  },
+  returns: v.union(organizationSupportAccessSettingsValidator, v.null()),
+  handler: async (ctx, args) => {
+    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+    if (!context || !context.access.view || context.viewerRole !== 'owner') {
+      return null;
+    }
+
+    const organizationId = context.organization._id ?? context.organization.id;
+    if (!organizationId) {
+      throw new Error('Organization is missing an id');
+    }
+
+    const [availableSiteAdmins, grants] = await Promise.all([
+      listSiteAdminOptions(ctx, organizationId),
+      ctx.db
+        .query('organizationSupportAccessGrants')
+        .withIndex('by_organization_id_and_created_at', (query) =>
+          query.eq('organizationId', organizationId),
+        )
+        .order('desc')
+        .take(50),
+    ]);
+
+    return {
+      availableSiteAdmins,
+      canManageSupportAccess: true,
+      grants: await buildOrganizationSupportAccessGrantRows(ctx, grants),
+      organization: {
+        id: organizationId,
+        slug: context.organization.slug,
+        name: context.organization.name,
+        logo: context.organization.logo ?? null,
+      },
+    };
   },
 });
 
@@ -1871,6 +2007,208 @@ export const updateOrganizationPolicies = mutation({
     return {
       success: true as const,
       policies: nextPolicies,
+    };
+  },
+});
+
+export const createOrganizationSupportAccessGrant = mutation({
+  args: {
+    organizationId: v.string(),
+    siteAdminUserId: v.string(),
+    scope: organizationSupportAccessScopeValidator,
+    reason: v.string(),
+    expiresAt: v.number(),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    grant: organizationSupportAccessGrantRowValidator,
+  }),
+  handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.support_access_grant.create',
+    });
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (context.viewerRole !== 'owner') {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    if (context.user.authUserId === args.siteAdminUserId) {
+      throwConvexError(
+        'VALIDATION',
+        'Site admins cannot create support access grants for themselves',
+      );
+    }
+
+    const siteAdminProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (query) => query.eq('authUserId', args.siteAdminUserId))
+      .unique();
+    if (!siteAdminProfile?.isSiteAdmin || siteAdminProfile.banned) {
+      throwConvexError('VALIDATION', 'Select an active site admin account');
+    }
+
+    const reason = args.reason.trim();
+    if (!reason) {
+      throwConvexError('VALIDATION', 'Provide a reason for this support access grant');
+    }
+
+    const now = Date.now();
+    if (args.expiresAt <= now) {
+      throwConvexError('VALIDATION', 'Support access must expire in the future');
+    }
+    if (args.expiresAt > now + ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_TTL_MS) {
+      throwConvexError('VALIDATION', 'Support access grants cannot exceed 8 hours');
+    }
+
+    const grantId = await ctx.db.insert('organizationSupportAccessGrants', {
+      organizationId: args.organizationId,
+      siteAdminUserId: args.siteAdminUserId,
+      scope: args.scope,
+      reason,
+      grantedByUserId: context.user.authUserId,
+      createdAt: now,
+      expiresAt: args.expiresAt,
+      revokedAt: null,
+      revokedByUserId: null,
+    });
+
+    const [grant] = await buildOrganizationSupportAccessGrantRows(ctx, [
+      {
+        _id: grantId,
+        _creationTime: now,
+        organizationId: args.organizationId,
+        siteAdminUserId: args.siteAdminUserId,
+        scope: args.scope,
+        reason,
+        grantedByUserId: context.user.authUserId,
+        createdAt: now,
+        expiresAt: args.expiresAt,
+        revokedAt: null,
+        revokedByUserId: null,
+      },
+    ]);
+
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'support_access_granted',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      actorUserId: context.user.authUserId,
+      identifier: context.user.authUser.email?.toLowerCase(),
+      outcome: 'success',
+      severity: 'warning',
+      resourceType: 'organization_support_access_grant',
+      resourceId: grantId,
+      resourceLabel: args.scope,
+      sourceSurface: 'organization.support_access_grant.create',
+      sessionId: context.user.authSession?.id ?? undefined,
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        expiresAt: args.expiresAt,
+        grantId,
+        reason,
+        scope: args.scope,
+        siteAdminEmail: siteAdminProfile.email,
+        siteAdminUserId: args.siteAdminUserId,
+      }),
+    });
+
+    return {
+      success: true as const,
+      grant,
+    };
+  },
+});
+
+export const revokeOrganizationSupportAccessGrant = mutation({
+  args: {
+    organizationId: v.string(),
+    grantId: v.string(),
+    reason: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: v.object({
+    success: v.literal(true),
+    grant: organizationSupportAccessGrantRowValidator,
+  }),
+  handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.support_access_grant.revoke',
+    });
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (context.viewerRole !== 'owner') {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const normalizedGrantId = ctx.db.normalizeId('organizationSupportAccessGrants', args.grantId);
+    if (!normalizedGrantId) {
+      throwConvexError('NOT_FOUND', 'Support access grant not found');
+    }
+
+    const grant = await ctx.db.get(normalizedGrantId);
+    if (!grant || grant.organizationId !== args.organizationId) {
+      throwConvexError('NOT_FOUND', 'Support access grant not found');
+    }
+
+    const now = Date.now();
+    if (grant.revokedAt === null) {
+      await ctx.db.patch(normalizedGrantId, {
+        revokedAt: now,
+        revokedByUserId: context.user.authUserId,
+      });
+    }
+
+    const [grantRow] = await buildOrganizationSupportAccessGrantRows(ctx, [
+      {
+        ...grant,
+        revokedAt: grant.revokedAt ?? now,
+        revokedByUserId: grant.revokedByUserId ?? context.user.authUserId,
+      },
+    ]);
+
+    const siteAdminProfile = await ctx.db
+      .query('userProfiles')
+      .withIndex('by_auth_user_id', (query) => query.eq('authUserId', grant.siteAdminUserId))
+      .unique();
+    const reason = args.reason?.trim() ? args.reason.trim() : null;
+
+    await ctx.runMutation(internal.audit.insertAuditLog, {
+      eventType: 'support_access_revoked',
+      organizationId: args.organizationId,
+      userId: context.user.authUserId,
+      actorUserId: context.user.authUserId,
+      identifier: context.user.authUser.email?.toLowerCase(),
+      outcome: 'success',
+      severity: 'warning',
+      resourceType: 'organization_support_access_grant',
+      resourceId: normalizedGrantId,
+      resourceLabel: grant.scope,
+      sourceSurface: 'organization.support_access_grant.revoke',
+      sessionId: context.user.authSession?.id ?? undefined,
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        grantId: normalizedGrantId,
+        reason,
+        revokedAt: grant.revokedAt ?? now,
+        scope: grant.scope,
+        siteAdminEmail: siteAdminProfile?.email ?? undefined,
+        siteAdminUserId: grant.siteAdminUserId,
+      }),
+    });
+
+    return {
+      success: true as const,
+      grant: grantRow,
     };
   },
 });
@@ -2163,6 +2501,7 @@ export const listOrganizationDirectory = query({
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
       organizationId,
+      permission: 'manageMembers',
       user: context.user,
       policies,
     });
@@ -2440,6 +2779,7 @@ export const listOrganizationDomains = query({
     const policies = await getOrganizationPolicies(ctx, organizationId);
     const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
       organizationId,
+      permission: 'manageDomains',
       user: context.user,
       policies,
     });
@@ -2904,273 +3244,293 @@ export const reactivateOrganizationMember = mutation({
     }),
 });
 
-export const listOrganizationAuditEvents = query({
-  args: {
-    slug: v.string(),
-    page: v.optional(v.number()),
-    pageSize: v.optional(v.number()),
-    includeAllMatching: v.optional(v.boolean()),
-    sortBy: v.optional(
-      v.union(
-        v.literal('label'),
-        v.literal('identifier'),
-        v.literal('userId'),
-        v.literal('createdAt'),
-      ),
+const listOrganizationAuditEventsArgs = {
+  slug: v.string(),
+  page: v.optional(v.number()),
+  pageSize: v.optional(v.number()),
+  includeAllMatching: v.optional(v.boolean()),
+  sortBy: v.optional(
+    v.union(
+      v.literal('label'),
+      v.literal('identifier'),
+      v.literal('userId'),
+      v.literal('createdAt'),
     ),
-    sortOrder: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
-    preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
-    limit: v.optional(v.number()),
-    cursor: v.optional(v.string()),
-    eventType: v.union(
-      v.literal('all'),
-      v.literal('organization_created'),
-      v.literal('organization_updated'),
-      v.literal('member_added'),
-      v.literal('member_removed'),
-      v.literal('member_role_updated'),
-      v.literal('member_suspended'),
-      v.literal('member_deactivated'),
-      v.literal('member_reactivated'),
-      v.literal('member_invited'),
-      v.literal('invite_accepted'),
-      v.literal('invite_rejected'),
-      v.literal('invite_cancelled'),
-      v.literal('domain_added'),
-      v.literal('domain_verification_succeeded'),
-      v.literal('domain_verification_failed'),
-      v.literal('domain_verification_token_regenerated'),
-      v.literal('domain_removed'),
-      v.literal('organization_policy_updated'),
-      v.literal('enterprise_auth_mode_updated'),
-      v.literal('enterprise_login_succeeded'),
-      v.literal('enterprise_scim_token_generated'),
-      v.literal('enterprise_scim_token_deleted'),
-      v.literal('scim_member_deprovisioned'),
-      v.literal('scim_member_reactivated'),
-      v.literal('scim_member_deprovision_failed'),
-      v.literal('bulk_invite_revoked'),
-      v.literal('bulk_invite_resent'),
-      v.literal('bulk_member_removed'),
-      v.literal('authorization_denied'),
-      v.literal('admin_user_sessions_viewed'),
-      v.literal('directory_exported'),
-      v.literal('audit_log_exported'),
-      v.literal('chat_thread_created'),
-      v.literal('chat_thread_deleted'),
-      v.literal('chat_attachment_uploaded'),
-      v.literal('chat_attachment_scan_passed'),
-      v.literal('chat_attachment_scan_failed'),
-      v.literal('chat_attachment_quarantined'),
-      v.literal('chat_attachment_deleted'),
-      v.literal('attachment_access_url_issued'),
-      v.literal('file_access_ticket_issued'),
-      v.literal('file_access_redeemed'),
-      v.literal('file_access_redeem_failed'),
-      v.literal('pdf_parse_requested'),
-      v.literal('pdf_parse_succeeded'),
-      v.literal('pdf_parse_failed'),
-      v.literal('chat_run_completed'),
-      v.literal('chat_run_failed'),
-      v.literal('chat_web_search_used'),
-      v.literal('audit_integrity_check_failed'),
-      v.literal('admin_step_up_challenged'),
-      v.literal('step_up_challenge_required'),
-      v.literal('step_up_challenge_completed'),
-      v.literal('step_up_challenge_failed'),
-      v.literal('step_up_consumed'),
-    ),
-    search: v.string(),
-    startDate: v.optional(v.string()),
-    endDate: v.optional(v.string()),
-    failuresOnly: v.optional(v.boolean()),
-  },
-  returns: v.union(organizationAuditResponseValidator, v.null()),
-  handler: async (ctx, args) => {
-    try {
-      await requireOrganizationPermission(ctx, {
-        organizationSlug: args.slug,
-        permission: 'viewAudit',
-        sourceSurface: 'organization.audit',
-      });
-    } catch {
-      return null;
-    }
-    const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-    if (!context || !context.access.view) {
-      return null;
-    }
+  ),
+  sortOrder: v.optional(v.union(v.literal('asc'), v.literal('desc'))),
+  preset: v.optional(v.union(v.literal('all'), v.literal('security'))),
+  limit: v.optional(v.number()),
+  cursor: v.optional(v.string()),
+  eventType: v.union(
+    v.literal('all'),
+    v.literal('organization_created'),
+    v.literal('organization_updated'),
+    v.literal('member_added'),
+    v.literal('member_removed'),
+    v.literal('member_role_updated'),
+    v.literal('member_suspended'),
+    v.literal('member_deactivated'),
+    v.literal('member_reactivated'),
+    v.literal('member_invited'),
+    v.literal('invite_accepted'),
+    v.literal('invite_rejected'),
+    v.literal('invite_cancelled'),
+    v.literal('domain_added'),
+    v.literal('domain_verification_succeeded'),
+    v.literal('domain_verification_failed'),
+    v.literal('domain_verification_token_regenerated'),
+    v.literal('domain_removed'),
+    v.literal('organization_policy_updated'),
+    v.literal('enterprise_auth_mode_updated'),
+    v.literal('enterprise_login_succeeded'),
+    v.literal('enterprise_scim_token_generated'),
+    v.literal('enterprise_scim_token_deleted'),
+    v.literal('scim_member_deprovisioned'),
+    v.literal('scim_member_reactivated'),
+    v.literal('scim_member_deprovision_failed'),
+    v.literal('bulk_invite_revoked'),
+    v.literal('bulk_invite_resent'),
+    v.literal('bulk_member_removed'),
+    v.literal('support_access_granted'),
+    v.literal('support_access_revoked'),
+    v.literal('support_access_used'),
+    v.literal('authorization_denied'),
+    v.literal('admin_user_sessions_viewed'),
+    v.literal('directory_exported'),
+    v.literal('audit_log_exported'),
+    v.literal('chat_thread_created'),
+    v.literal('chat_thread_deleted'),
+    v.literal('chat_attachment_uploaded'),
+    v.literal('chat_attachment_scan_passed'),
+    v.literal('chat_attachment_scan_failed'),
+    v.literal('chat_attachment_quarantined'),
+    v.literal('chat_attachment_deleted'),
+    v.literal('attachment_access_url_issued'),
+    v.literal('file_access_ticket_issued'),
+    v.literal('file_access_redeemed'),
+    v.literal('file_access_redeem_failed'),
+    v.literal('pdf_parse_requested'),
+    v.literal('pdf_parse_succeeded'),
+    v.literal('pdf_parse_failed'),
+    v.literal('chat_run_completed'),
+    v.literal('chat_run_failed'),
+    v.literal('chat_web_search_used'),
+    v.literal('audit_integrity_check_failed'),
+    v.literal('admin_step_up_challenged'),
+    v.literal('step_up_challenge_required'),
+    v.literal('step_up_challenge_completed'),
+    v.literal('step_up_challenge_failed'),
+    v.literal('step_up_consumed'),
+  ),
+  search: v.string(),
+  startDate: v.optional(v.string()),
+  endDate: v.optional(v.string()),
+  failuresOnly: v.optional(v.boolean()),
+} as const satisfies PropertyValidators;
 
-    const organizationId = context.organization._id ?? context.organization.id;
-    if (!organizationId) {
-      throw new Error('Organization is missing an id');
-    }
+const listOrganizationAuditEventsReturns = v.union(organizationAuditResponseValidator, v.null());
 
-    const ownerCount = context.viewerMembership
-      ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
-      : 0;
-    const policies = await getOrganizationPolicies(ctx, organizationId);
-    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
+type ListOrganizationAuditEventsArgs = DefaultArgsForOptionalValidator<
+  typeof listOrganizationAuditEventsArgs
+>[0];
+
+async function listOrganizationAuditEventsHandler(
+  ctx: QueryCtx,
+  args: ListOrganizationAuditEventsArgs,
+) {
+  try {
+    await requireOrganizationPermission(ctx, {
+      organizationSlug: args.slug,
+      permission: 'viewAudit',
+      sourceSurface: 'organization.audit',
+    });
+  } catch {
+    return null;
+  }
+  const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
+  if (!context || !context.access.view) {
+    return null;
+  }
+
+  const organizationId = context.organization._id ?? context.organization.id;
+  if (!organizationId) {
+    throw new Error('Organization is missing an id');
+  }
+
+  const ownerCount = context.viewerMembership
+    ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
+    : 0;
+  const policies = await getOrganizationPolicies(ctx, organizationId);
+  const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
+    organizationId,
+    permission: 'viewAudit',
+    user: context.user,
+    policies,
+  });
+  if (!enterpriseAccess.allowed) {
+    return null;
+  }
+  const capabilities = buildOrganizationCapabilities({
+    ownerCount,
+    policies,
+    viewerMembership: context.viewerMembership,
+    viewerRole: context.viewerRole,
+  });
+
+  if (!capabilities.canViewAudit) {
+    return null;
+  }
+
+  const requestedEventType = args.eventType === 'all' ? null : args.eventType;
+  const preset = args.preset ?? 'all';
+  const searchValue = args.search.trim().toLowerCase();
+  const searchStrategy = getAuditSearchStrategy(searchValue);
+  const parsedStartDate = parseAuditDateBoundary(args.startDate, 'start');
+  const parsedEndDate = parseAuditDateBoundary(args.endDate, 'end');
+  const startCreatedAt =
+    parsedStartDate !== null && parsedEndDate !== null
+      ? Math.min(parsedStartDate, parsedEndDate)
+      : parsedStartDate;
+  const endCreatedAt =
+    parsedStartDate !== null && parsedEndDate !== null
+      ? Math.max(parsedStartDate, parsedEndDate)
+      : parsedEndDate;
+  const failuresOnly = args.failuresOnly ?? false;
+  const sortBy = args.sortBy ?? 'createdAt';
+  const sortOrder = args.sortOrder ?? 'desc';
+  const pageSize = Math.max(1, Math.min(args.pageSize ?? args.limit ?? 10, 100));
+  const page = Math.max(1, args.page ?? 1);
+  const targetStart = (page - 1) * pageSize;
+  const targetEnd = targetStart + pageSize;
+  const includeAllMatching = args.includeAllMatching ?? false;
+  const matchedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
+  const pagedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
+  let total = 0;
+  let cursor: string | null = null;
+  let isDone = false;
+  const shouldCollectAllForSorting = includeAllMatching || sortBy !== 'createdAt';
+
+  while (!isDone) {
+    const auditPage = await collectOrganizationAuditPage(ctx, {
       organizationId,
-      user: context.user,
-      policies,
-    });
-    if (!enterpriseAccess.allowed) {
-      return null;
-    }
-    const capabilities = buildOrganizationCapabilities({
-      ownerCount,
-      policies,
-      viewerMembership: context.viewerMembership,
-      viewerRole: context.viewerRole,
+      requestedEventType,
+      searchStrategy,
+      sortOrder,
+      cursor,
+      numItems: 100,
     });
 
-    if (!capabilities.canViewAudit) {
-      return null;
-    }
-
-    const requestedEventType = args.eventType === 'all' ? null : args.eventType;
-    const preset = args.preset ?? 'all';
-    const searchValue = args.search.trim().toLowerCase();
-    const searchStrategy = getAuditSearchStrategy(searchValue);
-    const parsedStartDate = parseAuditDateBoundary(args.startDate, 'start');
-    const parsedEndDate = parseAuditDateBoundary(args.endDate, 'end');
-    const startCreatedAt =
-      parsedStartDate !== null && parsedEndDate !== null
-        ? Math.min(parsedStartDate, parsedEndDate)
-        : parsedStartDate;
-    const endCreatedAt =
-      parsedStartDate !== null && parsedEndDate !== null
-        ? Math.max(parsedStartDate, parsedEndDate)
-        : parsedEndDate;
-    const failuresOnly = args.failuresOnly ?? false;
-    const sortBy = args.sortBy ?? 'createdAt';
-    const sortOrder = args.sortOrder ?? 'desc';
-    const pageSize = Math.max(1, Math.min(args.pageSize ?? args.limit ?? 10, 100));
-    const page = Math.max(1, args.page ?? 1);
-    const targetStart = (page - 1) * pageSize;
-    const targetEnd = targetStart + pageSize;
-    const includeAllMatching = args.includeAllMatching ?? false;
-    const matchedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
-    const pagedEvents: Array<ReturnType<typeof toOrganizationAuditEventViewModel>> = [];
-    let total = 0;
-    let cursor: string | null = null;
-    let isDone = false;
-    const shouldCollectAllForSorting = includeAllMatching || sortBy !== 'createdAt';
-
-    while (!isDone) {
-      const auditPage = await collectOrganizationAuditPage(ctx, {
-        organizationId,
-        requestedEventType,
-        searchStrategy,
-        sortOrder,
-        cursor,
-        numItems: 100,
-      });
-
-      for (const event of auditPage.page) {
-        if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
-          continue;
-        }
-
-        if (requestedEventType && event.eventType !== requestedEventType) {
-          continue;
-        }
-
-        if (
-          preset === 'security' &&
-          !ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES.has(event.eventType)
-        ) {
-          continue;
-        }
-
-        if (startCreatedAt !== null && event.createdAt < startCreatedAt) {
-          continue;
-        }
-
-        if (endCreatedAt !== null && event.createdAt > endCreatedAt) {
-          continue;
-        }
-
-        if (failuresOnly && !ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES.has(event.eventType)) {
-          continue;
-        }
-
-        const eventViewModel = toOrganizationAuditEventViewModel(event);
-
-        if (
-          searchValue.length > 0 &&
-          !auditEventMatchesSearch(
-            {
-              label: eventViewModel.label,
-              actorLabel: eventViewModel.actorLabel,
-              targetLabel: eventViewModel.targetLabel,
-              eventType: event.eventType,
-              identifier: event.identifier ?? undefined,
-              userId: event.userId ?? undefined,
-              metadata: event.metadata,
-            },
-            searchValue,
-          )
-        ) {
-          continue;
-        }
-
-        total += 1;
-
-        if (shouldCollectAllForSorting) {
-          matchedEvents.push(eventViewModel);
-          continue;
-        }
-
-        if (total > targetStart && pagedEvents.length < pageSize) {
-          pagedEvents.push(eventViewModel);
-        }
+    for (const event of auditPage.page) {
+      if (!ORGANIZATION_AUDIT_EVENT_TYPES.has(event.eventType)) {
+        continue;
       }
 
-      cursor = auditPage.isDone ? null : auditPage.continueCursor;
-      isDone = auditPage.isDone;
+      if (requestedEventType && event.eventType !== requestedEventType) {
+        continue;
+      }
+
+      if (preset === 'security' && !ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES.has(event.eventType)) {
+        continue;
+      }
+
+      if (startCreatedAt !== null && event.createdAt < startCreatedAt) {
+        continue;
+      }
+
+      if (endCreatedAt !== null && event.createdAt > endCreatedAt) {
+        continue;
+      }
+
+      if (failuresOnly && !ORGANIZATION_AUDIT_FAILURE_EVENT_TYPES.has(event.eventType)) {
+        continue;
+      }
+
+      const eventViewModel = toOrganizationAuditEventViewModel(event);
+
+      if (
+        searchValue.length > 0 &&
+        !auditEventMatchesSearch(
+          {
+            label: eventViewModel.label,
+            actorLabel: eventViewModel.actorLabel,
+            targetLabel: eventViewModel.targetLabel,
+            eventType: event.eventType,
+            identifier: event.identifier ?? undefined,
+            userId: event.userId ?? undefined,
+            metadata: event.metadata,
+          },
+          searchValue,
+        )
+      ) {
+        continue;
+      }
+
+      total += 1;
+
+      if (shouldCollectAllForSorting) {
+        matchedEvents.push(eventViewModel);
+        continue;
+      }
+
+      if (total > targetStart && pagedEvents.length < pageSize) {
+        pagedEvents.push(eventViewModel);
+      }
     }
 
-    const sortedEvents = shouldCollectAllForSorting
-      ? sortBy === 'createdAt'
-        ? matchedEvents
-        : [...matchedEvents].sort((left, right) =>
-            compareOrganizationAuditEvents(left, right, sortBy, sortOrder),
-          )
-      : pagedEvents;
-    const finalEvents = includeAllMatching
-      ? sortedEvents
-      : shouldCollectAllForSorting
-        ? sortedEvents.slice(targetStart, targetEnd)
-        : pagedEvents;
-    const returnedPageSize = includeAllMatching ? Math.max(sortedEvents.length, 1) : pageSize;
-    const returnedPage = includeAllMatching ? 1 : page;
-    const returnedTotalPages = includeAllMatching
-      ? sortedEvents.length > 0
-        ? 1
-        : 0
-      : Math.ceil(total / pageSize);
+    cursor = auditPage.isDone ? null : auditPage.continueCursor;
+    isDone = auditPage.isDone;
+  }
 
-    return {
-      organization: {
-        id: organizationId,
-        slug: context.organization.slug,
-        name: context.organization.name,
-        logo: context.organization.logo ?? null,
-      },
-      capabilities: {
-        canViewAudit: capabilities.canViewAudit,
-      },
-      events: finalEvents,
-      pagination: {
-        page: returnedPage,
-        pageSize: returnedPageSize,
-        total,
-        totalPages: returnedTotalPages,
-      },
-    };
-  },
+  const sortedEvents = shouldCollectAllForSorting
+    ? sortBy === 'createdAt'
+      ? matchedEvents
+      : [...matchedEvents].sort((left, right) =>
+          compareOrganizationAuditEvents(left, right, sortBy, sortOrder),
+        )
+    : pagedEvents;
+  const finalEvents = includeAllMatching
+    ? sortedEvents
+    : shouldCollectAllForSorting
+      ? sortedEvents.slice(targetStart, targetEnd)
+      : pagedEvents;
+  const returnedPageSize = includeAllMatching ? Math.max(sortedEvents.length, 1) : pageSize;
+  const returnedPage = includeAllMatching ? 1 : page;
+  const returnedTotalPages = includeAllMatching
+    ? sortedEvents.length > 0
+      ? 1
+      : 0
+    : Math.ceil(total / pageSize);
+
+  return {
+    organization: {
+      id: organizationId,
+      slug: context.organization.slug,
+      name: context.organization.name,
+      logo: context.organization.logo ?? null,
+    },
+    capabilities: {
+      canViewAudit: capabilities.canViewAudit,
+    },
+    events: finalEvents,
+    pagination: {
+      page: returnedPage,
+      pageSize: returnedPageSize,
+      total,
+      totalPages: returnedTotalPages,
+    },
+  };
+}
+
+export const listOrganizationAuditEvents = query({
+  args: listOrganizationAuditEventsArgs,
+  returns: listOrganizationAuditEventsReturns,
+  handler: listOrganizationAuditEventsHandler,
+});
+
+export const listOrganizationAuditEventsInternal = internalQuery({
+  args: listOrganizationAuditEventsArgs,
+  returns: listOrganizationAuditEventsReturns,
+  handler: listOrganizationAuditEventsHandler,
 });
 
 export const exportOrganizationAuditCsv = action({
@@ -3214,6 +3574,9 @@ export const exportOrganizationAuditCsv = action({
       v.literal('bulk_invite_revoked'),
       v.literal('bulk_invite_resent'),
       v.literal('bulk_member_removed'),
+      v.literal('support_access_granted'),
+      v.literal('support_access_revoked'),
+      v.literal('support_access_used'),
       v.literal('authorization_denied'),
       v.literal('admin_user_sessions_viewed'),
       v.literal('directory_exported'),
@@ -3265,7 +3628,7 @@ export const exportOrganizationAuditCsv = action({
 
     while (true) {
       const auditPage = await ctx.runQuery(
-        anyApi.organizationManagement.listOrganizationAuditEvents,
+        internal.organizationManagement.listOrganizationAuditEventsInternal,
         {
           slug: args.slug,
           page: pageNumber,
@@ -3627,7 +3990,7 @@ export const deleteOrganizationStandaloneAttachmentsBatch: ReturnType<typeof int
     returns: v.number(),
     handler: async (ctx, args): Promise<number> => {
       const standaloneAttachments = (await ctx.runQuery(
-        anyApi.organizationManagement.listOrganizationStandaloneAttachmentsBatch,
+        internal.organizationManagement.listOrganizationStandaloneAttachmentsBatch,
         args,
       )) as Array<{
         _id: Id<'chatAttachments'>;

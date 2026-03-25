@@ -35,7 +35,8 @@ const ENFORCEMENT_OPTIONS: Array<{
   {
     value: 'required',
     label: 'SSO Required',
-    description: 'Require users on verified domains to sign in with SSO.',
+    description:
+      'Require managed enterprise identities for tenant access. External collaborators are blocked until they use a verified domain account.',
   },
 ];
 
@@ -224,6 +225,10 @@ export function OrganizationSsoEnforcementManagement({
           <p className="text-muted-foreground">
             Break-glass password login is disabled by the regulated baseline and cannot be enabled
             per organization.
+          </p>
+          <p className="mt-2 text-muted-foreground">
+            Provider support access also requires an owner-issued temporary grant before any tenant
+            PHI paths can be opened.
           </p>
         </div>
       ) : null}

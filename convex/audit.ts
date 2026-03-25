@@ -82,6 +82,42 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
     ],
   ],
   [
+    'support_access_granted',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'support_access_revoked',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'support_access_used',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
     'directory_exported',
     [
       'actorUserId',
@@ -493,6 +529,21 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       const parsed = requireMetadataObject(record.eventType, metadata);
       requireMetadataKey(record.eventType, parsed, 'permission', 'string');
       requireMetadataKey(record.eventType, parsed, 'reason', 'string');
+      return;
+    }
+    case 'support_access_granted':
+    case 'support_access_revoked': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'grantId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'siteAdminUserId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'scope', 'string');
+      return;
+    }
+    case 'support_access_used': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'grantId', 'string');
+      requireMetadataKey(record.eventType, parsed, 'permission', 'string');
+      requireMetadataKey(record.eventType, parsed, 'scope', 'string');
       return;
     }
     case 'attachment_access_url_issued': {

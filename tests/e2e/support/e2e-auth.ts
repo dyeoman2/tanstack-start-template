@@ -1,6 +1,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import type { APIRequestContext, Browser, BrowserContext } from '@playwright/test';
+import { ensureE2EPrincipalProvisioned } from '../../../scripts/lib/e2e-provision';
 import { getRequiredEnv } from './env';
 
 type Principal = 'user' | 'admin';
@@ -20,7 +21,7 @@ type AuthRoutePayload = {
   cookies: AuthRouteCookie[];
   email: string;
   principal: Principal;
-  userId: string;
+  userId: string | null;
 };
 
 async function createAuthenticatedContext(
@@ -45,6 +46,12 @@ export async function createStorageStateForPrincipal({
   request: APIRequestContext;
   storageStatePath: string;
 }) {
+  await ensureE2EPrincipalProvisioned({
+    baseUrl: baseURL,
+    principal,
+    quiet: true,
+  });
+
   const response = await request.post('/api/test/e2e-auth', {
     data: { principal },
     headers: {

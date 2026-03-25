@@ -421,7 +421,6 @@ function buildEvidenceReportDetail(overrides?: Partial<Record<string, unknown>>)
     contentHash: 'hash-123',
     contentJson: '{"status":"persisted"}',
     createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
-    exportBundleJson: null,
     exportHash: null,
     exportIntegritySummary: null,
     exportManifestHash: 'manifest-hash-1',

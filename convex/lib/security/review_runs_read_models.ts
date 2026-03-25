@@ -275,7 +275,6 @@ export async function buildEvidenceReportDetail(ctx: QueryCtx, reportId: Id<'evi
     contentHash: report.contentHash,
     contentJson: report.contentJson,
     createdAt: report.createdAt,
-    exportBundleJson: report.exportBundleJson ?? null,
     exportHash: report.exportHash ?? null,
     exportIntegritySummary: report.exportIntegritySummary ?? null,
     exportManifestHash: report.exportManifestHash ?? null,

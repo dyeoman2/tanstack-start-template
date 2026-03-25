@@ -93,26 +93,6 @@ describe('getStorageReadiness', () => {
     });
   });
 
-  it('can temporarily allow legacy clean canonical objects during rollout', () => {
-    expect(
-      getStorageReadiness(
-        createLifecycle({
-          canonicalBucket: 'bucket',
-          canonicalKey: 'org/acme/report/file-legacy',
-          malwareStatus: 'CLEAN',
-          storagePlacement: undefined,
-        }),
-        {
-          allowLegacyPrimaryReads: true,
-        },
-      ),
-    ).toEqual({
-      message: null,
-      readable: true,
-      reason: null,
-    });
-  });
-
   it('fails closed when a promoted row is missing its canonical clean object', () => {
     expect(
       getStorageReadiness(

@@ -91,6 +91,22 @@ const organizationEnterpriseProviderSchema = z.object({
   providerKey: z.enum(['google-workspace', 'entra', 'okta']),
 });
 
+const organizationSupportAccessScopeSchema = z.enum(['read_only', 'read_write']);
+
+const organizationSupportAccessGrantSchema = z.object({
+  organizationId: z.string().min(1),
+  siteAdminUserId: z.string().min(1),
+  scope: organizationSupportAccessScopeSchema,
+  reason: z.string().trim().min(1).max(500),
+  expiresAt: z.number().int().positive(),
+});
+
+const organizationSupportAccessGrantRevocationSchema = z.object({
+  organizationId: z.string().min(1),
+  grantId: z.string().min(1),
+  reason: z.string().trim().max(500).nullable().optional(),
+});
+
 const organizationBulkActionSchema = z.object({
   organizationId: z.string().min(1),
   action: z.enum(['revoke-invites', 'resend-invites', 'remove-members']),
@@ -350,6 +366,36 @@ export const updateOrganizationPoliciesServerFn = createServerFn({ method: 'POST
       );
     } catch (error) {
       throw handleServerError(error, 'Update organization policies');
+    }
+  });
+
+export const createOrganizationSupportAccessGrantServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationSupportAccessGrantSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.createOrganizationSupportAccessGrant,
+        data,
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Create support access grant');
+    }
+  });
+
+export const revokeOrganizationSupportAccessGrantServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationSupportAccessGrantRevocationSchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.revokeOrganizationSupportAccessGrant,
+        data,
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Revoke support access grant');
     }
   });
 

@@ -101,7 +101,6 @@ export async function exportEvidenceReportHandler(
 
   await ctx.runMutation(anyApi.securityReports.storeEvidenceReportExport, {
     id: args.id,
-    exportBundleJson: exportBundle,
     exportHash,
     exportIntegritySummary,
     exportManifestHash: manifestHash,

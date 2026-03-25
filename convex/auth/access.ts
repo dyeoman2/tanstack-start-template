@@ -44,6 +44,10 @@ import {
   getOrganizationMembershipStatus,
   getOrganizationMembershipStatuses,
 } from '../lib/organizationMembershipState';
+import {
+  requiresEnterpriseSatisfied,
+  resolveOrganizationEnterpriseAccess,
+} from '../lib/enterpriseAccess';
 import { organizationPermissionDecisionValidator } from '../lib/returnValidators';
 import { getActiveStepUpClaim, getCompatibilityStepUpClaim } from '../stepUp';
 import { throwConvexError } from './errors';
@@ -100,8 +104,17 @@ type OrganizationPoliciesForAuthorization = {
 type AuthorizationAssurance = {
   emailVerified: boolean;
   enterpriseSatisfied: boolean;
+  enterpriseStatus:
+    | 'not_required'
+    | 'satisfied'
+    | 'missing_enterprise_session'
+    | 'unmanaged_email_domain'
+    | 'support_grant_required'
+    | 'support_grant_expired';
   mfaSatisfied: boolean;
   recentStepUpSatisfied: boolean;
+  supportGrantId: Doc<'organizationSupportAccessGrants'>['_id'] | null;
+  supportGrantScope: 'read_only' | 'read_write' | null;
 };
 
 export type OrganizationPermissionDecision = {
@@ -126,12 +139,16 @@ type StorageReadAccessResult =
       organizationId: string | null;
       permission: OrganizationPermission | null;
       reason: string;
+      supportGrantId: null;
+      supportGrantScope: null;
     }
   | {
       allowed: true;
       organizationId: string | null;
       permission: OrganizationPermission | null;
       reason: null;
+      supportGrantId: Doc<'organizationSupportAccessGrants'>['_id'] | null;
+      supportGrantScope: 'read_only' | 'read_write' | null;
     };
 
 const organizationPermissionValidator = v.union(
@@ -209,6 +226,8 @@ async function resolveChatAttachmentStorageAccess(
       organizationId: args.organizationId,
       permission: 'issueAttachmentAccessUrl' as const,
       reason: 'Attachment not found',
+      supportGrantId: null,
+      supportGrantScope: null,
     };
   }
 
@@ -222,6 +241,8 @@ async function resolveChatAttachmentStorageAccess(
       organizationId: args.organizationId ?? attachment.organizationId,
       permission: 'issueAttachmentAccessUrl' as const,
       reason: decision.reason,
+      supportGrantId: null,
+      supportGrantScope: null,
     };
   }
 
@@ -231,6 +252,8 @@ async function resolveChatAttachmentStorageAccess(
       organizationId: args.organizationId ?? attachment.organizationId,
       permission: 'issueAttachmentAccessUrl' as const,
       reason: 'Attachment access denied',
+      supportGrantId: null,
+      supportGrantScope: null,
     };
   }
 
@@ -239,19 +262,9 @@ async function resolveChatAttachmentStorageAccess(
     organizationId: args.organizationId ?? attachment.organizationId,
     permission: 'issueAttachmentAccessUrl' as const,
     reason: null,
+    supportGrantId: decision.assurance.supportGrantId,
+    supportGrantScope: decision.assurance.supportGrantScope,
   };
-}
-
-function requiresEnterpriseSatisfied(permission: OrganizationPermission) {
-  switch (permission) {
-    case 'manageDomains':
-    case 'managePolicies':
-    case 'viewAudit':
-    case 'exportAudit':
-      return true;
-    default:
-      return false;
-  }
 }
 
 function canSiteAdminPerform(permission: OrganizationPermission) {
@@ -309,29 +322,6 @@ async function getOrganizationPoliciesForAuthorization(
     enterpriseAuthMode: policy?.enterpriseAuthMode ?? 'off',
     enterpriseProviderKey: policy?.enterpriseProviderKey ?? null,
   };
-}
-
-async function getVerifiedDomainsForAuthorization(
-  ctx: QueryCtx | MutationCtx,
-  organizationId: string,
-) {
-  const domains = await ctx.db
-    .query('organizationDomains')
-    .withIndex('by_organization_id', (query) => query.eq('organizationId', organizationId))
-    .collect();
-
-  return domains
-    .filter((domain) => domain.status === 'verified')
-    .map((domain) => domain.normalizedDomain);
-}
-
-function normalizeEmailDomain(email: string | undefined | null) {
-  if (!email) {
-    return '';
-  }
-
-  const [, domain = ''] = email.trim().toLowerCase().split('@');
-  return domain;
 }
 
 export type CurrentUser = Doc<'users'> & {
@@ -766,41 +756,6 @@ async function resolveUserAuthAssuranceState(
   });
 }
 
-async function evaluateEnterpriseAuthorization(
-  ctx: QueryCtx | MutationCtx,
-  input: {
-    membership: BetterAuthMember | null;
-    organizationId: string;
-    user: CurrentUser;
-  },
-) {
-  const policies = await getOrganizationPoliciesForAuthorization(ctx, input.organizationId);
-  if (policies.enterpriseAuthMode !== 'required') {
-    return true;
-  }
-
-  if (input.user.isSiteAdmin) {
-    return true;
-  }
-
-  const verifiedDomains = await getVerifiedDomainsForAuthorization(ctx, input.organizationId);
-  const emailDomain = normalizeEmailDomain(input.user.authUser.email);
-  const matchesManagedDomain = verifiedDomains.includes(emailDomain);
-  if (!matchesManagedDomain) {
-    return true;
-  }
-
-  if (policies.allowBreakGlassPasswordLogin && input.membership?.role === 'owner') {
-    return true;
-  }
-
-  return (
-    input.user.authSession?.authMethod === 'enterprise' &&
-    input.user.authSession.enterpriseOrganizationId === input.organizationId &&
-    input.user.authSession.enterpriseProviderKey === policies.enterpriseProviderKey
-  );
-}
-
 async function buildOrganizationPermissionDecision(
   ctx: QueryCtx | MutationCtx,
   input: {
@@ -867,18 +822,24 @@ async function buildOrganizationPermissionDecision(
     requirement: stepUpRequirement,
     sessionId: user.authSession?.id ?? null,
   });
-  const enterpriseSatisfied = await evaluateEnterpriseAuthorization(ctx, {
+  const policies = await getOrganizationPoliciesForAuthorization(ctx, organizationId);
+  const enterpriseAccess = await resolveOrganizationEnterpriseAccess(ctx, {
     membership,
     organizationId,
+    permission: input.permission,
+    policies,
     user,
   });
 
   const decision: OrganizationPermissionDecision = {
     assurance: {
       emailVerified: assuranceState.emailVerified,
-      enterpriseSatisfied,
+      enterpriseSatisfied: enterpriseAccess.allowed,
+      enterpriseStatus: enterpriseAccess.status,
       mfaSatisfied: !authPolicy.requiresMfaSetup,
       recentStepUpSatisfied: stepUpEvaluation.required ? stepUpEvaluation.satisfied : true,
+      supportGrantId: enterpriseAccess.supportGrant?.id ?? null,
+      supportGrantScope: enterpriseAccess.supportGrant?.scope ?? null,
     },
     membership,
     membershipStatus,
@@ -902,6 +863,12 @@ async function buildOrganizationPermissionDecision(
         reason: 'Recent step-up authentication is required',
       };
     }
+    if (requiresEnterpriseSatisfied(input.permission) && !decision.assurance.enterpriseSatisfied) {
+      return {
+        code: 'FORBIDDEN',
+        reason: enterpriseAccess.reason ?? 'This organization requires enterprise sign-in',
+      };
+    }
     return decision;
   }
 
@@ -922,7 +889,7 @@ async function buildOrganizationPermissionDecision(
   if (requiresEnterpriseSatisfied(input.permission) && !decision.assurance.enterpriseSatisfied) {
     return {
       code: 'FORBIDDEN',
-      reason: 'This organization requires enterprise sign-in',
+      reason: enterpriseAccess.reason ?? 'This organization requires enterprise sign-in',
     };
   }
 
@@ -1306,6 +1273,8 @@ export const resolveStorageReadAccess = query({
     organizationId: v.union(v.string(), v.null()),
     permission: v.union(organizationPermissionValidator, v.null()),
     reason: v.union(v.string(), v.null()),
+    supportGrantId: v.union(v.id('organizationSupportAccessGrants'), v.null()),
+    supportGrantScope: v.union(v.literal('read_only'), v.literal('read_write'), v.null()),
   }),
   handler: async (ctx, args): Promise<StorageReadAccessResult> => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
@@ -1319,6 +1288,8 @@ export const resolveStorageReadAccess = query({
           organizationId: user.activeOrganizationId,
           permission: null,
           reason: 'Stored file access lineage is invalid',
+          supportGrantId: null,
+          supportGrantScope: null,
         };
       }
       visited.add(storageId);
@@ -1334,6 +1305,8 @@ export const resolveStorageReadAccess = query({
           organizationId: null,
           permission: null,
           reason: 'Stored file not found',
+          supportGrantId: null,
+          supportGrantScope: null,
         };
       }
 
@@ -1383,6 +1356,8 @@ export const resolveStorageReadAccess = query({
             organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
             permission: 'manageEvidence' as const,
             reason: 'Site admin access required',
+            supportGrantId: null,
+            supportGrantScope: null,
           };
         }
 
@@ -1392,6 +1367,8 @@ export const resolveStorageReadAccess = query({
             organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
             permission: 'manageEvidence' as const,
             reason: 'Multi-factor authentication is required for site admin access',
+            supportGrantId: null,
+            supportGrantScope: null,
           };
         }
 
@@ -1401,6 +1378,8 @@ export const resolveStorageReadAccess = query({
             organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
             permission: 'manageEvidence' as const,
             reason: 'Step-up authentication is required',
+            supportGrantId: null,
+            supportGrantScope: null,
           };
         }
 
@@ -1409,6 +1388,8 @@ export const resolveStorageReadAccess = query({
           organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
           permission: 'manageEvidence' as const,
           reason: null,
+          supportGrantId: null,
+          supportGrantScope: null,
         };
       }
 
@@ -1417,6 +1398,8 @@ export const resolveStorageReadAccess = query({
         organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
         permission: null,
         reason: 'Stored file access is not available for this resource type',
+        supportGrantId: null,
+        supportGrantScope: null,
       };
     };
 

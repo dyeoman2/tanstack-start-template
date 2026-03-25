@@ -340,7 +340,6 @@ export type EvidenceReportDetail = {
   contentHash: string;
   contentJson: string;
   createdAt: number;
-  exportBundleJson: string | null;
   exportHash: string | null;
   exportIntegritySummary: string | null;
   exportManifestHash: string | null;

@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { spawnSync } from 'node:child_process';
+import { ensureE2EPrincipalProvisioned } from './lib/e2e-provision';
 import { findReachableLocalBaseUrls } from './lib/local-base-url';
 import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
@@ -155,6 +156,11 @@ async function main() {
     const destination = new URL(options.redirectTo, baseUrl).toString();
 
     try {
+      await ensureE2EPrincipalProvisioned({
+        baseUrl,
+        principal: options.principal,
+      });
+
       runAgentBrowser(options.sessionName, ['open', baseUrl]);
       runAgentBrowser(
         options.sessionName,

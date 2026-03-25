@@ -1,6 +1,7 @@
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import {
+  type ActionCtx,
   internalAction,
   internalMutation,
   internalQuery,
@@ -10,6 +11,7 @@ import {
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
 import { getE2ETestSecret } from '../src/lib/server/env.server';
+import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getVerifiedCurrentUserOrThrow, requireOrganizationPermission } from './auth/access';
 import { getSecurityScopeFields } from './lib/security/core';
 import {
@@ -25,6 +27,7 @@ import {
 } from './lib/security/validators';
 
 const SECURITY_WORKSPACE_RESEED_BATCH_SIZE = 8;
+const HOUR_IN_MS = 60 * 60 * 1000;
 
 type SecurityWorkspaceResetTable =
   | 'securityControlChecklistItems'
@@ -126,6 +129,167 @@ export const cleanupExpiredAttachments = internalAction({
     return null;
   },
 });
+
+export const listExpiredExportArtifactsWithPayloadInternal = internalQuery({
+  args: {
+    cutoff: v.number(),
+  },
+  returns: v.array(
+    v.object({
+      artifactId: v.id('exportArtifacts'),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const expiredArtifacts = await ctx.db
+      .query('exportArtifacts')
+      .withIndex('by_created_at', (q) => q.lt('createdAt', args.cutoff))
+      .collect();
+
+    return expiredArtifacts
+      .filter(
+        (artifact) => typeof artifact.payloadJson === 'string' && artifact.payloadJson.length > 0,
+      )
+      .map((artifact) => ({
+        artifactId: artifact._id,
+      }));
+  },
+});
+
+export const purgeExportArtifactPayloadInternal = internalMutation({
+  args: {
+    artifactId: v.id('exportArtifacts'),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const artifact = await ctx.db.get(args.artifactId);
+    if (
+      !artifact ||
+      typeof artifact.payloadJson !== 'string' ||
+      artifact.payloadJson.length === 0
+    ) {
+      return false;
+    }
+
+    await ctx.db.patch(args.artifactId, {
+      payloadJson: undefined,
+    });
+    return true;
+  },
+});
+
+export const listExpiredEvidenceReportExportCopiesInternal = internalQuery({
+  args: {
+    cutoff: v.number(),
+  },
+  returns: v.array(
+    v.object({
+      reportId: v.id('evidenceReports'),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const expiredReports = await ctx.db
+      .query('evidenceReports')
+      .withIndex('by_created_at', (q) => q.lt('createdAt', args.cutoff))
+      .collect();
+
+    return expiredReports
+      .filter((report) => {
+        if (typeof report.exportBundleJson !== 'string' || report.exportBundleJson.length === 0) {
+          return false;
+        }
+
+        const exportedAt = report.exportedAt ?? report.createdAt;
+        return exportedAt < args.cutoff;
+      })
+      .map((report) => ({
+        reportId: report._id,
+      }));
+  },
+});
+
+export const purgeEvidenceReportExportCopyInternal = internalMutation({
+  args: {
+    reportId: v.id('evidenceReports'),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const report = await ctx.db.get(args.reportId);
+    if (
+      !report ||
+      typeof report.exportBundleJson !== 'string' ||
+      report.exportBundleJson.length === 0
+    ) {
+      return false;
+    }
+
+    await ctx.db.patch(args.reportId, {
+      exportBundleJson: undefined,
+    });
+    return true;
+  },
+});
+
+export const cleanupExpiredExportPayloads = internalAction({
+  args: {},
+  returns: v.object({
+    purgedArtifactPayloadCount: v.number(),
+    purgedEvidenceReportCopyCount: v.number(),
+  }),
+  handler: cleanupExpiredExportPayloadsHandler,
+});
+
+export async function cleanupExpiredExportPayloadsHandler(ctx: ActionCtx) {
+  const cutoff = Date.now() - getRetentionPolicyConfig().exportPayloadRetentionHours * HOUR_IN_MS;
+  const [expiredArtifacts, expiredReportCopies] = (await Promise.all([
+    ctx.runQuery(internal.securityOps.listExpiredExportArtifactsWithPayloadInternal, {
+      cutoff,
+    }),
+    ctx.runQuery(internal.securityOps.listExpiredEvidenceReportExportCopiesInternal, {
+      cutoff,
+    }),
+  ])) as [Array<{ artifactId: Id<'exportArtifacts'> }>, Array<{ reportId: Id<'evidenceReports'> }>];
+
+  let purgedArtifactPayloadCount = 0;
+  for (const artifact of expiredArtifacts) {
+    const purged = (await ctx.runMutation(internal.securityOps.purgeExportArtifactPayloadInternal, {
+      artifactId: artifact.artifactId,
+    })) as boolean;
+    if (purged) {
+      purgedArtifactPayloadCount += 1;
+    }
+  }
+
+  let purgedEvidenceReportCopyCount = 0;
+  for (const report of expiredReportCopies) {
+    const purged = (await ctx.runMutation(
+      internal.securityOps.purgeEvidenceReportExportCopyInternal,
+      {
+        reportId: report.reportId,
+      },
+    )) as boolean;
+    if (purged) {
+      purgedEvidenceReportCopyCount += 1;
+    }
+  }
+
+  const processedCount = purgedArtifactPayloadCount + purgedEvidenceReportCopyCount;
+  const retentionHours = getRetentionPolicyConfig().exportPayloadRetentionHours;
+
+  await ctx.runMutation(internal.securityOps.recordRetentionJob, {
+    details:
+      processedCount > 0
+        ? `Purged ${purgedArtifactPayloadCount} export payloads and ${purgedEvidenceReportCopyCount} legacy evidence-report copies older than ${retentionHours} hours`
+        : `No expired raw export payloads found older than ${retentionHours} hours`,
+    jobKind: 'audit_export_cleanup',
+    processedCount,
+    status: 'success',
+  });
+
+  return {
+    purgedArtifactPayloadCount,
+    purgedEvidenceReportCopyCount,
+  };
+}
 
 export const listExpiredAttachmentsInternal = internalQuery({
   args: {

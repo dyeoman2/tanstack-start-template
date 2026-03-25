@@ -38,6 +38,7 @@ import type * as lib_betterAuthEmailServices from "../lib/betterAuthEmailService
 import type * as lib_chatAgentRuntime from "../lib/chatAgentRuntime.js";
 import type * as lib_chatAttachments from "../lib/chatAttachments.js";
 import type * as lib_chatRateLimits from "../lib/chatRateLimits.js";
+import type * as lib_enterpriseAccess from "../lib/enterpriseAccess.js";
 import type * as lib_onboardingState from "../lib/onboardingState.js";
 import type * as lib_organizationAuditEvents from "../lib/organizationAuditEvents.js";
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
@@ -125,6 +126,7 @@ declare const fullApi: ApiFromModules<{
   "lib/chatAgentRuntime": typeof lib_chatAgentRuntime;
   "lib/chatAttachments": typeof lib_chatAttachments;
   "lib/chatRateLimits": typeof lib_chatRateLimits;
+  "lib/enterpriseAccess": typeof lib_enterpriseAccess;
   "lib/onboardingState": typeof lib_onboardingState;
   "lib/organizationAuditEvents": typeof lib_organizationAuditEvents;
   "lib/organizationCleanup": typeof lib_organizationCleanup;

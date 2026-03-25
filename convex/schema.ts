@@ -254,6 +254,21 @@ export default defineSchema({
     .index('by_organization_id_and_user_id', ['organizationId', 'userId'])
     .index('by_organization_id_and_status', ['organizationId', 'status']),
 
+  organizationSupportAccessGrants: defineTable({
+    organizationId: v.string(),
+    siteAdminUserId: v.string(),
+    scope: v.union(v.literal('read_only'), v.literal('read_write')),
+    reason: v.string(),
+    grantedByUserId: v.string(),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    revokedAt: v.union(v.number(), v.null()),
+    revokedByUserId: v.union(v.string(), v.null()),
+  })
+    .index('by_organization_id', ['organizationId'])
+    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
+    .index('by_organization_id_and_site_admin_user_id', ['organizationId', 'siteAdminUserId']),
+
   organizationCleanupRequests: defineTable({
     organizationId: v.string(),
     requestedByUserId: v.string(),
@@ -725,13 +740,14 @@ export default defineSchema({
     exportedByUserId: v.string(),
     manifestJson: v.string(),
     manifestHash: v.string(),
-    payloadJson: v.string(),
+    payloadJson: v.optional(v.string()),
     payloadHash: v.string(),
     exportedAt: v.number(),
     createdAt: v.number(),
     schemaVersion: v.string(),
   })
     .index('by_artifact_type_and_created_at', ['artifactType', 'createdAt'])
+    .index('by_created_at', ['createdAt'])
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
     .index('by_source_report_id', ['sourceReportId']),
 

@@ -37,4 +37,10 @@ describe('script cli smoke', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain('Usage: pnpm run deploy:doctor');
   });
+
+  it('prints help for e2e:provision', () => {
+    const result = runTsxScript(['scripts/e2e-provision.ts', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: pnpm run e2e:provision');
+  });
 });

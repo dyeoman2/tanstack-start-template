@@ -19,7 +19,6 @@ import {
   createRepoBackedNetlifySite,
   formatNetlifySiteSummary,
   getNetlifySiteDetails,
-  getNetlifySiteEnvValue,
   listNetlifySiteHooks,
   readNetlifyLinkedSiteIdFromDisk,
   resolveNetlifySite,
@@ -32,7 +31,6 @@ import {
   buildDrSecretNames,
   buildRequiredNetlifyDrEnvVars,
   extractHostnameFromUrl,
-  isLikelyConvexAdminAuthToken,
   parseConvexEnvList,
 } from './lib/setup-dr';
 import {
@@ -245,29 +243,6 @@ function upsertAwsSecret(
   );
 }
 
-function getAwsSecretValue(secretId: string, region: string) {
-  const result = runCommand(
-    'aws',
-    [
-      'secretsmanager',
-      'get-secret-value',
-      '--secret-id',
-      secretId,
-      '--query',
-      'SecretString',
-      '--output',
-      'text',
-    ],
-    { env: { AWS_REGION: region } },
-  );
-  if (!result.ok) {
-    return null;
-  }
-
-  const value = result.stdout.trim();
-  return !value || value === 'None' ? null : value;
-}
-
 function getStackOutputs(stackName: string, region: string): StackOutputs | null {
   const result = runCommand(
     'aws',
@@ -459,29 +434,6 @@ async function main() {
     }
   }
 
-  const secretNames = buildDrSecretNames(projectSlug);
-  const awsSecretDeployKey = getAwsSecretValue(secretNames.convexAdminKey, awsRegion)?.trim() ?? '';
-  let deployKey = awsSecretDeployKey;
-  if (!deployKey) {
-    deployKey = getNetlifySiteEnvValue(drNetlifySite.id, 'CONVEX_DEPLOY_KEY')?.trim() ?? '';
-  }
-  if (!deployKey) {
-    deployKey = await ask(
-      'Convex admin/deploy auth token for the DR Netlify site (required if not already set): ',
-      deployKey,
-    );
-  }
-  if (!isLikelyConvexAdminAuthToken(deployKey)) {
-    if (awsSecretDeployKey) {
-      throw new Error(
-        `Secrets Manager secret ${secretNames.convexAdminKey} does not contain a valid Convex admin/deploy auth token. Rerun ./infra/aws-cdk/scripts/dr-recover-ecs.sh after fixing admin-key generation.`,
-      );
-    }
-    throw new Error('A valid Convex admin/deploy auth token is required for the DR Netlify site.');
-  }
-  setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKey);
-  changedRemotely.push('Updated DR Netlify env CONVEX_DEPLOY_KEY');
-
   const frontendOrigin =
     hostnameStrategy === 'custom-domain' && domain
       ? `https://${frontendSubdomain}.${domain}`
@@ -489,6 +441,7 @@ async function main() {
   if (!frontendOrigin) {
     throw new Error('Could not determine the DR Netlify frontend URL.');
   }
+  const secretNames = buildDrSecretNames(projectSlug);
 
   const envEntries = Object.entries(
     buildRequiredNetlifyDrEnvVars(convexProdEnv, {

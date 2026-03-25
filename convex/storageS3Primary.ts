@@ -25,12 +25,15 @@ function buildScopedStoragePath(args: {
   return `${topLevelPrefix}${scopePath}/${toStoragePathSegment(args.sourceType)}/${args.storageId}`;
 }
 
-export function buildMirroredStorageKey(args: {
+export function buildMirrorStorageKey(args: {
   organizationId?: string | null;
   sourceType: string;
   storageId: string;
 }) {
-  return buildScopedStoragePath(args);
+  return buildScopedStoragePath({
+    ...args,
+    topLevelPrefix: 'mirror',
+  });
 }
 
 function hexSha256ToBase64(value: string) {

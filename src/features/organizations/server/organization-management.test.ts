@@ -1,8 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
-  adminActionMock,
-  adminMutationMock,
   cancelBetterAuthOrganizationInvitationMock,
   checkBetterAuthOrganizationSlugMock,
   createBetterAuthOrganizationInvitationMock,
@@ -17,8 +15,6 @@ const {
   updateBetterAuthOrganizationMemberRoleMock,
   updateBetterAuthOrganizationMock,
 } = vi.hoisted(() => ({
-  adminActionMock: vi.fn(),
-  adminMutationMock: vi.fn(),
   cancelBetterAuthOrganizationInvitationMock: vi.fn(),
   checkBetterAuthOrganizationSlugMock: vi.fn(),
   createBetterAuthOrganizationInvitationMock: vi.fn(),
@@ -49,6 +45,7 @@ vi.mock('@convex/_generated/api', () => ({
       ensureCurrentUserContext: 'ensureCurrentUserContext',
     },
     organizationManagement: {
+      createOrganizationSupportAccessGrant: 'createOrganizationSupportAccessGrant',
       deactivateOrganizationMember: 'deactivateOrganizationMember',
       executePreparedOrganizationCleanup: 'executePreparedOrganizationCleanup',
       getOrganizationCreationEligibility: 'getOrganizationCreationEligibility',
@@ -56,6 +53,7 @@ vi.mock('@convex/_generated/api', () => ({
       getOrganizationWriteAccess: 'getOrganizationWriteAccess',
       prepareOrganizationCleanup: 'prepareOrganizationCleanup',
       reactivateOrganizationMember: 'reactivateOrganizationMember',
+      revokeOrganizationSupportAccessGrant: 'revokeOrganizationSupportAccessGrant',
       suspendOrganizationMember: 'suspendOrganizationMember',
       updateOrganizationPolicies: 'updateOrganizationPolicies',
     },
@@ -78,13 +76,6 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
     fetchAuthMutation: fetchAuthMutationMock,
     fetchAuthQuery: fetchAuthQueryMock,
   },
-}));
-
-vi.mock('~/lib/server/convex-admin.server', () => ({
-  createConvexAdminClient: () => ({
-    action: adminActionMock,
-    mutation: adminMutationMock,
-  }),
 }));
 
 vi.mock('~/lib/server/error-utils.server', () => ({
@@ -115,6 +106,7 @@ vi.mock('~/lib/server/better-auth/api', () => ({
 import {
   bulkOrganizationDirectoryActionServerFn,
   cancelOrganizationInvitationServerFn,
+  createOrganizationSupportAccessGrantServerFn,
   checkOrganizationSlugServerFn,
   createOrganizationInvitationServerFn,
   createOrganizationServerFn,
@@ -122,6 +114,7 @@ import {
   deleteOrganizationServerFn,
   reactivateOrganizationMemberServerFn,
   removeOrganizationMemberServerFn,
+  revokeOrganizationSupportAccessGrantServerFn,
   suspendOrganizationMemberServerFn,
   updateOrganizationMemberRoleServerFn,
   updateOrganizationPoliciesServerFn,
@@ -148,8 +141,6 @@ describe('organization management server functions', () => {
     });
     fetchAuthQueryMock.mockResolvedValue({ allowed: true });
     fetchAuthMutationMock.mockResolvedValue({ success: true });
-    adminActionMock.mockResolvedValue({ success: true });
-    adminMutationMock.mockResolvedValue({ success: true });
     checkBetterAuthOrganizationSlugMock.mockResolvedValue({ status: true });
     createBetterAuthOrganizationInvitationMock.mockResolvedValue({ id: 'invite-1' });
     updateBetterAuthOrganizationMemberRoleMock.mockResolvedValue({
@@ -309,6 +300,42 @@ describe('organization management server functions', () => {
       enterpriseProviderKey: null,
       enterpriseProtocol: null,
       allowBreakGlassPasswordLogin: true,
+    });
+  });
+
+  it('creates support access grants through Convex auth mutations', async () => {
+    await createOrganizationSupportAccessGrantServerFn({
+      data: {
+        organizationId: 'org_1',
+        siteAdminUserId: 'admin_1',
+        scope: 'read_only',
+        reason: 'Investigate ticket INC-42',
+        expiresAt: 1_710_000_000_000,
+      },
+    });
+
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('createOrganizationSupportAccessGrant', {
+      organizationId: 'org_1',
+      siteAdminUserId: 'admin_1',
+      scope: 'read_only',
+      reason: 'Investigate ticket INC-42',
+      expiresAt: 1_710_000_000_000,
+    });
+  });
+
+  it('revokes support access grants through Convex auth mutations', async () => {
+    await revokeOrganizationSupportAccessGrantServerFn({
+      data: {
+        organizationId: 'org_1',
+        grantId: 'grant_1',
+        reason: 'Issue resolved',
+      },
+    });
+
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('revokeOrganizationSupportAccessGrant', {
+      organizationId: 'org_1',
+      grantId: 'grant_1',
+      reason: 'Issue resolved',
     });
   });
 

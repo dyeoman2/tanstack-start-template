@@ -28,7 +28,11 @@ import {
   isValidContinuationPromptMessage,
   resolveThread,
 } from './agentChatActions';
-import { getVerifiedCurrentUserOrThrow, requireThreadPermission } from './auth/access';
+import {
+  getVerifiedCurrentUserOrThrow,
+  requireOrganizationPermission,
+  requireThreadPermission,
+} from './auth/access';
 import {
   assertChatModelSupportsWebSearch,
   type ChatAttachmentDoc,
@@ -72,6 +76,10 @@ type ThreadWithAccess = ChatThreadDoc & {
 };
 type PersonaWithAccess = PersonaDoc & {
   canManage: boolean;
+};
+
+type ThreadViewerResult = Awaited<ReturnType<typeof requireThreadPermission>> & {
+  thread: ChatThreadDoc;
 };
 
 function getCurrentUserDisplayName(
@@ -140,6 +148,44 @@ async function getCurrentChatContextOrNull(ctx: QueryCtx | MutationCtx) {
     isSiteAdmin: user.isSiteAdmin,
     currentUserName: getCurrentUserDisplayName(user),
   };
+}
+
+async function recordSupportAccessUsageIfNeeded(
+  ctx: MutationCtx,
+  input: {
+    decision: { assurance: { supportGrantId: string | null; supportGrantScope: string | null } };
+    organizationId: string;
+    permission: string;
+    resourceId: string;
+    resourceLabel?: string | null;
+    resourceType: string;
+    sessionId?: string | null;
+    sourceSurface: string;
+    userId: string;
+  },
+) {
+  if (!input.decision.assurance.supportGrantId || !input.decision.assurance.supportGrantScope) {
+    return;
+  }
+
+  await ctx.runMutation(internal.audit.insertAuditLog, {
+    eventType: 'support_access_used',
+    userId: input.userId,
+    actorUserId: input.userId,
+    organizationId: input.organizationId,
+    outcome: 'success',
+    severity: 'info',
+    resourceType: input.resourceType,
+    resourceId: input.resourceId,
+    resourceLabel: input.resourceLabel ?? undefined,
+    sessionId: input.sessionId ?? undefined,
+    sourceSurface: input.sourceSurface,
+    metadata: JSON.stringify({
+      grantId: input.decision.assurance.supportGrantId,
+      permission: input.permission,
+      scope: input.decision.assurance.supportGrantScope,
+    }),
+  });
 }
 
 function canViewThread(
@@ -248,14 +294,15 @@ async function getThreadForViewer(
   viewer: Pick<ChatViewerContext, 'userId' | 'organizationId' | 'isSiteAdmin'>,
 ) {
   try {
-    const { thread } = await requireThreadPermission(ctx, {
+    const result = await requireThreadPermission(ctx, {
       threadId,
       permission: 'readThread',
     });
+    const { thread } = result;
     if (!canViewThread(thread, viewer)) {
       return null;
     }
-    return thread;
+    return result as ThreadViewerResult;
   } catch {
     return null;
   }
@@ -1145,6 +1192,16 @@ export const listThreads = query({
       return [];
     }
 
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationId: viewer.organizationId,
+        permission: 'readThread',
+        sourceSurface: 'chat.thread_list',
+      });
+    } catch {
+      return [];
+    }
+
     const threads = await listAccessibleThreads(ctx, viewer);
 
     return threads.map((thread) => toThreadWithAccess(thread, viewer));
@@ -1157,6 +1214,16 @@ export const getLatestThreadId = query({
   handler: async (ctx) => {
     const viewer = await getCurrentChatContextOrNull(ctx);
     if (!viewer) {
+      return null;
+    }
+
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationId: viewer.organizationId,
+        permission: 'readThread',
+        sourceSurface: 'chat.latest_thread',
+      });
+    } catch {
       return null;
     }
 
@@ -1185,8 +1252,8 @@ export const getThread = query({
   returns: v.union(threadWithAccessValidator, v.null()),
   handler: async (ctx, args): Promise<ThreadWithAccess | null> => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    return thread ? toThreadWithAccess(thread, viewer) : null;
+    const result = await getThreadForViewer(ctx, args.threadId, viewer);
+    return result ? toThreadWithAccess(result.thread, viewer) : null;
   },
 });
 
@@ -1202,8 +1269,8 @@ export const getThreadTitle = query({
       return null;
     }
 
-    const thread = await getThreadForViewer(ctx, normalizedThreadId, viewer);
-    return thread?.title ?? null;
+    const result = await getThreadForViewer(ctx, normalizedThreadId, viewer);
+    return result?.thread.title ?? null;
   },
 });
 
@@ -1227,8 +1294,8 @@ export const listThreadMessages = query({
       };
     }
 
-    const thread = await getThreadForViewer(ctx, normalizedThreadId, viewer);
-    if (!thread) {
+    const result = await getThreadForViewer(ctx, normalizedThreadId, viewer);
+    if (!result) {
       return {
         page: [],
         isDone: true,
@@ -1236,6 +1303,7 @@ export const listThreadMessages = query({
         streams: undefined,
       };
     }
+    const thread = result.thread;
 
     const paginated = await listUIMessages(ctx, components.agent, {
       threadId: thread.agentThreadId,
@@ -1269,10 +1337,11 @@ export const getActiveRun = query({
   returns: v.union(activeRunWithAccessValidator, v.null()),
   handler: async (ctx, args): Promise<(ChatRunDoc & { canStop: boolean }) | null> => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
+    const result = await getThreadForViewer(ctx, args.threadId, viewer);
+    if (!result) {
       return null;
     }
+    const thread = result.thread;
 
     const runs = await getChatRunsForThread(ctx, args.threadId);
     const run = runs.find((nextRun) => nextRun.status === 'streaming') ?? null;
@@ -1298,10 +1367,11 @@ export const getLatestRunState = query({
     promptMessageId?: string;
   } | null> => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
+    const result = await getThreadForViewer(ctx, args.threadId, viewer);
+    if (!result) {
       return null;
     }
+    const thread = result.thread;
 
     const run = (await ctx.runQuery(internal.agentChat.getLatestRunForThreadInternal, {
       threadId: args.threadId,
@@ -1329,8 +1399,8 @@ export const getRetryableRunIds = query({
   returns: v.record(v.string(), v.string()),
   handler: async (ctx, args): Promise<Record<string, string>> => {
     const viewer = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, viewer);
-    if (!thread) {
+    const result = await getThreadForViewer(ctx, args.threadId, viewer);
+    if (!result) {
       return {};
     }
 
@@ -1487,6 +1557,11 @@ export const precreateThread = mutation({
   }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'> }> => {
     const { userId, organizationId, sessionId } = await getCurrentChatContext(ctx);
+    const decision = await requireOrganizationPermission(ctx, {
+      organizationId,
+      permission: 'writeThread',
+      sourceSurface: 'chat.precreate_thread',
+    });
 
     if (!args.text.trim() && args.attachmentIds.length === 0) {
       throw new ConvexError('Message content is required.');
@@ -1528,6 +1603,17 @@ export const precreateThread = mutation({
         }),
       });
     }
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId,
+      sourceSurface: 'chat.precreate_thread',
+      userId,
+    });
 
     return {
       threadId: thread._id,
@@ -1558,14 +1644,15 @@ export const sendMessage = mutation({
       throw new ConvexError('Message content is required.');
     }
 
-    const thread = await getThreadForViewer(ctx, args.threadId, {
+    const threadAccess = await getThreadForViewer(ctx, args.threadId, {
       userId,
       organizationId,
       isSiteAdmin,
     });
-    if (!thread) {
+    if (!threadAccess) {
       throw new ConvexError('Thread not found.');
     }
+    const thread = threadAccess.thread;
 
     await enforceChatPreflightOrThrow(ctx, {
       organizationId,
@@ -1661,6 +1748,17 @@ export const sendMessage = mutation({
     await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
       runId,
     });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision: threadAccess,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: args.ownerSessionId,
+      sourceSurface: 'chat.send_message',
+      userId,
+    });
 
     return {
       threadId: thread._id,
@@ -1708,9 +1806,17 @@ export const editUserMessage = mutation({
     if (!thread) {
       throw new ConvexError('Thread not found.');
     }
+    const threadAccess = await getThreadForViewer(ctx, thread._id, {
+      userId,
+      organizationId,
+      isSiteAdmin,
+    });
+    if (!threadAccess) {
+      throw new ConvexError('Thread not found.');
+    }
 
     if (
-      !canEditUserMessage(message, thread, {
+      !canEditUserMessage(message, threadAccess.thread, {
         userId,
         organizationId,
         isSiteAdmin,
@@ -1789,6 +1895,17 @@ export const editUserMessage = mutation({
     await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
       runId,
     });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision: threadAccess,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: args.ownerSessionId,
+      sourceSurface: 'chat.edit_message',
+      userId,
+    });
 
     return {
       threadId: thread._id,
@@ -1819,14 +1936,15 @@ export const retryAssistantResponse = mutation({
       throw new ConvexError('Run not found.');
     }
 
-    const thread = await getThreadForViewer(ctx, run.threadId, {
+    const threadAccess = await getThreadForViewer(ctx, run.threadId, {
       userId,
       organizationId,
       isSiteAdmin,
     });
-    if (!thread) {
+    if (!threadAccess) {
       throw new ConvexError('Thread not found.');
     }
+    const thread = threadAccess.thread;
 
     const [promptMessage] = (await ctx.runQuery(components.agent.messages.getMessagesByIds, {
       messageIds: [run.promptMessageId],
@@ -1885,6 +2003,17 @@ export const retryAssistantResponse = mutation({
     await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
       runId,
     });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision: threadAccess,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: args.ownerSessionId,
+      sourceSurface: 'chat.retry_response',
+      userId,
+    });
 
     return {
       threadId: thread._id,
@@ -1908,14 +2037,15 @@ export const continuePrompt = mutation({
   }),
   handler: async (ctx, args): Promise<{ threadId: Id<'chatThreads'>; runId: Id<'chatRuns'> }> => {
     const { userId, organizationId, isSiteAdmin } = await getCurrentChatContext(ctx);
-    const thread = await getThreadForViewer(ctx, args.threadId, {
+    const threadAccess = await getThreadForViewer(ctx, args.threadId, {
       userId,
       organizationId,
       isSiteAdmin,
     });
-    if (!thread) {
+    if (!threadAccess) {
       throw new ConvexError('Thread not found.');
     }
+    const thread = threadAccess.thread;
 
     if (args.personaId) {
       const persona = await getPersonaForOrganization(ctx, args.personaId, organizationId);
@@ -1986,6 +2116,17 @@ export const continuePrompt = mutation({
     });
     await ctx.scheduler.runAfter(0, internal.agentChatActions.runChatGenerationInternal, {
       runId,
+    });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision: threadAccess,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: args.ownerSessionId,
+      sourceSurface: 'chat.continue_prompt',
+      userId,
     });
 
     return {
@@ -2072,7 +2213,7 @@ export const setThreadPersona = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const { organizationId } = await getCurrentChatContext(ctx);
-    await requireThreadPermission(ctx, {
+    const decision = await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
@@ -2088,6 +2229,16 @@ export const setThreadPersona = mutation({
       personaId: args.personaId,
       updatedAt: Date.now(),
     });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision,
+      organizationId,
+      permission: 'writeThread',
+      resourceId: args.threadId,
+      resourceType: 'chat_thread',
+      sessionId: decision.user.authSession?.id ?? '',
+      sourceSurface: 'chat.set_thread_persona',
+      userId: decision.user.authUserId,
+    });
     return null;
   },
 });
@@ -2099,10 +2250,11 @@ export const renameThread = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { thread } = await requireThreadPermission(ctx, {
+    const decision = await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
+    const { thread } = decision;
 
     const title = args.title.trim();
 
@@ -2117,6 +2269,17 @@ export const renameThread = mutation({
         title,
       },
     });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision,
+      organizationId: thread.organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: title,
+      resourceType: 'chat_thread',
+      sessionId: decision.user.authSession?.id ?? '',
+      sourceSurface: 'chat.rename_thread',
+      userId: decision.user.authUserId,
+    });
     return null;
   },
 });
@@ -2128,10 +2291,11 @@ export const setThreadPinned = mutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const { thread } = await requireThreadPermission(ctx, {
+    const decision = await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
+    const { thread } = decision;
     if (thread.pinned === args.pinned) {
       return null;
     }
@@ -2139,6 +2303,17 @@ export const setThreadPinned = mutation({
     await ctx.db.patch(args.threadId, {
       pinned: args.pinned,
       updatedAt: Date.now(),
+    });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision,
+      organizationId: thread.organizationId,
+      permission: 'writeThread',
+      resourceId: thread._id,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: decision.user.authSession?.id ?? '',
+      sourceSurface: 'chat.set_thread_pinned',
+      userId: decision.user.authUserId,
     });
     return null;
   },
@@ -2151,10 +2326,11 @@ export const deleteThread = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const viewer = await getCurrentChatContext(ctx);
-    const { thread } = await requireThreadPermission(ctx, {
+    const decision = await requireThreadPermission(ctx, {
       threadId: args.threadId,
       permission: 'writeThread',
     });
+    const { thread } = decision;
 
     await ctx.runMutation(internal.agentChat.patchThreadInternal, {
       threadId: args.threadId,
@@ -2180,6 +2356,17 @@ export const deleteThread = mutation({
         threadId: args.threadId,
         title: thread.title,
       }),
+    });
+    await recordSupportAccessUsageIfNeeded(ctx, {
+      decision,
+      organizationId: viewer.organizationId,
+      permission: 'writeThread',
+      resourceId: args.threadId,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: viewer.sessionId,
+      sourceSurface: 'chat.thread_delete',
+      userId: viewer.userId,
     });
     return null;
   },

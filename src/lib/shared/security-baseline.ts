@@ -2,6 +2,7 @@ export const REGULATED_RETENTION_DEFAULTS = {
   attachmentUrlTtlMinutes: 15,
   backupReportRetentionDays: 30,
   dataRetentionDays: 30,
+  exportPayloadRetentionHours: 24,
   quarantineRetentionDays: 7,
   recentStepUpWindowMinutes: 15,
 } as const;

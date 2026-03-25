@@ -155,10 +155,7 @@ export async function loadStoredFileBlobWithMode(
     throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
   }
 
-  const runtimeConfig = getStorageRuntimeConfig();
-  const readiness = getStorageReadiness(lifecycle, {
-    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
-  });
+  const readiness = getStorageReadiness(lifecycle);
   if (!readiness.readable) {
     throw new Error(readiness.message ?? 'Stored file is not readable.');
   }
@@ -193,10 +190,7 @@ async function resolveDerivedParentLifecycleOrThrow(ctx: ActionCtx, parentStorag
   if (!parentLifecycle) {
     throw new Error(`Parent stored file not found for storageId=${parentStorageId}.`);
   }
-  const runtimeConfig = getStorageRuntimeConfig();
-  const readiness = getStorageReadiness(parentLifecycle, {
-    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
-  });
+  const readiness = getStorageReadiness(parentLifecycle);
   if (!readiness.readable) {
     throw new Error(readiness.message ?? 'Parent stored file is not readable.');
   }

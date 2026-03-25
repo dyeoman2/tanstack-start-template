@@ -66,6 +66,9 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Bulk invite revoked', value: 'bulk_invite_revoked' },
   { label: 'Bulk invite resent', value: 'bulk_invite_resent' },
   { label: 'Bulk member removed', value: 'bulk_member_removed' },
+  { label: 'Support access granted', value: 'support_access_granted' },
+  { label: 'Support access revoked', value: 'support_access_revoked' },
+  { label: 'Support access used', value: 'support_access_used' },
   { label: 'Directory exported', value: 'directory_exported' },
   { label: 'Audit log exported', value: 'audit_log_exported' },
   { label: 'Chat thread created', value: 'chat_thread_created' },
@@ -272,6 +275,12 @@ function getRawAuditSummary(row: RawOrganizationAuditRow) {
   }
 
   switch (row.eventType) {
+    case 'support_access_granted':
+      return 'A temporary provider support grant was issued.';
+    case 'support_access_revoked':
+      return 'A temporary provider support grant was revoked.';
+    case 'support_access_used':
+      return 'Provider support used a temporary access grant.';
     case 'enterprise_scim_token_generated':
       return 'A new SCIM token was created for this provider.';
     case 'enterprise_scim_token_deleted':

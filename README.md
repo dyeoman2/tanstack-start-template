@@ -165,7 +165,7 @@ E2E_ADMIN_EMAIL=e2e-admin@local.test
 E2E_ADMIN_PASSWORD=replace-with-a-deterministic-password
 ```
 
-The setup project will provision those principals, reconcile the Convex role profile, and save `playwright/.auth/user.json` and `playwright/.auth/admin.json` automatically.
+`pnpm run setup:e2e` writes the deterministic credentials locally and syncs the Convex gate vars. Principal provisioning now happens outside the app runtime: run `pnpm run e2e:provision` manually, or let the browser tooling auto-provision on first use before it saves `playwright/.auth/user.json` and `playwright/.auth/admin.json`.
 
 Because the frontend test server reuses your configured Convex deployment, that deployment must also have:
 
@@ -193,6 +193,8 @@ Content-Type: application/json
 
 Run that request from the same browser session your automation tool will continue using. On success, the endpoint forwards Better Auth `Set-Cookie` headers and redirects to the requested in-app path.
 
+Both `/api/test/agent-auth` and `/api/test/e2e-auth` are sign-in-only helpers. If the configured principal has not been provisioned yet, use `pnpm run e2e:provision` or one of the repo auth helper scripts, which now perform provisioning through CLI tooling before they hit the auth route.
+
 Use `POST /api/test/e2e-auth` only when your tool needs cookie JSON for manual injection, such as Playwright storage state bootstrapping.
 
 If the agent can run repo scripts, the easiest path is:
@@ -201,7 +203,7 @@ If the agent can run repo scripts, the easiest path is:
 pnpm run agent:auth -- --session-name codex-demo --principal user --redirect-to /app
 ```
 
-That command loads `.env.local`, authenticates the named `agent-browser` session through `/api/test/agent-auth`, and opens the requested page in the same browser session.
+That command loads `.env.local`, auto-provisions the configured principal through CLI tooling when needed, authenticates the named `agent-browser` session through `/api/test/agent-auth`, and opens the requested page in the same browser session.
 
 For the common "authenticate, wait, and inspect" flow:
 
@@ -227,7 +229,7 @@ For repo-local Playwright automation, use:
 pnpm run playwright:inspect -- --principal user --path /app
 ```
 
-That command authenticates through `/api/test/e2e-auth`, opens the page with Playwright, and prints a compact JSON summary of the resulting UI. Add `--screenshot output/playwright/app.png` to save a screenshot artifact.
+That command auto-provisions the configured principal through CLI tooling when needed, authenticates through `/api/test/e2e-auth`, opens the page with Playwright, and prints a compact JSON summary of the resulting UI. Add `--screenshot output/playwright/app.png` to save a screenshot artifact.
 
 For reliable browser automation in local development:
 

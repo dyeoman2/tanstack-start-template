@@ -16,6 +16,7 @@ import { OrganizationDomainManagement } from '~/features/organizations/component
 import { OrganizationEnterpriseAuthManagement } from '~/features/organizations/components/OrganizationEnterpriseAuthManagement';
 import { OrganizationProvisioningManagement } from '~/features/organizations/components/OrganizationProvisioningManagement';
 import { OrganizationSsoEnforcementManagement } from '~/features/organizations/components/OrganizationSsoEnforcementManagement';
+import { OrganizationSupportAccessManagement } from '~/features/organizations/components/OrganizationSupportAccessManagement';
 import { OrganizationWorkspaceNav } from '~/features/organizations/components/OrganizationWorkspaceNav';
 import { OrganizationWorkspaceTabs } from '~/features/organizations/components/OrganizationWorkspaceTabs';
 import { useStableOrganizationName } from '~/features/organizations/lib/organization-breadcrumb-state';
@@ -35,6 +36,13 @@ export function OrganizationIdentityPage({
   const location = useLocation();
   const navigate = useNavigate();
   const settings = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
+  const enterpriseAccess = useQuery(
+    api.organizationManagement.getOrganizationEnterpriseAccessBySlug,
+    {
+      slug,
+      permission: 'managePolicies',
+    },
+  );
 
   // Pre-warm Convex subscriptions so data is cached before accordion panels open.
   // Without these, each panel fetches on mount and shows a loading spinner.
@@ -126,9 +134,20 @@ export function OrganizationIdentityPage({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Organization not found</CardTitle>
+          <CardTitle>
+            {enterpriseAccess &&
+            enterpriseAccess.requiresEnterpriseAuth &&
+            !enterpriseAccess.allowed
+              ? 'Enterprise sign-in required'
+              : 'Organization not found'}
+          </CardTitle>
           <CardDescription>
-            The requested organization is unavailable or you no longer have access to it.
+            {enterpriseAccess &&
+            enterpriseAccess.requiresEnterpriseAuth &&
+            !enterpriseAccess.allowed
+              ? (enterpriseAccess.reason ??
+                'Use your managed enterprise identity before opening this organization.')
+              : 'The requested organization is unavailable or you no longer have access to it.'}
           </CardDescription>
         </CardHeader>
       </Card>
@@ -171,7 +190,8 @@ export function OrganizationIdentityPage({
       label: 'Enforcement',
       completed: enforcementConfigured,
       blockedMessage: enforcementBlockedMessage,
-      summary: 'Decide how SSO should be enforced for your users.',
+      summary:
+        'Decide how strictly enterprise sign-in should protect tenant access, including PHI-bearing paths.',
       content: (
         <OrganizationSsoEnforcementManagement
           slug={slug}
@@ -203,7 +223,7 @@ export function OrganizationIdentityPage({
     <div className="space-y-6">
       <OrganizationWorkspaceNav
         title={organizationName}
-        description="Manage single sign-on, user provisioning, and verified domains for your organization."
+        description="Manage single sign-on, verified domains, provider support access, and optional user provisioning."
       />
       <OrganizationWorkspaceTabs slug={slug} organizationName={organizationName} />
 
@@ -211,8 +231,8 @@ export function OrganizationIdentityPage({
         <CardHeader className="flex flex-col gap-1">
           <CardTitle>Set Up SSO & Provisioning</CardTitle>
           <CardDescription>
-            Complete these steps to configure SSO, domain verification, enforcement, and optional
-            SCIM provisioning.
+            Complete these steps to configure SSO, domain verification, strict enforcement, and
+            optional SCIM provisioning.
           </CardDescription>
         </CardHeader>
         <Separator />
@@ -296,6 +316,8 @@ export function OrganizationIdentityPage({
           </Accordion>
         </CardContent>
       </Card>
+
+      <OrganizationSupportAccessManagement slug={slug} />
     </div>
   );
 }

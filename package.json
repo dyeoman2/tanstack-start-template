@@ -41,6 +41,7 @@
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:server": "tsx scripts/e2e-dev.ts",
+    "e2e:provision": "tsx scripts/e2e-provision.ts",
     "agent:auth": "tsx scripts/agent-browser-auth.ts",
     "agent:close": "tsx scripts/agent-browser-close.ts",
     "agent:inspect": "tsx scripts/agent-browser-inspect.ts",
@@ -73,6 +74,7 @@
     "storage:setup": "tsx scripts/setup-storage.ts",
     "storage:setup:prod": "tsx scripts/setup-storage-prod.ts",
     "storage:backfill:clean-prefixes": "tsx scripts/backfill-s3-primary-clean-prefixes.ts",
+    "storage:backfill:mirror-prefixes": "tsx scripts/backfill-s3-mirror-prefixes.ts",
     "setup:e2e": "tsx scripts/setup-e2e.ts",
     "setup:convex": "tsx scripts/setup-convex.ts",
     "convex:env:hygiene": "tsx scripts/convex-env-hygiene.ts",
@@ -220,7 +222,7 @@
   "packageManager": "pnpm@10.33.0+sha512.10568bb4a6afb58c9eb3630da90cc9516417abebd3fabbe6739f0ae795728da1491e9db5a544c76ad8eb7570f5c4bb3d6c637b2cb41bfdcdb47fa823c8649319",
   "pnpm": {
     "overrides": {
-      "h3-v2": "npm:h3@2.0.1-rc.17",
+      "h3-v2": "npm:h3@2.0.1-rc.18",
       "lodash": "4.17.23"
     }
   }

@@ -9,6 +9,8 @@ Use these commands when an AI agent needs to verify UI changes in the local app 
 - `E2E_TEST_SECRET` present in `.env.local`
 - `agent-browser` installed and available on `PATH`
 
+The `agent:auth` and `agent:inspect` scripts auto-provision the deterministic E2E principals through CLI tooling before they hit the test auth routes. If you want to pre-create them yourself, run `pnpm run e2e:provision`.
+
 ## Auth + Snapshot
 
 Authenticate a normal user session, wait for the app shell, inspect the page, then clean up:
@@ -55,6 +57,7 @@ pnpm run agent:close -- --session-name codex-shot
 - `401 Unauthorized` or `404 Not found` from `/api/test/agent-auth`
   - Confirm `ENABLE_E2E_TEST_AUTH=true` in `.env.local`.
   - Confirm `E2E_TEST_SECRET` exists locally and matches the current app environment.
+  - If you are calling the route directly instead of using the helper scripts, run `pnpm run e2e:provision` first so the principal already exists.
 
 - Redirected back to `/login` or app shell shows unauthenticated errors
   - Use `http://127.0.0.1:3000`, not `http://localhost:3000`.

@@ -17,6 +17,7 @@ export type RetentionPolicyConfig = {
   attachmentUrlTtlMinutes: number;
   backupReportRetentionDays: number;
   dataRetentionDays: number;
+  exportPayloadRetentionHours: number;
   quarantineRetentionDays: number;
   recentStepUpWindowMinutes: number;
 };
@@ -34,6 +35,10 @@ export function getRetentionPolicyConfig(): RetentionPolicyConfig {
     dataRetentionDays: parsePositiveInteger(
       process.env.DATA_RETENTION_DAYS,
       REGULATED_RETENTION_DEFAULTS.dataRetentionDays,
+    ),
+    exportPayloadRetentionHours: parsePositiveInteger(
+      process.env.EXPORT_PAYLOAD_RETENTION_HOURS,
+      REGULATED_RETENTION_DEFAULTS.exportPayloadRetentionHours,
     ),
     quarantineRetentionDays: parsePositiveInteger(
       process.env.QUARANTINE_RETENTION_DAYS,

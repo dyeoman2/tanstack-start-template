@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildMirroredStorageKey,
+  buildMirrorStorageKey,
   buildPromotedStorageKey,
   buildQuarantineStorageKey,
 } from './storageS3Primary';
@@ -26,13 +26,13 @@ describe('s3-primary key builders', () => {
     ).toBe('clean/org/org_123/chat_attachment/file_1');
   });
 
-  it('keeps the mirrored storage key shape for s3-mirror paths', () => {
+  it('builds dedicated mirror keys under the mirror prefix', () => {
     expect(
-      buildMirroredStorageKey({
+      buildMirrorStorageKey({
         organizationId: 'org_123',
         sourceType: 'chat_attachment',
         storageId: 'file_1',
       }),
-    ).toBe('org/org_123/chat_attachment/file_1');
+    ).toBe('mirror/org/org_123/chat_attachment/file_1');
   });
 });

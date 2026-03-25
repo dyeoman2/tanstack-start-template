@@ -43,6 +43,9 @@ export const ORGANIZATION_AUDIT_EVENT_TYPES = [
   'bulk_invite_revoked',
   'bulk_invite_resent',
   'bulk_member_removed',
+  'support_access_granted',
+  'support_access_revoked',
+  'support_access_used',
   'authorization_denied',
   'admin_user_sessions_viewed',
   'directory_exported',
@@ -148,10 +151,18 @@ export const ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES = [
 
 export type OrganizationEnterpriseAuthMode = 'off' | 'optional' | 'required';
 export type OrganizationEnterpriseAuthProtocol = 'oidc';
+export type OrganizationEnterpriseAccessStatus =
+  | 'not_required'
+  | 'satisfied'
+  | 'missing_enterprise_session'
+  | 'unmanaged_email_domain'
+  | 'support_grant_required'
+  | 'support_grant_expired';
 export type OrganizationEnterpriseProviderKey =
   (typeof ORGANIZATION_ENTERPRISE_PROVIDER_KEYS)[number];
 export type OrganizationEnterpriseProviderStatus =
   (typeof ORGANIZATION_ENTERPRISE_PROVIDER_STATUS_VALUES)[number];
+export type OrganizationSupportAccessScope = 'read_only' | 'read_write';
 
 export type OrganizationEnterpriseProviderOption = {
   key: OrganizationEnterpriseProviderKey;
@@ -217,6 +228,45 @@ export type OrganizationDomainVerificationResult = {
   checkedAt: number;
   domain: OrganizationDomain;
   reason: string | null;
+};
+
+export type OrganizationEnterpriseAccessResult = {
+  allowed: boolean;
+  enterpriseAuthMode: OrganizationEnterpriseAuthMode;
+  providerKey: OrganizationEnterpriseProviderKey | null;
+  reason: string | null;
+  requiresEnterpriseAuth: boolean;
+  status: OrganizationEnterpriseAccessStatus;
+  supportGrant: {
+    expiresAt: number;
+    id: Id<'organizationSupportAccessGrants'>;
+    reason: string;
+    scope: OrganizationSupportAccessScope;
+  } | null;
+};
+
+export type OrganizationSupportAccessGrantRow = {
+  id: Id<'organizationSupportAccessGrants'>;
+  createdAt: number;
+  expiresAt: number;
+  grantedByEmail: string | null;
+  grantedByName: string | null;
+  grantedByUserId: string;
+  reason: string;
+  revokedAt: number | null;
+  revokedByEmail: string | null;
+  revokedByName: string | null;
+  revokedByUserId: string | null;
+  scope: OrganizationSupportAccessScope;
+  siteAdminEmail: string;
+  siteAdminName: string | null;
+  siteAdminUserId: string;
+};
+
+export type OrganizationSupportAccessSiteAdminOption = {
+  authUserId: string;
+  email: string;
+  name: string | null;
 };
 
 export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];

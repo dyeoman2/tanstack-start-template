@@ -31,13 +31,11 @@ describe('reconcileOrphanedMirrorObjects', () => {
           ? [{ Key: 'quarantine/org/acme/chat/file-1', LastModified: oldDate }]
           : prefix === 'clean/'
             ? [{ Key: 'clean/org/acme/chat/file-2', LastModified: oldDate }]
-            : prefix === 'org/'
-              ? [{ Key: 'org/acme/chat/file-3', LastModified: oldDate }]
-              : [{ Key: 'site-admin/chat/file-4', LastModified: oldDate }],
+            : [{ Key: 'mirror/org/acme/chat/file-3', LastModified: oldDate }],
     }));
   });
 
-  it('scans quarantine, clean, and legacy prefixes and deletes only orphaned keys', async () => {
+  it('scans quarantine, clean, and mirror prefixes and deletes only orphaned keys', async () => {
     const ctx = {
       runQuery: vi.fn(async (_ref: unknown, args: { bucket: string; key: string }) => {
         if (args.key === 'clean/org/acme/chat/file-2') {
@@ -49,7 +47,7 @@ describe('reconcileOrphanedMirrorObjects', () => {
 
     await reconcileOrphanedMirrorObjects(ctx as never);
 
-    expect(listS3ObjectsMock).toHaveBeenCalledTimes(4);
+    expect(listS3ObjectsMock).toHaveBeenCalledTimes(3);
     expect(listS3ObjectsMock).toHaveBeenCalledWith({
       bucket: 'bucket',
       maxKeys: 50,
@@ -63,26 +61,17 @@ describe('reconcileOrphanedMirrorObjects', () => {
     expect(listS3ObjectsMock).toHaveBeenCalledWith({
       bucket: 'bucket',
       maxKeys: 50,
-      prefix: 'org/',
-    });
-    expect(listS3ObjectsMock).toHaveBeenCalledWith({
-      bucket: 'bucket',
-      maxKeys: 50,
-      prefix: 'site-admin/',
+      prefix: 'mirror/',
     });
 
-    expect(deleteS3ObjectMock).toHaveBeenCalledTimes(3);
+    expect(deleteS3ObjectMock).toHaveBeenCalledTimes(2);
     expect(deleteS3ObjectMock).toHaveBeenCalledWith({
       bucket: 'bucket',
       key: 'quarantine/org/acme/chat/file-1',
     });
     expect(deleteS3ObjectMock).toHaveBeenCalledWith({
       bucket: 'bucket',
-      key: 'org/acme/chat/file-3',
-    });
-    expect(deleteS3ObjectMock).toHaveBeenCalledWith({
-      bucket: 'bucket',
-      key: 'site-admin/chat/file-4',
+      key: 'mirror/org/acme/chat/file-3',
     });
   });
 });

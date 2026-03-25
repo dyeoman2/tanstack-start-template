@@ -3,7 +3,7 @@
 import { getFile, serializeMessage, storeFile } from '@convex-dev/agent';
 import type { ModelMessage } from 'ai';
 import { ConvexError, v } from 'convex/values';
-import { getFileStorageBackendMode, getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { getFileStorageBackendMode } from '../src/lib/server/env.server';
 import { inspectFile } from '../src/lib/server/file-inspection.server';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import {
@@ -1059,10 +1059,7 @@ export const processPendingChatAttachmentInternal = internalAction({
     const lifecycle = (await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
       storageId: args.storageId,
     })) as Doc<'storageLifecycle'> | null;
-    const runtimeConfig = getStorageRuntimeConfig();
-    const readiness = getStorageReadiness(lifecycle, {
-      allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
-    });
+    const readiness = getStorageReadiness(lifecycle);
     if (!lifecycle || !readiness.readable) {
       return null;
     }

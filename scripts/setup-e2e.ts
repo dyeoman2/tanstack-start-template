@@ -45,6 +45,9 @@ function printUsage() {
   console.log('- Ensures .env.local exists');
   console.log('- Writes authenticated E2E defaults locally');
   console.log('- Syncs ENABLE_E2E_TEST_AUTH and E2E_TEST_SECRET to Convex');
+  console.log(
+    '- Leaves principal provisioning to `pnpm run e2e:provision` or the browser helper scripts',
+  );
   console.log('');
   console.log('Examples:');
   console.log('- pnpm run setup:e2e');
@@ -66,6 +69,9 @@ async function main() {
   console.log('What this does: writes local E2E auth defaults and syncs the Convex gate vars.');
   console.log('Prereqs: .env.local or setup:env, plus Convex CLI access to the target deployment.');
   console.log('Modifies: .env.local and Convex env vars ENABLE_E2E_TEST_AUTH/E2E_TEST_SECRET.');
+  console.log(
+    'Does not require CONVEX_DEPLOY_KEY in the app runtime; principal provisioning now runs through CLI tooling.',
+  );
   console.log('Safe to rerun: yes; existing values are reused where present.\n');
   requirePnpmAndConvexCli();
 
@@ -115,6 +121,10 @@ async function main() {
   console.log(`E2E_USER_EMAIL=${localValues.E2E_USER_EMAIL}`);
   console.log(`E2E_ADMIN_EMAIL=${localValues.E2E_ADMIN_EMAIL}`);
   console.log('────────────────────────────────────────────────');
+  console.log(
+    'Run `pnpm run e2e:provision` to pre-create the deterministic principals if you want to verify setup explicitly.',
+  );
+  console.log('The browser helper scripts also auto-provision those principals on first use.');
   console.log('Run `pnpm test:e2e` to execute the authenticated Playwright suite.');
   if (json) {
     emitStructuredOutput({
@@ -123,6 +133,7 @@ async function main() {
       syncedConvexKeys: convexEnvVars.map(([name]) => name),
       e2eUserEmail: localValues.E2E_USER_EMAIL,
       e2eAdminEmail: localValues.E2E_ADMIN_EMAIL,
+      provisioningCommand: 'pnpm run e2e:provision',
     });
   }
 }

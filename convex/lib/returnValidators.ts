@@ -1,4 +1,8 @@
 import { v } from 'convex/values';
+import {
+  organizationEnterpriseAccessStatusValidator,
+  organizationSupportAccessScopeValidator,
+} from './enterpriseAccess';
 
 export const userRoleValidator = v.union(v.literal('user'), v.literal('admin'));
 export const organizationRoleValidator = v.union(
@@ -772,10 +776,20 @@ export const organizationEnterpriseAuthResolutionResultValidator = v.union(
 
 export const organizationEnterpriseAccessResultValidator = v.object({
   allowed: v.boolean(),
+  status: organizationEnterpriseAccessStatusValidator,
   reason: v.union(v.string(), v.null()),
   requiresEnterpriseAuth: v.boolean(),
   providerKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
   enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
+  supportGrant: v.union(
+    v.object({
+      expiresAt: v.number(),
+      id: v.id('organizationSupportAccessGrants'),
+      reason: v.string(),
+      scope: organizationSupportAccessScopeValidator,
+    }),
+    v.null(),
+  ),
 });
 
 export const organizationDomainVerificationResultValidator = v.object({
@@ -918,8 +932,11 @@ export const organizationPermissionDecisionValidator = v.object({
   assurance: v.object({
     emailVerified: v.boolean(),
     enterpriseSatisfied: v.boolean(),
+    enterpriseStatus: organizationEnterpriseAccessStatusValidator,
     mfaSatisfied: v.boolean(),
     recentStepUpSatisfied: v.boolean(),
+    supportGrantId: v.union(v.id('organizationSupportAccessGrants'), v.null()),
+    supportGrantScope: v.union(organizationSupportAccessScopeValidator, v.null()),
   }),
   membership: v.union(betterAuthMemberValidator, v.null()),
   membershipStatus: v.union(
@@ -933,6 +950,37 @@ export const organizationPermissionDecisionValidator = v.object({
   permission: organizationPermissionValidator,
   user: currentAppUserValidator,
   viewerRole: organizationViewerRoleValidator,
+});
+
+export const organizationSupportAccessGrantRowValidator = v.object({
+  id: v.id('organizationSupportAccessGrants'),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  grantedByEmail: v.union(v.string(), v.null()),
+  grantedByName: v.union(v.string(), v.null()),
+  grantedByUserId: v.string(),
+  reason: v.string(),
+  revokedAt: v.union(v.number(), v.null()),
+  revokedByEmail: v.union(v.string(), v.null()),
+  revokedByName: v.union(v.string(), v.null()),
+  revokedByUserId: v.union(v.string(), v.null()),
+  scope: organizationSupportAccessScopeValidator,
+  siteAdminEmail: v.string(),
+  siteAdminName: v.union(v.string(), v.null()),
+  siteAdminUserId: v.string(),
+});
+
+export const organizationSupportAccessSiteAdminOptionValidator = v.object({
+  authUserId: v.string(),
+  email: v.string(),
+  name: v.union(v.string(), v.null()),
+});
+
+export const organizationSupportAccessSettingsValidator = v.object({
+  availableSiteAdmins: v.array(organizationSupportAccessSiteAdminOptionValidator),
+  canManageSupportAccess: v.boolean(),
+  grants: v.array(organizationSupportAccessGrantRowValidator),
+  organization: organizationSummaryValidator,
 });
 
 export const currentUserSessionValidator = v.object({

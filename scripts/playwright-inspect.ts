@@ -3,6 +3,7 @@
 import { mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { chromium, request } from '@playwright/test';
+import { ensureE2EPrincipalProvisioned } from './lib/e2e-provision';
 import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 type Principal = 'user' | 'admin';
@@ -133,6 +134,11 @@ async function main() {
   });
 
   try {
+    await ensureE2EPrincipalProvisioned({
+      baseUrl: options.baseUrl,
+      principal: options.principal,
+    });
+
     const authResponse = await apiContext.post('/api/test/e2e-auth', {
       data: { principal: options.principal },
       headers: {

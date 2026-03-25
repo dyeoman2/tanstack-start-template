@@ -11,19 +11,6 @@ type StorageLifecycleLike = Pick<
   | 'storagePlacement'
 > | null;
 
-function isLegacyPromotedS3Primary(lifecycle: Exclude<StorageLifecycleLike, null>) {
-  return (
-    lifecycle.backendMode === 's3-primary' &&
-    lifecycle.storagePlacement === undefined &&
-    lifecycle.malwareStatus === 'CLEAN' &&
-    Boolean(lifecycle.canonicalBucket && lifecycle.canonicalKey)
-  );
-}
-
-type StorageReadinessOptions = {
-  allowLegacyPrimaryReads?: boolean;
-};
-
 export type StorageReadiness =
   | {
       message: null;
@@ -36,10 +23,7 @@ export type StorageReadiness =
       reason: 'deleted' | 'mirror_pending' | 'not_found' | 'pending_scan' | 'quarantined';
     };
 
-export function getStorageReadiness(
-  lifecycle: StorageLifecycleLike,
-  options?: StorageReadinessOptions,
-): StorageReadiness {
+export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageReadiness {
   if (!lifecycle || lifecycle.deletedAt) {
     return {
       message: 'Stored file not found.',
@@ -49,14 +33,6 @@ export function getStorageReadiness(
   }
 
   if (lifecycle.backendMode === 'convex') {
-    return {
-      message: null,
-      readable: true,
-      reason: null,
-    };
-  }
-
-  if (options?.allowLegacyPrimaryReads && isLegacyPromotedS3Primary(lifecycle)) {
     return {
       message: null,
       readable: true,

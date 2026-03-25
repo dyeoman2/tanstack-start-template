@@ -172,6 +172,41 @@ async function recordFileAccessAuditEvent(
   });
 }
 
+async function recordSupportAccessUsage(
+  ctx: FileServingCtx,
+  args: {
+    grantId: string;
+    organizationId: string | null | undefined;
+    permission: string;
+    resourceId: string;
+    resourceLabel?: string | null;
+    resourceType: string;
+    scope: 'read_only' | 'read_write';
+    sessionId?: string | null;
+    sourceSurface: string;
+    userId: string;
+  },
+) {
+  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    actorUserId: args.userId,
+    eventType: 'support_access_used',
+    metadata: JSON.stringify({
+      grantId: args.grantId,
+      permission: args.permission,
+      scope: args.scope,
+    }),
+    organizationId: args.organizationId ?? undefined,
+    outcome: 'success',
+    resourceId: args.resourceId,
+    resourceLabel: args.resourceLabel ?? undefined,
+    resourceType: args.resourceType,
+    sessionId: args.sessionId ?? undefined,
+    severity: 'info',
+    sourceSurface: args.sourceSurface,
+    userId: args.userId,
+  });
+}
+
 async function resolveServeRedirect(ctx: FileServingCtx, storageId: string) {
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId,
@@ -180,10 +215,7 @@ async function resolveServeRedirect(ctx: FileServingCtx, storageId: string) {
     throw new ConvexError('Stored file not found.');
   }
 
-  const runtimeConfig = getStorageRuntimeConfig();
-  const readiness = getStorageReadiness(lifecycle, {
-    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
-  });
+  const readiness = getStorageReadiness(lifecycle);
   if (!readiness.readable) {
     throw new ConvexError(readiness.message);
   }
@@ -226,9 +258,7 @@ export async function issueFileAccessUrlForCurrentUser(
     storageId: args.storageId,
   });
   const runtimeConfig = getStorageRuntimeConfig();
-  const readiness = getStorageReadiness(lifecycle, {
-    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
-  });
+  const readiness = getStorageReadiness(lifecycle);
   if (!readiness.readable) {
     throw new ConvexError(readiness.message);
   }
@@ -313,6 +343,21 @@ export async function issueFileAccessUrlForCurrentUser(
     sourceSurface: args.sourceSurface,
     userId: currentUser.authUserId,
   });
+
+  if (access.supportGrantId && access.supportGrantScope && access.permission && organizationId) {
+    await recordSupportAccessUsage(ctx, {
+      grantId: access.supportGrantId,
+      organizationId,
+      permission: access.permission,
+      resourceId: args.storageId,
+      resourceLabel: lifecycle?.originalFileName ?? null,
+      resourceType: lifecycle?.sourceType ?? 'stored_file',
+      scope: access.supportGrantScope,
+      sessionId: issuedFromSessionId,
+      sourceSurface: args.sourceSurface,
+      userId: currentUser.authUserId,
+    });
+  }
 
   if (args.purpose === 'external_share') {
     await ctx.runMutation(internal.stepUp.consumeClaimInternal, {

@@ -22,6 +22,13 @@ export function OrganizationPoliciesPage({ slug }: { slug: string }) {
   const router = useRouter();
   const { showToast } = useToast();
   const settings = useQuery(api.organizationManagement.getOrganizationSettings, { slug });
+  const enterpriseAccess = useQuery(
+    api.organizationManagement.getOrganizationEnterpriseAccessBySlug,
+    {
+      slug,
+      permission: 'managePolicies',
+    },
+  );
   const updatePolicies = updateOrganizationPoliciesServerFn;
   const [invitePolicy, setInvitePolicy] = useState<OrganizationInvitePolicy>('owners_admins');
   const [verifiedDomainsOnly, setVerifiedDomainsOnly] = useState(false);
@@ -49,9 +56,20 @@ export function OrganizationPoliciesPage({ slug }: { slug: string }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Organization not found</CardTitle>
+          <CardTitle>
+            {enterpriseAccess &&
+            enterpriseAccess.requiresEnterpriseAuth &&
+            !enterpriseAccess.allowed
+              ? 'Enterprise sign-in required'
+              : 'Organization not found'}
+          </CardTitle>
           <CardDescription>
-            The requested organization is unavailable or you no longer have access to it.
+            {enterpriseAccess &&
+            enterpriseAccess.requiresEnterpriseAuth &&
+            !enterpriseAccess.allowed
+              ? (enterpriseAccess.reason ??
+                'Use your managed enterprise identity before opening this organization.')
+              : 'The requested organization is unavailable or you no longer have access to it.'}
           </CardDescription>
         </CardHeader>
       </Card>

@@ -18,6 +18,13 @@ crons.interval(
 );
 
 crons.interval(
+  'cleanup expired raw export payloads',
+  { hours: 6 },
+  internal.securityOps.cleanupExpiredExportPayloads,
+  {},
+);
+
+crons.interval(
   'cleanup stale storage uploads',
   { hours: 1 },
   internal.storageCleanup.cleanupStaleUploadsInternal,

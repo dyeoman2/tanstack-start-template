@@ -7,7 +7,7 @@ import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
 import { deleteS3Object, listS3Objects, putS3Object } from './lib/storageS3';
-import { buildMirroredStorageKey } from './storageS3Primary';
+import { buildMirrorStorageKey } from './storageS3Primary';
 import type { FinalizeUploadArgs } from './storageTypes';
 
 function asConvexStorageId(storageId: string) {
@@ -63,7 +63,7 @@ export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: st
     throw new ConvexError(`Convex blob not found for storageId=${args.storageId}.`);
   }
 
-  const key = buildMirroredStorageKey({
+  const key = buildMirrorStorageKey({
     organizationId: lifecycle.organizationId ?? null,
     sourceType: lifecycle.sourceType,
     storageId: args.storageId,
@@ -134,7 +134,7 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
 
   const contents = (
     await Promise.all(
-      ['quarantine/', 'clean/', 'org/', 'site-admin/'].map(async (prefix) => {
+      ['quarantine/', 'clean/', 'mirror/'].map(async (prefix) => {
         const listed = await listS3Objects({
           bucket,
           maxKeys: runtimeConfig.s3OrphanCleanupMaxScan,

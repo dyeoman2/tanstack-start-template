@@ -118,6 +118,12 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Bulk invitation resent';
     case 'bulk_member_removed':
       return 'Bulk member removed';
+    case 'support_access_granted':
+      return 'Support access granted';
+    case 'support_access_revoked':
+      return 'Support access revoked';
+    case 'support_access_used':
+      return 'Support access used';
     case 'authorization_denied':
       return 'Authorization denied';
     case 'admin_user_sessions_viewed':
@@ -241,6 +247,8 @@ function getGenericAuditActorLabel(eventType: string) {
     case 'domain_removed':
     case 'organization_policy_updated':
     case 'enterprise_auth_mode_updated':
+    case 'support_access_granted':
+    case 'support_access_revoked':
       return 'Organization admin';
     default:
       return undefined;
@@ -280,6 +288,14 @@ function getAuditTargetLabel(event: OrganizationAuditEventSource, metadata: unkn
   }
 
   if (
+    event.eventType === 'support_access_granted' ||
+    event.eventType === 'support_access_revoked' ||
+    event.eventType === 'support_access_used'
+  ) {
+    return 'Provider support access';
+  }
+
+  if (
     event.eventType === 'enterprise_scim_token_generated' ||
     event.eventType === 'enterprise_scim_token_deleted'
   ) {
@@ -287,6 +303,7 @@ function getAuditTargetLabel(event: OrganizationAuditEventSource, metadata: unkn
   }
 
   return (
+    toAuditMetadataDisplayValue(metadataRecord?.siteAdminEmail) ??
     toAuditMetadataDisplayValue(metadataRecord?.targetEmail) ??
     toAuditMetadataDisplayValue(metadataRecord?.email) ??
     toAuditMetadataDisplayValue(metadataRecord?.domain) ??
@@ -315,6 +332,26 @@ function getAuditSummary(eventType: string, metadata: unknown) {
   if (eventType === 'bulk_member_removed') {
     const targetRole = toAuditMetadataDisplayValue(metadataRecord?.targetRole);
     return targetRole ? `Removed ${targetRole}` : undefined;
+  }
+
+  if (
+    eventType === 'support_access_granted' ||
+    eventType === 'support_access_revoked' ||
+    eventType === 'support_access_used'
+  ) {
+    const scope = toAuditMetadataDisplayValue(metadataRecord?.scope);
+    const permission = toAuditMetadataDisplayValue(metadataRecord?.permission);
+    const reason = toAuditMetadataDisplayValue(metadataRecord?.reason);
+
+    if (eventType === 'support_access_used') {
+      return [permission ? `Permission: ${permission}` : null, scope ? `Scope: ${scope}` : null]
+        .filter((value): value is string => value !== null)
+        .join(' · ');
+    }
+
+    return [scope ? `Scope: ${scope}` : null, reason]
+      .filter((value): value is string => !!value)
+      .join(' · ');
   }
 
   if (

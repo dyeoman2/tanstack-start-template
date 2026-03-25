@@ -1,6 +1,4 @@
-import { internal } from '@convex/_generated/api';
 import { buildBetterAuthForwardHeaders } from '~/lib/server/better-auth/http';
-import { createConvexAdminClient } from '~/lib/server/convex-admin.server';
 import {
   type E2EPrincipalType,
   getE2EPrincipalConfig,
@@ -42,18 +40,8 @@ export type EstablishedE2EAuthSession = {
   authResponse: Response;
   email: string;
   principal: E2EPrincipalType;
-  userId: string;
+  userId: string | null;
 };
-
-type EnsurePrincipalRoleResult =
-  | {
-      found: false;
-    }
-  | {
-      found: true;
-      role: E2EPrincipalType;
-      userId: string;
-    };
 
 async function readAuthError(response: Response): Promise<AuthRouteResponse> {
   try {
@@ -62,6 +50,18 @@ async function readAuthError(response: Response): Promise<AuthRouteResponse> {
     const message = await response.text();
     return { message };
   }
+}
+
+function buildProvisioningHintMessage(message?: string) {
+  const detail = message?.trim();
+  const hint = 'Run `pnpm run e2e:provision` and retry.';
+
+  if (!detail) {
+    return `E2E principal is not provisioned. ${hint}`;
+  }
+
+  const normalizedDetail = /[.!?]$/.test(detail) ? detail : `${detail}.`;
+  return `${normalizedDetail} ${hint}`;
 }
 
 export function buildAuthEndpointHeaders(request: Request): Headers {
@@ -108,63 +108,12 @@ export async function establishE2EAuthSession(
   principalType: E2EPrincipalType,
 ): Promise<EstablishedE2EAuthSession> {
   const principal = getE2EPrincipalConfig(principalType);
-  const adminClient = createConvexAdminClient();
-  let createdViaSignUp = false;
-
-  let authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
+  const authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
 
   if (!authResponse.ok) {
-    await adminClient.mutation(internal.e2e.resetPrincipalByEmail, {
-      email: principal.email,
-    });
-
-    authResponse = await postToAuthEndpoint(request, '/api/auth/sign-up/email', principal);
-
-    if (!authResponse.ok) {
-      const authError = await readAuthError(authResponse);
-      throw new Response(authError.message || 'Failed to provision e2e principal', {
-        status: authResponse.status,
-      });
-    }
-
-    createdViaSignUp = true;
-  }
-
-  if (createdViaSignUp) {
-    const verificationResult = await adminClient.mutation(
-      internal.e2e.verifyPrincipalEmailByEmail,
-      {
-        email: principal.email,
-      },
-    );
-
-    if (!verificationResult.found) {
-      throw new Response('Failed to mark e2e principal email as verified', { status: 500 });
-    }
-
-    authResponse = await postToAuthEndpoint(request, '/api/auth/sign-in/email', principal);
-    if (!authResponse.ok) {
-      const authError = await readAuthError(authResponse);
-      throw new Response(authError.message || 'Failed to sign in verified e2e principal', {
-        status: authResponse.status,
-      });
-    }
-  }
-
-  let roleResult: EnsurePrincipalRoleResult;
-  try {
-    roleResult = await adminClient.action(internal.e2e.ensurePrincipalRole, {
-      email: principal.email,
-      role: principal.role,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Failed to bootstrap e2e principal';
-    throw new Response(message, { status: 500 });
-  }
-
-  if (!roleResult.found) {
-    throw new Response('Failed to reconcile e2e principal role and bootstrap context', {
-      status: 500,
+    const authError = await readAuthError(authResponse);
+    throw new Response(buildProvisioningHintMessage(authError.message), {
+      status: authResponse.status,
     });
   }
 
@@ -172,7 +121,7 @@ export async function establishE2EAuthSession(
     authResponse,
     email: principal.email,
     principal: principal.role,
-    userId: roleResult.userId,
+    userId: null,
   };
 }
 

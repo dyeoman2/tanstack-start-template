@@ -3,6 +3,7 @@ import {
   appendSetCookieHeaders,
   assertE2EAuthRequestAuthorized,
   buildAuthEndpointHeaders,
+  establishE2EAuthSession,
   getSetCookieHeaders,
   resolveAgentAuthRedirect,
 } from '~/lib/server/e2e-auth.server';
@@ -14,6 +15,10 @@ describe('e2e-auth.server', () => {
     process.env = { ...ORIGINAL_ENV };
     process.env.ENABLE_E2E_TEST_AUTH = 'true';
     process.env.E2E_TEST_SECRET = 'test-secret';
+    process.env.E2E_USER_EMAIL = 'e2e-user@local.test';
+    process.env.E2E_USER_PASSWORD = 'E2EUser!1234';
+    process.env.E2E_ADMIN_EMAIL = 'e2e-admin@local.test';
+    process.env.E2E_ADMIN_PASSWORD = 'E2EAdmin!1234';
   });
 
   afterEach(() => {
@@ -119,5 +124,67 @@ describe('e2e-auth.server', () => {
     expect(headers.get('referer')).toBe('http://127.0.0.1:3000/app');
     expect([...headers.entries()].filter(([name]) => name === 'origin')).toHaveLength(1);
     expect([...headers.entries()].filter(([name]) => name === 'referer')).toHaveLength(1);
+  });
+
+  it('establishes an existing e2e principal session via sign-in only', async () => {
+    const authResponse = new Response(
+      JSON.stringify({
+        ok: true,
+      }),
+      {
+        headers: {
+          'content-type': 'application/json',
+          'set-cookie': 'session=abc; Path=/; HttpOnly',
+        },
+        status: 200,
+      },
+    );
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(authResponse);
+    const request = new Request('http://127.0.0.1:3000/api/test/e2e-auth');
+
+    const session = await establishE2EAuthSession(request, 'user');
+
+    expect(fetchSpy).toHaveBeenCalledOnce();
+    const [url, init] = fetchSpy.mock.calls[0] ?? [];
+    expect(url?.toString()).toBe('http://127.0.0.1:3000/api/auth/sign-in/email');
+    expect(init?.method).toBe('POST');
+    expect(session.authResponse).toBe(authResponse);
+    expect(session.email).toBe('e2e-user@local.test');
+    expect(session.principal).toBe('user');
+    expect(session.userId).toBeNull();
+  });
+
+  it('returns a provisioning hint when the configured principal cannot sign in', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          message: 'Invalid email or password',
+        }),
+        {
+          headers: {
+            'content-type': 'application/json',
+          },
+          status: 401,
+        },
+      ),
+    );
+    const request = new Request('http://127.0.0.1:3000/api/test/e2e-auth');
+
+    let thrown: Response | null = null;
+    try {
+      await establishE2EAuthSession(request, 'user');
+    } catch (error) {
+      thrown = error instanceof Response ? error : null;
+    }
+
+    expect(thrown).not.toBeNull();
+    if (!thrown) {
+      throw new Error('Expected establishE2EAuthSession to throw a Response');
+    }
+
+    expect(thrown.status).toBe(401);
+    await expect(thrown.text()).resolves.toBe(
+      'Invalid email or password. Run `pnpm run e2e:provision` and retry.',
+    );
   });
 });

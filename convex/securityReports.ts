@@ -45,7 +45,6 @@ function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
     reportKind: report.reportKind,
     contentJson: report.contentJson,
     contentHash: report.contentHash,
-    exportBundleJson: report.exportBundleJson,
     exportHash: report.exportHash,
     exportIntegritySummary: report.exportIntegritySummary,
     exportManifestJson: report.exportManifestJson,
@@ -277,7 +276,6 @@ export const getEvidenceReportInternal = internalQuery({
 export const storeEvidenceReportExport = internalMutation({
   args: {
     id: v.id('evidenceReports'),
-    exportBundleJson: v.string(),
     exportHash: v.string(),
     exportIntegritySummary: v.string(),
     exportManifestHash: v.string(),
@@ -289,7 +287,6 @@ export const storeEvidenceReportExport = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     await ctx.db.patch(args.id, {
-      exportBundleJson: args.exportBundleJson,
       exportHash: args.exportHash,
       exportIntegritySummary: args.exportIntegritySummary,
       exportManifestHash: args.exportManifestHash,

@@ -34,7 +34,6 @@ import {
   createRepoBackedNetlifySite,
   formatNetlifySiteSummary,
   getNetlifySiteDetails,
-  getNetlifySiteEnvValue,
   isNetlifySiteRepoBacked,
   listNetlifySiteHooks,
   readNetlifyLinkedSiteIdFromDisk,
@@ -518,31 +517,6 @@ function upsertAwsSecret(
     `Failed to create Secrets Manager secret ${secretId}`,
   );
   return 'created';
-}
-
-function getAwsSecretValue(secretId: string, region: string) {
-  const result = runCommand(
-    'aws',
-    [
-      'secretsmanager',
-      'get-secret-value',
-      '--secret-id',
-      secretId,
-      '--query',
-      'SecretString',
-      '--output',
-      'text',
-    ],
-    {
-      env: { AWS_REGION: region },
-    },
-  );
-  if (!result.ok) {
-    return null;
-  }
-
-  const value = result.stdout.trim();
-  return !value || value === 'None' ? null : value;
 }
 
 function createDrCommandEnv(context: SetupContext, identity: AwsIdentity): NodeJS.ProcessEnv {
@@ -1568,8 +1542,6 @@ async function main() {
   printSection('Step 7: Create or validate the Netlify DR site');
   let drNetlifySite: NetlifySite | null = null;
   let netlifyRequiredEnvConfigured = false;
-  let netlifyConvexDeployKeyReady = false;
-  let netlifyDeployKeyDeferredUntilRecovery = false;
   if (flags.skipNetlify) {
     summary.frontendLane = 'partial';
     summary.warnings.push('Netlify DR setup was skipped with --skip-netlify.');
@@ -1624,62 +1596,6 @@ async function main() {
         'Could not create or resolve the dedicated Netlify DR site automatically. Provide --netlify-site on the next run or configure it manually.',
       );
     } else {
-      let deployKeyForNetlify = '';
-      let awsSecretDeployKeyForNetlify = '';
-      if (awsAuth && identity.region) {
-        awsSecretDeployKeyForNetlify =
-          getAwsSecretValue(secretNames.convexAdminKey, identity.region)?.trim() ?? '';
-        deployKeyForNetlify = awsSecretDeployKeyForNetlify;
-      }
-      if (!deployKeyForNetlify) {
-        const existingNetlifyDeployKey = getNetlifySiteEnvValue(
-          drNetlifySite.id,
-          'CONVEX_DEPLOY_KEY',
-        );
-        if (existingNetlifyDeployKey?.trim()) {
-          netlifyConvexDeployKeyReady = true;
-          deployKeyForNetlify = existingNetlifyDeployKey.trim();
-        } else if (awsAuth && identity.region) {
-          netlifyDeployKeyDeferredUntilRecovery = true;
-          summary.warnings.push(
-            'The DR Netlify site does not have a self-hosted Convex admin token yet. That token is generated during recovery, so this part of the frontend setup is deferred until after the first recovery drill.',
-          );
-        } else if (!flags.yes) {
-          deployKeyForNetlify = await ask(
-            'Convex admin/deploy auth token for the DR Netlify site (leave empty to keep frontend DR partial): ',
-          );
-        }
-      }
-
-      if (deployKeyForNetlify) {
-        if (!isLikelyConvexDeployKey(deployKeyForNetlify)) {
-          if (awsSecretDeployKeyForNetlify) {
-            summary.needsAttention.push(
-              `Secrets Manager secret ${secretNames.convexAdminKey} does not contain a valid Convex admin/deploy auth token. Rerun ./infra/aws-cdk/scripts/dr-recover-ecs.sh after fixing admin-key generation.`,
-            );
-          } else {
-            summary.needsAttention.push(
-              'The provided Netlify CONVEX_DEPLOY_KEY does not look like a valid Convex admin/deploy auth token.',
-            );
-          }
-        } else {
-          try {
-            setNetlifySiteEnvVar(drNetlifySite.id, 'CONVEX_DEPLOY_KEY', deployKeyForNetlify);
-            netlifyConvexDeployKeyReady = true;
-          } catch (error) {
-            summary.needsAttention.push(
-              `Failed to set Netlify CONVEX_DEPLOY_KEY automatically: ${(error as Error).message}`,
-            );
-          }
-        }
-      }
-
-      if (!netlifyConvexDeployKeyReady && !netlifyDeployKeyDeferredUntilRecovery) {
-        summary.needsAttention.push(
-          'Netlify DR is still missing a validated CONVEX_DEPLOY_KEY, so the frontend build is not fully ready.',
-        );
-      }
-
       if (linkedNetlifySiteDetails?.buildSettings?.repo_url) {
         console.log(
           '- Reinitializing the DR site continuous deployment with `netlify init --forceReinitialize`',
@@ -1982,7 +1898,6 @@ async function main() {
     hasBuildHookSecret &&
     hasFrontendCnameTargetSecret &&
     netlifyRequiredEnvConfigured &&
-    netlifyConvexDeployKeyReady &&
     summary.frontendLane !== 'blocked'
   ) {
     summary.frontendLane = 'ready';
@@ -2045,23 +1960,6 @@ async function main() {
         AWS_REGION: identity.region,
       });
       summary.completed.push('Ran the DR recovery script from the guided setup flow.');
-
-      if (drNetlifySite && netlifyDeployKeyDeferredUntilRecovery) {
-        try {
-          runInteractive('pnpm', ['run', 'dr:netlify:setup'], {
-            AWS_REGION: identity.region,
-          });
-          netlifyConvexDeployKeyReady = true;
-          summary.frontendLane = netlifyRequiredEnvConfigured ? 'ready' : summary.frontendLane;
-          summary.completed.push(
-            'Refreshed the DR Netlify site after recovery so it picked up the generated self-hosted Convex admin token.',
-          );
-        } catch (error) {
-          summary.needsAttention.push(
-            `Recovery succeeded, but the post-recovery Netlify refresh failed: ${(error as Error).message}`,
-          );
-        }
-      }
     }
   }
 

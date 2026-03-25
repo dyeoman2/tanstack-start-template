@@ -1,7 +1,7 @@
 #!/usr/bin/env tsx
 
 import { internal } from '../convex/_generated/api';
-import { createConvexAdminClient } from '../src/lib/server/convex-admin.server';
+import { createConvexAdminClient } from './lib/convex-admin';
 import { loadProjectEnvFiles } from './lib/load-project-env-files';
 
 function loadLocalEnv() {

@@ -64,7 +64,7 @@ function nullableToOptional<T>(value: T | null | undefined): T | undefined {
   return value === null || value === undefined ? undefined : value;
 }
 
-function hasLegacyPrimaryCanonicalKey(key: string | undefined) {
+function hasLegacyStorageNamespaceKey(key: string | undefined) {
   return typeof key === 'string' && (key.startsWith('org/') || key.startsWith('site-admin/'));
 }
 
@@ -73,9 +73,18 @@ function isLegacyReadablePrimaryLifecycle(lifecycle: StorageLifecycleDoc) {
     lifecycle.backendMode === 's3-primary' &&
     !lifecycle.deletedAt &&
     lifecycle.malwareStatus === 'CLEAN' &&
-    hasLegacyPrimaryCanonicalKey(lifecycle.canonicalKey) &&
+    hasLegacyStorageNamespaceKey(lifecycle.canonicalKey) &&
     lifecycle.storagePlacement !== 'PROMOTED' &&
     Boolean(lifecycle.canonicalBucket && lifecycle.canonicalKey)
+  );
+}
+
+function isLegacyMirrorLifecycle(lifecycle: StorageLifecycleDoc) {
+  return (
+    lifecycle.backendMode === 's3-mirror' &&
+    !lifecycle.deletedAt &&
+    hasLegacyStorageNamespaceKey(lifecycle.mirrorKey) &&
+    Boolean(lifecycle.mirrorBucket && lifecycle.mirrorKey)
   );
 }
 
@@ -546,6 +555,45 @@ export const listLegacyPrimaryCandidatesInternal = internalQuery({
   },
 });
 
+export const listLegacyMirrorCandidatesInternal = internalQuery({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+    page: v.array(
+      v.object({
+        mirrorBucket: v.string(),
+        mirrorKey: v.string(),
+        mirrorVersionId: v.union(v.string(), v.null()),
+        organizationId: v.union(v.string(), v.null()),
+        sourceType: v.string(),
+        storageId: v.string(),
+      }),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query('storageLifecycle')
+      .withIndex('by_backendMode_and_createdAt', (q) => q.eq('backendMode', 's3-mirror'))
+      .paginate(args.paginationOpts);
+
+    return {
+      continueCursor: result.continueCursor,
+      isDone: result.isDone,
+      page: result.page.filter(isLegacyMirrorLifecycle).map((row) => ({
+        mirrorBucket: row.mirrorBucket ?? '',
+        mirrorKey: row.mirrorKey ?? '',
+        mirrorVersionId: row.mirrorVersionId ?? null,
+        organizationId: row.organizationId ?? null,
+        sourceType: row.sourceType,
+        storageId: row.storageId,
+      })),
+    };
+  },
+});
+
 export const classifyS3KeysInternal = internalQuery({
   args: {
     bucket: v.string(),
@@ -712,6 +760,39 @@ export const markLegacyPrimaryPromotedInternal = internalMutation({
       actionResult: 'success',
       details: args.canonicalKey,
       eventType: 'legacy_promoted_migration',
+      storageId: args.storageId,
+    });
+    return null;
+  },
+});
+
+export const markLegacyMirrorMigratedInternal = internalMutation({
+  args: {
+    mirrorBucket: v.string(),
+    mirrorKey: v.string(),
+    mirrorVersionId: v.optional(v.union(v.string(), v.null())),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const lifecycle = await getLifecycleByStorageId(ctx, args.storageId);
+    if (!lifecycle) {
+      throw new ConvexError(`Lifecycle row not found for storageId=${args.storageId}.`);
+    }
+    const now = Date.now();
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        mirrorBucket: args.mirrorBucket,
+        mirrorKey: args.mirrorKey,
+        mirrorVersionId: args.mirrorVersionId ?? null,
+        updatedAt: now,
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'success',
+      details: args.mirrorKey,
+      eventType: 'legacy_mirror_migration',
       storageId: args.storageId,
     });
     return null;

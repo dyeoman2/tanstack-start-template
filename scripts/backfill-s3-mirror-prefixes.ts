@@ -6,15 +6,15 @@ import {
   ListObjectsV2Command,
   S3Client,
 } from '@aws-sdk/client-s3';
-import { buildPromotedStorageKey } from '../convex/storageS3Primary';
+import { buildMirrorStorageKey } from '../convex/storageS3Primary';
 import { requirePnpmAndConvexCli } from './lib/cli-preflight';
 import { convexExecCaptured } from './lib/convex-cli';
 import { sliceConvexCliJsonPayload } from './lib/deploy-env-helpers';
 
 type LegacyCandidate = {
-  canonicalBucket: string;
-  canonicalKey: string;
-  canonicalVersionId: string | null;
+  mirrorBucket: string;
+  mirrorKey: string;
+  mirrorVersionId: string | null;
   organizationId: string | null;
   sourceType: string;
   storageId: string;
@@ -48,11 +48,11 @@ function readFlagValue(name: string) {
 
 function printUsage() {
   console.log(
-    'Usage: pnpm exec tsx scripts/backfill-s3-primary-clean-prefixes.ts [--apply] [--prod] [--batch-size 100] [--verify-only]',
+    'Usage: pnpm exec tsx scripts/backfill-s3-mirror-prefixes.ts [--apply] [--prod] [--batch-size 100] [--verify-only]',
   );
   console.log('');
   console.log(
-    'Dry run by default. Use --apply to copy, patch lifecycle rows, and delete legacy objects.',
+    'Dry run by default. Use --apply to copy, patch lifecycle rows, and delete legacy mirrored objects.',
   );
 }
 
@@ -126,6 +126,7 @@ async function verifyRemainingLegacyObjects(client: S3Client, bucket: string, pr
   const legacyKeys = await listLegacyObjects(client, bucket);
   if (legacyKeys.length === 0) {
     return {
+      remainingMirror: [] as KeyClassification[],
       remainingPrimary: [] as KeyClassification[],
       remainingUnclassified: [] as KeyClassification[],
       total: 0,
@@ -146,6 +147,7 @@ async function verifyRemainingLegacyObjects(client: S3Client, bucket: string, pr
   }
 
   return {
+    remainingMirror: classifications.filter((entry) => entry.backendMode === 's3-mirror'),
     remainingPrimary: classifications.filter((entry) => entry.backendMode === 's3-primary'),
     remainingUnclassified: classifications.filter((entry) => entry.backendMode === null),
     total: classifications.length,
@@ -158,32 +160,32 @@ async function migrateCandidate(
   prod: boolean,
   apply: boolean,
 ) {
-  const promotedKey = buildPromotedStorageKey({
+  const mirrorKey = buildMirrorStorageKey({
     organizationId: candidate.organizationId,
     sourceType: candidate.sourceType,
     storageId: candidate.storageId,
   });
 
   if (!apply) {
-    console.log(`DRY RUN ${candidate.storageId}: ${candidate.canonicalKey} -> ${promotedKey}`);
+    console.log(`DRY RUN ${candidate.storageId}: ${candidate.mirrorKey} -> ${mirrorKey}`);
     return;
   }
 
   const copyResult = await client.send(
     new CopyObjectCommand({
-      Bucket: candidate.canonicalBucket,
-      CopySource: encodeS3CopySource(candidate.canonicalBucket, candidate.canonicalKey),
-      Key: promotedKey,
+      Bucket: candidate.mirrorBucket,
+      CopySource: encodeS3CopySource(candidate.mirrorBucket, candidate.mirrorKey),
+      Key: mirrorKey,
       MetadataDirective: 'COPY',
     }),
   );
 
   convexRunJson(
-    'storageLifecycle:markLegacyPrimaryPromotedInternal',
+    'storageLifecycle:markLegacyMirrorMigratedInternal',
     {
-      canonicalBucket: candidate.canonicalBucket,
-      canonicalKey: promotedKey,
-      canonicalVersionId: copyResult.VersionId ?? null,
+      mirrorBucket: candidate.mirrorBucket,
+      mirrorKey,
+      mirrorVersionId: copyResult.VersionId ?? null,
       storageId: candidate.storageId,
     },
     prod,
@@ -191,13 +193,13 @@ async function migrateCandidate(
 
   await client.send(
     new DeleteObjectCommand({
-      Bucket: candidate.canonicalBucket,
-      Key: candidate.canonicalKey,
-      VersionId: candidate.canonicalVersionId ?? undefined,
+      Bucket: candidate.mirrorBucket,
+      Key: candidate.mirrorKey,
+      VersionId: candidate.mirrorVersionId ?? undefined,
     }),
   );
 
-  console.log(`MIGRATED ${candidate.storageId}: ${candidate.canonicalKey} -> ${promotedKey}`);
+  console.log(`MIGRATED ${candidate.storageId}: ${candidate.mirrorKey} -> ${mirrorKey}`);
 }
 
 async function main() {
@@ -228,7 +230,7 @@ async function main() {
   if (!verifyOnly) {
     while (true) {
       const page: CandidatePage = convexRunJson<CandidatePage>(
-        'storageLifecycle:listLegacyPrimaryCandidatesInternal',
+        'storageLifecycle:listLegacyMirrorCandidatesInternal',
         {
           paginationOpts: {
             cursor,
@@ -254,7 +256,7 @@ async function main() {
   const verification = await verifyRemainingLegacyObjects(client, bucket, prod);
   const remainingCandidates = (() => {
     const firstPage = convexRunJson<CandidatePage>(
-      'storageLifecycle:listLegacyPrimaryCandidatesInternal',
+      'storageLifecycle:listLegacyMirrorCandidatesInternal',
       {
         paginationOpts: {
           cursor: null,
@@ -270,14 +272,23 @@ async function main() {
   console.log(`Mode: ${apply ? 'apply' : verifyOnly ? 'verify-only' : 'dry-run'}`);
   console.log(`Candidates processed in this run: ${processed}`);
   console.log(`Candidates migrated in this run: ${apply ? migrated : 0}`);
-  console.log(`Remaining legacy s3-primary candidates: ${remainingCandidates}`);
+  console.log(`Remaining legacy s3-mirror candidates: ${remainingCandidates}`);
   console.log(`Remaining legacy-prefix objects: ${verification.total}`);
+  console.log(`Remaining legacy-prefix s3-mirror objects: ${verification.remainingMirror.length}`);
   console.log(
     `Remaining legacy-prefix s3-primary objects: ${verification.remainingPrimary.length}`,
   );
   console.log(
     `Remaining legacy-prefix unclassified objects: ${verification.remainingUnclassified.length}`,
   );
+
+  if (verification.remainingMirror.length > 0) {
+    console.log('');
+    console.log('Remaining legacy-prefix s3-mirror objects:');
+    for (const entry of verification.remainingMirror.slice(0, 20)) {
+      console.log(`   ${entry.key} (${entry.storageId ?? 'unknown storageId'})`);
+    }
+  }
 
   if (verification.remainingPrimary.length > 0) {
     console.log('');
@@ -290,7 +301,7 @@ async function main() {
   if (verification.remainingUnclassified.length > 0) {
     console.log('');
     console.log(
-      'Remaining unclassified legacy-prefix objects (expected to be zero or non-s3-primary exclusions):',
+      'Remaining unclassified legacy-prefix objects (expected to be zero after the full cutover):',
     );
     for (const entry of verification.remainingUnclassified.slice(0, 20)) {
       console.log(`   ${entry.key}`);
@@ -299,14 +310,13 @@ async function main() {
 
   if (
     remainingCandidates === 0 &&
+    verification.remainingMirror.length === 0 &&
     verification.remainingPrimary.length === 0 &&
     verification.remainingUnclassified.length === 0
   ) {
     console.log('');
     console.log('Backfill verification passed.');
-    console.log(
-      'Next step: complete the mirror-prefix migration and redeploy the app/Convex bundle.',
-    );
+    console.log('Next step: redeploy the app/Convex bundle with legacy prefix reads removed.');
     console.log('Then redeploy storage infra with the strict legacy-prefix deny policy.');
     return;
   }

@@ -1,0 +1,240 @@
+import { describe, expect, it } from 'vitest';
+import {
+  doesSupportGrantCoverPermission,
+  requiresEnterpriseSatisfied,
+  resolveOrganizationEnterpriseAccess,
+} from './enterpriseAccess';
+
+function createCtx(overrides?: {
+  grants?: Array<Record<string, unknown>>;
+  verifiedDomains?: string[];
+}) {
+  return {
+    db: {
+      query(table: string) {
+        return {
+          withIndex(_indexName: string, _builder: unknown) {
+            return {
+              async collect() {
+                if (table === 'organizationDomains') {
+                  return (overrides?.verifiedDomains ?? []).map((domain) => ({
+                    normalizedDomain: domain,
+                    status: 'verified',
+                  }));
+                }
+
+                if (table === 'organizationSupportAccessGrants') {
+                  return overrides?.grants ?? [];
+                }
+
+                return [];
+              },
+            };
+          },
+        };
+      },
+    },
+  } as never;
+}
+
+const basePolicies = {
+  allowBreakGlassPasswordLogin: false,
+  enterpriseAuthMode: 'required' as const,
+  enterpriseProviderKey: 'google-workspace' as const,
+};
+
+const baseUser = {
+  authSession: null,
+  authUser: {
+    email: 'clinician@hospital.org',
+  },
+  authUserId: 'user-1',
+  isSiteAdmin: false,
+};
+
+describe('enterprise access', () => {
+  it('marks data-plane permissions as enterprise-protected', () => {
+    expect(requiresEnterpriseSatisfied('readThread')).toBe(true);
+    expect(requiresEnterpriseSatisfied('issueAttachmentAccessUrl')).toBe(true);
+    expect(requiresEnterpriseSatisfied('manageMembers')).toBe(false);
+  });
+
+  it('enforces enterprise session for managed-domain members on PHI reads', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'member' },
+        organizationId: 'org-1',
+        permission: 'readThread',
+        policies: basePolicies,
+        user: baseUser,
+      },
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.status).toBe('missing_enterprise_session');
+  });
+
+  it('denies unmanaged email domains when SSO is required', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'member' },
+        organizationId: 'org-1',
+        permission: 'readThread',
+        policies: basePolicies,
+        user: {
+          ...baseUser,
+          authUser: {
+            email: 'consultant@outside.example',
+          },
+        },
+      },
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.status).toBe('unmanaged_email_domain');
+  });
+
+  it('does not let break-glass password satisfy PHI data-plane access', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'readThread',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.status).toBe('missing_enterprise_session');
+  });
+
+  it('still allows owner break-glass on control-plane policy access', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'managePolicies',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.status).toBe('satisfied');
+  });
+
+  it('requires a support grant for site-admin PHI access', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
+      membership: null,
+      organizationId: 'org-1',
+      permission: 'readThread',
+      policies: basePolicies,
+      user: {
+        ...baseUser,
+        authUserId: 'site-admin-1',
+        isSiteAdmin: true,
+      },
+    });
+
+    expect(result.allowed).toBe(false);
+    expect(result.status).toBe('support_grant_required');
+  });
+
+  it('allows site-admin read access with an active read-only grant', async () => {
+    const now = Date.now();
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        grants: [
+          {
+            _id: 'grant-1',
+            organizationId: 'org-1',
+            siteAdminUserId: 'site-admin-1',
+            scope: 'read_only',
+            reason: 'Urgent support review',
+            grantedByUserId: 'owner-1',
+            createdAt: now,
+            expiresAt: now + 60_000,
+            revokedAt: null,
+            revokedByUserId: null,
+          },
+        ],
+      }),
+      {
+        membership: null,
+        organizationId: 'org-1',
+        permission: 'readThread',
+        policies: basePolicies,
+        user: {
+          ...baseUser,
+          authUserId: 'site-admin-1',
+          isSiteAdmin: true,
+        },
+      },
+    );
+
+    expect(result.allowed).toBe(true);
+    expect(result.status).toBe('satisfied');
+    expect(result.supportGrant?.id).toBe('grant-1');
+    expect(result.supportGrant?.scope).toBe('read_only');
+  });
+
+  it('does not let a read-only grant cover writes', async () => {
+    expect(doesSupportGrantCoverPermission('read_only', 'readThread')).toBe(true);
+    expect(doesSupportGrantCoverPermission('read_only', 'writeThread')).toBe(false);
+  });
+
+  it('marks expired site-admin grants distinctly', async () => {
+    const now = Date.now();
+    const result = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        grants: [
+          {
+            _id: 'grant-1',
+            organizationId: 'org-1',
+            siteAdminUserId: 'site-admin-1',
+            scope: 'read_write',
+            reason: 'Escalated investigation',
+            grantedByUserId: 'owner-1',
+            createdAt: now - 120_000,
+            expiresAt: now - 60_000,
+            revokedAt: null,
+            revokedByUserId: null,
+          },
+        ],
+      }),
+      {
+        membership: null,
+        organizationId: 'org-1',
+        permission: 'writeThread',
+        policies: basePolicies,
+        user: {
+          ...baseUser,
+          authUserId: 'site-admin-1',
+          isSiteAdmin: true,
+        },
+      },
+    );
+
+    expect(result.allowed).toBe(false);
+    expect(result.status).toBe('support_grant_expired');
+  });
+});
