@@ -61,6 +61,7 @@ const APPROVED_HELPER_PATTERNS = [
   /\bgetCurrentUserOrNull\s*\(/,
   /\bgetCurrentAuthUserOrThrow\s*\(/,
   /\bgetCurrentAuthUserOrNull\s*\(/,
+  /\bgetCurrentSetupAuthUserFromActionOrThrow\s*\(/,
   /\bgetVerifiedCurrentUserFromActionOrThrow\s*\(/,
   /\bgetVerifiedCurrentSiteAdminUserOrThrow\s*\(/,
   /\bgetVerifiedCurrentSiteAdminUserFromActionOrThrow\s*\(/,

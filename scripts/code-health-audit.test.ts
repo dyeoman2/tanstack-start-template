@@ -56,6 +56,26 @@ describe('code health auth audit', () => {
     });
   });
 
+  it('classifies setup auth helpers as protected', () => {
+    const [record] = scanConvexFunctionsFromSource(
+      `
+        export const bootstrapCurrentUserContext = action({
+          args: {},
+          returns: v.null(),
+          handler: async (ctx) => {
+            const viewer = await getCurrentSetupAuthUserFromActionOrThrow(ctx);
+            return viewer;
+          },
+        });
+      `,
+      'convex/users.ts',
+    );
+
+    expect(classifyConvexFunction(record)).toMatchObject({
+      classification: 'explicit-helper-protected',
+    });
+  });
+
   it('classifies SCIM lifecycle bridge as allowlisted', () => {
     const [record] = scanConvexFunctionsFromSource(
       `
