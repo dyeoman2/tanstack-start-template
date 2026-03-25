@@ -178,7 +178,6 @@ describe('Better Auth env helpers', () => {
     process.env.AWS_S3_FILES_KMS_KEY_ARN =
       'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
-    process.env.AWS_MALWARE_WEBHOOK_SHARED_SECRET = 'legacy-webhook-secret';
 
     const config = getStorageRuntimeConfig();
 
@@ -188,17 +187,24 @@ describe('Better Auth env helpers', () => {
       'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files',
     );
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
-    expect(config.guardDutyWebhookSharedSecret).toBe('legacy-webhook-secret');
-    expect(config.storageInspectionWebhookSharedSecret).toBe('legacy-webhook-secret');
+    expect(config.services.broker.baseUrl).toBeNull();
+    expect(config.services.worker.baseUrl).toBeNull();
   });
 
-  it('prefers the split storage env names over deprecated fallbacks', () => {
+  it('rejects the legacy shared storage webhook secret', () => {
+    process.env.FILE_STORAGE_BACKEND = 's3-primary';
+    process.env.AWS_MALWARE_WEBHOOK_SHARED_SECRET = 'legacy-webhook-secret';
+
+    expect(() => getStorageRuntimeConfig()).toThrow(
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET is no longer supported. Configure AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET and AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET on the storage worker runtime instead.',
+    );
+  });
+
+  it('requires broker and worker service wiring for s3-backed storage', () => {
     process.env.FILE_STORAGE_BACKEND = 's3-primary';
     process.env.AWS_REGION = 'us-west-1';
     process.env.CONVEX_SITE_URL = 'https://example.convex.site';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
-    process.env.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET = 'guardduty-secret';
-    process.env.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET = 'inspection-secret';
     process.env.AWS_S3_FILES_BUCKET = 'legacy-bucket';
     process.env.AWS_S3_CLEAN_BUCKET = 'clean-bucket';
     process.env.AWS_S3_MIRROR_BUCKET = 'mirror-bucket';
@@ -209,12 +215,16 @@ describe('Better Auth env helpers', () => {
     process.env.AWS_S3_MIRROR_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/mirror';
     process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/quarantine';
     process.env.AWS_S3_REJECTED_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/rejected';
-    process.env.AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN = 'arn:aws:iam::123456789012:role/upload';
-    process.env.AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN = 'arn:aws:iam::123456789012:role/download';
-    process.env.AWS_STORAGE_ROLE_ARN_PROMOTION = 'arn:aws:iam::123456789012:role/promotion';
-    process.env.AWS_STORAGE_ROLE_ARN_REJECTION = 'arn:aws:iam::123456789012:role/rejection';
-    process.env.AWS_STORAGE_ROLE_ARN_CLEANUP = 'arn:aws:iam::123456789012:role/cleanup';
-    process.env.AWS_STORAGE_ROLE_ARN_MIRROR = 'arn:aws:iam::123456789012:role/mirror';
+
+    expect(() => getStorageRuntimeConfig()).toThrow(
+      'STORAGE_BROKER_URL environment variable is required for FILE_STORAGE_BACKEND=s3-primary.',
+    );
+
+    process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
+    process.env.STORAGE_BROKER_SHARED_SECRET = 'broker-secret';
+    process.env.STORAGE_WORKER_URL = 'https://worker.example.com';
+    process.env.STORAGE_WORKER_SHARED_SECRET = 'worker-secret';
+    process.env.CONVEX_STORAGE_CALLBACK_SHARED_SECRET = 'convex-callback-secret';
 
     const config = getStorageRuntimeConfig();
 
@@ -222,9 +232,12 @@ describe('Better Auth env helpers', () => {
     expect(config.storageBuckets.quarantine.bucket).toBe('quarantine-bucket');
     expect(config.storageBuckets.rejected.bucket).toBe('rejected-bucket');
     expect(config.storageBuckets.mirror.bucket).toBe('mirror-bucket');
-    expect(config.guardDutyWebhookSharedSecret).toBe('guardduty-secret');
-    expect(config.storageInspectionWebhookSharedSecret).toBe('inspection-secret');
-    expect(config.storageRoleArns.downloadPresign).toBe('arn:aws:iam::123456789012:role/download');
+    expect(config.fileServeSigningSecret).toBe('canonical-secret');
+    expect(config.services.broker.baseUrl).toBe('https://broker.example.com');
+    expect(config.services.broker.sharedSecret).toBe('broker-secret');
+    expect(config.services.worker.baseUrl).toBe('https://worker.example.com');
+    expect(config.services.worker.sharedSecret).toBe('worker-secret');
+    expect(config.services.convexCallbackSharedSecret).toBe('convex-callback-secret');
   });
 
   it('reads audit archive runtime settings when configured', () => {

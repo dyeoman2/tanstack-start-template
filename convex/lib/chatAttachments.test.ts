@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_CHAT_ATTACHMENT_SIZE_BYTES, validateChatAttachmentUpload } from './chatAttachments';
+import {
+  MAX_CHAT_ATTACHMENT_SIZE_BYTES,
+  extractDocumentText,
+  validateChatAttachmentUpload,
+} from './chatAttachments';
 
 describe('validateChatAttachmentUpload', () => {
   it('accepts supported image uploads', () => {
@@ -54,5 +58,26 @@ describe('validateChatAttachmentUpload', () => {
         claimedMimeType: 'application/x-msdownload',
       }),
     ).toThrow('Unsupported attachment type.');
+  });
+
+  it('rejects xlsx uploads', () => {
+    expect(() =>
+      validateChatAttachmentUpload({
+        blobSize: 1024,
+        blobType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        fileName: 'report.xlsx',
+        claimedMimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      }),
+    ).toThrow('Unsupported attachment type.');
+  });
+});
+
+describe('extractDocumentText', () => {
+  it('formats csv documents', async () => {
+    const blob = new Blob(['name,count\nalpha,2\n'], { type: 'text/csv' });
+
+    await expect(extractDocumentText(blob, 'report.csv', 'text/csv')).resolves.toBe(
+      `[CSV File: report.csv]\n\nname | count\n--------------------------------------------------\nalpha | 2\n\n`,
+    );
   });
 });

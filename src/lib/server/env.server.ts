@@ -339,6 +339,18 @@ export type StorageBucketConfig = {
 
 export type StorageRoleConfig = Record<StorageCapability, string | null>;
 
+export type StorageServiceRuntimeConfig = {
+  broker: {
+    baseUrl: string | null;
+    sharedSecret: string | null;
+  };
+  convexCallbackSharedSecret: string | null;
+  worker: {
+    baseUrl: string | null;
+    sharedSecret: string | null;
+  };
+};
+
 export type AuditArchiveRuntimeConfig = {
   awsRegion: string | null;
   bucket: string | null;
@@ -353,16 +365,14 @@ export type StorageRuntimeConfig = {
   convexSiteUrl: string | null;
   fileServeSigningSecret: string | null;
   fileUploadMaxBytes: number;
-  guardDutyWebhookSharedSecret: string | null;
   malwareScanSlaMs: number;
   mirrorRetryBaseDelayMs: number;
   mirrorRetryMaxDelayMs: number;
   s3DeleteMaxAttempts: number;
   s3OrphanCleanupMaxScan: number;
   s3OrphanCleanupMinAgeMs: number;
+  services: StorageServiceRuntimeConfig;
   storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
-  storageInspectionWebhookSharedSecret: string | null;
-  storageRoleArns: StorageRoleConfig;
   storageStaleUploadTtlMs: number;
 };
 
@@ -422,29 +432,14 @@ function parsePositiveInteger(value: string | null, name: string, fallback: numb
   return parsed;
 }
 
+function readOptionalStorageEnv(name: string): string | null {
+  return readOptionalServerEnv(name);
+}
+
 function readRequiredStorageEnv(name: string, mode: FileStorageBackendMode): string {
-  const value = readOptionalServerEnv(name);
+  const value = readOptionalStorageEnv(name);
   if (!value) {
     throw new Error(`${name} environment variable is required for FILE_STORAGE_BACKEND=${mode}.`);
-  }
-  return value;
-}
-
-function readOptionalStorageEnv(name: string, legacyName?: string): string | null {
-  return readOptionalServerEnv(name) ?? (legacyName ? readOptionalServerEnv(legacyName) : null);
-}
-
-function readRequiredStorageEnvWithFallback(
-  name: string,
-  mode: FileStorageBackendMode,
-  legacyName?: string,
-): string {
-  const value = readOptionalStorageEnv(name, legacyName);
-  if (!value) {
-    const fallbackNote = legacyName ? ` (deprecated fallback: ${legacyName})` : '';
-    throw new Error(
-      `${name} environment variable is required for FILE_STORAGE_BACKEND=${mode}.${fallbackNote}`,
-    );
   }
   return value;
 }
@@ -458,29 +453,70 @@ function readStorageBucketConfig(
 
   if (mode === 'convex') {
     return {
-      bucket: readOptionalStorageEnv(bucketEnv, 'AWS_S3_FILES_BUCKET'),
-      kmsKeyArn: readOptionalStorageEnv(kmsEnv, 'AWS_S3_FILES_KMS_KEY_ARN'),
+      bucket: readOptionalStorageEnv(bucketEnv) ?? readOptionalServerEnv('AWS_S3_FILES_BUCKET'),
+      kmsKeyArn:
+        readOptionalStorageEnv(kmsEnv) ?? readOptionalServerEnv('AWS_S3_FILES_KMS_KEY_ARN'),
     };
   }
 
   return {
-    bucket: readRequiredStorageEnvWithFallback(bucketEnv, mode, 'AWS_S3_FILES_BUCKET'),
-    kmsKeyArn: readRequiredStorageEnvWithFallback(kmsEnv, mode, 'AWS_S3_FILES_KMS_KEY_ARN'),
+    bucket: readRequiredStorageEnv(bucketEnv, mode),
+    kmsKeyArn: readRequiredStorageEnv(kmsEnv, mode),
   };
 }
 
-function readStorageRoleConfig(mode: FileStorageBackendMode): StorageRoleConfig {
-  const readRole = (name: string) =>
-    mode === 'convex' ? readOptionalServerEnv(name) : readRequiredStorageEnv(name, mode);
-
+function readStorageServiceRuntimeConfig(): StorageServiceRuntimeConfig {
   return {
-    cleanup: readRole('AWS_STORAGE_ROLE_ARN_CLEANUP'),
-    downloadPresign: readRole('AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN'),
-    mirror: readRole('AWS_STORAGE_ROLE_ARN_MIRROR'),
-    promotion: readRole('AWS_STORAGE_ROLE_ARN_PROMOTION'),
-    rejection: readRole('AWS_STORAGE_ROLE_ARN_REJECTION'),
-    uploadPresign: readRole('AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN'),
+    broker: {
+      baseUrl: readOptionalServerEnv('STORAGE_BROKER_URL'),
+      sharedSecret: readOptionalServerEnv('STORAGE_BROKER_SHARED_SECRET'),
+    },
+    convexCallbackSharedSecret: readOptionalServerEnv('CONVEX_STORAGE_CALLBACK_SHARED_SECRET'),
+    worker: {
+      baseUrl: readOptionalServerEnv('STORAGE_WORKER_URL'),
+      sharedSecret: readOptionalServerEnv('STORAGE_WORKER_SHARED_SECRET'),
+    },
   };
+}
+
+function assertNoLegacyStorageWebhookSecret() {
+  if (readOptionalServerEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET')) {
+    throw new Error(
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET is no longer supported. Configure AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET and AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET on the storage worker runtime instead.',
+    );
+  }
+}
+
+function requireStorageServiceConfig(
+  services: StorageServiceRuntimeConfig,
+  mode: FileStorageBackendMode,
+): StorageServiceRuntimeConfig {
+  if (!services.broker.baseUrl) {
+    throw new Error(
+      `STORAGE_BROKER_URL environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  if (!services.broker.sharedSecret) {
+    throw new Error(
+      `STORAGE_BROKER_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  if (!services.worker.baseUrl) {
+    throw new Error(
+      `STORAGE_WORKER_URL environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  if (!services.worker.sharedSecret) {
+    throw new Error(
+      `STORAGE_WORKER_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  if (!services.convexCallbackSharedSecret) {
+    throw new Error(
+      `CONVEX_STORAGE_CALLBACK_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  return services;
 }
 
 export function getFileStorageBackendMode(): FileStorageBackendMode {
@@ -498,6 +534,7 @@ export function getFileStorageBackendMode(): FileStorageBackendMode {
 
 export function getStorageRuntimeConfig(): StorageRuntimeConfig {
   const backendMode = getFileStorageBackendMode();
+  assertNoLegacyStorageWebhookSecret();
   const baseConfig: StorageRuntimeConfig = {
     awsRegion: readOptionalServerEnv('AWS_REGION'),
     backendMode,
@@ -507,10 +544,6 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       readOptionalServerEnv('FILE_UPLOAD_MAX_BYTES'),
       'FILE_UPLOAD_MAX_BYTES',
       10 * 1024 * 1024,
-    ),
-    guardDutyWebhookSharedSecret: readOptionalStorageEnv(
-      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ),
     malwareScanSlaMs: parsePositiveInteger(
       readOptionalServerEnv('AWS_MALWARE_SCAN_SLA_MS'),
@@ -553,11 +586,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       quarantine: readStorageBucketConfig('quarantine', backendMode),
       rejected: readStorageBucketConfig('rejected', backendMode),
     },
-    storageInspectionWebhookSharedSecret: readOptionalStorageEnv(
-      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
-    ),
-    storageRoleArns: readStorageRoleConfig(backendMode),
+    services: readStorageServiceRuntimeConfig(),
   };
 
   if (backendMode === 'convex') {
@@ -569,16 +598,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
     awsRegion: readRequiredStorageEnv('AWS_REGION', backendMode),
     convexSiteUrl: readRequiredStorageEnv('CONVEX_SITE_URL', backendMode),
     fileServeSigningSecret: readRequiredStorageEnv('AWS_FILE_SERVE_SIGNING_SECRET', backendMode),
-    guardDutyWebhookSharedSecret: readRequiredStorageEnvWithFallback(
-      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
-      backendMode,
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
-    ),
-    storageInspectionWebhookSharedSecret: readRequiredStorageEnvWithFallback(
-      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
-      backendMode,
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
-    ),
+    services: requireStorageServiceConfig(baseConfig.services, backendMode),
   };
 }
 

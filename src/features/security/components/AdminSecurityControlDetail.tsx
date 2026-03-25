@@ -724,6 +724,7 @@ function ChecklistItemActions(props: {
               <TabsContent value="file" className="space-y-2">
                 <Input
                   type="file"
+                  accept=".jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.pdf,image/jpeg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
                     const evidenceDate = parseEvidenceDateInput(evidenceDateInput);
@@ -748,6 +749,9 @@ function ChecklistItemActions(props: {
                       });
                   }}
                 />
+                <p className="text-xs text-muted-foreground">
+                  Allowed file types: PDF, TXT, CSV, JPG, PNG, GIF, WEBP.
+                </p>
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => setIsAddingProof(false)}>
                     Close

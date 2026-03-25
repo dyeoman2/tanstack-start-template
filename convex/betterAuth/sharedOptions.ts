@@ -148,6 +148,7 @@ const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
 const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey']);
 const STEP_UP_TOTP_PATHS = new Set(['/two-factor/verify-totp']);
+const STEP_UP_BACKUP_CODE_PATHS = new Set(['/two-factor/verify-backup-code']);
 const CALLBACK_AUTH_PATH_PREFIXES = ['/callback/', '/oauth2/callback/'] as const;
 const ADMIN_STEP_UP_ROUTE_CONFIG = {
   '/admin/list-users': {
@@ -541,8 +542,9 @@ async function handleSessionEnrichmentAfterHook(
     return;
   }
 
-  const updatePayload: Record<string, string | null> = {
+  const updatePayload: Record<string, boolean | string | null> = {
     authMethod: resolution.authMethod,
+    mfaVerified: resolution.authMethod === 'passkey',
     enterpriseOrganizationId: null,
     enterpriseProviderKey: null,
     enterpriseProtocol: null,
@@ -560,6 +562,7 @@ async function handleSessionEnrichmentAfterHook(
     });
     if (enterpriseSession) {
       updatePayload.authMethod = 'enterprise';
+      updatePayload.mfaVerified = false;
       updatePayload.enterpriseOrganizationId = enterpriseSession.organizationId;
       updatePayload.enterpriseProviderKey = enterpriseSession.providerKey;
       updatePayload.enterpriseProtocol = enterpriseSession.protocol;
@@ -609,6 +612,31 @@ function resolveStepUpMethod(
       : STEP_UP_METHODS.totp;
   }
 
+  if (STEP_UP_BACKUP_CODE_PATHS.has(ctx.path)) {
+    return STEP_UP_METHODS.passwordPlusTotp;
+  }
+
+  return null;
+}
+
+function resolveSessionMfaVerifiedUpdate(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+): boolean | null {
+  if (PASSKEY_AUTH_PATHS.has(ctx.path)) {
+    return true;
+  }
+
+  if (
+    PASSWORD_AUTH_PATHS.has(ctx.path) ||
+    CALLBACK_AUTH_PATH_PREFIXES.some((prefix) => ctx.path.startsWith(prefix))
+  ) {
+    return false;
+  }
+
+  if (STEP_UP_TOTP_PATHS.has(ctx.path) || STEP_UP_BACKUP_CODE_PATHS.has(ctx.path)) {
+    return true;
+  }
+
   return null;
 }
 
@@ -617,6 +645,14 @@ async function handleStepUpAfterHook(
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ) {
   const sessionContext = resolveStepUpSessionContext(ctx);
+  const mfaVerified = resolveSessionMfaVerifiedUpdate(ctx);
+  const currentSession = ctx.context.session?.session as { token?: string } | undefined;
+  const sessionToken = ctx.context.newSession?.session?.token ?? currentSession?.token;
+  if (sessionToken && mfaVerified !== null) {
+    await ctx.context.internalAdapter.updateSession(sessionToken, {
+      mfaVerified,
+    });
+  }
   const pendingStepUp = parsePendingStepUpCookie(ctx.headers?.get('cookie'));
   const issuedMethod = resolveStepUpMethod(ctx);
 
@@ -833,6 +869,11 @@ export function createSharedBetterAuthOptions(
         },
         enterpriseProtocol: {
           type: 'string',
+          required: false,
+          input: false,
+        },
+        mfaVerified: {
+          type: 'boolean',
           required: false,
           input: false,
         },

@@ -6,6 +6,7 @@ import {
   inspectStorageUploadBytes,
   resolveStorageInspectionPolicy,
 } from '../src/lib/server/storage-inspection-policy';
+import { parseStorageInspectionWebhookPayload as parseSharedStorageInspectionWebhookPayload } from '../src/lib/shared/storage-webhook-payload';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
@@ -26,28 +27,13 @@ export const storageInspectionWebhookPayloadValidator = v.object({
 });
 
 export function parseStorageInspectionWebhookPayload(payload: string) {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(payload);
-  } catch {
-    throw new ConvexError('Storage inspection webhook payload is not valid JSON.');
+    return parseSharedStorageInspectionWebhookPayload(payload);
+  } catch (error) {
+    throw new ConvexError(
+      error instanceof Error ? error.message : 'Storage inspection webhook payload is malformed.',
+    );
   }
-
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('bucket' in parsed) ||
-    !('key' in parsed) ||
-    typeof parsed.bucket !== 'string' ||
-    typeof parsed.key !== 'string'
-  ) {
-    throw new ConvexError('Storage inspection webhook payload is malformed.');
-  }
-
-  return {
-    bucket: parsed.bucket,
-    key: parsed.key,
-  };
 }
 
 async function readObjectBytes(args: { key: string }): Promise<Uint8Array | null> {
@@ -142,6 +128,12 @@ async function promoteCleanObject(ctx: ActionCtx, lifecycle: LifecycleDoc) {
     return { applied: false, reason: 'missing_quarantine_object' as const };
   }
 
+  const runtimeConfig = getStorageRuntimeConfig();
+  const cleanBucket = runtimeConfig.storageBuckets.clean.bucket;
+  if (!cleanBucket) {
+    throw new ConvexError('AWS_S3_CLEAN_BUCKET environment variable is required for promotion.');
+  }
+
   const promotedKey = buildPromotedStorageKey({
     organizationId: lifecycle.organizationId ?? null,
     sourceType: lifecycle.sourceType,
@@ -149,7 +141,7 @@ async function promoteCleanObject(ctx: ActionCtx, lifecycle: LifecycleDoc) {
   });
   if (
     lifecycle.storagePlacement === 'PROMOTED' &&
-    lifecycle.canonicalBucket === lifecycle.quarantineBucket &&
+    lifecycle.canonicalBucket === cleanBucket &&
     lifecycle.canonicalKey === promotedKey
   ) {
     return { applied: false, reason: 'already_promoted' as const };
@@ -167,7 +159,7 @@ async function promoteCleanObject(ctx: ActionCtx, lifecycle: LifecycleDoc) {
   });
 
   await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
-    canonicalBucket: lifecycle.quarantineBucket,
+    canonicalBucket: cleanBucket,
     canonicalKey: promotedKey,
     canonicalVersionId: result.VersionId ?? null,
     scannedAt: Math.max(

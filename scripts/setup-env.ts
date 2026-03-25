@@ -130,13 +130,12 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=<generated-secret>
 # AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=<generated-secret>
 # AWS_FILE_SERVE_SIGNING_SECRET=<generated-secret>
-# AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-upload-presign
-# AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-download-presign
-# AWS_STORAGE_ROLE_ARN_PROMOTION=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-promotion
-# AWS_STORAGE_ROLE_ARN_REJECTION=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-rejection
-# AWS_STORAGE_ROLE_ARN_CLEANUP=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-cleanup
-# AWS_STORAGE_ROLE_ARN_MIRROR=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-mirror
-# AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=arn:aws:iam::123456789012:role/your-app-runtime-role
+# STORAGE_BROKER_URL=https://your-broker-runtime.lambda-url.us-west-1.on.aws
+# AWS_STORAGE_BROKER_SHARED_SECRET=<generated-secret>
+# STORAGE_WORKER_URL=https://your-worker-runtime.lambda-url.us-west-1.on.aws
+# AWS_STORAGE_WORKER_SHARED_SECRET=<generated-secret>
+# AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET=<generated-secret>
+# AWS_STORAGE_ALERT_EMAIL=alerts@example.com
 # CONVEX_SITE_URL=https://your-project.convex.site
 
 # ==========================================

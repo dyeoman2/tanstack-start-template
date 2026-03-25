@@ -476,7 +476,7 @@ async function main() {
         changedRemotely: [
           'Convex production env: BETTER_AUTH_SECRET, APP_NAME, RESEND_EMAIL_SENDER, optional RESEND_API_KEY',
           'Convex production deploy',
-          'Optional Netlify production env: BETTER_AUTH_SECRET, VITE_CONVEX_URL',
+          'Optional Netlify production env: VITE_CONVEX_URL',
           'Optional Convex production env: BETTER_AUTH_URL',
           opts.skipGithubDeploy
             ? 'GitHub deploy environments skipped'
@@ -664,10 +664,7 @@ async function main() {
     console.log(
       `Detected production Netlify site: ${formatNetlifySiteSummary(selectedProductionSite) ?? 'not selected'}`,
     );
-    console.log('Netlify needs these for build + SSR (same values as Convex where applicable):');
-    console.log(
-      `   BETTER_AUTH_SECRET = ${convexInfo?.betterAuthSecret ?? '[already set in Convex prod]'}`,
-    );
+    console.log('Netlify needs these for build + SSR:');
     console.log(
       `   VITE_CONVEX_URL = ${convexInfo?.convexUrl ?? 'https://your-deployment.convex.cloud'}`,
     );
@@ -676,11 +673,7 @@ async function main() {
 
     if (
       convexInfo &&
-      (opts.yes ||
-        (await askYesNo(
-          'Set BETTER_AUTH_SECRET + VITE_CONVEX_URL on Netlify production now?',
-          true,
-        )))
+      (opts.yes || (await askYesNo('Set VITE_CONVEX_URL on Netlify production now?', true)))
     ) {
       requireCommands([{ cmd: 'netlify' }]);
       const netlifyToken = await chooseOrPromptSecret(
@@ -699,19 +692,15 @@ async function main() {
       try {
         syncNetlifyProductionRuntimeAndBuildVars({
           authToken: netlifyToken,
-          betterAuthSecret: convexInfo.betterAuthSecret,
           siteId: netlifySiteId.trim(),
           viteConvexUrl: convexInfo.convexUrl,
         });
         console.log('✅ Netlify production environment variables updated.');
-        changedRemotely.push('Updated Netlify production env: BETTER_AUTH_SECRET, VITE_CONVEX_URL');
+        changedRemotely.push('Updated Netlify production env: VITE_CONVEX_URL');
         readiness.netlify = 'ready';
       } catch {
         console.log(
-          '⚠️  Netlify env sync failed. Set the two variables manually in Netlify UI, or run:',
-        );
-        console.log(
-          '   pnpm exec netlify env:set BETTER_AUTH_SECRET <secret> --context production --secret',
+          '⚠️  Netlify env sync failed. Set the variable manually in Netlify UI, or run:',
         );
         console.log('   pnpm exec netlify env:set VITE_CONVEX_URL <url> --context production');
         readiness.netlify = 'needs attention';

@@ -13,7 +13,7 @@ This template documents the implemented safeguards that ship out of the box and 
 - Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, MFA-gated admin access, and repo-pinned edge security headers; deployers still need to operate WAF, TLS certs, and key rotation.
 - Transmission and access protection: strict trusted-origin checks, canonical Better Auth base URL validation, short-lived session freshness, and policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
 - Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need centralized log aggregation, retention, and review processes.
-- Integrity: file-type/signature verification plus quarantining hooks support the document flow, but any production malware/DLP scanning is the deployer’s responsibility.
+- Integrity: file-type/signature verification plus quarantining hooks support the document flow, and the default regulated upload boundary is limited to PDF, plain text, CSV, and JPEG/PNG/GIF/WEBP images; any broader Office-style intake or production malware/DLP scanning remains the deployer’s responsibility.
 
 ### Operational evidence
 

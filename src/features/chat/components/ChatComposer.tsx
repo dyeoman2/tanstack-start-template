@@ -694,7 +694,7 @@ export function ChatComposer({
             type="file"
             className="hidden"
             multiple
-            accept="image/*,.heic,.heif,.txt,.csv,.pdf,.xlsx,text/plain,text/csv,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            accept=".jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.pdf,image/jpeg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf"
             onChange={(event) => {
               const files = event.target.files;
               if (!files?.length) {
@@ -719,6 +719,7 @@ export function ChatComposer({
             </TooltipTrigger>
             <TooltipContent>Attach files</TooltipContent>
           </Tooltip>
+          <p className="text-xs text-[#8e8a84]">Allowed: PDF, TXT, CSV, JPG, PNG, GIF, WEBP</p>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">

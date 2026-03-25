@@ -1,12 +1,7 @@
 import type { ParseResult } from 'papaparse';
-import type { Row } from 'read-excel-file/browser';
 import type { ParsedPdfImage } from '~/features/chat/types';
 
 const MAX_PDF_SIZE = 10 * 1024 * 1024;
-const MAX_SPREADSHEET_SIZE = 10 * 1024 * 1024;
-const MAX_SPREADSHEET_SHEETS = 10;
-const MAX_SPREADSHEET_ROWS = 5_000;
-const MAX_SPREADSHEET_CELLS = 50_000;
 
 function formatRowsAsTable(rows: unknown[][], addSeparatorAfterHeader = true) {
   let content = '';
@@ -23,22 +18,6 @@ function formatRowsAsTable(rows: unknown[][], addSeparatorAfterHeader = true) {
   });
 
   return content;
-}
-
-function formatCellValue(cell: Row[number]) {
-  if (cell === null || cell === undefined) {
-    return '';
-  }
-
-  if (cell instanceof Date) {
-    return cell.toISOString();
-  }
-
-  return String(cell);
-}
-
-function normalizeRows(rows: Row[]) {
-  return rows.map((row) => row.map((cell) => formatCellValue(cell)));
 }
 
 export interface ParsedFile {
@@ -121,58 +100,6 @@ async function parseCSV(file: File): Promise<ParsedFile> {
   });
 }
 
-async function parseExcel(file: File): Promise<ParsedFile> {
-  if (file.size > MAX_SPREADSHEET_SIZE) {
-    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-    throw new Error(`File size (${sizeMB}MB) exceeds the maximum allowed size of 10MB`);
-  }
-
-  const { default: readXlsxFile, readSheetNames } = await import('read-excel-file/browser');
-  const sheetNames = await readSheetNames(file);
-
-  if (sheetNames.length > MAX_SPREADSHEET_SHEETS) {
-    throw new Error(
-      `Spreadsheet has too many sheets. Maximum allowed is ${MAX_SPREADSHEET_SHEETS}.`,
-    );
-  }
-
-  let content = `[Excel File: ${file.name}]\n\n`;
-  let totalRows = 0;
-  let totalCells = 0;
-
-  for (const [index, sheetName] of sheetNames.entries()) {
-    const rows = await readXlsxFile(file, { sheet: sheetName });
-    totalRows += rows.length;
-    totalCells += rows.reduce((count, row) => count + row.length, 0);
-
-    if (totalRows > MAX_SPREADSHEET_ROWS) {
-      throw new Error(`Spreadsheet has too many rows. Maximum allowed is ${MAX_SPREADSHEET_ROWS}.`);
-    }
-
-    if (totalCells > MAX_SPREADSHEET_CELLS) {
-      throw new Error(
-        `Spreadsheet has too many cells. Maximum allowed is ${MAX_SPREADSHEET_CELLS}.`,
-      );
-    }
-
-    const normalizedRows = normalizeRows(rows);
-
-    content += `Sheet: ${sheetName}\n`;
-    content += `${'-'.repeat(50)}\n`;
-    content += formatRowsAsTable(normalizedRows);
-
-    if (index < sheetNames.length - 1) {
-      content += '\n';
-    }
-  }
-
-  return {
-    name: file.name,
-    content,
-    mimeType: file.type,
-  };
-}
-
 type FileParser = (file: File) => Promise<ParsedFile>;
 
 const fileTypeParsers: Array<{ test: (type: string, name: string) => boolean; parse: FileParser }> =
@@ -184,12 +111,6 @@ const fileTypeParsers: Array<{ test: (type: string, name: string) => boolean; pa
     {
       test: (type, name) => type === 'text/csv' || name.endsWith('.csv'),
       parse: parseCSV,
-    },
-    {
-      test: (type, name) =>
-        type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-        name.endsWith('.xlsx'),
-      parse: parseExcel,
     },
     {
       test: (type, name) => type === 'application/pdf' || name.endsWith('.pdf'),

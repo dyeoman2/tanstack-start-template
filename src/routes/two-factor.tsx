@@ -7,7 +7,6 @@ import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
-import { Checkbox } from '~/components/ui/checkbox';
 import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
@@ -82,7 +81,6 @@ function TwoFactorPage() {
   const { showToast } = useToast();
   const { data: sessionData } = useSession();
   const [code, setCode] = useState('');
-  const [trustDevice, setTrustDevice] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [didCopySetupKey, setDidCopySetupKey] = useState(false);
@@ -167,7 +165,6 @@ function TwoFactorPage() {
 
       await authClient.twoFactor.verifyTotp({
         code: code.trim(),
-        trustDevice,
         fetchOptions: { throw: true },
       });
 
@@ -331,18 +328,6 @@ function TwoFactorPage() {
                 </p>
               ) : null}
             </div>
-
-            <label
-              htmlFor="trust-device"
-              className="flex items-center gap-3 text-sm font-medium text-foreground"
-            >
-              <Checkbox
-                id="trust-device"
-                checked={trustDevice}
-                onCheckedChange={(checked) => setTrustDevice(checked === true)}
-              />
-              Trust this device for future logins
-            </label>
 
             <Button className="w-full" type="submit" disabled={isSubmitting || isSuccess}>
               {isSubmitting || isSuccess ? <Loader2 className="size-4 animate-spin" /> : null}

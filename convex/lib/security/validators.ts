@@ -283,7 +283,6 @@ const securityFindingListValidator = v.array(securityFindingListItemValidator);
 
 const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'image/gif',
   'image/jpeg',
   'image/png',
@@ -301,7 +300,6 @@ const SECURITY_EVIDENCE_ALLOWED_EXTENSIONS = new Set([
   '.png',
   '.txt',
   '.webp',
-  '.xlsx',
 ]);
 
 function getLowercaseFileExtension(fileName: string) {

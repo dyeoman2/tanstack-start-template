@@ -106,15 +106,12 @@ const CONVEX_SYNC_STORAGE_ENV_NAMES = [
   'AWS_S3_CLEAN_KMS_KEY_ARN',
   'AWS_S3_REJECTED_KMS_KEY_ARN',
   'AWS_S3_MIRROR_KMS_KEY_ARN',
-  'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
-  'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
   'AWS_FILE_SERVE_SIGNING_SECRET',
-  'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
-  'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
-  'AWS_STORAGE_ROLE_ARN_PROMOTION',
-  'AWS_STORAGE_ROLE_ARN_REJECTION',
-  'AWS_STORAGE_ROLE_ARN_CLEANUP',
-  'AWS_STORAGE_ROLE_ARN_MIRROR',
+  'STORAGE_BROKER_URL',
+  'STORAGE_BROKER_SHARED_SECRET',
+  'STORAGE_WORKER_URL',
+  'STORAGE_WORKER_SHARED_SECRET',
+  'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
 ] as const;
 
 function buildStorageKmsKeyArn(input: {
@@ -129,26 +126,6 @@ function buildStorageKmsKeyArn(input: {
   }
 
   return `arn:aws:kms:${input.awsRegion}:${input.accountId}:alias/${input.projectSlug}-${input.stage}-${input.kind}`;
-}
-
-function buildStorageRoleArn(input: {
-  accountId?: string;
-  awsRegion: string;
-  capability:
-    | 'cleanup'
-    | 'download-presign'
-    | 'mirror'
-    | 'promotion'
-    | 'rejection'
-    | 'upload-presign';
-  projectSlug: string;
-  stage: 'dev' | 'prod';
-}) {
-  if (!input.accountId) {
-    return null;
-  }
-
-  return `arn:aws:iam::${input.accountId}:role/${input.projectSlug}-${input.stage}-storage-${input.capability}`;
 }
 
 function buildScopedBucketNames(bucketBase: string) {
@@ -175,28 +152,31 @@ function trimTrailingSlashes(value: string) {
   return value.replace(/\/+$/, '');
 }
 
-function buildGuardDutyWebhookUrl(convexSiteUrl: string) {
-  return `${trimTrailingSlashes(convexSiteUrl)}/aws/guardduty-malware`;
-}
-
 function buildStorageDeployEnv(input: {
+  alertEmailAddress?: string;
   awsRegion: string;
   awsProfile?: string;
   buckets: ReturnType<typeof buildScopedBucketNames>;
+  convexCallbackSharedSecret: string;
   convexSiteUrl: string;
+  fileServeSigningSecret: string;
+  brokerSharedSecret: string;
   guardDutyWebhookSecret: string;
   inspectionWebhookSecret: string;
-  trustedPrincipalArn: string;
+  workerSharedSecret: string;
 }) {
   return {
     AWS_REGION: input.awsRegion,
     ...(input.awsProfile ? { AWS_PROFILE: input.awsProfile } : {}),
+    ...(input.alertEmailAddress ? { AWS_STORAGE_ALERT_EMAIL: input.alertEmailAddress } : {}),
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
-    AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: buildGuardDutyWebhookUrl(input.convexSiteUrl),
-    AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(input.convexSiteUrl)}/aws/storage-inspection`,
+    AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(input.convexSiteUrl),
+    AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET: input.convexCallbackSharedSecret,
+    AWS_FILE_SERVE_SIGNING_SECRET: input.fileServeSigningSecret,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: input.guardDutyWebhookSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: input.inspectionWebhookSecret,
-    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN: input.trustedPrincipalArn,
+    AWS_STORAGE_BROKER_SHARED_SECRET: input.brokerSharedSecret,
+    AWS_STORAGE_WORKER_SHARED_SECRET: input.workerSharedSecret,
     AWS_S3_QUARANTINE_BUCKET_NAME: input.buckets.quarantine,
     AWS_S3_CLEAN_BUCKET_NAME: input.buckets.clean,
     AWS_S3_REJECTED_BUCKET_NAME: input.buckets.rejected,
@@ -522,96 +502,48 @@ async function main() {
   const convexSiteUrl = await askWithDefault('Convex site URL', convexSiteUrlFallback);
   const guardDutyWebhookSecret = await askWithDefault(
     'AWS GuardDuty webhook shared secret',
-    readEnvValue(envContent, 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET') ??
-      readEnvValue(envContent, 'AWS_MALWARE_WEBHOOK_SHARED_SECRET') ??
-      (await generateSecret(32)),
+    readEnvValue(envContent, 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET') ?? (await generateSecret(32)),
   );
   const inspectionWebhookSecret = await askWithDefault(
     'AWS storage inspection webhook shared secret',
     readEnvValue(envContent, 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET') ??
-      readEnvValue(envContent, 'AWS_MALWARE_WEBHOOK_SHARED_SECRET') ??
       (await generateSecret(32)),
   );
   const serveSecret = await askWithDefault(
     'AWS file serve signing secret',
     readEnvValue(envContent, 'AWS_FILE_SERVE_SIGNING_SECRET') ?? (await generateSecret(32)),
   );
-  const uploadPresignRoleArn = await askRequired(
-    'AWS upload presign role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'upload-presign',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
+  const brokerSharedSecret = await askWithDefault(
+    'Storage broker shared secret',
+    readEnvValue(envContent, 'AWS_STORAGE_BROKER_SHARED_SECRET') ?? (await generateSecret(32)),
   );
-  const downloadPresignRoleArn = await askRequired(
-    'AWS download presign role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'download-presign',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
+  const workerSharedSecret = await askWithDefault(
+    'Storage worker shared secret',
+    readEnvValue(envContent, 'AWS_STORAGE_WORKER_SHARED_SECRET') ?? (await generateSecret(32)),
   );
-  const promotionRoleArn = await askRequired(
-    'AWS promotion role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_PROMOTION') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'promotion',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
+  const convexCallbackSharedSecret = await askWithDefault(
+    'Convex storage callback shared secret',
+    readEnvValue(envContent, 'AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET') ??
+      (await generateSecret(32)),
   );
-  const rejectionRoleArn = await askRequired(
-    'AWS rejection role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_REJECTION') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'rejection',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
-  );
-  const cleanupRoleArn = await askRequired(
-    'AWS cleanup role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_CLEANUP') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'cleanup',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
-  );
-  const mirrorRoleArn = await askRequired(
-    'AWS mirror role ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_MIRROR') ??
-      buildStorageRoleArn({
-        accountId: awsIdentity?.accountId,
-        awsRegion,
-        capability: 'mirror',
-        projectSlug: 'tanstack-start-template',
-        stage: 'dev',
-      }) ??
-      undefined,
-  );
-  const trustedPrincipalArn = await askRequired(
-    'AWS storage trusted principal ARN',
-    readEnvValue(envContent, 'AWS_STORAGE_TRUSTED_PRINCIPAL_ARN') ?? awsIdentity?.arn ?? undefined,
-  );
+  const brokerRuntimeUrl = (
+    await ask(
+      'Storage broker runtime URL (leave empty until after infra deploy): ',
+      readEnvValue(envContent, 'STORAGE_BROKER_URL') ?? undefined,
+    )
+  ).trim();
+  const workerRuntimeUrl = (
+    await ask(
+      'Storage worker runtime URL (leave empty until after infra deploy): ',
+      readEnvValue(envContent, 'STORAGE_WORKER_URL') ?? undefined,
+    )
+  ).trim();
+  const alertEmailAddress = (
+    await ask(
+      'AWS storage alert email (leave empty to disable prod SNS email alerts): ',
+      readEnvValue(envContent, 'AWS_STORAGE_ALERT_EMAIL') ?? undefined,
+    )
+  ).trim();
 
   envContent = upsertStructuredEnvValue(envContent, 'AWS_REGION', awsRegion, {
     sectionMarker: '# STORAGE',
@@ -689,43 +621,42 @@ async function main() {
   });
   envContent = upsertStructuredEnvValue(
     envContent,
-    'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
-    uploadPresignRoleArn,
+    'AWS_STORAGE_BROKER_SHARED_SECRET',
+    maybeQuote(brokerSharedSecret),
     { sectionMarker: '# STORAGE' },
   );
   envContent = upsertStructuredEnvValue(
     envContent,
-    'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
-    downloadPresignRoleArn,
+    'AWS_STORAGE_WORKER_SHARED_SECRET',
+    maybeQuote(workerSharedSecret),
     { sectionMarker: '# STORAGE' },
   );
   envContent = upsertStructuredEnvValue(
     envContent,
-    'AWS_STORAGE_ROLE_ARN_PROMOTION',
-    promotionRoleArn,
+    'AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
+    maybeQuote(convexCallbackSharedSecret),
     { sectionMarker: '# STORAGE' },
   );
-  envContent = upsertStructuredEnvValue(
-    envContent,
-    'AWS_STORAGE_ROLE_ARN_REJECTION',
-    rejectionRoleArn,
-    { sectionMarker: '# STORAGE' },
-  );
-  envContent = upsertStructuredEnvValue(
-    envContent,
-    'AWS_STORAGE_ROLE_ARN_CLEANUP',
-    cleanupRoleArn,
-    { sectionMarker: '# STORAGE' },
-  );
-  envContent = upsertStructuredEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_MIRROR', mirrorRoleArn, {
-    sectionMarker: '# STORAGE',
-  });
-  envContent = upsertStructuredEnvValue(
-    envContent,
-    'AWS_STORAGE_TRUSTED_PRINCIPAL_ARN',
-    trustedPrincipalArn,
-    { sectionMarker: '# STORAGE' },
-  );
+  if (brokerRuntimeUrl) {
+    envContent = upsertStructuredEnvValue(envContent, 'STORAGE_BROKER_URL', brokerRuntimeUrl, {
+      sectionMarker: '# STORAGE',
+    });
+  }
+  if (workerRuntimeUrl) {
+    envContent = upsertStructuredEnvValue(envContent, 'STORAGE_WORKER_URL', workerRuntimeUrl, {
+      sectionMarker: '# STORAGE',
+    });
+  }
+  if (alertEmailAddress) {
+    envContent = upsertStructuredEnvValue(
+      envContent,
+      'AWS_STORAGE_ALERT_EMAIL',
+      alertEmailAddress,
+      {
+        sectionMarker: '# STORAGE',
+      },
+    );
+  }
 
   writeFileSync(envPath, envContent, 'utf8');
   changedLocally.push(`Updated ${envPath} with storage env for ${storageMode}`);
@@ -750,13 +681,18 @@ async function main() {
   console.log('   AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_FILE_SERVE_SIGNING_SECRET=[set]');
-  console.log(`   AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN=${uploadPresignRoleArn}`);
-  console.log(`   AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN=${downloadPresignRoleArn}`);
-  console.log(`   AWS_STORAGE_ROLE_ARN_PROMOTION=${promotionRoleArn}`);
-  console.log(`   AWS_STORAGE_ROLE_ARN_REJECTION=${rejectionRoleArn}`);
-  console.log(`   AWS_STORAGE_ROLE_ARN_CLEANUP=${cleanupRoleArn}`);
-  console.log(`   AWS_STORAGE_ROLE_ARN_MIRROR=${mirrorRoleArn}`);
-  console.log(`   AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=${trustedPrincipalArn}`);
+  console.log('   AWS_STORAGE_BROKER_SHARED_SECRET=[set]');
+  console.log('   AWS_STORAGE_WORKER_SHARED_SECRET=[set]');
+  console.log('   AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET=[set]');
+  if (brokerRuntimeUrl) {
+    console.log(`   STORAGE_BROKER_URL=${brokerRuntimeUrl}`);
+  }
+  if (workerRuntimeUrl) {
+    console.log(`   STORAGE_WORKER_URL=${workerRuntimeUrl}`);
+  }
+  if (alertEmailAddress) {
+    console.log(`   AWS_STORAGE_ALERT_EMAIL=${alertEmailAddress}`);
+  }
   console.log(`   CONVEX_SITE_URL=${convexSiteUrl}`);
   console.log('');
   console.log(
@@ -766,6 +702,7 @@ async function main() {
     `AWS region: ${awsRegion}`,
     `AWS profile: ${awsProfile ?? 'current shell/default'}`,
     `Quarantine bucket: ${buckets.quarantine}`,
+    `Alert email: ${alertEmailAddress || 'disabled'}`,
     `Convex site URL: ${convexSiteUrl}`,
   ]);
 
@@ -785,45 +722,52 @@ async function main() {
     console.log(`   pnpm exec convex env set AWS_S3_CLEAN_KMS_KEY_ARN "${cleanKmsKeyArn}"`);
     console.log(`   pnpm exec convex env set AWS_S3_REJECTED_KMS_KEY_ARN "${rejectedKmsKeyArn}"`);
     console.log(`   pnpm exec convex env set AWS_S3_MIRROR_KMS_KEY_ARN "${mirrorKmsKeyArn}"`);
-    console.log('   pnpm exec convex env set AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET "<secret>"');
-    console.log(
-      '   pnpm exec convex env set AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET "<secret>"',
-    );
     console.log('   pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET "<secret>"');
+    console.log('   pnpm exec convex env set STORAGE_BROKER_URL "<broker-url>"');
+    console.log('   pnpm exec convex env set STORAGE_BROKER_SHARED_SECRET "<secret>"');
+    console.log('   pnpm exec convex env set STORAGE_WORKER_URL "<worker-url>"');
+    console.log('   pnpm exec convex env set STORAGE_WORKER_SHARED_SECRET "<secret>"');
+    console.log('   pnpm exec convex env set CONVEX_STORAGE_CALLBACK_SHARED_SECRET "<secret>"');
   } else {
-    try {
-      const convexEnvValues = {
-        FILE_STORAGE_BACKEND: storageMode,
-        AWS_REGION: awsRegion,
-        AWS_S3_QUARANTINE_BUCKET: buckets.quarantine,
-        AWS_S3_CLEAN_BUCKET: buckets.clean,
-        AWS_S3_REJECTED_BUCKET: buckets.rejected,
-        AWS_S3_MIRROR_BUCKET: buckets.mirror,
-        AWS_S3_QUARANTINE_KMS_KEY_ARN: quarantineKmsKeyArn,
-        AWS_S3_CLEAN_KMS_KEY_ARN: cleanKmsKeyArn,
-        AWS_S3_REJECTED_KMS_KEY_ARN: rejectedKmsKeyArn,
-        AWS_S3_MIRROR_KMS_KEY_ARN: mirrorKmsKeyArn,
-        AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: guardDutyWebhookSecret,
-        AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: inspectionWebhookSecret,
-        AWS_FILE_SERVE_SIGNING_SECRET: serveSecret,
-        AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN: uploadPresignRoleArn,
-        AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN: downloadPresignRoleArn,
-        AWS_STORAGE_ROLE_ARN_PROMOTION: promotionRoleArn,
-        AWS_STORAGE_ROLE_ARN_REJECTION: rejectionRoleArn,
-        AWS_STORAGE_ROLE_ARN_CLEANUP: cleanupRoleArn,
-        AWS_STORAGE_ROLE_ARN_MIRROR: mirrorRoleArn,
-      } satisfies Record<(typeof CONVEX_SYNC_STORAGE_ENV_NAMES)[number], string>;
-
-      for (const name of CONVEX_SYNC_STORAGE_ENV_NAMES) {
-        trySetConvexEnv(name, convexEnvValues[name]);
-      }
-      console.log('\n✅ Convex env synced.');
-      changedRemotely.push('Updated Convex dev env for storage backend/AWS settings');
-    } catch {
-      console.log('\n⚠️  Automatic Convex env sync failed.');
+    if (!brokerRuntimeUrl || !workerRuntimeUrl) {
       console.log(
-        '   Your .env.local is configured, but you still need to set the storage env vars in Convex.',
+        '\n⚠️  Skipping Convex env sync because broker/worker runtime URLs are not set yet.',
       );
+      console.log(
+        '   Deploy the storage stack, capture the StorageBrokerRuntimeUrl and StorageWorkerRuntimeUrl outputs, then rerun this script or set the Convex env vars manually.',
+      );
+    } else {
+      try {
+        const convexEnvValues = {
+          FILE_STORAGE_BACKEND: storageMode,
+          AWS_REGION: awsRegion,
+          AWS_S3_QUARANTINE_BUCKET: buckets.quarantine,
+          AWS_S3_CLEAN_BUCKET: buckets.clean,
+          AWS_S3_REJECTED_BUCKET: buckets.rejected,
+          AWS_S3_MIRROR_BUCKET: buckets.mirror,
+          AWS_S3_QUARANTINE_KMS_KEY_ARN: quarantineKmsKeyArn,
+          AWS_S3_CLEAN_KMS_KEY_ARN: cleanKmsKeyArn,
+          AWS_S3_REJECTED_KMS_KEY_ARN: rejectedKmsKeyArn,
+          AWS_S3_MIRROR_KMS_KEY_ARN: mirrorKmsKeyArn,
+          AWS_FILE_SERVE_SIGNING_SECRET: serveSecret,
+          STORAGE_BROKER_URL: brokerRuntimeUrl,
+          STORAGE_BROKER_SHARED_SECRET: brokerSharedSecret,
+          STORAGE_WORKER_URL: workerRuntimeUrl,
+          STORAGE_WORKER_SHARED_SECRET: workerSharedSecret,
+          CONVEX_STORAGE_CALLBACK_SHARED_SECRET: convexCallbackSharedSecret,
+        } satisfies Record<(typeof CONVEX_SYNC_STORAGE_ENV_NAMES)[number], string>;
+
+        for (const name of CONVEX_SYNC_STORAGE_ENV_NAMES) {
+          trySetConvexEnv(name, convexEnvValues[name]);
+        }
+        console.log('\n✅ Convex env synced.');
+        changedRemotely.push('Updated Convex dev env for storage backend/AWS settings');
+      } catch {
+        console.log('\n⚠️  Automatic Convex env sync failed.');
+        console.log(
+          '   Your .env.local is configured, but you still need to set the storage env vars in Convex.',
+        );
+      }
     }
   }
 
@@ -832,10 +776,14 @@ async function main() {
     awsRegion,
     awsProfile: awsProfile ?? undefined,
     buckets,
+    brokerSharedSecret,
+    convexCallbackSharedSecret,
     convexSiteUrl,
+    fileServeSigningSecret: serveSecret,
     guardDutyWebhookSecret,
     inspectionWebhookSecret,
-    trustedPrincipalArn,
+    alertEmailAddress: alertEmailAddress || undefined,
+    workerSharedSecret,
   });
 
   console.log('Derived storage deploy env for this local setup:');
@@ -844,16 +792,17 @@ async function main() {
     console.log(`   AWS_PROFILE=${storageDeployEnv.AWS_PROFILE}`);
   }
   console.log(
-    `   AWS_CONVEX_GUARDDUTY_WEBHOOK_URL=${storageDeployEnv.AWS_CONVEX_GUARDDUTY_WEBHOOK_URL}`,
+    `   AWS_CONVEX_STORAGE_CALLBACK_BASE_URL=${storageDeployEnv.AWS_CONVEX_STORAGE_CALLBACK_BASE_URL}`,
   );
-  console.log(
-    `   AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL=${storageDeployEnv.AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL}`,
-  );
+  console.log('   AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET=[set]');
+  console.log('   AWS_FILE_SERVE_SIGNING_SECRET=[set]');
   console.log('   AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=[set]');
-  console.log(
-    `   AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=${storageDeployEnv.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN}`,
-  );
+  console.log('   AWS_STORAGE_BROKER_SHARED_SECRET=[set]');
+  console.log('   AWS_STORAGE_WORKER_SHARED_SECRET=[set]');
+  if (storageDeployEnv.AWS_STORAGE_ALERT_EMAIL) {
+    console.log(`   AWS_STORAGE_ALERT_EMAIL=${storageDeployEnv.AWS_STORAGE_ALERT_EMAIL}`);
+  }
   console.log(`   AWS_S3_QUARANTINE_BUCKET_NAME=${storageDeployEnv.AWS_S3_QUARANTINE_BUCKET_NAME}`);
   console.log(`   AWS_S3_CLEAN_BUCKET_NAME=${storageDeployEnv.AWS_S3_CLEAN_BUCKET_NAME}`);
   console.log(`   AWS_S3_REJECTED_BUCKET_NAME=${storageDeployEnv.AWS_S3_REJECTED_BUCKET_NAME}`);

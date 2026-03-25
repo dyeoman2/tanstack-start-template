@@ -60,7 +60,10 @@ import { recordUserAuditEvent } from '../lib/auditEmitters';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
 type BetterAuthUserRecord = BetterAuthDoc<'user'> & Partial<BetterAuthSessionUser>;
-type BetterAuthSessionRecord = BetterAuthDoc<'session'> & Partial<BetterAuthSessionData>;
+type BetterAuthSessionRecord = BetterAuthDoc<'session'> &
+  Partial<BetterAuthSessionData> & {
+    mfaVerified?: boolean | null;
+  };
 
 export type ACCESS = OrganizationAccess;
 
@@ -119,7 +122,7 @@ export type OrganizationPermissionDecision = {
 };
 
 type AuthorizationFailure = {
-  code: 'FORBIDDEN' | 'NOT_FOUND';
+  code: 'FORBIDDEN' | 'MFA_REQUIRED' | 'NOT_FOUND';
   reason: string;
 };
 
@@ -151,6 +154,7 @@ function serializeOrganizationPermissionDecision(decision: OrganizationPermissio
         impersonatedBy: decision.user.authSession.impersonatedBy,
         activeOrganizationId: decision.user.authSession.activeOrganizationId,
         authMethod: decision.user.authSession.authMethod,
+        mfaVerified: decision.user.authSession.mfaVerified,
         enterpriseOrganizationId: decision.user.authSession.enterpriseOrganizationId,
         enterpriseProviderKey: decision.user.authSession.enterpriseProviderKey,
         enterpriseProtocol: decision.user.authSession.enterpriseProtocol,
@@ -354,6 +358,29 @@ function buildAuthAssuranceState(input: {
   };
 }
 
+function isCurrentSessionMfaSatisfied(user: Pick<CurrentUser, 'authSession'>): boolean {
+  if (user.authSession?.authMethod === 'passkey') {
+    return true;
+  }
+
+  return user.authSession?.mfaVerified === true;
+}
+
+function getMfaRequirementReason(input: {
+  mfaEnrolled: boolean;
+  sessionMfaSatisfied: boolean;
+}): string | null {
+  if (!input.mfaEnrolled) {
+    return 'Multi-factor authentication setup is required';
+  }
+
+  if (!input.sessionMfaSatisfied) {
+    return 'Multi-factor authentication is required for this session';
+  }
+
+  return null;
+}
+
 async function getCurrentAuthSessionOrNull(
   ctx: QueryCtx | MutationCtx,
 ): Promise<BetterAuthSessionRecord | null> {
@@ -515,6 +542,18 @@ export async function getVerifiedCurrentUserOrThrow(
     throwConvexError('FORBIDDEN', 'Email verification required');
   }
 
+  const authPolicy = evaluateAuthPolicy({
+    assurance: await resolveUserAuthAssuranceState(ctx, user),
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  });
+  const reason = getMfaRequirementReason({
+    mfaEnrolled: !authPolicy.requiresMfaSetup,
+    sessionMfaSatisfied: isCurrentSessionMfaSatisfied(user),
+  });
+  if (reason) {
+    throwConvexError('MFA_REQUIRED', reason);
+  }
+
   return user;
 }
 
@@ -531,6 +570,18 @@ export async function getVerifiedCurrentUserFromActionOrThrow(
 
   if (requiresVerifiedEmail(user.authUser)) {
     throwConvexError('FORBIDDEN', 'Email verification required');
+  }
+
+  const authPolicy = evaluateAuthPolicy({
+    assurance: await resolveUserAuthAssuranceState(ctx, user),
+    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  });
+  const reason = getMfaRequirementReason({
+    mfaEnrolled: !authPolicy.requiresMfaSetup,
+    sessionMfaSatisfied: isCurrentSessionMfaSatisfied(user),
+  });
+  if (reason) {
+    throwConvexError('MFA_REQUIRED', reason);
   }
 
   return user;
@@ -596,7 +647,7 @@ async function ensureCurrentUserHasMfaForSiteAdminOrThrow(
   });
 
   if (authPolicy.requiresMfaSetup) {
-    throwConvexError('FORBIDDEN', 'Multi-factor authentication is required for site admin access');
+    throwConvexError('MFA_REQUIRED', 'Multi-factor authentication setup is required');
   }
 
   return user;
@@ -640,7 +691,7 @@ export async function checkOrganizationAccess(
   userCtx?: { user: CurrentUser },
   options: OrganizationAccessOptions = {},
 ): Promise<ACCESS> {
-  const user = userCtx?.user ?? (await getCurrentUserOrThrow(ctx));
+  const user = userCtx?.user ?? (await getVerifiedCurrentUserOrThrow(ctx));
   const bypassSiteAdmin = options.bypassSiteAdmin ?? true;
 
   if (bypassSiteAdmin && user.isSiteAdmin) {
@@ -823,7 +874,7 @@ async function buildOrganizationPermissionDecision(
       enterpriseSatisfied: enterpriseAccess.allowed,
       enterpriseSatisfactionPath: enterpriseAccess.satisfactionPath,
       enterpriseStatus: enterpriseAccess.status,
-      mfaSatisfied: !authPolicy.requiresMfaSetup,
+      mfaSatisfied: !authPolicy.requiresMfaSetup && isCurrentSessionMfaSatisfied(user),
       recentStepUpSatisfied: stepUpEvaluation.required ? stepUpEvaluation.satisfied : true,
       supportGrantId: enterpriseAccess.supportGrant?.id ?? null,
       supportGrantScope: enterpriseAccess.supportGrant?.scope ?? null,
@@ -840,8 +891,8 @@ async function buildOrganizationPermissionDecision(
   if (user.isSiteAdmin && canSiteAdminPerform(input.permission)) {
     if (!decision.assurance.mfaSatisfied) {
       return {
-        code: 'FORBIDDEN',
-        reason: 'Multi-factor authentication is required for site admin access',
+        code: 'MFA_REQUIRED',
+        reason: 'Multi-factor authentication is required for this session',
       };
     }
     if (!decision.assurance.recentStepUpSatisfied) {
@@ -877,6 +928,13 @@ async function buildOrganizationPermissionDecision(
     return {
       code: 'FORBIDDEN',
       reason: enterpriseAccess.reason ?? 'This organization requires enterprise sign-in',
+    };
+  }
+
+  if (!decision.assurance.mfaSatisfied) {
+    return {
+      code: 'MFA_REQUIRED',
+      reason: 'Multi-factor authentication is required for this session',
     };
   }
 
@@ -1393,12 +1451,12 @@ export const resolveStorageReadAccess = query({
           };
         }
 
-        if (authPolicy.requiresMfaSetup) {
+        if (authPolicy.requiresMfaSetup || !isCurrentSessionMfaSatisfied(user)) {
           return {
             allowed: false,
             organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
             permission: 'manageEvidence' as const,
-            reason: 'Multi-factor authentication is required for site admin access',
+            reason: 'Multi-factor authentication is required for this session',
             supportGrantId: null,
             supportGrantScope: null,
           };

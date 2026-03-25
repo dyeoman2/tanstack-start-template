@@ -190,14 +190,11 @@ export function getRequiredStorageDrEnvKeys(envVars: Record<string, string>): st
       'AWS_S3_REJECTED_KMS_KEY_ARN',
       'AWS_S3_MIRROR_KMS_KEY_ARN',
       'AWS_FILE_SERVE_SIGNING_SECRET',
-      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
-      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
-      'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
-      'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
-      'AWS_STORAGE_ROLE_ARN_PROMOTION',
-      'AWS_STORAGE_ROLE_ARN_REJECTION',
-      'AWS_STORAGE_ROLE_ARN_CLEANUP',
-      'AWS_STORAGE_ROLE_ARN_MIRROR',
+      'STORAGE_BROKER_URL',
+      'STORAGE_BROKER_SHARED_SECRET',
+      'STORAGE_WORKER_URL',
+      'STORAGE_WORKER_SHARED_SECRET',
+      'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
     ];
   }
 
@@ -236,19 +233,10 @@ export function buildRequiredNetlifyDrEnvVars(
 ): Record<string, string> {
   const result: Record<string, string> = {
     APP_NAME: envVars.APP_NAME?.trim() || 'TanStack Start Template DR',
-    BETTER_AUTH_SECRET: envVars.BETTER_AUTH_SECRET?.trim() || '',
     BETTER_AUTH_URL: origins.frontendOrigin,
-    CONVEX_SITE_URL: origins.siteOrigin,
     VITE_CONVEX_URL: origins.backendOrigin,
+    FILE_STORAGE_BACKEND: envVars.FILE_STORAGE_BACKEND?.trim() || 'convex',
   };
-
-  const storageKeys = getRequiredStorageDrEnvKeys(envVars);
-  for (const key of storageKeys) {
-    const value = envVars[key]?.trim();
-    if (value) {
-      result[key] = key === 'CONVEX_SITE_URL' ? origins.siteOrigin : value;
-    }
-  }
 
   return result;
 }

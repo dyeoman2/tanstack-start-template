@@ -3,6 +3,7 @@ import { ConvexError } from 'convex/values';
 export type AuthErrorCode =
   | 'UNAUTHENTICATED'
   | 'FORBIDDEN'
+  | 'MFA_REQUIRED'
   | 'ADMIN_REQUIRED'
   | 'NOT_FOUND'
   | 'VALIDATION'

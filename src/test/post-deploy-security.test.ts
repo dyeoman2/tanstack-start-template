@@ -38,9 +38,11 @@ describe('runPostDeploySecurityChecks', () => {
   it('passes when live headers match on all privacy-sensitive surfaces', async () => {
     const fetchMock = vi
       .fn()
-      .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0'))
-      .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0'))
-      .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0'));
+      .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0, private'))
+      .mockResolvedValueOnce(buildHtmlResponse('private, no-store, max-age=0'))
+      .mockResolvedValueOnce(
+        buildHtmlResponse('no-store, no-cache, must-revalidate, max-age=0, private'),
+      );
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -63,11 +65,25 @@ describe('runPostDeploySecurityChecks', () => {
         Accept: 'text/html',
       },
     });
-    expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://app.example.com/app', {
+    expect(fetchMock).toHaveBeenNthCalledWith(3, 'https://app.example.com/app/__security_probe__', {
       method: 'GET',
       headers: {
         Accept: 'text/html',
       },
+    });
+  });
+
+  it('accepts extra cache directives when required privacy tokens are present', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => buildHtmlResponse('private, no-store, must-revalidate, max-age=0')),
+    );
+
+    const { runPostDeploySecurityChecks } = await import('../../scripts/post-deploy-security.mjs');
+    await runPostDeploySecurityChecks({
+      baseUrl: 'https://app.example.com',
+      timeoutMs: 50,
+      pollIntervalMs: 1,
     });
   });
 
@@ -127,11 +143,11 @@ describe('runPostDeploySecurityChecks', () => {
     );
   });
 
-  it('fails when cache-control is wrong for a privacy-sensitive route', async () => {
+  it('fails when cache-control is missing no-store for a privacy-sensitive route', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0'))
-      .mockImplementation(async () => buildHtmlResponse('public, max-age=600'));
+      .mockImplementation(async () => buildHtmlResponse('private, max-age=0'));
 
     vi.stubGlobal('fetch', fetchMock);
 
@@ -144,7 +160,28 @@ describe('runPostDeploySecurityChecks', () => {
         pollIntervalMs: 1,
       }),
     ).rejects.toThrow(
-      'GET /register security headers did not become ready within 20ms. Last error: /register header Cache-Control mismatch. Expected "no-store, max-age=0", received "public, max-age=600"',
+      'GET /register security headers did not become ready within 20ms. Last error: /register header Cache-Control mismatch. Missing token "no-store" in "private, max-age=0"',
+    );
+  });
+
+  it('fails when cache-control is missing max-age=0 for a privacy-sensitive route', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(buildHtmlResponse('no-store, max-age=0'))
+      .mockImplementation(async () => buildHtmlResponse('private, no-store'));
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const { runPostDeploySecurityChecks } = await import('../../scripts/post-deploy-security.mjs');
+
+    await expect(
+      runPostDeploySecurityChecks({
+        baseUrl: 'https://app.example.com',
+        timeoutMs: 20,
+        pollIntervalMs: 1,
+      }),
+    ).rejects.toThrow(
+      'GET /register security headers did not become ready within 20ms. Last error: /register header Cache-Control mismatch. Missing token "max-age=0" in "private, no-store"',
     );
   });
 });

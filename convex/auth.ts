@@ -31,6 +31,7 @@ import {
   getVerifiedCurrentUserFromActionOrThrow,
   requireStepUpFromActionOrThrow,
 } from './auth/access';
+import { throwConvexError } from './auth/errors';
 import {
   assertScimManagementAccess,
   canUserSelfServeCreateOrganization,
@@ -358,9 +359,21 @@ type BetterAuthCoreApiSurface = {
     };
   }): Promise<{
     session: {
+      authMethod?: string | null;
       id: string;
       createdAt: Date | number | string;
+      mfaVerified?: boolean | null;
       updatedAt?: Date | number | string | null;
+    } | null;
+    user?: {
+      createdAt?: Date | number | string;
+      email?: string | null;
+      emailVerified?: boolean;
+      id: string;
+      name?: string | null;
+      role?: string | string[] | null;
+      twoFactorEnabled?: boolean | null;
+      updatedAt?: Date | number | string;
     } | null;
   } | null>;
   listSessions(input: { headers: Headers }): Promise<
@@ -618,6 +631,71 @@ async function runBetterAuthAction<TData>(
       ok: false,
     };
   }
+}
+
+async function getBetterAuthActionContext(ctx: ActionCtx): Promise<BetterAuthActionContext> {
+  return (await authComponent.getAuth(
+    createAuth as unknown as ConvexBetterAuthCreateAuth<DataModel>,
+    ctx,
+  )) as unknown as BetterAuthActionContext;
+}
+
+export async function getCurrentSetupAuthUserFromActionOrThrow(ctx: ActionCtx): Promise<{
+  authSession: {
+    authMethod: string | null;
+    id: string;
+    mfaVerified: boolean | null;
+  };
+  authUser: {
+    createdAt: Date | number | string;
+    email: string | null;
+    emailVerified: boolean;
+    id: string;
+    name: string | null;
+    role: string | string[] | null;
+    twoFactorEnabled: boolean;
+    updatedAt: Date | number | string | undefined;
+  };
+  authUserId: string;
+  isSiteAdmin: boolean;
+}> {
+  const { auth, headers } = await getBetterAuthActionContext(ctx);
+  const result = await auth.api.getSession({
+    headers,
+    query: {
+      disableCookieCache: true,
+    },
+  });
+
+  if (!result?.session || !result.user) {
+    throwConvexError('UNAUTHENTICATED', 'Not authenticated');
+  }
+
+  const authUserId = assertUserId(result.user, 'User ID not found in auth user');
+
+  return {
+    authSession: {
+      authMethod: typeof result.session.authMethod === 'string' ? result.session.authMethod : null,
+      id: result.session.id,
+      mfaVerified:
+        typeof result.session.mfaVerified === 'boolean' ? result.session.mfaVerified : null,
+    },
+    authUser: {
+      createdAt: result.user.createdAt ?? Date.now(),
+      email: typeof result.user.email === 'string' ? result.user.email : null,
+      emailVerified: result.user.emailVerified === true,
+      id: result.user.id,
+      name: typeof result.user.name === 'string' ? result.user.name : null,
+      role:
+        typeof result.user.role === 'string' || Array.isArray(result.user.role)
+          ? result.user.role
+          : null,
+      twoFactorEnabled: result.user.twoFactorEnabled === true,
+      updatedAt: result.user.updatedAt,
+    },
+    authUserId,
+    isSiteAdmin: deriveIsSiteAdmin(normalizeUserRole(result.user.role ?? undefined)),
+  };
 }
 
 async function getCurrentBetterAuthUserOrThrow(ctx: ActionCtx): Promise<{
@@ -2392,7 +2470,7 @@ export const beginOnboardingAuthenticatorSetup = action({
   args: {},
   returns: onboardingAuthenticatorSetupResultValidator,
   handler: async (ctx) => {
-    const currentUser = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const currentUser = await getCurrentSetupAuthUserFromActionOrThrow(ctx);
     const authUserId = currentUser.authUserId;
 
     if (currentUser.authUser.twoFactorEnabled === true) {
@@ -2440,7 +2518,11 @@ export const beginOnboardingAuthenticatorSetup = action({
     );
 
     const issuer = process.env.APP_NAME?.trim() || 'TanStack Start Template';
-    const totpURI = createTotpUri(secret, issuer, currentUser.authUser.email);
+    const totpURI = createTotpUri(
+      secret,
+      issuer,
+      currentUser.authUser.email ?? currentUser.authUserId,
+    );
 
     return {
       backupCodes,

@@ -24,6 +24,7 @@ type RoleSummary = {
 };
 
 type GenerateOptions = {
+  envOverrides?: Record<string, string>;
   outDir?: string;
   projectSlug?: string;
   stage?: 'dev' | 'prod';
@@ -58,21 +59,22 @@ function loadSynthTemplate(options: GenerateOptions = {}) {
 
   const env = {
     ...process.env,
+    ...options.envOverrides,
     AWS_REGION: 'us-west-1',
     AWS_STORAGE_PROJECT_SLUG: projectSlug,
-    AWS_CONVEX_GUARDDUTY_WEBHOOK_URL:
-      process.env.AWS_CONVEX_GUARDDUTY_WEBHOOK_URL ??
-      'https://example.convex.site/aws/guardduty-malware',
-    AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL:
-      process.env.AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL ??
-      'https://example.convex.site/aws/storage-inspection',
+    AWS_CONVEX_STORAGE_CALLBACK_BASE_URL:
+      process.env.AWS_CONVEX_STORAGE_CALLBACK_BASE_URL ?? 'https://example.convex.site',
+    AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET:
+      process.env.AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET ?? 'callback-secret',
+    AWS_FILE_SERVE_SIGNING_SECRET: process.env.AWS_FILE_SERVE_SIGNING_SECRET ?? 'file-serve-secret',
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET:
       process.env.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET ?? 'guardduty-secret',
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET:
       process.env.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET ?? 'inspection-secret',
-    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN:
-      process.env.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN ??
-      'arn:aws:iam::111111111111:role/tanstack-start-template-app',
+    AWS_STORAGE_BROKER_SHARED_SECRET:
+      process.env.AWS_STORAGE_BROKER_SHARED_SECRET ?? 'broker-secret',
+    AWS_STORAGE_WORKER_SHARED_SECRET:
+      process.env.AWS_STORAGE_WORKER_SHARED_SECRET ?? 'worker-secret',
     AWS_S3_QUARANTINE_BUCKET_NAME:
       process.env.AWS_S3_QUARANTINE_BUCKET_NAME ?? `${projectSlug}-${stage}-quarantine`,
     AWS_S3_CLEAN_BUCKET_NAME:
@@ -119,6 +121,20 @@ function loadSynthTemplate(options: GenerateOptions = {}) {
     synthOutDir,
     template,
   };
+}
+
+export function synthesizeStorageStackTemplate(options: GenerateOptions = {}) {
+  const { cleanup, synthOutDir, stackName, template } = loadSynthTemplate(options);
+  try {
+    return {
+      stackName,
+      template,
+    };
+  } finally {
+    if (cleanup) {
+      rmSync(synthOutDir, { force: true, recursive: true });
+    }
+  }
 }
 
 function collectRoleSummaries(template: {
@@ -196,32 +212,26 @@ function collectRoleSummaries(template: {
 }
 
 export function generateStorageIamReport(options: GenerateOptions = {}) {
-  const { cleanup, synthOutDir, stackName, template } = loadSynthTemplate(options);
-  try {
-    const roles = collectRoleSummaries(template);
-    const lines = [
-      '# Storage IAM Report',
-      '',
-      `Generated from synthesized stack template \`${stackName}\`.`,
-      '',
-      '| Role | Assume Principal | Effect | Actions | Resources |',
-      '| --- | --- | --- | --- | --- |',
-    ];
+  const { stackName, template } = synthesizeStorageStackTemplate(options);
+  const roles = collectRoleSummaries(template);
+  const lines = [
+    '# Storage IAM Report',
+    '',
+    `Generated from synthesized stack template \`${stackName}\`.`,
+    '',
+    '| Role | Assume Principal | Effect | Actions | Resources |',
+    '| --- | --- | --- | --- | --- |',
+  ];
 
-    for (const role of roles) {
-      for (const statement of role.statements) {
-        lines.push(
-          `| ${role.roleName} | ${role.assumePrincipal} | ${statement.effect} | ${statement.actions.sort().join('<br>')} | ${statement.resources.sort().join('<br>')} |`,
-        );
-      }
-    }
-
-    return `${lines.join('\n')}\n`.replace(/\b\d{12}\b/g, '111111111111');
-  } finally {
-    if (cleanup) {
-      rmSync(synthOutDir, { force: true, recursive: true });
+  for (const role of roles) {
+    for (const statement of role.statements) {
+      lines.push(
+        `| ${role.roleName} | ${role.assumePrincipal} | ${statement.effect} | ${statement.actions.sort().join('<br>')} | ${statement.resources.sort().join('<br>')} |`,
+      );
     }
   }
+
+  return `${lines.join('\n')}\n`.replace(/\b\d{12}\b/g, '111111111111');
 }
 
 function main() {

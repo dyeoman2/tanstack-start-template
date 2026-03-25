@@ -134,6 +134,7 @@ function getPublicExportName(callExpression) {
 
 const AUTH_GUARD_PATTERNS = [
   /\bgetVerifiedCurrent[A-Za-z0-9_]*\(\s*ctx\b/,
+  /\bgetCurrentSetupAuthUserFromActionOrThrow\(\s*ctx\b/,
   /\brequire[A-Z][A-Za-z0-9_]*\(\s*ctx\b/,
   /\brunBetterAuthAction\(\s*ctx\b/,
   /\bgetCurrent[A-Za-z0-9_]*Context(?:OrNull)?\(\s*ctx\b/,

@@ -42,7 +42,6 @@ const DEFAULT_CONTEXTS: Array<'production'> = ['production'];
 
 export function syncNetlifyProductionRuntimeAndBuildVars(
   input: NetlifyEnvSyncInput & {
-    betterAuthSecret: string;
     includeDeployPreview?: boolean;
     viteConvexUrl: string;
   },
@@ -53,13 +52,6 @@ export function syncNetlifyProductionRuntimeAndBuildVars(
       : (input.contexts ?? DEFAULT_CONTEXTS);
 
   for (const context of contexts) {
-    netlifyEnvSet({
-      ...input,
-      context,
-      key: 'BETTER_AUTH_SECRET',
-      secret: true,
-      value: input.betterAuthSecret,
-    });
     netlifyEnvSet({
       ...input,
       context,

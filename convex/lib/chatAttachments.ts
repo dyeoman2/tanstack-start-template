@@ -1,14 +1,10 @@
 import type { ParseResult } from 'papaparse';
-import type { Row } from 'read-excel-file/universal';
 
 const CANVAS_MODULE_NAME = '@napi-rs/canvas';
 const PDF_PARSE_MODULE_NAME = 'pdf-parse';
 const DOCUMENT_PROMPT_SUMMARY_CHARS = 600;
 const DOCUMENT_PROMPT_TEXT_LIMIT = 6_000;
 export const MAX_CHAT_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
-const MAX_SPREADSHEET_SHEETS = 10;
-const MAX_SPREADSHEET_ROWS = 5_000;
-const MAX_SPREADSHEET_CELLS = 50_000;
 
 const IMAGE_EXTENSION_TO_MIME = new Map<string, string>([
   ['.gif', 'image/gif'],
@@ -22,7 +18,6 @@ const DOCUMENT_EXTENSION_TO_MIME = new Map<string, string>([
   ['.csv', 'text/csv'],
   ['.pdf', 'application/pdf'],
   ['.txt', 'text/plain'],
-  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
 ]);
 
 const GENERIC_MIME_TYPES = new Set(['', 'application/octet-stream']);
@@ -174,70 +169,8 @@ async function parseCsv(blob: Blob, fileName: string) {
   });
 }
 
-async function parseExcel(blob: Blob, fileName: string) {
-  const { default: readXlsxFile, readSheetNames } = await import('read-excel-file/universal');
-  const sheetNames = await readSheetNames(blob);
-
-  if (sheetNames.length > MAX_SPREADSHEET_SHEETS) {
-    throw new Error(
-      `Spreadsheet has too many sheets. Maximum allowed is ${MAX_SPREADSHEET_SHEETS}.`,
-    );
-  }
-
-  let content = `[Excel File: ${fileName}]\n\n`;
-  let totalRows = 0;
-  let totalCells = 0;
-
-  for (const [index, sheetName] of sheetNames.entries()) {
-    const rows = await readXlsxFile(blob, { sheet: sheetName });
-    totalRows += rows.length;
-    totalCells += rows.reduce((count, row) => count + row.length, 0);
-
-    if (totalRows > MAX_SPREADSHEET_ROWS) {
-      throw new Error(`Spreadsheet has too many rows. Maximum allowed is ${MAX_SPREADSHEET_ROWS}.`);
-    }
-
-    if (totalCells > MAX_SPREADSHEET_CELLS) {
-      throw new Error(
-        `Spreadsheet has too many cells. Maximum allowed is ${MAX_SPREADSHEET_CELLS}.`,
-      );
-    }
-
-    const normalizedRows = rows.map((row: Row) =>
-      row.map((cell) => {
-        if (cell === null || cell === undefined) {
-          return '';
-        }
-
-        if (cell instanceof Date) {
-          return cell.toISOString();
-        }
-
-        return String(cell);
-      }),
-    );
-
-    content += `Sheet: ${sheetName}\n`;
-    content += `${'-'.repeat(50)}\n`;
-    content += formatRowsAsTable(normalizedRows);
-
-    if (index < sheetNames.length - 1) {
-      content += '\n';
-    }
-  }
-
-  return content;
-}
-
 function looksLikeCsv(mimeType: string, fileName: string) {
   return mimeType === 'text/csv' || fileName.endsWith('.csv');
-}
-
-function looksLikeExcel(mimeType: string, fileName: string) {
-  return (
-    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    fileName.endsWith('.xlsx')
-  );
 }
 
 function looksLikePdf(mimeType: string, fileName: string) {
@@ -254,10 +187,6 @@ export async function extractDocumentText(blob: Blob, fileName: string, mimeType
 
   if (looksLikeCsv(normalizedMimeType, normalizedFileName)) {
     return await parseCsv(blob, fileName);
-  }
-
-  if (looksLikeExcel(normalizedMimeType, normalizedFileName)) {
-    return await parseExcel(blob, fileName);
   }
 
   return await blob.text();

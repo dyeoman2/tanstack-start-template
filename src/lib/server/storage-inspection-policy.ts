@@ -36,7 +36,6 @@ const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47];
 const JPEG_SIGNATURE = [0xff, 0xd8, 0xff];
 const GIF_SIGNATURE = [0x47, 0x49, 0x46, 0x38];
 const WEBP_SIGNATURE = [0x52, 0x49, 0x46, 0x46];
-const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
 
 const MAX_SECURITY_EVIDENCE_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const PDF_TOKEN_WINDOW_BYTES = 16 * 1024;
@@ -92,10 +91,8 @@ function resolveKnownKind(mimeType: string, fileName: string): AllowedFileKind |
   if (
     normalizedMimeType === 'text/csv' ||
     normalizedMimeType === 'text/plain' ||
-    normalizedMimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
     normalizedFileName.endsWith('.csv') ||
-    normalizedFileName.endsWith('.txt') ||
-    normalizedFileName.endsWith('.xlsx')
+    normalizedFileName.endsWith('.txt')
   ) {
     return 'document';
   }
@@ -129,13 +126,6 @@ function signatureMatches(bytes: Uint8Array, mimeType: string, fileName: string)
 
   if (normalizedMimeType === 'image/webp' || normalizedFileName.endsWith('.webp')) {
     return startsWithSignature(bytes, WEBP_SIGNATURE);
-  }
-
-  if (
-    normalizedMimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-    normalizedFileName.endsWith('.xlsx')
-  ) {
-    return startsWithSignature(bytes, ZIP_SIGNATURE);
   }
 
   if (normalizedMimeType === 'text/plain' || normalizedMimeType === 'text/csv') {

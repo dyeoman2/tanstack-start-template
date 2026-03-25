@@ -116,14 +116,11 @@ describe('storage helpers', () => {
       'AWS_S3_REJECTED_KMS_KEY_ARN',
       'AWS_S3_MIRROR_KMS_KEY_ARN',
       'AWS_FILE_SERVE_SIGNING_SECRET',
-      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
-      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
-      'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
-      'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
-      'AWS_STORAGE_ROLE_ARN_PROMOTION',
-      'AWS_STORAGE_ROLE_ARN_REJECTION',
-      'AWS_STORAGE_ROLE_ARN_CLEANUP',
-      'AWS_STORAGE_ROLE_ARN_MIRROR',
+      'STORAGE_BROKER_URL',
+      'STORAGE_BROKER_SHARED_SECRET',
+      'STORAGE_WORKER_URL',
+      'STORAGE_WORKER_SHARED_SECRET',
+      'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
     ]);
   });
 
@@ -152,7 +149,6 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       buildRequiredNetlifyDrEnvVars(
         {
           APP_NAME: 'Demo',
-          BETTER_AUTH_SECRET: 'secret',
           FILE_STORAGE_BACKEND: 's3-primary',
           AWS_REGION: 'us-west-1',
           AWS_S3_QUARANTINE_BUCKET: 'bucket-quarantine',
@@ -167,15 +163,12 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
             'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-rejected',
           AWS_S3_MIRROR_KMS_KEY_ARN:
             'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-mirror',
-          AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: 'guardduty',
-          AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: 'inspection',
           AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
-          AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN: 'arn:aws:iam::123:role/upload',
-          AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN: 'arn:aws:iam::123:role/download',
-          AWS_STORAGE_ROLE_ARN_PROMOTION: 'arn:aws:iam::123:role/promotion',
-          AWS_STORAGE_ROLE_ARN_REJECTION: 'arn:aws:iam::123:role/rejection',
-          AWS_STORAGE_ROLE_ARN_CLEANUP: 'arn:aws:iam::123:role/cleanup',
-          AWS_STORAGE_ROLE_ARN_MIRROR: 'arn:aws:iam::123:role/mirror',
+          STORAGE_BROKER_URL: 'https://broker.example.com',
+          STORAGE_BROKER_SHARED_SECRET: 'broker-secret',
+          STORAGE_WORKER_URL: 'https://worker.example.com',
+          STORAGE_WORKER_SHARED_SECRET: 'worker-secret',
+          CONVEX_STORAGE_CALLBACK_SHARED_SECRET: 'convex-callback-secret',
         },
         {
           backendOrigin: 'https://dr-backend.example.com',
@@ -185,33 +178,9 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       ),
     ).toMatchObject({
       APP_NAME: 'Demo',
-      BETTER_AUTH_SECRET: 'secret',
       BETTER_AUTH_URL: 'https://dr.example.com',
-      CONVEX_SITE_URL: 'https://dr-site.example.com',
       VITE_CONVEX_URL: 'https://dr-backend.example.com',
       FILE_STORAGE_BACKEND: 's3-primary',
-      AWS_REGION: 'us-west-1',
-      AWS_S3_QUARANTINE_BUCKET: 'bucket-quarantine',
-      AWS_S3_CLEAN_BUCKET: 'bucket-clean',
-      AWS_S3_REJECTED_BUCKET: 'bucket-rejected',
-      AWS_S3_MIRROR_BUCKET: 'bucket-mirror',
-      AWS_S3_QUARANTINE_KMS_KEY_ARN:
-        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-quarantine',
-      AWS_S3_CLEAN_KMS_KEY_ARN:
-        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-clean',
-      AWS_S3_REJECTED_KMS_KEY_ARN:
-        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-rejected',
-      AWS_S3_MIRROR_KMS_KEY_ARN:
-        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-mirror',
-      AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: 'guardduty',
-      AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: 'inspection',
-      AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
-      AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN: 'arn:aws:iam::123:role/upload',
-      AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN: 'arn:aws:iam::123:role/download',
-      AWS_STORAGE_ROLE_ARN_PROMOTION: 'arn:aws:iam::123:role/promotion',
-      AWS_STORAGE_ROLE_ARN_REJECTION: 'arn:aws:iam::123:role/rejection',
-      AWS_STORAGE_ROLE_ARN_CLEANUP: 'arn:aws:iam::123:role/cleanup',
-      AWS_STORAGE_ROLE_ARN_MIRROR: 'arn:aws:iam::123:role/mirror',
     });
   });
 });

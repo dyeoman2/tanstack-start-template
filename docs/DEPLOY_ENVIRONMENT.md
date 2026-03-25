@@ -76,10 +76,9 @@ For production Convex, add `-- --prod` to that command.
 
 Production builds and SSR need:
 
-- `BETTER_AUTH_SECRET` (same secret as Convex production)
 - `VITE_CONVEX_URL`
 
-`pnpm run setup:prod` can push these to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
+`pnpm run setup:prod` can push this to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
 
 ### Creating a site from the CLI
 
@@ -88,7 +87,6 @@ Netlify supports creating sites via the CLI/API (this repo already does that for
 You can also set them in the Netlify UI or with:
 
 ```bash
-npx netlify env:set BETTER_AUTH_SECRET '<secret>' --context production --secret
 npx netlify env:set VITE_CONVEX_URL 'https://<deployment>.convex.cloud' --context production
 ```
 
@@ -154,14 +152,11 @@ For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is mi
 - `AWS_S3_REJECTED_KMS_KEY_ARN`
 - `AWS_S3_MIRROR_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
-- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
-- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
-- `AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN`
-- `AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN`
-- `AWS_STORAGE_ROLE_ARN_PROMOTION`
-- `AWS_STORAGE_ROLE_ARN_REJECTION`
-- `AWS_STORAGE_ROLE_ARN_CLEANUP`
-- `AWS_STORAGE_ROLE_ARN_MIRROR`
+- `STORAGE_BROKER_URL`
+- `STORAGE_BROKER_SHARED_SECRET`
+- `STORAGE_WORKER_URL`
+- `STORAGE_WORKER_SHARED_SECRET`
+- `CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
 
 It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
 
@@ -175,9 +170,18 @@ If immutable audit archiving is enabled, `deploy:doctor` also requires:
 
 For AWS storage infrastructure preview/deploy, the operator environment also needs:
 
-- `AWS_STORAGE_TRUSTED_PRINCIPAL_ARN`
+- `AWS_FILE_SERVE_SIGNING_SECRET`
+- `AWS_STORAGE_BROKER_SHARED_SECRET`
+- `AWS_STORAGE_WORKER_SHARED_SECRET`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
+- `AWS_CONVEX_STORAGE_CALLBACK_BASE_URL`
+- `AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
+- optional `AWS_STORAGE_ALERT_EMAIL`
 
-The storage CDK stack uses that ARN as the only principal allowed to assume the per-capability storage roles.
+The storage CDK stack creates dedicated broker and worker runtime roles and scopes the
+per-capability storage roles so only those runtime roles can assume them.
+When `AWS_STORAGE_ALERT_EMAIL` is set for production storage deploys, the stack creates an SNS Standard topic with an email subscription and wires the storage alarms to it.
 
 ### `setup:prod` flags
 

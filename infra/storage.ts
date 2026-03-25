@@ -68,9 +68,13 @@ const quarantineBucket = requireEnv('AWS_S3_QUARANTINE_BUCKET');
 const cleanBucket = requireEnv('AWS_S3_CLEAN_BUCKET');
 const rejectedBucket = requireEnv('AWS_S3_REJECTED_BUCKET');
 const mirrorBucket = requireEnv('AWS_S3_MIRROR_BUCKET');
+const fileServeSigningSecret = requireEnv('AWS_FILE_SERVE_SIGNING_SECRET');
+const brokerSharedSecret = requireEnv('AWS_STORAGE_BROKER_SHARED_SECRET');
+const workerSharedSecret = requireEnv('AWS_STORAGE_WORKER_SHARED_SECRET');
+const convexStorageCallbackSharedSecret = requireEnv('AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET');
 const guardDutyWebhookSharedSecret = requireEnv('AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET');
 const inspectionWebhookSharedSecret = requireEnv('AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET');
-const storageTrustedPrincipalArn = requireEnv('AWS_STORAGE_TRUSTED_PRINCIPAL_ARN');
+const storageAlertEmail = process.env.AWS_STORAGE_ALERT_EMAIL?.trim() || '';
 const convexSiteUrl = requireEnv('CONVEX_SITE_URL');
 const awsRegion = requireEnv('AWS_REGION');
 
@@ -89,11 +93,14 @@ const result = spawnSync('pnpm', cdkArgs, {
     AWS_REGION: awsRegion,
     AWS_STORAGE_PROJECT_SLUG: projectSlug,
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || awsRegion,
-    AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/guardduty-malware`,
-    AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/storage-inspection`,
+    AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(convexSiteUrl),
+    AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET: convexStorageCallbackSharedSecret,
+    AWS_FILE_SERVE_SIGNING_SECRET: fileServeSigningSecret,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: guardDutyWebhookSharedSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: inspectionWebhookSharedSecret,
-    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN: storageTrustedPrincipalArn,
+    ...(storageAlertEmail ? { AWS_STORAGE_ALERT_EMAIL: storageAlertEmail } : {}),
+    AWS_STORAGE_BROKER_SHARED_SECRET: brokerSharedSecret,
+    AWS_STORAGE_WORKER_SHARED_SECRET: workerSharedSecret,
     AWS_S3_QUARANTINE_BUCKET_NAME: quarantineBucket,
     AWS_S3_CLEAN_BUCKET_NAME: cleanBucket,
     AWS_S3_REJECTED_BUCKET_NAME: rejectedBucket,

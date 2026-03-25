@@ -3,13 +3,8 @@ import type { ChatAttachmentKind, ChatComposerPart } from '~/features/chat/types
 
 const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
 const SUPPORTED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const SUPPORTED_DOCUMENT_MIME_TYPES = [
-  'text/plain',
-  'text/csv',
-  'application/pdf',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-];
-const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf', '.xlsx'];
+const SUPPORTED_DOCUMENT_MIME_TYPES = ['text/plain', 'text/csv', 'application/pdf'];
+const DOCUMENT_EXTENSIONS = ['.txt', '.csv', '.pdf'];
 const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
   ['.jpg', 'image/jpeg'],
   ['.jpeg', 'image/jpeg'],
@@ -19,7 +14,6 @@ const EXTENSION_TO_MIME_TYPE = new Map<string, string>([
   ['.txt', 'text/plain'],
   ['.csv', 'text/csv'],
   ['.pdf', 'application/pdf'],
-  ['.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
 ]);
 
 export type UploadedImage = { image: string; mimeType: string; name?: string };

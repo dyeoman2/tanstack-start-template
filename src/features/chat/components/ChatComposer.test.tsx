@@ -134,6 +134,16 @@ describe('ChatComposer', () => {
     expect(screen.getByLabelText('Message')).toHaveFocus();
   });
 
+  it('advertises only the narrowed attachment allowlist', () => {
+    const { container } = renderChatComposer();
+
+    expect(container.querySelector('input[type="file"]')).toHaveAttribute(
+      'accept',
+      '.jpg,.jpeg,.png,.gif,.webp,.txt,.csv,.pdf,image/jpeg,image/png,image/gif,image/webp,text/plain,text/csv,application/pdf',
+    );
+    expect(screen.getByText('Allowed: PDF, TXT, CSV, JPG, PNG, GIF, WEBP')).toBeInTheDocument();
+  });
+
   it('loads the main composer into edit mode and saves through the edit callback', async () => {
     const user = userEvent.setup();
     const onSubmitEdit = vi.fn().mockResolvedValue(undefined);

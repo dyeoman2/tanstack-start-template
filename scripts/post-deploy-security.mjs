@@ -12,9 +12,9 @@ const REQUIRED_HARDENING_HEADERS = {
 };
 
 const REQUIRED_CACHE_CONTROL_BY_PATH = {
-  '/': 'no-store, max-age=0',
-  '/register': 'no-store, max-age=0',
-  '/app': 'no-store, max-age=0',
+  '/': ['no-store', 'max-age=0'],
+  '/register': ['no-store', 'max-age=0'],
+  '/app/__security_probe__': ['no-store', 'max-age=0'],
 };
 
 const STRICT_TRANSPORT_SECURITY_VALUE = 'max-age=31536000; includeSubDomains; preload';
@@ -68,6 +68,23 @@ function expectHeader(headers, pathname, headerName, expectedValue) {
   }
 }
 
+function expectCacheControl(headers, pathname, expectedTokens) {
+  const actualValue = headers.get('Cache-Control');
+  if (!actualValue) {
+    throw new Error(
+      `${pathname} header Cache-Control mismatch. Expected tokens "${expectedTokens.join(', ')}", received "<missing>"`,
+    );
+  }
+
+  const normalized = actualValue.toLowerCase();
+  const missingToken = expectedTokens.find((token) => !normalized.includes(token.toLowerCase()));
+  if (missingToken) {
+    throw new Error(
+      `${pathname} header Cache-Control mismatch. Missing token "${missingToken}" in "${actualValue}"`,
+    );
+  }
+}
+
 async function expectSecurityHeaders(baseUrl, pathname) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: 'GET',
@@ -93,12 +110,7 @@ async function expectSecurityHeaders(baseUrl, pathname) {
     );
   }
 
-  expectHeader(
-    response.headers,
-    pathname,
-    'Cache-Control',
-    REQUIRED_CACHE_CONTROL_BY_PATH[pathname],
-  );
+  expectCacheControl(response.headers, pathname, REQUIRED_CACHE_CONTROL_BY_PATH[pathname]);
 }
 
 async function waitForCheck(label, check, timeoutMs, pollIntervalMs) {

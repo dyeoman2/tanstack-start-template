@@ -101,6 +101,22 @@ describe('authorized helpers', () => {
     });
   });
 
+  it('fails closed before organization lookup when the session is not MFA-assured', async () => {
+    getVerifiedCurrentUserOrThrowMock.mockRejectedValue(
+      new ConvexError({
+        code: 'MFA_REQUIRED',
+        message: 'Multi-factor authentication is required for this session',
+      }),
+    );
+
+    await expect(authorizeOrganizationView({} as never, 'org_1')).rejects.toMatchObject({
+      data: {
+        code: 'MFA_REQUIRED',
+      },
+    });
+    expect(checkOrganizationAccessMock).not.toHaveBeenCalled();
+  });
+
   it('allows site admins through org admin authorization without membership', async () => {
     const siteAdmin = {
       ...baseUser,

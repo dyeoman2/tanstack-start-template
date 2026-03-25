@@ -20,14 +20,13 @@ import {
   mutation,
   query,
 } from './_generated/server';
-import { authComponent } from './auth';
+import { authComponent, getCurrentSetupAuthUserFromActionOrThrow } from './auth';
 import {
   buildCurrentUserProfile,
   type CurrentUserProfile,
   getCurrentAuthUserOrNull,
   getCurrentAuthUserOrThrow,
   getCurrentUserOrNull,
-  getVerifiedCurrentUserFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
@@ -844,7 +843,7 @@ export const bootstrapCurrentUserContext = action({
   args: {},
   returns: bootstrapUserContextResultValidator,
   handler: async (ctx): Promise<BootstrapUserContextResult> => {
-    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const user = await getCurrentSetupAuthUserFromActionOrThrow(ctx);
     const email =
       typeof user.authUser.email === 'string' ? user.authUser.email.trim().toLowerCase() : '';
     if (!email) {
@@ -977,7 +976,7 @@ export const rollbackCurrentUserBootstrapContext = action({
   args: {},
   returns: successTrueValidator,
   handler: async (ctx): Promise<{ success: true }> => {
-    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const user = await getCurrentSetupAuthUserFromActionOrThrow(ctx);
     const email =
       typeof user.authUser.email === 'string' ? user.authUser.email.trim().toLowerCase() : '';
     if (!email) {

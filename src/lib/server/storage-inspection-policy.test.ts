@@ -71,6 +71,31 @@ describe('inspectStorageUploadBytes', () => {
     expect(result.reason).toBe('unsupported_type');
   });
 
+  it('passes csv documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeBytes('name,count\nalpha,2\n'),
+      fileName: 'report.csv',
+      maxBytes: 1024,
+      mimeType: 'text/csv',
+    });
+
+    expect(result.status).toBe('PASSED');
+  });
+
+  it('rejects xlsx documents as unsupported', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+      fileName: 'report.xlsx',
+      maxBytes: 1024,
+      mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+
+    expect(result.status).toBe('REJECTED');
+    expect(result.reason).toBe('unsupported_type');
+  });
+
   it.each([
     ['pdf_encrypted', '/Encrypt'],
     ['pdf_embedded_files', '/EmbeddedFile'],

@@ -2,17 +2,15 @@ import { httpRouter } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
 import { resend } from './emails';
+import { assertInternalServiceAuthorization } from '../src/lib/server/internal-service-auth';
+import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
-import {
-  applyStorageInspectionRequest,
-  parseStorageInspectionWebhookPayload,
-} from './storageDecision';
+import { applyStorageInspectionRequest } from './storageDecision';
 import {
   applyGuardDutyPromotionResult,
   applyGuardDutyFinding,
   parseGuardDutyWebhookPayload,
-  verifyWebhookSignature,
 } from './storageWebhook';
 
 const http = httpRouter();
@@ -47,19 +45,28 @@ http.route({
   }),
 });
 
+function ensureStorageCallbackAuthorized(request: Request) {
+  const runtimeConfig = getStorageRuntimeConfig();
+  assertInternalServiceAuthorization({
+    authorizationHeader: request.headers.get('authorization'),
+    expectedSecret: runtimeConfig.services.convexCallbackSharedSecret,
+  });
+}
+
 http.route({
-  path: '/aws/guardduty-malware',
+  path: '/internal/storage/guardduty',
   method: 'POST',
   handler: httpAction(async (ctx, request) => {
-    const rawBody = await request.text();
-    await verifyWebhookSignature({
-      kind: 'guardduty',
-      payload: rawBody,
-      signature: request.headers.get('X-Scriptflow-Signature'),
-      timestamp: request.headers.get('X-Scriptflow-Timestamp'),
-    });
+    try {
+      ensureStorageCallbackAuthorized(request);
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : 'Internal service authorization failed.',
+        { status: 401 },
+      );
+    }
 
-    const payload = parseGuardDutyWebhookPayload(rawBody);
+    const payload = parseGuardDutyWebhookPayload(await request.text());
     const result =
       payload.type === 'promotion_result'
         ? await applyGuardDutyPromotionResult(ctx, payload)
@@ -70,18 +77,19 @@ http.route({
 });
 
 http.route({
-  path: '/aws/storage-inspection',
+  path: '/internal/storage/inspection',
   method: 'POST',
   handler: httpAction(async (ctx, request) => {
-    const rawBody = await request.text();
-    await verifyWebhookSignature({
-      kind: 'inspection',
-      payload: rawBody,
-      signature: request.headers.get('X-Scriptflow-Signature'),
-      timestamp: request.headers.get('X-Scriptflow-Timestamp'),
-    });
+    try {
+      ensureStorageCallbackAuthorized(request);
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : 'Internal service authorization failed.',
+        { status: 401 },
+      );
+    }
 
-    const payload = parseStorageInspectionWebhookPayload(rawBody);
+    const payload = (await request.json()) as { bucket: string; key: string };
     const result = await applyStorageInspectionRequest(ctx, payload);
 
     return Response.json(result, { status: 200 });

@@ -11,6 +11,7 @@ const {
   getStorageRuntimeConfigMock: vi.fn(() => ({
     fileUploadMaxBytes: 10 * 1024 * 1024,
     storageBuckets: {
+      clean: { bucket: 'clean-bucket', kmsKeyArn: 'clean-kms' },
       quarantine: { bucket: 'bucket', kmsKeyArn: 'kms' },
     },
   })),
@@ -65,6 +66,13 @@ describe('tryFinalizeStorageDecision', () => {
     expect(promoteQuarantineObjectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         destinationKey: 'clean/org/org_123/chat_attachment/file_1',
+      }),
+    );
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        canonicalBucket: 'clean-bucket',
+        canonicalKey: 'clean/org/org_123/chat_attachment/file_1',
       }),
     );
     expect(deleteStorageObjectMock).toHaveBeenCalled();

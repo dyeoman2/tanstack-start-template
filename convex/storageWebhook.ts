@@ -2,12 +2,11 @@
 
 import { ConvexError, v } from 'convex/values';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { parseGuardDutyWebhookPayload as parseSharedGuardDutyWebhookPayload } from '../src/lib/shared/storage-webhook-payload';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
 import { tryFinalizeStorageDecision } from './storageDecision';
-
-const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
 export const guardDutyFindingPayloadValidator = v.object({
   type: v.literal('guardduty_finding'),
@@ -37,136 +36,12 @@ export const guardDutyWebhookPayloadValidator = v.union(
   guardDutyPromotionResultPayloadValidator,
 );
 
-export type StorageWebhookKind = 'guardduty' | 'inspection';
-
-function timingSafeEqual(left: string, right: string) {
-  const leftBytes = new TextEncoder().encode(left);
-  const rightBytes = new TextEncoder().encode(right);
-  if (leftBytes.length !== rightBytes.length) {
-    return false;
-  }
-
-  let mismatch = 0;
-  for (let index = 0; index < leftBytes.length; index += 1) {
-    const leftByte = leftBytes[index];
-    const rightByte = rightBytes[index];
-    if (leftByte === undefined || rightByte === undefined) {
-      return false;
-    }
-    mismatch |= leftByte ^ rightByte;
-  }
-  return mismatch === 0;
-}
-
-async function sign(secret: string, payload: string) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const signature = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(payload));
-  return Array.from(new Uint8Array(signature), (part) => part.toString(16).padStart(2, '0')).join(
-    '',
-  );
-}
-
-export async function verifyWebhookSignature(args: {
-  kind: StorageWebhookKind;
-  payload: string;
-  signature: string | null;
-  timestamp: string | null;
-}) {
-  const runtimeConfig = getStorageRuntimeConfig();
-  const sharedSecret =
-    args.kind === 'guardduty'
-      ? runtimeConfig.guardDutyWebhookSharedSecret
-      : runtimeConfig.storageInspectionWebhookSharedSecret;
-  if (!sharedSecret) {
-    throw new ConvexError(
-      args.kind === 'guardduty'
-        ? 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET is not configured.'
-        : 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET is not configured.',
-    );
-  }
-  if (!args.signature || !args.timestamp) {
-    throw new ConvexError('Missing required webhook signature headers.');
-  }
-
-  const timestampMs = Number.parseInt(args.timestamp, 10);
-  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > WEBHOOK_MAX_AGE_MS) {
-    throw new ConvexError('Webhook timestamp is stale.');
-  }
-
-  const expected = await sign(sharedSecret, `${args.timestamp}.${args.payload}`);
-  if (!timingSafeEqual(expected, args.signature)) {
-    throw new ConvexError('Webhook signature verification failed.');
-  }
-}
-
 export function parseGuardDutyWebhookPayload(payload: string) {
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(payload);
-  } catch {
-    throw new ConvexError('Webhook payload is not valid JSON.');
+    return parseSharedGuardDutyWebhookPayload(payload);
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : 'Webhook payload is malformed.');
   }
-
-  if (
-    !parsed ||
-    typeof parsed !== 'object' ||
-    !('bucket' in parsed) ||
-    !('findingId' in parsed) ||
-    !('status' in parsed) ||
-    !('scannedAt' in parsed) ||
-    !('type' in parsed)
-  ) {
-    throw new ConvexError('Webhook payload is malformed.');
-  }
-
-  const candidate = parsed as
-    | {
-        type: 'guardduty_finding';
-        bucket: string;
-        findingId: string;
-        key: string;
-        scannedAt: number;
-        status: 'CLEAN' | 'INFECTED';
-        versionId?: string;
-      }
-    | {
-        type: 'promotion_result';
-        bucket: string;
-        failureReason?: string;
-        findingId: string;
-        promotedBucket?: string;
-        promotedKey?: string;
-        promotedVersionId?: string;
-        quarantineKey: string;
-        scannedAt: number;
-        status: 'PROMOTED' | 'PROMOTION_FAILED';
-      };
-
-  if (candidate.type === 'guardduty_finding') {
-    if (!('key' in candidate)) {
-      throw new ConvexError('GuardDuty finding payload is malformed.');
-    }
-    if (candidate.status !== 'CLEAN' && candidate.status !== 'INFECTED') {
-      throw new ConvexError('Webhook status is not supported.');
-    }
-    return candidate;
-  }
-
-  if (!('quarantineKey' in candidate)) {
-    throw new ConvexError('Promotion result payload is malformed.');
-  }
-
-  if (candidate.status !== 'PROMOTED' && candidate.status !== 'PROMOTION_FAILED') {
-    throw new ConvexError('Promotion result status is not supported.');
-  }
-
-  return candidate;
 }
 
 export async function applyGuardDutyFinding(
@@ -337,29 +212,5 @@ export const applyGuardDutyPromotionResultInternal = internalAction({
   }),
   handler: async (ctx, args) => {
     return await applyGuardDutyPromotionResult(ctx, args);
-  },
-});
-
-export const createWebhookSignatureForPayload = internalAction({
-  args: {
-    kind: v.union(v.literal('guardduty'), v.literal('inspection')),
-    payload: v.string(),
-    timestamp: v.string(),
-  },
-  returns: v.string(),
-  handler: async (_ctx, args) => {
-    const runtimeConfig = getStorageRuntimeConfig();
-    const secret =
-      args.kind === 'guardduty'
-        ? runtimeConfig.guardDutyWebhookSharedSecret
-        : runtimeConfig.storageInspectionWebhookSharedSecret;
-    if (!secret) {
-      throw new ConvexError(
-        args.kind === 'guardduty'
-          ? 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET is not configured.'
-          : 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET is not configured.',
-      );
-    }
-    return await sign(secret, `${args.timestamp}.${args.payload}`);
   },
 });

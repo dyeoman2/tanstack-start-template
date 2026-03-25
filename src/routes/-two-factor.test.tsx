@@ -94,22 +94,18 @@ describe('TwoFactorPage', () => {
     toDataUrlMock.mockResolvedValue('data:image/png;base64,qr');
   });
 
-  it('shows trust-device checkbox during authenticator setup and submits it', async () => {
+  it('submits the authenticator code without a trust-device bypass', async () => {
     const user = userEvent.setup();
 
     render(<TwoFactorPage />);
 
-    const trustDevice = screen.getByLabelText('Trust this device for future logins');
-    expect(trustDevice).toBeInTheDocument();
-
-    await user.click(trustDevice);
+    expect(screen.queryByLabelText('Trust this device for future logins')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('One-Time Password'), '123456');
     await user.click(screen.getByRole('button', { name: 'Verify and enable' }));
 
     await waitFor(() => {
       expect(verifyTotpMock).toHaveBeenCalledWith({
         code: '123456',
-        trustDevice: true,
         fetchOptions: { throw: true },
       });
     });

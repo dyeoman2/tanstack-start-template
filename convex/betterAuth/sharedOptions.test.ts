@@ -302,6 +302,7 @@ describe('createSharedBetterAuthOptions', () => {
 
     expect(updateSession).toHaveBeenCalledWith('session_token', {
       authMethod: 'passkey',
+      mfaVerified: true,
       enterpriseOrganizationId: null,
       enterpriseProtocol: null,
       enterpriseProviderKey: null,
@@ -333,6 +334,7 @@ describe('createSharedBetterAuthOptions', () => {
 
     expect(updateSession).toHaveBeenCalledWith('session_token', {
       authMethod: 'password',
+      mfaVerified: false,
       enterpriseOrganizationId: null,
       enterpriseProtocol: null,
       enterpriseProviderKey: null,
@@ -364,6 +366,7 @@ describe('createSharedBetterAuthOptions', () => {
 
     expect(updateSession).toHaveBeenCalledWith('session_token', {
       authMethod: 'password',
+      mfaVerified: false,
       enterpriseOrganizationId: null,
       enterpriseProtocol: null,
       enterpriseProviderKey: null,
@@ -414,9 +417,68 @@ describe('createSharedBetterAuthOptions', () => {
     expect(updateSession).toHaveBeenCalledWith('session_token', {
       activeOrganizationId: 'org_1',
       authMethod: 'enterprise',
+      mfaVerified: false,
       enterpriseOrganizationId: 'org_1',
       enterpriseProtocol: 'oidc',
       enterpriseProviderKey: 'okta',
+    });
+  });
+
+  it('marks the session as MFA-verified after TOTP verification', async () => {
+    const options = createOptions();
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            id: 'session_1',
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      path: '/two-factor/verify-totp',
+    } as never);
+
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      mfaVerified: true,
+    });
+  });
+
+  it('marks the session as MFA-verified after backup-code verification', async () => {
+    const options = createOptions();
+    const updateSession = vi.fn(async () => {});
+
+    await getAfterHook(options)({
+      context: {
+        internalAdapter: {
+          updateSession,
+        },
+        newSession: {
+          session: {
+            id: 'session_1',
+            token: 'session_token',
+          },
+          user: {
+            email: 'user@example.com',
+            id: 'user_1',
+          },
+        },
+        returned: new Response('{}', { status: 200 }),
+      },
+      path: '/two-factor/verify-backup-code',
+    } as never);
+
+    expect(updateSession).toHaveBeenCalledWith('session_token', {
+      mfaVerified: true,
     });
   });
 
