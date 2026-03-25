@@ -3731,7 +3731,6 @@ export const exportOrganizationAuditCsv = action({
       manifestJson: manifest,
       organizationId: exportedOrganizationId,
       payloadHash: exportHash,
-      payloadJson: csv,
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 
@@ -3907,7 +3906,6 @@ export const exportOrganizationDirectoryCsv = action({
       manifestJson: manifest,
       organizationId: exportedOrganizationId,
       payloadHash: exportHash,
-      payloadJson: csv,
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 

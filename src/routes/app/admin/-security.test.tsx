@@ -231,7 +231,7 @@ function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
     latestRetentionJob: {
       createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
       details: 'ok',
-      jobKind: 'audit_export_cleanup',
+      jobKind: 'attachment_purge',
       processedCount: 2,
       status: 'success',
     },

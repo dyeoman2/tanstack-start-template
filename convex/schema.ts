@@ -705,7 +705,6 @@ export default defineSchema({
     ),
     contentJson: v.string(),
     contentHash: v.string(),
-    exportBundleJson: v.optional(v.string()),
     exportHash: v.optional(v.string()),
     exportIntegritySummary: v.optional(v.string()),
     exportManifestJson: v.optional(v.string()),
@@ -740,7 +739,6 @@ export default defineSchema({
     exportedByUserId: v.string(),
     manifestJson: v.string(),
     manifestHash: v.string(),
-    payloadJson: v.optional(v.string()),
     payloadHash: v.string(),
     exportedAt: v.number(),
     createdAt: v.number(),
@@ -1178,11 +1176,7 @@ export default defineSchema({
   retentionJobs: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    jobKind: v.union(
-      v.literal('attachment_purge'),
-      v.literal('quarantine_cleanup'),
-      v.literal('audit_export_cleanup'),
-    ),
+    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
     status: v.union(v.literal('success'), v.literal('failure')),
     details: v.optional(v.string()),
     processedCount: v.number(),

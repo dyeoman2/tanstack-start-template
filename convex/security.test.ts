@@ -25,7 +25,6 @@ let generateEvidenceReportHandler: typeof import('./lib/security/reports').gener
 let getAuditReadinessSnapshotHandler: typeof import('./lib/security/posture').getAuditReadinessSnapshotHandler;
 let _getSecurityPostureSummaryHandler: typeof import('./lib/security/posture').getSecurityPostureSummaryHandler;
 let buildSecurityWorkspaceControlSummary: typeof import('./lib/security/operations_core').buildSecurityWorkspaceControlSummary;
-let cleanupExpiredExportPayloadsHandler: typeof import('./securityOps').cleanupExpiredExportPayloadsHandler;
 let listSecurityFindingsHandler: typeof import('./lib/security/workspace').listSecurityFindingsHandler;
 let _listSecurityControlEvidenceActivityHandler: typeof import('./lib/security/workspace').listSecurityControlEvidenceActivityHandler;
 let securityWorkspaceModuleRef: typeof import('./securityWorkspace');
@@ -303,7 +302,6 @@ beforeAll(async () => {
   securityReportsModuleRef = reportsModule;
   securityReviewsModuleRef = reviewsModule;
   securityOpsModuleRef = opsModule;
-  cleanupExpiredExportPayloadsHandler = opsModule.cleanupExpiredExportPayloadsHandler;
   archiveSecurityControlEvidenceHandler =
     workspaceHelperModule.archiveSecurityControlEvidenceHandler;
   buildExportManifestFn = coreModule.buildExportManifest;
@@ -505,7 +503,7 @@ describe('audit evidence helpers', () => {
       {
         createdAt: Date.parse('2026-03-18T01:00:00.000Z'),
         details: 'ok',
-        jobKind: 'audit_export_cleanup',
+        jobKind: 'attachment_purge',
         processedCount: 4,
         status: 'success',
       },
@@ -1137,7 +1135,7 @@ describe('audit evidence helpers', () => {
         latestRetentionJob: {
           createdAt: Date.parse('2026-03-18T12:00:00.000Z'),
           details: 'ok',
-          jobKind: 'audit_export_cleanup',
+          jobKind: 'attachment_purge',
           processedCount: 2,
           status: 'success',
         },
@@ -1277,6 +1275,7 @@ describe('audit evidence helpers', () => {
       schemaVersion: expect.stringContaining('audit-evidence'),
       sourceReportId: 'report-1',
     });
+    expect(exportArtifactArgs).not.toHaveProperty('payloadJson');
     const manifest = JSON.parse(exportArtifactArgs.manifestJson as string) as Record<
       string,
       unknown
@@ -1524,44 +1523,6 @@ describe('security evidence mutations', () => {
       replacedByEvidenceId: newEvidenceId,
       renewedFromEvidenceId: seeded.evidenceId,
     });
-    vi.useRealTimers();
-  });
-});
-
-describe('security retention jobs', () => {
-  it('purges expired raw export payloads and records the cleanup job', async () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-03-24T12:00:00.000Z'));
-    const runQuery = vi
-      .fn()
-      .mockResolvedValueOnce([{ artifactId: 'artifact-1' }])
-      .mockResolvedValueOnce([{ reportId: 'report-1' }]);
-    const runMutation = vi
-      .fn()
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce(true)
-      .mockResolvedValueOnce('retention-job-1');
-    const result = await cleanupExpiredExportPayloadsHandler({
-      runMutation,
-      runQuery,
-    } as never);
-
-    expect(result).toEqual({
-      purgedArtifactPayloadCount: 1,
-      purgedEvidenceReportCopyCount: 1,
-    });
-    expect(runQuery).toHaveBeenCalledTimes(2);
-    expect(runMutation).toHaveBeenCalledTimes(3);
-    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({ artifactId: 'artifact-1' });
-    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({ reportId: 'report-1' });
-    expect(runMutation.mock.calls[2]?.[1]).toMatchObject({
-      jobKind: 'audit_export_cleanup',
-      processedCount: 2,
-      status: 'success',
-    });
-    expect(runMutation.mock.calls[2]?.[1]?.details).toEqual(
-      expect.stringContaining('Purged 1 export payloads and 1 legacy evidence-report copies'),
-    );
     vi.useRealTimers();
   });
 });

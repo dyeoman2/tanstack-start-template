@@ -1095,11 +1095,7 @@ const auditReadinessSnapshotValidator = v.object({
     v.object({
       createdAt: v.number(),
       details: v.optional(v.string()),
-      jobKind: v.union(
-        v.literal('attachment_purge'),
-        v.literal('quarantine_cleanup'),
-        v.literal('audit_export_cleanup'),
-      ),
+      jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
       processedCount: v.number(),
       scopeId: securityScopeIdValidator,
       scopeType: securityScopeTypeValidator,

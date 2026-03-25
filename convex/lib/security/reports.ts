@@ -94,7 +94,6 @@ export async function exportEvidenceReportHandler(
     manifestJson,
     organizationId: report.organizationId ?? currentUser.activeOrganizationId ?? undefined,
     payloadHash: exportHash,
-    payloadJson: exportBundle,
     schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     sourceReportId: args.id,
   });

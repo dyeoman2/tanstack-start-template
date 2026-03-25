@@ -39,7 +39,6 @@ export const createEvidenceReport = internalMutation({
     return await ctx.db.insert('evidenceReports', {
       ...getSecurityScopeFields(),
       ...args,
-      exportBundleJson: undefined,
       exportHash: undefined,
       exportIntegritySummary: undefined,
       exportManifestJson: undefined,
@@ -71,7 +70,6 @@ export const storeExportArtifact = internalMutation({
     manifestJson: v.string(),
     organizationId: v.optional(v.string()),
     payloadHash: v.string(),
-    payloadJson: v.string(),
     schemaVersion: v.string(),
     sourceReportId: v.optional(v.id('evidenceReports')),
   },
