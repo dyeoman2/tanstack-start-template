@@ -20,6 +20,9 @@ import {
 import { parseConvexEnvList } from './lib/setup-dr';
 import { emitStructuredOutput, hasFlag, routeLogsToStderrWhenJson } from './lib/script-ux';
 import { checkAuditArchiveRuntimeEnv, checkStorageRuntimeEnv } from './lib/deploy-doctor-checks';
+import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
+import { checkSnsEmailSubscriptionConfirmed } from './lib/provider-preflight';
+import { buildStorageStackName } from './lib/storage-env-contract';
 
 const REQUIRED_NETLIFY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -87,6 +90,99 @@ function printUsage() {
   console.log('- pnpm run deploy:doctor -- --prod --json');
   console.log('');
   console.log('Safe to rerun: yes; this script only reads state.');
+}
+
+function loadEnvFileMap(filePath: string): Record<string, string> {
+  if (!existsSync(filePath)) {
+    return {};
+  }
+
+  const content = readFileSync(filePath, 'utf8');
+  const out: Record<string, string> = {};
+  for (const line of content.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    const eq = trimmed.indexOf('=');
+    if (eq <= 0) {
+      continue;
+    }
+
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    out[key] = value;
+  }
+
+  return out;
+}
+
+function checkStorageAlertSubscription(
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+  operatorEnvVars: Record<string, string>,
+) {
+  const alertEmail = operatorEnvVars.AWS_STORAGE_ALERT_EMAIL?.trim() || '';
+  if (!alertEmail) {
+    checks.push({
+      check: 'Storage alert SNS email confirmation',
+      detail: 'Storage alert email not configured',
+      status: 'pass',
+    });
+    console.log('✅ Storage alert SNS email confirmation skipped');
+    return true;
+  }
+
+  const awsRegion = operatorEnvVars.AWS_REGION?.trim() || '';
+  if (!awsRegion) {
+    checks.push({
+      check: 'Storage alert SNS email confirmation',
+      detail: 'AWS_REGION missing from .env.prod',
+      status: 'fail',
+    });
+    console.log('❌ Storage alert SNS email confirmation cannot be verified without AWS_REGION');
+    return false;
+  }
+
+  const storageProjectSlug =
+    operatorEnvVars.AWS_STORAGE_PROJECT_SLUG?.trim() || 'tanstack-start-template';
+  const outputs = getCloudFormationStackOutputs({
+    awsProfile: operatorEnvVars.AWS_PROFILE?.trim() || undefined,
+    region: awsRegion,
+    stackName: buildStorageStackName(storageProjectSlug, 'prod'),
+  });
+  const topicArn = outputs?.StorageAlertsTopicArn?.trim() || '';
+  if (!topicArn) {
+    checks.push({
+      check: 'Storage alert SNS email confirmation',
+      detail: 'StorageAlertsTopicArn output missing',
+      status: 'fail',
+    });
+    console.log(
+      '❌ Storage alert SNS email confirmation cannot be verified without StorageAlertsTopicArn',
+    );
+    return false;
+  }
+
+  const result = checkSnsEmailSubscriptionConfirmed({
+    awsProfile: operatorEnvVars.AWS_PROFILE?.trim() || undefined,
+    emailAddress: alertEmail,
+    region: awsRegion,
+    topicArn,
+  });
+  checks.push({
+    check: 'Storage alert SNS email confirmation',
+    detail: result.detail,
+    status: result.ok ? 'pass' : 'fail',
+  });
+  console.log(`${result.ok ? '✅' : '❌'} ${result.detail}`);
+  return result.ok;
 }
 
 function main() {
@@ -170,6 +266,7 @@ function main() {
   }
 
   if (prod) {
+    const prodOperatorEnv = loadEnvFileMap(join(process.cwd(), '.env.prod'));
     if (process.env.CONVEX_DEPLOY_KEY?.trim()) {
       console.log('✅ CONVEX_DEPLOY_KEY is set');
       checks.push({ check: 'CONVEX_DEPLOY_KEY set', status: 'pass' });
@@ -222,6 +319,8 @@ function main() {
         detail: 'JWKS missing or invalid',
       });
     }
+
+    ok = checkStorageAlertSubscription(checks, prodOperatorEnv) && ok;
   }
 
   const linked = readNetlifyLinkedSiteIdFromDisk();

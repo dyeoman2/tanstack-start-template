@@ -50,6 +50,7 @@ import {
 } from '../lib/enterpriseAccess';
 import {
   type OrganizationPermission,
+  isEnterpriseDataPlanePermission,
   organizationPermissionValidator,
   requiresEnterpriseSatisfied,
 } from '../lib/organizationPermissions';
@@ -108,6 +109,7 @@ type AuthorizationAssurance = {
   recentStepUpSatisfied: boolean;
   supportGrantId: Doc<'organizationSupportAccessGrants'>['_id'] | null;
   supportGrantScope: 'read_only' | 'read_write' | null;
+  supportGrantTicketId: string | null;
 };
 
 export type OrganizationPermissionDecision = {
@@ -134,6 +136,7 @@ type StorageReadAccessResult =
       reason: string;
       supportGrantId: null;
       supportGrantScope: null;
+      supportGrantTicketId: null;
     }
   | {
       allowed: true;
@@ -142,6 +145,7 @@ type StorageReadAccessResult =
       reason: null;
       supportGrantId: Doc<'organizationSupportAccessGrants'>['_id'] | null;
       supportGrantScope: 'read_only' | 'read_write' | null;
+      supportGrantTicketId: string | null;
     };
 
 function serializeOrganizationPermissionDecision(decision: OrganizationPermissionDecision) {
@@ -218,6 +222,7 @@ async function resolveChatAttachmentStorageAccess(
       reason: 'Attachment not found',
       supportGrantId: null,
       supportGrantScope: null,
+      supportGrantTicketId: null,
     };
   }
 
@@ -233,6 +238,7 @@ async function resolveChatAttachmentStorageAccess(
       reason: decision.reason,
       supportGrantId: null,
       supportGrantScope: null,
+      supportGrantTicketId: null,
     };
   }
 
@@ -244,6 +250,7 @@ async function resolveChatAttachmentStorageAccess(
       reason: 'Attachment access denied',
       supportGrantId: null,
       supportGrantScope: null,
+      supportGrantTicketId: null,
     };
   }
 
@@ -254,6 +261,7 @@ async function resolveChatAttachmentStorageAccess(
     reason: null,
     supportGrantId: decision.assurance.supportGrantId,
     supportGrantScope: decision.assurance.supportGrantScope,
+    supportGrantTicketId: decision.assurance.supportGrantTicketId,
   };
 }
 
@@ -878,6 +886,7 @@ async function buildOrganizationPermissionDecision(
       recentStepUpSatisfied: stepUpEvaluation.required ? stepUpEvaluation.satisfied : true,
       supportGrantId: enterpriseAccess.supportGrant?.id ?? null,
       supportGrantScope: enterpriseAccess.supportGrant?.scope ?? null,
+      supportGrantTicketId: enterpriseAccess.supportGrant?.ticketId ?? null,
     },
     membership,
     membershipStatus,
@@ -1011,6 +1020,45 @@ async function recordEnterpriseBreakGlassUsed(
   });
 }
 
+async function recordSupportGrantUsed(
+  ctx: MutationCtx | ActionCtx,
+  input: {
+    decision: OrganizationPermissionDecision;
+    sourceSurface?: string;
+  },
+) {
+  if (
+    !input.decision.assurance.supportGrantId ||
+    !input.decision.assurance.supportGrantScope ||
+    !input.decision.assurance.supportGrantTicketId ||
+    isEnterpriseDataPlanePermission(input.decision.permission)
+  ) {
+    return;
+  }
+
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: input.decision.user.authUser.email?.toLowerCase(),
+    actorUserId: input.decision.user.authUserId,
+    emitter: 'auth.authorization',
+    eventType: 'support_access_used',
+    metadata: JSON.stringify({
+      grantId: input.decision.assurance.supportGrantId,
+      permission: input.decision.permission,
+      scope: input.decision.assurance.supportGrantScope,
+      ticketId: input.decision.assurance.supportGrantTicketId,
+    }),
+    organizationId: input.decision.organizationId,
+    outcome: 'success',
+    resourceId: input.decision.organizationId,
+    resourceLabel: input.decision.permission,
+    resourceType: 'organization_permission',
+    severity: 'info',
+    sessionId: input.decision.user.authSession?.id ?? undefined,
+    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    userId: input.decision.user.authUserId,
+  });
+}
+
 async function resolveOrganizationsForUser(
   ctx: QueryCtx | MutationCtx,
   authUserId: string,
@@ -1133,6 +1181,10 @@ export async function requireOrganizationPermission(
       decision: result,
       sourceSurface: input.sourceSurface,
     });
+    await recordSupportGrantUsed(ctx, {
+      decision: result,
+      sourceSurface: input.sourceSurface,
+    });
   }
 
   return result;
@@ -1181,6 +1233,10 @@ export async function requireOrganizationPermissionFromActionOrThrow(
   }
 
   await recordEnterpriseBreakGlassUsed(ctx, {
+    decision: result.decision,
+    sourceSurface: input.sourceSurface,
+  });
+  await recordSupportGrantUsed(ctx, {
     decision: result.decision,
     sourceSurface: input.sourceSurface,
   });
@@ -1365,6 +1421,7 @@ export const resolveStorageReadAccess = query({
     reason: v.union(v.string(), v.null()),
     supportGrantId: v.union(v.id('organizationSupportAccessGrants'), v.null()),
     supportGrantScope: v.union(v.literal('read_only'), v.literal('read_write'), v.null()),
+    supportGrantTicketId: v.union(v.string(), v.null()),
   }),
   handler: async (ctx, args): Promise<StorageReadAccessResult> => {
     const user = await getVerifiedCurrentUserOrThrow(ctx);
@@ -1380,6 +1437,7 @@ export const resolveStorageReadAccess = query({
           reason: 'Stored file access lineage is invalid',
           supportGrantId: null,
           supportGrantScope: null,
+          supportGrantTicketId: null,
         };
       }
       visited.add(storageId);
@@ -1397,6 +1455,7 @@ export const resolveStorageReadAccess = query({
           reason: 'Stored file not found',
           supportGrantId: null,
           supportGrantScope: null,
+          supportGrantTicketId: null,
         };
       }
 
@@ -1413,73 +1472,43 @@ export const resolveStorageReadAccess = query({
       }
 
       if (lifecycle.sourceType === 'security_control_evidence') {
-        const assurance = await resolveUserAuthAssuranceState(ctx, user);
-        const evidenceClaim = user.authSession?.id
-          ? await getActiveStepUpClaim(ctx, {
-              authUserId: user.authUserId,
-              requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
-              sessionId: user.authSession.id,
-            })
-          : null;
-        const authPolicy = evaluateAuthPolicy({
-          assurance,
-          recentStepUpWindowMs: getRecentStepUpWindowMs(),
-        });
-        const evidenceStepUp = evaluateStepUpClaim({
-          claim: evidenceClaim
-            ? {
-                consumedAt: evidenceClaim.consumedAt,
-                expiresAt: evidenceClaim.expiresAt,
-                method: evidenceClaim.method,
-                requirement: evidenceClaim.requirement,
-                sessionId: evidenceClaim.sessionId,
-                verifiedAt: evidenceClaim.verifiedAt,
-              }
-            : null,
-          requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
-          sessionId: user.authSession?.id ?? null,
-        });
-
-        if (!user.isSiteAdmin) {
+        const evidenceOrganizationId = lifecycle.organizationId ?? user.activeOrganizationId;
+        if (!evidenceOrganizationId) {
           return {
             allowed: false,
-            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+            organizationId: null,
             permission: 'manageEvidence' as const,
-            reason: 'Site admin access required',
+            reason: 'Organization context is required for evidence access',
             supportGrantId: null,
             supportGrantScope: null,
+            supportGrantTicketId: null,
           };
         }
 
-        if (authPolicy.requiresMfaSetup || !isCurrentSessionMfaSatisfied(user)) {
+        const decision = await buildOrganizationPermissionDecision(ctx, {
+          organizationId: evidenceOrganizationId,
+          permission: 'manageEvidence',
+        });
+        if ('code' in decision) {
           return {
             allowed: false,
-            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+            organizationId: evidenceOrganizationId,
             permission: 'manageEvidence' as const,
-            reason: 'Multi-factor authentication is required for this session',
+            reason: decision.reason,
             supportGrantId: null,
             supportGrantScope: null,
-          };
-        }
-
-        if (!evidenceStepUp.satisfied) {
-          return {
-            allowed: false,
-            organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
-            permission: 'manageEvidence' as const,
-            reason: 'Step-up authentication is required',
-            supportGrantId: null,
-            supportGrantScope: null,
+            supportGrantTicketId: null,
           };
         }
 
         return {
           allowed: true,
-          organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
+          organizationId: evidenceOrganizationId,
           permission: 'manageEvidence' as const,
           reason: null,
-          supportGrantId: null,
-          supportGrantScope: null,
+          supportGrantId: decision.assurance.supportGrantId,
+          supportGrantScope: decision.assurance.supportGrantScope,
+          supportGrantTicketId: decision.assurance.supportGrantTicketId,
         };
       }
 
@@ -1490,6 +1519,7 @@ export const resolveStorageReadAccess = query({
         reason: 'Stored file access is not available for this resource type',
         supportGrantId: null,
         supportGrantScope: null,
+        supportGrantTicketId: null,
       };
     };
 

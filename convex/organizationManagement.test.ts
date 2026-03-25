@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { collectOrganizationAuditPage } from './organizationManagement';
+import {
+  buildSupportGrantAuditMetadata,
+  collectOrganizationAuditPage,
+} from './organizationManagement';
 
 function createQueryResult(rows: unknown[]) {
   return {
@@ -128,5 +131,35 @@ describe('collectOrganizationAuditPage', () => {
       organizationId: 'org-1',
       label: 'Domain added',
     });
+  });
+});
+
+describe('buildSupportGrantAuditMetadata', () => {
+  it('returns ticket-linked support grant metadata when a grant is present', () => {
+    expect(
+      buildSupportGrantAuditMetadata({
+        assurance: {
+          supportGrantId: 'grant-1' as never,
+          supportGrantScope: 'read_only',
+          supportGrantTicketId: 'INC-42',
+        },
+      } as never),
+    ).toEqual({
+      supportGrantId: 'grant-1',
+      supportGrantScope: 'read_only',
+      ticketId: 'INC-42',
+    });
+  });
+
+  it('returns null when the action is not running under a support grant', () => {
+    expect(
+      buildSupportGrantAuditMetadata({
+        assurance: {
+          supportGrantId: null,
+          supportGrantScope: null,
+          supportGrantTicketId: null,
+        },
+      } as never),
+    ).toBeNull();
   });
 });

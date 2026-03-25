@@ -396,7 +396,7 @@ export async function putCleanObject(
   return await putStorageObject(config, {
     ...args,
     bucketKind: 'clean',
-    capability: 'promotion',
+    capability: 'cleanPut',
   });
 }
 

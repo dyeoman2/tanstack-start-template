@@ -13,6 +13,12 @@ import {
 import { convexEnvSet } from './lib/convex-cli';
 import { upsertStructuredEnvValue } from './lib/env-file';
 import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
+import { loadOptionalEnvFile } from './lib/load-env-file';
+import {
+  checkAwsCredentials,
+  checkCdkBootstrap,
+  checkConvexProdAccess,
+} from './lib/provider-preflight';
 import {
   emitStructuredOutput,
   maybeWriteStructuredOutputArtifact,
@@ -71,6 +77,48 @@ async function askYesNo(question: string, fallback = false) {
     return fallback;
   }
   return answer === 'y' || answer === 'yes';
+}
+
+async function resolveOptionalInput(input: {
+  fallback?: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    return input.fallback?.trim() ?? '';
+  }
+
+  return (
+    await ask(`${input.question}: `, input.fallback?.trim() ? input.fallback.trim() : undefined)
+  ).trim();
+}
+
+async function resolveDefaultedInput(input: {
+  fallback: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    return input.fallback;
+  }
+
+  return askWithDefault(input.question, input.fallback);
+}
+
+async function resolveRequiredInput(input: {
+  fallback?: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    const value = input.fallback?.trim() ?? '';
+    if (!value) {
+      throw new Error(`${input.question} is required in non-interactive mode.`);
+    }
+    return value;
+  }
+
+  return askRequired(input.question, input.fallback);
 }
 
 function readEnvFile(filePath: string) {
@@ -183,7 +231,7 @@ function writeProdEnvValue(envContent: string, name: string, value: string) {
 }
 
 function printUsage() {
-  console.log('Usage: pnpm run audit-archive:setup -- [--prod] [--json]');
+  console.log('Usage: pnpm run audit-archive:setup -- [--prod] [--yes] [--json]');
   console.log('');
   console.log(
     'What this does: configure immutable audit archive AWS inputs for local/dev by default or production with --prod, optionally preview/deploy the stack, capture CloudFormation outputs, and optionally sync Convex runtime env.',
@@ -197,6 +245,7 @@ function printUsage() {
 async function main() {
   const json = process.argv.includes('--json');
   const prod = process.argv.includes('--prod');
+  const yes = process.argv.includes('--yes') || process.argv.includes('--non-interactive');
   routeLogsToStderrWhenJson(json);
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     printUsage();
@@ -207,6 +256,7 @@ async function main() {
   const changedRemotely: string[] = [];
   const nextCommands: string[] = [];
   const warnings: string[] = [];
+  let convexEnvSynced = false;
   const targetEnvFile = prod ? PROD_ENV_FILE : LOCAL_ENV_FILE;
   const targetEnvLabel = prod ? 'production' : 'local development';
   const convexTarget = prod ? 'production' : 'current development';
@@ -241,7 +291,7 @@ async function main() {
     },
   ]);
 
-  const shouldContinue = await askYesNo('Continue?', true);
+  const shouldContinue = yes || (await askYesNo('Continue?', true));
   if (!shouldContinue) {
     console.log('Cancelled.');
     return;
@@ -251,20 +301,37 @@ async function main() {
   requirePnpmAndConvexCli();
 
   const targetEnvPath = path.join(process.cwd(), targetEnvFile);
+  loadOptionalEnvFile(path.join(process.cwd(), '.env'));
+  loadOptionalEnvFile(targetEnvPath);
   let targetEnvContent = readEnvFile(targetEnvPath);
-  const awsRegion = await askWithDefault(
-    'AWS region',
-    readEnvValue(targetEnvContent, 'AWS_REGION') ?? process.env.AWS_REGION?.trim() ?? 'us-west-1',
-  );
-  const awsProfile = await chooseAwsProfile(
-    readEnvValue(targetEnvContent, 'AWS_PROFILE') ?? process.env.AWS_PROFILE?.trim() ?? null,
-  );
-  const projectSlug = await askWithDefault(
-    'Audit archive project slug',
-    readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_PROJECT_SLUG') ??
+  const awsRegion = await resolveDefaultedInput({
+    fallback:
+      readEnvValue(targetEnvContent, 'AWS_REGION') ?? process.env.AWS_REGION?.trim() ?? 'us-west-1',
+    nonInteractive: yes,
+    question: 'AWS region',
+  });
+  const awsProfile = await (yes
+    ? Promise.resolve(
+        readEnvValue(targetEnvContent, 'AWS_PROFILE') ?? process.env.AWS_PROFILE?.trim() ?? null,
+      )
+    : chooseAwsProfile(
+        readEnvValue(targetEnvContent, 'AWS_PROFILE') ?? process.env.AWS_PROFILE?.trim() ?? null,
+      ));
+  const projectSlug = await resolveDefaultedInput({
+    fallback:
+      readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_PROJECT_SLUG') ??
       process.env.AWS_AUDIT_ARCHIVE_PROJECT_SLUG?.trim() ??
       DEFAULT_PROJECT_SLUG,
-  );
+    nonInteractive: yes,
+    question: 'Audit archive project slug',
+  });
+  const awsCredentialCheck = checkAwsCredentials({
+    awsProfile: awsProfile ?? undefined,
+    region: awsRegion,
+  });
+  if (!awsCredentialCheck.ok) {
+    throw new Error(awsCredentialCheck.detail);
+  }
   const stackName = buildAuditArchiveStackName(projectSlug);
   const currentOutputs =
     getCloudFormationStackOutputs({
@@ -277,28 +344,35 @@ async function main() {
     process.env.AWS_AUDIT_ARCHIVE_BUCKET_NAME?.trim() ??
     currentOutputs.AuditArchiveBucketName ??
     '';
-  const bucketNameInput = await ask(
-    'Audit archive bucket name (leave empty to let CDK name it): ',
-    defaultBucketName || undefined,
-  );
-  const retentionDays = await askWithDefault(
-    'Audit archive retention days',
-    readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_RETENTION_DAYS') ??
+  const bucketNameInput = await resolveOptionalInput({
+    fallback: defaultBucketName || undefined,
+    nonInteractive: yes,
+    question: 'Audit archive bucket name (leave empty to let CDK name it)',
+  });
+  const retentionDays = await resolveDefaultedInput({
+    fallback:
+      readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_RETENTION_DAYS') ??
       process.env.AWS_AUDIT_ARCHIVE_RETENTION_DAYS?.trim() ??
       DEFAULT_RETENTION_DAYS,
-  );
-  const trustedPrincipalArn = await askRequired(
-    'Trusted principal ARN for the audit archive role',
-    readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN') ??
+    nonInteractive: yes,
+    question: 'Audit archive retention days',
+  });
+  const trustedPrincipalArn = await resolveRequiredInput({
+    fallback:
+      readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN') ??
       process.env.AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN?.trim() ??
       undefined,
-  );
-  const archivePrefix = await askWithDefault(
-    'Audit archive runtime prefix',
-    readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_PREFIX') ??
+    nonInteractive: yes,
+    question: 'Trusted principal ARN for the audit archive role',
+  });
+  const archivePrefix = await resolveDefaultedInput({
+    fallback:
+      readEnvValue(targetEnvContent, 'AWS_AUDIT_ARCHIVE_PREFIX') ??
       process.env.AWS_AUDIT_ARCHIVE_PREFIX?.trim() ??
       DEFAULT_ARCHIVE_PREFIX,
-  );
+    nonInteractive: yes,
+    question: 'Audit archive runtime prefix',
+  });
 
   printTargetSummary('Provider target summary', [
     `AWS region: ${awsRegion}`,
@@ -354,8 +428,15 @@ async function main() {
 
   const infraRoot = path.join(process.cwd(), 'infra', 'aws-cdk');
   const appPath = 'node ./bin/app.mjs';
-  const shouldPreviewInfra = await askYesNo('Run audit archive preview now?', false);
+  const shouldPreviewInfra = yes ? false : await askYesNo('Run audit archive preview now?', false);
   if (shouldPreviewInfra) {
+    const bootstrapCheck = checkCdkBootstrap({
+      awsProfile: awsProfile ?? undefined,
+      region: awsRegion,
+    });
+    if (!bootstrapCheck.ok) {
+      throw new Error(bootstrapCheck.detail);
+    }
     run('pnpm', ['exec', 'cdk', 'synth', '--app', appPath, stackName], {
       cwd: infraRoot,
       env: deployEnv,
@@ -363,8 +444,15 @@ async function main() {
     changedRemotely.push('Ran AWS audit archive preview');
   }
 
-  const shouldDeployInfra = await askYesNo('Run audit archive deploy now?', false);
+  const shouldDeployInfra = yes ? true : await askYesNo('Run audit archive deploy now?', false);
   if (shouldDeployInfra) {
+    const bootstrapCheck = checkCdkBootstrap({
+      awsProfile: awsProfile ?? undefined,
+      region: awsRegion,
+    });
+    if (!bootstrapCheck.ok) {
+      throw new Error(bootstrapCheck.detail);
+    }
     run(
       'pnpm',
       ['exec', 'cdk', 'deploy', '--require-approval', 'never', '--app', appPath, stackName],
@@ -408,10 +496,9 @@ async function main() {
     changedLocally.push(`Updated ${targetEnvPath} with audit archive runtime outputs`);
   }
 
-  const setConvex = await askYesNo(
-    `Sync audit archive runtime env into Convex ${convexTarget} now?`,
-    true,
-  );
+  const setConvex = yes
+    ? true
+    : await askYesNo(`Sync audit archive runtime env into Convex ${convexTarget} now?`, true);
   if (setConvex) {
     if (!runtimeBucket || !runtimeKmsKeyArn || !runtimeRoleArn) {
       warnings.push(
@@ -421,6 +508,12 @@ async function main() {
         '\n⚠️  Skipping Convex sync because audit archive stack outputs are still missing.',
       );
     } else {
+      if (prod) {
+        const convexCheck = checkConvexProdAccess();
+        if (!convexCheck.ok) {
+          throw new Error(convexCheck.detail);
+        }
+      }
       const runtimeEnvVars: Record<string, string> = {
         AWS_AUDIT_ARCHIVE_BUCKET: runtimeBucket,
         AWS_AUDIT_ARCHIVE_KMS_KEY_ARN: runtimeKmsKeyArn,
@@ -431,6 +524,7 @@ async function main() {
         convexEnvSet(name, value, prod);
       }
       changedRemotely.push(`Updated Convex ${convexTarget} audit archive env vars`);
+      convexEnvSynced = true;
     }
   }
 
@@ -452,8 +546,12 @@ async function main() {
     nextCommands,
     readiness: {
       auditArchive: runtimeReady ? 'ready' : 'needs attention',
-      convexEnv: runtimeReady ? 'ready to sync' : 'needs attention',
-      envFile: 'ready',
+      convexEnv: !setConvex
+        ? 'skipped'
+        : runtimeReady && convexEnvSynced
+          ? 'ready'
+          : 'needs attention',
+      operatorEnv: 'ready',
     },
     warnings,
   };

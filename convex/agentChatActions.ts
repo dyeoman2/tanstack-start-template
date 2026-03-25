@@ -24,14 +24,15 @@ import {
 import { buildChatRequestConfig, getBaseChatAgent } from './lib/chatAgentRuntime';
 import {
   buildAttachmentPromptSummary,
-  extractDocumentText,
+  clipDocumentPromptText,
   validateChatAttachmentUpload,
 } from './lib/chatAttachments';
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
-import { getCleanObject } from './lib/storageS3';
+import { deleteStorageObject, enqueueDocumentParseTask, getCleanObject } from './lib/storageS3';
 import {
+  deleteStoredFileWithMode,
   finalizeUploadWithMode,
   resolveFileUrlWithMode,
   storeDerivedFileWithMode,
@@ -1070,6 +1071,32 @@ export const processPendingChatAttachmentInternal = internalAction({
     }
 
     try {
+      if (attachment.kind === 'document') {
+        if (!lifecycle.canonicalKey) {
+          throw new ConvexError('Stored document does not have a canonical S3 object key.');
+        }
+
+        await enqueueDocumentParseTask({
+          canonicalKey: lifecycle.canonicalKey,
+          fileName: attachment.name,
+          kind: 'document_parse',
+          mimeType: attachment.mimeType,
+          organizationId: attachment.organizationId,
+          parseKind: 'chat_document_extract',
+          sourceType: lifecycle.sourceType,
+          storageId: attachment.storageId,
+        });
+        await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+          attachmentId: attachment._id,
+          patch: {
+            errorMessage: null,
+            status: 'processing',
+            updatedAt: Date.now(),
+          },
+        });
+        return null;
+      }
+
       const blob = await loadAttachmentProcessingBlob(ctx, {
         attachment,
         lifecycle,
@@ -1077,26 +1104,11 @@ export const processPendingChatAttachmentInternal = internalAction({
       const stored = await storeFile(ctx, components.agent, blob, {
         filename: attachment.name,
       });
-      let extractedTextStorageId: string | undefined;
-
-      if (attachment.kind === 'document') {
-        const extractedText = await extractDocumentText(blob, attachment.name, attachment.mimeType);
-        const derivedTextFile = await storeDerivedFileWithMode(ctx, {
-          blob: new Blob([extractedText], { type: 'text/plain' }),
-          fileName: `${attachment.name}.extracted.txt`,
-          mimeType: 'text/plain',
-          organizationId: attachment.organizationId,
-          parentStorageId: attachment.storageId,
-          sourceId: attachment._id,
-          sourceType: 'chat_attachment_extracted_text',
-        });
-        extractedTextStorageId = derivedTextFile.storageId;
-      }
 
       await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
         attachmentId: attachment._id,
         patch: {
-          extractedTextStorageId: extractedTextStorageId ?? null,
+          extractedTextStorageId: null,
           agentFileId: stored.file.fileId,
           errorMessage: null,
           promptSummary: buildAttachmentPromptSummary({
@@ -1122,6 +1134,80 @@ export const processPendingChatAttachmentInternal = internalAction({
     return null;
   },
 });
+
+export async function applyChatDocumentParseResult(
+  ctx: ActionCtx,
+  args: {
+    errorMessage?: string;
+    resultKey?: string;
+    status: 'FAILED' | 'SUCCEEDED';
+    storageId: string;
+  },
+) {
+  const attachment = (await ctx.runQuery(internal.agentChat.getAttachmentByStorageIdInternal, {
+    storageId: args.storageId,
+  })) as ChatAttachmentDoc | null;
+  if (!attachment) {
+    return { applied: false, reason: 'missing_attachment' as const };
+  }
+
+  if (args.status === 'FAILED') {
+    await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+      attachmentId: attachment._id,
+      patch: {
+        errorMessage: args.errorMessage ?? 'Failed to extract attachment text.',
+        status: 'error',
+        updatedAt: Date.now(),
+      },
+    });
+    return { applied: true, reason: 'failed' as const };
+  }
+
+  if (!args.resultKey) {
+    throw new ConvexError('Document parse callback is missing the staged result key.');
+  }
+
+  const stagedResult = await getCleanObject({ key: args.resultKey });
+  const extractedText = await stagedResult.Body.text();
+  const derivedTextFile = await storeDerivedFileWithMode(ctx, {
+    blob: stagedResult.Body,
+    fileName: `${attachment.name}.extracted.txt`,
+    mimeType: 'text/plain',
+    organizationId: attachment.organizationId,
+    parentStorageId: attachment.storageId,
+    sourceId: attachment._id,
+    sourceType: 'chat_attachment_extracted_text',
+  });
+
+  await deleteStorageObject({
+    bucketKind: 'clean',
+    key: args.resultKey,
+  });
+
+  if (attachment.extractedTextStorageId) {
+    await deleteStoredFileWithMode(ctx, {
+      storageId: attachment.extractedTextStorageId,
+    });
+  }
+
+  await ctx.runMutation(internal.agentChat.updateAttachmentInternal, {
+    attachmentId: attachment._id,
+    patch: {
+      extractedTextStorageId: derivedTextFile.storageId,
+      agentFileId: null,
+      errorMessage: null,
+      promptSummary: buildAttachmentPromptSummary({
+        kind: attachment.kind,
+        name: attachment.name,
+        text: clipDocumentPromptText(extractedText),
+      }),
+      status: 'ready',
+      updatedAt: Date.now(),
+    },
+  });
+
+  return { applied: true, reason: 'ok' as const };
+}
 
 export const runChatGenerationInternal = internalAction({
   args: {

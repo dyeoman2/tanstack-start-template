@@ -11,7 +11,7 @@ type AgentUIPart =
       kind: 'image' | 'document';
       name: string;
       mimeType: string;
-      status: 'pending' | 'ready' | 'error';
+      status: 'pending' | 'processing' | 'ready' | 'error';
       previewUrl?: string | null;
       promptSummary: string;
       errorMessage?: string;
@@ -85,7 +85,10 @@ function isAttachmentPart(part: AgentUIPart): part is Extract<AgentUIPart, { typ
     (part.kind === 'image' || part.kind === 'document') &&
     typeof part.name === 'string' &&
     typeof part.mimeType === 'string' &&
-    (part.status === 'pending' || part.status === 'ready' || part.status === 'error') &&
+    (part.status === 'pending' ||
+      part.status === 'processing' ||
+      part.status === 'ready' ||
+      part.status === 'error') &&
     typeof part.promptSummary === 'string'
   );
 }

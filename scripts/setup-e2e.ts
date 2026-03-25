@@ -14,6 +14,7 @@ import { upsertStructuredEnvValue } from './lib/env-file';
 const envPath = join(process.cwd(), '.env.local');
 
 const DEFAULT_E2E_VALUES = {
+  APP_DEPLOYMENT_ENV: 'development',
   ENABLE_E2E_TEST_AUTH: 'true',
   E2E_USER_EMAIL: 'e2e-user@local.test',
   E2E_USER_PASSWORD: 'E2EUser!1234',
@@ -58,6 +59,21 @@ async function askYesNo(question: string, fallback = false) {
   return answer === 'y' || answer === 'yes';
 }
 
+function resolveLocalDeploymentEnv() {
+  const configured = process.env.APP_DEPLOYMENT_ENV?.trim();
+  if (!configured) {
+    return DEFAULT_E2E_VALUES.APP_DEPLOYMENT_ENV;
+  }
+
+  if (configured === 'development' || configured === 'test') {
+    return configured;
+  }
+
+  throw new Error(
+    `APP_DEPLOYMENT_ENV must be development or test for setup:e2e. Received ${configured}.`,
+  );
+}
+
 function loadLocalEnv() {
   loadProjectEnvFiles();
 }
@@ -75,17 +91,17 @@ function ensureLocalEnvFile() {
 }
 
 function printUsage() {
-  console.log('Usage: pnpm run setup:e2e [-- --prod] [--json]');
+  console.log('Usage: pnpm run setup:e2e [-- --json]');
   console.log('');
   console.log('What this does:');
   console.log('- Ensures .env.local exists');
+  console.log('- Writes APP_DEPLOYMENT_ENV=development for local authenticated test helpers');
   console.log('- Writes authenticated E2E defaults locally');
-  console.log('- Syncs ENABLE_E2E_TEST_AUTH and E2E_TEST_SECRET to Convex');
+  console.log('- Syncs APP_DEPLOYMENT_ENV, ENABLE_E2E_TEST_AUTH, and E2E_TEST_SECRET to Convex');
   console.log('- Optionally provisions the deterministic user/admin principals immediately');
   console.log('');
   console.log('Examples:');
   console.log('- pnpm run setup:e2e');
-  console.log('- pnpm run setup:e2e -- --prod');
   console.log('');
   console.log('Docs: docs/SCRIPT_AUTOMATION.md');
   console.log('Safe to rerun: yes');
@@ -98,11 +114,22 @@ async function main() {
     printUsage();
     return;
   }
+  if (process.argv.includes('--prod')) {
+    throw new Error(
+      'setup:e2e no longer supports --prod. Test auth is limited to explicit development or test deployments.',
+    );
+  }
 
   console.log('🔐 Setting up authenticated Playwright E2E env...\n');
-  console.log('What this does: writes local E2E auth defaults and syncs the Convex gate vars.');
-  console.log('Prereqs: .env.local or setup:env, plus Convex CLI access to the target deployment.');
-  console.log('Modifies: .env.local and Convex env vars ENABLE_E2E_TEST_AUTH/E2E_TEST_SECRET.');
+  console.log(
+    'What this does: writes local E2E auth defaults and syncs the authenticated test gate vars to the current Convex development deployment.',
+  );
+  console.log(
+    'Prereqs: .env.local or setup:env, plus Convex CLI access to the current development deployment.',
+  );
+  console.log(
+    'Modifies: .env.local and Convex env vars APP_DEPLOYMENT_ENV/ENABLE_E2E_TEST_AUTH/E2E_TEST_SECRET.',
+  );
   console.log(
     'Does not require CONVEX_DEPLOY_KEY in the app runtime; principal provisioning now runs through CLI tooling.',
   );
@@ -113,6 +140,7 @@ async function main() {
   loadLocalEnv();
 
   const localValues = {
+    APP_DEPLOYMENT_ENV: resolveLocalDeploymentEnv(),
     ENABLE_E2E_TEST_AUTH:
       process.env.ENABLE_E2E_TEST_AUTH || DEFAULT_E2E_VALUES.ENABLE_E2E_TEST_AUTH,
     E2E_TEST_SECRET: process.env.E2E_TEST_SECRET || (await generateSecret(32)),
@@ -132,23 +160,21 @@ async function main() {
   }
   writeFileSync(envPath, envContent, 'utf8');
 
-  const prod = process.argv.includes('--prod');
-  const convexTarget = prod ? 'production' : 'current development';
-  const defaultBaseUrl = prod
-    ? process.env.BETTER_AUTH_URL?.trim() || 'https://app.example.com'
-    : 'http://127.0.0.1:3000';
+  const convexTarget = 'current development';
+  const defaultBaseUrl = 'http://127.0.0.1:3000';
 
   console.log(`✅ Updated local E2E values in ${envPath}`);
   console.log(`🔧 Syncing required E2E gate vars to the ${convexTarget} Convex deployment...`);
 
   const convexEnvVars = [
+    ['APP_DEPLOYMENT_ENV', localValues.APP_DEPLOYMENT_ENV],
     ['ENABLE_E2E_TEST_AUTH', localValues.ENABLE_E2E_TEST_AUTH],
     ['E2E_TEST_SECRET', localValues.E2E_TEST_SECRET],
   ] as const;
 
   for (const [name, value] of convexEnvVars) {
     console.log(`   Setting ${name}...`);
-    convexEnvSet(name, value, prod);
+    convexEnvSet(name, value, false);
   }
 
   let provisioningAttempted = false;
@@ -157,24 +183,17 @@ async function main() {
   const shouldProvisionPrincipals = json
     ? false
     : await askYesNo(
-        `Provision the deterministic E2E principals now? This requires the ${prod ? 'target app URL' : 'local app'} to be reachable.`,
+        'Provision the deterministic E2E principals now? This requires the local app to be reachable.',
         false,
       );
   if (shouldProvisionPrincipals) {
     provisioningAttempted = true;
     provisioningBaseUrl = await askWithDefault(
-      prod ? 'Base URL for E2E provisioning' : 'Base URL for local E2E provisioning',
+      'Base URL for local E2E provisioning',
       defaultBaseUrl,
     );
     try {
-      const provisionArgs = [
-        'run',
-        'e2e:provision',
-        '--',
-        '--base-url',
-        provisioningBaseUrl,
-        ...(prod ? ['--prod'] : []),
-      ];
+      const provisionArgs = ['run', 'e2e:provision', '--', '--base-url', provisioningBaseUrl];
       const result = spawnSync('pnpm', provisionArgs, {
         cwd: process.cwd(),
         stdio: 'inherit',
@@ -186,13 +205,14 @@ async function main() {
     } catch {
       console.log('⚠️  E2E principal provisioning did not complete.');
       console.log(
-        `   Start the app at ${provisioningBaseUrl} and rerun \`pnpm run e2e:provision -- --base-url ${provisioningBaseUrl}${prod ? ' --prod' : ''}\` when ready.`,
+        `   Start the app at ${provisioningBaseUrl} and rerun \`pnpm run e2e:provision -- --base-url ${provisioningBaseUrl}\` when ready.`,
       );
     }
   }
 
   console.log('\n✅ Authenticated Playwright E2E setup complete!');
   console.log('────────────────────────────────────────────────');
+  console.log(`APP_DEPLOYMENT_ENV=${localValues.APP_DEPLOYMENT_ENV}`);
   console.log(`ENABLE_E2E_TEST_AUTH=${localValues.ENABLE_E2E_TEST_AUTH}`);
   console.log(`E2E_TEST_SECRET=${localValues.E2E_TEST_SECRET}`);
   console.log(`E2E_USER_EMAIL=${localValues.E2E_USER_EMAIL}`);
@@ -209,7 +229,7 @@ async function main() {
   console.log('Run `pnpm test:e2e` to execute the authenticated Playwright suite.');
   if (json) {
     emitStructuredOutput({
-      target: prod ? 'production' : 'development',
+      target: 'development',
       localEnvPath: envPath,
       syncedConvexKeys: convexEnvVars.map(([name]) => name),
       e2eUserEmail: localValues.E2E_USER_EMAIL,

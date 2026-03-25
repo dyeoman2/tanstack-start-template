@@ -40,6 +40,7 @@ import {
   getVerifiedCurrentUserFromActionOrThrow,
   getVerifiedCurrentUserOrThrow,
   listOrganizationMembers,
+  type OrganizationPermissionDecision,
   requireOrganizationPermission,
   requireOrganizationPermissionFromActionOrThrow,
 } from './auth/access';
@@ -203,6 +204,7 @@ type OrganizationSupportAccessGrantRow = {
   siteAdminEmail: string;
   siteAdminName: string | null;
   siteAdminUserId: string;
+  ticketId: string;
 };
 type OrganizationSupportAccessSiteAdminOption = {
   authUserId: string;
@@ -860,8 +862,27 @@ async function buildOrganizationSupportAccessGrantRows(
         siteAdminEmail: siteAdminProfile?.email ?? grant.siteAdminUserId,
         siteAdminName: siteAdminProfile?.name ?? null,
         siteAdminUserId: grant.siteAdminUserId,
+        ticketId: grant.ticketId,
       } satisfies OrganizationSupportAccessGrantRow;
     });
+}
+
+export function buildSupportGrantAuditMetadata(
+  decision: Pick<OrganizationPermissionDecision, 'assurance'>,
+) {
+  if (
+    !decision.assurance.supportGrantId ||
+    !decision.assurance.supportGrantScope ||
+    !decision.assurance.supportGrantTicketId
+  ) {
+    return null;
+  }
+
+  return {
+    supportGrantId: decision.assurance.supportGrantId,
+    supportGrantScope: decision.assurance.supportGrantScope,
+    ticketId: decision.assurance.supportGrantTicketId,
+  };
 }
 
 async function getOrganizationEnterpriseAccessForUser(
@@ -1984,6 +2005,7 @@ export const createOrganizationSupportAccessGrant = mutation({
     organizationId: v.string(),
     siteAdminUserId: v.string(),
     scope: organizationSupportAccessScopeValidator,
+    ticketId: v.string(),
     reason: v.string(),
     expiresAt: v.number(),
   },
@@ -2022,8 +2044,12 @@ export const createOrganizationSupportAccessGrant = mutation({
     }
 
     const reason = args.reason.trim();
+    const ticketId = args.ticketId.trim();
     if (!reason) {
       throwConvexError('VALIDATION', 'Provide a reason for this support access grant');
+    }
+    if (!ticketId) {
+      throwConvexError('VALIDATION', 'Provide a ticket ID for this support access grant');
     }
 
     const now = Date.now();
@@ -2038,6 +2064,7 @@ export const createOrganizationSupportAccessGrant = mutation({
       organizationId: args.organizationId,
       siteAdminUserId: args.siteAdminUserId,
       scope: args.scope,
+      ticketId,
       reason,
       grantedByUserId: context.user.authUserId,
       createdAt: now,
@@ -2053,6 +2080,7 @@ export const createOrganizationSupportAccessGrant = mutation({
         organizationId: args.organizationId,
         siteAdminUserId: args.siteAdminUserId,
         scope: args.scope,
+        ticketId,
         reason,
         grantedByUserId: context.user.authUserId,
         createdAt: now,
@@ -2075,6 +2103,7 @@ export const createOrganizationSupportAccessGrant = mutation({
         scope: args.scope,
         siteAdminEmail: siteAdminProfile.email,
         siteAdminUserId: args.siteAdminUserId,
+        ticketId,
       }),
       organizationId: args.organizationId,
       outcome: 'success',
@@ -3679,6 +3708,7 @@ export const exportOrganizationAuditCsv = action({
       sourceReportId: null,
     });
     const manifestHash = await hashContent(manifest);
+    const supportGrantMetadata = buildSupportGrantAuditMetadata(authorization);
 
     await ctx.runMutation(internal.securityPosture.storeExportArtifact, {
       artifactType: 'audit_csv',
@@ -3711,6 +3741,7 @@ export const exportOrganizationAuditCsv = action({
         manifestHash,
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
+        ...supportGrantMetadata,
       }),
       organizationId: exportedOrganizationId,
       outcome: 'success',
@@ -3852,6 +3883,7 @@ export const exportOrganizationDirectoryCsv = action({
       sourceReportId: null,
     });
     const manifestHash = await hashContent(manifest);
+    const supportGrantMetadata = buildSupportGrantAuditMetadata(authorization);
 
     await ctx.runMutation(internal.securityPosture.storeExportArtifact, {
       artifactType: 'directory_csv',
@@ -3884,6 +3916,7 @@ export const exportOrganizationDirectoryCsv = action({
         manifestHash,
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
+        ...supportGrantMetadata,
       }),
       organizationId: exportedOrganizationId,
       outcome: 'success',

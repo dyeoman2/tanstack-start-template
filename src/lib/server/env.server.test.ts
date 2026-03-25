@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  getAppDeploymentEnv,
   getAuditArchiveRuntimeConfig,
   getBetterAuthAllowedHosts,
   getBetterAuthSecret,
@@ -18,6 +19,7 @@ describe('isE2EPrincipalEmail', () => {
   beforeEach(() => {
     process.env = {
       ...ORIGINAL_ENV,
+      APP_DEPLOYMENT_ENV: 'development',
       ENABLE_E2E_TEST_AUTH: 'true',
       E2E_USER_EMAIL: 'e2e-user@local.test',
       E2E_ADMIN_EMAIL: 'e2e-admin@local.test',
@@ -161,16 +163,30 @@ describe('Better Auth env helpers', () => {
     expect(shouldUseSecureAuthCookies('not-a-url')).toBe(false);
   });
 
-  it('allows e2e auth only in tests or loopback runtimes', () => {
-    process.env.NODE_ENV = 'development';
-
-    expect(isSafeE2EAuthRuntime(new Request('http://127.0.0.1:3000/api/test/e2e-auth'))).toBe(true);
+  it('allows e2e auth only in explicit development or test deployments', () => {
+    process.env.APP_DEPLOYMENT_ENV = 'development';
     expect(isSafeE2EAuthRuntime(new Request('https://app.example.com/api/test/e2e-auth'))).toBe(
-      false,
+      true,
     );
 
-    process.env.NODE_ENV = 'test';
+    process.env.APP_DEPLOYMENT_ENV = 'test';
     expect(isSafeE2EAuthRuntime()).toBe(true);
+
+    process.env.APP_DEPLOYMENT_ENV = 'preview';
+    expect(isSafeE2EAuthRuntime()).toBe(false);
+
+    delete process.env.APP_DEPLOYMENT_ENV;
+    expect(isSafeE2EAuthRuntime()).toBe(false);
+  });
+
+  it('parses APP_DEPLOYMENT_ENV and rejects invalid values', () => {
+    process.env.APP_DEPLOYMENT_ENV = 'staging';
+    expect(getAppDeploymentEnv()).toBe('staging');
+
+    process.env.APP_DEPLOYMENT_ENV = 'invalid';
+    expect(() => getAppDeploymentEnv()).toThrow(
+      'APP_DEPLOYMENT_ENV must be one of: development, test, preview, staging, production.',
+    );
   });
 
   it('reads storage runtime settings from the AWS-prefixed env names', () => {
@@ -188,7 +204,7 @@ describe('Better Auth env helpers', () => {
     );
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
     expect(config.services.broker.baseUrl).toBeNull();
-    expect(config.services.worker.baseUrl).toBeNull();
+    expect(config.services.broker.accessKeyId).toBeNull();
   });
 
   it('rejects the legacy shared storage webhook secret', () => {
@@ -200,7 +216,7 @@ describe('Better Auth env helpers', () => {
     );
   });
 
-  it('requires broker and worker service wiring for s3-backed storage', () => {
+  it('requires broker credentials and callback secrets for s3-backed storage', () => {
     process.env.FILE_STORAGE_BACKEND = 's3-primary';
     process.env.AWS_REGION = 'us-west-1';
     process.env.CONVEX_SITE_URL = 'https://example.convex.site';
@@ -224,10 +240,11 @@ describe('Better Auth env helpers', () => {
     );
 
     process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
-    process.env.STORAGE_BROKER_SHARED_SECRET = 'broker-secret';
-    process.env.STORAGE_WORKER_URL = 'https://worker.example.com';
-    process.env.STORAGE_WORKER_SHARED_SECRET = 'worker-secret';
-    process.env.CONVEX_STORAGE_CALLBACK_SHARED_SECRET = 'convex-callback-secret';
+    process.env.STORAGE_BROKER_ACCESS_KEY_ID = 'broker-access-key';
+    process.env.STORAGE_BROKER_SECRET_ACCESS_KEY = 'broker-secret-key';
+    process.env.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET = 'decision-secret';
+    process.env.CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET = 'document-secret';
+    process.env.CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET = 'inspection-secret';
 
     const config = getStorageRuntimeConfig();
 
@@ -237,10 +254,11 @@ describe('Better Auth env helpers', () => {
     expect(config.storageBuckets.mirror.bucket).toBe('mirror-bucket');
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
     expect(config.services.broker.baseUrl).toBe('https://broker.example.com');
-    expect(config.services.broker.sharedSecret).toBe('broker-secret');
-    expect(config.services.worker.baseUrl).toBe('https://worker.example.com');
-    expect(config.services.worker.sharedSecret).toBe('worker-secret');
-    expect(config.services.convexCallbackSharedSecret).toBe('convex-callback-secret');
+    expect(config.services.broker.accessKeyId).toBe('broker-access-key');
+    expect(config.services.broker.secretAccessKey).toBe('broker-secret-key');
+    expect(config.services.callbacks.decision.currentSecret).toBe('decision-secret');
+    expect(config.services.callbacks.document.currentSecret).toBe('document-secret');
+    expect(config.services.callbacks.inspection.currentSecret).toBe('inspection-secret');
   });
 
   it('requires immutable audit archive wiring for s3-backed storage even when no archive env is set', () => {
@@ -256,10 +274,11 @@ describe('Better Auth env helpers', () => {
     process.env.CONVEX_SITE_URL = 'https://example.convex.site';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
     process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
-    process.env.STORAGE_BROKER_SHARED_SECRET = 'broker-secret';
-    process.env.STORAGE_WORKER_URL = 'https://worker.example.com';
-    process.env.STORAGE_WORKER_SHARED_SECRET = 'worker-secret';
-    process.env.CONVEX_STORAGE_CALLBACK_SHARED_SECRET = 'convex-callback-secret';
+    process.env.STORAGE_BROKER_ACCESS_KEY_ID = 'broker-access-key';
+    process.env.STORAGE_BROKER_SECRET_ACCESS_KEY = 'broker-secret-key';
+    process.env.CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET = 'decision-secret';
+    process.env.CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET = 'document-secret';
+    process.env.CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET = 'inspection-secret';
 
     expect(() => getAuditArchiveRuntimeConfig()).toThrow(
       'AWS_REGION environment variable is required when FILE_STORAGE_BACKEND=s3-primary.',

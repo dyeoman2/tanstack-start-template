@@ -242,6 +242,7 @@ export type OrganizationEnterpriseAccessResult = {
     id: Id<'organizationSupportAccessGrants'>;
     reason: string;
     scope: OrganizationSupportAccessScope;
+    ticketId: string;
   } | null;
 };
 
@@ -261,6 +262,7 @@ export type OrganizationSupportAccessGrantRow = {
   siteAdminEmail: string;
   siteAdminName: string | null;
   siteAdminUserId: string;
+  ticketId: string;
 };
 
 export type OrganizationSupportAccessSiteAdminOption = {

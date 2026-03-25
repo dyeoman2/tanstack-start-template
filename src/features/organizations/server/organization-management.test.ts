@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ServerError } from '~/lib/server/error-utils.server';
 
 const {
   cancelBetterAuthOrganizationInvitationMock,
@@ -309,6 +310,7 @@ describe('organization management server functions', () => {
         organizationId: 'org_1',
         siteAdminUserId: 'admin_1',
         scope: 'read_only',
+        ticketId: 'INC-42',
         reason: 'Investigate ticket INC-42',
         expiresAt: 1_710_000_000_000,
       },
@@ -318,6 +320,7 @@ describe('organization management server functions', () => {
       organizationId: 'org_1',
       siteAdminUserId: 'admin_1',
       scope: 'read_only',
+      ticketId: 'INC-42',
       reason: 'Investigate ticket INC-42',
       expiresAt: 1_710_000_000_000,
     });
@@ -421,6 +424,36 @@ describe('organization management server functions', () => {
       expect.any(Function),
     );
     expect(fetchAuthActionMock).toHaveBeenCalledWith('ensureCurrentUserContext', {});
+  });
+
+  it('does not refresh user context when organization creation is blocked by MFA enforcement', async () => {
+    const failure = new ServerError(
+      'Multi-factor authentication is required for this session',
+      403,
+      {
+        code: 'MFA_REQUIRED',
+      },
+    );
+    fetchAuthQueryMock.mockResolvedValueOnce({
+      count: 1,
+      limit: 2,
+      canCreate: true,
+      reason: null,
+      isUnlimited: false,
+    });
+    createBetterAuthOrganizationMock.mockRejectedValue(failure);
+    handleServerErrorMock.mockReturnValue(failure);
+
+    await expect(
+      createOrganizationServerFn({
+        data: {
+          name: 'Acme',
+          slug: 'acme',
+        },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(fetchAuthActionMock).not.toHaveBeenCalled();
   });
 
   it('checks slug availability through Better Auth before creation', async () => {

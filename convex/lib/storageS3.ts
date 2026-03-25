@@ -1,11 +1,15 @@
 'use node';
 
+import { fetchWithAwsSigv4 } from '../../src/lib/server/aws-sigv4';
 import { getStorageRuntimeConfig } from '../../src/lib/server/env.server';
-import { buildInternalServiceAuthorizationHeader } from '../../src/lib/server/internal-service-auth';
 import type {
+  DocumentParseQueueMessage,
   StorageBucketKind,
+  StorageDecisionQueueMessage,
+  StorageInspectionQueueMessage,
   StorageServiceDeleteObjectRequest,
   StorageServiceDownloadUrlRequest,
+  StorageServiceEnqueueResponse,
   StorageServiceListObjectVersionsRequest,
   StorageServiceListObjectVersionsResponse,
   StorageServiceListObjectsRequest,
@@ -17,20 +21,24 @@ import type {
   StorageServiceUploadTargetRequest,
 } from '../../src/lib/shared/storage-service-contract';
 
-type CleanupObjectResponse = {
+type StorageObjectResponse = {
   Body: Blob;
   ContentType?: string;
   VersionId?: string | null;
 };
 
-function getRequiredService(kind: 'broker' | 'worker') {
-  const service = getStorageRuntimeConfig().services[kind];
-  if (!service.baseUrl || !service.sharedSecret) {
-    throw new Error(`Storage ${kind} service is not configured for S3 operations.`);
+function getRequiredBrokerService() {
+  const service = getStorageRuntimeConfig().services.broker;
+  if (!service.baseUrl || !service.accessKeyId || !service.secretAccessKey) {
+    throw new Error('Storage broker service is not configured for S3 operations.');
   }
   return {
     baseUrl: service.baseUrl,
-    sharedSecret: service.sharedSecret,
+    credentials: {
+      accessKeyId: service.accessKeyId,
+      secretAccessKey: service.secretAccessKey,
+      sessionToken: service.sessionToken,
+    },
   };
 }
 
@@ -43,19 +51,18 @@ async function readErrorMessage(response: Response) {
   return text || `${response.status} ${response.statusText}`;
 }
 
-async function requestJson<TResponse>(args: {
-  body: unknown;
-  path: string;
-  service: 'broker' | 'worker';
-}) {
-  const service = getRequiredService(args.service);
-  const response = await fetch(buildUrl(service.baseUrl, args.path), {
-    method: 'POST',
-    headers: {
-      Authorization: buildInternalServiceAuthorizationHeader(service.sharedSecret),
-      'Content-Type': 'application/json',
-    },
+async function requestJson<TResponse>(args: { body: unknown; path: string }) {
+  const service = getRequiredBrokerService();
+  const runtimeConfig = getStorageRuntimeConfig();
+  const response = await fetchWithAwsSigv4({
     body: JSON.stringify(args.body),
+    credentials: service.credentials,
+    headers: {
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+    region: runtimeConfig.awsRegion ?? 'us-west-1',
+    url: buildUrl(service.baseUrl, args.path),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -67,16 +74,18 @@ async function requestJson<TResponse>(args: {
 async function requestObjectRead(args: {
   body: StorageServiceReadObjectRequest;
   path: string;
-  service: 'broker' | 'worker';
-}): Promise<CleanupObjectResponse> {
-  const service = getRequiredService(args.service);
-  const response = await fetch(buildUrl(service.baseUrl, args.path), {
-    method: 'POST',
-    headers: {
-      Authorization: buildInternalServiceAuthorizationHeader(service.sharedSecret),
-      'Content-Type': 'application/json',
-    },
+}): Promise<StorageObjectResponse> {
+  const service = getRequiredBrokerService();
+  const runtimeConfig = getStorageRuntimeConfig();
+  const response = await fetchWithAwsSigv4({
     body: JSON.stringify(args.body),
+    credentials: service.credentials,
+    headers: {
+      'content-type': 'application/json',
+    },
+    method: 'POST',
+    region: runtimeConfig.awsRegion ?? 'us-west-1',
+    url: buildUrl(service.baseUrl, args.path),
   });
   if (!response.ok) {
     throw new Error(await readErrorMessage(response));
@@ -109,7 +118,6 @@ export async function createQuarantineUploadPresignedUrl(args: StorageServiceUpl
   return await requestJson<StorageServicePresignedUrlResponse>({
     body: args,
     path: '/internal/storage/upload-target',
-    service: 'broker',
   });
 }
 
@@ -117,7 +125,6 @@ export async function createDownloadPresignedStorageUrl(args: StorageServiceDown
   return await requestJson<StorageServicePresignedUrlResponse>({
     body: args,
     path: '/internal/storage/download-url',
-    service: 'broker',
   });
 }
 
@@ -137,7 +144,6 @@ async function putObject(
   const result = await requestJson<StorageServicePutObjectResponse>({
     body: requestBody,
     path,
-    service: 'worker',
   });
   return {
     VersionId: result.versionId ?? undefined,
@@ -149,7 +155,7 @@ export async function putMirrorObject(args: {
   contentType: string;
   key: string;
 }) {
-  return await putObject('/internal/storage/mirror', args);
+  return await putObject('/internal/storage/mirror-put', args);
 }
 
 export async function putCleanObject(args: { body: Uint8Array; contentType: string; key: string }) {
@@ -164,7 +170,6 @@ export async function promoteQuarantineObject(args: {
   const result = await requestJson<StorageServicePutObjectResponse>({
     body: args,
     path: '/internal/storage/promote',
-    service: 'worker',
   });
   return {
     VersionId: result.versionId ?? undefined,
@@ -179,7 +184,6 @@ export async function rejectQuarantineObject(args: {
   const result = await requestJson<StorageServicePutObjectResponse>({
     body: args,
     path: '/internal/storage/reject',
-    service: 'worker',
   });
   return {
     VersionId: result.versionId ?? undefined,
@@ -193,7 +197,6 @@ export async function deleteStorageObject(args: StorageServiceDeleteObjectReques
       ...args,
     },
     path: '/internal/storage/cleanup',
-    service: 'worker',
   });
 }
 
@@ -204,7 +207,6 @@ export async function listStorageObjects(args: StorageServiceListObjectsRequest)
       ...args,
     },
     path: '/internal/storage/cleanup',
-    service: 'worker',
   });
   return {
     Contents: result.contents.map((entry) => ({
@@ -221,7 +223,6 @@ export async function listStorageObjectVersions(args: StorageServiceListObjectVe
       ...args,
     },
     path: '/internal/storage/cleanup',
-    service: 'worker',
   });
   return {
     Versions: result.versions.map((entry) => ({
@@ -240,7 +241,6 @@ export async function getQuarantineObject(args: { key: string }) {
       key: args.key,
     },
     path: '/internal/storage/object-read',
-    service: 'worker',
   });
 }
 
@@ -251,7 +251,6 @@ export async function getCleanObject(args: { key: string }) {
       key: args.key,
     },
     path: '/internal/storage/object-read',
-    service: 'broker',
   });
 }
 
@@ -262,6 +261,26 @@ export async function getMirrorObject(args: { key: string }) {
       key: args.key,
     },
     path: '/internal/storage/object-read',
-    service: 'broker',
+  });
+}
+
+export async function enqueueStorageInspectionTask(args: StorageInspectionQueueMessage) {
+  return await requestJson<StorageServiceEnqueueResponse>({
+    body: args,
+    path: '/internal/storage/enqueue-inspection',
+  });
+}
+
+export async function enqueueStorageDecisionTask(args: StorageDecisionQueueMessage) {
+  return await requestJson<StorageServiceEnqueueResponse>({
+    body: args,
+    path: '/internal/storage/enqueue-decision',
+  });
+}
+
+export async function enqueueDocumentParseTask(args: DocumentParseQueueMessage) {
+  return await requestJson<StorageServiceEnqueueResponse>({
+    body: args,
+    path: '/internal/storage/enqueue-document-parse',
   });
 }

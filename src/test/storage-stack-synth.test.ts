@@ -11,7 +11,7 @@ function getResourcesByType(
 }
 
 describe('storage stack synth', () => {
-  it('trusts only the dedicated broker and worker runtime roles for storage capabilities', () => {
+  it('trusts only the dedicated broker and private worker runtime roles for storage capabilities', () => {
     const { template } = synthesizeStorageStackTemplate({ stage: 'dev' });
     const roleMap = new Map(
       getResourcesByType(template, 'AWS::IAM::Role').map(([, resource]) => [
@@ -33,7 +33,19 @@ describe('storage stack synth', () => {
       ],
     });
     expect(
-      roleMap.get('tanstack-start-template-dev-storage-worker-runtime')?.Properties
+      roleMap.get('tanstack-start-template-dev-storage-inspection-worker-runtime')?.Properties
+        ?.AssumeRolePolicyDocument,
+    ).toMatchObject({
+      Statement: [
+        expect.objectContaining({
+          Principal: {
+            Service: 'lambda.amazonaws.com',
+          },
+        }),
+      ],
+    });
+    expect(
+      roleMap.get('tanstack-start-template-dev-document-parse-worker-runtime')?.Properties
         ?.AssumeRolePolicyDocument,
     ).toMatchObject({
       Statement: [
@@ -48,6 +60,7 @@ describe('storage stack synth', () => {
     for (const roleName of [
       'tanstack-start-template-dev-storage-upload-presign',
       'tanstack-start-template-dev-storage-download-presign',
+      'tanstack-start-template-dev-storage-clean-put',
     ]) {
       expect(roleMap.get(roleName)?.Properties?.AssumeRolePolicyDocument).toMatchObject({
         Statement: [
@@ -73,13 +86,22 @@ describe('storage stack synth', () => {
           expect.objectContaining({
             Principal: {
               AWS: {
-                'Fn::GetAtt': [expect.stringContaining('StorageWorkerRuntimeRole'), 'Arn'],
+                'Fn::GetAtt': [expect.stringContaining('StorageBrokerRuntimeRole'), 'Arn'],
               },
             },
           }),
         ],
       });
     }
+  });
+
+  it('removes the public worker Function URL and secures broker ingress behind API Gateway', () => {
+    const { template } = synthesizeStorageStackTemplate({ stage: 'dev' });
+    const functionUrls = getResourcesByType(template, 'AWS::Lambda::Url');
+    const apis = getResourcesByType(template, 'AWS::ApiGateway::RestApi');
+
+    expect(functionUrls).toHaveLength(0);
+    expect(apis).toHaveLength(1);
   });
 
   it('includes SNS email alerting and quarantine stuck alarms in production', () => {

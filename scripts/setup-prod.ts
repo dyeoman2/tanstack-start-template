@@ -57,12 +57,25 @@ import {
 import { syncNetlifyProductionRuntimeAndBuildVars } from './lib/netlify-site-env';
 import { DEFAULT_APP_NAME, DEFAULT_PROD_RESEND_SENDER } from './lib/setup-defaults';
 import {
+  checkGitHubMutationReadiness,
+  checkNetlifyMutationReadiness,
+} from './lib/provider-preflight';
+import {
+  filterSetupProdNextCommands,
+  hasFailedDeployDoctorChecks,
+  normalizeStrictReadiness,
+  normalizeSetupProdReadinessMap,
+  summarizeFailedDeployDoctorChecks,
+  type StrictReadinessState,
+} from './lib/setup-prod-gate';
+import {
   emitStructuredOutput,
   printFinalChangeSummary,
   printStatusSummary,
   printTargetSummary,
   routeLogsToStderrWhenJson,
 } from './lib/script-ux';
+import { isS3BackedStorageBackend, type DeployDoctorCheck } from './lib/deploy-doctor-checks';
 
 type ProdCliOptions = {
   createNetlifySite: string | null;
@@ -308,6 +321,13 @@ type ChildSetupSummary = {
   warnings?: string[];
 };
 
+type DeployDoctorSummary = {
+  checks?: DeployDoctorCheck[];
+  mode?: string;
+  ok?: boolean;
+  schemaVersion?: number;
+};
+
 function appendUnique(target: string[], values?: string[]) {
   for (const value of values ?? []) {
     if (!target.includes(value)) {
@@ -333,6 +353,28 @@ function runInteractiveCommandWithSummary(command: string, env?: NodeJS.ProcessE
   } finally {
     rmSync(outputDir, { force: true, recursive: true });
   }
+}
+
+function runJsonCommand(command: string, args: string[], env?: NodeJS.ProcessEnv) {
+  const result = spawnSync(command, args, {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      ...env,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const raw = (result.stdout ?? '').trim();
+  if (!raw) {
+    throw new Error(`${command} ${args.join(' ')} did not produce JSON output.`);
+  }
+
+  return {
+    parsed: JSON.parse(raw) as DeployDoctorSummary,
+    status: result.status ?? 1,
+  };
 }
 
 function isNetlifyCliReady() {
@@ -468,6 +510,7 @@ async function main() {
     netlify: 'pending',
     storage: 'skipped',
     dr: 'skipped',
+    validation: 'needs attention',
   };
 
   try {
@@ -523,24 +566,22 @@ async function main() {
         readiness: {
           ai:
             planEnvFromFile.OPENROUTER_API_KEY?.trim() || process.env.OPENROUTER_API_KEY?.trim()
-              ? 'would configure'
-              : 'optional / unknown',
-          convex: 'would configure',
-          email: planEnvFromFile.RESEND_API_KEY?.trim() ? 'would configure' : 'optional / unknown',
-          github: opts.skipGithubDeploy ? 'skipped' : 'would configure',
-          netlify: commandOnPath('netlify') ? getNetlifyAuthStatus() : 'cli missing',
-          auditArchive: 'optional',
-          storage: 'optional',
-          dr: 'optional',
+              ? 'ready'
+              : 'needs attention',
+          auditArchive: 'skipped',
+          convex: 'needs attention',
+          email: planEnvFromFile.RESEND_API_KEY?.trim() ? 'ready' : 'needs attention',
+          github: opts.skipGithubDeploy ? 'skipped' : 'needs attention',
+          netlify: commandOnPath('netlify') ? 'needs attention' : 'failed',
+          storage: 'needs attention',
+          dr: 'skipped',
+          validation: 'needs attention',
         },
         targets: {
           linkedNetlifySite: formatNetlifySiteSummary(planLinkedSite),
           linkedNetlifyOrigin: planLinkedSiteOrigin,
           smokeBaseUrl:
-            resolveConfiguredSmokeBaseUrl(opts, planEnvFromFile) ||
-            getExistingProdBetterAuthUrl() ||
-            planLinkedSiteOrigin ||
-            null,
+            resolveConfiguredSmokeBaseUrl(opts, planEnvFromFile) || planLinkedSiteOrigin || null,
         },
       };
       if (opts.json) {
@@ -713,6 +754,12 @@ async function main() {
       convexInfo &&
       (opts.yes || (await askYesNo('Set VITE_CONVEX_URL on Netlify production now?', true)))
     ) {
+      const netlifyPreflight = checkNetlifyMutationReadiness({
+        requireLinkedSite: !selectedProductionSite?.id,
+      });
+      if (!netlifyPreflight.ok) {
+        throw new Error(netlifyPreflight.detail);
+      }
       requireCommands([{ cmd: 'netlify' }]);
       const netlifyToken = await chooseOrPromptSecret(
         'Netlify auth token',
@@ -745,7 +792,7 @@ async function main() {
         warnings.push('Netlify production env vars still need to be set manually.');
       }
     } else if (readiness.netlify === 'pending') {
-      readiness.netlify = selectedProductionSite ? 'site selected, env sync skipped' : 'skipped';
+      readiness.netlify = 'needs attention';
     }
 
     let runGithubConfigure = true;
@@ -805,6 +852,10 @@ async function main() {
     }
 
     if (runGithubConfigure) {
+      const githubPreflight = checkGitHubMutationReadiness();
+      if (!githubPreflight.ok) {
+        throw new Error(githubPreflight.detail);
+      }
       requireCommands([{ cmd: 'git' }, { cmd: 'gh' }]);
       const { repo } = await configureGitHubDeployEnvironments({
         productionConvexDeployKey,
@@ -839,16 +890,19 @@ async function main() {
 
     console.log('\n📦 Production storage setup');
     try {
-      const storageSummary = runInteractiveCommandWithSummary('pnpm run storage:setup:prod', {
-        ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
-        ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
-      });
+      const storageSummary = runInteractiveCommandWithSummary(
+        opts.yes ? 'pnpm run storage:setup:prod -- --yes' : 'pnpm run storage:setup:prod',
+        {
+          ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
+          ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
+        },
+      );
       changedRemotely.push('Ran guided production storage setup');
       appendUnique(changedLocally, storageSummary?.changedLocally);
       appendUnique(changedRemotely, storageSummary?.changedRemotely);
       appendUnique(nextCommands, storageSummary?.nextCommands);
       appendUnique(warnings, storageSummary?.warnings);
-      readiness.storage = storageSummary?.readiness?.storage ?? 'needs attention';
+      readiness.storage = normalizeStrictReadiness(storageSummary?.readiness?.storage);
       if (readiness.storage !== 'ready') {
         warnings.push(
           'Production storage setup completed, but storage is not fully ready yet. Review the child summary for missing broker/worker runtime URLs or skipped sync steps.',
@@ -863,43 +917,56 @@ async function main() {
     }
 
     console.log('\n📦 Optional production extras');
-    if (!opts.yes) {
-      const shouldSetupAuditArchive = await askYesNo(
-        'Configure immutable audit archive now?',
-        false,
-      );
-      if (shouldSetupAuditArchive) {
-        try {
-          const auditArchiveSummary = runInteractiveCommandWithSummary(
-            'pnpm run audit-archive:setup -- --prod',
-          );
-          changedRemotely.push('Ran guided audit archive setup');
-          appendUnique(changedLocally, auditArchiveSummary?.changedLocally);
-          appendUnique(changedRemotely, auditArchiveSummary?.changedRemotely);
-          appendUnique(nextCommands, auditArchiveSummary?.nextCommands);
-          appendUnique(warnings, auditArchiveSummary?.warnings);
-          readiness.auditArchive =
-            auditArchiveSummary?.readiness?.auditArchive ?? 'needs attention';
-          if (readiness.auditArchive !== 'ready') {
-            warnings.push(
-              'Audit archive setup ran, but immutable archive runtime outputs or Convex sync still need attention.',
-            );
-          }
-        } catch {
-          console.log(
-            '⚠️  Audit archive setup did not complete. You can rerun `pnpm run audit-archive:setup -- --prod` later.',
-          );
-          readiness.auditArchive = 'needs attention';
-          warnings.push('Audit archive setup was started but did not complete.');
-        }
-      } else {
-        console.log(
-          'ℹ️  Skipping immutable audit archive setup. Run `pnpm run audit-archive:setup -- --prod` any time.',
+    const currentProdEnv = existsSync(path.join(process.cwd(), '.env.prod'))
+      ? loadEnvFileMap('.env.prod')
+      : {};
+    const archiveRequired = isS3BackedStorageBackend(currentProdEnv.FILE_STORAGE_BACKEND ?? '');
+    const shouldSetupAuditArchive = archiveRequired
+      ? opts.yes ||
+        (await askYesNo(
+          'Immutable audit archive is required for S3-backed storage. Configure it now?',
+          true,
+        ))
+      : opts.yes
+        ? false
+        : await askYesNo('Configure immutable audit archive now?', false);
+    if (shouldSetupAuditArchive) {
+      try {
+        const auditArchiveSummary = runInteractiveCommandWithSummary(
+          opts.yes
+            ? 'pnpm run audit-archive:setup -- --prod --yes'
+            : 'pnpm run audit-archive:setup -- --prod',
         );
-        readiness.auditArchive = 'skipped';
+        changedRemotely.push('Ran guided audit archive setup');
+        appendUnique(changedLocally, auditArchiveSummary?.changedLocally);
+        appendUnique(changedRemotely, auditArchiveSummary?.changedRemotely);
+        appendUnique(nextCommands, auditArchiveSummary?.nextCommands);
+        appendUnique(warnings, auditArchiveSummary?.warnings);
+        readiness.auditArchive = normalizeStrictReadiness(
+          auditArchiveSummary?.readiness?.auditArchive,
+        );
+        if (readiness.auditArchive !== 'ready') {
+          warnings.push(
+            'Audit archive setup ran, but immutable archive runtime outputs or Convex sync still need attention.',
+          );
+        }
+      } catch {
+        console.log(
+          '⚠️  Audit archive setup did not complete. You can rerun `pnpm run audit-archive:setup -- --prod` later.',
+        );
+        readiness.auditArchive = archiveRequired ? 'failed' : 'needs attention';
+        warnings.push('Audit archive setup was started but did not complete.');
       }
+    } else if (archiveRequired) {
+      console.log('⚠️  Immutable audit archive remains required for S3-backed storage.');
+      readiness.auditArchive = 'failed';
+      warnings.push(
+        'Immutable audit archive was skipped even though production storage requires it.',
+      );
     } else {
-      console.log('ℹ️  Skipping optional audit archive setup in non-interactive mode.');
+      console.log(
+        'ℹ️  Skipping immutable audit archive setup. Run `pnpm run audit-archive:setup -- --prod` any time.',
+      );
       readiness.auditArchive = 'skipped';
     }
 
@@ -914,7 +981,7 @@ async function main() {
         try {
           runInteractiveCommand('pnpm run dr:setup');
           changedRemotely.push('Ran guided disaster recovery setup');
-          readiness.dr = 'configured in follow-up flow';
+          readiness.dr = 'ready';
         } catch {
           console.log(
             '⚠️  Disaster recovery setup did not complete. You can rerun `pnpm run dr:setup` later.',
@@ -948,11 +1015,52 @@ async function main() {
     if (readiness.dr !== 'ready' && !nextCommands.includes('pnpm run dr:setup')) {
       nextCommands.push('pnpm run dr:setup');
     }
-    const finalSummary = { changedLocally, changedRemotely, nextCommands, readiness, warnings };
+    const doctorResult = runJsonCommand(
+      'pnpm',
+      ['run', 'deploy:doctor', '--', '--prod', '--json'],
+      {
+        ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
+        ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
+      },
+    );
+    const failedDoctorChecks = summarizeFailedDeployDoctorChecks(doctorResult.parsed.checks ?? []);
+    readiness.validation = hasFailedDeployDoctorChecks(doctorResult.parsed.checks ?? [])
+      ? 'failed'
+      : 'ready';
+
+    const normalizedReadiness = normalizeSetupProdReadinessMap(readiness) as Record<
+      string,
+      StrictReadinessState
+    >;
+
+    const filteredNextCommands = filterSetupProdNextCommands({
+      nextCommands,
+      readiness: normalizedReadiness,
+    });
+
+    const finalSummary = {
+      changedLocally,
+      changedRemotely,
+      nextCommands: filteredNextCommands,
+      readiness: normalizedReadiness,
+      warnings,
+      validation: {
+        deployDoctor: doctorResult.parsed,
+      },
+    };
     if (opts.json) {
       emitStructuredOutput(finalSummary);
     } else {
       printFinalChangeSummary(finalSummary);
+    }
+    if (normalizedReadiness.validation === 'failed' || failedDoctorChecks.length > 0) {
+      if (!opts.json) {
+        console.log('Production bootstrap validation failed:');
+        for (const line of failedDoctorChecks) {
+          console.log(`- ${line}`);
+        }
+      }
+      process.exit(1);
     }
   } catch (error) {
     console.error('\n❌ Setup failed:', error);

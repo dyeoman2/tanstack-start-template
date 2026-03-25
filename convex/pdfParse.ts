@@ -25,8 +25,12 @@ export const getPdfParseJobByStorageIdInternal = internalQuery({
 export const upsertPdfParseJobInternal = internalMutation({
   args: {
     completedAt: v.optional(v.union(v.number(), v.null())),
+    dispatchAttempts: v.optional(v.number()),
+    dispatchErrorMessage: v.optional(v.union(v.string(), v.null())),
     errorMessage: v.optional(v.union(v.string(), v.null())),
     organizationId: v.string(),
+    parserVersion: v.optional(v.union(v.string(), v.null())),
+    processingStartedAt: v.optional(v.union(v.number(), v.null())),
     requestedByUserId: v.string(),
     resultStorageId: v.optional(v.union(v.string(), v.null())),
     status: pdfParseJobStatusValidator,
@@ -43,8 +47,12 @@ export const upsertPdfParseJobInternal = internalMutation({
     if (existing) {
       await ctx.db.patch(existing._id, {
         completedAt: args.completedAt ?? existing.completedAt,
+        dispatchAttempts: args.dispatchAttempts ?? existing.dispatchAttempts,
+        dispatchErrorMessage: args.dispatchErrorMessage ?? undefined,
         errorMessage: args.errorMessage ?? undefined,
         organizationId: args.organizationId,
+        parserVersion: args.parserVersion ?? existing.parserVersion,
+        processingStartedAt: args.processingStartedAt ?? existing.processingStartedAt,
         requestedByUserId: args.requestedByUserId,
         resultStorageId: args.resultStorageId ?? existing.resultStorageId,
         status: args.status,
@@ -56,8 +64,12 @@ export const upsertPdfParseJobInternal = internalMutation({
     return await ctx.db.insert('pdfParseJobs', {
       completedAt: args.completedAt ?? undefined,
       createdAt: args.updatedAt,
+      dispatchAttempts: args.dispatchAttempts ?? 0,
+      dispatchErrorMessage: args.dispatchErrorMessage ?? undefined,
       errorMessage: args.errorMessage ?? undefined,
       organizationId: args.organizationId,
+      parserVersion: args.parserVersion ?? undefined,
+      processingStartedAt: args.processingStartedAt ?? undefined,
       requestedByUserId: args.requestedByUserId,
       resultStorageId: args.resultStorageId ?? undefined,
       status: args.status,

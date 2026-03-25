@@ -97,6 +97,7 @@ const organizationSupportAccessGrantSchema = z.object({
   organizationId: z.string().min(1),
   siteAdminUserId: z.string().min(1),
   scope: organizationSupportAccessScopeSchema,
+  ticketId: z.string().trim().min(1).max(200),
   reason: z.string().trim().min(1).max(500),
   expiresAt: z.number().int().positive(),
 });

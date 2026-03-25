@@ -44,6 +44,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function assertTestAuthDeploymentEnv() {
+  const deploymentEnv = process.env.APP_DEPLOYMENT_ENV;
+  if (deploymentEnv === 'development' || deploymentEnv === 'test') {
+    return;
+  }
+
+  throw new Error('APP_DEPLOYMENT_ENV must be set to development or test for local test auth');
+}
+
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     baseUrl: 'http://127.0.0.1:3000',
@@ -118,9 +127,12 @@ async function main() {
   console.log(
     'What this does: authenticate against /api/test/e2e-auth, load a page, optionally capture a screenshot, and print a compact JSON summary.',
   );
-  console.log('Prereqs: local app reachable, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set.');
+  console.log(
+    'Prereqs: local app reachable, APP_DEPLOYMENT_ENV=development|test, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set.',
+  );
   console.log('Safe to rerun: yes.\n');
 
+  assertTestAuthDeploymentEnv();
   if (process.env.ENABLE_E2E_TEST_AUTH !== 'true') {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true');
   }

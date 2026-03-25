@@ -18,6 +18,15 @@ function assertRequiredEnv(name: string) {
   }
 }
 
+function assertTestAuthDeploymentEnv() {
+  const deploymentEnv = process.env.APP_DEPLOYMENT_ENV;
+  if (deploymentEnv === 'development' || deploymentEnv === 'test') {
+    return;
+  }
+
+  throw new Error('APP_DEPLOYMENT_ENV must be set to development or test for Playwright E2E');
+}
+
 function withInstrumentServerImport(existingNodeOptions: string | undefined) {
   const importFlag = '--import ./instrument.server.mjs';
   if (!existingNodeOptions || existingNodeOptions.trim().length === 0) {
@@ -37,6 +46,7 @@ async function main() {
   const requiredEnv = [
     'BETTER_AUTH_SECRET',
     'VITE_CONVEX_URL',
+    'APP_DEPLOYMENT_ENV',
     'ENABLE_E2E_TEST_AUTH',
     'E2E_TEST_SECRET',
     'E2E_USER_EMAIL',
@@ -52,6 +62,8 @@ async function main() {
   if (process.env.ENABLE_E2E_TEST_AUTH !== 'true') {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true for authenticated Playwright E2E');
   }
+
+  assertTestAuthDeploymentEnv();
 
   const child = spawn('pnpm', ['exec', 'vite', 'dev', '--host', HOST, '--port', PORT], {
     cwd: process.cwd(),

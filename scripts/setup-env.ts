@@ -84,6 +84,7 @@ BETTER_AUTH_SECRET=${authSecret}
 
 # Set development environment
 NODE_ENV=development
+APP_DEPLOYMENT_ENV=development
 
 # Better Auth base URL. Use 127.0.0.1 so local browser automation shares one origin.
 BETTER_AUTH_URL=http://127.0.0.1:3000
@@ -164,7 +165,7 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # PLAYWRIGHT E2E AUTH (Optional)
 # ==========================================
 
-# Enable only when you want authenticated E2E seeding/login helpers
+# Enable only when you want authenticated E2E seeding/login helpers in an explicit development/test deployment
 # ENABLE_E2E_TEST_AUTH=true
 # E2E_TEST_SECRET=<shared-secret-for-test-route>
 # E2E_USER_EMAIL=e2e-user@local.test

@@ -21,6 +21,7 @@ Current schema version:
 - `pnpm run dr:setup -- --plan --json`
 - `pnpm run storage:setup -- --json`
 - `pnpm run storage:setup:prod -- --json`
+- `pnpm run audit-archive:setup -- --prod --json`
 - `pnpm run dr:netlify:setup -- --json`
 - `pnpm run convex:env:hygiene -- --json`
 - `pnpm run setup:e2e -- --json`
@@ -51,3 +52,4 @@ This is an alias for clearer CI/operator usage.
 
 - Prefer `--plan --json` before using a live mutating operator flow in CI or scripted automation.
 - For mutating scripts, treat the JSON payload as a summary contract, not a full event stream.
+- `setup:prod` now runs a final `deploy:doctor -- --prod --json` validation gate and exits non-zero when required production checks still fail.

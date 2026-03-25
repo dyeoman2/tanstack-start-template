@@ -50,8 +50,7 @@ async function postToConvex({ payload, secret, webhookUrl }) {
 }
 
 export async function handler(event) {
-  const webhookUrl =
-    process.env.STORAGE_WORKER_WEBHOOK_URL ?? process.env.CONVEX_GUARDDUTY_WEBHOOK_URL;
+  const webhookUrl = process.env.CONVEX_GUARDDUTY_WEBHOOK_URL;
   const secret = process.env.GUARDDUTY_WEBHOOK_SHARED_SECRET;
   const expectedBucket = process.env.EXPECTED_BUCKET_NAME;
 

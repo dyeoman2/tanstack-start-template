@@ -33,8 +33,36 @@ interface AuthProviderProps {
   children: ReactNode;
 }
 
+function getEnsureContextErrorCode(error: unknown): string | null {
+  if (!error || typeof error !== 'object') {
+    return null;
+  }
+
+  const candidate = error as {
+    code?: unknown;
+    data?: { code?: unknown };
+  };
+
+  if (typeof candidate.data?.code === 'string') {
+    return candidate.data.code;
+  }
+
+  if (typeof candidate.code === 'string') {
+    return candidate.code;
+  }
+
+  return null;
+}
+
 function AuthProvider({ children }: AuthProviderProps) {
-  const { user, isAuthenticated, isPending, isSiteAdmin } = useAuth();
+  const {
+    user,
+    isAuthenticated,
+    isPending,
+    isSiteAdmin,
+    requiresMfaSetup,
+    requiresMfaVerification,
+  } = useAuth();
   const { isAuthenticated: isConvexAuthenticated, isLoading: isConvexAuthLoading } =
     useConvexAuth();
   const ensureCurrentUserContext = useAction(api.users.ensureCurrentUserContext);
@@ -125,7 +153,17 @@ function AuthProvider({ children }: AuthProviderProps) {
       return;
     }
 
+    if (requiresMfaSetup || requiresMfaVerification) {
+      return;
+    }
+
     void ensureCurrentUserContext({}).catch((error) => {
+      const code = getEnsureContextErrorCode(error);
+      if (code === 'MFA_REQUIRED' || code === 'UNAUTHENTICATED') {
+        console.info('[auth] Skipping user context ensure until session assurance is available');
+        return;
+      }
+
       console.warn('[auth] Failed to ensure user context', error);
     });
   }, [
@@ -134,6 +172,8 @@ function AuthProvider({ children }: AuthProviderProps) {
     isPending,
     isConvexAuthLoading,
     isConvexAuthenticated,
+    requiresMfaSetup,
+    requiresMfaVerification,
   ]);
 
   return (

@@ -80,6 +80,13 @@ For guided immutable audit archive setup:
 pnpm run audit-archive:setup -- --prod
 ```
 
+Preview / deploy directly from the current `.env.prod` operator state:
+
+```bash
+pnpm run audit-archive:preview
+pnpm run audit-archive:deploy
+```
+
 Destroy:
 
 ```bash

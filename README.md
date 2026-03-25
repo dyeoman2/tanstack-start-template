@@ -157,6 +157,7 @@ pnpm setup:e2e
 That command updates `.env.local` with deterministic E2E principals and syncs the required gate vars to your current Convex deployment automatically. If you prefer to manage the values manually, add these values to `.env.local` before running authenticated suites:
 
 ```bash
+APP_DEPLOYMENT_ENV=development
 ENABLE_E2E_TEST_AUTH=true
 E2E_TEST_SECRET=replace-with-a-shared-secret
 E2E_USER_EMAIL=e2e-user@local.test
@@ -167,14 +168,15 @@ E2E_ADMIN_PASSWORD=replace-with-a-deterministic-password
 
 `pnpm run setup:e2e` writes the deterministic credentials locally and syncs the Convex gate vars. Principal provisioning now happens outside the app runtime: run `pnpm run e2e:provision` manually, or let the browser tooling auto-provision on first use before it saves `playwright/.auth/user.json` and `playwright/.auth/admin.json`.
 
-Because the frontend test server reuses your configured Convex deployment, that deployment must also have:
+Because the frontend test server reuses your configured Convex development deployment, that deployment must also have:
 
 ```bash
+APP_DEPLOYMENT_ENV=development
 ENABLE_E2E_TEST_AUTH=true
 E2E_TEST_SECRET=the-same-shared-secret
 ```
 
-`pnpm setup:e2e` handles that sync for the current deployment. You only need to set those deployment vars manually if you are not using the setup script.
+`pnpm setup:e2e` handles that sync for the current development deployment. Never enable these vars on preview, staging, or production deployments.
 
 ### Agent Browser Authentication
 

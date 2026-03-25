@@ -80,6 +80,7 @@ Production builds and SSR need:
 
 `pnpm run setup:prod` can push this to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
 `setup:prod` also orchestrates the guided production storage flow, the optional immutable audit archive flow, and the optional DR flow, and now reports their child-script readiness back in the final summary instead of treating “the child exited” as success.
+At the end of the flow, `setup:prod` runs `pnpm run deploy:doctor -- --prod --json` and fails hard if required production checks still fail.
 
 ### Creating a site from the CLI
 
@@ -190,9 +191,17 @@ pnpm run audit-archive:setup -- --prod
 
 That flow persists both deploy-time inputs and the runtime outputs (`AWS_AUDIT_ARCHIVE_BUCKET`, `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`, `AWS_AUDIT_ARCHIVE_ROLE_ARN`) to `.env.prod`, and can sync the runtime values into Convex production when the stack outputs are available.
 
+For direct operator or CI deploys of the immutable archive stack, use:
+
+```bash
+pnpm run audit-archive:preview
+pnpm run audit-archive:deploy
+```
+
 The storage CDK stack creates dedicated broker and worker runtime roles and scopes the
 per-capability storage roles so only those runtime roles can assume them.
 When `AWS_STORAGE_ALERT_EMAIL` is set for production storage deploys, the stack creates an SNS Standard topic with an email subscription and wires the storage alarms to it.
+`deploy:doctor -- --prod` now treats an unconfirmed storage alert email subscription as a failed production readiness check when `AWS_STORAGE_ALERT_EMAIL` is configured in `.env.prod`.
 
 ### `setup:prod` flags
 

@@ -27,6 +27,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
+function assertTestAuthDeploymentEnv() {
+  const deploymentEnv = process.env.APP_DEPLOYMENT_ENV;
+  if (deploymentEnv === 'development' || deploymentEnv === 'test') {
+    return;
+  }
+
+  throw new Error('APP_DEPLOYMENT_ENV must be set to development or test for local test auth');
+}
+
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     principal: 'user',
@@ -139,10 +148,11 @@ async function main() {
     'What this does: opens a local app session and authenticates it for automated browser work.',
   );
   console.log(
-    'Prereqs: local app reachable, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set, agent-browser installed.',
+    'Prereqs: local app reachable, APP_DEPLOYMENT_ENV=development|test, ENABLE_E2E_TEST_AUTH=true, E2E_TEST_SECRET set, agent-browser installed.',
   );
   console.log('Safe to rerun: yes; the named session can be reauthenticated.\n');
 
+  assertTestAuthDeploymentEnv();
   if (process.env.ENABLE_E2E_TEST_AUTH !== 'true') {
     throw new Error('ENABLE_E2E_TEST_AUTH must be set to true');
   }

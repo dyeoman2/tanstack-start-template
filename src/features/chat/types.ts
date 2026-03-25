@@ -12,6 +12,7 @@ export type ChatAttachmentKind = 'image' | 'document';
 export type ChatAttachmentStatus =
   | 'pending'
   | 'pending_scan'
+  | 'processing'
   | 'quarantined'
   | 'ready'
   | 'error'

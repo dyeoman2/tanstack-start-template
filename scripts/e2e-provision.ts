@@ -10,14 +10,12 @@ type Options = {
   baseUrl?: string;
   json: boolean;
   principal: Principal;
-  prod: boolean;
 };
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
     json: false,
     principal: 'all',
-    prod: false,
   };
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -38,11 +36,6 @@ function parseArgs(argv: string[]): Options {
       continue;
     }
 
-    if (arg === '--prod') {
-      options.prod = true;
-      continue;
-    }
-
     if (arg === '--json') {
       options.json = true;
     }
@@ -57,7 +50,7 @@ function loadLocalEnv() {
 
 function printUsage() {
   console.log(
-    'Usage: pnpm run e2e:provision -- [--base-url http://127.0.0.1:3000] [--principal user|admin|all] [--prod] [--json]',
+    'Usage: pnpm run e2e:provision -- [--base-url http://127.0.0.1:3000] [--principal user|admin|all] [--json]',
   );
   console.log('');
   console.log('What this does: provisions deterministic E2E principals outside the app runtime.');
@@ -73,6 +66,11 @@ async function main() {
   }
 
   loadLocalEnv();
+  if (process.argv.includes('--prod')) {
+    throw new Error(
+      'e2e:provision no longer supports --prod. Test auth is limited to explicit development or test deployments.',
+    );
+  }
   const options = parseArgs(process.argv.slice(2));
   const baseUrl = await resolveLocalBaseUrl(options.baseUrl);
   const principals: Array<'user' | 'admin'> =
@@ -95,7 +93,6 @@ async function main() {
       await ensureE2EPrincipalProvisioned({
         baseUrl,
         principal,
-        prod: options.prod,
         quiet: options.json,
       }),
     );

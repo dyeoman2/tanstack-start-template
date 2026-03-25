@@ -230,8 +230,8 @@ export function OrganizationSsoEnforcementManagement({
       ) : null}
 
       <p className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-        Provider support access to tenant PHI always requires an owner-issued temporary grant before
-        any tenant data-plane paths can be opened.
+        Provider support access to any tenant-scoped organization data or settings always requires
+        an owner-issued temporary grant before access is opened.
       </p>
 
       {saveError ? (

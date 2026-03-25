@@ -2,10 +2,6 @@
 
 import { ConvexError, v } from 'convex/values';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
-import {
-  inspectStorageUploadBytes,
-  resolveStorageInspectionPolicy,
-} from '../src/lib/server/storage-inspection-policy';
 import { parseStorageInspectionWebhookPayload as parseSharedStorageInspectionWebhookPayload } from '../src/lib/shared/storage-webhook-payload';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
@@ -13,17 +9,28 @@ import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
 import {
   deleteStorageObject,
-  getQuarantineObject,
+  enqueueStorageInspectionTask,
   promoteQuarantineObject,
   rejectQuarantineObject,
 } from './lib/storageS3';
 import { buildPromotedStorageKey, buildRejectedStorageKey } from './storageS3Primary';
+import { inspectionReasonValidator, type InspectionReason } from './storageTypes';
 
 type LifecycleDoc = Doc<'storageLifecycle'>;
 
 export const storageInspectionWebhookPayloadValidator = v.object({
   bucket: v.string(),
   key: v.string(),
+});
+
+export const storageInspectionResultPayloadValidator = v.object({
+  type: v.literal('inspection_result'),
+  storageId: v.string(),
+  details: v.optional(v.string()),
+  engine: v.string(),
+  reason: v.optional(inspectionReasonValidator),
+  scannedAt: v.number(),
+  status: v.union(v.literal('FAILED'), v.literal('PASSED'), v.literal('REJECTED')),
 });
 
 export function parseStorageInspectionWebhookPayload(payload: string) {
@@ -34,48 +41,6 @@ export function parseStorageInspectionWebhookPayload(payload: string) {
       error instanceof Error ? error.message : 'Storage inspection webhook payload is malformed.',
     );
   }
-}
-
-async function readObjectBytes(args: { key: string }): Promise<Uint8Array | null> {
-  const object = await getQuarantineObject({ key: args.key });
-  const body = object.Body;
-  if (!body) {
-    return null;
-  }
-  if (body instanceof Uint8Array) {
-    return body;
-  }
-  if (typeof body === 'object' && body !== null && 'transformToByteArray' in body) {
-    return await (
-      body as {
-        transformToByteArray: () => Promise<Uint8Array>;
-      }
-    ).transformToByteArray();
-  }
-  if (typeof body === 'object' && body !== null && 'transformToWebStream' in body) {
-    const stream = (
-      body as { transformToWebStream: () => ReadableStream<Uint8Array> }
-    ).transformToWebStream();
-    const reader = stream.getReader();
-    const chunks: Uint8Array[] = [];
-    let totalLength = 0;
-    while (true) {
-      const result = await reader.read();
-      if (result.done) {
-        break;
-      }
-      chunks.push(result.value);
-      totalLength += result.value.byteLength;
-    }
-    const combined = new Uint8Array(totalLength);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    return combined;
-  }
-  return null;
 }
 
 async function loadLifecycleByStorageId(
@@ -260,15 +225,8 @@ export async function tryFinalizeStorageDecision(ctx: ActionCtx, args: { storage
 }
 
 async function inspectLifecycle(ctx: ActionCtx, lifecycle: LifecycleDoc) {
-  const runtimeConfig = getStorageRuntimeConfig();
   if (!lifecycle.quarantineBucket || !lifecycle.quarantineKey) {
     return { applied: false, reason: 'missing_quarantine_object' as const };
-  }
-  if (
-    runtimeConfig.storageBuckets.quarantine.bucket &&
-    lifecycle.quarantineBucket !== runtimeConfig.storageBuckets.quarantine.bucket
-  ) {
-    return { applied: false, reason: 'wrong_bucket' as const };
   }
   if (
     lifecycle.inspectionStatus === 'PASSED' ||
@@ -277,60 +235,30 @@ async function inspectLifecycle(ctx: ActionCtx, lifecycle: LifecycleDoc) {
   ) {
     return { applied: false, reason: 'already_inspected' as const };
   }
-
-  const bytes = await readObjectBytes({
+  const runtimeConfig = getStorageRuntimeConfig();
+  const maxBytes =
+    lifecycle.sourceType === 'security_control_evidence'
+      ? Math.max(runtimeConfig.fileUploadMaxBytes, 25 * 1024 * 1024)
+      : runtimeConfig.fileUploadMaxBytes;
+  await enqueueStorageInspectionTask({
+    kind: 'storage_inspection',
+    storageId: lifecycle.storageId,
+    bucket: lifecycle.quarantineBucket,
+    fileName: lifecycle.originalFileName,
     key: lifecycle.quarantineKey,
-  });
-  if (!bytes) {
-    await ctx.runMutation(internal.storageLifecycle.markInspectionFailedInternal, {
-      details: 'Uploaded file was not found in S3 quarantine storage.',
-      engine: 's3-intake-policy',
-      scannedAt: Date.now(),
-      storageId: lifecycle.storageId,
-    });
-    await tryFinalizeStorageDecision(ctx, { storageId: lifecycle.storageId });
-    return { applied: false, reason: 'missing_object' as const };
-  }
-
-  const policy = resolveStorageInspectionPolicy({
-    defaultMaxBytes: runtimeConfig.fileUploadMaxBytes,
+    maxBytes,
+    mimeType: lifecycle.mimeType ?? 'application/octet-stream',
+    organizationId: lifecycle.organizationId ?? null,
+    sha256Hex: lifecycle.sha256Hex,
     sourceType: lifecycle.sourceType,
   });
-  const result = await inspectStorageUploadBytes({
-    allowedKinds: policy.allowedKinds,
-    bytes,
-    fileName: lifecycle.originalFileName,
-    maxBytes: policy.maxBytes,
-    mimeType: lifecycle.mimeType ?? 'application/octet-stream',
-    sha256Hex: lifecycle.sha256Hex ?? undefined,
+  await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
+    actionResult: 'success',
+    details: 'inspection_enqueued',
+    eventType: 'inspection_enqueued',
+    storageId: lifecycle.storageId,
   });
-
-  if (result.status === 'PASSED') {
-    await ctx.runMutation(internal.storageLifecycle.markInspectionPassedInternal, {
-      details: result.details ?? null,
-      engine: result.engine,
-      scannedAt: result.inspectedAt,
-      storageId: lifecycle.storageId,
-    });
-  } else if (result.status === 'REJECTED') {
-    await ctx.runMutation(internal.storageLifecycle.markInspectionRejectedInternal, {
-      details: result.details ?? null,
-      engine: result.engine,
-      reason: result.reason ?? 'inspection_error',
-      scannedAt: result.inspectedAt,
-      storageId: lifecycle.storageId,
-    });
-  } else {
-    await ctx.runMutation(internal.storageLifecycle.markInspectionFailedInternal, {
-      details: result.details ?? null,
-      engine: result.engine,
-      scannedAt: result.inspectedAt,
-      storageId: lifecycle.storageId,
-    });
-  }
-
-  await tryFinalizeStorageDecision(ctx, { storageId: lifecycle.storageId });
-  return { applied: true, reason: result.status.toLowerCase() as 'failed' | 'passed' | 'rejected' };
+  return { applied: true, reason: 'enqueued' as const };
 }
 
 export async function applyStorageInspectionRequest(
@@ -343,6 +271,58 @@ export async function applyStorageInspectionRequest(
   }
 
   return await inspectLifecycle(ctx, lifecycle);
+}
+
+export async function applyStorageInspectionResult(
+  ctx: ActionCtx,
+  args: {
+    details?: string;
+    engine: string;
+    reason?: InspectionReason;
+    scannedAt: number;
+    status: 'FAILED' | 'PASSED' | 'REJECTED';
+    storageId: string;
+  },
+) {
+  const lifecycle = await loadLifecycleByStorageId(ctx, args.storageId);
+  if (!lifecycle) {
+    return { applied: false, reason: 'missing_lifecycle' as const };
+  }
+
+  if (
+    lifecycle.inspectionStatus === 'PASSED' ||
+    lifecycle.inspectionStatus === 'REJECTED' ||
+    lifecycle.inspectionStatus === 'FAILED'
+  ) {
+    return { applied: false, reason: 'already_applied' as const };
+  }
+
+  if (args.status === 'PASSED') {
+    await ctx.runMutation(internal.storageLifecycle.markInspectionPassedInternal, {
+      details: args.details ?? null,
+      engine: args.engine,
+      scannedAt: args.scannedAt,
+      storageId: args.storageId,
+    });
+  } else if (args.status === 'REJECTED') {
+    await ctx.runMutation(internal.storageLifecycle.markInspectionRejectedInternal, {
+      details: args.details ?? null,
+      engine: args.engine,
+      reason: args.reason ?? 'inspection_error',
+      scannedAt: args.scannedAt,
+      storageId: args.storageId,
+    });
+  } else {
+    await ctx.runMutation(internal.storageLifecycle.markInspectionFailedInternal, {
+      details: args.details ?? null,
+      engine: args.engine,
+      scannedAt: args.scannedAt,
+      storageId: args.storageId,
+    });
+  }
+
+  await tryFinalizeStorageDecision(ctx, { storageId: args.storageId });
+  return { applied: true, reason: 'ok' as const };
 }
 
 export const inspectQuarantineObjectByStorageIdInternal = internalAction({
@@ -372,5 +352,16 @@ export const tryFinalizeStorageDecisionInternal = internalAction({
   }),
   handler: async (ctx, args) => {
     return await tryFinalizeStorageDecision(ctx, args);
+  },
+});
+
+export const applyStorageInspectionResultInternal = internalAction({
+  args: storageInspectionResultPayloadValidator,
+  returns: v.object({
+    applied: v.boolean(),
+    reason: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    return await applyStorageInspectionResult(ctx, args);
   },
 });

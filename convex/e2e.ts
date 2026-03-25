@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { isE2ETestAuthEnabled } from '../src/lib/server/env.server';
+import { isDevelopmentOrTestDeployment, isE2ETestAuthEnabled } from '../src/lib/server/env.server';
 import { normalizeAuditIdentifier } from '../src/lib/shared/auth-audit';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
@@ -19,6 +19,10 @@ const deletePaginationOpts = {
 function assertE2EAccess() {
   if (!isE2ETestAuthEnabled()) {
     throw new Error('E2E test auth is disabled');
+  }
+
+  if (!isDevelopmentOrTestDeployment()) {
+    throw new Error('E2E test auth is not available in this deployment');
   }
 }
 

@@ -22,6 +22,13 @@ import {
   routeLogsToStderrWhenJson,
 } from './lib/script-ux';
 import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
+import { loadOptionalEnvFile } from './lib/load-env-file';
+import {
+  checkAwsCredentials,
+  checkCdkBootstrap,
+  checkConvexProdAccess,
+  checkSnsEmailSubscriptionConfirmed,
+} from './lib/provider-preflight';
 import {
   buildStorageStackName,
   findForbiddenStorageEnvNames,
@@ -114,6 +121,48 @@ async function askYesNo(question: string, fallback = false) {
   return answer === 'y' || answer === 'yes';
 }
 
+async function resolveOptionalInput(input: {
+  fallback?: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    return input.fallback?.trim() ?? '';
+  }
+
+  return (
+    await ask(`${input.question}: `, input.fallback?.trim() ? input.fallback.trim() : undefined)
+  ).trim();
+}
+
+async function resolveDefaultedInput(input: {
+  fallback: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    return input.fallback;
+  }
+
+  return askWithDefault(input.question, input.fallback);
+}
+
+async function resolveRequiredInput(input: {
+  fallback?: string;
+  nonInteractive: boolean;
+  question: string;
+}) {
+  if (input.nonInteractive) {
+    const value = input.fallback?.trim() ?? '';
+    if (!value) {
+      throw new Error(`${input.question} is required in non-interactive mode.`);
+    }
+    return value;
+  }
+
+  return askRequired(input.question, input.fallback);
+}
+
 function run(command: string, env?: NodeJS.ProcessEnv) {
   execSync(command, {
     cwd: process.cwd(),
@@ -168,6 +217,9 @@ function buildStorageDeployEnv(input: {
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
     AWS_CONVEX_STORAGE_CALLBACK_BASE_URL: trimTrailingSlashes(input.convexSiteUrl),
     AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET: input.convexCallbackSharedSecret,
+    AWS_CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET: input.convexCallbackSharedSecret,
+    AWS_CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET: input.convexCallbackSharedSecret,
+    AWS_CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET: input.convexCallbackSharedSecret,
     AWS_FILE_SERVE_SIGNING_SECRET: input.fileServeSigningSecret,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: input.guardDutyWebhookSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: input.inspectionWebhookSecret,
@@ -379,8 +431,23 @@ async function chooseStorageMode(): Promise<StorageMode> {
   }
 }
 
+function normalizeStorageMode(value: string | undefined): StorageMode | null {
+  switch ((value ?? '').trim()) {
+    case 'convex':
+      return 'convex';
+    case 's3':
+    case 's3-primary':
+      return 's3-primary';
+    case 'mirror':
+    case 's3-mirror':
+      return 's3-mirror';
+    default:
+      return null;
+  }
+}
+
 function printUsage() {
-  console.log('Usage: pnpm run storage:setup:prod [--json]');
+  console.log('Usage: pnpm run storage:setup:prod [--yes] [--json]');
   console.log('');
   console.log(
     'What this does: configure production storage runtime vars in Convex and optionally preview/deploy production AWS storage infra.',
@@ -423,6 +490,7 @@ function getAwsAuthStatus(region: string) {
 
 async function main() {
   const json = process.argv.includes('--json');
+  const yes = process.argv.includes('--yes') || process.argv.includes('--non-interactive');
   routeLogsToStderrWhenJson(json);
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     printUsage();
@@ -432,6 +500,10 @@ async function main() {
   const changedRemotely: string[] = [];
   const nextCommands: string[] = [];
   const warnings: string[] = [];
+  let convexEnvSynced = false;
+  let convexEnvSyncRequested = false;
+  loadOptionalEnvFile(path.join(process.cwd(), '.env'));
+  loadOptionalEnvFile(path.join(process.cwd(), PROD_ENV_FILE));
 
   console.log('🚀 Production storage setup\n');
   console.log('This flow configures production storage runtime env in Convex prod.');
@@ -456,7 +528,7 @@ async function main() {
     { label: 'AWS', value: getAwsAuthStatus(preflightRegion) },
   ]);
 
-  const shouldContinue = await askYesNo('Continue?', true);
+  const shouldContinue = yes || (await askYesNo('Continue?', true));
   if (!shouldContinue) {
     console.log('Cancelled.');
     return;
@@ -465,15 +537,29 @@ async function main() {
   requirePnpmAndConvexCli();
   assertNoForbiddenStorageEnvVars(process.env);
 
-  const storageMode = await chooseStorageMode();
+  const storageMode =
+    (yes ? normalizeStorageMode(process.env.FILE_STORAGE_BACKEND) : null) ??
+    (await chooseStorageMode());
   if (storageMode !== 'convex') {
     requireCommands([{ cmd: 'aws' }]);
   }
-  const awsRegion = await askWithDefault(
-    'AWS region',
-    process.env.AWS_REGION?.trim() || 'us-west-1',
-  );
-  const awsProfile = await chooseAwsProfile(process.env.AWS_PROFILE?.trim() || null);
+  const awsRegion = await resolveDefaultedInput({
+    fallback: process.env.AWS_REGION?.trim() || 'us-west-1',
+    nonInteractive: yes,
+    question: 'AWS region',
+  });
+  const awsProfile = await (yes
+    ? Promise.resolve(process.env.AWS_PROFILE?.trim() || null)
+    : chooseAwsProfile(process.env.AWS_PROFILE?.trim() || null));
+  if (storageMode !== 'convex') {
+    const awsCheck = checkAwsCredentials({
+      awsProfile: awsProfile ?? undefined,
+      region: awsRegion,
+    });
+    if (!awsCheck.ok) {
+      throw new Error(awsCheck.detail);
+    }
+  }
   const awsIdentity =
     storageMode === 'convex' ? null : getAwsIdentity(awsRegion, awsProfile ?? undefined);
   const storageProjectSlug =
@@ -533,20 +619,27 @@ async function main() {
       console.log(
         `No deployed audit archive stack outputs found yet for ${auditArchiveStackName}.`,
       );
-      const shouldRunAuditArchiveSetup = await askYesNo(
-        'Run guided audit archive setup now so S3-backed production storage has repo-managed archive infrastructure?',
-        false,
-      );
+      const shouldRunAuditArchiveSetup = yes
+        ? true
+        : await askYesNo(
+            'Run guided audit archive setup now so S3-backed production storage has repo-managed archive infrastructure?',
+            false,
+          );
       if (shouldRunAuditArchiveSetup) {
         try {
-          run('pnpm run audit-archive:setup -- --prod', {
-            AWS_REGION: awsRegion,
-            ...(awsProfile ? { AWS_PROFILE: awsProfile } : {}),
-            ...(awsIdentity?.arn
-              ? { AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN: awsIdentity.arn }
-              : {}),
-            AWS_AUDIT_ARCHIVE_PROJECT_SLUG: auditArchiveProjectSlug,
-          });
+          run(
+            yes
+              ? 'pnpm run audit-archive:setup -- --prod --yes'
+              : 'pnpm run audit-archive:setup -- --prod',
+            {
+              AWS_REGION: awsRegion,
+              ...(awsProfile ? { AWS_PROFILE: awsProfile } : {}),
+              ...(awsIdentity?.arn
+                ? { AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN: awsIdentity.arn }
+                : {}),
+              AWS_AUDIT_ARCHIVE_PROJECT_SLUG: auditArchiveProjectSlug,
+            },
+          );
           changedRemotely.push('Ran guided audit archive setup (prod)');
           auditArchiveOutputs =
             getStorageStackOutputs({
@@ -563,14 +656,16 @@ async function main() {
       }
     }
 
-    const bucketBase = await askWithDefault(
-      'AWS S3 storage bucket base name',
-      'tanstack-start-template-prod-storage',
-    );
+    const bucketBase = await resolveDefaultedInput({
+      fallback:
+        process.env.AWS_STORAGE_BUCKET_BASE?.trim() || 'tanstack-start-template-prod-storage',
+      nonInteractive: yes,
+      question: 'AWS S3 storage bucket base name',
+    });
     const buckets = buildScopedBucketNames(bucketBase);
-    const quarantineKmsKeyArn = await askRequired(
-      'AWS quarantine bucket KMS key ARN or alias ARN',
-      process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN?.trim() ||
+    const quarantineKmsKeyArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN?.trim() ||
         buildStorageKmsKeyArn({
           accountId: awsIdentity?.accountId,
           awsRegion,
@@ -579,10 +674,12 @@ async function main() {
           stage: 'prod',
         }) ||
         undefined,
-    );
-    const cleanKmsKeyArn = await askRequired(
-      'AWS clean bucket KMS key ARN or alias ARN',
-      process.env.AWS_S3_CLEAN_KMS_KEY_ARN?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS quarantine bucket KMS key ARN or alias ARN',
+    });
+    const cleanKmsKeyArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_S3_CLEAN_KMS_KEY_ARN?.trim() ||
         buildStorageKmsKeyArn({
           accountId: awsIdentity?.accountId,
           awsRegion,
@@ -591,10 +688,12 @@ async function main() {
           stage: 'prod',
         }) ||
         undefined,
-    );
-    const rejectedKmsKeyArn = await askRequired(
-      'AWS rejected bucket KMS key ARN or alias ARN',
-      process.env.AWS_S3_REJECTED_KMS_KEY_ARN?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS clean bucket KMS key ARN or alias ARN',
+    });
+    const rejectedKmsKeyArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_S3_REJECTED_KMS_KEY_ARN?.trim() ||
         buildStorageKmsKeyArn({
           accountId: awsIdentity?.accountId,
           awsRegion,
@@ -603,10 +702,12 @@ async function main() {
           stage: 'prod',
         }) ||
         undefined,
-    );
-    const mirrorKmsKeyArn = await askRequired(
-      'AWS mirror bucket KMS key ARN or alias ARN',
-      process.env.AWS_S3_MIRROR_KMS_KEY_ARN?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS rejected bucket KMS key ARN or alias ARN',
+    });
+    const mirrorKmsKeyArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_S3_MIRROR_KMS_KEY_ARN?.trim() ||
         buildStorageKmsKeyArn({
           accountId: awsIdentity?.accountId,
           awsRegion,
@@ -615,17 +716,25 @@ async function main() {
           stage: 'prod',
         }) ||
         undefined,
-    );
-    const convexSiteUrl = await askWithDefault('Convex site URL', getDefaultConvexSiteUrl());
-    const auditArchiveBucket = await askRequired(
-      'AWS audit archive bucket name',
-      process.env.AWS_AUDIT_ARCHIVE_BUCKET?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS mirror bucket KMS key ARN or alias ARN',
+    });
+    const convexSiteUrl = await resolveDefaultedInput({
+      fallback: getDefaultConvexSiteUrl(),
+      nonInteractive: yes,
+      question: 'Convex site URL',
+    });
+    const auditArchiveBucket = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_AUDIT_ARCHIVE_BUCKET?.trim() ||
         auditArchiveOutputs?.AuditArchiveBucketName?.trim() ||
         buildAuditArchiveBucketName(auditArchiveProjectSlug),
-    );
-    const auditArchiveKmsKeyArn = await askRequired(
-      'AWS audit archive KMS key ARN',
-      process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS audit archive bucket name',
+    });
+    const auditArchiveKmsKeyArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN?.trim() ||
         auditArchiveOutputs?.AuditArchiveBucketKeyArn?.trim() ||
         buildAuditArchiveKmsKeyArn({
           accountId: awsIdentity?.accountId,
@@ -633,63 +742,75 @@ async function main() {
           projectSlug: auditArchiveProjectSlug,
         }) ||
         undefined,
-    );
-    const auditArchiveRoleArn = await askRequired(
-      'AWS audit archive role ARN',
-      process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN?.trim() ||
+      nonInteractive: yes,
+      question: 'AWS audit archive KMS key ARN',
+    });
+    const auditArchiveRoleArn = await resolveRequiredInput({
+      fallback:
+        process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN?.trim() ||
         auditArchiveOutputs?.AuditArchiveRoleArn?.trim() ||
         buildAuditArchiveRoleArn({
           accountId: awsIdentity?.accountId,
           projectSlug: auditArchiveProjectSlug,
         }) ||
         undefined,
-    );
-    const auditArchivePrefix = await askWithDefault(
-      'AWS audit archive object prefix',
-      process.env.AWS_AUDIT_ARCHIVE_PREFIX?.trim() || DEFAULT_AUDIT_ARCHIVE_PREFIX,
-    );
-    const guardDutyWebhookSecret = await askWithDefault(
-      'AWS GuardDuty webhook shared secret',
-      await generateSecret(32),
-    );
-    const inspectionWebhookSecret = await askWithDefault(
-      'AWS storage inspection webhook shared secret',
-      await generateSecret(32),
-    );
-    const serveSecret = await askWithDefault(
-      'AWS file serve signing secret',
-      await generateSecret(32),
-    );
-    const brokerSharedSecret = await askWithDefault(
-      'Storage broker shared secret',
-      process.env.AWS_STORAGE_BROKER_SHARED_SECRET?.trim() || (await generateSecret(32)),
-    );
-    const workerSharedSecret = await askWithDefault(
-      'Storage worker shared secret',
-      process.env.AWS_STORAGE_WORKER_SHARED_SECRET?.trim() || (await generateSecret(32)),
-    );
-    const convexCallbackSharedSecret = await askWithDefault(
-      'Convex storage callback shared secret',
-      process.env.AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET?.trim() || (await generateSecret(32)),
-    );
-    let brokerRuntimeUrl = (
-      await ask(
-        'Storage broker runtime URL (leave empty until after infra deploy): ',
-        discoveredBrokerRuntimeUrl || process.env.STORAGE_BROKER_URL?.trim() || undefined,
-      )
-    ).trim();
-    let workerRuntimeUrl = (
-      await ask(
-        'Storage worker runtime URL (leave empty until after infra deploy): ',
-        discoveredWorkerRuntimeUrl || process.env.STORAGE_WORKER_URL?.trim() || undefined,
-      )
-    ).trim();
-    const alertEmailAddress = (
-      await ask(
-        'AWS storage alert email (leave empty to disable prod SNS email alerts): ',
-        process.env.AWS_STORAGE_ALERT_EMAIL?.trim() || undefined,
-      )
-    ).trim();
+      nonInteractive: yes,
+      question: 'AWS audit archive role ARN',
+    });
+    const auditArchivePrefix = await resolveDefaultedInput({
+      fallback: process.env.AWS_AUDIT_ARCHIVE_PREFIX?.trim() || DEFAULT_AUDIT_ARCHIVE_PREFIX,
+      nonInteractive: yes,
+      question: 'AWS audit archive object prefix',
+    });
+    const guardDutyWebhookSecret = await resolveDefaultedInput({
+      fallback:
+        process.env.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'AWS GuardDuty webhook shared secret',
+    });
+    const inspectionWebhookSecret = await resolveDefaultedInput({
+      fallback:
+        process.env.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET?.trim() ||
+        (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'AWS storage inspection webhook shared secret',
+    });
+    const serveSecret = await resolveDefaultedInput({
+      fallback: process.env.AWS_FILE_SERVE_SIGNING_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'AWS file serve signing secret',
+    });
+    const brokerSharedSecret = await resolveDefaultedInput({
+      fallback: process.env.AWS_STORAGE_BROKER_SHARED_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'Storage broker shared secret',
+    });
+    const workerSharedSecret = await resolveDefaultedInput({
+      fallback: process.env.AWS_STORAGE_WORKER_SHARED_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'Storage worker shared secret',
+    });
+    const convexCallbackSharedSecret = await resolveDefaultedInput({
+      fallback:
+        process.env.AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET?.trim() || (await generateSecret(32)),
+      nonInteractive: yes,
+      question: 'Convex storage callback shared secret',
+    });
+    let brokerRuntimeUrl = await resolveOptionalInput({
+      fallback: discoveredBrokerRuntimeUrl || process.env.STORAGE_BROKER_URL?.trim() || undefined,
+      nonInteractive: yes,
+      question: 'Storage broker runtime URL (leave empty until after infra deploy)',
+    });
+    let workerRuntimeUrl = await resolveOptionalInput({
+      fallback: discoveredWorkerRuntimeUrl || process.env.STORAGE_WORKER_URL?.trim() || undefined,
+      nonInteractive: yes,
+      question: 'Storage worker runtime URL (leave empty until after infra deploy)',
+    });
+    const alertEmailAddress = await resolveOptionalInput({
+      fallback: process.env.AWS_STORAGE_ALERT_EMAIL?.trim() || undefined,
+      nonInteractive: yes,
+      question: 'AWS storage alert email (leave empty to disable prod SNS email alerts)',
+    });
 
     operatorEnvVars.AWS_REGION = awsRegion;
     operatorEnvVars.AWS_S3_QUARANTINE_BUCKET = buckets.quarantine;
@@ -767,7 +888,7 @@ async function main() {
     `Quarantine bucket: ${operatorEnvVars.AWS_S3_QUARANTINE_BUCKET ?? 'n/a'}`,
     `Audit archive bucket: ${operatorEnvVars.AWS_AUDIT_ARCHIVE_BUCKET ?? 'n/a'}`,
     `Alert email: ${operatorEnvVars.AWS_STORAGE_ALERT_EMAIL ?? 'disabled'}`,
-    'Netlify storage env sync: not required',
+    'Netlify storage env sync: skipped',
   ]);
 
   const persistedEnvVars = {
@@ -796,7 +917,8 @@ async function main() {
       changedRemotely,
       nextCommands,
       readiness: {
-        convexEnv: 'not required',
+        alerts: 'skipped',
+        convexEnv: 'skipped',
         operatorEnv: 'ready',
         storage: 'ready',
       },
@@ -851,9 +973,18 @@ async function main() {
     console.log('Check your AWS credentials before previewing or deploying.');
   }
 
-  const shouldPreviewInfra = await askYesNo('Run `pnpm storage:preview:prod` now?', false);
+  const shouldPreviewInfra = yes
+    ? false
+    : await askYesNo('Run `pnpm storage:preview:prod` now?', false);
   if (shouldPreviewInfra) {
     try {
+      const bootstrapCheck = checkCdkBootstrap({
+        awsProfile: awsProfile ?? undefined,
+        region: awsRegion,
+      });
+      if (!bootstrapCheck.ok) {
+        throw new Error(bootstrapCheck.detail);
+      }
       run('pnpm storage:preview:prod', storageDeployEnv);
       console.log('✅ CDK preview completed.');
       changedRemotely.push('Ran AWS storage preview (prod)');
@@ -863,9 +994,18 @@ async function main() {
     }
   }
 
-  const shouldDeployInfra = await askYesNo('Run `pnpm storage:deploy:prod` now?', false);
+  const shouldDeployInfra = yes
+    ? true
+    : await askYesNo('Run `pnpm storage:deploy:prod` now?', false);
   if (shouldDeployInfra) {
     try {
+      const bootstrapCheck = checkCdkBootstrap({
+        awsProfile: awsProfile ?? undefined,
+        region: awsRegion,
+      });
+      if (!bootstrapCheck.ok) {
+        throw new Error(bootstrapCheck.detail);
+      }
       run('pnpm storage:deploy:prod', storageDeployEnv);
       console.log('✅ AWS storage infrastructure deployed.');
       changedRemotely.push('Deployed AWS storage infrastructure (prod)');
@@ -907,8 +1047,9 @@ async function main() {
     nextCommands.push('pnpm storage:deploy:prod');
   }
 
-  const setConvex = await askYesNo('\nSet these in Convex production now?', true);
+  const setConvex = yes ? true : await askYesNo('\nSet these in Convex production now?', true);
   if (setConvex) {
+    convexEnvSyncRequested = true;
     if (!convexProdEnvVars.STORAGE_BROKER_URL || !convexProdEnvVars.STORAGE_WORKER_URL) {
       console.log(
         '\n⚠️  Skipping Convex production env sync because broker/worker runtime URLs are still missing.',
@@ -920,6 +1061,10 @@ async function main() {
         'Convex production storage env sync was skipped because storage runtime URLs are still missing.',
       );
     } else {
+      const convexCheck = checkConvexProdAccess();
+      if (!convexCheck.ok) {
+        throw new Error(convexCheck.detail);
+      }
       console.log('\n☁️  Setting Convex production env vars...');
       const convexEnvValues: Record<string, string> = {
         FILE_STORAGE_BACKEND: String(convexProdEnvVars.FILE_STORAGE_BACKEND),
@@ -960,6 +1105,7 @@ async function main() {
       if (failedKeys.length === 0) {
         console.log('✅ Convex production env updated.');
         changedRemotely.push('Updated Convex production storage env vars');
+        convexEnvSynced = true;
       } else {
         console.log('⚠️  Some Convex production env vars were not updated.');
         console.log('   Retry manually with:');
@@ -967,6 +1113,31 @@ async function main() {
           console.log(`   ${buildManualConvexEnvSetCommand(failed.name, failed.value)}`);
         }
       }
+    }
+  }
+
+  const finalStorageOutputs =
+    storageMode === 'convex'
+      ? null
+      : getStorageStackOutputs({
+          awsProfile: awsProfile ?? undefined,
+          region: awsRegion,
+          stackName: storageStackName,
+        });
+  const alertTopicArn = finalStorageOutputs?.StorageAlertsTopicArn?.trim() || '';
+  const alertEmailAddressForCheck =
+    operatorEnvVars.AWS_STORAGE_ALERT_EMAIL ?? process.env.AWS_STORAGE_ALERT_EMAIL?.trim() ?? '';
+  let alertsReady = true;
+  if (alertEmailAddressForCheck && alertTopicArn) {
+    const snsCheck = checkSnsEmailSubscriptionConfirmed({
+      awsProfile: awsProfile ?? undefined,
+      emailAddress: alertEmailAddressForCheck,
+      region: awsRegion,
+      topicArn: alertTopicArn,
+    });
+    if (!snsCheck.ok) {
+      alertsReady = false;
+      warnings.push(snsCheck.detail);
     }
   }
 
@@ -987,12 +1158,15 @@ async function main() {
     changedRemotely,
     nextCommands,
     readiness: {
+      alerts: alertsReady ? 'ready' : 'needs attention',
       convexEnv:
         storageMode === 'convex'
-          ? 'not required'
-          : convexProdEnvVars.STORAGE_BROKER_URL && convexProdEnvVars.STORAGE_WORKER_URL
-            ? 'ready'
-            : 'needs attention',
+          ? 'skipped'
+          : !convexEnvSyncRequested
+            ? 'skipped'
+            : convexEnvSynced
+              ? 'ready'
+              : 'needs attention',
       operatorEnv: 'ready',
       storage: getStorageSetupReadiness({
         brokerRuntimeUrl: convexProdEnvVars.STORAGE_BROKER_URL,

@@ -50,6 +50,7 @@ const ensurePrincipalRoleHandler = (
 describe('ensurePrincipalRole', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.APP_DEPLOYMENT_ENV = 'development';
     process.env.ENABLE_E2E_TEST_AUTH = 'true';
   });
 
@@ -109,5 +110,16 @@ describe('ensurePrincipalRole', () => {
     });
 
     expect(result).toEqual({ found: false });
+  });
+
+  it('rejects e2e helpers outside explicit development or test deployments', async () => {
+    process.env.APP_DEPLOYMENT_ENV = 'preview';
+
+    await expect(
+      ensurePrincipalRoleHandler({ runAction: vi.fn() } as never, {
+        email: 'e2e-user@local.test',
+        role: 'user',
+      }),
+    ).rejects.toThrow('E2E test auth is not available in this deployment');
   });
 });

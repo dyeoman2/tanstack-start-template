@@ -243,9 +243,12 @@ describe('enterprise access', () => {
   });
 
   it.each(['off', 'optional', 'required'] as const)(
-    'requires a support grant for site-admin data-plane access when enterpriseAuthMode=%s',
+    'requires a support grant for site-admin tenant access when enterpriseAuthMode=%s',
     async (enterpriseAuthMode) => {
       for (const permission of [
+        'viewOrganization',
+        'viewAudit',
+        'exportAudit',
         'readThread',
         'writeThread',
         'readAttachment',
@@ -285,6 +288,7 @@ describe('enterprise access', () => {
               organizationId: 'org-1',
               siteAdminUserId: 'site-admin-1',
               scope: 'read_only',
+              ticketId: 'INC-42',
               reason: 'Urgent support review',
               grantedByUserId: 'owner-1',
               createdAt: now,
@@ -315,28 +319,14 @@ describe('enterprise access', () => {
       expect(result.status).toBe('satisfied');
       expect(result.supportGrant?.id).toBe('grant-1');
       expect(result.supportGrant?.scope).toBe('read_only');
+      expect(result.supportGrant?.ticketId).toBe('INC-42');
     },
   );
 
-  it('marks site-admin non-data-plane access as a separate satisfaction path', async () => {
-    const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
-      membership: null,
-      organizationId: 'org-1',
-      permission: 'managePolicies',
-      policies: basePolicies,
-      user: {
-        ...baseUser,
-        authUserId: 'site-admin-1',
-        isSiteAdmin: true,
-      },
-    });
-
-    expect(result.allowed).toBe(true);
-    expect(result.satisfactionPath).toBe('site_admin');
-    expect(result.status).toBe('satisfied');
-  });
-
   it('does not let a read-only grant cover writes', async () => {
+    expect(doesSupportGrantCoverPermission('read_only', 'viewOrganization')).toBe(true);
+    expect(doesSupportGrantCoverPermission('read_only', 'exportAudit')).toBe(true);
+    expect(doesSupportGrantCoverPermission('read_only', 'managePolicies')).toBe(false);
     expect(doesSupportGrantCoverPermission('read_only', 'readThread')).toBe(true);
     expect(doesSupportGrantCoverPermission('read_only', 'writeThread')).toBe(false);
   });
@@ -353,6 +343,7 @@ describe('enterprise access', () => {
               organizationId: 'org-1',
               siteAdminUserId: 'site-admin-1',
               scope: 'read_write',
+              ticketId: 'INC-99',
               reason: 'Escalated investigation',
               grantedByUserId: 'owner-1',
               createdAt: now,
@@ -381,6 +372,48 @@ describe('enterprise access', () => {
       expect(result.allowed).toBe(true);
       expect(result.status).toBe('satisfied');
       expect(result.supportGrant?.scope).toBe('read_write');
+      expect(result.supportGrant?.ticketId).toBe('INC-99');
+    },
+  );
+
+  it.each(['manageMembers', 'manageDomains', 'managePolicies', 'manageEvidence'] as const)(
+    'allows site-admin org writes only with a read-write grant for %s',
+    async (permission) => {
+      const now = Date.now();
+      const result = await resolveOrganizationEnterpriseAccess(
+        createCtx({
+          grants: [
+            {
+              _id: 'grant-1',
+              organizationId: 'org-1',
+              siteAdminUserId: 'site-admin-1',
+              scope: 'read_write',
+              ticketId: 'INC-77',
+              reason: 'Escalated investigation',
+              grantedByUserId: 'owner-1',
+              createdAt: now,
+              expiresAt: now + 60_000,
+              revokedAt: null,
+              revokedByUserId: null,
+            },
+          ],
+        }),
+        {
+          membership: null,
+          organizationId: 'org-1',
+          permission,
+          policies: basePolicies,
+          user: {
+            ...baseUser,
+            authUserId: 'site-admin-1',
+            isSiteAdmin: true,
+          },
+        },
+      );
+
+      expect(result.allowed).toBe(true);
+      expect(result.status).toBe('satisfied');
+      expect(result.supportGrant?.scope).toBe('read_write');
     },
   );
 
@@ -394,6 +427,7 @@ describe('enterprise access', () => {
             organizationId: 'org-1',
             siteAdminUserId: 'site-admin-1',
             scope: 'read_write',
+            ticketId: 'INC-99',
             reason: 'Escalated investigation',
             grantedByUserId: 'owner-1',
             createdAt: now - 120_000,

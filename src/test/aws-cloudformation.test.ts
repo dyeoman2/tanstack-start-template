@@ -6,11 +6,11 @@ describe('parseStackOutputs', () => {
     expect(
       parseStackOutputs([
         { OutputKey: 'StorageBrokerRuntimeUrl', OutputValue: 'https://broker.example.com' },
-        { OutputKey: 'StorageWorkerRuntimeUrl', OutputValue: 'https://worker.example.com' },
+        { OutputKey: 'StorageBrokerAccessKeyId', OutputValue: 'AKIAEXAMPLE' },
       ]),
     ).toEqual({
+      StorageBrokerAccessKeyId: 'AKIAEXAMPLE',
       StorageBrokerRuntimeUrl: 'https://broker.example.com',
-      StorageWorkerRuntimeUrl: 'https://worker.example.com',
     });
   });
 

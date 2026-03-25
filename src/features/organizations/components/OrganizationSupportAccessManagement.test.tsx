@@ -87,6 +87,7 @@ function buildSettings(overrides?: Record<string, unknown>) {
         siteAdminEmail: 'support@example.com',
         siteAdminName: 'Support Admin',
         siteAdminUserId: 'site-admin-1',
+        ticketId: 'INC-17',
       },
     ],
     ...overrides,
@@ -104,6 +105,7 @@ describe('OrganizationSupportAccessManagement', () => {
 
     render(<OrganizationSupportAccessManagement slug="cottage-hospital" />);
 
+    await user.type(screen.getByLabelText('Ticket ID'), 'INC-42');
     await user.type(
       screen.getByLabelText('Reason'),
       'Investigate incident INC-42 and confirm document intake state.',
@@ -116,6 +118,7 @@ describe('OrganizationSupportAccessManagement', () => {
           organizationId: 'org-1',
           siteAdminUserId: 'site-admin-1',
           scope: 'read_only',
+          ticketId: 'INC-42',
           reason: 'Investigate incident INC-42 and confirm document intake state.',
         }),
       });

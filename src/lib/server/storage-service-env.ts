@@ -6,6 +6,7 @@ export type StorageBucketConfig = {
 };
 
 export type StorageCapability =
+  | 'cleanPut'
   | 'cleanup'
   | 'downloadPresign'
   | 'mirror'
@@ -17,21 +18,44 @@ export type StorageRoleConfig = Record<StorageCapability, string>;
 
 export type StorageBrokerRuntimeConfig = {
   awsRegion: string;
+  decisionQueueUrl: string;
+  documentParseQueueUrl: string;
   fileServeSigningSecret: string;
-  serviceSharedSecret: string;
+  inspectionQueueUrl: string;
   storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
-  storageRoleArns: Pick<StorageRoleConfig, 'downloadPresign' | 'uploadPresign'>;
+  storageRoleArns: Pick<
+    StorageRoleConfig,
+    | 'cleanPut'
+    | 'cleanup'
+    | 'downloadPresign'
+    | 'mirror'
+    | 'promotion'
+    | 'rejection'
+    | 'uploadPresign'
+  >;
 };
 
-export type StorageWorkerRuntimeConfig = {
+export type StorageInspectionWorkerRuntimeConfig = {
   awsRegion: string;
-  convexCallbackBaseUrl: string;
-  convexCallbackSharedSecret: string;
-  guardDutyWebhookSharedSecret: string;
-  inspectionWebhookSharedSecret: string;
-  serviceSharedSecret: string;
+  callbackBaseUrl: string;
+  callbackSecret: string;
+  defaultMaxBytes: number;
   storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
-  storageRoleArns: Pick<StorageRoleConfig, 'cleanup' | 'mirror' | 'promotion' | 'rejection'>;
+};
+
+export type StorageDecisionWorkerRuntimeConfig = {
+  awsRegion: string;
+  callbackBaseUrl: string;
+  callbackSecret: string;
+  storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
+};
+
+export type DocumentParserWorkerRuntimeConfig = {
+  awsRegion: string;
+  callbackBaseUrl: string;
+  callbackSecret: string;
+  stagingPrefix: string;
+  storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
 };
 
 function readRequiredEnv(name: string) {
@@ -40,6 +64,18 @@ function readRequiredEnv(name: string) {
     throw new Error(`${name} environment variable is required.`);
   }
   return value;
+}
+
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    return fallback;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    throw new Error(`${name} environment variable must be a positive integer.`);
+  }
+  return parsed;
 }
 
 function assertNoLegacyWebhookSecret() {
@@ -63,45 +99,64 @@ function readStorageRoleArn(capability: StorageCapability) {
   );
 }
 
+function readStorageBuckets() {
+  return {
+    clean: readBucketConfig('clean'),
+    mirror: readBucketConfig('mirror'),
+    quarantine: readBucketConfig('quarantine'),
+    rejected: readBucketConfig('rejected'),
+  };
+}
+
 export function getStorageBrokerRuntimeConfig(): StorageBrokerRuntimeConfig {
   assertNoLegacyWebhookSecret();
   return {
     awsRegion: readRequiredEnv('AWS_REGION'),
+    decisionQueueUrl: readRequiredEnv('AWS_STORAGE_DECISION_QUEUE_URL'),
+    documentParseQueueUrl: readRequiredEnv('AWS_DOCUMENT_PARSE_QUEUE_URL'),
     fileServeSigningSecret: readRequiredEnv('AWS_FILE_SERVE_SIGNING_SECRET'),
-    serviceSharedSecret: readRequiredEnv('STORAGE_BROKER_SHARED_SECRET'),
-    storageBuckets: {
-      clean: readBucketConfig('clean'),
-      mirror: readBucketConfig('mirror'),
-      quarantine: readBucketConfig('quarantine'),
-      rejected: readBucketConfig('rejected'),
-    },
+    inspectionQueueUrl: readRequiredEnv('AWS_STORAGE_INSPECTION_QUEUE_URL'),
+    storageBuckets: readStorageBuckets(),
     storageRoleArns: {
+      cleanPut: readStorageRoleArn('cleanPut'),
+      cleanup: readStorageRoleArn('cleanup'),
       downloadPresign: readStorageRoleArn('downloadPresign'),
+      mirror: readStorageRoleArn('mirror'),
+      promotion: readStorageRoleArn('promotion'),
+      rejection: readStorageRoleArn('rejection'),
       uploadPresign: readStorageRoleArn('uploadPresign'),
     },
   };
 }
 
-export function getStorageWorkerRuntimeConfig(): StorageWorkerRuntimeConfig {
+export function getStorageInspectionWorkerRuntimeConfig(): StorageInspectionWorkerRuntimeConfig {
   assertNoLegacyWebhookSecret();
   return {
     awsRegion: readRequiredEnv('AWS_REGION'),
-    convexCallbackBaseUrl: readRequiredEnv('CONVEX_STORAGE_CALLBACK_BASE_URL'),
-    convexCallbackSharedSecret: readRequiredEnv('CONVEX_STORAGE_CALLBACK_SHARED_SECRET'),
-    guardDutyWebhookSharedSecret: readRequiredEnv('AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET'),
-    inspectionWebhookSharedSecret: readRequiredEnv('AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET'),
-    serviceSharedSecret: readRequiredEnv('STORAGE_WORKER_SHARED_SECRET'),
-    storageBuckets: {
-      clean: readBucketConfig('clean'),
-      mirror: readBucketConfig('mirror'),
-      quarantine: readBucketConfig('quarantine'),
-      rejected: readBucketConfig('rejected'),
-    },
-    storageRoleArns: {
-      cleanup: readStorageRoleArn('cleanup'),
-      mirror: readStorageRoleArn('mirror'),
-      promotion: readStorageRoleArn('promotion'),
-      rejection: readStorageRoleArn('rejection'),
-    },
+    callbackBaseUrl: readRequiredEnv('CONVEX_STORAGE_CALLBACK_BASE_URL'),
+    callbackSecret: readRequiredEnv('CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET'),
+    defaultMaxBytes: readPositiveIntegerEnv('FILE_UPLOAD_MAX_BYTES', 10 * 1024 * 1024),
+    storageBuckets: readStorageBuckets(),
+  };
+}
+
+export function getStorageDecisionWorkerRuntimeConfig(): StorageDecisionWorkerRuntimeConfig {
+  assertNoLegacyWebhookSecret();
+  return {
+    awsRegion: readRequiredEnv('AWS_REGION'),
+    callbackBaseUrl: readRequiredEnv('CONVEX_STORAGE_CALLBACK_BASE_URL'),
+    callbackSecret: readRequiredEnv('CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET'),
+    storageBuckets: readStorageBuckets(),
+  };
+}
+
+export function getDocumentParserWorkerRuntimeConfig(): DocumentParserWorkerRuntimeConfig {
+  assertNoLegacyWebhookSecret();
+  return {
+    awsRegion: readRequiredEnv('AWS_REGION'),
+    callbackBaseUrl: readRequiredEnv('CONVEX_STORAGE_CALLBACK_BASE_URL'),
+    callbackSecret: readRequiredEnv('CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET'),
+    stagingPrefix: readRequiredEnv('AWS_DOCUMENT_RESULT_STAGING_PREFIX'),
+    storageBuckets: readStorageBuckets(),
   };
 }

@@ -9,7 +9,11 @@ import {
 } from './_generated/server';
 import { v } from 'convex/values';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
-import { getE2ETestSecret } from '../src/lib/server/env.server';
+import {
+  getSecurityWorkspaceResetSecret,
+  isDevelopmentOrTestDeployment,
+  isSecurityWorkspaceResetEnabled,
+} from '../src/lib/server/env.server';
 import { getVerifiedCurrentUserOrThrow, requireOrganizationPermission } from './auth/access';
 import { getSecurityScopeFields } from './lib/security/core';
 import {
@@ -58,6 +62,16 @@ const SECURITY_WORKSPACE_RESET_TABLES: readonly SecurityWorkspaceResetTable[] = 
   'securityVendors',
   'securityVendorControlMappings',
 ];
+
+function assertSecurityWorkspaceResetAuthorized(secret: string) {
+  if (!isDevelopmentOrTestDeployment() || !isSecurityWorkspaceResetEnabled()) {
+    throw new Error('Security workspace reset is disabled.');
+  }
+
+  if (secret !== getSecurityWorkspaceResetSecret()) {
+    throw new Error('Invalid reseed secret.');
+  }
+}
 
 async function insertDocumentScanEvent(
   ctx: MutationCtx,
@@ -177,9 +191,7 @@ export const deleteSecurityWorkspaceTableBatchForDevelopment = internalMutation(
     hasMore: v.boolean(),
   }),
   handler: async (ctx, args) => {
-    if (args.secret !== getE2ETestSecret()) {
-      throw new Error('Invalid reseed secret.');
-    }
+    assertSecurityWorkspaceResetAuthorized(args.secret);
 
     const batch = await ctx.db.query(args.tableName).take(SECURITY_WORKSPACE_RESEED_BATCH_SIZE);
     for (const row of batch) {
@@ -215,9 +227,7 @@ export const resetSecurityControlWorkspaceForDevelopment = internalAction({
     deletedVendors: v.number(),
   }),
   handler: async (ctx, args) => {
-    if (args.secret !== getE2ETestSecret()) {
-      throw new Error('Invalid reseed secret.');
-    }
+    assertSecurityWorkspaceResetAuthorized(args.secret);
 
     const deletedCounts: Record<SecurityWorkspaceResetTable, number> = {
       evidenceReports: 0,

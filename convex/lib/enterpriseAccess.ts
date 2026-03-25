@@ -3,11 +3,13 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
 import {
   canOwnerUseBreakGlassForPermission,
+  doesSupportGrantCoverPermission,
   isEnterpriseDataPlanePermission,
   requiresEnterpriseSatisfied,
 } from './organizationPermissions';
 
 export {
+  doesSupportGrantCoverPermission,
   isEnterpriseDataPlanePermission,
   requiresEnterpriseSatisfied,
 } from './organizationPermissions';
@@ -87,6 +89,7 @@ export type OrganizationSupportAccessGrantSummary = {
   id: Id<'organizationSupportAccessGrants'>;
   reason: string;
   scope: OrganizationSupportAccessScope;
+  ticketId: string;
 };
 
 export type OrganizationEnterpriseAccessResult = {
@@ -117,21 +120,6 @@ function normalizeEmailDomain(email: string | undefined | null) {
   return domain;
 }
 
-export function doesSupportGrantCoverPermission(
-  scope: OrganizationSupportAccessScope,
-  permission?: string | null,
-) {
-  if (!permission || !isEnterpriseDataPlanePermission(permission)) {
-    return false;
-  }
-
-  if (scope === 'read_write') {
-    return true;
-  }
-
-  return permission !== 'writeThread' && permission !== 'deleteAttachment';
-}
-
 export function getEnterpriseAccessReason(status: OrganizationEnterpriseAccessStatus) {
   switch (status) {
     case 'missing_enterprise_session':
@@ -139,7 +127,7 @@ export function getEnterpriseAccessReason(status: OrganizationEnterpriseAccessSt
     case 'unmanaged_email_domain':
       return 'Use a verified organization email domain to access this organization';
     case 'support_grant_required':
-      return 'Organization owner approval is required before provider support can access tenant data';
+      return 'Organization owner approval is required before provider support can access tenant-scoped organization data';
     case 'support_grant_expired':
       return 'Your temporary support access grant has expired';
     default:
@@ -191,7 +179,7 @@ async function resolveSupportGrantState(
   grant: OrganizationSupportAccessGrantSummary | null;
   status: 'active' | 'expired' | 'missing';
 }> {
-  if (!isEnterpriseDataPlanePermission(input.permission)) {
+  if (!requiresEnterpriseSatisfied(input.permission)) {
     return {
       grant: null,
       status: 'missing',
@@ -221,6 +209,7 @@ async function resolveSupportGrantState(
         id: active._id,
         reason: active.reason,
         scope: active.scope,
+        ticketId: active.ticketId,
       },
       status: 'active',
     };
@@ -243,7 +232,7 @@ export async function resolveOrganizationEnterpriseAccess(
   ctx: QueryCtx | MutationCtx,
   input: ResolveOrganizationEnterpriseAccessInput,
 ): Promise<OrganizationEnterpriseAccessResult> {
-  if (input.user.isSiteAdmin && isEnterpriseDataPlanePermission(input.permission)) {
+  if (input.user.isSiteAdmin && requiresEnterpriseSatisfied(input.permission)) {
     const supportGrantState = await resolveSupportGrantState(ctx, {
       organizationId: input.organizationId,
       permission: input.permission,

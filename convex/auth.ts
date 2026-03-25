@@ -3034,6 +3034,8 @@ export const createOrganizationServer = action({
   },
   returns: betterAuthActionResultValidator(betterAuthOrganizationSummaryValidator),
   handler: async (ctx, args) => {
+    await getVerifiedCurrentUserFromActionOrThrow(ctx);
+
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
       const response = await auth.api.createOrganization({
         body: args,

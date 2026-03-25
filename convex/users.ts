@@ -20,12 +20,13 @@ import {
   mutation,
   query,
 } from './_generated/server';
-import { authComponent, getCurrentSetupAuthUserFromActionOrThrow } from './auth';
+import { getCurrentSetupAuthUserFromActionOrThrow } from './auth';
 import {
   buildCurrentUserProfile,
   type CurrentUserProfile,
   getCurrentAuthUserOrNull,
   getCurrentAuthUserOrThrow,
+  getVerifiedCurrentUserFromActionOrThrow,
   getCurrentUserOrNull,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
@@ -1037,11 +1038,8 @@ export const ensureCurrentUserContext = action({
   args: {},
   returns: ensureUserContextResultValidator,
   handler: async (ctx): Promise<EnsureUserContextResult> => {
-    const authUser = await authComponent.getAuthUser(ctx);
-    if (!authUser) {
-      throw new Error('Not authenticated');
-    }
-    const authUserId = assertUserId(authUser, 'User ID not found in auth user');
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    const authUserId = user.authUserId;
     const existingMemberships = await fetchBetterAuthMembersByUserId(ctx, authUserId);
     if (existingMemberships.length === 0) {
       await createDefaultOrganization(ctx, authUserId, Date.now());

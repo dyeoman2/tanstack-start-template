@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Badge } from '~/components/ui/badge';
 import { Button } from '~/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '~/components/ui/card';
+import { Input } from '~/components/ui/input';
 import { Label } from '~/components/ui/label';
 import {
   Select,
@@ -62,6 +63,7 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
   const [scope, setScope] = useState<'read_only' | 'read_write'>('read_only');
   const [durationHours, setDurationHours] =
     useState<(typeof DURATION_OPTIONS)[number]['value']>('1');
+  const [ticketId, setTicketId] = useState('');
   const [reason, setReason] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -92,8 +94,8 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
   }
 
   const handleCreateGrant = async () => {
-    if (!siteAdminUserId || !reason.trim()) {
-      setSaveError('Choose a site admin and provide a reason for access.');
+    if (!siteAdminUserId || !ticketId.trim() || !reason.trim()) {
+      setSaveError('Choose a site admin, ticket ID, and reason for access.');
       return;
     }
 
@@ -106,11 +108,13 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
           organizationId: settings.organization.id,
           siteAdminUserId,
           scope,
+          ticketId: ticketId.trim(),
           reason: reason.trim(),
           expiresAt: Date.now() + Number.parseInt(durationHours, 10) * 60 * 60 * 1000,
         },
       });
       await refreshState();
+      setTicketId('');
       setReason('');
       showToast('Support access grant created.', 'success');
     } catch (error) {
@@ -156,8 +160,8 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
       <CardHeader>
         <CardTitle>Temporary Support Access</CardTitle>
         <CardDescription>
-          External collaborators are blocked when SSO Required is on. If provider support needs
-          tenant data access, an organization owner must issue a short-lived grant first.
+          External collaborators are blocked when SSO Required is on. If provider support needs any
+          tenant-scoped access, an organization owner must issue a short-lived grant first.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -166,7 +170,7 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
             <ShieldAlert className="mt-0.5 size-4 shrink-0" />
             <p>
               Grants are limited to provider site admins, expire within 8 hours, and are recorded in
-              the audit log.
+              the audit log with a customer ticket reference.
             </p>
           </div>
         </div>
@@ -207,13 +211,12 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
 
         <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_220px]">
           <div className="space-y-2">
-            <Label htmlFor="support-reason">Reason</Label>
-            <Textarea
-              id="support-reason"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="Ticket number, incident context, and what support needs to inspect."
-              rows={4}
+            <Label htmlFor="support-ticket-id">Ticket ID</Label>
+            <Input
+              id="support-ticket-id"
+              value={ticketId}
+              onChange={(event) => setTicketId(event.target.value)}
+              placeholder="INC-42"
             />
           </div>
 
@@ -243,6 +246,17 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
               {isSaving ? 'Issuing…' : 'Issue temporary grant'}
             </Button>
           </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="support-reason">Reason</Label>
+          <Textarea
+            id="support-reason"
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            placeholder="Ticket context and what support needs to inspect or change."
+            rows={4}
+          />
         </div>
 
         {saveError ? (
@@ -287,6 +301,8 @@ export function OrganizationSupportAccessManagement({ slug }: { slug: string }) 
                         </div>
                         <p className="text-sm text-muted-foreground">{grant.reason}</p>
                         <p className="text-xs text-muted-foreground">
+                          Ticket {grant.ticketId}
+                          {' · '}
                           Issued by{' '}
                           {grant.grantedByName ?? grant.grantedByEmail ?? grant.grantedByUserId}
                           {' · '}

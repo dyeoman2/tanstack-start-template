@@ -2,7 +2,9 @@ export type StorageBucketKind = 'clean' | 'mirror' | 'quarantine' | 'rejected';
 
 export type StorageServiceConfig = {
   baseUrl: string | null;
-  sharedSecret: string | null;
+  accessKeyId: string | null;
+  secretAccessKey: string | null;
+  sessionToken: string | null;
 };
 
 export type StorageServiceObjectRecord = {
@@ -84,6 +86,118 @@ export type StorageServiceListObjectVersionsResponse = {
 export type StorageServiceReadObjectResponseHeaders = {
   contentType: string;
   versionId: string | null;
+};
+
+export type StorageInspectionQueueMessage = {
+  kind: 'storage_inspection';
+  storageId: string;
+  bucket: string;
+  key: string;
+  fileName: string;
+  maxBytes: number;
+  mimeType: string;
+  organizationId?: string | null;
+  sha256Hex?: string;
+  sourceType: string;
+};
+
+export type StorageDecisionQueueMessage = {
+  kind: 'storage_decision';
+  action: 'promote' | 'reject';
+  storageId: string;
+  contentType?: string;
+  destinationKey: string;
+  organizationId?: string | null;
+  quarantineKey: string;
+  quarantineVersionId?: string | null;
+  rejectedBucket?: string;
+  sourceType: string;
+};
+
+export type DocumentParseQueueMessage = {
+  kind: 'document_parse';
+  parseKind: 'chat_document_extract' | 'pdf_parse';
+  storageId: string;
+  fileName: string;
+  mimeType: string;
+  canonicalKey: string;
+  organizationId?: string | null;
+  sourceType: string;
+};
+
+export type StorageCleanupQueueMessage =
+  | ({
+      kind: 'storage_cleanup';
+      operation: 'deleteObject';
+    } & StorageServiceDeleteObjectRequest)
+  | ({
+      kind: 'storage_cleanup';
+      operation: 'listObjects';
+    } & StorageServiceListObjectsRequest)
+  | ({
+      kind: 'storage_cleanup';
+      operation: 'listObjectVersions';
+    } & StorageServiceListObjectVersionsRequest);
+
+export type StorageQueueMessage =
+  | DocumentParseQueueMessage
+  | StorageCleanupQueueMessage
+  | StorageDecisionQueueMessage
+  | StorageInspectionQueueMessage;
+
+export type StorageServiceEnqueueResponse = {
+  accepted: true;
+};
+
+export type StorageInspectionResultCallbackRequest = {
+  type: 'inspection_result';
+  storageId: string;
+  details?: string;
+  engine: string;
+  reason?:
+    | 'checksum_mismatch'
+    | 'file_signature_mismatch'
+    | 'inspection_error'
+    | 'pdf_active_content'
+    | 'pdf_embedded_files'
+    | 'pdf_encrypted'
+    | 'pdf_javascript'
+    | 'pdf_launch_action'
+    | 'pdf_malformed'
+    | 'pdf_open_action'
+    | 'pdf_rich_media'
+    | 'pdf_xfa'
+    | 'size_limit_exceeded'
+    | 'unsupported_type';
+  scannedAt: number;
+  status: 'FAILED' | 'PASSED' | 'REJECTED';
+};
+
+export type StorageDecisionResultCallbackRequest = {
+  type: 'decision_result';
+  action: 'promote' | 'reject';
+  storageId: string;
+  errorMessage?: string;
+  promotedBucket?: string;
+  promotedKey?: string;
+  promotedVersionId?: string | null;
+  rejectedBucket?: string;
+  rejectedKey?: string;
+  rejectedVersionId?: string | null;
+  status: 'FAILED' | 'PROMOTED' | 'REJECTED';
+};
+
+export type DocumentParseResultCallbackRequest = {
+  type: 'document_result';
+  parseKind: 'chat_document_extract' | 'pdf_parse';
+  storageId: string;
+  errorMessage?: string;
+  pageCount?: number;
+  imageCount?: number;
+  parserVersion: string;
+  resultContentType?: string;
+  resultKey?: string;
+  status: 'FAILED' | 'SUCCEEDED';
 };
 
 export type StorageServiceGuardDutyCallbackRequest =

@@ -31,7 +31,14 @@ function parseJson<T>(raw: string): T | null {
     return null;
   }
 
-  const start = trimmed.indexOf('{') >= 0 ? trimmed.indexOf('{') : trimmed.indexOf('[');
+  const objectStart = trimmed.indexOf('{');
+  const arrayStart = trimmed.indexOf('[');
+  const start =
+    objectStart >= 0 && arrayStart >= 0
+      ? Math.min(objectStart, arrayStart)
+      : objectStart >= 0
+        ? objectStart
+        : arrayStart;
   if (start < 0) {
     return null;
   }

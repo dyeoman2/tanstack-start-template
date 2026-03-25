@@ -7,6 +7,7 @@ describe('shouldSkipE2EAuthEmailForTesting', () => {
   beforeEach(() => {
     process.env = {
       ...ORIGINAL_ENV,
+      APP_DEPLOYMENT_ENV: 'development',
       BETTER_AUTH_SECRET: 'test-secret-test-secret-test-secret',
       ENABLE_E2E_TEST_AUTH: 'true',
       E2E_USER_EMAIL: 'e2e-user@local.test',

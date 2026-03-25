@@ -124,7 +124,7 @@ describe('OrganizationSsoEnforcementManagement', () => {
     expect(screen.getByText('Emergency password fallback disabled')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Provider support access to tenant PHI always requires an owner-issued temporary grant before any tenant data-plane paths can be opened.',
+        'Provider support access to any tenant-scoped organization data or settings always requires an owner-issued temporary grant before access is opened.',
       ),
     ).toBeInTheDocument();
     expect(
@@ -137,7 +137,7 @@ describe('OrganizationSsoEnforcementManagement', () => {
 
     expect(
       screen.getByText(
-        'Provider support access to tenant PHI always requires an owner-issued temporary grant before any tenant data-plane paths can be opened.',
+        'Provider support access to any tenant-scoped organization data or settings always requires an owner-issued temporary grant before access is opened.',
       ),
     ).toBeInTheDocument();
     expect(

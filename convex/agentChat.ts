@@ -685,6 +685,7 @@ export const createAttachmentInternal = internalMutation({
     status: v.union(
       v.literal('pending'),
       v.literal('pending_scan'),
+      v.literal('processing'),
       v.literal('quarantined'),
       v.literal('ready'),
       v.literal('error'),
@@ -787,6 +788,7 @@ export const updateAttachmentInternal = internalMutation({
         v.union(
           v.literal('pending'),
           v.literal('pending_scan'),
+          v.literal('processing'),
           v.literal('quarantined'),
           v.literal('ready'),
           v.literal('error'),

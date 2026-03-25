@@ -321,10 +321,12 @@ export function getBetterAuthSecret(): string {
   return secret;
 }
 
+export type AppDeploymentEnv = 'development' | 'test' | 'preview' | 'staging' | 'production';
 export type E2EPrincipalType = 'user' | 'admin';
 export type FileStorageBackendMode = 'convex' | 's3-primary' | 's3-mirror';
 export type StorageBucketKind = 'clean' | 'mirror' | 'quarantine' | 'rejected';
 export type StorageCapability =
+  | 'cleanPut'
   | 'cleanup'
   | 'downloadPresign'
   | 'mirror'
@@ -342,12 +344,23 @@ export type StorageRoleConfig = Record<StorageCapability, string | null>;
 export type StorageServiceRuntimeConfig = {
   broker: {
     baseUrl: string | null;
-    sharedSecret: string | null;
+    accessKeyId: string | null;
+    secretAccessKey: string | null;
+    sessionToken: string | null;
   };
-  convexCallbackSharedSecret: string | null;
-  worker: {
-    baseUrl: string | null;
-    sharedSecret: string | null;
+  callbacks: {
+    decision: {
+      currentSecret: string | null;
+      previousSecret: string | null;
+    };
+    document: {
+      currentSecret: string | null;
+      previousSecret: string | null;
+    };
+    inspection: {
+      currentSecret: string | null;
+      previousSecret: string | null;
+    };
   };
 };
 
@@ -368,6 +381,7 @@ export type StorageRuntimeConfig = {
   malwareScanSlaMs: number;
   mirrorRetryBaseDelayMs: number;
   mirrorRetryMaxDelayMs: number;
+  parserResultStagingPrefix: string;
   s3DeleteMaxAttempts: number;
   s3OrphanCleanupMaxScan: number;
   s3OrphanCleanupMinAgeMs: number;
@@ -383,6 +397,7 @@ export type E2EPrincipalConfig = {
   role: E2EPrincipalType;
 };
 
+const APP_DEPLOYMENT_ENVS = ['development', 'test', 'preview', 'staging', 'production'] as const;
 const DEFAULT_E2E_PRINCIPAL_EMAILS = ['e2e-user@local.test', 'e2e-admin@local.test'] as const;
 
 function getRequiredServerEnv(name: string): string {
@@ -393,25 +408,49 @@ function getRequiredServerEnv(name: string): string {
   return value;
 }
 
+function parseAppDeploymentEnv(value: string): AppDeploymentEnv {
+  if ((APP_DEPLOYMENT_ENVS as readonly string[]).includes(value)) {
+    return value as AppDeploymentEnv;
+  }
+
+  throw new Error(`APP_DEPLOYMENT_ENV must be one of: ${APP_DEPLOYMENT_ENVS.join(', ')}.`);
+}
+
+export function getAppDeploymentEnv(): AppDeploymentEnv | null {
+  const value = readOptionalServerEnv('APP_DEPLOYMENT_ENV');
+  if (!value) {
+    return null;
+  }
+
+  return parseAppDeploymentEnv(value);
+}
+
+function isDevOrTestDeployment(env: AppDeploymentEnv | null): boolean {
+  return env === 'development' || env === 'test';
+}
+
+export function isDevelopmentOrTestDeployment(): boolean {
+  return isDevOrTestDeployment(getAppDeploymentEnv());
+}
+
 export function isE2ETestAuthEnabled(): boolean {
   return process.env.ENABLE_E2E_TEST_AUTH === 'true';
 }
 
-export function isSafeE2EAuthRuntime(request?: Request): boolean {
-  if (!request) {
-    return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
-  }
-
-  try {
-    const { hostname } = new URL(request.url);
-    return isLoopbackHostname(hostname);
-  } catch {
-    return false;
-  }
+export function isSafeE2EAuthRuntime(_request?: Request): boolean {
+  return isDevelopmentOrTestDeployment();
 }
 
 export function getE2ETestSecret(): string {
   return getRequiredServerEnv('E2E_TEST_SECRET');
+}
+
+export function isSecurityWorkspaceResetEnabled(): boolean {
+  return process.env.ENABLE_SECURITY_WORKSPACE_RESET === 'true';
+}
+
+export function getSecurityWorkspaceResetSecret(): string {
+  return getRequiredServerEnv('SECURITY_WORKSPACE_RESET_SECRET');
 }
 
 function readOptionalServerEnv(name: string): string | null {
@@ -469,12 +508,29 @@ function readStorageServiceRuntimeConfig(): StorageServiceRuntimeConfig {
   return {
     broker: {
       baseUrl: readOptionalServerEnv('STORAGE_BROKER_URL'),
-      sharedSecret: readOptionalServerEnv('STORAGE_BROKER_SHARED_SECRET'),
+      accessKeyId: readOptionalServerEnv('STORAGE_BROKER_ACCESS_KEY_ID'),
+      secretAccessKey: readOptionalServerEnv('STORAGE_BROKER_SECRET_ACCESS_KEY'),
+      sessionToken: readOptionalServerEnv('STORAGE_BROKER_SESSION_TOKEN'),
     },
-    convexCallbackSharedSecret: readOptionalServerEnv('CONVEX_STORAGE_CALLBACK_SHARED_SECRET'),
-    worker: {
-      baseUrl: readOptionalServerEnv('STORAGE_WORKER_URL'),
-      sharedSecret: readOptionalServerEnv('STORAGE_WORKER_SHARED_SECRET'),
+    callbacks: {
+      decision: {
+        currentSecret: readOptionalServerEnv('CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET'),
+        previousSecret: readOptionalServerEnv(
+          'CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET_PREVIOUS',
+        ),
+      },
+      document: {
+        currentSecret: readOptionalServerEnv('CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET'),
+        previousSecret: readOptionalServerEnv(
+          'CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET_PREVIOUS',
+        ),
+      },
+      inspection: {
+        currentSecret: readOptionalServerEnv('CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET'),
+        previousSecret: readOptionalServerEnv(
+          'CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET_PREVIOUS',
+        ),
+      },
     },
   };
 }
@@ -496,24 +552,29 @@ function requireStorageServiceConfig(
       `STORAGE_BROKER_URL environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.broker.sharedSecret) {
+  if (!services.broker.accessKeyId) {
     throw new Error(
-      `STORAGE_BROKER_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `STORAGE_BROKER_ACCESS_KEY_ID environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.worker.baseUrl) {
+  if (!services.broker.secretAccessKey) {
     throw new Error(
-      `STORAGE_WORKER_URL environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `STORAGE_BROKER_SECRET_ACCESS_KEY environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.worker.sharedSecret) {
+  if (!services.callbacks.decision.currentSecret) {
     throw new Error(
-      `STORAGE_WORKER_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `CONVEX_STORAGE_DECISION_CALLBACK_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
-  if (!services.convexCallbackSharedSecret) {
+  if (!services.callbacks.document.currentSecret) {
     throw new Error(
-      `CONVEX_STORAGE_CALLBACK_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+      `CONVEX_DOCUMENT_RESULT_CALLBACK_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
+    );
+  }
+  if (!services.callbacks.inspection.currentSecret) {
+    throw new Error(
+      `CONVEX_STORAGE_INSPECTION_CALLBACK_SHARED_SECRET environment variable is required for FILE_STORAGE_BACKEND=${mode}.`,
     );
   }
   return services;
@@ -564,6 +625,8 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       'AWS_MIRROR_RETRY_MAX_DELAY_MS',
       15 * 60 * 1000,
     ),
+    parserResultStagingPrefix:
+      readOptionalServerEnv('AWS_DOCUMENT_RESULT_STAGING_PREFIX') ?? 'parser-staging/',
     s3DeleteMaxAttempts: parsePositiveInteger(
       readOptionalServerEnv('AWS_S3_DELETE_MAX_ATTEMPTS'),
       'AWS_S3_DELETE_MAX_ATTEMPTS',
@@ -708,7 +771,7 @@ export function getE2EPrincipalConfig(principal: E2EPrincipalType): E2EPrincipal
 }
 
 export function isE2EPrincipalEmail(email: string): boolean {
-  if (!isE2ETestAuthEnabled()) {
+  if (!isE2ETestAuthEnabled() || !isDevelopmentOrTestDeployment()) {
     return false;
   }
 

@@ -55,6 +55,7 @@ export const chatAttachmentKindValidator = v.union(v.literal('image'), v.literal
 export const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('pending_scan'),
+  v.literal('processing'),
   v.literal('quarantined'),
   v.literal('ready'),
   v.literal('error'),
@@ -846,6 +847,7 @@ export const organizationEnterpriseAccessResultValidator = v.object({
       id: v.id('organizationSupportAccessGrants'),
       reason: v.string(),
       scope: organizationSupportAccessScopeValidator,
+      ticketId: v.string(),
     }),
     v.null(),
   ),
@@ -997,6 +999,7 @@ export const organizationPermissionDecisionValidator = v.object({
     recentStepUpSatisfied: v.boolean(),
     supportGrantId: v.union(v.id('organizationSupportAccessGrants'), v.null()),
     supportGrantScope: v.union(organizationSupportAccessScopeValidator, v.null()),
+    supportGrantTicketId: v.union(v.string(), v.null()),
   }),
   membership: v.union(betterAuthMemberValidator, v.null()),
   membershipStatus: v.union(
@@ -1028,6 +1031,7 @@ export const organizationSupportAccessGrantRowValidator = v.object({
   siteAdminEmail: v.string(),
   siteAdminName: v.union(v.string(), v.null()),
   siteAdminUserId: v.string(),
+  ticketId: v.string(),
 });
 
 export const organizationSupportAccessSiteAdminOptionValidator = v.object({

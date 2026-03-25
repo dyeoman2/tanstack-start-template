@@ -2,11 +2,17 @@ import { httpRouter } from 'convex/server';
 import { httpAction } from './_generated/server';
 import { authComponent, createAuth } from './auth';
 import { resend } from './emails';
-import { assertInternalServiceAuthorization } from '../src/lib/server/internal-service-auth';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { verifyStorageWebhookSignatureWithSecrets } from '../src/lib/server/storage-webhook-signature';
 import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
-import { applyStorageInspectionRequest } from './storageDecision';
+import {
+  applyStorageInspectionRequest,
+  applyStorageInspectionResult,
+  parseStorageInspectionWebhookPayload,
+} from './storageDecision';
+import { applyChatDocumentParseResult } from './agentChatActions';
+import { applyPdfParseDocumentResult } from './pdfParseActions';
 import {
   applyGuardDutyPromotionResult,
   applyGuardDutyFinding,
@@ -45,32 +51,45 @@ http.route({
   }),
 });
 
-function ensureStorageCallbackAuthorized(request: Request) {
-  const runtimeConfig = getStorageRuntimeConfig();
-  assertInternalServiceAuthorization({
-    authorizationHeader: request.headers.get('authorization'),
-    expectedSecret: runtimeConfig.services.convexCallbackSharedSecret,
+async function ensureSignedStorageCallback(
+  request: Request,
+  sharedSecrets: Array<string | null | undefined>,
+) {
+  const payload = await request.text();
+  await verifyStorageWebhookSignatureWithSecrets({
+    payload,
+    sharedSecrets,
+    signature: request.headers.get('x-scriptflow-signature'),
+    timestamp: request.headers.get('x-scriptflow-timestamp'),
   });
+  return payload;
+}
+
+function getStorageCallbackSecrets(kind: 'decision' | 'document' | 'inspection') {
+  const runtimeConfig = getStorageRuntimeConfig();
+  const config = runtimeConfig.services.callbacks[kind];
+  return [config.currentSecret, config.previousSecret];
 }
 
 http.route({
   path: '/internal/storage/guardduty',
   method: 'POST',
   handler: httpAction(async (ctx, request) => {
+    let payload: string;
     try {
-      ensureStorageCallbackAuthorized(request);
+      payload = await ensureSignedStorageCallback(request, getStorageCallbackSecrets('decision'));
     } catch (error) {
       return new Response(
-        error instanceof Error ? error.message : 'Internal service authorization failed.',
+        error instanceof Error ? error.message : 'Storage callback signature verification failed.',
         { status: 401 },
       );
     }
 
-    const payload = parseGuardDutyWebhookPayload(await request.text());
+    const parsedPayload = parseGuardDutyWebhookPayload(payload);
     const result =
-      payload.type === 'promotion_result'
-        ? await applyGuardDutyPromotionResult(ctx, payload)
-        : await applyGuardDutyFinding(ctx, payload);
+      parsedPayload.type === 'promotion_result'
+        ? await applyGuardDutyPromotionResult(ctx, parsedPayload)
+        : await applyGuardDutyFinding(ctx, parsedPayload);
 
     return Response.json(result, { status: 200 });
   }),
@@ -80,17 +99,75 @@ http.route({
   path: '/internal/storage/inspection',
   method: 'POST',
   handler: httpAction(async (ctx, request) => {
+    let payload: string;
     try {
-      ensureStorageCallbackAuthorized(request);
+      payload = await ensureSignedStorageCallback(request, getStorageCallbackSecrets('inspection'));
     } catch (error) {
       return new Response(
-        error instanceof Error ? error.message : 'Internal service authorization failed.',
+        error instanceof Error ? error.message : 'Storage callback signature verification failed.',
         { status: 401 },
       );
     }
 
-    const payload = (await request.json()) as { bucket: string; key: string };
-    const result = await applyStorageInspectionRequest(ctx, payload);
+    const result = await applyStorageInspectionRequest(
+      ctx,
+      parseStorageInspectionWebhookPayload(payload),
+    );
+
+    return Response.json(result, { status: 200 });
+  }),
+});
+
+http.route({
+  path: '/internal/storage/inspection-result',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    let payload: string;
+    try {
+      payload = await ensureSignedStorageCallback(request, getStorageCallbackSecrets('inspection'));
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : 'Storage callback signature verification failed.',
+        { status: 401 },
+      );
+    }
+
+    const parsedPayload = JSON.parse(payload) as Parameters<typeof applyStorageInspectionResult>[1];
+    const result = await applyStorageInspectionResult(ctx, parsedPayload);
+
+    return Response.json(result, { status: 200 });
+  }),
+});
+
+http.route({
+  path: '/internal/storage/document-result',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    let payload: string;
+    try {
+      payload = await ensureSignedStorageCallback(request, getStorageCallbackSecrets('document'));
+    } catch (error) {
+      return new Response(
+        error instanceof Error ? error.message : 'Storage callback signature verification failed.',
+        { status: 401 },
+      );
+    }
+
+    const parsedPayload = JSON.parse(payload) as {
+      errorMessage?: string;
+      imageCount?: number;
+      pageCount?: number;
+      parseKind: 'chat_document_extract' | 'pdf_parse';
+      parserVersion?: string;
+      resultContentType?: string;
+      resultKey?: string;
+      status: 'FAILED' | 'SUCCEEDED';
+      storageId: string;
+    };
+    const result =
+      parsedPayload.parseKind === 'pdf_parse'
+        ? await applyPdfParseDocumentResult(ctx, parsedPayload)
+        : await applyChatDocumentParseResult(ctx, parsedPayload);
 
     return Response.json(result, { status: 200 });
   }),

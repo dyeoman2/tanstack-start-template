@@ -62,3 +62,37 @@ export async function verifyStorageWebhookSignature(args: {
     throw new Error('Webhook signature verification failed.');
   }
 }
+
+export async function verifyStorageWebhookSignatureWithSecrets(args: {
+  payload: string;
+  sharedSecrets: Array<string | null | undefined>;
+  signature: string | null;
+  timestamp: string | null;
+}) {
+  const availableSecrets = args.sharedSecrets.filter(
+    (secret): secret is string => typeof secret === 'string' && secret.length > 0,
+  );
+  if (availableSecrets.length === 0) {
+    throw new Error('Storage webhook shared secret is not configured.');
+  }
+  if (!args.signature || !args.timestamp) {
+    throw new Error('Missing required webhook signature headers.');
+  }
+
+  const timestampMs = Number.parseInt(args.timestamp, 10);
+  if (!Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > WEBHOOK_MAX_AGE_MS) {
+    throw new Error('Webhook timestamp is stale.');
+  }
+
+  for (const secret of availableSecrets) {
+    const expected = await createStorageWebhookSignature(
+      secret,
+      `${args.timestamp}.${args.payload}`,
+    );
+    if (timingSafeEqual(expected, args.signature)) {
+      return;
+    }
+  }
+
+  throw new Error('Webhook signature verification failed.');
+}

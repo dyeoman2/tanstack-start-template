@@ -13,6 +13,7 @@ const ORIGINAL_ENV = { ...process.env };
 describe('e2e-auth.server', () => {
   beforeEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    process.env.APP_DEPLOYMENT_ENV = 'development';
     process.env.ENABLE_E2E_TEST_AUTH = 'true';
     process.env.E2E_TEST_SECRET = 'test-secret';
     process.env.E2E_USER_EMAIL = 'e2e-user@local.test';
@@ -36,6 +37,16 @@ describe('e2e-auth.server', () => {
     expect(() => assertE2EAuthRequestAuthorized(request)).not.toThrow();
   });
 
+  it('does not depend on a loopback request hostname', () => {
+    const request = new Request('https://app.example.com/api/test/agent-auth', {
+      headers: {
+        'x-e2e-test-secret': 'test-secret',
+      },
+    });
+
+    expect(() => assertE2EAuthRequestAuthorized(request)).not.toThrow();
+  });
+
   it('rejects requests when auth is disabled', () => {
     process.env.ENABLE_E2E_TEST_AUTH = 'false';
     const request = new Request('http://127.0.0.1:3000/api/test/agent-auth', {
@@ -49,9 +60,22 @@ describe('e2e-auth.server', () => {
     );
   });
 
-  it('rejects requests outside loopback and test runtimes', () => {
-    process.env.NODE_ENV = 'development';
-    const request = new Request('https://app.example.com/api/test/agent-auth', {
+  it('rejects requests outside explicit development or test deployments', () => {
+    process.env.APP_DEPLOYMENT_ENV = 'preview';
+    const request = new Request('http://127.0.0.1:3000/api/test/agent-auth', {
+      headers: {
+        'x-e2e-test-secret': 'test-secret',
+      },
+    });
+
+    expect(() => assertE2EAuthRequestAuthorized(request)).toThrow(
+      expect.objectContaining({ status: 404 }),
+    );
+  });
+
+  it('rejects requests when APP_DEPLOYMENT_ENV is missing', () => {
+    delete process.env.APP_DEPLOYMENT_ENV;
+    const request = new Request('http://127.0.0.1:3000/api/test/agent-auth', {
       headers: {
         'x-e2e-test-secret': 'test-secret',
       },

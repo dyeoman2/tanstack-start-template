@@ -1,5 +1,5 @@
 import { v } from 'convex/values';
-import { getE2ETestSecret } from '../../src/lib/server/env.server';
+import { getSecurityWorkspaceResetSecret } from '../../src/lib/server/env.server';
 import { ACTIVE_CONTROL_REGISTER } from '../../src/lib/shared/compliance/control-register';
 import { internal } from '../_generated/api';
 import { internalAction } from '../_generated/server';
@@ -79,7 +79,7 @@ export const seed = internalAction({
         securityWorkspaceResetSummary = await ctx.runAction(
           internal.securityOps.resetSecurityControlWorkspaceForDevelopment,
           {
-            secret: getE2ETestSecret(),
+            secret: getSecurityWorkspaceResetSecret(),
           },
         );
         notes.push(

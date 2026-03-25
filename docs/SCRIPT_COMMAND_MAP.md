@@ -40,6 +40,8 @@ Automation-focused JSON/plan usage lives in [SCRIPT_AUTOMATION.md](./SCRIPT_AUTO
 - Guided local storage setup: `pnpm run storage:setup`
 - Guided production storage setup: `pnpm run storage:setup:prod`
 - Guided immutable audit archive setup: `pnpm run audit-archive:setup -- --prod`
+- Preview immutable audit archive infra: `pnpm run audit-archive:preview`
+- Deploy immutable audit archive infra: `pnpm run audit-archive:deploy`
 - Destroy all repo-managed AWS resources: `pnpm run aws:destroy:all`
 - Verify repo-managed AWS teardown left no repo-scoped AWS resources: run the four AWS CLI checks in [infra/README.md](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/README.md)
 - Destroy immutable audit archive infra: `pnpm run audit-archive:destroy`

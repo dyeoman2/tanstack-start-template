@@ -15,9 +15,9 @@ import {
   loadStoredFileBlobWithMode,
   storeDerivedFileWithMode,
 } from './storagePlatform';
+import { deleteStorageObject, enqueueDocumentParseTask, getCleanObject } from './lib/storageS3';
 import { getStorageReadiness } from './storageReadiness';
 import { storageBackendModeValidator } from './storageTypes';
-import { parsePdfBlob } from '../src/lib/server/pdf-parse.server';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
 
 const pdfParseJobStatusValidator = v.union(
@@ -98,8 +98,12 @@ async function patchPdfParseJob(
   ctx: Pick<ActionCtx, 'runMutation'>,
   args: {
     completedAt?: number | null;
+    dispatchAttempts?: number;
+    dispatchErrorMessage?: string | null;
     errorMessage?: string | null;
     organizationId: string;
+    parserVersion?: string | null;
+    processingStartedAt?: number | null;
     requestedByUserId: string;
     resultStorageId?: string | null;
     status: 'failed' | 'processing' | 'quarantined' | 'queued' | 'ready';
@@ -108,16 +112,6 @@ async function patchPdfParseJob(
   },
 ) {
   await ctx.runMutation(internal.pdfParse.upsertPdfParseJobInternal, args);
-}
-
-async function loadPdfSourceBlob(
-  ctx: ActionCtx,
-  lifecycle: Pick<Doc<'storageLifecycle'>, 'storageId'>,
-) {
-  return await loadStoredFileBlobWithMode(ctx, {
-    fallbackMimeType: 'application/pdf',
-    storageId: lifecycle.storageId,
-  });
 }
 
 export const getPdfParseBackendMode = action({
@@ -149,8 +143,11 @@ export const processPendingPdfParseJobInternal = internalAction({
     if (!lifecycle) {
       await patchPdfParseJob(ctx, {
         completedAt: Date.now(),
+        dispatchErrorMessage: null,
         errorMessage: 'Stored file not found.',
         organizationId: job.organizationId,
+        parserVersion: null,
+        processingStartedAt: null,
         requestedByUserId: job.requestedByUserId,
         status: 'failed',
         storageId: args.storageId,
@@ -162,8 +159,12 @@ export const processPendingPdfParseJobInternal = internalAction({
     if (!readiness.readable) {
       await patchPdfParseJob(ctx, {
         completedAt: readiness.reason === 'quarantined' ? Date.now() : null,
+        dispatchErrorMessage: null,
         errorMessage: readiness.reason === 'quarantined' ? readiness.message : null,
         organizationId: job.organizationId,
+        parserVersion: null,
+        processingStartedAt:
+          readiness.reason === 'quarantined' ? null : (job.processingStartedAt ?? null),
         requestedByUserId: job.requestedByUserId,
         resultStorageId: null,
         status: readiness.reason === 'quarantined' ? 'quarantined' : 'queued',
@@ -175,8 +176,12 @@ export const processPendingPdfParseJobInternal = internalAction({
 
     await patchPdfParseJob(ctx, {
       completedAt: null,
+      dispatchAttempts: (job.dispatchAttempts ?? 0) + 1,
+      dispatchErrorMessage: null,
       errorMessage: null,
       organizationId: job.organizationId,
+      parserVersion: null,
+      processingStartedAt: Date.now(),
       requestedByUserId: job.requestedByUserId,
       resultStorageId: null,
       status: 'processing',
@@ -185,57 +190,28 @@ export const processPendingPdfParseJobInternal = internalAction({
     });
 
     try {
-      const blob = await loadPdfSourceBlob(ctx, lifecycle);
-      const parsed = await parsePdfBlob(blob);
-      const resultFile = await storeDerivedFileWithMode(ctx, {
-        blob: new Blob([JSON.stringify(parsed)], { type: 'application/json' }),
-        fileName: `${lifecycle.originalFileName}.parsed.json`,
-        mimeType: 'application/json',
-        organizationId: lifecycle.organizationId ?? job.organizationId,
-        parentStorageId: args.storageId,
-        sourceId: args.storageId,
-        sourceType: 'pdf_parse_result',
-      });
-
-      if (job.resultStorageId) {
-        await deleteStoredFileWithMode(ctx, {
-          storageId: job.resultStorageId,
-        });
+      if (!lifecycle.canonicalKey) {
+        throw new Error('Stored PDF does not have a canonical S3 object key.');
       }
-
-      await patchPdfParseJob(ctx, {
-        completedAt: Date.now(),
-        errorMessage: null,
-        organizationId: job.organizationId,
-        requestedByUserId: job.requestedByUserId,
-        resultStorageId: resultFile.storageId,
-        status: 'ready',
+      await enqueueDocumentParseTask({
+        canonicalKey: lifecycle.canonicalKey,
+        fileName: lifecycle.originalFileName,
+        kind: 'document_parse',
+        mimeType: lifecycle.mimeType ?? 'application/pdf',
+        organizationId: lifecycle.organizationId ?? null,
+        parseKind: 'pdf_parse',
+        sourceType: lifecycle.sourceType,
         storageId: args.storageId,
-        updatedAt: Date.now(),
-      });
-
-      await recordSystemAuditEvent(ctx, {
-        emitter: 'pdf.parse.worker',
-        eventType: 'pdf_parse_succeeded',
-        initiatedByUserId: job.requestedByUserId,
-        metadata: JSON.stringify({
-          imageCount: parsed.images.length,
-          pageCount: parsed.pages,
-        }),
-        organizationId: job.organizationId,
-        outcome: 'success',
-        resourceId: args.storageId,
-        resourceLabel: lifecycle.originalFileName,
-        resourceType: 'pdf_file',
-        severity: 'info',
-        sourceSurface: 'api.parse_pdf',
-        userId: job.requestedByUserId,
       });
     } catch (error) {
       await patchPdfParseJob(ctx, {
         completedAt: Date.now(),
+        dispatchErrorMessage:
+          error instanceof Error ? error.message : 'Failed to dispatch PDF parse job',
         errorMessage: error instanceof Error ? error.message : 'Failed to parse PDF',
         organizationId: job.organizationId,
+        parserVersion: null,
+        processingStartedAt: job.processingStartedAt ?? null,
         requestedByUserId: job.requestedByUserId,
         resultStorageId: null,
         status: 'failed',
@@ -263,6 +239,108 @@ export const processPendingPdfParseJobInternal = internalAction({
     return null;
   },
 });
+
+export async function applyPdfParseDocumentResult(
+  ctx: ActionCtx,
+  args: {
+    errorMessage?: string;
+    imageCount?: number;
+    pageCount?: number;
+    parserVersion?: string;
+    resultContentType?: string;
+    resultKey?: string;
+    status: 'FAILED' | 'SUCCEEDED';
+    storageId: string;
+  },
+) {
+  const job = await getPdfParseJob(ctx, args.storageId);
+  if (!job) {
+    return { applied: false, reason: 'missing_job' as const };
+  }
+  const lifecycle = (await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
+    storageId: args.storageId,
+  })) as Doc<'storageLifecycle'> | null;
+  if (!lifecycle) {
+    return { applied: false, reason: 'missing_lifecycle' as const };
+  }
+
+  if (args.status === 'FAILED') {
+    await patchPdfParseJob(ctx, {
+      completedAt: Date.now(),
+      dispatchErrorMessage: null,
+      errorMessage: args.errorMessage ?? 'Failed to parse PDF',
+      organizationId: job.organizationId,
+      parserVersion: args.parserVersion ?? null,
+      processingStartedAt: job.processingStartedAt ?? null,
+      requestedByUserId: job.requestedByUserId,
+      resultStorageId: null,
+      status: 'failed',
+      storageId: args.storageId,
+      updatedAt: Date.now(),
+    });
+    return { applied: true, reason: 'failed' as const };
+  }
+
+  if (!args.resultKey) {
+    throw new Error('Document parse callback is missing the staged result key.');
+  }
+
+  const stagedResult = await getCleanObject({ key: args.resultKey });
+  const resultFile = await storeDerivedFileWithMode(ctx, {
+    blob: stagedResult.Body,
+    fileName: `${lifecycle.originalFileName}.parsed.json`,
+    mimeType: args.resultContentType ?? 'application/json',
+    organizationId: lifecycle.organizationId ?? job.organizationId,
+    parentStorageId: args.storageId,
+    sourceId: args.storageId,
+    sourceType: 'pdf_parse_result',
+  });
+
+  if (job.resultStorageId) {
+    await deleteStoredFileWithMode(ctx, {
+      storageId: job.resultStorageId,
+    });
+  }
+
+  await deleteStorageObject({
+    bucketKind: 'clean',
+    key: args.resultKey,
+  });
+
+  await patchPdfParseJob(ctx, {
+    completedAt: Date.now(),
+    dispatchErrorMessage: null,
+    errorMessage: null,
+    organizationId: job.organizationId,
+    parserVersion: args.parserVersion ?? null,
+    processingStartedAt: job.processingStartedAt ?? null,
+    requestedByUserId: job.requestedByUserId,
+    resultStorageId: resultFile.storageId,
+    status: 'ready',
+    storageId: args.storageId,
+    updatedAt: Date.now(),
+  });
+
+  await recordSystemAuditEvent(ctx, {
+    emitter: 'pdf.parse.worker',
+    eventType: 'pdf_parse_succeeded',
+    initiatedByUserId: job.requestedByUserId,
+    metadata: JSON.stringify({
+      imageCount: args.imageCount ?? 0,
+      pageCount: args.pageCount ?? 0,
+    }),
+    organizationId: job.organizationId,
+    outcome: 'success',
+    resourceId: args.storageId,
+    resourceLabel: lifecycle.originalFileName,
+    resourceType: 'pdf_file',
+    severity: 'info',
+    sourceSurface: 'api.parse_pdf',
+    userId: job.requestedByUserId,
+  });
+
+  return { applied: true, reason: 'ok' as const };
+}
 
 export const enqueuePdfParseJob = action({
   args: {
@@ -299,8 +377,12 @@ export const enqueuePdfParseJob = action({
         : readiness.reason === 'quarantined'
           ? Date.now()
           : null,
+      dispatchAttempts: 0,
+      dispatchErrorMessage: null,
       errorMessage: readiness.reason === 'quarantined' ? readiness.message : null,
       organizationId: lifecycle.organizationId ?? user.activeOrganizationId ?? 'unknown',
+      parserVersion: null,
+      processingStartedAt: null,
       requestedByUserId: user.authUserId,
       resultStorageId: null,
       status: readiness.reason === 'quarantined' ? 'quarantined' : 'queued',

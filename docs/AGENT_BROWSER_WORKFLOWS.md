@@ -5,6 +5,7 @@ Use these commands when an AI agent needs to verify UI changes in the local app 
 ## Prerequisites
 
 - Local app running at `http://127.0.0.1:3000`
+- `APP_DEPLOYMENT_ENV=development` or `APP_DEPLOYMENT_ENV=test`
 - `ENABLE_E2E_TEST_AUTH=true`
 - `E2E_TEST_SECRET` present in `.env.local`
 - `agent-browser` installed and available on `PATH`
@@ -55,6 +56,7 @@ pnpm run agent:close -- --session-name codex-shot
   - If you are scripting the route manually, make the request from inside the browser session, not from a detached HTTP client.
 
 - `401 Unauthorized` or `404 Not found` from `/api/test/agent-auth`
+  - Confirm `APP_DEPLOYMENT_ENV=development` or `APP_DEPLOYMENT_ENV=test` in `.env.local`.
   - Confirm `ENABLE_E2E_TEST_AUTH=true` in `.env.local`.
   - Confirm `E2E_TEST_SECRET` exists locally and matches the current app environment.
   - If you are calling the route directly instead of using the helper scripts, run `pnpm run e2e:provision` first so the principal already exists.
