@@ -805,6 +805,24 @@ describe('audit evidence helpers', () => {
         sealedAt: Date.parse('2026-03-18T04:10:00.000Z'),
       },
     ];
+    const auditLedgerImmutableExports: Array<Record<string, unknown>> = [
+      {
+        _id: 'immutable-export-1',
+        chainId: 'primary',
+        startSequence: 1,
+        endSequence: 16,
+        headHash: 'head-hash-0',
+        eventCount: 16,
+        sealedAt: Date.parse('2026-03-18T04:10:00.000Z'),
+        exportedAt: Date.parse('2026-03-18T04:12:00.000Z'),
+        bucket: 'audit-archive-bucket',
+        objectKey: 'audit-ledger/primary/000000000001-000000000016-head-hash-0.jsonl.gz',
+        manifestObjectKey:
+          'audit-ledger/primary/000000000001-000000000016-head-hash-0.manifest.json',
+        payloadSha256: 'payload-sha',
+        manifestSha256: 'manifest-sha',
+      },
+    ];
     const ctx = {
       db: {
         query: (table: string) => ({
@@ -840,6 +858,10 @@ describe('audit evidence helpers', () => {
               );
             } else if (table === 'auditLedgerSeals') {
               rows = auditLedgerSeals.filter((row) =>
+                filters.every(([field, value]) => row[field] === value),
+              );
+            } else if (table === 'auditLedgerImmutableExports') {
+              rows = auditLedgerImmutableExports.filter((row) =>
                 filters.every(([field, value]) => row[field] === value),
               );
             } else {
@@ -883,6 +905,12 @@ describe('audit evidence helpers', () => {
       expectedSequence: 17,
     });
     expect(snapshot.lastSealAt).toBe(Date.parse('2026-03-18T04:10:00.000Z'));
+    expect(snapshot.latestImmutableExport).toMatchObject({
+      endSequence: 16,
+      exportedAt: Date.parse('2026-03-18T04:12:00.000Z'),
+    });
+    expect(snapshot.immutableExportHealthy).toBe(true);
+    expect(snapshot.immutableExportLagCount).toBe(0);
     expect(snapshot.sealCount).toBe(1);
     expect(snapshot.unverifiedTailCount).toBe(2);
     expect(snapshot.metadataGaps).toHaveLength(1);
@@ -1095,6 +1123,11 @@ describe('audit evidence helpers', () => {
                 collect: async () => [{ _id: 'checkpoint-1' }, { _id: 'checkpoint-2' }],
               };
             }
+            if (table === 'auditLedgerImmutableExports') {
+              return {
+                order: () => ({ first: async () => ({ exportedAt: 91 }) }),
+              };
+            }
             if (table === 'auditLedgerEvents') {
               return {
                 order: () => ({ first: async () => ({ recordedAt: 95 }) }),
@@ -1117,6 +1150,7 @@ describe('audit evidence helpers', () => {
     });
     expect(result.auth.mfaEnabledUsers).toBe(2);
     expect(result.audit.integrityFailures).toBe(2);
+    expect(result.audit.lastImmutableExportAt).toBe(91);
   });
 
   it('counts current seeded evidence in the workspace control summary', async () => {

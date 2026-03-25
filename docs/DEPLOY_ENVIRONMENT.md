@@ -165,6 +165,14 @@ For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is mi
 
 It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
 
+If immutable audit archiving is enabled, `deploy:doctor` also requires:
+
+- `AWS_AUDIT_ARCHIVE_BUCKET`
+- `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`
+- `AWS_AUDIT_ARCHIVE_ROLE_ARN`
+
+`AWS_AUDIT_ARCHIVE_PREFIX` is optional and defaults to `audit-ledger/`.
+
 ### `setup:prod` flags
 
 Non-interactive-oriented options (combine as needed):

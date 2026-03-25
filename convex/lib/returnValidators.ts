@@ -291,6 +291,23 @@ export const auditLedgerSealDocValidator = v.object({
   sealedAt: v.number(),
 });
 
+export const auditLedgerImmutableExportDocValidator = v.object({
+  _id: v.id('auditLedgerImmutableExports'),
+  _creationTime: v.number(),
+  chainId: v.string(),
+  startSequence: v.number(),
+  endSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  eventCount: v.number(),
+  sealedAt: v.number(),
+  exportedAt: v.number(),
+  bucket: v.string(),
+  objectKey: v.string(),
+  manifestObjectKey: v.string(),
+  payloadSha256: v.string(),
+  manifestSha256: v.string(),
+});
+
 export const dashboardStatsDocValidator = v.object({
   _id: v.id('dashboardStats'),
   _creationTime: v.number(),

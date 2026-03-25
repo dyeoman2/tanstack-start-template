@@ -45,4 +45,11 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  'archive sealed audit ledger segments',
+  { minutes: 5 },
+  internal.auditArchive.exportSealedAuditLedgerSegmentToImmutableStoreInternal,
+  {},
+);
+
 export default crons;

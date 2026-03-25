@@ -3,6 +3,7 @@
 This directory now contains AWS CDK infrastructure for two separate concerns:
 
 - the existing malware-scanned S3 storage path
+- immutable audit archiving
 - disaster recovery backup and vendor-exit recovery infrastructure
 
 ## Stack Layout
@@ -23,6 +24,11 @@ This directory now contains AWS CDK infrastructure for two separate concerns:
 - [package.json](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/package.json)
 - [tsconfig.json](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/tsconfig.json)
 - [cdk.json](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/cdk.json)
+
+### Immutable audit archive
+
+- [app.mjs](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/bin/app.mjs)
+- [audit-archive-stack.cts](/Users/yeoman/Desktop/tanstack/tanstack-start-template/infra/aws-cdk/lib/audit-archive-stack.cts)
 
 ## DR Architecture
 
@@ -50,6 +56,15 @@ The recovery stack provisions:
 - Secrets Manager secrets for Aurora credentials and the Convex instance secret
 
 This stack is intended for disaster recovery events, not day-to-day production use.
+
+### Audit archive stack
+
+The archive stack provisions:
+
+- an Object Lock S3 bucket in compliance mode
+- a dedicated KMS key
+- a dedicated write role trusted by one explicit principal ARN
+- blocked public access, SSL-only access, bucket-owner-enforced ownership, and versioning
 
 ## Commands
 
@@ -198,6 +213,12 @@ Those are transformed into the CDK app inputs:
 - `AWS_DR_CLOUDFLARE_ZONE_SECRET_NAME`
 - `AWS_DR_NETLIFY_HOOK_SECRET_NAME`
 
+### Audit archive stack
+
+- `AWS_AUDIT_ARCHIVE_BUCKET_NAME`
+- `AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN`
+- optional `AWS_AUDIT_ARCHIVE_RETENTION_DAYS`
+
 ## Runtime/App Environment Contract
 
 The application storage platform expects these runtime variables when `FILE_STORAGE_BACKEND` is `s3-primary` or `s3-mirror`:
@@ -222,6 +243,13 @@ The application storage platform expects these runtime variables when `FILE_STOR
 - `AWS_STORAGE_ROLE_ARN_CLEANUP`
 - `AWS_STORAGE_ROLE_ARN_MIRROR`
 - `CONVEX_SITE_URL`
+
+When immutable audit archiving is enabled, the application also expects:
+
+- `AWS_AUDIT_ARCHIVE_BUCKET`
+- `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`
+- `AWS_AUDIT_ARCHIVE_ROLE_ARN`
+- optional `AWS_AUDIT_ARCHIVE_PREFIX`
 
 Optional runtime tuning:
 
@@ -257,3 +285,4 @@ See the DR docs for the full operator flow:
 - The weekly DR backup workflow lives at [db-backup.yml](/Users/yeoman/Desktop/tanstack/tanstack-start-template/.github/workflows/db-backup.yml).
 - The backup workflow validates that exported data is restorable; it is not just an artifact upload job.
 - Bucket lifecycle expiration is intentionally not configured for canonical file retention in the storage path; application lifecycle deletion remains the source of truth there.
+- The immutable audit archive is an external evidence anchor for sealed ledger segments. It is not the primary audit query path for the app.

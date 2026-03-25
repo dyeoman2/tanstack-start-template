@@ -276,6 +276,23 @@ export default defineSchema({
     .index('by_chain_id_and_sealed_at', ['chainId', 'sealedAt'])
     .index('by_chain_id_and_end_sequence', ['chainId', 'endSequence']),
 
+  auditLedgerImmutableExports: defineTable({
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    eventCount: v.number(),
+    sealedAt: v.number(),
+    exportedAt: v.number(),
+    bucket: v.string(),
+    objectKey: v.string(),
+    manifestObjectKey: v.string(),
+    payloadSha256: v.string(),
+    manifestSha256: v.string(),
+  })
+    .index('by_chain_id_and_exported_at', ['chainId', 'exportedAt'])
+    .index('by_chain_id_and_end_sequence', ['chainId', 'endSequence']),
+
   organizationDomains: defineTable({
     organizationId: v.string(),
     domain: v.string(),

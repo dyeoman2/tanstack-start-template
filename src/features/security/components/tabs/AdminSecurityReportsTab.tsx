@@ -252,6 +252,19 @@ export function AdminSecurityReportsTab(props: {
                         ? new Date(props.auditReadiness.lastSealAt).toLocaleString()
                         : 'none'}
                     </p>
+                    <p>
+                      Immutable archive:{' '}
+                      {props.auditReadiness.immutableExportHealthy ? 'healthy' : 'lagging'}
+                    </p>
+                    <p>Immutable archive lag: {props.auditReadiness.immutableExportLagCount}</p>
+                    <p>
+                      Last immutable export:{' '}
+                      {props.auditReadiness.latestImmutableExport
+                        ? new Date(
+                            props.auditReadiness.latestImmutableExport.exportedAt,
+                          ).toLocaleString()
+                        : 'none'}
+                    </p>
                     {props.auditReadiness.lastIntegrityFailure ? (
                       <p>
                         Last failure: #{props.auditReadiness.lastIntegrityFailure.expectedSequence}{' '}

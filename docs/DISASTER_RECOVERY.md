@@ -83,6 +83,11 @@ DR can reuse the existing S3-backed serving path. Recovery should preserve:
 
 In this configuration, file availability can be preserved independently of Convex database export/import.
 
+If production also enables immutable audit archiving, treat that bucket as an external evidence
+anchor, not as part of the DR restore path. Recovery should continue to prioritize Convex export
+import plus the live S3 file buckets; the Object Lock archive is for repudiation resistance and
+operator evidence, not for application reads.
+
 ### If production uses `convex`
 
 `convex export` does **not** include Convex file blobs. In that mode:

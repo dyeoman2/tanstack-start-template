@@ -339,6 +339,14 @@ export type StorageBucketConfig = {
 
 export type StorageRoleConfig = Record<StorageCapability, string | null>;
 
+export type AuditArchiveRuntimeConfig = {
+  awsRegion: string | null;
+  bucket: string | null;
+  kmsKeyArn: string | null;
+  prefix: string;
+  roleArn: string | null;
+};
+
 export type StorageRuntimeConfig = {
   awsRegion: string | null;
   backendMode: FileStorageBackendMode;
@@ -572,6 +580,49 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ),
   };
+}
+
+export function getAuditArchiveRuntimeConfig(): AuditArchiveRuntimeConfig {
+  const prefix = readOptionalServerEnv('AWS_AUDIT_ARCHIVE_PREFIX')?.trim() || 'audit-ledger/';
+  const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
+  const baseConfig: AuditArchiveRuntimeConfig = {
+    awsRegion: readOptionalServerEnv('AWS_REGION'),
+    bucket: readOptionalServerEnv('AWS_AUDIT_ARCHIVE_BUCKET'),
+    kmsKeyArn: readOptionalServerEnv('AWS_AUDIT_ARCHIVE_KMS_KEY_ARN'),
+    prefix: normalizedPrefix,
+    roleArn: readOptionalServerEnv('AWS_AUDIT_ARCHIVE_ROLE_ARN'),
+  };
+
+  const configuredValues = [
+    baseConfig.awsRegion,
+    baseConfig.bucket,
+    baseConfig.kmsKeyArn,
+    baseConfig.roleArn,
+  ].filter((value) => (value ?? '').trim().length > 0);
+  if (configuredValues.length === 0) {
+    return baseConfig;
+  }
+
+  if (!baseConfig.awsRegion) {
+    throw new Error('AWS_REGION environment variable is required for audit archive operations.');
+  }
+  if (!baseConfig.bucket) {
+    throw new Error(
+      'AWS_AUDIT_ARCHIVE_BUCKET environment variable is required for audit archive operations.',
+    );
+  }
+  if (!baseConfig.kmsKeyArn) {
+    throw new Error(
+      'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required for audit archive operations.',
+    );
+  }
+  if (!baseConfig.roleArn) {
+    throw new Error(
+      'AWS_AUDIT_ARCHIVE_ROLE_ARN environment variable is required for audit archive operations.',
+    );
+  }
+
+  return baseConfig;
 }
 
 export function getGoogleOAuthCredentials(): {

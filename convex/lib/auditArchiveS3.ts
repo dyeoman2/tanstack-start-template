@@ -1,0 +1,150 @@
+'use node';
+
+import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
+import { getAuditArchiveRuntimeConfig } from '../../src/lib/server/env.server';
+
+type AwsCredentials = {
+  accessKeyId: string;
+  secretAccessKey: string;
+  sessionToken?: string;
+};
+
+type CachedCredentials = {
+  credentials: AwsCredentials;
+  expiresAt: number;
+};
+
+const ASSUME_ROLE_REFRESH_WINDOW_MS = 60 * 1000;
+
+let cachedClient: S3Client | null = null;
+let cachedStsClient: STSClient | null = null;
+let cachedCredentialsPromise: Promise<CachedCredentials> | null = null;
+
+function getRequiredArchiveConfig(): {
+  awsRegion: string;
+  bucket: string;
+  kmsKeyArn: string;
+  prefix: string;
+  roleArn: string;
+} {
+  const config = getAuditArchiveRuntimeConfig();
+  if (!config.awsRegion || !config.bucket || !config.kmsKeyArn || !config.roleArn) {
+    throw new Error('Audit archive runtime config is incomplete.');
+  }
+  return {
+    awsRegion: config.awsRegion,
+    bucket: config.bucket,
+    kmsKeyArn: config.kmsKeyArn,
+    prefix: config.prefix,
+    roleArn: config.roleArn,
+  };
+}
+
+function getStsClient() {
+  const { awsRegion } = getRequiredArchiveConfig();
+  if (cachedStsClient) {
+    return cachedStsClient;
+  }
+
+  cachedStsClient = new STSClient({ region: awsRegion });
+  return cachedStsClient;
+}
+
+async function getArchiveCredentials(): Promise<AwsCredentials> {
+  const cached = cachedCredentialsPromise;
+  if (cached) {
+    const result = await cached;
+    if (result.expiresAt > Date.now() + ASSUME_ROLE_REFRESH_WINDOW_MS) {
+      return result.credentials;
+    }
+    cachedCredentialsPromise = null;
+  }
+
+  const config = getRequiredArchiveConfig();
+  const roleArn = config.roleArn;
+  const assumePromise = (async (): Promise<CachedCredentials> => {
+    const response = await getStsClient().send(
+      new AssumeRoleCommand({
+        RoleArn: roleArn,
+        RoleSessionName: `audit-archive-${Date.now()}`,
+      }),
+    );
+    if (!response.Credentials) {
+      throw new Error('AWS STS AssumeRole returned no credentials for audit archive.');
+    }
+
+    return {
+      credentials: {
+        accessKeyId: response.Credentials.AccessKeyId ?? '',
+        secretAccessKey: response.Credentials.SecretAccessKey ?? '',
+        sessionToken: response.Credentials.SessionToken,
+      },
+      expiresAt: response.Credentials.Expiration
+        ? response.Credentials.Expiration.getTime()
+        : Date.now() + 15 * 60 * 1000,
+    };
+  })();
+
+  cachedCredentialsPromise = assumePromise;
+  try {
+    return (await assumePromise).credentials;
+  } catch (error) {
+    cachedCredentialsPromise = null;
+    throw error;
+  }
+}
+
+function getAuditArchiveClient() {
+  if (cachedClient) {
+    return cachedClient;
+  }
+
+  const { awsRegion } = getRequiredArchiveConfig();
+  cachedClient = new S3Client({
+    credentials: async () => await getArchiveCredentials(),
+    region: awsRegion,
+  });
+  return cachedClient;
+}
+
+export async function headAuditArchiveObject(args: { key: string }) {
+  const { bucket } = getRequiredArchiveConfig();
+  return await getAuditArchiveClient().send(
+    new HeadObjectCommand({
+      Bucket: bucket,
+      Key: args.key,
+    }),
+  );
+}
+
+export async function getAuditArchiveObjectMetadata(args: { key: string }) {
+  const object = await headAuditArchiveObject(args);
+  return {
+    bucket: getRequiredArchiveConfig().bucket,
+    eTag: object.ETag ?? null,
+    key: args.key,
+    lastModified: object.LastModified?.getTime() ?? null,
+    versionId: object.VersionId ?? null,
+  };
+}
+
+export async function putAuditArchiveObject(args: {
+  body: Uint8Array;
+  contentEncoding?: string;
+  contentType: string;
+  key: string;
+}) {
+  const { bucket, kmsKeyArn } = getRequiredArchiveConfig();
+  return await getAuditArchiveClient().send(
+    new PutObjectCommand({
+      Body: args.body,
+      Bucket: bucket,
+      ContentEncoding: args.contentEncoding,
+      ContentType: args.contentType,
+      Key: args.key,
+      SSEKMSKeyId: kmsKeyArn,
+      ServerSideEncryption: 'aws:kms',
+    }),
+  );
+}

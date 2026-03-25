@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
+  getAuditArchiveRuntimeConfig,
   getBetterAuthAllowedHosts,
   getBetterAuthSecret,
   getBetterAuthTrustedOrigins,
@@ -224,5 +225,30 @@ describe('Better Auth env helpers', () => {
     expect(config.guardDutyWebhookSharedSecret).toBe('guardduty-secret');
     expect(config.storageInspectionWebhookSharedSecret).toBe('inspection-secret');
     expect(config.storageRoleArns.downloadPresign).toBe('arn:aws:iam::123456789012:role/download');
+  });
+
+  it('reads audit archive runtime settings when configured', () => {
+    process.env.AWS_REGION = 'us-west-1';
+    process.env.AWS_AUDIT_ARCHIVE_BUCKET = 'audit-archive-bucket';
+    process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/audit';
+    process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN = 'arn:aws:iam::123456789012:role/audit-archive';
+    process.env.AWS_AUDIT_ARCHIVE_PREFIX = 'archive/root';
+
+    expect(getAuditArchiveRuntimeConfig()).toEqual({
+      awsRegion: 'us-west-1',
+      bucket: 'audit-archive-bucket',
+      kmsKeyArn: 'arn:aws:kms:us-west-1:123456789012:key/audit',
+      prefix: 'archive/root/',
+      roleArn: 'arn:aws:iam::123456789012:role/audit-archive',
+    });
+  });
+
+  it('requires a complete audit archive runtime config once any archive env is set', () => {
+    process.env.AWS_REGION = 'us-west-1';
+    process.env.AWS_AUDIT_ARCHIVE_BUCKET = 'audit-archive-bucket';
+
+    expect(() => getAuditArchiveRuntimeConfig()).toThrow(
+      'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required for audit archive operations.',
+    );
   });
 });

@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import {
   buildDefaultBackupBucketName,
   buildDrSecretNames,
@@ -211,6 +213,18 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       AWS_STORAGE_ROLE_ARN_CLEANUP: 'arn:aws:iam::123:role/cleanup',
       AWS_STORAGE_ROLE_ARN_MIRROR: 'arn:aws:iam::123:role/mirror',
     });
+  });
+});
+
+describe('dr-recover-ecs.sh storage env replay', () => {
+  it('replays the split S3 runtime env contract', () => {
+    const scriptPath = path.join(process.cwd(), 'infra', 'aws-cdk', 'scripts', 'dr-recover-ecs.sh');
+    const contents = readFileSync(scriptPath, 'utf8');
+
+    for (const envName of getRequiredStorageDrEnvKeys({ FILE_STORAGE_BACKEND: 's3-primary' })) {
+      expect(contents).toContain(`get_json_value '${envName}'`);
+      expect(contents).toContain(`set_convex_env_if_present "${envName}"`);
+    }
   });
 });
 

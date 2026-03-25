@@ -17,6 +17,7 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
     latestRetentionJob,
     latestBackupCheck,
     latestAuditEvent,
+    latestImmutableExport,
     integrityFailures,
   ] = await Promise.all([
     fetchAllBetterAuthUsers(ctx),
@@ -26,6 +27,11 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
     ctx.db
       .query('auditLedgerEvents')
       .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerImmutableExports')
+      .withIndex('by_chain_id_and_exported_at', (q) => q.eq('chainId', 'primary'))
       .order('desc')
       .first(),
     countQueryResults(
@@ -55,6 +61,7 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
     audit: {
       integrityFailures,
       lastEventAt: latestAuditEvent?.recordedAt ?? null,
+      lastImmutableExportAt: latestImmutableExport?.exportedAt ?? null,
     },
     auth: {
       emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
@@ -98,6 +105,7 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
     latestRetentionJob,
     latestSuccessfulCheckpoint,
     latestFailedCheckpoint,
+    latestImmutableExport,
     latestSeal,
     sealCount,
     recentAuditLogs,
@@ -126,6 +134,11 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
         q.eq('chainId', 'primary').eq('status', 'failed'),
       )
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerImmutableExports')
+      .withIndex('by_chain_id_and_end_sequence', (q) => q.eq('chainId', 'primary'))
       .order('desc')
       .first(),
     ctx.db
@@ -216,6 +229,14 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
           verifiedEventCount: latestSuccessfulCheckpoint.verifiedEventCount,
         }
       : null,
+    latestImmutableExport: latestImmutableExport
+      ? {
+          endSequence: latestImmutableExport.endSequence,
+          exportedAt: latestImmutableExport.exportedAt,
+          headHash: latestImmutableExport.headHash,
+          objectKey: latestImmutableExport.objectKey,
+        }
+      : null,
     lastIntegrityFailure: latestFailedCheckpoint?.failure
       ? {
           checkedAt: latestFailedCheckpoint.checkedAt,
@@ -241,6 +262,14 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       manifestHash: artifact.manifestHash,
       sourceReportId: artifact.sourceReportId ?? null,
     })),
+    immutableExportHealthy:
+      latestSeal === null
+        ? true
+        : (latestImmutableExport?.endSequence ?? 0) >= latestSeal.endSequence,
+    immutableExportLagCount: Math.max(
+      0,
+      latestSeal ? latestSeal.endSequence - (latestImmutableExport?.endSequence ?? 0) : 0,
+    ),
     sealCount,
     unverifiedTailCount: Math.max(
       0,

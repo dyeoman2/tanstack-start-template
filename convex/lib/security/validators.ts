@@ -191,6 +191,7 @@ const securityPostureSummaryValidator = v.object({
   audit: v.object({
     integrityFailures: v.number(),
     lastEventAt: v.union(v.number(), v.null()),
+    lastImmutableExportAt: v.union(v.number(), v.null()),
   }),
   auth: v.object({
     emailVerificationRequired: v.boolean(),
@@ -1151,6 +1152,15 @@ const auditReadinessSnapshotValidator = v.object({
     v.null(),
   ),
   latestVerifiedCheckpoint: v.union(auditReadinessVerifiedCheckpointSummaryValidator, v.null()),
+  latestImmutableExport: v.union(
+    v.object({
+      endSequence: v.number(),
+      exportedAt: v.number(),
+      headHash: v.union(v.string(), v.null()),
+      objectKey: v.string(),
+    }),
+    v.null(),
+  ),
   lastIntegrityFailure: v.union(auditReadinessIntegrityFailureSummaryValidator, v.null()),
   lastSealAt: v.union(v.number(), v.null()),
   metadataGaps: v.array(
@@ -1178,6 +1188,8 @@ const auditReadinessSnapshotValidator = v.object({
       sourceReportId: v.union(v.id('evidenceReports'), v.null()),
     }),
   ),
+  immutableExportHealthy: v.boolean(),
+  immutableExportLagCount: v.number(),
   sealCount: v.number(),
   unverifiedTailCount: v.number(),
 });

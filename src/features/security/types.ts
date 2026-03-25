@@ -119,6 +119,7 @@ export type SecurityPostureSummary = {
   audit: {
     integrityFailures: number;
     lastEventAt: number | null;
+    lastImmutableExportAt: number | null;
   };
   auth: {
     emailVerificationRequired: boolean;
@@ -318,12 +319,20 @@ export type AuditReadinessOverview = {
     startSequence: number;
     verifiedEventCount: number;
   } | null;
+  latestImmutableExport: {
+    endSequence: number;
+    exportedAt: number;
+    headHash: string | null;
+    objectKey: string;
+  } | null;
   lastIntegrityFailure: {
     checkedAt: number;
     eventId: string;
     expectedSequence: number;
   } | null;
   lastSealAt: number | null;
+  immutableExportHealthy: boolean;
+  immutableExportLagCount: number;
   metadataGaps: Array<{
     createdAt: number;
     eventType: string;

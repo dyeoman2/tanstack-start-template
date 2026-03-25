@@ -41,6 +41,13 @@ const REQUIRED_S3_RUNTIME_ENV_NAMES = [
   'AWS_STORAGE_ROLE_ARN_MIRROR',
 ] as const;
 
+const REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES = [
+  'AWS_REGION',
+  'AWS_AUDIT_ARCHIVE_BUCKET',
+  'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN',
+  'AWS_AUDIT_ARCHIVE_ROLE_ARN',
+] as const;
+
 const REQUIRED_NETLIFY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
   'Cross-Origin-Resource-Policy': 'same-origin',
@@ -125,6 +132,45 @@ function checkStorageRuntimeEnv(
     check: `S3 runtime env (${label})`,
     status: 'pass',
     detail: `FILE_STORAGE_BACKEND=${backend}`,
+  });
+  return true;
+}
+
+function checkAuditArchiveRuntimeEnv(
+  label: string,
+  envVars: Record<string, string>,
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+) {
+  const configured = REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES.some((name) =>
+    (envVars[name] ?? '').trim(),
+  );
+  if (!configured) {
+    console.log(`✅ Audit archive runtime env (${label}) not configured`);
+    checks.push({
+      check: `Audit archive runtime env (${label})`,
+      status: 'pass',
+      detail: 'Audit archive disabled',
+    });
+    return true;
+  }
+
+  const missing = REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES.filter(
+    (name) => !(envVars[name] ?? '').trim(),
+  );
+  if (missing.length > 0) {
+    console.log(`❌ Missing audit archive runtime env (${label}): ${missing.join(', ')}`);
+    checks.push({
+      check: `Audit archive runtime env (${label})`,
+      status: 'fail',
+      detail: `Missing ${missing.join(', ')}`,
+    });
+    return false;
+  }
+
+  console.log(`✅ Audit archive runtime env complete (${label})`);
+  checks.push({
+    check: `Audit archive runtime env (${label})`,
+    status: 'pass',
   });
   return true;
 }
@@ -311,16 +357,17 @@ function main() {
   ok = checkNetlifyHardening(checks) && ok;
 
   if (convexDevEnvOutput) {
-    ok = checkStorageRuntimeEnv('Convex dev', parseConvexEnvList(convexDevEnvOutput), checks) && ok;
+    const devEnvVars = parseConvexEnvList(convexDevEnvOutput);
+    ok = checkStorageRuntimeEnv('Convex dev', devEnvVars, checks) && ok;
+    ok = checkAuditArchiveRuntimeEnv('Convex dev', devEnvVars, checks) && ok;
   }
 
   if (convexProdEnvOutput) {
+    const prodEnvVars = parseConvexEnvList(convexProdEnvOutput);
     ok =
-      checkStorageRuntimeEnv(
-        'Convex production',
-        parseConvexEnvList(convexProdEnvOutput),
-        checks,
-      ) && ok;
+      checkStorageRuntimeEnv('Convex production', prodEnvVars, checks) &&
+      checkAuditArchiveRuntimeEnv('Convex production', prodEnvVars, checks) &&
+      ok;
   }
 
   console.log('');

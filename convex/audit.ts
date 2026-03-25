@@ -28,8 +28,9 @@ import {
   auditLedgerEventDocValidator,
   auditLedgerEventsResponseValidator,
   auditLedgerExportValidator,
-  auditLedgerIntegrityResultValidator,
   auditLedgerCheckpointDocValidator,
+  auditLedgerImmutableExportDocValidator,
+  auditLedgerIntegrityResultValidator,
   auditLedgerSealDocValidator,
 } from './lib/returnValidators';
 
@@ -201,6 +202,10 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
       'severity',
       'sourceSurface',
     ],
+  ],
+  [
+    'audit_ledger_segment_archived',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
   [
     'evidence_report_generated',
@@ -403,6 +408,16 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'rowCount', 'number');
       requireMetadataKey(record.eventType, parsed, 'scope', 'string');
       requireMetadataKey(record.eventType, parsed, 'filters', 'object');
+      return;
+    }
+    case 'audit_ledger_segment_archived': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'startSequence', 'number');
+      requireMetadataKey(record.eventType, parsed, 'endSequence', 'number');
+      requireMetadataKey(record.eventType, parsed, 'headHash', 'string');
+      requireMetadataKey(record.eventType, parsed, 'bucket', 'string');
+      requireMetadataKey(record.eventType, parsed, 'objectKey', 'string');
+      requireMetadataKey(record.eventType, parsed, 'manifestSha256', 'string');
       return;
     }
     case 'evidence_report_generated': {
@@ -1174,6 +1189,20 @@ export const getLatestAuditLedgerSealInternal = internalQuery({
   },
 });
 
+export const getLatestImmutableAuditExportInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerImmutableExportDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerImmutableExports')
+        .withIndex('by_chain_id_and_end_sequence', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
 export const listAuditLedgerEventsForVerificationInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -1293,6 +1322,48 @@ export const createAuditLedgerSealInternal = internalMutation({
     }
 
     await ctx.db.insert('auditLedgerSeals', args);
+    return null;
+  },
+});
+
+export const recordImmutableAuditExportInternal = internalMutation({
+  args: {
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    eventCount: v.number(),
+    sealedAt: v.number(),
+    exportedAt: v.number(),
+    bucket: v.string(),
+    objectKey: v.string(),
+    manifestObjectKey: v.string(),
+    payloadSha256: v.string(),
+    manifestSha256: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const latestExport = await ctx.db
+      .query('auditLedgerImmutableExports')
+      .withIndex('by_chain_id_and_end_sequence', (q) => q.eq('chainId', args.chainId))
+      .order('desc')
+      .first();
+
+    if (latestExport) {
+      if (args.endSequence < latestExport.endSequence) {
+        throw new Error('Audit immutable export end sequence cannot regress');
+      }
+
+      if (
+        args.endSequence === latestExport.endSequence &&
+        args.headHash === latestExport.headHash &&
+        args.objectKey === latestExport.objectKey
+      ) {
+        return null;
+      }
+    }
+
+    await ctx.db.insert('auditLedgerImmutableExports', args);
     return null;
   },
 });

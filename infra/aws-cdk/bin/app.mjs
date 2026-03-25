@@ -6,6 +6,7 @@ const cdk = require('aws-cdk-lib');
 const { MalwareScanStack } = require(path.join('..', 'lib', 'malware-scan-stack.cts'));
 const { DrBackupStack } = require(path.join('..', 'lib', 'dr-backup-stack.cts'));
 const { DrEcsStack } = require(path.join('..', 'lib', 'dr-ecs-stack.cts'));
+const { AuditArchiveStack } = require(path.join('..', 'lib', 'audit-archive-stack.cts'));
 const DEFAULT_PROJECT_SLUG = 'tanstack-start-template';
 
 function buildStorageStackName(projectSlug, stage) {
@@ -18,6 +19,10 @@ function buildDrBackupStackName(projectSlug) {
 
 function buildDrEcsStackName(projectSlug) {
   return `${projectSlug}-dr-ecs-stack`;
+}
+
+function buildAuditArchiveStackName(projectSlug) {
+  return `${projectSlug}-audit-archive-stack`;
 }
 
 function readTrimmedEnv(name) {
@@ -55,6 +60,8 @@ const app = new cdk.App();
 const awsEnv = createAwsEnv();
 const storageProjectSlug = readTrimmedEnv('AWS_STORAGE_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
 const drProjectSlug = readTrimmedEnv('AWS_DR_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
+const auditArchiveProjectSlug =
+  readTrimmedEnv('AWS_AUDIT_ARCHIVE_PROJECT_SLUG') || DEFAULT_PROJECT_SLUG;
 const drEcsStackName = readTrimmedEnv('AWS_DR_STACK_NAME') || buildDrEcsStackName(drProjectSlug);
 const drHostnameStrategy = readTrimmedEnv('AWS_DR_HOSTNAME_STRATEGY') || 'custom-domain';
 const storageStage = readTrimmedEnv('STORAGE_STAGE');
@@ -85,6 +92,19 @@ new DrBackupStack(app, buildDrBackupStackName(drProjectSlug), {
   env: awsEnv,
   projectSlug: drProjectSlug,
 });
+
+const auditArchiveTrustedPrincipalArn = readTrimmedEnv('AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN');
+if (auditArchiveTrustedPrincipalArn) {
+  new AuditArchiveStack(app, buildAuditArchiveStackName(auditArchiveProjectSlug), {
+    bucketName: readTrimmedEnv('AWS_AUDIT_ARCHIVE_BUCKET_NAME') || undefined,
+    description: 'TanStack Start immutable audit archive bucket',
+    env: awsEnv,
+    projectSlug: auditArchiveProjectSlug,
+    retentionDays:
+      Number.parseInt(readTrimmedEnv('AWS_AUDIT_ARCHIVE_RETENTION_DAYS'), 10) || undefined,
+    trustedPrincipalArn: auditArchiveTrustedPrincipalArn,
+  });
+}
 
 const drDomain = readTrimmedEnv('AWS_DR_DOMAIN');
 if (drDomain || drHostnameStrategy === 'provider-hostnames') {
