@@ -4,7 +4,7 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { issueFileAccessUrlForCurrentUser } from './fileServing';
-import { copyS3Object, createPresignedS3Url, deleteS3Object, headS3Object } from './lib/storageS3';
+import { createPresignedS3Url, deleteS3Object } from './lib/storageS3';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
 
 function toStoragePathSegment(value: string) {
@@ -25,12 +25,20 @@ function buildScopedStoragePath(args: {
   return `${topLevelPrefix}${scopePath}/${toStoragePathSegment(args.sourceType)}/${args.storageId}`;
 }
 
-export function buildDeterministicStorageKey(args: {
+export function buildMirroredStorageKey(args: {
   organizationId?: string | null;
   sourceType: string;
   storageId: string;
 }) {
   return buildScopedStoragePath(args);
+}
+
+function hexSha256ToBase64(value: string) {
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/u.test(normalized)) {
+    throw new Error('Expected a lowercase SHA-256 hex digest.');
+  }
+  return Buffer.from(normalized, 'hex').toString('base64');
 }
 
 export function buildQuarantineStorageKey(args: {
@@ -60,6 +68,7 @@ export async function generateS3PrimaryUploadTarget(args: {
   fileName: string;
   fileSize: number;
   organizationId?: string | null;
+  sha256Hex?: string;
   sourceType: string;
   storageId: string;
 }): Promise<UploadTargetResult> {
@@ -73,9 +82,15 @@ export async function generateS3PrimaryUploadTarget(args: {
     sourceType: args.sourceType,
     storageId: args.storageId,
   });
+  const checksumHeader = args.sha256Hex
+    ? {
+        'x-amz-checksum-sha256': hexSha256ToBase64(args.sha256Hex),
+      }
+    : undefined;
   const presigned = await createPresignedS3Url({
     bucket,
     contentType: args.contentType,
+    headers: checksumHeader,
     key: quarantineKey,
     method: 'PUT',
   });
@@ -86,6 +101,7 @@ export async function generateS3PrimaryUploadTarget(args: {
     storageId: args.storageId,
     uploadHeaders: {
       'Content-Type': args.contentType,
+      ...checksumHeader,
     },
     uploadMethod: 'PUT',
     uploadUrl: presigned.url,
@@ -104,7 +120,6 @@ export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUplo
     sourceType: args.sourceType,
     storageId: args.storageId,
   });
-  const head = await headS3Object({ bucket, key: quarantineKey });
 
   await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
     backendMode: 's3-primary',
@@ -116,7 +131,6 @@ export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUplo
     originalFileName: args.fileName,
     quarantineBucket: bucket,
     quarantineKey,
-    quarantineVersionId: head.VersionId,
     sourceId: args.sourceId,
     sourceType: args.sourceType,
     storageId: args.storageId,
@@ -169,61 +183,4 @@ export async function deleteS3PrimaryObject(ctx: ActionCtx, args: { storageId: s
       versionId: lifecycle.quarantineVersionId,
     });
   }
-}
-
-export async function promoteS3PrimaryObject(
-  ctx: ActionCtx,
-  args: { scannedAt: number; storageId: string },
-) {
-  const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
-    storageId: args.storageId,
-  });
-  if (!lifecycle) {
-    throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
-  }
-
-  if (lifecycle.storagePlacement === 'PROMOTED' && lifecycle.malwareStatus === 'CLEAN') {
-    return { promoted: false as const, reason: 'already_promoted' as const };
-  }
-
-  if (!lifecycle.quarantineBucket || !lifecycle.quarantineKey) {
-    throw new Error('Stored file does not have a quarantine backing object.');
-  }
-
-  const promotedKey = buildPromotedStorageKey({
-    organizationId: lifecycle.organizationId ?? null,
-    sourceType: lifecycle.sourceType,
-    storageId: lifecycle.storageId,
-  });
-  const copyResult = await copyS3Object({
-    bucket: lifecycle.quarantineBucket,
-    contentType: lifecycle.mimeType,
-    destinationKey: promotedKey,
-    sourceBucket: lifecycle.quarantineBucket,
-    sourceKey: lifecycle.quarantineKey,
-  });
-
-  await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
-    canonicalBucket: lifecycle.quarantineBucket,
-    canonicalKey: promotedKey,
-    canonicalVersionId: copyResult.VersionId ?? null,
-    scannedAt: args.scannedAt,
-    storageId: args.storageId,
-    storagePlacement: 'PROMOTED',
-  });
-
-  await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
-    actionResult: 'success',
-    details: promotedKey,
-    eventType: 's3_primary_promoted',
-    storageId: args.storageId,
-  });
-
-  await deleteS3Object({
-    bucket: lifecycle.quarantineBucket,
-    key: lifecycle.quarantineKey,
-    versionId: lifecycle.quarantineVersionId,
-  });
-
-  return { promoted: true as const, reason: 'ok' as const };
 }

@@ -20,6 +20,10 @@ function isLegacyPromotedS3Primary(lifecycle: Exclude<StorageLifecycleLike, null
   );
 }
 
+type StorageReadinessOptions = {
+  allowLegacyPrimaryReads?: boolean;
+};
+
 export type StorageReadiness =
   | {
       message: null;
@@ -32,7 +36,10 @@ export type StorageReadiness =
       reason: 'deleted' | 'mirror_pending' | 'not_found' | 'pending_scan' | 'quarantined';
     };
 
-export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageReadiness {
+export function getStorageReadiness(
+  lifecycle: StorageLifecycleLike,
+  options?: StorageReadinessOptions,
+): StorageReadiness {
   if (!lifecycle || lifecycle.deletedAt) {
     return {
       message: 'Stored file not found.',
@@ -49,7 +56,7 @@ export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageRea
     };
   }
 
-  if (isLegacyPromotedS3Primary(lifecycle)) {
+  if (options?.allowLegacyPrimaryReads && isLegacyPromotedS3Primary(lifecycle)) {
     return {
       message: null,
       readable: true,

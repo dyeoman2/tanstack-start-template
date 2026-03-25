@@ -7,7 +7,7 @@ import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
 import { deleteS3Object, listS3Objects, putS3Object } from './lib/storageS3';
-import { buildDeterministicStorageKey } from './storageS3Primary';
+import { buildMirroredStorageKey } from './storageS3Primary';
 import type { FinalizeUploadArgs } from './storageTypes';
 
 function asConvexStorageId(storageId: string) {
@@ -63,7 +63,7 @@ export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: st
     throw new ConvexError(`Convex blob not found for storageId=${args.storageId}.`);
   }
 
-  const key = buildDeterministicStorageKey({
+  const key = buildMirroredStorageKey({
     organizationId: lifecycle.organizationId ?? null,
     sourceType: lifecycle.sourceType,
     storageId: args.storageId,

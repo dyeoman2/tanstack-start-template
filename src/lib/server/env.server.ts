@@ -325,6 +325,7 @@ export type E2EPrincipalType = 'user' | 'admin';
 export type FileStorageBackendMode = 'convex' | 's3-primary' | 's3-mirror';
 
 export type StorageRuntimeConfig = {
+  allowLegacyPrimaryReads: boolean;
   awsRegion: string | null;
   backendMode: FileStorageBackendMode;
   convexSiteUrl: string | null;
@@ -397,6 +398,21 @@ function parsePositiveInteger(value: string | null, name: string, fallback: numb
   return parsed;
 }
 
+function parseBooleanServerEnv(value: string | null, fallback: boolean): boolean {
+  if (value === null) {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+  throw new Error('Boolean server env values must be one of: 1, 0, true, false, yes, no.');
+}
+
 function readRequiredStorageEnv(name: string, mode: FileStorageBackendMode): string {
   const value = readOptionalServerEnv(name);
   if (!value) {
@@ -421,6 +437,10 @@ export function getFileStorageBackendMode(): FileStorageBackendMode {
 export function getStorageRuntimeConfig(): StorageRuntimeConfig {
   const backendMode = getFileStorageBackendMode();
   const baseConfig: StorageRuntimeConfig = {
+    allowLegacyPrimaryReads: parseBooleanServerEnv(
+      readOptionalServerEnv('AWS_S3_LEGACY_PRIMARY_READS_ENABLED'),
+      true,
+    ),
     awsRegion: readOptionalServerEnv('AWS_REGION'),
     backendMode,
     convexSiteUrl: readOptionalServerEnv('CONVEX_SITE_URL'),

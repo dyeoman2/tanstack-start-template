@@ -1,37 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyGuardDutyFinding } from './storageWebhook';
+import { applyGuardDutyFinding, applyGuardDutyPromotionResult } from './storageWebhook';
 
-const { getStorageRuntimeConfigMock, promoteS3PrimaryObjectMock } = vi.hoisted(() => ({
+const { getStorageRuntimeConfigMock } = vi.hoisted(() => ({
   getStorageRuntimeConfigMock: vi.fn(() => ({
     malwareWebhookSharedSecret: 'secret',
     s3FilesBucket: 'bucket',
   })),
-  promoteS3PrimaryObjectMock: vi.fn(),
 }));
 
 vi.mock('../src/lib/server/env.server', () => ({
   getStorageRuntimeConfig: getStorageRuntimeConfigMock,
 }));
 
-vi.mock('./storageS3Primary', async () => {
-  const actual = await vi.importActual<typeof import('./storageS3Primary')>('./storageS3Primary');
-  return {
-    ...actual,
-    promoteS3PrimaryObject: promoteS3PrimaryObjectMock,
-  };
-});
-
-describe('applyGuardDutyFinding', () => {
+describe('storage webhook handling', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('uses promotion for clean s3-primary findings and treats repeat promotion as idempotent', async () => {
-    promoteS3PrimaryObjectMock.mockResolvedValue({
-      promoted: false,
-      reason: 'already_promoted',
-    });
-
+  it('treats raw clean s3-primary findings as awaiting promotion results', async () => {
     const ctx = {
       runAction: vi.fn(),
       runMutation: vi.fn(),
@@ -52,13 +38,48 @@ describe('applyGuardDutyFinding', () => {
       }),
     ).resolves.toEqual({
       applied: false,
+      reason: 'awaiting_promotion_result',
+    });
+
+    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.runAction).not.toHaveBeenCalled();
+  });
+
+  it('treats repeat promotion callbacks as idempotent', async () => {
+    const ctx = {
+      runAction: vi.fn(),
+      runMutation: vi.fn(),
+      runQuery: vi.fn(async (_ref: unknown, args: { key: string }) => {
+        if (args.key === 'quarantine/org/acme/chat/file-1') {
+          return {
+            canonicalBucket: 'bucket',
+            canonicalKey: 'clean/org/acme/chat/file-1',
+            canonicalVersionId: 'version-1',
+            malwareStatus: 'CLEAN',
+            storageId: 'file-1',
+            storagePlacement: 'PROMOTED',
+          };
+        }
+        return null;
+      }),
+    };
+
+    await expect(
+      applyGuardDutyPromotionResult(ctx as never, {
+        bucket: 'bucket',
+        findingId: 'finding-1',
+        promotedBucket: 'bucket',
+        promotedKey: 'clean/org/acme/chat/file-1',
+        promotedVersionId: 'version-1',
+        quarantineKey: 'quarantine/org/acme/chat/file-1',
+        scannedAt: Date.now(),
+        status: 'PROMOTED',
+      }),
+    ).resolves.toEqual({
+      applied: false,
       reason: 'already_promoted',
     });
 
-    expect(promoteS3PrimaryObjectMock).toHaveBeenCalledWith(ctx, {
-      scannedAt: expect.any(Number),
-      storageId: 'file-1',
-    });
     expect(ctx.runMutation).not.toHaveBeenCalled();
     expect(ctx.runAction).not.toHaveBeenCalled();
   });

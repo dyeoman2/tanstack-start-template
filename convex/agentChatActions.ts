@@ -36,7 +36,6 @@ import {
   storeDerivedFileWithMode,
 } from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
-import { buildDeterministicStorageKey } from './storageS3Primary';
 
 type ChatDataCtx =
   | Pick<ActionCtx, 'runQuery' | 'runMutation'>
@@ -770,26 +769,11 @@ export const createChatAttachmentFromUpload = action({
 
     const backendMode = getFileStorageBackendMode();
     const blob =
-      backendMode === 's3-primary'
-        ? await (async () => {
-            const runtimeConfig = getStorageRuntimeConfig();
-            const bucket = runtimeConfig.s3FilesBucket;
-            if (!bucket) {
-              throw new ConvexError('AWS_S3_FILES_BUCKET is not configured.');
-            }
-            const object = await getS3Object({
-              bucket,
-              key: buildDeterministicStorageKey({
-                organizationId,
-                sourceType: 'chat_attachment',
-                storageId: args.storageId,
-              }),
-            });
-            return await toBlob(object.Body, args.mimeType);
-          })()
-        : await ctx.storage.get(args.storageId as Id<'_storage'>);
+      backendMode === 's3-primary' ? null : await ctx.storage.get(args.storageId as Id<'_storage'>);
     if (!blob) {
-      throw new Error('Uploaded file was not found.');
+      if (backendMode !== 's3-primary') {
+        throw new Error('Uploaded file was not found.');
+      }
     }
 
     if (blob) {
@@ -1075,7 +1059,10 @@ export const processPendingChatAttachmentInternal = internalAction({
     const lifecycle = (await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
       storageId: args.storageId,
     })) as Doc<'storageLifecycle'> | null;
-    const readiness = getStorageReadiness(lifecycle);
+    const runtimeConfig = getStorageRuntimeConfig();
+    const readiness = getStorageReadiness(lifecycle, {
+      allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+    });
     if (!lifecycle || !readiness.readable) {
       return null;
     }

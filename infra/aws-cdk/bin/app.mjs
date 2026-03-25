@@ -25,6 +25,11 @@ function readTrimmedEnv(name) {
   return value ? value.trim() : '';
 }
 
+function readBooleanEnv(name) {
+  const value = readTrimmedEnv(name).toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes';
+}
+
 function createStageConfig(projectSlug, stage) {
   return {
     bucketName: readTrimmedEnv('AWS_S3_FILES_BUCKET_NAME'),
@@ -35,6 +40,7 @@ function createStageConfig(projectSlug, stage) {
     malwareWebhookSharedSecret: readTrimmedEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
     projectSlug,
     stage,
+    strictPrefixPolicy: readBooleanEnv('AWS_S3_STRICT_CLEAN_PREFIX_POLICY'),
     webhookUrl: readTrimmedEnv('AWS_CONVEX_GUARDDUTY_WEBHOOK_URL'),
   };
 }

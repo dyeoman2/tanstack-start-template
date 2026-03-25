@@ -2019,6 +2019,7 @@ export const generateChatAttachmentUploadTarget = action({
       fileName: args.fileName.trim(),
       fileSize: args.sizeBytes,
       organizationId: viewer.organizationId,
+      sha256Hex: args.sha256.toLowerCase(),
       sourceId: `pending:${token}`,
       sourceType: 'chat_attachment',
     });

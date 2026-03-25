@@ -476,6 +476,7 @@ export default defineSchema({
     .index('by_parentStorageId', ['parentStorageId'])
     .index('by_organizationId', ['organizationId'])
     .index('by_source', ['sourceType', 'sourceId'])
+    .index('by_backendMode_and_createdAt', ['backendMode', 'createdAt'])
     .index('by_s3Key', ['canonicalBucket', 'canonicalKey'])
     .index('by_mirrorS3Key', ['mirrorBucket', 'mirrorKey'])
     .index('by_quarantineS3Key', ['quarantineBucket', 'quarantineKey'])

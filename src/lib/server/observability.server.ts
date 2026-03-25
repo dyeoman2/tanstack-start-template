@@ -3,7 +3,19 @@ const SECURITY_LOG_ALLOWLIST: Record<SecurityLogPayload['scope'], readonly strin
   health: ['component', 'status', 'timestamp'],
   retention: ['jobKind', 'processedCount', 'status'],
   scan: ['engine', 'fileExtension', 'reason', 'resultStatus'],
-  telemetry: ['eventName', 'status', 'vendor'],
+  telemetry: [
+    'blockedURL',
+    'disposition',
+    'documentURL',
+    'effectiveDirective',
+    'eventName',
+    'originalPolicy',
+    'referrer',
+    'status',
+    'statusCode',
+    'vendor',
+    'violatedDirective',
+  ],
 };
 
 function sanitizeSecurityLogData(

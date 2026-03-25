@@ -75,6 +75,14 @@ pnpm run storage:deploy:dev
 pnpm run storage:deploy:prod
 ```
 
+Legacy `s3-primary` clean-prefix backfill:
+
+```bash
+pnpm run storage:backfill:clean-prefixes
+pnpm run storage:backfill:clean-prefixes -- --apply
+pnpm run storage:backfill:clean-prefixes -- --apply --prod
+```
+
 Destroy:
 
 ```bash
@@ -155,6 +163,7 @@ The storage wrapper takes an explicit stage via `--stage dev|prod`, then derives
 - `AWS_S3_FILES_BUCKET`
 - `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - optional `AWS_PROFILE`
+- optional `AWS_S3_STRICT_CLEAN_PREFIX_POLICY=true` after the legacy clean-prefix backfill reaches zero remaining `s3-primary` legacy objects
 
 Those are transformed into the CDK app inputs:
 
@@ -203,6 +212,7 @@ The application storage platform expects these runtime variables when `FILE_STOR
 Optional runtime tuning:
 
 - `FILE_UPLOAD_MAX_BYTES`
+- `AWS_S3_LEGACY_PRIMARY_READS_ENABLED`
 - `AWS_MALWARE_SCAN_SLA_MS`
 - `STORAGE_STALE_UPLOAD_TTL_MS`
 - `AWS_S3_ORPHAN_CLEANUP_MIN_AGE_MS`

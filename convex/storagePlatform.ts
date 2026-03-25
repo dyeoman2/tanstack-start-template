@@ -48,6 +48,7 @@ export async function createUploadTargetWithMode(ctx: ActionCtx, args: CreateUpl
       fileName: args.fileName,
       fileSize: args.fileSize,
       organizationId: args.organizationId,
+      sha256Hex: args.sha256Hex,
       sourceType: args.sourceType,
       storageId,
     });
@@ -154,7 +155,10 @@ export async function loadStoredFileBlobWithMode(
     throw new Error(`Storage lifecycle row not found for storageId=${args.storageId}.`);
   }
 
-  const readiness = getStorageReadiness(lifecycle);
+  const runtimeConfig = getStorageRuntimeConfig();
+  const readiness = getStorageReadiness(lifecycle, {
+    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+  });
   if (!readiness.readable) {
     throw new Error(readiness.message ?? 'Stored file is not readable.');
   }
@@ -189,7 +193,10 @@ async function resolveDerivedParentLifecycleOrThrow(ctx: ActionCtx, parentStorag
   if (!parentLifecycle) {
     throw new Error(`Parent stored file not found for storageId=${parentStorageId}.`);
   }
-  const readiness = getStorageReadiness(parentLifecycle);
+  const runtimeConfig = getStorageRuntimeConfig();
+  const readiness = getStorageReadiness(parentLifecycle, {
+    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+  });
   if (!readiness.readable) {
     throw new Error(readiness.message ?? 'Parent stored file is not readable.');
   }

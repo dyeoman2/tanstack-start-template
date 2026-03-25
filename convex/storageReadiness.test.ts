@@ -76,7 +76,7 @@ describe('getStorageReadiness', () => {
     });
   });
 
-  it('continues to treat legacy clean canonical objects as readable', () => {
+  it('fails closed for legacy clean canonical objects by default', () => {
     expect(
       getStorageReadiness(
         createLifecycle({
@@ -85,6 +85,26 @@ describe('getStorageReadiness', () => {
           malwareStatus: 'CLEAN',
           storagePlacement: undefined,
         }),
+      ),
+    ).toEqual({
+      message: 'Stored file is pending malware scan.',
+      readable: false,
+      reason: 'pending_scan',
+    });
+  });
+
+  it('can temporarily allow legacy clean canonical objects during rollout', () => {
+    expect(
+      getStorageReadiness(
+        createLifecycle({
+          canonicalBucket: 'bucket',
+          canonicalKey: 'org/acme/report/file-legacy',
+          malwareStatus: 'CLEAN',
+          storagePlacement: undefined,
+        }),
+        {
+          allowLegacyPrimaryReads: true,
+        },
       ),
     ).toEqual({
       message: null,

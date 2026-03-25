@@ -5,6 +5,7 @@ import { resend } from './emails';
 import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
 import {
+  applyGuardDutyPromotionResult,
   applyGuardDutyFinding,
   parseGuardDutyWebhookPayload,
   verifyWebhookSignature,
@@ -54,7 +55,10 @@ http.route({
     });
 
     const payload = parseGuardDutyWebhookPayload(rawBody);
-    const result = await applyGuardDutyFinding(ctx, payload);
+    const result =
+      payload.type === 'promotion_result'
+        ? await applyGuardDutyPromotionResult(ctx, payload)
+        : await applyGuardDutyFinding(ctx, payload);
 
     return Response.json(result, { status: 200 });
   }),

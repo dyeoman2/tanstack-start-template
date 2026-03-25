@@ -59,6 +59,7 @@ export type CreateUploadTargetArgs = {
   fileName: string;
   fileSize: number;
   organizationId?: string | null;
+  sha256Hex?: string;
   sourceId?: string;
   sourceType: string;
 };

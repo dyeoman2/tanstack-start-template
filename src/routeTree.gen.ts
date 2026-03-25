@@ -30,6 +30,7 @@ import { Route as ApiReadinessRouteImport } from './routes/api/readiness'
 import { Route as ApiParsePdfRouteImport } from './routes/api/parse-pdf'
 import { Route as ApiMetricsRouteImport } from './routes/api/metrics'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiCspReportRouteImport } from './routes/api/csp-report'
 import { Route as AppOrganizationsIndexRouteImport } from './routes/app/organizations/index'
 import { Route as AppChatIndexRouteImport } from './routes/app/chat/index'
 import { Route as AppAdminIndexRouteImport } from './routes/app/admin/index'
@@ -163,6 +164,11 @@ const ApiMetricsRoute = ApiMetricsRouteImport.update({
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiCspReportRoute = ApiCspReportRouteImport.update({
+  id: '/api/csp-report',
+  path: '/api/csp-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppOrganizationsIndexRoute = AppOrganizationsIndexRouteImport.update({
@@ -334,6 +340,7 @@ export interface FileRoutesByFullPath {
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
@@ -385,6 +392,7 @@ export interface FileRoutesByTo {
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
@@ -435,6 +443,7 @@ export interface FileRoutesById {
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
+  '/api/csp-report': typeof ApiCspReportRoute
   '/api/health': typeof ApiHealthRoute
   '/api/metrics': typeof ApiMetricsRoute
   '/api/parse-pdf': typeof ApiParsePdfRoute
@@ -489,6 +498,7 @@ export interface FileRouteTypes {
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
+    | '/api/csp-report'
     | '/api/health'
     | '/api/metrics'
     | '/api/parse-pdf'
@@ -540,6 +550,7 @@ export interface FileRouteTypes {
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
+    | '/api/csp-report'
     | '/api/health'
     | '/api/metrics'
     | '/api/parse-pdf'
@@ -589,6 +600,7 @@ export interface FileRouteTypes {
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
+    | '/api/csp-report'
     | '/api/health'
     | '/api/metrics'
     | '/api/parse-pdf'
@@ -642,6 +654,7 @@ export interface RootRouteChildren {
   TestSentryRoute: typeof TestSentryRoute
   TwoFactorRoute: typeof TwoFactorRoute
   VerifyEmailPendingRoute: typeof VerifyEmailPendingRoute
+  ApiCspReportRoute: typeof ApiCspReportRoute
   ApiHealthRoute: typeof ApiHealthRoute
   ApiMetricsRoute: typeof ApiMetricsRoute
   ApiParsePdfRoute: typeof ApiParsePdfRoute
@@ -802,6 +815,13 @@ declare module '@tanstack/react-router' {
       path: '/api/health'
       fullPath: '/api/health'
       preLoaderRoute: typeof ApiHealthRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/csp-report': {
+      id: '/api/csp-report'
+      path: '/api/csp-report'
+      fullPath: '/api/csp-report'
+      preLoaderRoute: typeof ApiCspReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/app/organizations/': {
@@ -1094,6 +1114,7 @@ const rootRouteChildren: RootRouteChildren = {
   TestSentryRoute: TestSentryRoute,
   TwoFactorRoute: TwoFactorRoute,
   VerifyEmailPendingRoute: VerifyEmailPendingRoute,
+  ApiCspReportRoute: ApiCspReportRoute,
   ApiHealthRoute: ApiHealthRoute,
   ApiMetricsRoute: ApiMetricsRoute,
   ApiParsePdfRoute: ApiParsePdfRoute,

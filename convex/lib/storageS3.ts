@@ -121,6 +121,7 @@ export async function createPresignedS3Url(args: {
   bucket: string;
   contentType?: string;
   expiresInSeconds?: number;
+  headers?: Record<string, string>;
   key: string;
   method: 'GET' | 'PUT';
 }) {
@@ -136,7 +137,10 @@ export async function createPresignedS3Url(args: {
   const dateStamp = toDateStamp(now);
   const host = `${args.bucket}.s3.${runtimeConfig.awsRegion}.amazonaws.com`;
   const canonicalUri = `/${args.key.split('/').map(encodeRfc3986).join('/')}`;
-  const signedHeaders: Record<string, string> = { host };
+  const signedHeaders: Record<string, string> = {
+    host,
+    ...args.headers,
+  };
   if (args.contentType) {
     signedHeaders['content-type'] = args.contentType;
   }

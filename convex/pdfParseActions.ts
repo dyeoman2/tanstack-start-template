@@ -1,6 +1,7 @@
 'use node';
 
 import { ConvexError, v } from 'convex/values';
+import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
@@ -121,7 +122,10 @@ export const processPendingPdfParseJobInternal = internalAction({
     const lifecycle = (await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
       storageId: args.storageId,
     })) as Doc<'storageLifecycle'> | null;
-    const readiness = getStorageReadiness(lifecycle);
+    const runtimeConfig = getStorageRuntimeConfig();
+    const readiness = getStorageReadiness(lifecycle, {
+      allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+    });
 
     if (!lifecycle) {
       await patchPdfParseJob(ctx, {
@@ -267,7 +271,10 @@ export const enqueuePdfParseJob = action({
       throw new ConvexError('Stored file not found.');
     }
 
-    const readiness = getStorageReadiness(lifecycle);
+    const runtimeConfig = getStorageRuntimeConfig();
+    const readiness = getStorageReadiness(lifecycle, {
+      allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+    });
     await patchPdfParseJob(ctx, {
       completedAt: readiness.readable
         ? null

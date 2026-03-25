@@ -180,7 +180,10 @@ async function resolveServeRedirect(ctx: FileServingCtx, storageId: string) {
     throw new ConvexError('Stored file not found.');
   }
 
-  const readiness = getStorageReadiness(lifecycle);
+  const runtimeConfig = getStorageRuntimeConfig();
+  const readiness = getStorageReadiness(lifecycle, {
+    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+  });
   if (!readiness.readable) {
     throw new ConvexError(readiness.message);
   }
@@ -222,12 +225,14 @@ export async function issueFileAccessUrlForCurrentUser(
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
     storageId: args.storageId,
   });
-  const readiness = getStorageReadiness(lifecycle);
+  const runtimeConfig = getStorageRuntimeConfig();
+  const readiness = getStorageReadiness(lifecycle, {
+    allowLegacyPrimaryReads: runtimeConfig.allowLegacyPrimaryReads,
+  });
   if (!readiness.readable) {
     throw new ConvexError(readiness.message);
   }
 
-  const runtimeConfig = getStorageRuntimeConfig();
   if (!runtimeConfig.convexSiteUrl) {
     throw new ConvexError('CONVEX_SITE_URL is not configured.');
   }

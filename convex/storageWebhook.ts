@@ -5,11 +5,11 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
-import { promoteS3PrimaryObject } from './storageS3Primary';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
-export const guardDutyWebhookPayloadValidator = v.object({
+export const guardDutyFindingPayloadValidator = v.object({
+  type: v.literal('guardduty_finding'),
   bucket: v.string(),
   findingId: v.string(),
   key: v.string(),
@@ -17,6 +17,24 @@ export const guardDutyWebhookPayloadValidator = v.object({
   status: v.union(v.literal('CLEAN'), v.literal('INFECTED')),
   versionId: v.optional(v.string()),
 });
+
+export const guardDutyPromotionResultPayloadValidator = v.object({
+  type: v.literal('promotion_result'),
+  bucket: v.string(),
+  failureReason: v.optional(v.string()),
+  findingId: v.string(),
+  promotedBucket: v.optional(v.string()),
+  promotedKey: v.optional(v.string()),
+  promotedVersionId: v.optional(v.string()),
+  quarantineKey: v.string(),
+  scannedAt: v.number(),
+  status: v.union(v.literal('PROMOTED'), v.literal('PROMOTION_FAILED')),
+});
+
+export const guardDutyWebhookPayloadValidator = v.union(
+  guardDutyFindingPayloadValidator,
+  guardDutyPromotionResultPayloadValidator,
+);
 
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
@@ -90,25 +108,53 @@ export function parseGuardDutyWebhookPayload(payload: string) {
     !parsed ||
     typeof parsed !== 'object' ||
     !('bucket' in parsed) ||
-    !('key' in parsed) ||
     !('findingId' in parsed) ||
     !('status' in parsed) ||
-    !('scannedAt' in parsed)
+    !('scannedAt' in parsed) ||
+    !('type' in parsed)
   ) {
     throw new ConvexError('Webhook payload is malformed.');
   }
 
-  const candidate = parsed as {
-    bucket: string;
-    findingId: string;
-    key: string;
-    scannedAt: number;
-    status: 'CLEAN' | 'INFECTED';
-    versionId?: string;
-  };
+  const candidate = parsed as
+    | {
+        type: 'guardduty_finding';
+        bucket: string;
+        findingId: string;
+        key: string;
+        scannedAt: number;
+        status: 'CLEAN' | 'INFECTED';
+        versionId?: string;
+      }
+    | {
+        type: 'promotion_result';
+        bucket: string;
+        failureReason?: string;
+        findingId: string;
+        promotedBucket?: string;
+        promotedKey?: string;
+        promotedVersionId?: string;
+        quarantineKey: string;
+        scannedAt: number;
+        status: 'PROMOTED' | 'PROMOTION_FAILED';
+      };
 
-  if (candidate.status !== 'CLEAN' && candidate.status !== 'INFECTED') {
-    throw new ConvexError('Webhook status is not supported.');
+  if (candidate.type === 'guardduty_finding') {
+    if (!('key' in candidate)) {
+      throw new ConvexError('GuardDuty finding payload is malformed.');
+    }
+    if (candidate.status !== 'CLEAN' && candidate.status !== 'INFECTED') {
+      throw new ConvexError('Webhook status is not supported.');
+    }
+    return candidate;
+  }
+
+  if (!('quarantineKey' in candidate)) {
+    throw new ConvexError('Promotion result payload is malformed.');
+  }
+
+  if (candidate.status !== 'PROMOTED' && candidate.status !== 'PROMOTION_FAILED') {
+    throw new ConvexError('Promotion result status is not supported.');
   }
 
   return candidate;
@@ -143,19 +189,12 @@ export async function applyGuardDutyFinding(
 
   if (args.status === 'CLEAN') {
     if (lifecycle.backendMode === 's3-primary') {
-      const promoted = await promoteS3PrimaryObject(ctx, {
-        scannedAt: args.scannedAt,
-        storageId: lifecycle.storageId,
-      });
-      if (promoted.reason === 'already_promoted') {
-        return { applied: false, reason: 'already_promoted' as const };
-      }
-    } else {
-      await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
-        scannedAt: args.scannedAt,
-        storageId: lifecycle.storageId,
-      });
+      return { applied: false, reason: 'awaiting_promotion_result' as const };
     }
+    await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
+      scannedAt: args.scannedAt,
+      storageId: lifecycle.storageId,
+    });
     await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
       storageId: lifecycle.storageId,
     });
@@ -180,14 +219,100 @@ export async function applyGuardDutyFinding(
   return { applied: true, reason: 'ok' as const };
 }
 
+export async function applyGuardDutyPromotionResult(
+  ctx: ActionCtx,
+  args: {
+    bucket: string;
+    failureReason?: string;
+    findingId: string;
+    promotedBucket?: string;
+    promotedKey?: string;
+    promotedVersionId?: string;
+    quarantineKey: string;
+    scannedAt: number;
+    status: 'PROMOTED' | 'PROMOTION_FAILED';
+  },
+) {
+  const runtimeConfig = getStorageRuntimeConfig();
+  if (runtimeConfig.s3FilesBucket && args.bucket !== runtimeConfig.s3FilesBucket) {
+    return { applied: false, reason: 'wrong_bucket' as const };
+  }
+
+  const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByQuarantineS3KeyInternal, {
+    bucket: args.bucket,
+    key: args.quarantineKey,
+  });
+  if (!lifecycle) {
+    return { applied: false, reason: 'missing_lifecycle' as const };
+  }
+
+  if (args.status === 'PROMOTION_FAILED') {
+    await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
+      actionResult: 'failure',
+      details: args.failureReason ?? 'promotion_failed',
+      eventType: 's3_primary_promotion_failed',
+      storageId: lifecycle.storageId,
+    });
+    return { applied: false, reason: 'promotion_failed' as const };
+  }
+
+  if (!args.promotedBucket || !args.promotedKey) {
+    throw new ConvexError('Promotion result is missing the promoted object location.');
+  }
+
+  if (
+    lifecycle.storagePlacement === 'PROMOTED' &&
+    lifecycle.malwareStatus === 'CLEAN' &&
+    lifecycle.canonicalBucket === args.promotedBucket &&
+    lifecycle.canonicalKey === args.promotedKey &&
+    (lifecycle.canonicalVersionId ?? null) === (args.promotedVersionId ?? null)
+  ) {
+    return { applied: false, reason: 'already_promoted' as const };
+  }
+
+  await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
+    canonicalBucket: args.promotedBucket,
+    canonicalKey: args.promotedKey,
+    canonicalVersionId: args.promotedVersionId ?? null,
+    scannedAt: args.scannedAt,
+    storageId: lifecycle.storageId,
+    storagePlacement: 'PROMOTED',
+  });
+  await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
+    actionResult: 'success',
+    details: args.promotedKey,
+    eventType: 's3_primary_promoted',
+    storageId: lifecycle.storageId,
+  });
+  await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
+    storageId: lifecycle.storageId,
+  });
+  await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+    storageId: lifecycle.storageId,
+  });
+
+  return { applied: true, reason: 'ok' as const };
+}
+
 export const applyGuardDutyFindingInternal = internalAction({
-  args: guardDutyWebhookPayloadValidator,
+  args: guardDutyFindingPayloadValidator,
   returns: v.object({
     applied: v.boolean(),
     reason: v.string(),
   }),
   handler: async (ctx, args) => {
     return await applyGuardDutyFinding(ctx, args);
+  },
+});
+
+export const applyGuardDutyPromotionResultInternal = internalAction({
+  args: guardDutyPromotionResultPayloadValidator,
+  returns: v.object({
+    applied: v.boolean(),
+    reason: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    return await applyGuardDutyPromotionResult(ctx, args);
   },
 });
 

@@ -1,4 +1,5 @@
 import { ConvexError, v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
 import type { Doc, Id } from './_generated/dataModel';
 import {
   internalQuery,
@@ -61,6 +62,21 @@ const lifecycleEventArgs = {
 
 function nullableToOptional<T>(value: T | null | undefined): T | undefined {
   return value === null || value === undefined ? undefined : value;
+}
+
+function hasLegacyPrimaryCanonicalKey(key: string | undefined) {
+  return typeof key === 'string' && (key.startsWith('org/') || key.startsWith('site-admin/'));
+}
+
+function isLegacyReadablePrimaryLifecycle(lifecycle: StorageLifecycleDoc) {
+  return (
+    lifecycle.backendMode === 's3-primary' &&
+    !lifecycle.deletedAt &&
+    lifecycle.malwareStatus === 'CLEAN' &&
+    hasLegacyPrimaryCanonicalKey(lifecycle.canonicalKey) &&
+    lifecycle.storagePlacement !== 'PROMOTED' &&
+    Boolean(lifecycle.canonicalBucket && lifecycle.canonicalKey)
+  );
 }
 
 export async function getLifecycleByStorageId(
@@ -491,6 +507,75 @@ export const listExpiredLifecycleByDeadlineInternal = internalQuery({
   },
 });
 
+export const listLegacyPrimaryCandidatesInternal = internalQuery({
+  args: {
+    paginationOpts: paginationOptsValidator,
+  },
+  returns: v.object({
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+    page: v.array(
+      v.object({
+        canonicalBucket: v.string(),
+        canonicalKey: v.string(),
+        canonicalVersionId: v.union(v.string(), v.null()),
+        organizationId: v.union(v.string(), v.null()),
+        sourceType: v.string(),
+        storageId: v.string(),
+      }),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query('storageLifecycle')
+      .withIndex('by_backendMode_and_createdAt', (q) => q.eq('backendMode', 's3-primary'))
+      .paginate(args.paginationOpts);
+
+    return {
+      continueCursor: result.continueCursor,
+      isDone: result.isDone,
+      page: result.page.filter(isLegacyReadablePrimaryLifecycle).map((row) => ({
+        canonicalBucket: row.canonicalBucket ?? '',
+        canonicalKey: row.canonicalKey ?? '',
+        canonicalVersionId: row.canonicalVersionId ?? null,
+        organizationId: row.organizationId ?? null,
+        sourceType: row.sourceType,
+        storageId: row.storageId,
+      })),
+    };
+  },
+});
+
+export const classifyS3KeysInternal = internalQuery({
+  args: {
+    bucket: v.string(),
+    keys: v.array(v.string()),
+  },
+  returns: v.array(
+    v.object({
+      backendMode: v.union(storageBackendModeValidator, v.null()),
+      deletedAt: v.union(v.number(), v.null()),
+      key: v.string(),
+      sourceType: v.union(v.string(), v.null()),
+      storageId: v.union(v.string(), v.null()),
+    }),
+  ),
+  handler: async (ctx, args) => {
+    const results = [];
+    for (const key of args.keys) {
+      const lifecycle = await getLifecycleByAnyS3Key(ctx, args.bucket, key);
+      results.push({
+        backendMode: lifecycle?.backendMode ?? null,
+        deletedAt: lifecycle?.deletedAt ?? null,
+        key,
+        sourceType: lifecycle?.sourceType ?? null,
+        storageId: lifecycle?.storageId ?? null,
+      });
+    }
+    return results;
+  },
+});
+
 async function hasSecurityEvidenceRecord(
   ctx: QueryCtx,
   args: { internalControlId: string; itemId: string; storageId: string },
@@ -596,6 +681,40 @@ export const appendLifecycleEventInternal = internalMutation({
   returns: v.id('storageLifecycleEvents'),
   handler: async (ctx, args) => {
     return await appendLifecycleEvent(ctx, args);
+  },
+});
+
+export const markLegacyPrimaryPromotedInternal = internalMutation({
+  args: {
+    canonicalBucket: v.string(),
+    canonicalKey: v.string(),
+    canonicalVersionId: v.optional(v.union(v.string(), v.null())),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const lifecycle = await getLifecycleByStorageId(ctx, args.storageId);
+    if (!lifecycle) {
+      throw new ConvexError(`Lifecycle row not found for storageId=${args.storageId}.`);
+    }
+    const now = Date.now();
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        canonicalBucket: args.canonicalBucket,
+        canonicalKey: args.canonicalKey,
+        canonicalVersionId: args.canonicalVersionId ?? null,
+        storagePlacement: 'PROMOTED',
+        updatedAt: now,
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'success',
+      details: args.canonicalKey,
+      eventType: 'legacy_promoted_migration',
+      storageId: args.storageId,
+    });
+    return null;
   },
 });
 
