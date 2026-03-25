@@ -385,9 +385,8 @@ describe('audit evidence helpers', () => {
   it('builds deterministic export manifests for identical inputs', () => {
     const integritySummary = summarizeIntegrityCheckFn({
       checkedAt: Date.parse('2026-03-18T00:00:00.000Z'),
-      failures: [],
-      limit: 250,
-      verified: true,
+      failure: null,
+      ok: true,
     });
 
     const left = buildExportManifestFn({
@@ -452,7 +451,7 @@ describe('audit evidence helpers', () => {
       initiatedByUserId: 'admin-user',
       restoredItemCount: 5,
       status: 'failure',
-      sourceDataset: 'auditLogs',
+      sourceDataset: 'auditLedgerEvents',
       summary: 'Restore verification failed on checksum mismatch.',
       targetEnvironment: 'test',
       verificationMethod: 'checksum-compare',
@@ -508,7 +507,7 @@ describe('audit evidence helpers', () => {
         status: 'success',
       },
     ];
-    const auditLogs = [
+    const auditLedgerEvents = [
       {
         createdAt: Date.parse('2026-03-18T02:00:00.000Z'),
         eventType: 'organization_policy_updated',
@@ -543,7 +542,7 @@ describe('audit evidence helpers', () => {
     const queryMap = {
       backupVerificationReports: backupReports,
       retentionJobs,
-      auditLogs,
+      auditLedgerEvents,
       exportArtifacts,
     } as const;
     const ctx = {
@@ -625,16 +624,15 @@ describe('audit evidence helpers', () => {
                 order: () => ({ first: async () => ({ checkedAt: 80, status: 'failure' }) }),
               };
             }
-            if (table === 'auditLogs') {
-              if (
-                filters.some(
-                  ([field, value]) =>
-                    field === 'eventType' && value === 'audit_integrity_check_failed',
-                )
-              ) {
-                return { collect: async () => [{ id: 'fail-1' }, { id: 'fail-2' }] };
-              }
-              return { order: () => ({ first: async () => ({ createdAt: 95 }) }) };
+            if (table === 'auditLedgerCheckpoints') {
+              return {
+                collect: async () => [{ _id: 'checkpoint-1' }, { _id: 'checkpoint-2' }],
+              };
+            }
+            if (table === 'auditLedgerEvents') {
+              return {
+                order: () => ({ first: async () => ({ recordedAt: 95 }) }),
+              };
             }
 
             throw new Error(`Unexpected query table: ${table}`);
@@ -811,24 +809,16 @@ describe('audit evidence helpers', () => {
               };
             }
 
-            if (table === 'auditLogs') {
-              if (
-                filters.some(
-                  ([field, value]) =>
-                    field === 'eventType' && value === 'audit_integrity_check_failed',
-                )
-              ) {
-                return {
-                  collect: async () => [{ _id: 'audit-failure-1' }],
-                  order: () => ({
-                    first: async () => ({
-                      _id: 'audit-failure-1',
-                      createdAt: 95,
-                    }),
+            if (table === 'auditLedgerCheckpoints') {
+              return {
+                collect: async () => [{ _id: 'audit-failure-1' }],
+                order: () => ({
+                  first: async () => ({
+                    _id: 'audit-failure-1',
+                    checkedAt: 95,
                   }),
-                };
-              }
-              return { order: () => ({ first: async () => ({ createdAt: 90 }) }) };
+                }),
+              };
             }
 
             if (table === 'securityControlEvidence') {
@@ -1015,19 +1005,11 @@ describe('audit evidence helpers', () => {
               };
             }
 
-            if (table === 'auditLogs') {
-              if (
-                filters.some(
-                  ([field, value]) =>
-                    field === 'eventType' && value === 'audit_integrity_check_failed',
-                )
-              ) {
-                return {
-                  collect: async () => [],
-                  order: () => ({ first: async () => null }),
-                };
-              }
-              return { order: () => ({ first: async () => ({ createdAt: 90 }) }) };
+            if (table === 'auditLedgerCheckpoints') {
+              return {
+                collect: async () => [],
+                order: () => ({ first: async () => null }),
+              };
             }
 
             if (table === 'securityControlEvidence') {
@@ -1127,7 +1109,7 @@ describe('audit evidence helpers', () => {
           initiatedByKind: 'user',
           initiatedByUserId: 'admin-user',
           restoredItemCount: 5,
-          sourceDataset: 'auditLogs',
+          sourceDataset: 'auditLedgerEvents',
           status: 'success',
           targetEnvironment: 'test',
           verificationMethod: 'checksum-compare',
@@ -1168,9 +1150,8 @@ describe('audit evidence helpers', () => {
       .mockResolvedValueOnce({ verifiedDomainsOnly: true });
     const runAction = vi.fn(async () => ({
       checkedAt: Date.parse('2026-03-18T14:55:00.000Z'),
-      failures: [{ id: 'failure-1' }],
-      limit: 250,
-      verified: false,
+      failure: { eventId: 'failure-1' },
+      ok: false,
     }));
     const runMutation = vi
       .fn()

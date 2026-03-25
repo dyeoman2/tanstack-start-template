@@ -147,13 +147,13 @@ export const resetPrincipalByEmail = internalMutation({
     if (appUser) {
       const normalizedEmail = normalizeAuditIdentifier(args.email);
       const logsByUserId = await ctx.db
-        .query('auditLogs')
-        .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
+        .query('auditLedgerEvents')
+        .withIndex('by_userId_and_sequence', (q) => q.eq('userId', userId))
         .collect();
       const logsByIdentifier = normalizedEmail
         ? await ctx.db
-            .query('auditLogs')
-            .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', normalizedEmail))
+            .query('auditLedgerEvents')
+            .withIndex('by_identifier_and_sequence', (q) => q.eq('identifier', normalizedEmail))
             .collect()
         : [];
       const logsById = new Map(

@@ -168,7 +168,7 @@ async function recordSupportAccessUsageIfNeeded(
     return;
   }
 
-  await ctx.runMutation(internal.audit.insertAuditLog, {
+  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
     eventType: 'support_access_used',
     userId: input.userId,
     actorUserId: input.userId,
@@ -1583,7 +1583,7 @@ export const precreateThread = mutation({
     });
 
     if (created) {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_thread_created',
         userId,
         actorUserId: userId,
@@ -2340,7 +2340,7 @@ export const deleteThread = mutation({
         updatedAt: Date.now(),
       },
     });
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'chat_thread_deleted',
       userId: viewer.userId,
       actorUserId: viewer.userId,

@@ -1,8 +1,12 @@
 import { v } from 'convex/values';
 import {
+  organizationEnterpriseSatisfactionPathValidator,
   organizationEnterpriseAccessStatusValidator,
   organizationSupportAccessScopeValidator,
 } from './enterpriseAccess';
+import { organizationPermissionValidator } from './organizationPermissions';
+
+export { organizationPermissionValidator } from './organizationPermissions';
 
 export const userRoleValidator = v.union(v.literal('user'), v.literal('admin'));
 export const organizationRoleValidator = v.union(
@@ -23,20 +27,6 @@ export const organizationViewerRoleValidator = v.union(
   organizationRoleValidator,
   v.literal('site-admin'),
   v.null(),
-);
-export const organizationPermissionValidator = v.union(
-  v.literal('viewOrganization'),
-  v.literal('manageMembers'),
-  v.literal('manageDomains'),
-  v.literal('managePolicies'),
-  v.literal('viewAudit'),
-  v.literal('exportAudit'),
-  v.literal('manageEvidence'),
-  v.literal('readThread'),
-  v.literal('writeThread'),
-  v.literal('readAttachment'),
-  v.literal('deleteAttachment'),
-  v.literal('issueAttachmentAccessUrl'),
 );
 export const organizationAccessValidator = v.object({
   admin: v.boolean(),
@@ -226,10 +216,12 @@ export const userProfileSyncStateDocValidator = v.object({
   totalUsers: v.number(),
 });
 
-export const auditLogsDocValidator = v.object({
-  _id: v.id('auditLogs'),
+export const auditLedgerEventDocValidator = v.object({
+  _id: v.id('auditLedgerEvents'),
   _creationTime: v.number(),
+  chainId: v.string(),
   id: v.string(),
+  sequence: v.number(),
   eventType: v.string(),
   userId: v.optional(v.string()),
   actorUserId: v.optional(v.string()),
@@ -244,12 +236,34 @@ export const auditLogsDocValidator = v.object({
   resourceId: v.optional(v.string()),
   resourceLabel: v.optional(v.string()),
   sourceSurface: v.optional(v.string()),
-  eventHash: v.optional(v.string()),
-  previousEventHash: v.optional(v.string()),
+  eventHash: v.string(),
+  previousEventHash: v.union(v.string(), v.null()),
   metadata: v.optional(v.string()),
-  createdAt: v.number(),
+  recordedAt: v.number(),
   ipAddress: v.optional(v.string()),
   userAgent: v.optional(v.string()),
+});
+
+export const auditLedgerCheckpointDocValidator = v.object({
+  _id: v.id('auditLedgerCheckpoints'),
+  _creationTime: v.number(),
+  chainId: v.string(),
+  startSequence: v.number(),
+  endSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  status: v.union(v.literal('ok'), v.literal('failed')),
+  checkedAt: v.number(),
+  verifiedEventCount: v.number(),
+  failure: v.optional(
+    v.object({
+      actualEventHash: v.union(v.string(), v.null()),
+      actualPreviousEventHash: v.union(v.string(), v.null()),
+      eventId: v.string(),
+      expectedPreviousEventHash: v.union(v.string(), v.null()),
+      expectedSequence: v.number(),
+      recomputedEventHash: v.string(),
+    }),
+  ),
 });
 
 export const dashboardStatsDocValidator = v.object({
@@ -779,6 +793,7 @@ export const organizationEnterpriseAccessResultValidator = v.object({
   status: organizationEnterpriseAccessStatusValidator,
   reason: v.union(v.string(), v.null()),
   requiresEnterpriseAuth: v.boolean(),
+  satisfactionPath: v.union(organizationEnterpriseSatisfactionPathValidator, v.null()),
   providerKey: v.union(organizationEnterpriseProviderKeyValidator, v.null()),
   enterpriseAuthMode: organizationEnterpriseAuthModeValidator,
   supportGrant: v.union(
@@ -932,6 +947,7 @@ export const organizationPermissionDecisionValidator = v.object({
   assurance: v.object({
     emailVerified: v.boolean(),
     enterpriseSatisfied: v.boolean(),
+    enterpriseSatisfactionPath: v.union(organizationEnterpriseSatisfactionPathValidator, v.null()),
     enterpriseStatus: organizationEnterpriseAccessStatusValidator,
     mfaSatisfied: v.boolean(),
     recentStepUpSatisfied: v.boolean(),
@@ -1099,6 +1115,7 @@ export const chatModelOptionValidator = v.object({
 
 export const auditEventValidator = v.object({
   id: v.string(),
+  sequence: v.number(),
   eventType: v.string(),
   userId: v.optional(v.string()),
   actorUserId: v.optional(v.string()),
@@ -1115,17 +1132,55 @@ export const auditEventValidator = v.object({
   sourceSurface: v.optional(v.string()),
   eventHash: v.optional(v.string()),
   previousEventHash: v.optional(v.string()),
-  createdAt: v.number(),
+  recordedAt: v.number(),
   ipAddress: v.optional(v.string()),
   userAgent: v.optional(v.string()),
   metadata: v.optional(v.any()),
 });
 
-export const auditLogsResponseValidator = v.object({
+export const auditLedgerEventsResponseValidator = v.object({
   events: v.array(auditEventValidator),
   limit: v.number(),
   continueCursor: v.union(v.string(), v.null()),
   isDone: v.boolean(),
+});
+
+export const auditLedgerExportManifestValidator = v.object({
+  chainId: v.string(),
+  chainVersion: v.number(),
+  firstSequence: v.union(v.number(), v.null()),
+  lastSequence: v.union(v.number(), v.null()),
+  rowCount: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  exportedAt: v.number(),
+});
+
+export const auditLedgerExportValidator = v.object({
+  filename: v.string(),
+  jsonl: v.string(),
+  manifest: auditLedgerExportManifestValidator,
+});
+
+export const auditLedgerIntegrityResultValidator = v.object({
+  chainId: v.string(),
+  checkedAt: v.number(),
+  checkedFromSequence: v.number(),
+  checkedToSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  headSequence: v.number(),
+  ok: v.boolean(),
+  verifiedEventCount: v.number(),
+  failure: v.union(
+    v.object({
+      actualEventHash: v.union(v.string(), v.null()),
+      actualPreviousEventHash: v.union(v.string(), v.null()),
+      eventId: v.string(),
+      expectedPreviousEventHash: v.union(v.string(), v.null()),
+      expectedSequence: v.number(),
+      recomputedEventHash: v.string(),
+    }),
+    v.null(),
+  ),
 });
 
 export const emailServiceConfiguredValidator = v.object({

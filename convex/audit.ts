@@ -21,30 +21,63 @@ import {
 import {
   getVerifiedCurrentAuthUserOrNull,
   getVerifiedCurrentUserFromActionOrThrow,
-  requireOrganizationPermissionFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
-import { buildOrganizationAuditProjection } from './lib/organizationAuditEvents';
-import { auditLogsDocValidator, auditLogsResponseValidator } from './lib/returnValidators';
+import {
+  auditLedgerEventDocValidator,
+  auditLedgerEventsResponseValidator,
+  auditLedgerExportValidator,
+  auditLedgerIntegrityResultValidator,
+  auditLedgerCheckpointDocValidator,
+} from './lib/returnValidators';
 
-type AuditLogDoc = Doc<'auditLogs'>;
+type AuditLedgerEventDoc = Doc<'auditLedgerEvents'>;
 const AUDIT_FETCH_BATCH_SIZE = 128;
 const SECURITY_EXPORT_BATCH_SIZE = 100;
+const AUDIT_LEDGER_CHAIN_ID = 'primary';
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
-const CLIENT_AUDIT_RATE_LIMIT = {
-  kind: 'fixed window' as const,
-  rate: 30,
-  period: 60 * 1000,
-  capacity: 30,
+const TEST_AUDIT_SERVER_WRITE_SECRET = 'test-audit-server-write-secret';
+type AuditLedgerStateSnapshot = {
+  chainId: string;
+  chainVersion: number;
+  headSequence: number;
+  headEventHash: string | null;
+  startedAt: number;
+  updatedAt: number;
 };
-const MAX_CLIENT_AUDIT_METADATA_BYTES = 4 * 1024;
-const CLIENT_AUDIT_EVENT_TYPES = new Set<string>([
-  'admin_user_sessions_viewed',
-  'pdf_parse_failed',
-  'pdf_parse_requested',
-  'pdf_parse_succeeded',
-]);
+type AuditLedgerVerificationFailure = {
+  actualEventHash: string | null;
+  actualPreviousEventHash: string | null;
+  eventId: string;
+  expectedPreviousEventHash: string | null;
+  expectedSequence: number;
+  recomputedEventHash: string;
+};
+type AuditLedgerIntegrityResult = {
+  chainId: string;
+  checkedAt: number;
+  checkedFromSequence: number;
+  checkedToSequence: number;
+  headHash: string | null;
+  headSequence: number;
+  ok: boolean;
+  verifiedEventCount: number;
+  failure: AuditLedgerVerificationFailure | null;
+};
+type AuditLedgerExportResult = {
+  filename: string;
+  jsonl: string;
+  manifest: {
+    chainId: string;
+    chainVersion: number;
+    firstSequence: number | null;
+    lastSequence: number | null;
+    rowCount: number;
+    headHash: string | null;
+    exportedAt: number;
+  };
+};
 const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   string,
   Array<
@@ -71,6 +104,18 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   ],
   [
     'enterprise_auth_mode_updated',
+    [
+      'actorUserId',
+      'organizationId',
+      'outcome',
+      'resourceType',
+      'resourceId',
+      'severity',
+      'sourceSurface',
+    ],
+  ],
+  [
+    'enterprise_break_glass_used',
     [
       'actorUserId',
       'organizationId',
@@ -292,159 +337,6 @@ function parseMetadata(metadata: string | undefined) {
   }
 }
 
-function isPlainRecord(value: unknown): value is Record<string, unknown> {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return false;
-  }
-
-  const prototype = Object.getPrototypeOf(value);
-  return prototype === Object.prototype || prototype === null;
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === 'string');
-}
-
-function validateClientAuditMetadataShape(eventType: string, metadata: unknown) {
-  if (metadata === undefined) {
-    return;
-  }
-
-  if (!isPlainRecord(metadata)) {
-    throwConvexError('VALIDATION', 'Client audit metadata must be a plain object.');
-  }
-
-  switch (eventType) {
-    case 'pdf_parse_requested': {
-      const allowedKeys = new Set(['storageId', 'mimeType', 'sizeBytes']);
-      for (const key of Object.keys(metadata)) {
-        if (!allowedKeys.has(key)) {
-          throwConvexError('VALIDATION', `Unsupported pdf_parse_requested metadata field: ${key}`);
-        }
-      }
-      if (
-        metadata.storageId !== undefined &&
-        (typeof metadata.storageId !== 'string' || metadata.storageId.trim().length === 0)
-      ) {
-        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.storageId must be a string.');
-      }
-      if (
-        metadata.mimeType !== undefined &&
-        (typeof metadata.mimeType !== 'string' || metadata.mimeType.trim().length === 0)
-      ) {
-        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.mimeType must be a string.');
-      }
-      if (
-        metadata.sizeBytes !== undefined &&
-        (typeof metadata.sizeBytes !== 'number' ||
-          !Number.isFinite(metadata.sizeBytes) ||
-          metadata.sizeBytes < 0)
-      ) {
-        throwConvexError('VALIDATION', 'pdf_parse_requested metadata.sizeBytes must be a number.');
-      }
-      return;
-    }
-    case 'pdf_parse_succeeded': {
-      const allowedKeys = new Set(['imageCount', 'pageCount']);
-      for (const key of Object.keys(metadata)) {
-        if (!allowedKeys.has(key)) {
-          throwConvexError('VALIDATION', `Unsupported pdf_parse_succeeded metadata field: ${key}`);
-        }
-      }
-      if (
-        typeof metadata.imageCount !== 'number' ||
-        !Number.isFinite(metadata.imageCount) ||
-        metadata.imageCount < 0
-      ) {
-        throwConvexError('VALIDATION', 'pdf_parse_succeeded metadata.imageCount is required.');
-      }
-      if (
-        typeof metadata.pageCount !== 'number' ||
-        !Number.isFinite(metadata.pageCount) ||
-        metadata.pageCount < 0
-      ) {
-        throwConvexError('VALIDATION', 'pdf_parse_succeeded metadata.pageCount is required.');
-      }
-      return;
-    }
-    case 'pdf_parse_failed': {
-      const allowedKeys = new Set(['error']);
-      for (const key of Object.keys(metadata)) {
-        if (!allowedKeys.has(key)) {
-          throwConvexError('VALIDATION', `Unsupported pdf_parse_failed metadata field: ${key}`);
-        }
-      }
-      if (typeof metadata.error !== 'string' || metadata.error.trim().length === 0) {
-        throwConvexError('VALIDATION', 'pdf_parse_failed metadata.error is required.');
-      }
-      return;
-    }
-    case 'admin_user_sessions_viewed': {
-      const allowedKeys = new Set(['sessionIds', 'targetUserId']);
-      for (const key of Object.keys(metadata)) {
-        if (!allowedKeys.has(key)) {
-          throwConvexError(
-            'VALIDATION',
-            `Unsupported admin_user_sessions_viewed metadata field: ${key}`,
-          );
-        }
-      }
-      if (metadata.sessionIds !== undefined && !isStringArray(metadata.sessionIds)) {
-        throwConvexError(
-          'VALIDATION',
-          'admin_user_sessions_viewed metadata.sessionIds must be an array of strings.',
-        );
-      }
-      if (
-        metadata.targetUserId !== undefined &&
-        (typeof metadata.targetUserId !== 'string' || metadata.targetUserId.trim().length === 0)
-      ) {
-        throwConvexError(
-          'VALIDATION',
-          'admin_user_sessions_viewed metadata.targetUserId must be a string.',
-        );
-      }
-      return;
-    }
-    default:
-      throwConvexError('VALIDATION', `Unsupported client audit event type: ${eventType}`);
-  }
-}
-
-export function normalizeClientAuditMetadata(eventType: string, metadata: unknown) {
-  if (metadata === undefined) {
-    return undefined;
-  }
-
-  const parsed =
-    typeof metadata === 'string'
-      ? (() => {
-          try {
-            return JSON.parse(metadata) as unknown;
-          } catch {
-            throwConvexError('VALIDATION', 'Client audit metadata must be valid JSON.');
-          }
-        })()
-      : metadata;
-
-  validateClientAuditMetadataShape(eventType, parsed);
-
-  const serialized = JSON.stringify(parsed);
-  if (!serialized) {
-    return undefined;
-  }
-
-  const metadataBytes = new TextEncoder().encode(serialized).length;
-  if (metadataBytes > MAX_CLIENT_AUDIT_METADATA_BYTES) {
-    throwConvexError(
-      'VALIDATION',
-      `Client audit metadata must be ${MAX_CLIENT_AUDIT_METADATA_BYTES} bytes or smaller.`,
-    );
-  }
-
-  return serialized;
-}
-
 function requireMetadataObject(eventType: string, metadata: unknown) {
   if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
     throw new Error(`Audit event ${eventType} requires structured metadata`);
@@ -531,6 +423,12 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'reason', 'string');
       return;
     }
+    case 'enterprise_break_glass_used': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'permission', 'string');
+      requireMetadataKey(record.eventType, parsed, 'satisfactionPath', 'string');
+      return;
+    }
     case 'support_access_granted':
     case 'support_access_revoked': {
       const parsed = requireMetadataObject(record.eventType, metadata);
@@ -613,13 +511,14 @@ export function validateRegulatedAuditFields(record: {
   validateEventSpecificMetadata(record);
 }
 
-function toAuditEvent(log: AuditLogDoc): AuthAuditEvent | null {
+function toAuditEvent(log: AuditLedgerEventDoc): AuthAuditEvent | null {
   if (!isAuthAuditEventType(log.eventType)) {
     return null;
   }
 
   return {
     id: log.id,
+    sequence: log.sequence,
     eventType: log.eventType,
     ...(log.userId ? { userId: log.userId } : {}),
     ...(log.actorUserId ? { actorUserId: log.actorUserId } : {}),
@@ -636,7 +535,7 @@ function toAuditEvent(log: AuditLogDoc): AuthAuditEvent | null {
     ...(log.sourceSurface ? { sourceSurface: log.sourceSurface } : {}),
     ...(log.eventHash ? { eventHash: log.eventHash } : {}),
     ...(log.previousEventHash ? { previousEventHash: log.previousEventHash } : {}),
-    createdAt: log.createdAt,
+    recordedAt: log.recordedAt,
     ...(log.ipAddress ? { ipAddress: log.ipAddress } : {}),
     ...(log.userAgent ? { userAgent: log.userAgent } : {}),
     ...(log.metadata ? { metadata: parseMetadata(log.metadata) } : {}),
@@ -652,9 +551,11 @@ async function hashAuditPayload(payload: string) {
 }
 
 function buildAuditHashPayload(input: {
+  chainId: string;
   id: string;
+  sequence: number;
   eventType: string;
-  createdAt: number;
+  recordedAt: number;
   userId?: string;
   actorUserId?: string;
   targetUserId?: string;
@@ -671,12 +572,14 @@ function buildAuditHashPayload(input: {
   metadata?: string;
   ipAddress?: string;
   userAgent?: string;
-  previousEventHash?: string;
+  previousEventHash?: string | null;
 }) {
   return JSON.stringify({
+    chainId: input.chainId,
     id: input.id,
+    sequence: input.sequence,
     eventType: input.eventType,
-    createdAt: input.createdAt,
+    recordedAt: input.recordedAt,
     userId: input.userId ?? null,
     actorUserId: input.actorUserId ?? null,
     targetUserId: input.targetUserId ?? null,
@@ -697,19 +600,54 @@ function buildAuditHashPayload(input: {
   });
 }
 
-async function getLatestAuditLog(ctx: QueryCtx | MutationCtx) {
-  const latestPage = await ctx.db
-    .query('auditLogs')
-    .withIndex('by_createdAt')
-    .order('desc')
-    .take(1);
-  return latestPage[0] ?? null;
+function getRequiredAuditServerWriteSecret() {
+  const configured = process.env.AUDIT_SERVER_WRITE_SECRET?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+    return TEST_AUDIT_SERVER_WRITE_SECRET;
+  }
+
+  throw new Error('AUDIT_SERVER_WRITE_SECRET environment variable is required');
 }
 
-function compareByCreatedAtDesc(left: AuthAuditEvent, right: AuthAuditEvent) {
-  const createdAtDiff = right.createdAt - left.createdAt;
-  if (createdAtDiff !== 0) {
-    return createdAtDiff;
+async function getAuditLedgerState(ctx: QueryCtx | MutationCtx) {
+  return (
+    (await ctx.db
+      .query('auditLedgerState')
+      .withIndex('by_chain_id', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+      .unique()) ?? null
+  );
+}
+
+async function ensureAuditLedgerState(ctx: MutationCtx) {
+  const existing = await getAuditLedgerState(ctx);
+  if (existing) {
+    return existing;
+  }
+
+  const now = Date.now();
+  const stateId = await ctx.db.insert('auditLedgerState', {
+    chainId: AUDIT_LEDGER_CHAIN_ID,
+    chainVersion: 1,
+    headSequence: 0,
+    headEventHash: null,
+    startedAt: now,
+    updatedAt: now,
+  });
+  const state = await ctx.db.get(stateId);
+  if (!state) {
+    throw new Error('Failed to initialize audit ledger state');
+  }
+
+  return state;
+}
+
+function compareBySequenceDesc(left: AuthAuditEvent, right: AuthAuditEvent) {
+  if (left.sequence !== right.sequence) {
+    return right.sequence - left.sequence;
   }
 
   return right.id.localeCompare(left.id);
@@ -727,7 +665,7 @@ function dedupeEvents(events: AuthAuditEvent[]) {
   return Array.from(uniqueEvents.values());
 }
 
-async function collectAuditLogsPageForAdmin(
+async function collectAuditLedgerPageForAdmin(
   ctx: QueryCtx,
   filters: {
     eventType?: string;
@@ -741,259 +679,207 @@ async function collectAuditLogsPageForAdmin(
 
   if (userId) {
     return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', userId))
+      .query('auditLedgerEvents')
+      .withIndex('by_userId_and_sequence', (q) => q.eq('userId', userId))
       .order('desc')
       .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   if (identifier) {
     return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_identifier_and_createdAt', (q) => q.eq('identifier', identifier))
-      .order('desc')
-      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
-  }
-
-  if (eventType) {
-    return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_eventType_and_createdAt', (q) => q.eq('eventType', eventType))
+      .query('auditLedgerEvents')
+      .withIndex('by_identifier_and_sequence', (q) => q.eq('identifier', identifier))
       .order('desc')
       .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   if (organizationId) {
     return await ctx.db
-      .query('auditLogs')
-      .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+      .query('auditLedgerEvents')
+      .withIndex('by_organizationId_and_sequence', (q) => q.eq('organizationId', organizationId))
+      .order('desc')
+      .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
+  }
+
+  if (eventType) {
+    return await ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_eventType_and_sequence', (q) =>
+        q.eq('chainId', AUDIT_LEDGER_CHAIN_ID).eq('eventType', eventType),
+      )
       .order('desc')
       .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
   }
 
   return await ctx.db
-    .query('auditLogs')
-    .withIndex('by_createdAt')
+    .query('auditLedgerEvents')
+    .withIndex('by_sequence', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
     .order('desc')
     .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
 }
 
-async function collectAuditLogsPageForUser(
+async function collectAuditLedgerPageForUser(
   ctx: QueryCtx,
   currentUserId: string,
   cursor: string | null,
 ) {
   return await ctx.db
-    .query('auditLogs')
-    .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', currentUserId))
+    .query('auditLedgerEvents')
+    .withIndex('by_userId_and_sequence', (q) => q.eq('userId', currentUserId))
     .order('desc')
     .paginate({ cursor, numItems: AUDIT_FETCH_BATCH_SIZE });
 }
 
-export const insertAuditLog = internalMutation({
+const appendAuditLedgerEventArgs = {
+  eventType: v.string(),
+  userId: v.optional(v.string()),
+  actorUserId: v.optional(v.string()),
+  targetUserId: v.optional(v.string()),
+  organizationId: v.optional(v.string()),
+  identifier: v.optional(v.string()),
+  sessionId: v.optional(v.string()),
+  requestId: v.optional(v.string()),
+  outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
+  severity: v.optional(v.union(v.literal('info'), v.literal('warning'), v.literal('critical'))),
+  resourceType: v.optional(v.string()),
+  resourceId: v.optional(v.string()),
+  resourceLabel: v.optional(v.string()),
+  sourceSurface: v.optional(v.string()),
+  metadata: v.optional(v.string()),
+  ipAddress: v.optional(v.string()),
+  userAgent: v.optional(v.string()),
+} as const;
+
+async function appendAuditLedgerEvent(
+  ctx: MutationCtx,
   args: {
-    eventType: v.string(),
-    userId: v.optional(v.string()),
-    actorUserId: v.optional(v.string()),
-    targetUserId: v.optional(v.string()),
-    organizationId: v.optional(v.string()),
-    identifier: v.optional(v.string()),
-    sessionId: v.optional(v.string()),
-    requestId: v.optional(v.string()),
-    outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
-    severity: v.optional(v.union(v.literal('info'), v.literal('warning'), v.literal('critical'))),
-    resourceType: v.optional(v.string()),
-    resourceId: v.optional(v.string()),
-    resourceLabel: v.optional(v.string()),
-    sourceSurface: v.optional(v.string()),
-    metadata: v.optional(v.string()),
-    ipAddress: v.optional(v.string()),
-    userAgent: v.optional(v.string()),
-    createdAt: v.optional(v.number()),
+    eventType: string;
+    userId?: string;
+    actorUserId?: string;
+    targetUserId?: string;
+    organizationId?: string;
+    identifier?: string;
+    sessionId?: string;
+    requestId?: string;
+    outcome?: 'success' | 'failure';
+    severity?: 'info' | 'warning' | 'critical';
+    resourceType?: string;
+    resourceId?: string;
+    resourceLabel?: string;
+    sourceSurface?: string;
+    metadata?: string;
+    ipAddress?: string;
+    userAgent?: string;
+  },
+) {
+  if (!isAuthAuditEventType(args.eventType)) {
+    throw new Error(`Unsupported audit event type: ${args.eventType}`);
+  }
+
+  const state = await ensureAuditLedgerState(ctx);
+  const sequence = state.headSequence + 1;
+  const recordedAt = Date.now();
+  const previousEventHash = state.headEventHash;
+  const record = {
+    chainId: AUDIT_LEDGER_CHAIN_ID,
+    id: crypto.randomUUID(),
+    sequence,
+    eventType: args.eventType,
+    ...(normalizeOptionalString(args.userId)
+      ? { userId: normalizeOptionalString(args.userId) }
+      : {}),
+    ...(normalizeOptionalString(args.actorUserId)
+      ? { actorUserId: normalizeOptionalString(args.actorUserId) }
+      : {}),
+    ...(normalizeOptionalString(args.targetUserId)
+      ? { targetUserId: normalizeOptionalString(args.targetUserId) }
+      : {}),
+    ...(normalizeOptionalString(args.organizationId)
+      ? { organizationId: normalizeOptionalString(args.organizationId) }
+      : {}),
+    ...(normalizeAuditIdentifier(args.identifier)
+      ? { identifier: normalizeAuditIdentifier(args.identifier) }
+      : {}),
+    ...(normalizeOptionalString(args.sessionId)
+      ? { sessionId: normalizeOptionalString(args.sessionId) }
+      : {}),
+    ...(normalizeOptionalString(args.requestId)
+      ? { requestId: normalizeOptionalString(args.requestId) }
+      : {}),
+    ...(normalizeOutcome(args.outcome) ? { outcome: normalizeOutcome(args.outcome) } : {}),
+    ...(normalizeSeverity(args.severity) ? { severity: normalizeSeverity(args.severity) } : {}),
+    ...(normalizeOptionalString(args.resourceType)
+      ? { resourceType: normalizeOptionalString(args.resourceType) }
+      : {}),
+    ...(normalizeOptionalString(args.resourceId)
+      ? { resourceId: normalizeOptionalString(args.resourceId) }
+      : {}),
+    ...(normalizeOptionalString(args.resourceLabel)
+      ? { resourceLabel: normalizeOptionalString(args.resourceLabel) }
+      : {}),
+    ...(normalizeOptionalString(args.sourceSurface)
+      ? { sourceSurface: normalizeOptionalString(args.sourceSurface) }
+      : {}),
+    ...(normalizeOptionalString(args.metadata) ? { metadata: args.metadata } : {}),
+    ...(normalizeOptionalString(args.ipAddress)
+      ? { ipAddress: normalizeOptionalString(args.ipAddress) }
+      : {}),
+    ...(normalizeOptionalString(args.userAgent)
+      ? { userAgent: normalizeOptionalString(args.userAgent) }
+      : {}),
+    recordedAt,
+  };
+  validateRegulatedAuditFields(record);
+
+  const eventHash = await hashAuditPayload(
+    buildAuditHashPayload({
+      ...record,
+      previousEventHash,
+    }),
+  );
+
+  await ctx.db.insert('auditLedgerEvents', {
+    ...record,
+    eventHash,
+    previousEventHash,
+  });
+  await ctx.db.patch(state._id, {
+    headSequence: sequence,
+    headEventHash: eventHash,
+    updatedAt: recordedAt,
+  });
+
+  return null;
+}
+
+export const appendAuditLedgerEventInternal = internalMutation({
+  args: {
+    ...appendAuditLedgerEventArgs,
   },
   returns: v.null(),
-  handler: async (ctx, args) => {
-    if (!isAuthAuditEventType(args.eventType)) {
-      throw new Error(`Unsupported audit event type: ${args.eventType}`);
-    }
-
-    const id = crypto.randomUUID();
-    const createdAt = args.createdAt ?? Date.now();
-    const latestLog = await getLatestAuditLog(ctx);
-    const previousEventHash = normalizeOptionalString(latestLog?.eventHash);
-    const record = {
-      id,
-      eventType: args.eventType,
-      ...(normalizeOptionalString(args.userId)
-        ? { userId: normalizeOptionalString(args.userId) }
-        : {}),
-      ...(normalizeOptionalString(args.actorUserId)
-        ? { actorUserId: normalizeOptionalString(args.actorUserId) }
-        : {}),
-      ...(normalizeOptionalString(args.targetUserId)
-        ? { targetUserId: normalizeOptionalString(args.targetUserId) }
-        : {}),
-      ...(normalizeOptionalString(args.organizationId)
-        ? { organizationId: normalizeOptionalString(args.organizationId) }
-        : {}),
-      ...(normalizeAuditIdentifier(args.identifier)
-        ? { identifier: normalizeAuditIdentifier(args.identifier) }
-        : {}),
-      ...(normalizeOptionalString(args.sessionId)
-        ? { sessionId: normalizeOptionalString(args.sessionId) }
-        : {}),
-      ...(normalizeOptionalString(args.requestId)
-        ? { requestId: normalizeOptionalString(args.requestId) }
-        : {}),
-      ...(normalizeOutcome(args.outcome) ? { outcome: normalizeOutcome(args.outcome) } : {}),
-      ...(normalizeSeverity(args.severity) ? { severity: normalizeSeverity(args.severity) } : {}),
-      ...(normalizeOptionalString(args.resourceType)
-        ? { resourceType: normalizeOptionalString(args.resourceType) }
-        : {}),
-      ...(normalizeOptionalString(args.resourceId)
-        ? { resourceId: normalizeOptionalString(args.resourceId) }
-        : {}),
-      ...(normalizeOptionalString(args.resourceLabel)
-        ? { resourceLabel: normalizeOptionalString(args.resourceLabel) }
-        : {}),
-      ...(normalizeOptionalString(args.sourceSurface)
-        ? { sourceSurface: normalizeOptionalString(args.sourceSurface) }
-        : {}),
-      ...(args.metadata ? { metadata: args.metadata } : {}),
-      createdAt,
-      ...(normalizeOptionalString(args.ipAddress)
-        ? { ipAddress: normalizeOptionalString(args.ipAddress) }
-        : {}),
-      ...(normalizeOptionalString(args.userAgent)
-        ? { userAgent: normalizeOptionalString(args.userAgent) }
-        : {}),
-      ...(previousEventHash ? { previousEventHash } : {}),
-    };
-    const eventHash = await hashAuditPayload(
-      buildAuditHashPayload({
-        id,
-        eventType: record.eventType,
-        createdAt: record.createdAt,
-        userId: record.userId,
-        actorUserId: record.actorUserId,
-        targetUserId: record.targetUserId,
-        organizationId: record.organizationId,
-        identifier: record.identifier,
-        sessionId: record.sessionId,
-        requestId: record.requestId,
-        outcome: record.outcome,
-        severity: record.severity,
-        resourceType: record.resourceType,
-        resourceId: record.resourceId,
-        resourceLabel: record.resourceLabel,
-        sourceSurface: record.sourceSurface,
-        metadata: record.metadata,
-        ipAddress: record.ipAddress,
-        userAgent: record.userAgent,
-        previousEventHash,
-      }),
-    );
-
-    validateRegulatedAuditFields(record);
-
-    await ctx.db.insert('auditLogs', {
-      ...record,
-      eventHash,
-    });
-
-    const organizationProjection = buildOrganizationAuditProjection({
-      id,
-      eventType: record.eventType,
-      userId: record.userId,
-      actorUserId: record.actorUserId,
-      targetUserId: record.targetUserId,
-      organizationId: record.organizationId,
-      identifier: record.identifier,
-      sessionId: record.sessionId,
-      requestId: record.requestId,
-      outcome: record.outcome,
-      severity: record.severity,
-      resourceType: record.resourceType,
-      resourceId: record.resourceId,
-      resourceLabel: record.resourceLabel,
-      sourceSurface: record.sourceSurface,
-      eventHash,
-      previousEventHash,
-      metadata: record.metadata,
-      createdAt: record.createdAt,
-      ipAddress: record.ipAddress,
-      userAgent: record.userAgent,
-    });
-
-    if (organizationProjection) {
-      await ctx.db.insert('organizationAuditEvents', organizationProjection);
-    }
-
-    return null;
-  },
+  handler: async (ctx, args) => await appendAuditLedgerEvent(ctx, args),
 });
 
-export const recordClientAuditEvent = action({
+export const recordAuditEventFromServer = action({
   args: {
-    eventType: v.string(),
-    organizationId: v.optional(v.string()),
-    identifier: v.optional(v.string()),
-    outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
-    severity: v.optional(v.union(v.literal('info'), v.literal('warning'), v.literal('critical'))),
-    resourceType: v.optional(v.string()),
-    resourceId: v.optional(v.string()),
-    resourceLabel: v.optional(v.string()),
-    sourceSurface: v.optional(v.string()),
-    metadata: v.optional(v.any()),
-    requestId: v.optional(v.string()),
+    serverWriteSecret: v.string(),
+    ...appendAuditLedgerEventArgs,
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
-    if (!CLIENT_AUDIT_EVENT_TYPES.has(args.eventType)) {
-      throwConvexError('VALIDATION', `Unsupported client audit event type: ${args.eventType}`);
+    await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    if (args.serverWriteSecret !== getRequiredAuditServerWriteSecret()) {
+      throwConvexError('FORBIDDEN', 'Invalid audit server write secret');
     }
 
-    const rateLimitResult = await ctx.runAction(internal.auth.rateLimitAction, {
-      name: 'clientAuditEvent',
-      key: `clientAuditEvent:${user.authUserId}`,
-      config: CLIENT_AUDIT_RATE_LIMIT,
-    });
-    if (!rateLimitResult.ok) {
-      throwConvexError(
-        'RATE_LIMITED',
-        `Client audit rate limit exceeded. Try again in ${Math.max(
-          1,
-          Math.ceil((rateLimitResult.retryAfter ?? 0) / 1000),
-        )} seconds.`,
-      );
-    }
-
-    if (args.eventType === 'admin_user_sessions_viewed' && !user.isSiteAdmin) {
-      throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
-    }
-
-    if (args.organizationId) {
-      await requireOrganizationPermissionFromActionOrThrow(ctx, {
-        organizationId: args.organizationId,
-        permission: 'viewOrganization',
-        sourceSurface: args.sourceSurface ?? 'audit.client',
-      });
-    }
-
-    const metadata = normalizeClientAuditMetadata(args.eventType, args.metadata);
-
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: args.eventType,
-      userId: user.authUserId,
-      actorUserId: user.authUserId,
-      organizationId: args.organizationId ?? user.activeOrganizationId ?? undefined,
-      identifier:
-        args.identifier ??
-        (typeof user.authUser.email === 'string'
-          ? normalizeAuditIdentifier(user.authUser.email)
-          : undefined),
-      sessionId: user.authSession?.id ?? undefined,
+      userId: args.userId,
+      actorUserId: args.actorUserId,
+      targetUserId: args.targetUserId,
+      organizationId: args.organizationId,
+      identifier: args.identifier,
+      sessionId: args.sessionId,
       requestId: args.requestId,
       outcome: args.outcome,
       severity: args.severity,
@@ -1001,24 +887,61 @@ export const recordClientAuditEvent = action({
       resourceId: args.resourceId,
       resourceLabel: args.resourceLabel,
       sourceSurface: args.sourceSurface,
-      metadata,
+      metadata: args.metadata,
+      ipAddress: args.ipAddress,
+      userAgent: args.userAgent,
     });
+
     return null;
   },
 });
 
-export const getRecentAuditLogsInternal = internalQuery({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  returns: v.array(auditLogsDocValidator),
-  handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(args.limit ?? 500, 2_000));
-    return await ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(limit);
+export const getAuditLedgerStateInternal = internalQuery({
+  args: {},
+  returns: v.union(
+    v.object({
+      chainId: v.string(),
+      chainVersion: v.number(),
+      headSequence: v.number(),
+      headEventHash: v.union(v.string(), v.null()),
+      startedAt: v.number(),
+      updatedAt: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx) => {
+    const state = await getAuditLedgerState(ctx);
+    if (!state) {
+      return null;
+    }
+
+    return {
+      chainId: state.chainId,
+      chainVersion: state.chainVersion,
+      headSequence: state.headSequence,
+      headEventHash: state.headEventHash,
+      startedAt: state.startedAt,
+      updatedAt: state.updatedAt,
+    };
   },
 });
 
-export const getAuditLogs = query({
+export const getRecentAuditLedgerEventsInternal = internalQuery({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.array(auditLedgerEventDocValidator),
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 500, 2_000));
+    return await ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_sequence', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+      .order('desc')
+      .take(limit);
+  },
+});
+
+export const listAuditLedgerEvents = query({
   args: {
     limit: v.optional(v.number()),
     cursor: v.optional(v.string()),
@@ -1031,7 +954,7 @@ export const getAuditLogs = query({
     sourceSurface: v.optional(v.string()),
     resourceType: v.optional(v.string()),
   },
-  returns: auditLogsResponseValidator,
+  returns: auditLedgerEventsResponseValidator,
   handler: async (ctx, args) => {
     const authUser = await getVerifiedCurrentAuthUserOrNull(ctx);
     if (!authUser) {
@@ -1051,11 +974,11 @@ export const getAuditLogs = query({
     }
 
     if (!isSiteAdmin && requestedUserId && requestedUserId !== currentUserId) {
-      throwConvexError('FORBIDDEN', 'You can only query your own audit logs');
+      throwConvexError('FORBIDDEN', 'You can only query your own audit ledger');
     }
 
     if (!isSiteAdmin && requestedIdentifier && requestedIdentifier !== currentIdentifier) {
-      throwConvexError('FORBIDDEN', 'You can only query your own audit logs');
+      throwConvexError('FORBIDDEN', 'You can only query your own audit ledger');
     }
 
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
@@ -1112,15 +1035,15 @@ export const getAuditLogs = query({
     let isDone = false;
 
     while (events.length < limit && !isDone) {
-      const result: PaginationResult<AuditLogDoc> = isSiteAdmin
-        ? await collectAuditLogsPageForAdmin(ctx, {
+      const result: PaginationResult<AuditLedgerEventDoc> = isSiteAdmin
+        ? await collectAuditLedgerPageForAdmin(ctx, {
             eventType: args.eventType,
             identifier: requestedIdentifier,
             organizationId,
             userId: requestedUserId,
             cursor,
           })
-        : await collectAuditLogsPageForUser(ctx, currentUserId, cursor);
+        : await collectAuditLedgerPageForUser(ctx, currentUserId, cursor);
 
       const nextEvents = dedupeEvents(
         result.page
@@ -1128,7 +1051,7 @@ export const getAuditLogs = query({
           .filter((event): event is AuthAuditEvent => event !== null),
       )
         .filter(filterEvent)
-        .sort(compareByCreatedAtDesc);
+        .sort(compareBySequenceDesc);
 
       events.push(...nextEvents);
       isDone = result.isDone;
@@ -1144,7 +1067,7 @@ export const getAuditLogs = query({
   },
 });
 
-export const exportSecurityAuditEventsJsonl = action({
+export const exportAuditLedgerJsonl = action({
   args: {
     organizationId: v.optional(v.string()),
     outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
@@ -1152,17 +1075,14 @@ export const exportSecurityAuditEventsJsonl = action({
     sourceSurface: v.optional(v.string()),
     resourceType: v.optional(v.string()),
   },
-  returns: v.object({
-    filename: v.string(),
-    jsonl: v.string(),
-  }),
-  handler: async (ctx, args) => {
+  returns: auditLedgerExportValidator,
+  handler: async (ctx, args): Promise<AuditLedgerExportResult> => {
     const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
     if (!user.isSiteAdmin) {
       throwConvexError('ADMIN_REQUIRED', 'Site admin access required');
     }
 
-    const lines: string[] = [];
+    const events: AuthAuditEvent[] = [];
     let cursor: string | null = null;
     let isDone = false;
 
@@ -1172,7 +1092,7 @@ export const exportSecurityAuditEventsJsonl = action({
         continueCursor: string | null;
         isDone: boolean;
         limit: number;
-      } = await ctx.runQuery(anyApi.audit.getAuditLogs, {
+      } = await ctx.runQuery(anyApi.audit.listAuditLedgerEvents, {
         limit: SECURITY_EXPORT_BATCH_SIZE,
         cursor: cursor ?? undefined,
         organizationId: args.organizationId,
@@ -1182,137 +1102,262 @@ export const exportSecurityAuditEventsJsonl = action({
         resourceType: args.resourceType,
       });
 
-      for (const event of page.events) {
-        lines.push(JSON.stringify(event));
-      }
+      events.push(...page.events);
 
       cursor = page.continueCursor;
       isDone = page.isDone || cursor === null;
     }
 
+    const orderedEvents = [...events].sort((left, right) => left.sequence - right.sequence);
+    const state: AuditLedgerStateSnapshot | null = await ctx.runQuery(
+      anyApi.audit.getAuditLedgerStateInternal,
+      {},
+    );
+    const lastEvent =
+      orderedEvents.length > 0 ? orderedEvents[orderedEvents.length - 1] : undefined;
+
     return {
       filename: `security-audit-events-${new Date().toISOString().slice(0, 10)}.jsonl`,
-      jsonl: lines.join('\n'),
+      jsonl: orderedEvents.map((event) => JSON.stringify(event)).join('\n'),
+      manifest: {
+        chainId: AUDIT_LEDGER_CHAIN_ID,
+        chainVersion: state?.chainVersion ?? 1,
+        firstSequence: orderedEvents[0]?.sequence ?? null,
+        lastSequence: lastEvent?.sequence ?? null,
+        rowCount: orderedEvents.length,
+        headHash: state?.headEventHash ?? null,
+        exportedAt: Date.now(),
+      },
     };
   },
 });
 
-export const verifyAuditIntegrityInternal = internalAction({
+export const getLatestSuccessfulAuditLedgerCheckpointInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerCheckpointDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+          q.eq('chainId', AUDIT_LEDGER_CHAIN_ID).eq('status', 'ok'),
+        )
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
+export const listAuditLedgerEventsForVerificationInternal = internalQuery({
   args: {
-    limit: v.optional(v.number()),
+    cursor: v.optional(v.string()),
+    startSequence: v.number(),
+    numItems: v.optional(v.number()),
   },
   returns: v.object({
+    page: v.array(auditLedgerEventDocValidator),
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const result = await ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_sequence', (q) =>
+        q.eq('chainId', AUDIT_LEDGER_CHAIN_ID).gte('sequence', args.startSequence),
+      )
+      .order('asc')
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: Math.max(1, Math.min(args.numItems ?? AUDIT_FETCH_BATCH_SIZE, 256)),
+      });
+
+    return {
+      page: result.page,
+      continueCursor: result.continueCursor,
+      isDone: result.isDone,
+    };
+  },
+});
+
+export const createAuditLedgerCheckpointInternal = internalMutation({
+  args: {
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    status: v.union(v.literal('ok'), v.literal('failed')),
     checkedAt: v.number(),
-    checked: v.number(),
-    failures: v.array(
+    verifiedEventCount: v.number(),
+    failure: v.optional(
       v.object({
-        id: v.string(),
+        actualEventHash: v.union(v.string(), v.null()),
+        actualPreviousEventHash: v.union(v.string(), v.null()),
+        eventId: v.string(),
+        expectedPreviousEventHash: v.union(v.string(), v.null()),
+        expectedSequence: v.number(),
+        recomputedEventHash: v.string(),
       }),
     ),
-    ok: v.boolean(),
-    failureEventId: v.union(v.string(), v.null()),
-    limit: v.number(),
-    verified: v.boolean(),
-  }),
-  handler: async (
-    ctx,
-    args,
-  ): Promise<{
-    checked: number;
-    checkedAt: number;
-    failureEventId: string | null;
-    failures: Array<{ id: string }>;
-    limit: number;
-    ok: boolean;
-    verified: boolean;
-  }> => {
-    const limit = Math.max(1, Math.min(args.limit ?? 500, 2_000));
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.insert('auditLedgerCheckpoints', args);
+    return null;
+  },
+});
+
+export const verifyAuditLedgerIntegrityInternal = internalAction({
+  args: {},
+  returns: auditLedgerIntegrityResultValidator,
+  handler: async (ctx): Promise<AuditLedgerIntegrityResult> => {
     const checkedAt = Date.now();
-    const logs: AuditLogDoc[] = await ctx.runQuery(internal.audit.getRecentAuditLogsInternal, {
-      limit,
-    });
-    const orderedLogs: AuditLogDoc[] = [...logs].sort(
-      (left, right) => left.createdAt - right.createdAt,
+    const state: AuditLedgerStateSnapshot | null = await ctx.runQuery(
+      anyApi.audit.getAuditLedgerStateInternal,
+      {},
     );
-    let previousEventHash: string | undefined;
+    const latestSuccessfulCheckpoint: Doc<'auditLedgerCheckpoints'> | null = await ctx.runQuery(
+      anyApi.audit.getLatestSuccessfulAuditLedgerCheckpointInternal,
+      {},
+    );
+    const checkedFromSequence = latestSuccessfulCheckpoint
+      ? latestSuccessfulCheckpoint.endSequence + 1
+      : 1;
+    const headSequence = state?.headSequence ?? 0;
+    const headHash = state?.headEventHash ?? null;
 
-    for (const log of orderedLogs) {
-      const recomputedHash = await hashAuditPayload(
-        buildAuditHashPayload({
-          id: log.id,
-          eventType: log.eventType,
-          createdAt: log.createdAt,
-          userId: log.userId,
-          actorUserId: log.actorUserId,
-          targetUserId: log.targetUserId,
-          organizationId: log.organizationId,
-          identifier: log.identifier,
-          sessionId: log.sessionId,
-          requestId: log.requestId,
-          outcome: log.outcome,
-          severity: log.severity,
-          resourceType: log.resourceType,
-          resourceId: log.resourceId,
-          resourceLabel: log.resourceLabel,
-          sourceSurface: log.sourceSurface,
-          metadata: log.metadata,
-          ipAddress: log.ipAddress,
-          userAgent: log.userAgent,
-          previousEventHash,
-        }),
-      );
+    if (!state || headSequence === 0 || checkedFromSequence > headSequence) {
+      await ctx.runMutation(internal.audit.createAuditLedgerCheckpointInternal, {
+        chainId: AUDIT_LEDGER_CHAIN_ID,
+        startSequence: checkedFromSequence,
+        endSequence: headSequence,
+        headHash,
+        status: 'ok',
+        checkedAt,
+        verifiedEventCount: 0,
+      });
+      await ctx.runMutation(internal.securityOps.syncCurrentSecurityFindingsInternal, {
+        actorUserId: 'system:audit-ledger',
+      });
 
-      if (log.previousEventHash !== previousEventHash || log.eventHash !== recomputedHash) {
-        const failureEventId = crypto.randomUUID();
-        await ctx.runMutation(internal.audit.insertAuditLog, {
-          eventType: 'audit_integrity_check_failed',
-          userId: undefined,
-          actorUserId: undefined,
-          organizationId: log.organizationId,
-          identifier: log.identifier,
-          outcome: 'failure',
-          severity: 'critical',
-          resourceType: 'audit_log',
-          resourceId: log.id,
-          resourceLabel: log.eventType,
-          sourceSurface: 'system.integrity_check',
-          metadata: JSON.stringify({
-            checkedEventId: log.id,
-            checkedEventType: log.eventType,
-            expectedPreviousEventHash: previousEventHash ?? null,
-            actualPreviousEventHash: log.previousEventHash ?? null,
-            actualEventHash: log.eventHash ?? null,
-            recomputedEventHash: recomputedHash,
-          }),
-          requestId: failureEventId,
-        });
-
-        return {
-          checked: orderedLogs.length,
-          checkedAt,
-          ok: false,
-          failureEventId,
-          failures: [{ id: failureEventId }],
-          limit,
-          verified: false,
-        };
-      }
-
-      previousEventHash = log.eventHash;
+      return {
+        chainId: AUDIT_LEDGER_CHAIN_ID,
+        checkedAt,
+        checkedFromSequence,
+        checkedToSequence: headSequence,
+        headHash,
+        headSequence,
+        ok: true,
+        verifiedEventCount: 0,
+        failure: null,
+      };
     }
 
+    let cursor: string | undefined;
+    let expectedSequence = checkedFromSequence;
+    let previousEventHash = latestSuccessfulCheckpoint?.headHash ?? null;
+    let verifiedEventCount = 0;
+    let failure: {
+      actualEventHash: string | null;
+      actualPreviousEventHash: string | null;
+      eventId: string;
+      expectedPreviousEventHash: string | null;
+      expectedSequence: number;
+      recomputedEventHash: string;
+    } | null = null;
+    let isDone = false;
+
+    while (!isDone) {
+      const page: {
+        page: AuditLedgerEventDoc[];
+        continueCursor: string;
+        isDone: boolean;
+      } = await ctx.runQuery(anyApi.audit.listAuditLedgerEventsForVerificationInternal, {
+        cursor,
+        startSequence: checkedFromSequence,
+        numItems: AUDIT_FETCH_BATCH_SIZE,
+      });
+
+      for (const event of page.page) {
+        const recomputedEventHash = await hashAuditPayload(
+          buildAuditHashPayload({
+            chainId: event.chainId,
+            id: event.id,
+            sequence: event.sequence,
+            eventType: event.eventType,
+            recordedAt: event.recordedAt,
+            userId: event.userId,
+            actorUserId: event.actorUserId,
+            targetUserId: event.targetUserId,
+            organizationId: event.organizationId,
+            identifier: event.identifier,
+            sessionId: event.sessionId,
+            requestId: event.requestId,
+            outcome: event.outcome,
+            severity: event.severity,
+            resourceType: event.resourceType,
+            resourceId: event.resourceId,
+            resourceLabel: event.resourceLabel,
+            sourceSurface: event.sourceSurface,
+            metadata: event.metadata,
+            ipAddress: event.ipAddress,
+            userAgent: event.userAgent,
+            previousEventHash,
+          }),
+        );
+
+        if (
+          event.sequence !== expectedSequence ||
+          event.previousEventHash !== previousEventHash ||
+          event.eventHash !== recomputedEventHash
+        ) {
+          failure = {
+            actualEventHash: event.eventHash,
+            actualPreviousEventHash: event.previousEventHash,
+            eventId: event.id,
+            expectedPreviousEventHash: previousEventHash,
+            expectedSequence,
+            recomputedEventHash,
+          };
+          break;
+        }
+
+        previousEventHash = event.eventHash;
+        expectedSequence += 1;
+        verifiedEventCount += 1;
+      }
+
+      if (failure) {
+        break;
+      }
+
+      cursor = page.isDone ? undefined : page.continueCursor;
+      isDone = page.isDone || cursor === undefined;
+    }
+
+    await ctx.runMutation(internal.audit.createAuditLedgerCheckpointInternal, {
+      chainId: AUDIT_LEDGER_CHAIN_ID,
+      startSequence: checkedFromSequence,
+      endSequence: headSequence,
+      headHash,
+      status: failure ? 'failed' : 'ok',
+      checkedAt,
+      verifiedEventCount,
+      ...(failure ? { failure } : {}),
+    });
     await ctx.runMutation(internal.securityOps.syncCurrentSecurityFindingsInternal, {
-      actorUserId: 'system:audit-integrity',
+      actorUserId: 'system:audit-ledger',
     });
 
     return {
-      checked: orderedLogs.length,
+      chainId: AUDIT_LEDGER_CHAIN_ID,
       checkedAt,
-      ok: true,
-      failureEventId: null,
-      failures: [],
-      limit,
-      verified: true,
+      checkedFromSequence,
+      checkedToSequence: headSequence,
+      headHash,
+      headSequence,
+      ok: failure === null,
+      verifiedEventCount,
+      failure,
     };
   },
 });

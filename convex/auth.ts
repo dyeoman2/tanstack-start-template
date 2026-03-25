@@ -672,7 +672,7 @@ async function recordAdminStepUpChallenge(
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: currentUser.authUserId,
     eventType: 'admin_step_up_challenged',
     metadata: JSON.stringify({
@@ -1807,13 +1807,12 @@ export const createAuth = (
     metadata?: string;
     ipAddress?: string;
     userAgent?: string;
-    createdAt?: number;
   }) => {
     if (!ctxWithRunMutation.runMutation) {
       return;
     }
 
-    await ctxWithRunMutation.runMutation(anyApi.audit.insertAuditLog, {
+    await ctxWithRunMutation.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
       ...event,
     });
   };
@@ -1825,7 +1824,6 @@ export const createAuth = (
     afterSCIMTokenGenerated: async ({ organizationId, providerId, userId }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'enterprise_scim_token_generated',
         identifier: providerId,
         metadata: JSON.stringify({
@@ -1853,7 +1851,6 @@ export const createAuth = (
     }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'admin_step_up_challenged',
         metadata: JSON.stringify({
           path,
@@ -1873,7 +1870,6 @@ export const createAuth = (
     recordStepUpCompletion: async ({ method, path, requirement, sessionId, userId }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'step_up_challenge_completed',
         metadata: JSON.stringify({
           method,
@@ -1892,7 +1888,6 @@ export const createAuth = (
     recordStepUpRequired: async ({ path, reason, requirement, sessionId, userId }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'step_up_challenge_required',
         metadata: JSON.stringify({
           path,
@@ -1911,7 +1906,6 @@ export const createAuth = (
     recordStepUpConsumed: async ({ path, requirement, sessionId, userId }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'step_up_consumed',
         metadata: JSON.stringify({
           path,
@@ -1929,7 +1923,6 @@ export const createAuth = (
     recordStepUpFailure: async ({ path, reason, requirement, sessionId, userId }) => {
       await recordAuditEvent({
         actorUserId: userId,
-        createdAt: Date.now(),
         eventType: 'step_up_challenge_failed',
         metadata: JSON.stringify({
           path,
@@ -2080,7 +2073,6 @@ export const createAuth = (
       }
 
       await recordAuditEvent({
-        createdAt: Date.now(),
         eventType: 'enterprise_login_succeeded',
         identifier: userEmail.toLowerCase(),
         metadata: JSON.stringify({
@@ -3251,9 +3243,8 @@ export const deleteOrganizationScimProviderServer = action({
 
       if (result.ok) {
         const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-        await ctx.runMutation(anyApi.audit.insertAuditLog, {
+        await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
           actorUserId: currentUser.id,
-          createdAt: Date.now(),
           eventType: 'enterprise_scim_token_deleted',
           identifier: providerId,
           metadata: JSON.stringify({
@@ -3311,8 +3302,7 @@ async function handleScimOrganizationLifecycleImpl(ctx: ActionCtx, args: ScimLif
     metadata?: Record<string, unknown>;
     userId?: string;
   }) => {
-    await ctx.runMutation(internal.audit.insertAuditLog, {
-      createdAt: Date.now(),
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: input.eventType,
       identifier: input.identifier,
       metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
@@ -3603,6 +3593,7 @@ export const handleScimOrganizationLifecycle = action({
   },
   returns: scimLifecycleResponseValidator,
   handler: async (ctx, args) => {
+    /* security-lint-ok: public reason: SCIM lifecycle requests are authenticated by the signed provider token in the authorization header inside handleScimOrganizationLifecycleImpl. */
     return await handleScimOrganizationLifecycleImpl(ctx, args);
   },
 });

@@ -57,6 +57,7 @@ const AUDIT_EVENT_FILTER_OPTIONS: TableFilterOption<'all' | OrganizationAuditEve
   { label: 'Domain removed', value: 'domain_removed' },
   { label: 'Policies updated', value: 'organization_policy_updated' },
   { label: 'Enterprise auth mode updated', value: 'enterprise_auth_mode_updated' },
+  { label: 'Enterprise break-glass used', value: 'enterprise_break_glass_used' },
   { label: 'Enterprise login succeeded', value: 'enterprise_login_succeeded' },
   { label: 'SCIM token generated', value: 'enterprise_scim_token_generated' },
   { label: 'SCIM token revoked', value: 'enterprise_scim_token_deleted' },

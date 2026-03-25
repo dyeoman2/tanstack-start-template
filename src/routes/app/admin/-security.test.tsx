@@ -223,7 +223,7 @@ function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
       initiatedByKind: 'user',
       initiatedByUserId: 'admin-user',
       restoredItemCount: 4,
-      sourceDataset: 'auditLogs',
+      sourceDataset: 'auditLedgerEvents',
       status: 'success',
       targetEnvironment: 'test',
       verificationMethod: 'checksum-compare',

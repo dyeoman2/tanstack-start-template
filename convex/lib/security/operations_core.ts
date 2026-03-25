@@ -256,8 +256,7 @@ async function recordSecurityControlEvidenceAuditEvent(
   const auditEventId = crypto.randomUUID();
   const createdAt = Date.now();
 
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
-    createdAt,
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: args.actorUserId,
     userId: args.actorUserId,
     organizationId: args.organizationId,
@@ -431,15 +430,15 @@ async function buildCurrentSecurityFindings(
   const [integrityFailures, latestIntegrityFailure, releaseEvidenceRows] = await Promise.all([
     countQueryResults(
       ctx.db
-        .query('auditLogs')
-        .withIndex('by_eventType_and_createdAt', (q) =>
-          q.eq('eventType', 'audit_integrity_check_failed'),
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+          q.eq('chainId', 'primary').eq('status', 'failed'),
         ),
     ),
     ctx.db
-      .query('auditLogs')
-      .withIndex('by_eventType_and_createdAt', (q) =>
-        q.eq('eventType', 'audit_integrity_check_failed'),
+      .query('auditLedgerCheckpoints')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('status', 'failed'),
       )
       .order('desc')
       .first(),
@@ -465,10 +464,10 @@ async function buildCurrentSecurityFindings(
       severity: integrityFailures > 0 ? 'critical' : 'info',
       status: integrityFailures > 0 ? 'open' : 'resolved',
       sourceType: 'audit_log',
-      sourceLabel: 'Audit log integrity verification',
+      sourceLabel: 'Audit ledger integrity verification',
       sourceRecordId: latestIntegrityFailure?._id ?? null,
-      firstObservedAt: latestIntegrityFailure?.createdAt ?? referenceTime,
-      lastObservedAt: latestIntegrityFailure?.createdAt ?? referenceTime,
+      firstObservedAt: latestIntegrityFailure?.checkedAt ?? referenceTime,
+      lastObservedAt: latestIntegrityFailure?.checkedAt ?? referenceTime,
     },
     {
       findingKey: 'document_scan_quarantines',
@@ -963,7 +962,7 @@ export async function recordBackupVerificationHandler(
     initiatedByUserId: args.initiatedByUserId ?? null,
   });
 
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: args.initiatedByUserId ?? undefined,
     userId: args.initiatedByUserId ?? undefined,
     eventType:

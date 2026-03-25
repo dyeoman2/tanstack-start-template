@@ -38,6 +38,7 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'domain_removed',
   'organization_policy_updated',
   'enterprise_auth_mode_updated',
+  'enterprise_break_glass_used',
   'enterprise_login_succeeded',
   'enterprise_scim_token_generated',
   'enterprise_scim_token_deleted',
@@ -68,7 +69,6 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'chat_run_completed',
   'chat_run_failed',
   'chat_web_search_used',
-  'audit_integrity_check_failed',
   'evidence_report_generated',
   'evidence_report_exported',
   'evidence_report_reviewed',
@@ -101,6 +101,7 @@ export type AuthAuditHandlerOwner = (typeof AUTH_AUDIT_HANDLER_OWNERS)[number];
 
 export type AuthAuditEvent = {
   id: string;
+  sequence: number;
   eventType: AuthAuditEventType;
   userId?: string;
   actorUserId?: string;
@@ -117,7 +118,7 @@ export type AuthAuditEvent = {
   sourceSurface?: string;
   eventHash?: string;
   previousEventHash?: string;
-  createdAt: number;
+  recordedAt: number;
   ipAddress?: string;
   userAgent?: string;
   metadata?: unknown;
@@ -166,6 +167,7 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   domain_removed: ['organization'],
   organization_policy_updated: ['organization'],
   enterprise_auth_mode_updated: ['organization'],
+  enterprise_break_glass_used: ['organization'],
   enterprise_login_succeeded: ['organization'],
   enterprise_scim_token_generated: ['organization'],
   enterprise_scim_token_deleted: ['organization'],
@@ -196,7 +198,6 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   chat_run_completed: ['organization'],
   chat_run_failed: ['organization'],
   chat_web_search_used: ['organization'],
-  audit_integrity_check_failed: ['organization'],
   evidence_report_generated: ['organization'],
   evidence_report_exported: ['organization'],
   evidence_report_reviewed: ['organization'],

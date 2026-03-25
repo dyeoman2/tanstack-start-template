@@ -379,6 +379,19 @@ export function getE2ETestSecret(): string {
   return getRequiredServerEnv('E2E_TEST_SECRET');
 }
 
+export function getAuditServerWriteSecret(): string {
+  const configured = process.env.AUDIT_SERVER_WRITE_SECRET?.trim();
+  if (configured) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
+    return 'test-audit-server-write-secret';
+  }
+
+  throw new Error('AUDIT_SERVER_WRITE_SECRET environment variable is required');
+}
+
 function readOptionalServerEnv(name: string): string | null {
   const value = process.env[name]?.trim();
   return value ? value : null;

@@ -369,7 +369,6 @@ type ExportManifest = {
   integritySummary: {
     checkedAt: string | null;
     failureCount: number;
-    limit: number;
     verified: boolean;
   };
   organizationScope: string | null;
@@ -389,7 +388,6 @@ export function buildExportManifest(input: {
   integritySummary: {
     checkedAt: number | null;
     failureCount: number;
-    limit: number;
     verified: boolean;
   };
   organizationScope: string | null;
@@ -410,7 +408,6 @@ export function buildExportManifest(input: {
           ? null
           : new Date(input.integritySummary.checkedAt).toISOString(),
       failureCount: input.integritySummary.failureCount,
-      limit: input.integritySummary.limit,
       verified: input.integritySummary.verified,
     },
     organizationScope: input.organizationScope,
@@ -423,15 +420,13 @@ export function buildExportManifest(input: {
 
 export function summarizeIntegrityCheck(integrityCheck: {
   checkedAt?: number;
-  failures?: unknown[];
-  limit?: number;
-  verified?: boolean;
+  failure?: unknown | null;
+  ok?: boolean;
 }) {
   return {
     checkedAt: typeof integrityCheck.checkedAt === 'number' ? integrityCheck.checkedAt : null,
-    failureCount: Array.isArray(integrityCheck.failures) ? integrityCheck.failures.length : 0,
-    limit: typeof integrityCheck.limit === 'number' ? integrityCheck.limit : 0,
-    verified: integrityCheck.verified === true,
+    failureCount: integrityCheck.failure ? 1 : 0,
+    verified: integrityCheck.ok === true,
   };
 }
 

@@ -814,7 +814,7 @@ export const createChatAttachmentFromUpload = action({
       createdAt: now,
     })) as Id<'chatAttachments'>;
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'chat_attachment_uploaded',
       userId,
       actorUserId: userId,
@@ -876,7 +876,7 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_attachment_quarantined',
         userId,
         actorUserId: userId,
@@ -909,7 +909,7 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_attachment_scan_failed',
         userId,
         actorUserId: userId,
@@ -931,7 +931,7 @@ export const createChatAttachmentFromUpload = action({
     }
 
     try {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_attachment_scan_passed',
         userId,
         actorUserId: userId,
@@ -982,7 +982,7 @@ export const createChatAttachmentFromUpload = action({
       );
 
       if (kind === 'image') {
-        await ctx.runMutation(internal.audit.insertAuditLog, {
+        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
           eventType: 'attachment_access_url_issued',
           userId,
           actorUserId: userId,
@@ -1020,7 +1020,7 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_attachment_scan_failed',
         userId,
         actorUserId: userId,
@@ -1258,7 +1258,7 @@ export const runChatGenerationInternal = internalAction({
           ...(assistantMessage?._id ? { activeAssistantMessageId: assistantMessage._id } : {}),
         },
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_run_completed',
         userId: run.initiatedByUserId,
         actorUserId: run.initiatedByUserId,
@@ -1278,7 +1278,7 @@ export const runChatGenerationInternal = internalAction({
         }),
       });
       if (run.useWebSearch) {
-        await ctx.runMutation(internal.audit.insertAuditLog, {
+        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
           eventType: 'chat_web_search_used',
           userId: run.initiatedByUserId,
           actorUserId: run.initiatedByUserId,
@@ -1296,7 +1296,7 @@ export const runChatGenerationInternal = internalAction({
           }),
         });
       }
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'outbound_vendor_access_used',
         userId: run.initiatedByUserId,
         actorUserId: run.initiatedByUserId,
@@ -1339,7 +1339,7 @@ export const runChatGenerationInternal = internalAction({
         status: 'error',
         failureKind: classifyChatRunFailure(error),
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'chat_run_failed',
         userId: latestRun.initiatedByUserId,
         actorUserId: latestRun.initiatedByUserId,
@@ -1359,7 +1359,7 @@ export const runChatGenerationInternal = internalAction({
         }),
       });
       if (error instanceof Error && error.name === 'VendorBoundaryError') {
-        await ctx.runMutation(internal.audit.insertAuditLog, {
+        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
           eventType: 'outbound_vendor_access_denied',
           userId: latestRun.initiatedByUserId,
           actorUserId: latestRun.initiatedByUserId,

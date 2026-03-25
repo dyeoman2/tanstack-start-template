@@ -67,6 +67,7 @@ describe('auth audit coverage', () => {
       'domain_removed',
       'organization_policy_updated',
       'enterprise_auth_mode_updated',
+      'enterprise_break_glass_used',
       'enterprise_login_succeeded',
       'enterprise_scim_token_generated',
       'enterprise_scim_token_deleted',
@@ -118,7 +119,6 @@ describe('auth audit coverage', () => {
       'chat_run_completed',
       'chat_run_failed',
       'chat_web_search_used',
-      'audit_integrity_check_failed',
     ] as const;
     for (const handler of AUTH_AUDIT_ALL_HANDLER_REGISTRY) {
       for (const eventType of handler.events) {

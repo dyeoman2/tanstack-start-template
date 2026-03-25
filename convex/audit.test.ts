@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizeClientAuditMetadata, validateRegulatedAuditFields } from './audit';
+import { validateRegulatedAuditFields } from './audit';
 
 describe('regulated audit validation', () => {
   it('accepts privileged events with complete manifest-linked metadata', () => {
@@ -59,35 +59,5 @@ describe('regulated audit validation', () => {
         sourceSurface: 'auth.authorization',
       }),
     ).toThrow(/reason/);
-  });
-});
-
-describe('client audit metadata normalization', () => {
-  it('accepts compatible JSON-string metadata from existing callers', () => {
-    expect(
-      normalizeClientAuditMetadata(
-        'pdf_parse_requested',
-        JSON.stringify({
-          storageId: 'storage_123',
-        }),
-      ),
-    ).toBe('{"storageId":"storage_123"}');
-  });
-
-  it('rejects unexpected fields', () => {
-    expect(() =>
-      normalizeClientAuditMetadata('pdf_parse_failed', {
-        error: 'boom',
-        extra: 'nope',
-      }),
-    ).toThrow(/Unsupported pdf_parse_failed metadata field/);
-  });
-
-  it('rejects oversized metadata payloads', () => {
-    expect(() =>
-      normalizeClientAuditMetadata('pdf_parse_failed', {
-        error: 'x'.repeat(4 * 1024),
-      }),
-    ).toThrow(/bytes or smaller/);
   });
 });

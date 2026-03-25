@@ -316,7 +316,7 @@ async function verifyOrganizationDomainHandler(
     const matched = resolvedValues.includes(expectedValue);
 
     if (!matched) {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'domain_verification_failed',
         organizationId: args.organizationId,
         userId: user.authUserId,
@@ -349,7 +349,7 @@ async function verifyOrganizationDomainHandler(
       };
     }
   } catch (error) {
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'domain_verification_failed',
       organizationId: args.organizationId,
       userId: user.authUserId,
@@ -391,7 +391,7 @@ async function verifyOrganizationDomainHandler(
     },
   );
 
-  await ctx.runMutation(internal.audit.insertAuditLog, {
+  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
     eventType: 'domain_verification_succeeded',
     organizationId: args.organizationId,
     userId: user.authUserId,

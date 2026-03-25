@@ -54,9 +54,11 @@ const baseUser = {
 
 describe('enterprise access', () => {
   it('marks data-plane permissions as enterprise-protected', () => {
+    expect(requiresEnterpriseSatisfied('viewOrganization')).toBe(true);
     expect(requiresEnterpriseSatisfied('readThread')).toBe(true);
     expect(requiresEnterpriseSatisfied('issueAttachmentAccessUrl')).toBe(true);
-    expect(requiresEnterpriseSatisfied('manageMembers')).toBe(false);
+    expect(requiresEnterpriseSatisfied('manageMembers')).toBe(true);
+    expect(requiresEnterpriseSatisfied('manageEvidence')).toBe(true);
   });
 
   it('enforces enterprise session for managed-domain members on PHI reads', async () => {
@@ -139,7 +141,105 @@ describe('enterprise access', () => {
     );
 
     expect(result.allowed).toBe(true);
+    expect(result.satisfactionPath).toBe('owner_break_glass');
     expect(result.status).toBe('satisfied');
+  });
+
+  it('allows owner break-glass for organization entry and member administration', async () => {
+    const viewResult = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'viewOrganization',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    const manageMembersResult = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'manageMembers',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    expect(viewResult.allowed).toBe(true);
+    expect(viewResult.satisfactionPath).toBe('owner_break_glass');
+    expect(manageMembersResult.allowed).toBe(true);
+    expect(manageMembersResult.satisfactionPath).toBe('owner_break_glass');
+  });
+
+  it('blocks owner break-glass for audit, evidence, and PHI data plane access', async () => {
+    const auditResult = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'viewAudit',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    const evidenceResult = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'manageEvidence',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    const dataPlaneResult = await resolveOrganizationEnterpriseAccess(
+      createCtx({
+        verifiedDomains: ['hospital.org'],
+      }),
+      {
+        membership: { role: 'owner' },
+        organizationId: 'org-1',
+        permission: 'readAttachment',
+        policies: {
+          ...basePolicies,
+          allowBreakGlassPasswordLogin: true,
+        },
+        user: baseUser,
+      },
+    );
+
+    expect(auditResult.allowed).toBe(false);
+    expect(auditResult.status).toBe('missing_enterprise_session');
+    expect(auditResult.satisfactionPath).toBeNull();
+    expect(evidenceResult.allowed).toBe(false);
+    expect(evidenceResult.status).toBe('missing_enterprise_session');
+    expect(dataPlaneResult.allowed).toBe(false);
+    expect(dataPlaneResult.status).toBe('missing_enterprise_session');
   });
 
   it('requires a support grant for site-admin PHI access', async () => {
@@ -192,9 +292,28 @@ describe('enterprise access', () => {
     );
 
     expect(result.allowed).toBe(true);
+    expect(result.satisfactionPath).toBe('support_grant');
     expect(result.status).toBe('satisfied');
     expect(result.supportGrant?.id).toBe('grant-1');
     expect(result.supportGrant?.scope).toBe('read_only');
+  });
+
+  it('marks site-admin non-data-plane access as a separate satisfaction path', async () => {
+    const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
+      membership: null,
+      organizationId: 'org-1',
+      permission: 'managePolicies',
+      policies: basePolicies,
+      user: {
+        ...baseUser,
+        authUserId: 'site-admin-1',
+        isSiteAdmin: true,
+      },
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.satisfactionPath).toBe('site_admin');
+    expect(result.status).toBe('satisfied');
   });
 
   it('does not let a read-only grant cover writes', async () => {

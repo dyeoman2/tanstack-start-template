@@ -303,6 +303,7 @@ export const recordDocumentScanEvent = mutation({
   },
   returns: v.id('documentScanEvents'),
   handler: async (ctx, args): Promise<Id<'documentScanEvents'>> => {
+    /* security-lint-ok: site-admin-not-required reason: authenticated organization users must be able to persist scan results for files they upload after organization-level authorization passes. */
     const user = await getVerifiedCurrentUserOrThrow(ctx);
     await requireOrganizationPermission(ctx, {
       organizationId: args.organizationId,
@@ -321,7 +322,11 @@ export const recordDocumentScanEvent = mutation({
 export const recordRetentionJob = internalMutation({
   args: {
     details: v.optional(v.string()),
-    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
+    jobKind: v.union(
+      v.literal('attachment_purge'),
+      v.literal('quarantine_cleanup'),
+      v.literal('audit_export_cleanup'),
+    ),
     processedCount: v.number(),
     status: v.union(v.literal('success'), v.literal('failure')),
   },

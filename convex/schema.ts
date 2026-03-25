@@ -161,10 +161,12 @@ export default defineSchema({
     .index('by_email_id', ['emailId'])
     .index('by_occurred_at', ['occurredAt']),
 
-  auditLogs: defineTable({
+  auditLedgerEvents: defineTable({
+    chainId: v.string(),
     id: v.string(),
+    sequence: v.number(),
     eventType: v.string(),
-    userId: v.optional(v.string()), // References Better Auth user.id when the event resolves to one
+    userId: v.optional(v.string()),
     actorUserId: v.optional(v.string()),
     targetUserId: v.optional(v.string()),
     organizationId: v.optional(v.string()),
@@ -177,23 +179,50 @@ export default defineSchema({
     resourceId: v.optional(v.string()),
     resourceLabel: v.optional(v.string()),
     sourceSurface: v.optional(v.string()),
-    eventHash: v.optional(v.string()),
-    previousEventHash: v.optional(v.string()),
+    eventHash: v.string(),
+    previousEventHash: v.union(v.string(), v.null()),
     metadata: v.optional(v.string()),
-    createdAt: v.number(),
+    recordedAt: v.number(),
     ipAddress: v.optional(v.string()),
     userAgent: v.optional(v.string()),
   })
-    .index('by_userId_and_createdAt', ['userId', 'createdAt'])
-    .index('by_createdAt', ['createdAt'])
-    .index('by_eventType_and_createdAt', ['eventType', 'createdAt'])
-    .index('by_organizationId_and_createdAt', ['organizationId', 'createdAt'])
-    .index('by_organizationId_and_eventType_and_createdAt', [
-      'organizationId',
-      'eventType',
-      'createdAt',
-    ])
-    .index('by_identifier_and_createdAt', ['identifier', 'createdAt']),
+    .index('by_sequence', ['chainId', 'sequence'])
+    .index('by_recordedAt', ['chainId', 'recordedAt'])
+    .index('by_eventType_and_sequence', ['chainId', 'eventType', 'sequence'])
+    .index('by_organizationId_and_sequence', ['organizationId', 'sequence'])
+    .index('by_userId_and_sequence', ['userId', 'sequence'])
+    .index('by_identifier_and_sequence', ['identifier', 'sequence']),
+
+  auditLedgerState: defineTable({
+    chainId: v.string(),
+    chainVersion: v.number(),
+    headSequence: v.number(),
+    headEventHash: v.union(v.string(), v.null()),
+    startedAt: v.number(),
+    updatedAt: v.number(),
+  }).index('by_chain_id', ['chainId']),
+
+  auditLedgerCheckpoints: defineTable({
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    status: v.union(v.literal('ok'), v.literal('failed')),
+    checkedAt: v.number(),
+    verifiedEventCount: v.number(),
+    failure: v.optional(
+      v.object({
+        actualEventHash: v.union(v.string(), v.null()),
+        actualPreviousEventHash: v.union(v.string(), v.null()),
+        eventId: v.string(),
+        expectedPreviousEventHash: v.union(v.string(), v.null()),
+        expectedSequence: v.number(),
+        recomputedEventHash: v.string(),
+      }),
+    ),
+  })
+    .index('by_chain_id_and_checked_at', ['chainId', 'checkedAt'])
+    .index('by_chain_id_and_status_and_checked_at', ['chainId', 'status', 'checkedAt']),
 
   organizationDomains: defineTable({
     organizationId: v.string(),
@@ -1128,55 +1157,14 @@ export default defineSchema({
     .index('by_to', ['toType', 'toId'])
     .index('by_relationship_and_created_at', ['relationshipType', 'createdAt']),
 
-  organizationAuditEvents: defineTable({
-    auditEventId: v.string(),
-    eventType: v.string(),
-    label: v.string(),
-    actorLabel: v.union(v.string(), v.null()),
-    targetLabel: v.union(v.string(), v.null()),
-    summary: v.union(v.string(), v.null()),
-    userId: v.union(v.string(), v.null()),
-    actorUserId: v.union(v.string(), v.null()),
-    targetUserId: v.union(v.string(), v.null()),
-    organizationId: v.string(),
-    identifier: v.union(v.string(), v.null()),
-    sessionId: v.union(v.string(), v.null()),
-    requestId: v.union(v.string(), v.null()),
-    outcome: v.union(v.literal('success'), v.literal('failure'), v.null()),
-    severity: v.union(v.literal('info'), v.literal('warning'), v.literal('critical'), v.null()),
-    resourceType: v.union(v.string(), v.null()),
-    resourceId: v.union(v.string(), v.null()),
-    resourceLabel: v.union(v.string(), v.null()),
-    sourceSurface: v.union(v.string(), v.null()),
-    eventHash: v.union(v.string(), v.null()),
-    previousEventHash: v.union(v.string(), v.null()),
-    metadata: v.union(v.string(), v.null()),
-    createdAt: v.number(),
-    ipAddress: v.union(v.string(), v.null()),
-    userAgent: v.union(v.string(), v.null()),
-  })
-    .index('by_audit_event_id', ['auditEventId'])
-    .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
-    .index('by_organization_id_and_event_type_and_created_at', [
-      'organizationId',
-      'eventType',
-      'createdAt',
-    ])
-    .index('by_organization_id_and_identifier_and_created_at', [
-      'organizationId',
-      'identifier',
-      'createdAt',
-    ])
-    .index('by_organization_id_and_user_id_and_created_at', [
-      'organizationId',
-      'userId',
-      'createdAt',
-    ]),
-
   retentionJobs: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
+    jobKind: v.union(
+      v.literal('attachment_purge'),
+      v.literal('quarantine_cleanup'),
+      v.literal('audit_export_cleanup'),
+    ),
     status: v.union(v.literal('success'), v.literal('failure')),
     details: v.optional(v.string()),
     processedCount: v.number(),

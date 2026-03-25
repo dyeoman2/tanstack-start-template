@@ -23,12 +23,16 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
     fetchAllBetterAuthPasskeys(ctx),
     ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
     ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
-    ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').first(),
+    ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
     countQueryResults(
       ctx.db
-        .query('auditLogs')
-        .withIndex('by_eventType_and_createdAt', (q) =>
-          q.eq('eventType', 'audit_integrity_check_failed'),
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+          q.eq('chainId', 'primary').eq('status', 'failed'),
         ),
     ),
   ]);
@@ -50,7 +54,7 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
   return {
     audit: {
       integrityFailures,
-      lastEventAt: latestAuditEvent?.createdAt ?? null,
+      lastEventAt: latestAuditEvent?.recordedAt ?? null,
     },
     auth: {
       emailVerificationRequired: ALWAYS_ON_REGULATED_BASELINE.requireVerifiedEmail,
@@ -91,7 +95,11 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
     [
       ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
       ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
-      ctx.db.query('auditLogs').withIndex('by_createdAt').order('desc').take(200),
+      ctx.db
+        .query('auditLedgerEvents')
+        .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
+        .order('desc')
+        .take(200),
       ctx.db
         .query('exportArtifacts')
         .withIndex('by_artifact_type_and_created_at')
@@ -104,7 +112,7 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
     .filter((log) => log.eventType === 'organization_policy_updated')
     .slice(0, 25)
     .map((log) => ({
-      createdAt: log.createdAt,
+      createdAt: log.recordedAt,
       eventType: log.eventType,
       id: log.id,
       resourceId: log.resourceId ?? null,
@@ -145,7 +153,7 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       .filter((log) => log.eventType === 'authorization_denied')
       .slice(0, 25)
       .map((log) => ({
-        createdAt: log.createdAt,
+        createdAt: log.recordedAt,
         eventType: log.eventType,
         id: log.id,
         metadata: log.metadata ?? null,

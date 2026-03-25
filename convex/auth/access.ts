@@ -45,9 +45,14 @@ import {
   getOrganizationMembershipStatuses,
 } from '../lib/organizationMembershipState';
 import {
-  requiresEnterpriseSatisfied,
+  type OrganizationEnterpriseSatisfactionPath,
   resolveOrganizationEnterpriseAccess,
 } from '../lib/enterpriseAccess';
+import {
+  type OrganizationPermission,
+  organizationPermissionValidator,
+  requiresEnterpriseSatisfied,
+} from '../lib/organizationPermissions';
 import { organizationPermissionDecisionValidator } from '../lib/returnValidators';
 import { getActiveStepUpClaim, getCompatibilityStepUpClaim } from '../stepUp';
 import { throwConvexError } from './errors';
@@ -78,23 +83,6 @@ export const NO_ACCESS: ACCESS = {
   ...NO_ORGANIZATION_ACCESS,
 };
 
-export const ORGANIZATION_PERMISSION_VALUES = [
-  'viewOrganization',
-  'manageMembers',
-  'manageDomains',
-  'managePolicies',
-  'viewAudit',
-  'exportAudit',
-  'manageEvidence',
-  'readThread',
-  'writeThread',
-  'readAttachment',
-  'deleteAttachment',
-  'issueAttachmentAccessUrl',
-] as const;
-
-export type OrganizationPermission = (typeof ORGANIZATION_PERMISSION_VALUES)[number];
-
 type OrganizationPoliciesForAuthorization = {
   allowBreakGlassPasswordLogin: boolean;
   enterpriseAuthMode: 'off' | 'optional' | 'required';
@@ -104,6 +92,7 @@ type OrganizationPoliciesForAuthorization = {
 type AuthorizationAssurance = {
   emailVerified: boolean;
   enterpriseSatisfied: boolean;
+  enterpriseSatisfactionPath: OrganizationEnterpriseSatisfactionPath | null;
   enterpriseStatus:
     | 'not_required'
     | 'satisfied'
@@ -150,10 +139,6 @@ type StorageReadAccessResult =
       supportGrantId: Doc<'organizationSupportAccessGrants'>['_id'] | null;
       supportGrantScope: 'read_only' | 'read_write' | null;
     };
-
-const organizationPermissionValidator = v.union(
-  ...ORGANIZATION_PERMISSION_VALUES.map((permission) => v.literal(permission)),
-);
 
 function serializeOrganizationPermissionDecision(decision: OrganizationPermissionDecision) {
   const authSession = decision.user.authSession
@@ -835,6 +820,7 @@ async function buildOrganizationPermissionDecision(
     assurance: {
       emailVerified: assuranceState.emailVerified,
       enterpriseSatisfied: enterpriseAccess.allowed,
+      enterpriseSatisfactionPath: enterpriseAccess.satisfactionPath,
       enterpriseStatus: enterpriseAccess.status,
       mfaSatisfied: !authPolicy.requiresMfaSetup,
       recentStepUpSatisfied: stepUpEvaluation.required ? stepUpEvaluation.satisfied : true,
@@ -913,7 +899,7 @@ async function recordAuthorizationDenied(
     user: CurrentUser;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     eventType: 'authorization_denied',
     userId: input.user.authUserId,
     actorUserId: input.user.authUserId,
@@ -929,6 +915,37 @@ async function recordAuthorizationDenied(
     metadata: JSON.stringify({
       permission: input.permission,
       reason: input.reason,
+    }),
+  });
+}
+
+async function recordEnterpriseBreakGlassUsed(
+  ctx: MutationCtx | ActionCtx,
+  input: {
+    decision: OrganizationPermissionDecision;
+    sourceSurface?: string;
+  },
+) {
+  if (input.decision.assurance.enterpriseSatisfactionPath !== 'owner_break_glass') {
+    return;
+  }
+
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+    eventType: 'enterprise_break_glass_used',
+    userId: input.decision.user.authUserId,
+    actorUserId: input.decision.user.authUserId,
+    organizationId: input.decision.organizationId,
+    identifier: input.decision.user.authUser.email?.toLowerCase(),
+    sessionId: input.decision.user.authSession?.id ?? undefined,
+    outcome: 'success',
+    severity: 'warning',
+    resourceType: 'organization_permission',
+    resourceId: input.decision.organizationId,
+    resourceLabel: input.decision.permission,
+    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    metadata: JSON.stringify({
+      permission: input.decision.permission,
+      satisfactionPath: 'owner_break_glass',
     }),
   });
 }
@@ -1050,6 +1067,13 @@ export async function requireOrganizationPermission(
     throwConvexError(result.code, result.reason);
   }
 
+  if ('runMutation' in ctx) {
+    await recordEnterpriseBreakGlassUsed(ctx, {
+      decision: result,
+      sourceSurface: input.sourceSurface,
+    });
+  }
+
   return result;
 }
 
@@ -1094,6 +1118,11 @@ export async function requireOrganizationPermissionFromActionOrThrow(
     });
     throwConvexError('FORBIDDEN', result.reason);
   }
+
+  await recordEnterpriseBreakGlassUsed(ctx, {
+    decision: result.decision,
+    sourceSurface: input.sourceSurface,
+  });
 
   return result.decision;
 }

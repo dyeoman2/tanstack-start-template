@@ -156,7 +156,7 @@ async function recordFileAccessAuditEvent(
     userId?: string | null;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: args.userId ?? undefined,
     eventType: args.eventType,
     metadata: JSON.stringify(args.metadata),
@@ -187,7 +187,7 @@ async function recordSupportAccessUsage(
     userId: string;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: args.userId,
     eventType: 'support_access_used',
     metadata: JSON.stringify({
@@ -277,7 +277,7 @@ export async function issueFileAccessUrlForCurrentUser(
     args.purpose === 'external_share' &&
     !(await isAttachmentSharingAllowed(ctx, organizationId))
   ) {
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
       actorUserId: currentUser.authUserId,
       eventType: 'authorization_denied',
       metadata: JSON.stringify({
@@ -365,7 +365,7 @@ export async function issueFileAccessUrlForCurrentUser(
       requirement: STEP_UP_REQUIREMENTS.attachmentAccess,
       sessionId: issuedFromSessionId,
     });
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
       actorUserId: currentUser.authUserId,
       eventType: 'step_up_consumed',
       metadata: JSON.stringify({

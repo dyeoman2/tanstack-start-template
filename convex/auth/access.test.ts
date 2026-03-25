@@ -33,4 +33,13 @@ describe('access constants', () => {
     expect(VIEW_ACCESS.edit).toBe(false);
     expect(NO_ACCESS.view).toBe(false);
   });
+
+  it('treats every org-scoped permission as enterprise-protected by default', async () => {
+    const { requiresEnterpriseSatisfied } = await import('../lib/enterpriseAccess');
+    const { ORGANIZATION_PERMISSION_VALUES } = await import('../lib/organizationPermissions');
+
+    expect(
+      ORGANIZATION_PERMISSION_VALUES.every((permission) => requiresEnterpriseSatisfied(permission)),
+    ).toBe(true);
+  });
 });

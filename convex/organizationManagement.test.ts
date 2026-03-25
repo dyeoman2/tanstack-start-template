@@ -14,40 +14,36 @@ function createQueryResult(rows: unknown[]) {
 }
 
 describe('collectOrganizationAuditPage', () => {
-  it('uses projected organization audit rows when available', async () => {
+  it('uses audit ledger rows for organization views', async () => {
     const ctx = {
       db: {
         query: (table: string) => {
-          if (table === 'organizationAuditEvents') {
+          if (table === 'auditLedgerEvents') {
             return {
               withIndex: () =>
                 createQueryResult([
                   {
-                    auditEventId: 'audit-1',
+                    chainId: 'primary',
+                    id: 'audit-1',
+                    sequence: 1,
                     eventType: 'member_added',
-                    label: 'Member added',
-                    actorLabel: 'Owner',
-                    targetLabel: 'User',
-                    summary: null,
                     userId: 'user-1',
                     actorUserId: 'user-1',
                     targetUserId: 'user-2',
                     organizationId: 'org-1',
                     identifier: 'user@example.com',
-                    sessionId: null,
-                    requestId: null,
                     outcome: 'success',
                     severity: 'info',
                     resourceType: 'organization_member',
                     resourceId: 'membership-1',
                     resourceLabel: 'Membership',
                     sourceSurface: 'organization.members',
-                    eventHash: null,
+                    eventHash: 'hash-1',
                     previousEventHash: null,
                     metadata: null,
-                    createdAt: 100,
-                    ipAddress: null,
-                    userAgent: null,
+                    recordedAt: 100,
+                    ipAddress: undefined,
+                    userAgent: undefined,
                   },
                 ]),
             };
@@ -74,22 +70,18 @@ describe('collectOrganizationAuditPage', () => {
     });
   });
 
-  it('falls back to raw audit logs when projections have not been backfilled yet', async () => {
+  it('projects raw ledger events into organization audit rows', async () => {
     const ctx = {
       db: {
         query: (table: string) => {
-          if (table === 'organizationAuditEvents') {
-            return {
-              withIndex: () => createQueryResult([]),
-            };
-          }
-
-          if (table === 'auditLogs') {
+          if (table === 'auditLedgerEvents') {
             return {
               withIndex: () =>
                 createQueryResult([
                   {
+                    chainId: 'primary',
                     id: 'audit-2',
+                    sequence: 2,
                     eventType: 'domain_added',
                     userId: 'user-1',
                     actorUserId: 'user-1',
@@ -104,10 +96,10 @@ describe('collectOrganizationAuditPage', () => {
                     resourceId: 'domain-1',
                     resourceLabel: 'example.com',
                     sourceSurface: 'organization.domain_add',
-                    eventHash: undefined,
-                    previousEventHash: undefined,
+                    eventHash: 'hash-2',
+                    previousEventHash: null,
                     metadata: JSON.stringify({ domain: 'example.com' }),
-                    createdAt: 200,
+                    recordedAt: 200,
                     ipAddress: undefined,
                     userAgent: undefined,
                   },

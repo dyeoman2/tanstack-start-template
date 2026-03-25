@@ -191,7 +191,7 @@ export const processPendingPdfParseJobInternal = internalAction({
         updatedAt: Date.now(),
       });
 
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         actorUserId: job.requestedByUserId,
         eventType: 'pdf_parse_succeeded',
         metadata: JSON.stringify({
@@ -218,7 +218,7 @@ export const processPendingPdfParseJobInternal = internalAction({
         storageId: args.storageId,
         updatedAt: Date.now(),
       });
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         actorUserId: job.requestedByUserId,
         eventType: 'pdf_parse_failed',
         metadata: JSON.stringify({

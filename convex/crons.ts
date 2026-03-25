@@ -38,4 +38,11 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  'verify audit ledger integrity',
+  { hours: 1 },
+  internal.audit.verifyAuditLedgerIntegrityInternal,
+  {},
+);
+
 export default crons;

@@ -43,6 +43,7 @@ import type * as lib_onboardingState from "../lib/onboardingState.js";
 import type * as lib_organizationAuditEvents from "../lib/organizationAuditEvents.js";
 import type * as lib_organizationCleanup from "../lib/organizationCleanup.js";
 import type * as lib_organizationMembershipState from "../lib/organizationMembershipState.js";
+import type * as lib_organizationPermissions from "../lib/organizationPermissions.js";
 import type * as lib_returnValidators from "../lib/returnValidators.js";
 import type * as lib_security_control_workspace_core from "../lib/security/control_workspace_core.js";
 import type * as lib_security_core from "../lib/security/core.js";
@@ -131,6 +132,7 @@ declare const fullApi: ApiFromModules<{
   "lib/organizationAuditEvents": typeof lib_organizationAuditEvents;
   "lib/organizationCleanup": typeof lib_organizationCleanup;
   "lib/organizationMembershipState": typeof lib_organizationMembershipState;
+  "lib/organizationPermissions": typeof lib_organizationPermissions;
   "lib/returnValidators": typeof lib_returnValidators;
   "lib/security/control_workspace_core": typeof lib_security_control_workspace_core;
   "lib/security/core": typeof lib_security_core;

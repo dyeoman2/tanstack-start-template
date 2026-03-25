@@ -96,6 +96,8 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Organization policies updated';
     case 'enterprise_auth_mode_updated':
       return 'Enterprise auth mode updated';
+    case 'enterprise_break_glass_used':
+      return 'Enterprise break-glass used';
     case 'enterprise_login_succeeded':
       return 'Enterprise login succeeded';
     case 'enterprise_scim_user_provisioned':
@@ -166,8 +168,6 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Chat run failed';
     case 'chat_web_search_used':
       return 'Web search used';
-    case 'audit_integrity_check_failed':
-      return 'Audit integrity check failed';
     case 'security_control_evidence_created':
       return 'Security control evidence added';
     case 'security_control_evidence_reviewed':
@@ -250,6 +250,8 @@ function getGenericAuditActorLabel(eventType: string) {
     case 'support_access_granted':
     case 'support_access_revoked':
       return 'Organization admin';
+    case 'enterprise_break_glass_used':
+      return 'Organization owner';
     default:
       return undefined;
   }
@@ -287,6 +289,10 @@ function getAuditTargetLabel(event: OrganizationAuditEventSource, metadata: unkn
     return 'Enterprise auth settings';
   }
 
+  if (event.eventType === 'enterprise_break_glass_used') {
+    return 'Break-glass access';
+  }
+
   if (
     event.eventType === 'support_access_granted' ||
     event.eventType === 'support_access_revoked' ||
@@ -322,6 +328,11 @@ function getAuditSummary(eventType: string, metadata: unknown) {
       : [];
 
     return changedKeys.length > 0 ? `Changed: ${changedKeys.join(', ')}` : undefined;
+  }
+
+  if (eventType === 'enterprise_break_glass_used') {
+    const permission = toAuditMetadataDisplayValue(metadataRecord?.permission);
+    return permission ? `Permission: ${permission}` : undefined;
   }
 
   if (eventType === 'bulk_invite_revoked' || eventType === 'bulk_invite_resent') {

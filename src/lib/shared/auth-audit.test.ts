@@ -26,6 +26,7 @@ describe('auth audit helpers', () => {
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_added');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('domain_removed');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_auth_mode_updated');
+    expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_break_glass_used');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_login_succeeded');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_scim_token_generated');
     expect(AUTH_AUDIT_EVENT_TYPES).toContain('enterprise_scim_token_deleted');

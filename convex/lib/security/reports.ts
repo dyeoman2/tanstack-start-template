@@ -44,16 +44,14 @@ export async function exportEvidenceReportHandler(
   }
 
   const exportedAt = Date.now();
-  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
-    limit: 250,
-  });
+  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
   const exportBundle = stringifyStable({
     contentHash: report.contentHash,
     exportedAt: new Date(exportedAt).toISOString(),
     integritySummary: {
       contentHash: report.contentHash,
       checkedAt: integrityCheck.checkedAt,
-      failureCount: integrityCheck.failures.length,
+      failureCount: integrityCheck.failure ? 1 : 0,
       reviewedAt: report.reviewedAt ?? null,
       reviewStatus: report.reviewStatus,
     },
@@ -109,7 +107,7 @@ export async function exportEvidenceReportHandler(
     latestExportArtifactId: artifactId,
   });
 
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: currentUser.authUserId,
     eventType: 'evidence_report_exported',
     identifier: currentUser.authUser.email ?? undefined,
@@ -215,18 +213,16 @@ export async function generateEvidenceReportHandler(
     title: string;
   }>;
   const recentAuditLogs: Array<{
-    createdAt: number;
+    recordedAt: number;
     eventType: string;
     organizationId?: string;
     outcome?: 'success' | 'failure';
     resourceType?: string;
     sourceSurface?: string;
-  }> = await ctx.runQuery(anyApi.audit.getRecentAuditLogsInternal, {
+  }> = await ctx.runQuery(anyApi.audit.getRecentAuditLedgerEventsInternal, {
     limit: 25,
   });
-  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
-    limit: 250,
-  });
+  const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
   const auditReadinessSnapshot = await ctx.runQuery(
     anyApi.securityPosture.getAuditReadinessSnapshot,
     {},
@@ -316,7 +312,7 @@ export async function generateEvidenceReportHandler(
             backupDrillStatus: auditReadinessSnapshot.latestBackupDrill?.status ?? null,
             deniedActionCount: auditReadinessSnapshot.recentDeniedActions.length,
             exportCount: auditReadinessSnapshot.recentExports.length,
-            integrityFailureCount: integrityCheck.failures.length,
+            integrityFailureCount: integrityCheck.failure ? 1 : 0,
             metadataGapCount: auditReadinessSnapshot.metadataGaps.length,
           },
         }
@@ -398,7 +394,7 @@ export async function generateEvidenceReportHandler(
                   },
                   integrityCheck,
                   recentAuditEvents: recentAuditLogs.slice(0, 10).map((log) => ({
-                    createdAt: log.createdAt,
+                    createdAt: log.recordedAt,
                     eventType: log.eventType,
                     outcome: log.outcome ?? null,
                     organizationId: log.organizationId ?? null,
@@ -420,7 +416,7 @@ export async function generateEvidenceReportHandler(
     reportKind,
   });
 
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: currentUser.authUserId,
     eventType: 'evidence_report_generated',
     identifier: currentUser.authUser.email ?? undefined,
@@ -740,7 +736,7 @@ export async function finalizeReviewRunHandler(
     reviewRunId: args.reviewRunId,
   });
 
-  await ctx.runMutation(anyApi.audit.insertAuditLog, {
+  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
     actorUserId: currentUser.authUserId,
     eventType: 'security_review_run_finalized',
     identifier: currentUser.authUser.email ?? undefined,

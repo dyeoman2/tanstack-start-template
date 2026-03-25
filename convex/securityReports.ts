@@ -148,7 +148,7 @@ export const reviewEvidenceReport = mutation({
       });
     }
 
-    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
       actorUserId: currentUser.authUserId,
       eventType: 'evidence_report_reviewed',
       identifier: currentUser.authUser.email ?? undefined,

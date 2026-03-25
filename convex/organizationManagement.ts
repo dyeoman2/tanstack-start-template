@@ -100,10 +100,9 @@ type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'stat
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
 type OrganizationAuditSortField = 'label' | 'identifier' | 'userId' | 'createdAt';
 
-type OrganizationAuditEventRecord = Doc<'organizationAuditEvents'>;
-type OrganizationAuditEventViewSource =
-  | OrganizationAuditEventRecord
-  | NonNullable<ReturnType<typeof buildOrganizationAuditProjection>>;
+type OrganizationAuditEventViewSource = NonNullable<
+  ReturnType<typeof buildOrganizationAuditProjection>
+>;
 type OrganizationCleanupRequestRecord = {
   completedAt: number | null;
   createdAt: number;
@@ -263,6 +262,7 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'domain_removed',
   'organization_policy_updated',
   'enterprise_auth_mode_updated',
+  'enterprise_break_glass_used',
   'enterprise_login_succeeded',
   'enterprise_scim_token_generated',
   'enterprise_scim_token_deleted',
@@ -296,7 +296,6 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'chat_run_completed',
   'chat_run_failed',
   'chat_web_search_used',
-  'audit_integrity_check_failed',
   'evidence_report_generated',
   'evidence_report_exported',
   'evidence_report_reviewed',
@@ -328,6 +327,7 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'admin_user_sessions_viewed',
   'directory_exported',
   'audit_log_exported',
+  'enterprise_break_glass_used',
   'organization_policy_updated',
   'enterprise_auth_mode_updated',
   'enterprise_login_succeeded',
@@ -361,7 +361,6 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'chat_run_completed',
   'chat_run_failed',
   'chat_web_search_used',
-  'audit_integrity_check_failed',
   'evidence_report_generated',
   'evidence_report_exported',
   'evidence_report_reviewed',
@@ -1064,13 +1063,14 @@ export async function collectOrganizationAuditPage(
   const { organizationId, requestedEventType, searchStrategy, sortOrder, cursor, numItems } = input;
 
   const projectRawAuditPage = async (
-    page: PaginationResult<Doc<'auditLogs'>>,
+    page: PaginationResult<Doc<'auditLedgerEvents'>>,
   ): Promise<{
     page: OrganizationAuditEventViewSource[];
     isDone: boolean;
     continueCursor: string;
   }> => ({
     page: page.page
+      .filter((event) => event.organizationId === organizationId)
       .map((event) =>
         buildOrganizationAuditProjection({
           id: event.id,
@@ -1089,9 +1089,9 @@ export async function collectOrganizationAuditPage(
           resourceLabel: event.resourceLabel,
           sourceSurface: event.sourceSurface,
           eventHash: event.eventHash,
-          previousEventHash: event.previousEventHash,
+          previousEventHash: event.previousEventHash ?? undefined,
           metadata: event.metadata,
-          createdAt: event.createdAt,
+          createdAt: event.recordedAt,
           ipAddress: event.ipAddress,
           userAgent: event.userAgent,
         }),
@@ -1102,21 +1102,10 @@ export async function collectOrganizationAuditPage(
   });
 
   if (searchStrategy.kind === 'identifier') {
-    const projectedPage = await ctx.db
-      .query('organizationAuditEvents')
-      .withIndex('by_organization_id_and_identifier_and_created_at', (q) =>
-        q.eq('organizationId', organizationId).eq('identifier', searchStrategy.identifier),
-      )
-      .order(sortOrder)
-      .paginate({ cursor, numItems });
-    if (projectedPage.page.length > 0 || cursor !== null) {
-      return projectedPage;
-    }
-
     return await projectRawAuditPage(
       await ctx.db
-        .query('auditLogs')
-        .withIndex('by_identifier_and_createdAt', (q) =>
+        .query('auditLedgerEvents')
+        .withIndex('by_identifier_and_sequence', (q) =>
           q.eq('identifier', searchStrategy.identifier),
         )
         .order(sortOrder)
@@ -1125,21 +1114,10 @@ export async function collectOrganizationAuditPage(
   }
 
   if (searchStrategy.kind === 'userId') {
-    const projectedPage = await ctx.db
-      .query('organizationAuditEvents')
-      .withIndex('by_organization_id_and_user_id_and_created_at', (q) =>
-        q.eq('organizationId', organizationId).eq('userId', searchStrategy.userId),
-      )
-      .order(sortOrder)
-      .paginate({ cursor, numItems });
-    if (projectedPage.page.length > 0 || cursor !== null) {
-      return projectedPage;
-    }
-
     return await projectRawAuditPage(
       await ctx.db
-        .query('auditLogs')
-        .withIndex('by_userId_and_createdAt', (q) => q.eq('userId', searchStrategy.userId))
+        .query('auditLedgerEvents')
+        .withIndex('by_userId_and_sequence', (q) => q.eq('userId', searchStrategy.userId))
         .order(sortOrder)
         .paginate({ cursor, numItems }),
     );
@@ -1152,41 +1130,21 @@ export async function collectOrganizationAuditPage(
       throw new Error('Audit event type is required for event-type scoped queries');
     }
 
-    const projectedPage = await ctx.db
-      .query('organizationAuditEvents')
-      .withIndex('by_organization_id_and_event_type_and_created_at', (q) =>
-        q.eq('organizationId', organizationId).eq('eventType', eventType),
-      )
-      .order(sortOrder)
-      .paginate({ cursor, numItems });
-    if (projectedPage.page.length > 0 || cursor !== null) {
-      return projectedPage;
-    }
-
     return await projectRawAuditPage(
       await ctx.db
-        .query('auditLogs')
-        .withIndex('by_organizationId_and_eventType_and_createdAt', (q) =>
-          q.eq('organizationId', organizationId).eq('eventType', eventType),
+        .query('auditLedgerEvents')
+        .withIndex('by_eventType_and_sequence', (q) =>
+          q.eq('chainId', 'primary').eq('eventType', eventType),
         )
         .order(sortOrder)
         .paginate({ cursor, numItems }),
     );
   }
 
-  const projectedPage = await ctx.db
-    .query('organizationAuditEvents')
-    .withIndex('by_organization_id_and_created_at', (q) => q.eq('organizationId', organizationId))
-    .order(sortOrder)
-    .paginate({ cursor, numItems });
-  if (projectedPage.page.length > 0 || cursor !== null) {
-    return projectedPage;
-  }
-
   return await projectRawAuditPage(
     await ctx.db
-      .query('auditLogs')
-      .withIndex('by_organizationId_and_createdAt', (q) => q.eq('organizationId', organizationId))
+      .query('auditLedgerEvents')
+      .withIndex('by_organizationId_and_sequence', (q) => q.eq('organizationId', organizationId))
       .order(sortOrder)
       .paginate({ cursor, numItems }),
   );
@@ -1206,7 +1164,7 @@ async function insertOrganizationAuditLog(
     metadata?: Record<string, unknown>;
   },
 ) {
-  await ctx.runMutation(internal.audit.insertAuditLog, {
+  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
     eventType: input.eventType,
     organizationId: input.organizationId,
     ...(input.userId ? { userId: input.userId } : {}),
@@ -1961,7 +1919,7 @@ export const updateOrganizationPolicies = mutation({
       });
     }
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'organization_policy_updated',
       organizationId: args.organizationId,
       userId: context.user.authUserId,
@@ -1983,7 +1941,7 @@ export const updateOrganizationPolicies = mutation({
     });
 
     if (currentPolicies.enterpriseAuthMode !== nextPolicies.enterpriseAuthMode) {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: 'enterprise_auth_mode_updated',
         organizationId: args.organizationId,
         userId: context.user.authUserId,
@@ -2094,7 +2052,7 @@ export const createOrganizationSupportAccessGrant = mutation({
       },
     ]);
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'support_access_granted',
       organizationId: args.organizationId,
       userId: context.user.authUserId,
@@ -2182,7 +2140,7 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       .unique();
     const reason = args.reason?.trim() ? args.reason.trim() : null;
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'support_access_revoked',
       organizationId: args.organizationId,
       userId: context.user.authUserId,
@@ -2482,8 +2440,18 @@ export const listOrganizationDirectory = query({
   },
   returns: v.union(organizationDirectoryResponseValidator, v.null()),
   handler: async (ctx, args) => {
+    try {
+      await requireOrganizationPermission(ctx, {
+        organizationSlug: args.slug,
+        permission: 'manageMembers',
+        sourceSurface: 'organization.directory',
+      });
+    } catch {
+      return null;
+    }
+
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-    if (!context || !context.access.view || !canManageOrganization(context.viewerRole)) {
+    if (!context) {
       return null;
     }
 
@@ -2499,15 +2467,6 @@ export const listOrganizationDirectory = query({
     const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
     const ownerCount = await countActiveOwners(ctx, memberships);
     const policies = await getOrganizationPolicies(ctx, organizationId);
-    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
-      organizationId,
-      permission: 'manageMembers',
-      user: context.user,
-      policies,
-    });
-    if (!enterpriseAccess.allowed) {
-      return null;
-    }
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
@@ -2757,14 +2716,14 @@ export const listOrganizationDomains = query({
     try {
       await requireOrganizationPermission(ctx, {
         organizationSlug: args.slug,
-        permission: 'viewOrganization',
+        permission: 'manageDomains',
         sourceSurface: 'organization.domains',
       });
     } catch {
       return null;
     }
     const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-    if (!context || !context.access.view) {
+    if (!context) {
       return null;
     }
 
@@ -2777,15 +2736,6 @@ export const listOrganizationDomains = query({
       ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
       : 0;
     const policies = await getOrganizationPolicies(ctx, organizationId);
-    const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
-      organizationId,
-      permission: 'manageDomains',
-      user: context.user,
-      policies,
-    });
-    if (!enterpriseAccess.allowed) {
-      return null;
-    }
     const capabilities = buildOrganizationCapabilities({
       ownerCount,
       policies,
@@ -3042,7 +2992,7 @@ async function recordOrganizationBulkAuditEventsMutation(
 
   await Promise.all(
     args.entries.map(async (entry) => {
-      await ctx.runMutation(internal.audit.insertAuditLog, {
+      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
         eventType: args.eventType,
         organizationId: args.organizationId,
         userId: args.actorUserId,
@@ -3171,7 +3121,7 @@ async function changeOrganizationMemberStatus(
         ? 'member_suspended'
         : 'member_deactivated';
 
-  await ctx.runMutation(internal.audit.insertAuditLog, {
+  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
     eventType,
     organizationId: args.organizationId,
     userId: context.user.authUserId,
@@ -3282,6 +3232,7 @@ const listOrganizationAuditEventsArgs = {
     v.literal('domain_removed'),
     v.literal('organization_policy_updated'),
     v.literal('enterprise_auth_mode_updated'),
+    v.literal('enterprise_break_glass_used'),
     v.literal('enterprise_login_succeeded'),
     v.literal('enterprise_scim_token_generated'),
     v.literal('enterprise_scim_token_deleted'),
@@ -3315,7 +3266,6 @@ const listOrganizationAuditEventsArgs = {
     v.literal('chat_run_completed'),
     v.literal('chat_run_failed'),
     v.literal('chat_web_search_used'),
-    v.literal('audit_integrity_check_failed'),
     v.literal('admin_step_up_challenged'),
     v.literal('step_up_challenge_required'),
     v.literal('step_up_challenge_completed'),
@@ -3348,7 +3298,7 @@ async function listOrganizationAuditEventsHandler(
     return null;
   }
   const context = await getOrganizationAccessContextBySlug(ctx, args.slug);
-  if (!context || !context.access.view) {
+  if (!context) {
     return null;
   }
 
@@ -3361,15 +3311,6 @@ async function listOrganizationAuditEventsHandler(
     ? await countActiveOwners(ctx, await listOrganizationMembers(ctx, organizationId))
     : 0;
   const policies = await getOrganizationPolicies(ctx, organizationId);
-  const enterpriseAccess = await getOrganizationEnterpriseAccessForUser(ctx, {
-    organizationId,
-    permission: 'viewAudit',
-    user: context.user,
-    policies,
-  });
-  if (!enterpriseAccess.allowed) {
-    return null;
-  }
   const capabilities = buildOrganizationCapabilities({
     ownerCount,
     policies,
@@ -3565,6 +3506,7 @@ export const exportOrganizationAuditCsv = action({
       v.literal('domain_removed'),
       v.literal('organization_policy_updated'),
       v.literal('enterprise_auth_mode_updated'),
+      v.literal('enterprise_break_glass_used'),
       v.literal('enterprise_login_succeeded'),
       v.literal('enterprise_scim_token_generated'),
       v.literal('enterprise_scim_token_deleted'),
@@ -3598,7 +3540,6 @@ export const exportOrganizationAuditCsv = action({
       v.literal('chat_run_completed'),
       v.literal('chat_run_failed'),
       v.literal('chat_web_search_used'),
-      v.literal('audit_integrity_check_failed'),
       v.literal('admin_step_up_challenged'),
       v.literal('step_up_challenge_required'),
       v.literal('step_up_challenge_completed'),
@@ -3691,9 +3632,7 @@ export const exportOrganizationAuditCsv = action({
     ].join('\n');
     const exportedAt = Date.now();
     const exportHash = await hashContent(csv);
-    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
-      limit: 250,
-    });
+    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
     const exportId = crypto.randomUUID();
     const manifest = stringifyStable({
       actorUserId: currentUser.authUserId,
@@ -3711,9 +3650,8 @@ export const exportOrganizationAuditCsv = action({
       exportedAt: new Date(exportedAt).toISOString(),
       integritySummary: {
         checkedAt: new Date(integrityCheck.checkedAt).toISOString(),
-        failureCount: integrityCheck.failures.length,
-        limit: integrityCheck.limit,
-        verified: integrityCheck.verified,
+        failureCount: integrityCheck.failure ? 1 : 0,
+        verified: integrityCheck.ok,
       },
       organizationScope: exportedOrganizationId ?? null,
       reviewStatusAtExport: 'reviewed',
@@ -3734,7 +3672,7 @@ export const exportOrganizationAuditCsv = action({
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'audit_log_exported',
       userId: currentUser.authUserId,
       actorUserId: currentUser.authUserId,
@@ -3866,9 +3804,7 @@ export const exportOrganizationDirectoryCsv = action({
     ].join('\n');
     const exportedAt = Date.now();
     const exportHash = await hashContent(csv);
-    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditIntegrityInternal, {
-      limit: 250,
-    });
+    const integrityCheck = await ctx.runAction(anyApi.audit.verifyAuditLedgerIntegrityInternal, {});
     const exportId = crypto.randomUUID();
     const manifest = stringifyStable({
       actorUserId: currentUser.authUserId,
@@ -3886,9 +3822,8 @@ export const exportOrganizationDirectoryCsv = action({
       exportedAt: new Date(exportedAt).toISOString(),
       integritySummary: {
         checkedAt: new Date(integrityCheck.checkedAt).toISOString(),
-        failureCount: integrityCheck.failures.length,
-        limit: integrityCheck.limit,
-        verified: integrityCheck.verified,
+        failureCount: integrityCheck.failure ? 1 : 0,
+        verified: integrityCheck.ok,
       },
       organizationScope: exportedOrganizationId ?? null,
       reviewStatusAtExport: 'reviewed',
@@ -3909,7 +3844,7 @@ export const exportOrganizationDirectoryCsv = action({
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 
-    await ctx.runMutation(internal.audit.insertAuditLog, {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
       eventType: 'directory_exported',
       userId: currentUser.authUserId,
       actorUserId: currentUser.authUserId,

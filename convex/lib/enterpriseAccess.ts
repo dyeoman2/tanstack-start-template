@@ -1,6 +1,16 @@
 import { v } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import {
+  canOwnerUseBreakGlassForPermission,
+  isEnterpriseDataPlanePermission,
+  requiresEnterpriseSatisfied,
+} from './organizationPermissions';
+
+export {
+  isEnterpriseDataPlanePermission,
+  requiresEnterpriseSatisfied,
+} from './organizationPermissions';
 
 export const ORGANIZATION_SUPPORT_ACCESS_SCOPE_VALUES = ['read_only', 'read_write'] as const;
 export type OrganizationSupportAccessScope =
@@ -31,24 +41,22 @@ export const organizationEnterpriseAccessStatusValidator = v.union(
   v.literal('support_grant_expired'),
 );
 
-export const ORGANIZATION_ENTERPRISE_DATA_PLANE_PERMISSIONS = [
-  'readThread',
-  'writeThread',
-  'readAttachment',
-  'deleteAttachment',
-  'issueAttachmentAccessUrl',
+export const ORGANIZATION_ENTERPRISE_SATISFACTION_PATH_VALUES = [
+  'not_required',
+  'enterprise_session',
+  'owner_break_glass',
+  'site_admin',
+  'support_grant',
 ] as const;
+export type OrganizationEnterpriseSatisfactionPath =
+  (typeof ORGANIZATION_ENTERPRISE_SATISFACTION_PATH_VALUES)[number];
 
-const ENTERPRISE_REQUIRED_PERMISSION_SET = new Set<string>([
-  'manageDomains',
-  'managePolicies',
-  'viewAudit',
-  'exportAudit',
-  ...ORGANIZATION_ENTERPRISE_DATA_PLANE_PERMISSIONS,
-]);
-
-const ENTERPRISE_DATA_PLANE_PERMISSION_SET = new Set<string>(
-  ORGANIZATION_ENTERPRISE_DATA_PLANE_PERMISSIONS,
+export const organizationEnterpriseSatisfactionPathValidator = v.union(
+  v.literal('not_required'),
+  v.literal('enterprise_session'),
+  v.literal('owner_break_glass'),
+  v.literal('site_admin'),
+  v.literal('support_grant'),
 );
 
 type OrganizationPoliciesForEnterpriseAccess = {
@@ -87,6 +95,7 @@ export type OrganizationEnterpriseAccessResult = {
   providerKey: 'google-workspace' | 'entra' | 'okta' | null;
   reason: string | null;
   requiresEnterpriseAuth: boolean;
+  satisfactionPath: OrganizationEnterpriseSatisfactionPath | null;
   status: OrganizationEnterpriseAccessStatus;
   supportGrant: OrganizationSupportAccessGrantSummary | null;
 };
@@ -106,22 +115,6 @@ function normalizeEmailDomain(email: string | undefined | null) {
 
   const [, domain = ''] = email.trim().toLowerCase().split('@');
   return domain;
-}
-
-export function requiresEnterpriseSatisfied(permission?: string | null) {
-  if (!permission) {
-    return true;
-  }
-
-  return ENTERPRISE_REQUIRED_PERMISSION_SET.has(permission);
-}
-
-export function isEnterpriseDataPlanePermission(permission?: string | null) {
-  if (!permission) {
-    return false;
-  }
-
-  return ENTERPRISE_DATA_PLANE_PERMISSION_SET.has(permission);
 }
 
 export function doesSupportGrantCoverPermission(
@@ -157,6 +150,7 @@ export function getEnterpriseAccessReason(status: OrganizationEnterpriseAccessSt
 export function buildEnterpriseAccessResult(input: {
   enterpriseAuthMode: 'off' | 'optional' | 'required';
   providerKey: 'google-workspace' | 'entra' | 'okta' | null;
+  satisfactionPath?: OrganizationEnterpriseSatisfactionPath | null;
   status: OrganizationEnterpriseAccessStatus;
   supportGrant?: OrganizationSupportAccessGrantSummary | null;
 }): OrganizationEnterpriseAccessResult {
@@ -169,6 +163,7 @@ export function buildEnterpriseAccessResult(input: {
     providerKey: input.providerKey,
     reason: getEnterpriseAccessReason(input.status),
     requiresEnterpriseAuth,
+    satisfactionPath: input.satisfactionPath ?? null,
     status: input.status,
     supportGrant: input.supportGrant ?? null,
   };
@@ -252,6 +247,7 @@ export async function resolveOrganizationEnterpriseAccess(
     return buildEnterpriseAccessResult({
       enterpriseAuthMode: input.policies.enterpriseAuthMode,
       providerKey: input.policies.enterpriseProviderKey,
+      satisfactionPath: 'not_required',
       status: 'not_required',
     });
   }
@@ -260,7 +256,8 @@ export async function resolveOrganizationEnterpriseAccess(
     return buildEnterpriseAccessResult({
       enterpriseAuthMode: input.policies.enterpriseAuthMode,
       providerKey: input.policies.enterpriseProviderKey,
-      status: 'not_required',
+      satisfactionPath: 'site_admin',
+      status: 'satisfied',
     });
   }
 
@@ -269,6 +266,7 @@ export async function resolveOrganizationEnterpriseAccess(
       return buildEnterpriseAccessResult({
         enterpriseAuthMode: input.policies.enterpriseAuthMode,
         providerKey: input.policies.enterpriseProviderKey,
+        satisfactionPath: 'site_admin',
         status: 'satisfied',
       });
     }
@@ -289,6 +287,7 @@ export async function resolveOrganizationEnterpriseAccess(
             ? 'support_grant_expired'
             : 'support_grant_required',
       supportGrant: supportGrantState.grant,
+      satisfactionPath: supportGrantState.status === 'active' ? 'support_grant' : null,
     });
   }
 
@@ -305,13 +304,14 @@ export async function resolveOrganizationEnterpriseAccess(
   }
 
   if (
-    !isEnterpriseDataPlanePermission(input.permission) &&
+    canOwnerUseBreakGlassForPermission(input.permission) &&
     input.policies.allowBreakGlassPasswordLogin &&
     input.membership?.role === 'owner'
   ) {
     return buildEnterpriseAccessResult({
       enterpriseAuthMode: input.policies.enterpriseAuthMode,
       providerKey: input.policies.enterpriseProviderKey,
+      satisfactionPath: 'owner_break_glass',
       status: 'satisfied',
     });
   }
@@ -324,6 +324,7 @@ export async function resolveOrganizationEnterpriseAccess(
   return buildEnterpriseAccessResult({
     enterpriseAuthMode: input.policies.enterpriseAuthMode,
     providerKey: input.policies.enterpriseProviderKey,
+    satisfactionPath: hasMatchingEnterpriseSession ? 'enterprise_session' : null,
     status: hasMatchingEnterpriseSession ? 'satisfied' : 'missing_enterprise_session',
   });
 }

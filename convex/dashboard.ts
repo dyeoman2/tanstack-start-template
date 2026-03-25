@@ -18,16 +18,16 @@ async function countSignupsSince(ctx: QueryCtx, since: number) {
 
     while (true) {
       const result = await ctx.db
-        .query('auditLogs')
-        .withIndex('by_eventType_and_createdAt', (q) =>
-          q.eq('eventType', 'user_signed_up').gte('createdAt', since),
+        .query('auditLedgerEvents')
+        .withIndex('by_eventType_and_sequence', (q) =>
+          q.eq('chainId', 'primary').eq('eventType', 'user_signed_up'),
         )
         .paginate({
           cursor,
           numItems: SIGNUP_COUNT_BATCH_SIZE,
         });
 
-      count += result.page.length;
+      count += result.page.filter((event) => event.recordedAt >= since).length;
 
       if (result.isDone) {
         return count;
