@@ -232,6 +232,41 @@ export function AdminSecurityReportsTab(props: {
             <h3 className="text-sm font-medium">Recent Readiness Signals</h3>
             <div className="space-y-2">
               <div className="rounded-md border p-3 text-sm">
+                <p className="font-medium">Ledger verification</p>
+                {props.auditReadiness?.currentHead ? (
+                  <div className="mt-2 space-y-1 text-muted-foreground">
+                    <p>
+                      Head #{props.auditReadiness.currentHead.headSequence} ·{' '}
+                      {props.auditReadiness.latestCheckpoint?.status ?? 'unverified'}
+                    </p>
+                    <p>Unverified tail: {props.auditReadiness.unverifiedTailCount}</p>
+                    <p>
+                      Latest checkpoint:{' '}
+                      {props.auditReadiness.latestCheckpoint
+                        ? new Date(props.auditReadiness.latestCheckpoint.checkedAt).toLocaleString()
+                        : 'none'}
+                    </p>
+                    <p>
+                      Last seal:{' '}
+                      {props.auditReadiness.lastSealAt
+                        ? new Date(props.auditReadiness.lastSealAt).toLocaleString()
+                        : 'none'}
+                    </p>
+                    {props.auditReadiness.lastIntegrityFailure ? (
+                      <p>
+                        Last failure: #{props.auditReadiness.lastIntegrityFailure.expectedSequence}{' '}
+                        ·{' '}
+                        {new Date(
+                          props.auditReadiness.lastIntegrityFailure.checkedAt,
+                        ).toLocaleString()}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="mt-2 text-muted-foreground">No audit ledger head recorded.</p>
+                )}
+              </div>
+              <div className="rounded-md border p-3 text-sm">
                 <p className="font-medium">Metadata gaps</p>
                 {props.auditReadiness?.metadataGaps?.length ? (
                   <div className="mt-2 space-y-1 text-muted-foreground">

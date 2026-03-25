@@ -1,7 +1,7 @@
 import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { getAuditServerWriteSecret, getFileStorageBackendMode } from '~/lib/server/env.server';
+import { getFileStorageBackendMode } from '~/lib/server/env.server';
 import { inspectFile } from '~/lib/server/file-inspection.server';
 import { logSecurityEvent } from '~/lib/server/observability.server';
 import { parsePdfBlob } from '~/lib/server/pdf-parse.server';
@@ -12,7 +12,7 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Failed to parse PDF';
 }
 
-async function recordTrustedAuditEvent(input: {
+async function recordDirectPdfParseAuditEvent(input: {
   eventType: 'pdf_parse_requested' | 'pdf_parse_succeeded' | 'pdf_parse_failed';
   metadata?: string;
   organizationId?: string;
@@ -24,8 +24,7 @@ async function recordTrustedAuditEvent(input: {
   resourceType?: string;
   sourceSurface?: string;
 }) {
-  await convexAuthReactStart.fetchAuthAction(api.audit.recordAuditEventFromServer, {
-    serverWriteSecret: getAuditServerWriteSecret(),
+  await convexAuthReactStart.fetchAuthAction(api.pdfParseActions.recordDirectPdfParseAuditEvent, {
     eventType: input.eventType,
     metadata: input.metadata,
     organizationId: input.organizationId,
@@ -120,20 +119,6 @@ export const Route = createFileRoute('/api/parse-pdf')({
               return Response.json({ error: 'storageId is required' }, { status: 400 });
             }
 
-            await recordTrustedAuditEvent({
-              eventType: 'pdf_parse_requested',
-              metadata: JSON.stringify({
-                storageId,
-              }),
-              organizationId,
-              outcome: 'success',
-              requestId,
-              resourceId: storageId,
-              resourceType: 'pdf_file',
-              severity: 'info',
-              sourceSurface: 'api.parse_pdf',
-            });
-
             const queued = await convexAuthReactStart.fetchAuthAction(
               api.pdfParseActions.enqueuePdfParseJob,
               {
@@ -152,7 +137,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           }
 
           const file = fileValue;
-          await recordTrustedAuditEvent({
+          await recordDirectPdfParseAuditEvent({
             eventType: 'pdf_parse_requested',
             metadata: JSON.stringify({
               mimeType: file.type,
@@ -225,7 +210,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
 
           const parsed = await parsePdfBlob(blob);
 
-          await recordTrustedAuditEvent({
+          await recordDirectPdfParseAuditEvent({
             eventType: 'pdf_parse_succeeded',
             metadata: JSON.stringify({
               imageCount: parsed.images.length,
@@ -249,8 +234,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
           });
         } catch (error) {
           await convexAuthReactStart
-            .fetchAuthAction(api.audit.recordAuditEventFromServer, {
-              serverWriteSecret: getAuditServerWriteSecret(),
+            .fetchAuthAction(api.pdfParseActions.recordDirectPdfParseAuditEvent, {
               eventType: 'pdf_parse_failed',
               metadata: JSON.stringify({
                 error: getErrorMessage(error),

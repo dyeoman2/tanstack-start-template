@@ -1,6 +1,7 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anyApi } from 'convex/server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
+import { internal } from './_generated/api';
 
 vi.mock('./auth/access', () => ({
   getVerifiedCurrentSiteAdminUserFromActionOrThrow: vi.fn(),
@@ -34,6 +35,7 @@ let securityPostureModuleRef: typeof import('./securityPosture');
 let securityReportsModuleRef: typeof import('./securityReports');
 let securityReviewsModuleRef: typeof import('./securityReviews');
 let securityOpsModuleRef: typeof import('./securityOps');
+let auditModuleRef: typeof import('./audit');
 let renewSecurityControlEvidenceHandler: typeof import('./lib/security/workspace').renewSecurityControlEvidenceHandler;
 let recordBackupVerificationHandler: typeof import('./lib/security/operations_core').recordBackupVerificationHandler;
 let reviewSecurityFindingHandler: typeof import('./lib/security/workspace').reviewSecurityFindingHandler;
@@ -382,6 +384,7 @@ beforeAll(async () => {
     opsHelperModule,
     coreModule,
     reviewRunsReadModelsModule,
+    auditModule,
   ] = await Promise.all([
     import('./securityWorkspace'),
     import('./securityPosture'),
@@ -394,6 +397,7 @@ beforeAll(async () => {
     import('./lib/security/operations_core'),
     import('./lib/security/core'),
     import('./lib/security/review_runs_read_models'),
+    import('./audit'),
   ]);
   securityWorkspaceModuleRef = workspaceModule;
   securityPostureModuleRef = postureModule;
@@ -418,6 +422,7 @@ beforeAll(async () => {
   reviewSecurityFindingHandler = workspaceHelperModule.reviewSecurityFindingHandler;
   summarizeIntegrityCheckFn = coreModule.summarizeIntegrityCheck;
   buildEvidenceReportDetailFn = reviewRunsReadModelsModule.buildEvidenceReportDetail;
+  auditModuleRef = auditModule;
 });
 
 beforeEach(() => {
@@ -694,7 +699,7 @@ describe('audit evidence helpers', () => {
     vi.useRealTimers();
   });
 
-  it('surfaces metadata gaps and stale drill state in the readiness snapshot', async () => {
+  it('surfaces metadata gaps and ledger health in the readiness snapshot', async () => {
     const backupReports = [
       {
         artifactHash: 'artifact-hash',
@@ -722,7 +727,7 @@ describe('audit evidence helpers', () => {
     ];
     const auditLedgerEvents = [
       {
-        createdAt: Date.parse('2026-03-18T02:00:00.000Z'),
+        recordedAt: Date.parse('2026-03-18T02:00:00.000Z'),
         eventType: 'organization_policy_updated',
         id: 'gap-1',
         outcome: 'success',
@@ -732,7 +737,7 @@ describe('audit evidence helpers', () => {
         sourceSurface: null,
       },
       {
-        createdAt: Date.parse('2026-03-18T03:00:00.000Z'),
+        recordedAt: Date.parse('2026-03-18T03:00:00.000Z'),
         eventType: 'authorization_denied',
         id: 'denial-1',
         metadata: '{"permission":"viewAudit","reason":"forbidden"}',
@@ -752,27 +757,135 @@ describe('audit evidence helpers', () => {
         sourceReportId: null,
       },
     ];
-    const queryMap = {
-      backupVerificationReports: backupReports,
-      retentionJobs,
-      auditLedgerEvents,
-      exportArtifacts,
-    } as const;
+    const auditLedgerState: Array<Record<string, unknown>> = [
+      {
+        chainId: 'primary',
+        headSequence: 18,
+        headEventHash: 'head-hash-1',
+        updatedAt: Date.parse('2026-03-18T04:30:00.000Z'),
+      },
+    ];
+    const auditLedgerCheckpoints: Array<Record<string, unknown>> = [
+      {
+        _id: 'checkpoint-ok-1',
+        chainId: 'primary',
+        startSequence: 1,
+        endSequence: 16,
+        headHash: 'head-hash-0',
+        status: 'ok',
+        checkedAt: Date.parse('2026-03-18T04:10:00.000Z'),
+        verifiedEventCount: 16,
+      },
+      {
+        _id: 'checkpoint-failed-1',
+        chainId: 'primary',
+        startSequence: 17,
+        endSequence: 17,
+        headHash: 'head-hash-bad',
+        status: 'failed',
+        checkedAt: Date.parse('2026-03-18T04:20:00.000Z'),
+        verifiedEventCount: 0,
+        failure: {
+          actualEventHash: 'bad-hash',
+          actualPreviousEventHash: 'head-hash-0',
+          eventId: 'evt-17',
+          expectedPreviousEventHash: 'head-hash-0',
+          expectedSequence: 17,
+          recomputedEventHash: 'recomputed-hash',
+        },
+      },
+    ];
+    const auditLedgerSeals: Array<Record<string, unknown>> = [
+      {
+        _id: 'seal-1',
+        chainId: 'primary',
+        startSequence: 1,
+        endSequence: 16,
+        eventCount: 16,
+        headHash: 'head-hash-0',
+        sealedAt: Date.parse('2026-03-18T04:10:00.000Z'),
+      },
+    ];
     const ctx = {
       db: {
-        query: (table: keyof typeof queryMap) => ({
-          withIndex: () => ({
-            order: () => ({
-              first: async () => structuredClone(queryMap[table][0] ?? null),
-              take: async (count: number) => structuredClone(queryMap[table].slice(0, count)),
-            }),
-          }),
+        query: (table: string) => ({
+          withIndex: (
+            _index: string,
+            buildRange?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+          ) => {
+            const filters: Array<[string, unknown]> = [];
+            const q = {
+              eq(field: string, value: unknown) {
+                filters.push([field, value]);
+                return q;
+              },
+            };
+            buildRange?.(q);
+
+            let rows: Array<Record<string, unknown>>;
+            if (table === 'backupVerificationReports') {
+              rows = backupReports;
+            } else if (table === 'retentionJobs') {
+              rows = retentionJobs;
+            } else if (table === 'auditLedgerEvents') {
+              rows = auditLedgerEvents;
+            } else if (table === 'exportArtifacts') {
+              rows = exportArtifacts;
+            } else if (table === 'auditLedgerState') {
+              rows = auditLedgerState.filter((row) =>
+                filters.every(([field, value]) => row[field] === value),
+              );
+            } else if (table === 'auditLedgerCheckpoints') {
+              rows = auditLedgerCheckpoints.filter((row) =>
+                filters.every(([field, value]) => row[field] === value),
+              );
+            } else if (table === 'auditLedgerSeals') {
+              rows = auditLedgerSeals.filter((row) =>
+                filters.every(([field, value]) => row[field] === value),
+              );
+            } else {
+              throw new Error(`Unexpected query table: ${table}`);
+            }
+
+            return {
+              async collect() {
+                return structuredClone(rows);
+              },
+              order(direction: 'asc' | 'desc' = 'asc') {
+                const ordered = direction === 'desc' ? [...rows].reverse() : [...rows];
+                return {
+                  first: async () => structuredClone(ordered[0] ?? null),
+                  take: async (count: number) => structuredClone(ordered.slice(0, count)),
+                };
+              },
+              first: async () => structuredClone(rows[0] ?? null),
+            };
+          },
         }),
       },
     };
 
     const snapshot = await getAuditReadinessSnapshotHandler(ctx as never);
 
+    expect(snapshot.currentHead).toMatchObject({
+      headHash: 'head-hash-1',
+      headSequence: 18,
+    });
+    expect(snapshot.latestCheckpoint).toMatchObject({
+      checkedAt: Date.parse('2026-03-18T04:20:00.000Z'),
+      status: 'failed',
+    });
+    expect(snapshot.latestVerifiedCheckpoint).toMatchObject({
+      checkedAt: Date.parse('2026-03-18T04:10:00.000Z'),
+      endSequence: 16,
+    });
+    expect(snapshot.lastIntegrityFailure).toMatchObject({
+      eventId: 'evt-17',
+      expectedSequence: 17,
+    });
+    expect(snapshot.lastSealAt).toBe(Date.parse('2026-03-18T04:10:00.000Z'));
+    expect(snapshot.sealCount).toBe(1);
+    expect(snapshot.unverifiedTailCount).toBe(2);
     expect(snapshot.metadataGaps).toHaveLength(1);
     expect(snapshot.metadataGaps[0]).toMatchObject({
       eventType: 'organization_policy_updated',
@@ -787,6 +900,147 @@ describe('audit evidence helpers', () => {
       drillId: 'drill-1',
       status: 'success',
     });
+  });
+
+  it('creates an ok checkpoint and seal for a verified incremental segment', async () => {
+    const eventHashPayload = JSON.stringify({
+      chainId: 'primary',
+      id: 'event-3',
+      sequence: 3,
+      eventType: 'pdf_parse_requested',
+      recordedAt: 3,
+      userId: null,
+      actorUserId: 'user-1',
+      targetUserId: null,
+      organizationId: null,
+      identifier: null,
+      sessionId: null,
+      requestId: null,
+      outcome: null,
+      severity: null,
+      resourceType: null,
+      resourceId: null,
+      resourceLabel: null,
+      sourceSurface: null,
+      metadata: null,
+      ipAddress: null,
+      userAgent: null,
+      previousEventHash: 'hash-2',
+    });
+    const eventHashBuffer = await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(eventHashPayload),
+    );
+    const eventHash = Array.from(new Uint8Array(eventHashBuffer), (value) =>
+      value.toString(16).padStart(2, '0'),
+    ).join('');
+
+    let queryStep = 0;
+    const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
+      queryStep += 1;
+
+      if (queryStep === 1) {
+        return {
+          chainId: 'primary',
+          chainVersion: 1,
+          headSequence: 3,
+          headEventHash: eventHash,
+          startedAt: 1,
+          updatedAt: 3,
+        };
+      }
+
+      if (queryStep === 2) {
+        return {
+          _id: 'checkpoint-ok-1',
+          chainId: 'primary',
+          startSequence: 1,
+          endSequence: 2,
+          headHash: 'hash-2',
+          status: 'ok',
+          checkedAt: 2,
+          verifiedEventCount: 2,
+        };
+      }
+
+      if (queryStep === 3) {
+        return {
+          _id: 'checkpoint-ok-1',
+          chainId: 'primary',
+          startSequence: 1,
+          endSequence: 2,
+          headHash: 'hash-2',
+          status: 'ok',
+          checkedAt: 2,
+          verifiedEventCount: 2,
+        };
+      }
+
+      if (queryStep === 4) {
+        expect(args).toMatchObject({
+          endSequence: 3,
+          startSequence: 3,
+        });
+        return {
+          continueCursor: '',
+          isDone: true,
+          page: [
+            {
+              actorUserId: 'user-1',
+              chainId: 'primary',
+              eventHash,
+              eventType: 'pdf_parse_requested',
+              id: 'event-3',
+              previousEventHash: 'hash-2',
+              recordedAt: 3,
+              sequence: 3,
+            },
+          ],
+        };
+      }
+
+      throw new Error(`Unexpected runQuery call at step ${queryStep}`);
+    });
+    const runMutation = vi.fn(async () => null);
+
+    const verifyIntegrityHandler = (auditModuleRef.verifyAuditLedgerIntegrityInternal as any)
+      ._handler as (
+      ctx: unknown,
+      args: Record<string, never>,
+    ) => Promise<{ ok: boolean; verifiedEventCount: number }>;
+
+    const result = await verifyIntegrityHandler(
+      {
+        runMutation,
+        runQuery,
+      } as never,
+      {},
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.verifiedEventCount).toBe(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        chainId: 'primary',
+        endSequence: 3,
+        headHash: eventHash,
+        startSequence: 3,
+        status: 'ok',
+        verifiedEventCount: 1,
+        verifiedHeadHash: eventHash,
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        chainId: 'primary',
+        endSequence: 3,
+        eventCount: 1,
+        headHash: eventHash,
+        startSequence: 3,
+      }),
+    );
   });
 
   it('reads security posture from the precomputed metrics snapshot', async () => {
@@ -1023,13 +1277,35 @@ describe('audit evidence helpers', () => {
             }
 
             if (table === 'auditLedgerCheckpoints') {
+              const statusFilter = filters.find(([field]) => field === 'status')?.[1];
               return {
-                collect: async () => [{ _id: 'audit-failure-1' }],
+                collect: async () =>
+                  statusFilter === 'failed'
+                    ? [{ _id: 'audit-failure-1' }]
+                    : [{ _id: 'audit-ok-1' }],
                 order: () => ({
-                  first: async () => ({
-                    _id: 'audit-failure-1',
-                    checkedAt: 95,
-                  }),
+                  first: async () =>
+                    statusFilter === 'failed'
+                      ? {
+                          _id: 'audit-failure-1',
+                          checkedAt: 95,
+                          endSequence: 4,
+                        }
+                      : {
+                          _id: 'audit-ok-1',
+                          checkedAt: 94,
+                          endSequence: 5,
+                        },
+                }),
+              };
+            }
+
+            if (table === 'auditLedgerState') {
+              return {
+                first: async () => ({
+                  chainId: 'primary',
+                  headSequence: 5,
+                  updatedAt: 95,
                 }),
               };
             }
@@ -1222,6 +1498,16 @@ describe('audit evidence helpers', () => {
               return {
                 collect: async () => [],
                 order: () => ({ first: async () => null }),
+              };
+            }
+
+            if (table === 'auditLedgerState') {
+              return {
+                first: async () => ({
+                  chainId: 'primary',
+                  headSequence: 0,
+                  updatedAt: 95,
+                }),
               };
             }
 

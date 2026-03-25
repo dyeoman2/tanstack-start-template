@@ -214,6 +214,11 @@ function buildSummary() {
 
 function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
   return {
+    currentHead: {
+      headHash: 'head-hash-1',
+      headSequence: 18,
+      updatedAt: Date.parse('2026-03-18T09:30:00.000Z'),
+    },
     latestBackupDrill: {
       artifactHash: 'artifact-hash-1',
       checkedAt: Date.parse('2026-03-17T08:00:00.000Z'),
@@ -228,6 +233,14 @@ function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
       targetEnvironment: 'test',
       verificationMethod: 'checksum-compare',
     },
+    latestCheckpoint: {
+      checkedAt: Date.parse('2026-03-18T09:20:00.000Z'),
+      endSequence: 18,
+      headHash: 'head-hash-1',
+      startSequence: 1,
+      status: 'ok',
+      verifiedEventCount: 18,
+    },
     latestRetentionJob: {
       createdAt: Date.parse('2026-03-18T08:00:00.000Z'),
       details: 'ok',
@@ -235,6 +248,15 @@ function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
       processedCount: 2,
       status: 'success',
     },
+    latestVerifiedCheckpoint: {
+      checkedAt: Date.parse('2026-03-18T09:20:00.000Z'),
+      endSequence: 18,
+      headHash: 'head-hash-1',
+      startSequence: 1,
+      verifiedEventCount: 18,
+    },
+    lastIntegrityFailure: null,
+    lastSealAt: Date.parse('2026-03-18T09:20:00.000Z'),
     metadataGaps: [],
     recentDeniedActions: [],
     recentExports: [
@@ -245,6 +267,8 @@ function buildAuditReadiness(overrides?: Partial<Record<string, unknown>>) {
         sourceReportId: 'report-1',
       },
     ],
+    sealCount: 1,
+    unverifiedTailCount: 0,
     ...overrides,
   };
 }
@@ -1222,6 +1246,7 @@ describe('Admin security route', () => {
     expect(screen.getByText('Audit Readiness Signals')).toBeInTheDocument();
     expect(screen.getByText('Recent Export Artifacts')).toBeInTheDocument();
     expect(screen.getAllByText(/manifest-hash-1/).length).toBeGreaterThan(0);
+    expect(screen.getByText('Ledger verification')).toBeInTheDocument();
     expect(screen.getByText('Metadata gaps')).toBeInTheDocument();
     expect(screen.getByText('Authorization denials')).toBeInTheDocument();
   });

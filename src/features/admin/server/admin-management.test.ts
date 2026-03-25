@@ -27,11 +27,9 @@ vi.mock('@convex/_generated/api', () => ({
   api: {
     admin: {
       deleteUserIndexEntry: 'deleteUserIndexEntry',
+      recordAdminUserSessionsViewed: 'recordAdminUserSessionsViewed',
       setUserOnboardingStatus: 'setUserOnboardingStatus',
       syncUserIndexEntry: 'syncUserIndexEntry',
-    },
-    audit: {
-      recordAuditEventFromServer: 'recordAuditEventFromServer',
     },
   },
 }));
@@ -46,10 +44,6 @@ vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
     fetchAuthMutation: fetchAuthMutationMock,
     fetchAuthQuery: vi.fn(),
   },
-}));
-
-vi.mock('~/lib/server/env.server', () => ({
-  getAuditServerWriteSecret: vi.fn(() => 'test-audit-server-write-secret'),
 }));
 
 vi.mock('~/lib/server/error-utils.server', () => ({
@@ -93,7 +87,7 @@ describe('listAdminUserSessionsServerFn', () => {
     vi.clearAllMocks();
   });
 
-  it('records the audit event through the trusted server audit action', async () => {
+  it('records the audit event through the dedicated admin audit action', async () => {
     requireAdminMock.mockResolvedValue({
       user: {
         id: 'admin_1',
@@ -121,18 +115,9 @@ describe('listAdminUserSessionsServerFn', () => {
     });
 
     expect(listBetterAuthUserSessionsMock).toHaveBeenCalledWith('user_1', expect.any(Function));
-    expect(fetchAuthActionMock).toHaveBeenCalledWith('recordAuditEventFromServer', {
-      serverWriteSecret: 'test-audit-server-write-secret',
-      eventType: 'admin_user_sessions_viewed',
-      metadata: JSON.stringify({
-        targetUserId: 'user_1',
-        sessionCount: 1,
-      }),
-      outcome: 'success',
-      resourceId: 'user_1',
-      resourceType: 'user_session',
-      severity: 'info',
-      sourceSurface: 'admin.user_sessions',
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('recordAdminUserSessionsViewed', {
+      sessionCount: 1,
+      targetUserId: 'user_1',
     });
     expect(result).toEqual([
       {

@@ -427,7 +427,18 @@ async function buildCurrentSecurityFindings(
 ): Promise<SecurityFindingSnapshot[]> {
   const metrics = await _getSecurityMetricsSnapshot(ctx);
   const referenceTime = Date.now();
-  const [integrityFailures, latestIntegrityFailure, releaseEvidenceRows] = await Promise.all([
+  const auditVerificationLagThresholdMs = 2 * 60 * 60 * 1000;
+  const [
+    auditLedgerState,
+    integrityFailures,
+    latestIntegrityFailure,
+    latestSuccessfulCheckpoint,
+    releaseEvidenceRows,
+  ] = await Promise.all([
+    ctx.db
+      .query('auditLedgerState')
+      .withIndex('by_chain_id', (q) => q.eq('chainId', 'primary'))
+      .first(),
     countQueryResults(
       ctx.db
         .query('auditLedgerCheckpoints')
@@ -443,6 +454,13 @@ async function buildCurrentSecurityFindings(
       .order('desc')
       .first(),
     ctx.db
+      .query('auditLedgerCheckpoints')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('status', 'ok'),
+      )
+      .order('desc')
+      .first(),
+    ctx.db
       .query('securityControlEvidence')
       .withIndex('by_internal_control_id_and_item_id', (q) =>
         q
@@ -451,23 +469,43 @@ async function buildCurrentSecurityFindings(
       )
       .collect(),
   ]);
+  const headSequence = auditLedgerState?.headSequence ?? 0;
+  const latestVerifiedSequence = latestSuccessfulCheckpoint?.endSequence ?? 0;
+  const unverifiedTailCount = Math.max(0, headSequence - latestVerifiedSequence);
+  const verificationLagMs =
+    latestSuccessfulCheckpoint === null
+      ? Number.POSITIVE_INFINITY
+      : referenceTime - latestSuccessfulCheckpoint.checkedAt;
+  const hasVerificationLag =
+    headSequence > 0 &&
+    (latestSuccessfulCheckpoint === null ||
+      (unverifiedTailCount > 0 && verificationLagMs > auditVerificationLagThresholdMs));
+  const auditIntegrityDescription =
+    integrityFailures > 0
+      ? `${integrityFailures} audit integrity failure signal${integrityFailures === 1 ? '' : 's'} recorded in the current audit log review set.${hasVerificationLag ? ` ${unverifiedTailCount} ledger event${unverifiedTailCount === 1 ? '' : 's'} also remain beyond the verification lag threshold.` : ''}`
+      : hasVerificationLag
+        ? `${unverifiedTailCount} audit ledger event${unverifiedTailCount === 1 ? '' : 's'} remain outside the verification lag window, so the current head is not fully checkpointed.`
+        : 'No audit integrity failures are present in the current review set.';
+  const auditIntegrityObservedAt =
+    latestIntegrityFailure?.checkedAt ??
+    latestSuccessfulCheckpoint?.checkedAt ??
+    auditLedgerState?.updatedAt ??
+    referenceTime;
 
   const findings: SecurityFindingSnapshot[] = [
     {
       findingKey: 'audit_integrity_failures',
       findingType: 'audit_integrity_failures',
       title: 'Audit integrity monitoring',
-      description:
-        integrityFailures > 0
-          ? `${integrityFailures} audit integrity failure signal${integrityFailures === 1 ? '' : 's'} recorded in the current audit log review set.`
-          : 'No audit integrity failures are present in the current review set.',
-      severity: integrityFailures > 0 ? 'critical' : 'info',
-      status: integrityFailures > 0 ? 'open' : 'resolved',
+      description: auditIntegrityDescription,
+      severity: integrityFailures > 0 ? 'critical' : hasVerificationLag ? 'warning' : 'info',
+      status: integrityFailures > 0 || hasVerificationLag ? 'open' : 'resolved',
       sourceType: 'audit_log',
       sourceLabel: 'Audit ledger integrity verification',
-      sourceRecordId: latestIntegrityFailure?._id ?? null,
-      firstObservedAt: latestIntegrityFailure?.checkedAt ?? referenceTime,
-      lastObservedAt: latestIntegrityFailure?.checkedAt ?? referenceTime,
+      sourceRecordId: latestIntegrityFailure?._id ?? latestSuccessfulCheckpoint?._id ?? null,
+      firstObservedAt: auditIntegrityObservedAt,
+      lastObservedAt:
+        integrityFailures > 0 || hasVerificationLag ? referenceTime : auditIntegrityObservedAt,
     },
     {
       findingKey: 'document_scan_quarantines',

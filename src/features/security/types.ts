@@ -277,6 +277,11 @@ export type SecurityControlWorkspaceSummary = Omit<
 } & SecurityScope;
 
 export type AuditReadinessOverview = {
+  currentHead: {
+    headHash: string | null;
+    headSequence: number;
+    updatedAt: number;
+  } | null;
   latestBackupDrill: {
     artifactHash: string | null;
     checkedAt: number;
@@ -291,6 +296,14 @@ export type AuditReadinessOverview = {
     targetEnvironment: 'development' | 'production' | 'test';
     verificationMethod: string;
   } | null;
+  latestCheckpoint: {
+    checkedAt: number;
+    endSequence: number;
+    headHash: string | null;
+    startSequence: number;
+    status: 'failed' | 'ok';
+    verifiedEventCount: number;
+  } | null;
   latestRetentionJob: {
     createdAt: number;
     details?: string;
@@ -298,6 +311,19 @@ export type AuditReadinessOverview = {
     processedCount: number;
     status: 'failure' | 'success';
   } | null;
+  latestVerifiedCheckpoint: {
+    checkedAt: number;
+    endSequence: number;
+    headHash: string | null;
+    startSequence: number;
+    verifiedEventCount: number;
+  } | null;
+  lastIntegrityFailure: {
+    checkedAt: number;
+    eventId: string;
+    expectedSequence: number;
+  } | null;
+  lastSealAt: number | null;
   metadataGaps: Array<{
     createdAt: number;
     eventType: string;
@@ -317,6 +343,8 @@ export type AuditReadinessOverview = {
     manifestHash: string;
     sourceReportId: Id<'evidenceReports'> | null;
   }>;
+  sealCount: number;
+  unverifiedTailCount: number;
 };
 
 export type EvidenceReportListItem = {

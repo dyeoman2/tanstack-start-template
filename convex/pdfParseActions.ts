@@ -283,6 +283,22 @@ export const enqueuePdfParseJob = action({
       updatedAt: Date.now(),
     });
 
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      actorUserId: user.authUserId,
+      eventType: 'pdf_parse_requested',
+      metadata: JSON.stringify({
+        storageId: args.storageId,
+      }),
+      organizationId: lifecycle.organizationId ?? user.activeOrganizationId ?? 'unknown',
+      outcome: 'success',
+      resourceId: args.storageId,
+      resourceLabel: lifecycle.originalFileName,
+      resourceType: 'pdf_file',
+      severity: 'info',
+      sourceSurface: 'api.parse_pdf',
+      userId: user.authUserId,
+    });
+
     if (readiness.readable) {
       await ctx.scheduler.runAfter(0, internal.pdfParseActions.processPendingPdfParseJobInternal, {
         storageId: args.storageId,
@@ -297,6 +313,46 @@ export const enqueuePdfParseJob = action({
       status: 'blocked_pending_scan' as const,
       storageId: args.storageId,
     };
+  },
+});
+
+export const recordDirectPdfParseAuditEvent = action({
+  args: {
+    eventType: v.union(
+      v.literal('pdf_parse_requested'),
+      v.literal('pdf_parse_succeeded'),
+      v.literal('pdf_parse_failed'),
+    ),
+    metadata: v.optional(v.string()),
+    organizationId: v.optional(v.string()),
+    outcome: v.optional(v.union(v.literal('success'), v.literal('failure'))),
+    requestId: v.optional(v.string()),
+    resourceId: v.optional(v.string()),
+    resourceLabel: v.optional(v.string()),
+    resourceType: v.optional(v.string()),
+    severity: v.optional(v.union(v.literal('info'), v.literal('warning'), v.literal('critical'))),
+    sourceSurface: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      actorUserId: user.authUserId,
+      eventType: args.eventType,
+      metadata: args.metadata,
+      organizationId: args.organizationId ?? user.activeOrganizationId ?? undefined,
+      outcome: args.outcome,
+      requestId: args.requestId,
+      resourceId: args.resourceId,
+      resourceLabel: args.resourceLabel,
+      resourceType: args.resourceType,
+      severity: args.severity,
+      sourceSurface: args.sourceSurface,
+      userId: user.authUserId,
+    });
+
+    return null;
   },
 });
 

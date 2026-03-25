@@ -746,6 +746,32 @@ export const ensureUserIndex = siteAdminAction({
   },
 });
 
+export const recordAdminUserSessionsViewed = siteAdminAction({
+  args: {
+    sessionCount: v.number(),
+    targetUserId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      actorUserId: ctx.user.authUserId,
+      eventType: 'admin_user_sessions_viewed',
+      metadata: JSON.stringify({
+        sessionCount: args.sessionCount,
+        targetUserId: args.targetUserId,
+      }),
+      outcome: 'success',
+      resourceId: args.targetUserId,
+      resourceType: 'user_session',
+      severity: 'info',
+      sourceSurface: 'admin.user_sessions',
+      userId: ctx.user.authUserId,
+    });
+
+    return null;
+  },
+});
+
 export const getUserIndexSyncStateInternal = internalQuery({
   args: {},
   returns: v.union(userProfileSyncStateDocValidator, v.null()),

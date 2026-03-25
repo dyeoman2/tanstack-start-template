@@ -29,15 +29,16 @@ import {
   auditLedgerExportValidator,
   auditLedgerIntegrityResultValidator,
   auditLedgerCheckpointDocValidator,
+  auditLedgerSealDocValidator,
 } from './lib/returnValidators';
 
 type AuditLedgerEventDoc = Doc<'auditLedgerEvents'>;
+type AuditLedgerCheckpointDoc = Doc<'auditLedgerCheckpoints'>;
 const AUDIT_FETCH_BATCH_SIZE = 128;
 const SECURITY_EXPORT_BATCH_SIZE = 100;
 const AUDIT_LEDGER_CHAIN_ID = 'primary';
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
-const TEST_AUDIT_SERVER_WRITE_SECRET = 'test-audit-server-write-secret';
 type AuditLedgerStateSnapshot = {
   chainId: string;
   chainVersion: number;
@@ -600,19 +601,6 @@ function buildAuditHashPayload(input: {
   });
 }
 
-function getRequiredAuditServerWriteSecret() {
-  const configured = process.env.AUDIT_SERVER_WRITE_SECRET?.trim();
-  if (configured) {
-    return configured;
-  }
-
-  if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true') {
-    return TEST_AUDIT_SERVER_WRITE_SECRET;
-  }
-
-  throw new Error('AUDIT_SERVER_WRITE_SECRET environment variable is required');
-}
-
 async function getAuditLedgerState(ctx: QueryCtx | MutationCtx) {
   return (
     (await ctx.db
@@ -777,9 +765,13 @@ async function appendAuditLedgerEvent(
   }
 
   const state = await ensureAuditLedgerState(ctx);
+  // The state head is the single ordering source for the next append.
   const sequence = state.headSequence + 1;
   const recordedAt = Date.now();
   const previousEventHash = state.headEventHash;
+  if (sequence <= state.headSequence) {
+    throw new Error('Audit ledger sequence must advance monotonically');
+  }
   const record = {
     chainId: AUDIT_LEDGER_CHAIN_ID,
     id: crypto.randomUUID(),
@@ -858,42 +850,6 @@ export const appendAuditLedgerEventInternal = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => await appendAuditLedgerEvent(ctx, args),
-});
-
-export const recordAuditEventFromServer = action({
-  args: {
-    serverWriteSecret: v.string(),
-    ...appendAuditLedgerEventArgs,
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await getVerifiedCurrentUserFromActionOrThrow(ctx);
-    if (args.serverWriteSecret !== getRequiredAuditServerWriteSecret()) {
-      throwConvexError('FORBIDDEN', 'Invalid audit server write secret');
-    }
-
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: args.eventType,
-      userId: args.userId,
-      actorUserId: args.actorUserId,
-      targetUserId: args.targetUserId,
-      organizationId: args.organizationId,
-      identifier: args.identifier,
-      sessionId: args.sessionId,
-      requestId: args.requestId,
-      outcome: args.outcome,
-      severity: args.severity,
-      resourceType: args.resourceType,
-      resourceId: args.resourceId,
-      resourceLabel: args.resourceLabel,
-      sourceSurface: args.sourceSurface,
-      metadata: args.metadata,
-      ipAddress: args.ipAddress,
-      userAgent: args.userAgent,
-    });
-
-    return null;
-  },
 });
 
 export const getAuditLedgerStateInternal = internalQuery({
@@ -1132,6 +1088,20 @@ export const exportAuditLedgerJsonl = action({
   },
 });
 
+export const getLatestAuditLedgerCheckpointInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerCheckpointDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
 export const getLatestSuccessfulAuditLedgerCheckpointInternal = internalQuery({
   args: {},
   returns: v.union(auditLedgerCheckpointDocValidator, v.null()),
@@ -1148,9 +1118,40 @@ export const getLatestSuccessfulAuditLedgerCheckpointInternal = internalQuery({
   },
 });
 
+export const getLatestFailedAuditLedgerCheckpointInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerCheckpointDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+          q.eq('chainId', AUDIT_LEDGER_CHAIN_ID).eq('status', 'failed'),
+        )
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
+export const getLatestAuditLedgerSealInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerSealDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerSeals')
+        .withIndex('by_chain_id_and_sealed_at', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
 export const listAuditLedgerEventsForVerificationInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
+    endSequence: v.number(),
     startSequence: v.number(),
     numItems: v.optional(v.number()),
   },
@@ -1163,7 +1164,10 @@ export const listAuditLedgerEventsForVerificationInternal = internalQuery({
     const result = await ctx.db
       .query('auditLedgerEvents')
       .withIndex('by_sequence', (q) =>
-        q.eq('chainId', AUDIT_LEDGER_CHAIN_ID).gte('sequence', args.startSequence),
+        q
+          .eq('chainId', AUDIT_LEDGER_CHAIN_ID)
+          .gte('sequence', args.startSequence)
+          .lte('sequence', args.endSequence),
       )
       .order('asc')
       .paginate({
@@ -1188,6 +1192,7 @@ export const createAuditLedgerCheckpointInternal = internalMutation({
     status: v.union(v.literal('ok'), v.literal('failed')),
     checkedAt: v.number(),
     verifiedEventCount: v.number(),
+    verifiedHeadHash: v.optional(v.union(v.string(), v.null())),
     failure: v.optional(
       v.object({
         actualEventHash: v.union(v.string(), v.null()),
@@ -1201,7 +1206,67 @@ export const createAuditLedgerCheckpointInternal = internalMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.db.insert('auditLedgerCheckpoints', args);
+    if (args.status === 'ok') {
+      const latestSuccessfulCheckpoint = await ctx.db
+        .query('auditLedgerCheckpoints')
+        .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+          q.eq('chainId', args.chainId).eq('status', 'ok'),
+        )
+        .order('desc')
+        .first();
+
+      if (args.headHash !== (args.verifiedHeadHash ?? null)) {
+        throw new Error('Audit checkpoint head hash must match the verified ledger head');
+      }
+
+      if (latestSuccessfulCheckpoint) {
+        if (args.endSequence < latestSuccessfulCheckpoint.endSequence) {
+          throw new Error('Audit checkpoint end sequence cannot regress');
+        }
+
+        if (
+          args.endSequence === latestSuccessfulCheckpoint.endSequence &&
+          args.headHash === latestSuccessfulCheckpoint.headHash
+        ) {
+          return null;
+        }
+      }
+    }
+
+    const { verifiedHeadHash: _verifiedHeadHash, ...checkpoint } = args;
+    await ctx.db.insert('auditLedgerCheckpoints', checkpoint);
+    return null;
+  },
+});
+
+export const createAuditLedgerSealInternal = internalMutation({
+  args: {
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    eventCount: v.number(),
+    sealedAt: v.number(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const latestSeal = await ctx.db
+      .query('auditLedgerSeals')
+      .withIndex('by_chain_id_and_end_sequence', (q) => q.eq('chainId', args.chainId))
+      .order('desc')
+      .first();
+
+    if (latestSeal) {
+      if (args.endSequence < latestSeal.endSequence) {
+        throw new Error('Audit ledger seal end sequence cannot regress');
+      }
+
+      if (args.endSequence === latestSeal.endSequence && args.headHash === latestSeal.headHash) {
+        return null;
+      }
+    }
+
+    await ctx.db.insert('auditLedgerSeals', args);
     return null;
   },
 });
@@ -1212,11 +1277,15 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
   handler: async (ctx): Promise<AuditLedgerIntegrityResult> => {
     const checkedAt = Date.now();
     const state: AuditLedgerStateSnapshot | null = await ctx.runQuery(
-      anyApi.audit.getAuditLedgerStateInternal,
+      internal.audit.getAuditLedgerStateInternal,
       {},
     );
-    const latestSuccessfulCheckpoint: Doc<'auditLedgerCheckpoints'> | null = await ctx.runQuery(
-      anyApi.audit.getLatestSuccessfulAuditLedgerCheckpointInternal,
+    const latestCheckpoint: AuditLedgerCheckpointDoc | null = await ctx.runQuery(
+      internal.audit.getLatestAuditLedgerCheckpointInternal,
+      {},
+    );
+    const latestSuccessfulCheckpoint: AuditLedgerCheckpointDoc | null = await ctx.runQuery(
+      internal.audit.getLatestSuccessfulAuditLedgerCheckpointInternal,
       {},
     );
     const checkedFromSequence = latestSuccessfulCheckpoint
@@ -1225,16 +1294,34 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
     const headSequence = state?.headSequence ?? 0;
     const headHash = state?.headEventHash ?? null;
 
-    if (!state || headSequence === 0 || checkedFromSequence > headSequence) {
+    const persistResult = async (input: {
+      failure: AuditLedgerVerificationFailure | null;
+      verifiedEventCount: number;
+      verifiedHeadHash: string | null;
+    }) => {
       await ctx.runMutation(internal.audit.createAuditLedgerCheckpointInternal, {
         chainId: AUDIT_LEDGER_CHAIN_ID,
         startSequence: checkedFromSequence,
         endSequence: headSequence,
         headHash,
-        status: 'ok',
+        status: input.failure ? 'failed' : 'ok',
         checkedAt,
-        verifiedEventCount: 0,
+        verifiedEventCount: input.verifiedEventCount,
+        verifiedHeadHash: input.verifiedHeadHash,
+        ...(input.failure ? { failure: input.failure } : {}),
       });
+
+      if (!input.failure && input.verifiedEventCount > 0) {
+        await ctx.runMutation(internal.audit.createAuditLedgerSealInternal, {
+          chainId: AUDIT_LEDGER_CHAIN_ID,
+          startSequence: checkedFromSequence,
+          endSequence: headSequence,
+          headHash,
+          eventCount: input.verifiedEventCount,
+          sealedAt: checkedAt,
+        });
+      }
+
       await ctx.runMutation(internal.securityOps.syncCurrentSecurityFindingsInternal, {
         actorUserId: 'system:audit-ledger',
       });
@@ -1246,24 +1333,69 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
         checkedToSequence: headSequence,
         headHash,
         headSequence,
-        ok: true,
-        verifiedEventCount: 0,
-        failure: null,
+        ok: input.failure === null,
+        verifiedEventCount: input.verifiedEventCount,
+        failure: input.failure,
       };
+    };
+
+    if (!state || headSequence === 0) {
+      return await persistResult({
+        failure: null,
+        verifiedEventCount: 0,
+        verifiedHeadHash: headHash,
+      });
+    }
+
+    if (latestSuccessfulCheckpoint) {
+      if (latestSuccessfulCheckpoint.endSequence > headSequence) {
+        return await persistResult({
+          failure: {
+            actualEventHash: headHash,
+            actualPreviousEventHash: latestSuccessfulCheckpoint.headHash,
+            eventId: latestSuccessfulCheckpoint._id,
+            expectedPreviousEventHash: latestSuccessfulCheckpoint.headHash,
+            expectedSequence: latestSuccessfulCheckpoint.endSequence,
+            recomputedEventHash: latestSuccessfulCheckpoint.headHash ?? '',
+          },
+          verifiedEventCount: 0,
+          verifiedHeadHash: latestSuccessfulCheckpoint.headHash,
+        });
+      }
+
+      if (
+        checkedFromSequence > headSequence &&
+        latestSuccessfulCheckpoint.endSequence === headSequence &&
+        latestSuccessfulCheckpoint.headHash !== headHash
+      ) {
+        return await persistResult({
+          failure: {
+            actualEventHash: headHash,
+            actualPreviousEventHash: latestSuccessfulCheckpoint.headHash,
+            eventId: latestSuccessfulCheckpoint._id,
+            expectedPreviousEventHash: latestSuccessfulCheckpoint.headHash,
+            expectedSequence: headSequence,
+            recomputedEventHash: latestSuccessfulCheckpoint.headHash ?? '',
+          },
+          verifiedEventCount: 0,
+          verifiedHeadHash: latestSuccessfulCheckpoint.headHash,
+        });
+      }
+    }
+
+    if (checkedFromSequence > headSequence) {
+      return await persistResult({
+        failure: null,
+        verifiedEventCount: 0,
+        verifiedHeadHash: headHash,
+      });
     }
 
     let cursor: string | undefined;
     let expectedSequence = checkedFromSequence;
     let previousEventHash = latestSuccessfulCheckpoint?.headHash ?? null;
     let verifiedEventCount = 0;
-    let failure: {
-      actualEventHash: string | null;
-      actualPreviousEventHash: string | null;
-      eventId: string;
-      expectedPreviousEventHash: string | null;
-      expectedSequence: number;
-      recomputedEventHash: string;
-    } | null = null;
+    let failure: AuditLedgerVerificationFailure | null = null;
     let isDone = false;
 
     while (!isDone) {
@@ -1271,8 +1403,9 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
         page: AuditLedgerEventDoc[];
         continueCursor: string;
         isDone: boolean;
-      } = await ctx.runQuery(anyApi.audit.listAuditLedgerEventsForVerificationInternal, {
+      } = await ctx.runQuery(internal.audit.listAuditLedgerEventsForVerificationInternal, {
         cursor,
+        endSequence: headSequence,
         startSequence: checkedFromSequence,
         numItems: AUDIT_FETCH_BATCH_SIZE,
       });
@@ -1334,30 +1467,22 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
       isDone = page.isDone || cursor === undefined;
     }
 
-    await ctx.runMutation(internal.audit.createAuditLedgerCheckpointInternal, {
-      chainId: AUDIT_LEDGER_CHAIN_ID,
-      startSequence: checkedFromSequence,
-      endSequence: headSequence,
-      headHash,
-      status: failure ? 'failed' : 'ok',
-      checkedAt,
-      verifiedEventCount,
-      ...(failure ? { failure } : {}),
-    });
-    await ctx.runMutation(internal.securityOps.syncCurrentSecurityFindingsInternal, {
-      actorUserId: 'system:audit-ledger',
-    });
+    if (!failure && previousEventHash !== headHash) {
+      failure = {
+        actualEventHash: headHash,
+        actualPreviousEventHash:
+          latestCheckpoint?.headHash ?? latestSuccessfulCheckpoint?.headHash ?? null,
+        eventId: latestCheckpoint?._id ?? 'audit-ledger-head',
+        expectedPreviousEventHash: previousEventHash,
+        expectedSequence: headSequence,
+        recomputedEventHash: previousEventHash ?? '',
+      };
+    }
 
-    return {
-      chainId: AUDIT_LEDGER_CHAIN_ID,
-      checkedAt,
-      checkedFromSequence,
-      checkedToSequence: headSequence,
-      headHash,
-      headSequence,
-      ok: failure === null,
-      verifiedEventCount,
+    return await persistResult({
       failure,
-    };
+      verifiedEventCount,
+      verifiedHeadHash: previousEventHash,
+    });
   },
 });

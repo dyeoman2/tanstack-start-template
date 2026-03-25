@@ -91,22 +91,64 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
 }
 
 export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
-  const [latestBackupDrill, latestRetentionJob, recentAuditLogs, recentExports] = await Promise.all(
-    [
-      ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
-      ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
+  const [
+    auditLedgerState,
+    latestBackupDrill,
+    latestCheckpoint,
+    latestRetentionJob,
+    latestSuccessfulCheckpoint,
+    latestFailedCheckpoint,
+    latestSeal,
+    sealCount,
+    recentAuditLogs,
+    recentExports,
+  ] = await Promise.all([
+    ctx.db
+      .query('auditLedgerState')
+      .withIndex('by_chain_id', (q) => q.eq('chainId', 'primary'))
+      .first(),
+    ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
+    ctx.db
+      .query('auditLedgerCheckpoints')
+      .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    ctx.db.query('retentionJobs').withIndex('by_created_at').order('desc').first(),
+    ctx.db
+      .query('auditLedgerCheckpoints')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('status', 'ok'),
+      )
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerCheckpoints')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('status', 'failed'),
+      )
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerSeals')
+      .withIndex('by_chain_id_and_sealed_at', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    countQueryResults(
       ctx.db
-        .query('auditLedgerEvents')
-        .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
-        .order('desc')
-        .take(200),
-      ctx.db
-        .query('exportArtifacts')
-        .withIndex('by_artifact_type_and_created_at')
-        .order('desc')
-        .take(25),
-    ],
-  );
+        .query('auditLedgerSeals')
+        .withIndex('by_chain_id_and_sealed_at', (q) => q.eq('chainId', 'primary')),
+    ),
+    ctx.db
+      .query('auditLedgerEvents')
+      .withIndex('by_recordedAt', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .take(200),
+    ctx.db
+      .query('exportArtifacts')
+      .withIndex('by_artifact_type_and_created_at')
+      .order('desc')
+      .take(25),
+  ]);
 
   const metadataGaps = recentAuditLogs
     .filter((log) => log.eventType === 'organization_policy_updated')
@@ -119,6 +161,13 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
     }));
 
   return {
+    currentHead: auditLedgerState
+      ? {
+          headHash: auditLedgerState.headEventHash,
+          headSequence: auditLedgerState.headSequence,
+          updatedAt: auditLedgerState.updatedAt,
+        }
+      : null,
     latestBackupDrill: latestBackupDrill
       ? {
           artifactHash: latestBackupDrill.artifactHash ?? null,
@@ -137,6 +186,16 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
           verificationMethod: latestBackupDrill.verificationMethod,
         }
       : null,
+    latestCheckpoint: latestCheckpoint
+      ? {
+          checkedAt: latestCheckpoint.checkedAt,
+          endSequence: latestCheckpoint.endSequence,
+          headHash: latestCheckpoint.headHash,
+          startSequence: latestCheckpoint.startSequence,
+          status: latestCheckpoint.status,
+          verifiedEventCount: latestCheckpoint.verifiedEventCount,
+        }
+      : null,
     latestRetentionJob: latestRetentionJob
       ? {
           createdAt: latestRetentionJob.createdAt,
@@ -148,6 +207,23 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
           status: latestRetentionJob.status,
         }
       : null,
+    latestVerifiedCheckpoint: latestSuccessfulCheckpoint
+      ? {
+          checkedAt: latestSuccessfulCheckpoint.checkedAt,
+          endSequence: latestSuccessfulCheckpoint.endSequence,
+          headHash: latestSuccessfulCheckpoint.headHash,
+          startSequence: latestSuccessfulCheckpoint.startSequence,
+          verifiedEventCount: latestSuccessfulCheckpoint.verifiedEventCount,
+        }
+      : null,
+    lastIntegrityFailure: latestFailedCheckpoint?.failure
+      ? {
+          checkedAt: latestFailedCheckpoint.checkedAt,
+          eventId: latestFailedCheckpoint.failure.eventId,
+          expectedSequence: latestFailedCheckpoint.failure.expectedSequence,
+        }
+      : null,
+    lastSealAt: latestSeal?.sealedAt ?? null,
     metadataGaps,
     recentDeniedActions: recentAuditLogs
       .filter((log) => log.eventType === 'authorization_denied')
@@ -165,5 +241,10 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       manifestHash: artifact.manifestHash,
       sourceReportId: artifact.sourceReportId ?? null,
     })),
+    sealCount,
+    unverifiedTailCount: Math.max(
+      0,
+      (auditLedgerState?.headSequence ?? 0) - (latestSuccessfulCheckpoint?.endSequence ?? 0),
+    ),
   };
 }

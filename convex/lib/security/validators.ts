@@ -1091,7 +1091,33 @@ const backupVerificationDrillTypeValidator = v.union(
   v.literal('restore_verification'),
 );
 const backupVerificationInitiatedByKindValidator = v.union(v.literal('system'), v.literal('user'));
+const auditReadinessHeadSummaryValidator = v.object({
+  headHash: v.union(v.string(), v.null()),
+  headSequence: v.number(),
+  updatedAt: v.number(),
+});
+const auditReadinessCheckpointSummaryValidator = v.object({
+  checkedAt: v.number(),
+  endSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  startSequence: v.number(),
+  status: v.union(v.literal('ok'), v.literal('failed')),
+  verifiedEventCount: v.number(),
+});
+const auditReadinessVerifiedCheckpointSummaryValidator = v.object({
+  checkedAt: v.number(),
+  endSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  startSequence: v.number(),
+  verifiedEventCount: v.number(),
+});
+const auditReadinessIntegrityFailureSummaryValidator = v.object({
+  checkedAt: v.number(),
+  eventId: v.string(),
+  expectedSequence: v.number(),
+});
 const auditReadinessSnapshotValidator = v.object({
+  currentHead: v.union(auditReadinessHeadSummaryValidator, v.null()),
   latestBackupDrill: v.union(
     v.object({
       artifactHash: v.union(v.string(), v.null()),
@@ -1111,6 +1137,7 @@ const auditReadinessSnapshotValidator = v.object({
     }),
     v.null(),
   ),
+  latestCheckpoint: v.union(auditReadinessCheckpointSummaryValidator, v.null()),
   latestRetentionJob: v.union(
     v.object({
       createdAt: v.number(),
@@ -1123,6 +1150,9 @@ const auditReadinessSnapshotValidator = v.object({
     }),
     v.null(),
   ),
+  latestVerifiedCheckpoint: v.union(auditReadinessVerifiedCheckpointSummaryValidator, v.null()),
+  lastIntegrityFailure: v.union(auditReadinessIntegrityFailureSummaryValidator, v.null()),
+  lastSealAt: v.union(v.number(), v.null()),
   metadataGaps: v.array(
     v.object({
       createdAt: v.number(),
@@ -1148,6 +1178,8 @@ const auditReadinessSnapshotValidator = v.object({
       sourceReportId: v.union(v.id('evidenceReports'), v.null()),
     }),
   ),
+  sealCount: v.number(),
+  unverifiedTailCount: v.number(),
 });
 const securityWorkspaceOverviewValidator = v.object({
   auditReadiness: auditReadinessSnapshotValidator,

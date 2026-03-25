@@ -251,6 +251,17 @@ export default defineSchema({
     .index('by_chain_id_and_checked_at', ['chainId', 'checkedAt'])
     .index('by_chain_id_and_status_and_checked_at', ['chainId', 'status', 'checkedAt']),
 
+  auditLedgerSeals: defineTable({
+    chainId: v.string(),
+    startSequence: v.number(),
+    endSequence: v.number(),
+    headHash: v.union(v.string(), v.null()),
+    eventCount: v.number(),
+    sealedAt: v.number(),
+  })
+    .index('by_chain_id_and_sealed_at', ['chainId', 'sealedAt'])
+    .index('by_chain_id_and_end_sequence', ['chainId', 'endSequence']),
+
   organizationDomains: defineTable({
     organizationId: v.string(),
     domain: v.string(),

@@ -266,6 +266,17 @@ export const auditLedgerCheckpointDocValidator = v.object({
   ),
 });
 
+export const auditLedgerSealDocValidator = v.object({
+  _id: v.id('auditLedgerSeals'),
+  _creationTime: v.number(),
+  chainId: v.string(),
+  startSequence: v.number(),
+  endSequence: v.number(),
+  headHash: v.union(v.string(), v.null()),
+  eventCount: v.number(),
+  sealedAt: v.number(),
+});
+
 export const dashboardStatsDocValidator = v.object({
   _id: v.id('dashboardStats'),
   _creationTime: v.number(),

@@ -30,7 +30,6 @@ import {
   updateBetterAuthUser,
 } from '~/lib/server/better-auth/api';
 import { getBetterAuthRequest } from '~/lib/server/better-auth/http';
-import { getAuditServerWriteSecret } from '~/lib/server/env.server';
 import { handleServerError, ServerError } from '~/lib/server/error-utils.server';
 import type { OnboardingStatus } from '~/lib/shared/onboarding';
 
@@ -563,18 +562,9 @@ export const listAdminUserSessionsServerFn = createServerFn({ method: 'POST' })
       const response = await listBetterAuthUserSessions(data.userId, ({ code, message, status }) =>
         normalizeAuthErrorMessage(code ?? undefined, message, status),
       );
-      await convexAuthReactStart.fetchAuthAction(api.audit.recordAuditEventFromServer, {
-        serverWriteSecret: getAuditServerWriteSecret(),
-        eventType: 'admin_user_sessions_viewed',
-        metadata: JSON.stringify({
-          targetUserId: data.userId,
-          sessionCount: response.sessions.length,
-        }),
-        outcome: 'success',
-        resourceId: data.userId,
-        resourceType: 'user_session',
-        severity: 'info',
-        sourceSurface: 'admin.user_sessions',
+      await convexAuthReactStart.fetchAuthAction(api.admin.recordAdminUserSessionsViewed, {
+        sessionCount: response.sessions.length,
+        targetUserId: data.userId,
       });
 
       return response.sessions.map(normalizeAdminSession);
