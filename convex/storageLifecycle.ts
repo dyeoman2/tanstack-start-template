@@ -7,6 +7,8 @@ import {
   type QueryCtx,
 } from './_generated/server';
 import {
+  inspectionReasonValidator,
+  inspectionStatusValidator,
   malwareStatusValidator,
   mirrorStatusValidator,
   quarantineReasonValidator,
@@ -24,6 +26,11 @@ const lifecyclePatchValidator = v.object({
   canonicalVersionId: v.optional(v.union(v.string(), v.null())),
   deletedAt: v.optional(v.union(v.number(), v.null())),
   fileSize: v.optional(v.union(v.number(), v.null())),
+  inspectionDetails: v.optional(v.union(v.string(), v.null())),
+  inspectionEngine: v.optional(v.union(v.string(), v.null())),
+  inspectionReason: v.optional(v.union(inspectionReasonValidator, v.null())),
+  inspectionScannedAt: v.optional(v.union(v.number(), v.null())),
+  inspectionStatus: v.optional(v.union(inspectionStatusValidator, v.null())),
   malwareDetectedAt: v.optional(v.union(v.number(), v.null())),
   malwareFindingId: v.optional(v.union(v.string(), v.null())),
   malwareScannedAt: v.optional(v.union(v.number(), v.null())),
@@ -42,8 +49,12 @@ const lifecyclePatchValidator = v.object({
   parentStorageId: v.optional(v.union(v.string(), v.null())),
   organizationId: v.optional(v.union(v.string(), v.null())),
   originalFileName: v.optional(v.string()),
+  rejectedBucket: v.optional(v.union(v.string(), v.null())),
+  rejectedKey: v.optional(v.union(v.string(), v.null())),
+  rejectedVersionId: v.optional(v.union(v.string(), v.null())),
   quarantinedAt: v.optional(v.union(v.number(), v.null())),
   quarantineReason: v.optional(v.union(quarantineReasonValidator, v.null())),
+  sha256Hex: v.optional(v.union(v.string(), v.null())),
   sourceId: v.optional(v.string()),
   sourceType: v.optional(v.string()),
   storagePlacement: v.optional(v.union(storagePlacementValidator, v.null())),
@@ -181,6 +192,11 @@ export async function upsertLifecycle(
     canonicalKey?: string;
     canonicalVersionId?: string;
     fileSize?: number;
+    inspectionDetails?: string;
+    inspectionEngine?: string;
+    inspectionReason?: StorageLifecycleDoc['inspectionReason'];
+    inspectionScannedAt?: number;
+    inspectionStatus?: StorageLifecycleDoc['inspectionStatus'];
     malwareStatus?: StorageLifecycleDoc['malwareStatus'];
     mimeType?: string;
     mirrorBucket?: string;
@@ -188,12 +204,16 @@ export async function upsertLifecycle(
     mirrorKey?: string;
     mirrorStatus?: StorageLifecycleDoc['mirrorStatus'];
     mirrorVersionId?: string;
+    rejectedBucket?: string;
+    rejectedKey?: string;
+    rejectedVersionId?: string;
     quarantineBucket?: string;
     quarantineKey?: string;
     quarantineVersionId?: string;
     parentStorageId?: string | null;
     organizationId?: string | null;
     originalFileName: string;
+    sha256Hex?: string;
     sourceId: string;
     sourceType: string;
     storageId: string;
@@ -211,6 +231,11 @@ export async function upsertLifecycle(
       canonicalKey: args.canonicalKey ?? existing.canonicalKey,
       canonicalVersionId: args.canonicalVersionId ?? existing.canonicalVersionId,
       fileSize: args.fileSize ?? existing.fileSize,
+      inspectionDetails: args.inspectionDetails ?? existing.inspectionDetails,
+      inspectionEngine: args.inspectionEngine ?? existing.inspectionEngine,
+      inspectionReason: args.inspectionReason ?? existing.inspectionReason,
+      inspectionScannedAt: args.inspectionScannedAt ?? existing.inspectionScannedAt,
+      inspectionStatus: args.inspectionStatus ?? existing.inspectionStatus,
       malwareStatus: args.malwareStatus ?? existing.malwareStatus,
       mimeType: args.mimeType ?? existing.mimeType,
       mirrorBucket: args.mirrorBucket ?? existing.mirrorBucket,
@@ -218,12 +243,16 @@ export async function upsertLifecycle(
       mirrorKey: args.mirrorKey ?? existing.mirrorKey,
       mirrorStatus: args.mirrorStatus ?? existing.mirrorStatus,
       mirrorVersionId: args.mirrorVersionId ?? existing.mirrorVersionId,
+      rejectedBucket: args.rejectedBucket ?? existing.rejectedBucket,
+      rejectedKey: args.rejectedKey ?? existing.rejectedKey,
+      rejectedVersionId: args.rejectedVersionId ?? existing.rejectedVersionId,
       quarantineBucket: args.quarantineBucket ?? existing.quarantineBucket,
       quarantineKey: args.quarantineKey ?? existing.quarantineKey,
       quarantineVersionId: args.quarantineVersionId ?? existing.quarantineVersionId,
       parentStorageId: args.parentStorageId ?? existing.parentStorageId,
       organizationId: args.organizationId ?? existing.organizationId,
       originalFileName: args.originalFileName,
+      sha256Hex: args.sha256Hex ?? existing.sha256Hex,
       sourceId: args.sourceId,
       sourceType: args.sourceType,
       storagePlacement: args.storagePlacement ?? existing.storagePlacement,
@@ -241,6 +270,11 @@ export async function upsertLifecycle(
     createdAt: now,
     deletedAt: undefined,
     fileSize: args.fileSize,
+    inspectionDetails: args.inspectionDetails,
+    inspectionEngine: args.inspectionEngine,
+    inspectionReason: args.inspectionReason,
+    inspectionScannedAt: args.inspectionScannedAt,
+    inspectionStatus: args.inspectionStatus,
     malwareStatus: args.malwareStatus,
     mimeType: args.mimeType,
     mirrorAttempts: undefined,
@@ -250,12 +284,16 @@ export async function upsertLifecycle(
     mirrorLastError: undefined,
     mirrorStatus: args.mirrorStatus,
     mirrorVersionId: args.mirrorVersionId,
+    rejectedBucket: args.rejectedBucket,
+    rejectedKey: args.rejectedKey,
+    rejectedVersionId: args.rejectedVersionId,
     quarantineBucket: args.quarantineBucket,
     quarantineKey: args.quarantineKey,
     quarantineVersionId: args.quarantineVersionId,
     parentStorageId: nullableToOptional(args.parentStorageId),
     organizationId: nullableToOptional(args.organizationId),
     originalFileName: args.originalFileName,
+    sha256Hex: args.sha256Hex,
     quarantinedAt: undefined,
     quarantineReason: undefined,
     sourceId: args.sourceId,
@@ -277,6 +315,11 @@ async function applyLifecyclePatch(
       canonicalVersionId?: string | null;
       deletedAt?: number | null;
       fileSize?: number | null;
+      inspectionDetails?: string | null;
+      inspectionEngine?: string | null;
+      inspectionReason?: StorageLifecycleDoc['inspectionReason'] | null;
+      inspectionScannedAt?: number | null;
+      inspectionStatus?: StorageLifecycleDoc['inspectionStatus'] | null;
       malwareDetectedAt?: number | null;
       malwareFindingId?: string | null;
       malwareScannedAt?: number | null;
@@ -289,12 +332,16 @@ async function applyLifecyclePatch(
       mirrorLastError?: string | null;
       mirrorStatus?: StorageLifecycleDoc['mirrorStatus'] | null;
       mirrorVersionId?: string | null;
+      rejectedBucket?: string | null;
+      rejectedKey?: string | null;
+      rejectedVersionId?: string | null;
       quarantineBucket?: string | null;
       quarantineKey?: string | null;
       quarantineVersionId?: string | null;
       parentStorageId?: string | null;
       organizationId?: string | null;
       originalFileName?: string;
+      sha256Hex?: string | null;
       quarantinedAt?: number | null;
       quarantineReason?: StorageLifecycleDoc['quarantineReason'] | null;
       sourceId?: string;
@@ -333,6 +380,26 @@ async function applyLifecyclePatch(
       args.patch.fileSize !== undefined
         ? nullableToOptional(args.patch.fileSize)
         : lifecycle.fileSize,
+    inspectionDetails:
+      args.patch.inspectionDetails !== undefined
+        ? nullableToOptional(args.patch.inspectionDetails)
+        : lifecycle.inspectionDetails,
+    inspectionEngine:
+      args.patch.inspectionEngine !== undefined
+        ? nullableToOptional(args.patch.inspectionEngine)
+        : lifecycle.inspectionEngine,
+    inspectionReason:
+      args.patch.inspectionReason !== undefined
+        ? nullableToOptional(args.patch.inspectionReason)
+        : lifecycle.inspectionReason,
+    inspectionScannedAt:
+      args.patch.inspectionScannedAt !== undefined
+        ? nullableToOptional(args.patch.inspectionScannedAt)
+        : lifecycle.inspectionScannedAt,
+    inspectionStatus:
+      args.patch.inspectionStatus !== undefined
+        ? nullableToOptional(args.patch.inspectionStatus)
+        : lifecycle.inspectionStatus,
     malwareDetectedAt:
       args.patch.malwareDetectedAt !== undefined
         ? nullableToOptional(args.patch.malwareDetectedAt)
@@ -381,6 +448,18 @@ async function applyLifecyclePatch(
       args.patch.mirrorVersionId !== undefined
         ? nullableToOptional(args.patch.mirrorVersionId)
         : lifecycle.mirrorVersionId,
+    rejectedBucket:
+      args.patch.rejectedBucket !== undefined
+        ? nullableToOptional(args.patch.rejectedBucket)
+        : lifecycle.rejectedBucket,
+    rejectedKey:
+      args.patch.rejectedKey !== undefined
+        ? nullableToOptional(args.patch.rejectedKey)
+        : lifecycle.rejectedKey,
+    rejectedVersionId:
+      args.patch.rejectedVersionId !== undefined
+        ? nullableToOptional(args.patch.rejectedVersionId)
+        : lifecycle.rejectedVersionId,
     quarantineBucket:
       args.patch.quarantineBucket !== undefined
         ? nullableToOptional(args.patch.quarantineBucket)
@@ -402,6 +481,10 @@ async function applyLifecyclePatch(
         ? nullableToOptional(args.patch.organizationId)
         : lifecycle.organizationId,
     originalFileName: args.patch.originalFileName ?? lifecycle.originalFileName,
+    sha256Hex:
+      args.patch.sha256Hex !== undefined
+        ? nullableToOptional(args.patch.sha256Hex)
+        : lifecycle.sha256Hex,
     quarantinedAt:
       args.patch.quarantinedAt !== undefined
         ? nullableToOptional(args.patch.quarantinedAt)
@@ -491,6 +574,53 @@ export const listExpiredLifecycleByDeadlineInternal = internalQuery({
   },
 });
 
+export const backfillLegacyInspectionStatusInternal = internalMutation({
+  args: {
+    limit: v.optional(v.number()),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    const limit = Math.max(1, Math.min(args.limit ?? 100, 500));
+    const rows = await ctx.db
+      .query('storageLifecycle')
+      .withIndex('by_malwareStatus', (q) => q.eq('malwareStatus', 'CLEAN'))
+      .collect();
+
+    let updated = 0;
+    for (const row of rows) {
+      if (
+        updated >= limit ||
+        row.deletedAt ||
+        row.storagePlacement !== 'PROMOTED' ||
+        row.inspectionStatus !== undefined
+      ) {
+        continue;
+      }
+
+      await applyLifecyclePatch(ctx, {
+        patch: {
+          inspectionDetails: 'Legacy promoted file backfilled as inspection passed.',
+          inspectionEngine: 'legacy-backfill',
+          inspectionReason: null,
+          inspectionScannedAt: row.malwareScannedAt ?? row.updatedAt,
+          inspectionStatus: 'PASSED',
+          updatedAt: Date.now(),
+        },
+        storageId: row.storageId,
+      });
+      await appendLifecycleEvent(ctx, {
+        actionResult: 'success',
+        details: 'legacy_backfill',
+        eventType: 'inspection_backfilled',
+        storageId: row.storageId,
+      });
+      updated += 1;
+    }
+
+    return updated;
+  },
+});
+
 async function hasSecurityEvidenceRecord(
   ctx: QueryCtx,
   args: { internalControlId: string; itemId: string; storageId: string },
@@ -554,6 +684,11 @@ export const upsertLifecycleInternal = internalMutation({
     canonicalKey: v.optional(v.string()),
     canonicalVersionId: v.optional(v.string()),
     fileSize: v.optional(v.number()),
+    inspectionDetails: v.optional(v.string()),
+    inspectionEngine: v.optional(v.string()),
+    inspectionReason: v.optional(inspectionReasonValidator),
+    inspectionScannedAt: v.optional(v.number()),
+    inspectionStatus: v.optional(inspectionStatusValidator),
     malwareStatus: v.optional(malwareStatusValidator),
     mimeType: v.optional(v.string()),
     mirrorBucket: v.optional(v.string()),
@@ -561,12 +696,16 @@ export const upsertLifecycleInternal = internalMutation({
     mirrorKey: v.optional(v.string()),
     mirrorStatus: v.optional(mirrorStatusValidator),
     mirrorVersionId: v.optional(v.string()),
+    rejectedBucket: v.optional(v.string()),
+    rejectedKey: v.optional(v.string()),
+    rejectedVersionId: v.optional(v.string()),
     quarantineBucket: v.optional(v.string()),
     quarantineKey: v.optional(v.string()),
     quarantineVersionId: v.optional(v.string()),
     parentStorageId: v.optional(v.union(v.string(), v.null())),
     organizationId: v.optional(v.union(v.string(), v.null())),
     originalFileName: v.string(),
+    sha256Hex: v.optional(v.string()),
     sourceId: v.string(),
     sourceType: v.string(),
     storageId: v.string(),
@@ -629,6 +768,136 @@ async function patchDescendantLifecycleState(
     });
   }
 }
+
+export const markInspectionPassedInternal = internalMutation({
+  args: {
+    details: v.optional(v.union(v.string(), v.null())),
+    engine: v.string(),
+    scannedAt: v.number(),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        inspectionDetails: args.details ?? null,
+        inspectionEngine: args.engine,
+        inspectionReason: null,
+        inspectionScannedAt: args.scannedAt,
+        inspectionStatus: 'PASSED',
+        updatedAt: Date.now(),
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'success',
+      details: args.engine,
+      eventType: 'inspection_passed',
+      storageId: args.storageId,
+    });
+    return null;
+  },
+});
+
+export const markInspectionRejectedInternal = internalMutation({
+  args: {
+    details: v.optional(v.union(v.string(), v.null())),
+    engine: v.string(),
+    reason: inspectionReasonValidator,
+    scannedAt: v.number(),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        inspectionDetails: args.details ?? null,
+        inspectionEngine: args.engine,
+        inspectionReason: args.reason,
+        inspectionScannedAt: args.scannedAt,
+        inspectionStatus: 'REJECTED',
+        quarantinedAt: now,
+        quarantineReason: 'INSPECTION_REJECTED',
+        updatedAt: now,
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'failure',
+      details: args.reason,
+      eventType: 'inspection_rejected',
+      storageId: args.storageId,
+    });
+    return null;
+  },
+});
+
+export const markInspectionFailedInternal = internalMutation({
+  args: {
+    details: v.optional(v.union(v.string(), v.null())),
+    engine: v.string(),
+    scannedAt: v.number(),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        inspectionDetails: args.details ?? null,
+        inspectionEngine: args.engine,
+        inspectionReason: 'inspection_error',
+        inspectionScannedAt: args.scannedAt,
+        inspectionStatus: 'FAILED',
+        updatedAt: Date.now(),
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'failure',
+      details: args.details ?? 'inspection_failed',
+      eventType: 'inspection_failed',
+      storageId: args.storageId,
+    });
+    return null;
+  },
+});
+
+export const markRejectedInternal = internalMutation({
+  args: {
+    rejectedBucket: v.string(),
+    rejectedKey: v.string(),
+    rejectedVersionId: v.optional(v.union(v.string(), v.null())),
+    storageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    await applyLifecyclePatch(ctx, {
+      patch: {
+        canonicalBucket: null,
+        canonicalKey: null,
+        canonicalVersionId: null,
+        quarantineBucket: null,
+        quarantineKey: null,
+        quarantineVersionId: null,
+        rejectedBucket: args.rejectedBucket,
+        rejectedKey: args.rejectedKey,
+        rejectedVersionId: args.rejectedVersionId ?? null,
+        storagePlacement: 'REJECTED',
+        updatedAt: now,
+      },
+      storageId: args.storageId,
+    });
+    await appendLifecycleEvent(ctx, {
+      actionResult: 'failure',
+      details: args.rejectedKey,
+      eventType: 'moved_to_rejected',
+      storageId: args.storageId,
+    });
+    return null;
+  },
+});
 
 export const markCleanInternal = internalMutation({
   args: {

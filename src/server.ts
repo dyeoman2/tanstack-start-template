@@ -48,10 +48,13 @@ const handler = createStartHandler(async ({ request, router, responseHeaders }) 
 
   responseHeaders.set('Document-Policy', 'js-profiling');
   responseHeaders.set(getDocumentCspHeaderName(documentCspMode), documentContentSecurityPolicy);
+  responseHeaders.set('Cross-Origin-Opener-Policy', 'same-origin');
+  responseHeaders.set('Cross-Origin-Resource-Policy', 'same-origin');
   responseHeaders.set('Permissions-Policy', DOCUMENT_PERMISSIONS_POLICY);
   responseHeaders.set('Referrer-Policy', 'strict-origin-when-cross-origin');
   responseHeaders.set('X-Content-Type-Options', 'nosniff');
   responseHeaders.set('X-Frame-Options', 'DENY');
+  responseHeaders.set('X-Permitted-Cross-Domain-Policies', 'none');
   if (shouldSetStrictTransportSecurity(request)) {
     responseHeaders.set(
       'Strict-Transport-Security',

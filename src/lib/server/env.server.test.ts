@@ -174,11 +174,16 @@ describe('Better Auth env helpers', () => {
 
   it('reads storage runtime settings from the AWS-prefixed env names', () => {
     process.env.AWS_S3_FILES_BUCKET = 'canonical-bucket';
+    process.env.AWS_S3_FILES_KMS_KEY_ARN =
+      'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
 
     const config = getStorageRuntimeConfig();
 
     expect(config.s3FilesBucket).toBe('canonical-bucket');
+    expect(config.s3FilesKmsKeyArn).toBe(
+      'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files',
+    );
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
   });
 });

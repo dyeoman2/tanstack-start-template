@@ -23,7 +23,7 @@ import { useAuthState } from '~/features/auth/hooks/useAuthState';
 import { cn } from '~/lib/utils';
 
 type NavItem = {
-  to: string;
+  to: '/app' | '/app/chat';
   label: string;
   exact?: boolean;
   icon?: LucideIcon;

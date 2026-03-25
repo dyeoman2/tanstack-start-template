@@ -8,6 +8,7 @@ import { defineConfig } from 'vite';
 
 export default defineConfig((env) => {
   const isDev = env.mode === 'development';
+  const routeFileIgnorePattern = isDev ? undefined : '^(agent-auth|e2e-auth)\\.(ts|tsx|js|jsx)$';
 
   return {
     optimizeDeps: {
@@ -31,7 +32,13 @@ export default defineConfig((env) => {
     plugins: [
       tailwindcss(),
       // TanStack Router plugin (via Start) must run before React
-      tanstackStart(),
+      tanstackStart({
+        router: {
+          // Keep test auth routes out of the generated production route tree so
+          // they are not part of the shipped server bundle.
+          routeFileIgnorePattern,
+        },
+      }),
       react(),
       // Adapter after Start + React - only in production builds
       ...(isDev ? [] : [netlify()]),

@@ -1,6 +1,6 @@
 ## Better Auth Security Notes
 
-This project enforces the regulated baseline we ship, distinguishing the controls in code from the deployer-owned ops that still need to be delivered.
+This project enforces the regulated baseline we ship, distinguishing the controls pinned in code and IaC from the deployer-owned ops that still need to be delivered.
 
 ### Why This Is Strict by Default
 
@@ -25,7 +25,7 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Local manual auth flows use `http://localhost:3000` as the canonical origin. See [`docs/LOCAL_AUTH_ENV.md`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/LOCAL_AUTH_ENV.md) for the required local `.env.local` and `npx convex env set BETTER_AUTH_URL ...` setup.
 - Set `BETTER_AUTH_PREVIEW_HOSTS` to explicit host patterns such as `*.netlify.app,*.vercel.app` for ephemeral environments and add extra trusted origins via `BETTER_AUTH_TRUSTED_ORIGINS` when necessary.
 - `BETTER_AUTH_TRUSTED_ORIGINS` must contain absolute origins such as `https://admin.example.com`; hostnames without a scheme are rejected at startup.
-- Deployment hardening (security headers, TLS termination, and monitoring for origin spoofing) must live outside this repo.
+- Deployment hardening baseline is pinned in this repo through `src/server.ts`, `netlify.toml`, and `pnpm run deploy:doctor`; deployers still own TLS certificate lifecycle, WAF policy, and monitoring for origin spoofing.
 - Production edges should send `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` or an equivalent HSTS policy.
 - Any deployment that relies on forwarded client IP metadata must use a trusted edge or load balancer that strips and rewrites forwarding headers such as `x-forwarded-for`; this app assumes those headers are canonicalized before requests reach Better Auth and rate-limit logic.
 
@@ -36,4 +36,4 @@ This project enforces the regulated baseline we ship, distinguishing the control
 - Session policy is explicit: 24-hour expiry, 4-hour refresh cadence, and 15-minute freshness windows for step-up protected actions.
 - Better Auth session metadata is normalized after sign-in so downstream policy code can distinguish password, passkey, social, and enterprise authentication paths consistently.
 - Break-glass password fallback is disabled by default for organization policies.
-- Infrastructure-level controls (e.g., network isolation, secret rotation, hardware security modules for cookies) remain deployer responsibilities.
+- Infrastructure-level controls beyond the shipped baseline (for example network isolation, secret rotation cadence, and hardware-backed secret custody) remain deployer responsibilities.

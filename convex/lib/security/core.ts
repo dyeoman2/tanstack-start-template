@@ -1,5 +1,5 @@
-import type { Doc } from '../../_generated/dataModel';
-import type { MutationCtx } from '../../_generated/server';
+import type { Doc, Id } from '../../_generated/dataModel';
+import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import {
   EXPORT_ARTIFACT_SCHEMA_VERSION,
@@ -428,6 +428,111 @@ export function summarizeIntegrityCheck(integrityCheck: {
     failureCount: integrityCheck.failure ? 1 : 0,
     verified: integrityCheck.ok === true,
   };
+}
+
+export type EvidenceReportLatestExportIntegritySummary = {
+  checkedAt: string | null;
+  failureCount: number;
+  verified: boolean;
+};
+
+export type EvidenceReportLatestExport = {
+  exportHash: string;
+  exportedAt: number;
+  exportedByUserId: string;
+  id: Id<'exportArtifacts'>;
+  integritySummary: EvidenceReportLatestExportIntegritySummary | null;
+  manifestHash: string;
+  manifestJson: string;
+  schemaVersion: string;
+};
+
+function parseEvidenceReportExportIntegritySummary(
+  manifestJson: string,
+): EvidenceReportLatestExportIntegritySummary | null {
+  try {
+    const parsed = JSON.parse(manifestJson) as {
+      integritySummary?: {
+        checkedAt?: string | null;
+        failureCount?: number;
+        verified?: boolean;
+      };
+    };
+    const integritySummary = parsed.integritySummary;
+    if (!integritySummary || typeof integritySummary !== 'object') {
+      return null;
+    }
+
+    return {
+      checkedAt:
+        integritySummary.checkedAt === null || typeof integritySummary.checkedAt === 'string'
+          ? integritySummary.checkedAt
+          : null,
+      failureCount:
+        typeof integritySummary.failureCount === 'number' ? integritySummary.failureCount : 0,
+      verified: integritySummary.verified === true,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function mapExportArtifactToEvidenceReportLatestExport(
+  artifact: Pick<
+    Doc<'exportArtifacts'>,
+    | '_id'
+    | 'exportedAt'
+    | 'exportedByUserId'
+    | 'manifestHash'
+    | 'manifestJson'
+    | 'payloadHash'
+    | 'schemaVersion'
+  >,
+): EvidenceReportLatestExport {
+  return {
+    exportHash: artifact.payloadHash,
+    exportedAt: artifact.exportedAt,
+    exportedByUserId: artifact.exportedByUserId,
+    id: artifact._id,
+    integritySummary: parseEvidenceReportExportIntegritySummary(artifact.manifestJson),
+    manifestHash: artifact.manifestHash,
+    manifestJson: artifact.manifestJson,
+    schemaVersion: artifact.schemaVersion,
+  };
+}
+
+export async function getLatestEvidenceReportExportForReport(
+  ctx: Pick<QueryCtx, 'db'>,
+  reportId: Id<'evidenceReports'>,
+): Promise<EvidenceReportLatestExport | null> {
+  const artifacts = await ctx.db
+    .query('exportArtifacts')
+    .withIndex('by_source_report_id_and_created_at', (q) => q.eq('sourceReportId', reportId))
+    .order('desc')
+    .take(10);
+  const latestArtifact = artifacts.find(
+    (artifact) => artifact.artifactType === 'evidence_report_export',
+  );
+  return latestArtifact ? mapExportArtifactToEvidenceReportLatestExport(latestArtifact) : null;
+}
+
+export async function getLatestEvidenceReportExportsByReportId(
+  ctx: Pick<QueryCtx, 'db'>,
+  reportIds: Id<'evidenceReports'>[],
+): Promise<Map<Id<'evidenceReports'>, EvidenceReportLatestExport>> {
+  const uniqueReportIds = Array.from(new Set(reportIds));
+  const latestExports = await Promise.all(
+    uniqueReportIds.map(
+      async (reportId) =>
+        [reportId, await getLatestEvidenceReportExportForReport(ctx, reportId)] as const,
+    ),
+  );
+
+  return new Map(
+    latestExports.filter(
+      (entry): entry is [Id<'evidenceReports'>, EvidenceReportLatestExport] => entry[1] !== null,
+    ),
+  );
 }
 
 export {

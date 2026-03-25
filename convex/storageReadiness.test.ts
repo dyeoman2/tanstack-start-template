@@ -8,6 +8,7 @@ type ReadinessLifecycle = Pick<
   | 'canonicalBucket'
   | 'canonicalKey'
   | 'deletedAt'
+  | 'inspectionStatus'
   | 'malwareStatus'
   | 'mirrorStatus'
   | 'storagePlacement'
@@ -19,6 +20,7 @@ function createLifecycle(overrides: Partial<ReadinessLifecycle>): ReadinessLifec
     canonicalBucket: undefined,
     canonicalKey: undefined,
     deletedAt: undefined,
+    inspectionStatus: 'PENDING',
     malwareStatus: 'PENDING',
     mirrorStatus: undefined,
     storagePlacement: 'QUARANTINE',
@@ -31,6 +33,7 @@ describe('getStorageReadiness', () => {
     expect(
       getStorageReadiness(
         createLifecycle({
+          inspectionStatus: 'PENDING',
           malwareStatus: 'PENDING',
           storagePlacement: 'QUARANTINE',
         }),
@@ -48,6 +51,7 @@ describe('getStorageReadiness', () => {
         createLifecycle({
           canonicalBucket: 'bucket',
           canonicalKey: 'clean/org/acme/report/file-1',
+          inspectionStatus: 'PASSED',
           malwareStatus: 'CLEAN',
           storagePlacement: 'PROMOTED',
         }),
@@ -65,6 +69,7 @@ describe('getStorageReadiness', () => {
         createLifecycle({
           canonicalBucket: 'bucket',
           canonicalKey: 'clean/org/acme/report/file-1',
+          inspectionStatus: 'PASSED',
           malwareStatus: 'INFECTED',
           storagePlacement: 'PROMOTED',
         }),
@@ -82,6 +87,7 @@ describe('getStorageReadiness', () => {
         createLifecycle({
           canonicalBucket: undefined,
           canonicalKey: undefined,
+          inspectionStatus: 'PASSED',
           malwareStatus: 'CLEAN',
           storagePlacement: 'PROMOTED',
         }),
@@ -90,6 +96,58 @@ describe('getStorageReadiness', () => {
       message: 'Stored file is pending malware scan.',
       readable: false,
       reason: 'pending_scan',
+    });
+  });
+
+  it('keeps malware-clean files unreadable until inspection passes', () => {
+    expect(
+      getStorageReadiness(
+        createLifecycle({
+          canonicalBucket: undefined,
+          canonicalKey: undefined,
+          inspectionStatus: 'PENDING',
+          malwareStatus: 'CLEAN',
+          storagePlacement: 'QUARANTINE',
+        }),
+      ),
+    ).toEqual({
+      message: 'Stored file is pending malware scan.',
+      readable: false,
+      reason: 'pending_scan',
+    });
+  });
+
+  it('treats inspection-rejected uploads as quarantined', () => {
+    expect(
+      getStorageReadiness(
+        createLifecycle({
+          inspectionStatus: 'REJECTED',
+          malwareStatus: 'PENDING',
+          storagePlacement: 'REJECTED',
+        }),
+      ),
+    ).toEqual({
+      message: 'Stored file is quarantined.',
+      readable: false,
+      reason: 'quarantined',
+    });
+  });
+
+  it('keeps legacy promoted clean rows readable while inspection status is missing', () => {
+    expect(
+      getStorageReadiness(
+        createLifecycle({
+          canonicalBucket: 'bucket',
+          canonicalKey: 'clean/org/acme/report/file-1',
+          inspectionStatus: undefined,
+          malwareStatus: 'CLEAN',
+          storagePlacement: 'PROMOTED',
+        }),
+      ),
+    ).toEqual({
+      message: null,
+      readable: true,
+      reason: null,
     });
   });
 });

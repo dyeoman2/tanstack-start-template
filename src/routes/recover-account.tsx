@@ -47,7 +47,7 @@ function RecoverAccountPage() {
       });
 
       await router.invalidate();
-      await router.navigate({ to: redirectTo || '/app', replace: true });
+      router.history.replace(redirectTo ?? '/app');
     } catch (error) {
       showToast(
         getBetterAuthUserFacingMessage(error, {

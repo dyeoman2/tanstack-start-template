@@ -2,7 +2,11 @@ import type { Doc, Id } from '../../_generated/dataModel';
 import type { QueryCtx } from '../../_generated/server';
 import { listSecurityPolicyGovernanceContexts } from './governance_context';
 import type { ReviewTaskBlueprint } from './securityReviewConfig';
-import { normalizeSecurityScope, resolveControlLinkMetadata } from './core';
+import {
+  getLatestEvidenceReportExportForReport,
+  normalizeSecurityScope,
+  resolveControlLinkMetadata,
+} from './core';
 import {
   buildActorDisplayMap,
   buildCurrentSecurityFindings,
@@ -248,6 +252,7 @@ export async function buildEvidenceReportDetail(ctx: QueryCtx, reportId: Id<'evi
   if (!report) {
     return null;
   }
+  const latestExport = await getLatestEvidenceReportExportForReport(ctx, reportId);
 
   const links = await listReviewTaskEvidenceLinksBySource(ctx, {
     sourceId: reportId,
@@ -275,14 +280,9 @@ export async function buildEvidenceReportDetail(ctx: QueryCtx, reportId: Id<'evi
     contentHash: report.contentHash,
     contentJson: report.contentJson,
     createdAt: report.createdAt,
-    exportHash: report.exportHash ?? null,
-    exportIntegritySummary: report.exportIntegritySummary ?? null,
-    exportManifestHash: report.exportManifestHash ?? null,
-    exportManifestJson: report.exportManifestJson ?? null,
-    exportedAt: report.exportedAt ?? null,
-    exportedByUserId: report.exportedByUserId ?? null,
     generatedByUserId: report.generatedByUserId,
     id: report._id,
+    latestExport,
     linkedTasks: links
       .map((link) => {
         const task = reviewTasks.find((entry) => entry._id === link.reviewTaskId);

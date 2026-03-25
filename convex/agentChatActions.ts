@@ -956,6 +956,7 @@ export const createChatAttachmentFromUpload = action({
         fileSize: validatedAttachment.sizeBytes,
         mimeType: validatedAttachment.mimeType,
         organizationId,
+        sha256Hex: uploadTokenRecord.expectedSha256,
         sourceId: attachmentId,
         sourceType: 'chat_attachment',
         storageId: args.storageId,

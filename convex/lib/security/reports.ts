@@ -78,12 +78,6 @@ export async function exportEvidenceReportHandler(
   });
   const manifestJson = stringifyStable(manifest);
   const manifestHash = await hashContent(manifestJson);
-  const exportIntegritySummary = stringifyStable({
-    contentHash: report.contentHash,
-    exportHash,
-    manifestHash,
-    reviewStatus: report.reviewStatus,
-  });
   const artifactId = await ctx.runMutation(anyApi.securityPosture.storeExportArtifact, {
     artifactType: 'evidence_report_export',
     exportedAt,
@@ -94,17 +88,6 @@ export async function exportEvidenceReportHandler(
     payloadHash: exportHash,
     schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     sourceReportId: args.id,
-  });
-
-  await ctx.runMutation(anyApi.securityReports.storeEvidenceReportExport, {
-    id: args.id,
-    exportHash,
-    exportIntegritySummary,
-    exportManifestHash: manifestHash,
-    exportManifestJson: manifestJson,
-    exportedAt,
-    exportedByUserId: currentUser.authUserId,
-    latestExportArtifactId: artifactId,
   });
 
   await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
@@ -131,8 +114,14 @@ export async function exportEvidenceReportHandler(
 
   return {
     createdAt: report.createdAt,
-    exportHash,
     id: report._id,
+    latestExport: {
+      exportHash,
+      exportedAt,
+      exportedByUserId: currentUser.authUserId,
+      id: artifactId,
+      manifestHash,
+    },
     report: exportBundle,
     scopeId: normalizeSecurityScope(report).scopeId,
     scopeType: normalizeSecurityScope(report).scopeType,
@@ -436,8 +425,8 @@ export async function generateEvidenceReportHandler(
 
   return {
     createdAt,
-    exportHash: null,
     id,
+    latestExport: null,
     report,
     scopeId: SECURITY_SCOPE_ID,
     scopeType: SECURITY_SCOPE_TYPE,

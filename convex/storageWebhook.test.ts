@@ -17,7 +17,7 @@ describe('storage webhook handling', () => {
     vi.clearAllMocks();
   });
 
-  it('treats raw clean s3-primary findings as awaiting promotion results', async () => {
+  it('records clean s3-primary findings and waits for the decision worker', async () => {
     const ctx = {
       runAction: vi.fn(),
       runMutation: vi.fn(),
@@ -37,11 +37,17 @@ describe('storage webhook handling', () => {
         status: 'CLEAN',
       }),
     ).resolves.toEqual({
-      applied: false,
-      reason: 'awaiting_promotion_result',
+      applied: true,
+      reason: 'ok',
     });
 
-    expect(ctx.runMutation).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        scannedAt: expect.any(Number),
+        storageId: 'file-1',
+      }),
+    );
     expect(ctx.runAction).not.toHaveBeenCalled();
   });
 

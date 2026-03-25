@@ -336,6 +336,7 @@ export type StorageRuntimeConfig = {
   mirrorRetryMaxDelayMs: number;
   s3DeleteMaxAttempts: number;
   s3FilesBucket: string | null;
+  s3FilesKmsKeyArn: string | null;
   s3OrphanCleanupMaxScan: number;
   s3OrphanCleanupMinAgeMs: number;
   storageStaleUploadTtlMs: number;
@@ -465,6 +466,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       3,
     ),
     s3FilesBucket: readOptionalServerEnv('AWS_S3_FILES_BUCKET'),
+    s3FilesKmsKeyArn: readOptionalServerEnv('AWS_S3_FILES_KMS_KEY_ARN'),
     s3OrphanCleanupMaxScan: parsePositiveInteger(
       readOptionalServerEnv('AWS_S3_ORPHAN_CLEANUP_MAX_SCAN'),
       'AWS_S3_ORPHAN_CLEANUP_MAX_SCAN',
@@ -496,6 +498,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       backendMode,
     ),
     s3FilesBucket: readRequiredStorageEnv('AWS_S3_FILES_BUCKET', backendMode),
+    s3FilesKmsKeyArn: readRequiredStorageEnv('AWS_S3_FILES_KMS_KEY_ARN', backendMode),
   };
 }
 

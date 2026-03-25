@@ -4,7 +4,12 @@ import { Trash2 } from 'lucide-react';
 interface AdminCardProps {
   title: string;
   description: string;
-  href?: string;
+  href?:
+    | '/app/admin/emails'
+    | '/app/admin/models'
+    | '/app/admin/security'
+    | '/app/admin/stats'
+    | '/app/admin/users';
   onClick?: () => void;
   destructive?: boolean;
   disabled?: boolean;

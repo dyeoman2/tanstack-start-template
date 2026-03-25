@@ -85,6 +85,7 @@ const result = spawnSync('pnpm', cdkArgs, {
     AWS_STORAGE_PROJECT_SLUG: projectSlug,
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || awsRegion,
     AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/guardduty-malware`,
+    AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/storage-inspection`,
     AWS_MALWARE_WEBHOOK_SHARED_SECRET: malwareWebhookSharedSecret,
     AWS_S3_FILES_BUCKET_NAME: bucket,
     STORAGE_STAGE: stage,

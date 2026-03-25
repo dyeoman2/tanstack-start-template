@@ -5,6 +5,7 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
+import { tryFinalizeStorageDecision } from './storageDecision';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -183,24 +184,29 @@ export async function applyGuardDutyFinding(
     return { applied: false, reason: 'missing_lifecycle' as const };
   }
 
-  if (lifecycle.malwareFindingId === args.findingId) {
+  if (
+    lifecycle.malwareFindingId === args.findingId ||
+    (args.status === 'CLEAN' && lifecycle.malwareStatus === 'CLEAN') ||
+    (args.status === 'INFECTED' && lifecycle.malwareStatus === 'INFECTED')
+  ) {
     return { applied: false, reason: 'duplicate_finding' as const };
   }
 
   if (args.status === 'CLEAN') {
-    if (lifecycle.backendMode === 's3-primary') {
-      return { applied: false, reason: 'awaiting_promotion_result' as const };
-    }
     await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
       scannedAt: args.scannedAt,
       storageId: lifecycle.storageId,
     });
-    await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
-      storageId: lifecycle.storageId,
-    });
-    await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
-      storageId: lifecycle.storageId,
-    });
+    if (lifecycle.backendMode === 's3-primary') {
+      await tryFinalizeStorageDecision(ctx, { storageId: lifecycle.storageId });
+    } else {
+      await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
+        storageId: lifecycle.storageId,
+      });
+      await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+        storageId: lifecycle.storageId,
+      });
+    }
   } else {
     await ctx.runMutation(internal.storageLifecycle.markInfectedInternal, {
       findingId: args.findingId,
@@ -211,9 +217,13 @@ export async function applyGuardDutyFinding(
       reason: 'Attachment blocked by GuardDuty malware finding.',
       storageId: lifecycle.storageId,
     });
-    await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
-      storageId: lifecycle.storageId,
-    });
+    if (lifecycle.backendMode === 's3-primary') {
+      await tryFinalizeStorageDecision(ctx, { storageId: lifecycle.storageId });
+    } else {
+      await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+        storageId: lifecycle.storageId,
+      });
+    }
   }
 
   return { applied: true, reason: 'ok' as const };

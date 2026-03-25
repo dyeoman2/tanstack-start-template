@@ -132,7 +132,10 @@ bash ./scripts/sync-dr-env-to-secrets-manager.sh --preview-name your-preview
 If production uses `s3-primary` or `s3-mirror`, make sure the resulting secret includes:
 
 - `FILE_STORAGE_BACKEND`
+- `AWS_REGION`
 - `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - `CONVEX_SITE_URL`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 

@@ -19,10 +19,12 @@ vi.mock('./storagePlatform', () => ({
 
 let archiveSecurityControlEvidenceHandler: typeof import('./lib/security/workspace').archiveSecurityControlEvidenceHandler;
 let buildExportManifestFn: typeof import('./lib/security/core').buildExportManifest;
+let buildEvidenceReportDetailFn: typeof import('./lib/security/review_runs_read_models').buildEvidenceReportDetail;
 let deleteSecurityRelationships: typeof import('./lib/security/core').deleteSecurityRelationships;
 let exportEvidenceReportHandler: typeof import('./lib/security/reports').exportEvidenceReportHandler;
 let generateEvidenceReportHandler: typeof import('./lib/security/reports').generateEvidenceReportHandler;
 let getAuditReadinessSnapshotHandler: typeof import('./lib/security/posture').getAuditReadinessSnapshotHandler;
+let getLatestEvidenceReportExportsByReportIdFn: typeof import('./lib/security/core').getLatestEvidenceReportExportsByReportId;
 let _getSecurityPostureSummaryHandler: typeof import('./lib/security/posture').getSecurityPostureSummaryHandler;
 let buildSecurityWorkspaceControlSummary: typeof import('./lib/security/operations_core').buildSecurityWorkspaceControlSummary;
 let listSecurityFindingsHandler: typeof import('./lib/security/workspace').listSecurityFindingsHandler;
@@ -235,6 +237,100 @@ function createSecurityDb(seed?: {
   return { db, tables };
 }
 
+function createSecurityQueryCtx(seed?: {
+  evidenceReports?: Array<Record<string, unknown>>;
+  exportArtifacts?: Array<Record<string, unknown>>;
+  reviewRuns?: Array<Record<string, unknown>>;
+  reviewTaskEvidenceLinks?: Array<Record<string, unknown>>;
+  reviewTasks?: Array<Record<string, unknown>>;
+  userProfiles?: Array<Record<string, unknown>>;
+}) {
+  const tables = {
+    evidenceReports: seed?.evidenceReports ?? [],
+    exportArtifacts: seed?.exportArtifacts ?? [],
+    reviewRuns: seed?.reviewRuns ?? [],
+    reviewTaskEvidenceLinks: seed?.reviewTaskEvidenceLinks ?? [],
+    reviewTasks: seed?.reviewTasks ?? [],
+    userProfiles: seed?.userProfiles ?? [],
+  } as const;
+
+  return {
+    db: {
+      async get(id: string) {
+        for (const table of Object.values(tables)) {
+          const match = table.find((doc) => doc._id === id);
+          if (match) {
+            return clone(match);
+          }
+        }
+        return null;
+      },
+      query(table: keyof typeof tables) {
+        const tableEntries = tables[table];
+        return {
+          withIndex: (
+            _indexName: string,
+            buildRange?: (q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => { eq: (field: string, value: unknown) => unknown };
+            }) => unknown,
+          ) => {
+            const filters: Array<[string, unknown]> = [];
+            const q = {
+              eq(field: string, value: unknown) {
+                filters.push([field, value]);
+                return q;
+              },
+            };
+            buildRange?.(q);
+            const matching = tableEntries.filter((doc) =>
+              filters.every(
+                ([field, expected]) => (doc as Record<string, unknown>)[field] === expected,
+              ),
+            );
+            const sortByCreatedAt = (direction: 'asc' | 'desc') =>
+              [...matching].sort((left, right) => {
+                const leftCreatedAt =
+                  typeof left.createdAt === 'number' ? left.createdAt : left._creationTime;
+                const rightCreatedAt =
+                  typeof right.createdAt === 'number' ? right.createdAt : right._creationTime;
+                const diff = Number(leftCreatedAt ?? 0) - Number(rightCreatedAt ?? 0);
+                return direction === 'desc' ? -diff : diff;
+              });
+
+            return {
+              async collect() {
+                return clone(matching);
+              },
+              async first() {
+                return clone(matching[0] ?? null);
+              },
+              async unique() {
+                return clone(matching[0] ?? null);
+              },
+              order(direction: 'asc' | 'desc') {
+                return {
+                  async collect() {
+                    return clone(sortByCreatedAt(direction));
+                  },
+                  async first() {
+                    return clone(sortByCreatedAt(direction)[0] ?? null);
+                  },
+                  async take(limit: number) {
+                    return clone(sortByCreatedAt(direction).slice(0, limit));
+                  },
+                };
+              },
+            };
+          },
+        };
+      },
+    },
+  };
+}
+
 function createMutationCtx(seed?: {
   checklistItems?: ChecklistItemDoc[];
   evidence?: SecurityEvidenceDoc[];
@@ -285,6 +381,7 @@ beforeAll(async () => {
     reportsHelperModule,
     opsHelperModule,
     coreModule,
+    reviewRunsReadModelsModule,
   ] = await Promise.all([
     import('./securityWorkspace'),
     import('./securityPosture'),
@@ -296,6 +393,7 @@ beforeAll(async () => {
     import('./lib/security/reports'),
     import('./lib/security/operations_core'),
     import('./lib/security/core'),
+    import('./lib/security/review_runs_read_models'),
   ]);
   securityWorkspaceModuleRef = workspaceModule;
   securityPostureModuleRef = postureModule;
@@ -309,6 +407,7 @@ beforeAll(async () => {
   exportEvidenceReportHandler = reportsHelperModule.exportEvidenceReportHandler;
   generateEvidenceReportHandler = reportsHelperModule.generateEvidenceReportHandler;
   getAuditReadinessSnapshotHandler = postureHelperModule.getAuditReadinessSnapshotHandler;
+  getLatestEvidenceReportExportsByReportIdFn = coreModule.getLatestEvidenceReportExportsByReportId;
   _getSecurityPostureSummaryHandler = postureHelperModule.getSecurityPostureSummaryHandler;
   buildSecurityWorkspaceControlSummary = opsHelperModule.buildSecurityWorkspaceControlSummary;
   listSecurityFindingsHandler = workspaceHelperModule.listSecurityFindingsHandler;
@@ -318,6 +417,7 @@ beforeAll(async () => {
   recordBackupVerificationHandler = opsHelperModule.recordBackupVerificationHandler;
   reviewSecurityFindingHandler = workspaceHelperModule.reviewSecurityFindingHandler;
   summarizeIntegrityCheckFn = coreModule.summarizeIntegrityCheck;
+  buildEvidenceReportDetailFn = reviewRunsReadModelsModule.buildEvidenceReportDetail;
 });
 
 beforeEach(() => {
@@ -424,6 +524,119 @@ describe('audit evidence helpers', () => {
 
     expect(left).toEqual(right);
     expect(left.schemaVersion).toContain('audit-evidence');
+  });
+
+  it('derives the latest evidence report export summary from export artifacts', async () => {
+    const latestExports = await getLatestEvidenceReportExportsByReportIdFn(
+      createSecurityQueryCtx({
+        exportArtifacts: [
+          {
+            _id: 'artifact-ignore',
+            artifactType: 'directory_csv',
+            createdAt: 300,
+            exportedAt: 300,
+            exportedByUserId: 'admin-user',
+            manifestHash: 'manifest-ignore',
+            manifestJson: '{}',
+            payloadHash: 'payload-ignore',
+            schemaVersion: 'audit-evidence-v1',
+            sourceReportId: 'report-1',
+          },
+          {
+            _id: 'artifact-old',
+            artifactType: 'evidence_report_export',
+            createdAt: 200,
+            exportedAt: 200,
+            exportedByUserId: 'admin-user',
+            manifestHash: 'manifest-old',
+            manifestJson:
+              '{"integritySummary":{"checkedAt":"2026-03-18T00:00:00.000Z","failureCount":1,"verified":false}}',
+            payloadHash: 'payload-old',
+            schemaVersion: 'audit-evidence-v1',
+            sourceReportId: 'report-1',
+          },
+          {
+            _id: 'artifact-new',
+            artifactType: 'evidence_report_export',
+            createdAt: 250,
+            exportedAt: 250,
+            exportedByUserId: 'admin-user',
+            manifestHash: 'manifest-new',
+            manifestJson:
+              '{"integritySummary":{"checkedAt":"2026-03-19T00:00:00.000Z","failureCount":0,"verified":true}}',
+            payloadHash: 'payload-new',
+            schemaVersion: 'audit-evidence-v2',
+            sourceReportId: 'report-1',
+          },
+        ],
+      }) as never,
+      ['report-1' as never, 'report-2' as never],
+    );
+
+    expect(latestExports.get('report-1' as never)).toMatchObject({
+      exportHash: 'payload-new',
+      exportedAt: 250,
+      exportedByUserId: 'admin-user',
+      id: 'artifact-new',
+      manifestHash: 'manifest-new',
+    });
+    expect(latestExports.get('report-2' as never)).toBeUndefined();
+  });
+
+  it('builds report detail from export artifacts and tolerates malformed manifests', async () => {
+    const result = await buildEvidenceReportDetailFn(
+      createSecurityQueryCtx({
+        evidenceReports: [
+          {
+            _id: 'report-1',
+            _creationTime: 1,
+            contentHash: 'content-hash-1',
+            contentJson: '{"status":"ok"}',
+            createdAt: 100,
+            generatedByUserId: 'admin-user',
+            organizationId: 'org-1',
+            reportKind: 'audit_readiness',
+            reviewStatus: 'reviewed',
+            reviewedAt: null,
+            reviewedByUserId: null,
+            scopeId: 'provider',
+            scopeType: 'provider_global',
+          },
+        ],
+        exportArtifacts: [
+          {
+            _id: 'artifact-bad',
+            artifactType: 'evidence_report_export',
+            createdAt: 150,
+            exportedAt: 150,
+            exportedByUserId: 'admin-user',
+            manifestHash: 'manifest-bad',
+            manifestJson: '{',
+            payloadHash: 'payload-bad',
+            schemaVersion: 'audit-evidence-v2',
+            sourceReportId: 'report-1',
+          },
+        ],
+      }) as never,
+      'report-1' as never,
+    );
+
+    expect(result).toMatchObject({
+      contentHash: 'content-hash-1',
+      id: 'report-1',
+      latestExport: {
+        exportHash: 'payload-bad',
+        exportedAt: 150,
+        exportedByUserId: 'admin-user',
+        id: 'artifact-bad',
+        integritySummary: null,
+        manifestHash: 'manifest-bad',
+        manifestJson: '{',
+        schemaVersion: 'audit-evidence-v2',
+      },
+      linkedTasks: [],
+      organizationId: 'org-1',
+    });
   });
 
   it('records structured backup drill evidence and matching audit events', async () => {
@@ -1228,11 +1441,7 @@ describe('audit evidence helpers', () => {
       limit: 250,
       verified: false,
     }));
-    const runMutation = vi
-      .fn()
-      .mockResolvedValueOnce('artifact-1')
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null);
+    const runMutation = vi.fn().mockResolvedValueOnce('artifact-1').mockResolvedValueOnce(null);
 
     const result = await exportEvidenceReportHandler(
       {
@@ -1245,6 +1454,13 @@ describe('audit evidence helpers', () => {
 
     expect(result).toMatchObject({
       id: 'report-1',
+      latestExport: {
+        exportHash: expect.any(String),
+        exportedAt: Date.parse('2026-03-18T16:00:00.000Z'),
+        exportedByUserId: 'admin-user',
+        id: 'artifact-1',
+        manifestHash: expect.any(String),
+      },
       reportKind: 'audit_readiness',
       reviewStatus: 'reviewed',
     });
@@ -1274,12 +1490,8 @@ describe('audit evidence helpers', () => {
       reportId: 'report-1',
       reportKind: 'audit_readiness',
     });
+    expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
-      id: 'report-1',
-      latestExportArtifactId: 'artifact-1',
-    });
-    expect(runMutation.mock.calls[1]?.[1]).not.toHaveProperty('exportBundleJson');
-    expect(runMutation.mock.calls[2]?.[1]).toMatchObject({
       eventType: 'evidence_report_exported',
       resourceId: 'report-1',
       resourceLabel: 'audit_readiness',

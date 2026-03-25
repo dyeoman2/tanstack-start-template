@@ -121,6 +121,7 @@ Those commands derive storage CDK inputs from the runtime storage env for the se
 - `AWS_REGION`
 - `CONVEX_SITE_URL`
 - `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
 - `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - optional `AWS_PROFILE`
 
@@ -194,6 +195,7 @@ If using S3-backed storage:
 
 - `FILE_STORAGE_BACKEND`
 - `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 
 ## Dedicated DR Frontend Requirements

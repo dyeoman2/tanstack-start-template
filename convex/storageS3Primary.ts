@@ -4,7 +4,11 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { issueFileAccessUrlForCurrentUser } from './fileServing';
-import { createPresignedS3Url, deleteS3Object } from './lib/storageS3';
+import {
+  createPresignedS3Url,
+  deleteS3Object,
+  getRequiredS3EncryptionHeaders,
+} from './lib/storageS3';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
 
 function toStoragePathSegment(value: string) {
@@ -66,6 +70,17 @@ export function buildPromotedStorageKey(args: {
   });
 }
 
+export function buildRejectedStorageKey(args: {
+  organizationId?: string | null;
+  sourceType: string;
+  storageId: string;
+}) {
+  return buildScopedStoragePath({
+    ...args,
+    topLevelPrefix: 'rejected',
+  });
+}
+
 export async function generateS3PrimaryUploadTarget(args: {
   contentType: string;
   fileName: string;
@@ -90,10 +105,14 @@ export async function generateS3PrimaryUploadTarget(args: {
         'x-amz-checksum-sha256': hexSha256ToBase64(args.sha256Hex),
       }
     : undefined;
+  const encryptionHeaders = getRequiredS3EncryptionHeaders();
   const presigned = await createPresignedS3Url({
     bucket,
     contentType: args.contentType,
-    headers: checksumHeader,
+    headers: {
+      ...encryptionHeaders,
+      ...checksumHeader,
+    },
     key: quarantineKey,
     method: 'PUT',
   });
@@ -104,6 +123,7 @@ export async function generateS3PrimaryUploadTarget(args: {
     storageId: args.storageId,
     uploadHeaders: {
       'Content-Type': args.contentType,
+      ...encryptionHeaders,
       ...checksumHeader,
     },
     uploadMethod: 'PUT',
@@ -145,6 +165,13 @@ export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUplo
     eventType: 'finalized',
     storageId: args.storageId,
   });
+  await ctx.scheduler.runAfter(
+    0,
+    internal.storageDecision.inspectQuarantineObjectByStorageIdInternal,
+    {
+      storageId: args.storageId,
+    },
+  );
 }
 
 export async function resolveS3PrimaryUrl(ctx: ActionCtx, args: ResolveFileUrlArgs) {
@@ -184,6 +211,14 @@ export async function deleteS3PrimaryObject(ctx: ActionCtx, args: { storageId: s
       bucket: lifecycle.quarantineBucket,
       key: lifecycle.quarantineKey,
       versionId: lifecycle.quarantineVersionId,
+    });
+  }
+
+  if (lifecycle.rejectedBucket && lifecycle.rejectedKey) {
+    await deleteS3Object({
+      bucket: lifecycle.rejectedBucket,
+      key: lifecycle.rejectedKey,
+      versionId: lifecycle.rejectedVersionId,
     });
   }
 }

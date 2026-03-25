@@ -5,6 +5,10 @@ import { resend } from './emails';
 import { recordFileAccessRedeemFailure, redeemFileAccessTicketOrThrow } from './fileServing';
 import { healthCheck } from './health';
 import {
+  applyStorageInspectionRequest,
+  parseStorageInspectionWebhookPayload,
+} from './storageDecision';
+import {
   applyGuardDutyPromotionResult,
   applyGuardDutyFinding,
   parseGuardDutyWebhookPayload,
@@ -59,6 +63,24 @@ http.route({
       payload.type === 'promotion_result'
         ? await applyGuardDutyPromotionResult(ctx, payload)
         : await applyGuardDutyFinding(ctx, payload);
+
+    return Response.json(result, { status: 200 });
+  }),
+});
+
+http.route({
+  path: '/aws/storage-inspection',
+  method: 'POST',
+  handler: httpAction(async (ctx, request) => {
+    const rawBody = await request.text();
+    await verifyWebhookSignature({
+      payload: rawBody,
+      signature: request.headers.get('X-Scriptflow-Signature'),
+      timestamp: request.headers.get('X-Scriptflow-Timestamp'),
+    });
+
+    const payload = parseStorageInspectionWebhookPayload(rawBody);
+    const result = await applyStorageInspectionRequest(ctx, payload);
 
     return Response.json(result, { status: 200 });
   }),

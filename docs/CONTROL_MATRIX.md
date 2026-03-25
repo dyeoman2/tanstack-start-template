@@ -10,9 +10,9 @@ This template documents the implemented safeguards that ship out of the box and 
 
 ### Physical and technical safeguards (app scope)
 
-- Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, and MFA-gated admin access; infrastructure hardening (WAF, TLS certs, key rotation) is required from the deployment environment.
+- Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, MFA-gated admin access, and repo-pinned edge security headers; deployers still need to operate WAF, TLS certs, and key rotation.
 - Transmission and access protection: strict trusted-origin checks, canonical Better Auth base URL validation, short-lived session freshness, and policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
-- Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need log aggregation, retention, and review processes.
+- Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need centralized log aggregation, retention, and review processes.
 - Integrity: file-type/signature verification plus quarantining hooks support the document flow, but any production malware/DLP scanning is the deployer’s responsibility.
 
 ### Operational evidence
@@ -24,4 +24,4 @@ This template documents the implemented safeguards that ship out of the box and 
 ### Important limitations
 
 - This template explicitly ships controls it can enforce; certification, attestation, or third-party compliance reports must still be delivered by the deployer/operator.
-- Deployers remain responsible for infrastructure hardening, operational backup execution, incident response, BAA/legal documentation, and any paid third-party services (SOC 2 readiness, HITRUST assessment, dedicated AV engines) they choose to add.
+- Deployers remain responsible for controls beyond the shipped baseline: WAF tuning, operational backup execution, incident response, BAA/legal documentation, and any paid third-party services (SOC 2 readiness, HITRUST assessment, dedicated AV engines) they choose to add.

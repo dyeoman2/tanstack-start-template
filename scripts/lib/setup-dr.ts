@@ -182,6 +182,7 @@ export function getRequiredStorageDrEnvKeys(envVars: Record<string, string>): st
       'FILE_STORAGE_BACKEND',
       'AWS_REGION',
       'AWS_S3_FILES_BUCKET',
+      'AWS_S3_FILES_KMS_KEY_ARN',
       'AWS_FILE_SERVE_SIGNING_SECRET',
       'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ];

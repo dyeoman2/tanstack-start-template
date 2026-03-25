@@ -7,7 +7,7 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireCommands } from './lib/cli-preflight';
 import { convexEnvList } from './lib/convex-cli';
@@ -17,7 +17,104 @@ import {
   getNetlifySiteDetails,
   readNetlifyLinkedSiteIdFromDisk,
 } from './lib/netlify-cli';
+import { parseConvexEnvList } from './lib/setup-dr';
 import { emitStructuredOutput, hasFlag, routeLogsToStderrWhenJson } from './lib/script-ux';
+
+const REQUIRED_S3_RUNTIME_ENV_NAMES = [
+  'AWS_REGION',
+  'AWS_S3_FILES_BUCKET',
+  'AWS_S3_FILES_KMS_KEY_ARN',
+  'AWS_FILE_SERVE_SIGNING_SECRET',
+  'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+] as const;
+
+const REQUIRED_NETLIFY_HEADERS = {
+  'Cross-Origin-Opener-Policy': 'same-origin',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Permissions-Policy':
+    'camera=(), geolocation=(), microphone=(), payment=(), usb=(), browsing-topics=()',
+  'Referrer-Policy': 'strict-origin-when-cross-origin',
+  'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'X-Permitted-Cross-Domain-Policies': 'none',
+} as const;
+
+function hasExactTomlAssignment(contents: string, name: string, value: string) {
+  const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const escapedValue = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${escapedName}\\s*=\\s*"${escapedValue}"\\s*$`, 'm').test(contents);
+}
+
+function checkNetlifyHardening(
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+) {
+  const netlifyTomlPath = join(process.cwd(), 'netlify.toml');
+  if (!existsSync(netlifyTomlPath)) {
+    checks.push({
+      check: 'Netlify hardening headers',
+      status: 'fail',
+      detail: 'netlify.toml is missing',
+    });
+    console.log('❌ Netlify hardening headers are not enforced because netlify.toml is missing');
+    return false;
+  }
+
+  const contents = readFileSync(netlifyTomlPath, 'utf8');
+  const missing = Object.entries(REQUIRED_NETLIFY_HEADERS)
+    .filter(([name, value]) => !hasExactTomlAssignment(contents, name, value))
+    .map(([name]) => name);
+
+  if (missing.length > 0) {
+    console.log(`❌ Netlify hardening headers missing or drifted: ${missing.join(', ')}`);
+    checks.push({
+      check: 'Netlify hardening headers',
+      status: 'fail',
+      detail: `Missing: ${missing.join(', ')}`,
+    });
+    return false;
+  }
+
+  console.log('✅ Netlify hardening headers pinned in netlify.toml');
+  checks.push({ check: 'Netlify hardening headers', status: 'pass' });
+  return true;
+}
+
+function checkStorageRuntimeEnv(
+  label: string,
+  envVars: Record<string, string>,
+  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
+) {
+  const backend = (envVars.FILE_STORAGE_BACKEND ?? 'convex').trim() || 'convex';
+  if (backend !== 's3-primary' && backend !== 's3-mirror') {
+    console.log(`✅ S3 runtime env (${label}) not required for FILE_STORAGE_BACKEND=${backend}`);
+    checks.push({
+      check: `S3 runtime env (${label})`,
+      status: 'pass',
+      detail: `FILE_STORAGE_BACKEND=${backend}`,
+    });
+    return true;
+  }
+
+  const missing = REQUIRED_S3_RUNTIME_ENV_NAMES.filter((name) => !(envVars[name] ?? '').trim());
+  if (missing.length > 0) {
+    console.log(`❌ Missing S3 runtime env (${label}): ${missing.join(', ')}`);
+    checks.push({
+      check: `S3 runtime env (${label})`,
+      status: 'fail',
+      detail: `FILE_STORAGE_BACKEND=${backend}; missing ${missing.join(', ')}`,
+    });
+    return false;
+  }
+
+  console.log(`✅ S3 runtime env complete (${label})`);
+  checks.push({
+    check: `S3 runtime env (${label})`,
+    status: 'pass',
+    detail: `FILE_STORAGE_BACKEND=${backend}`,
+  });
+  return true;
+}
 
 function printUsage() {
   console.log('Usage: pnpm run deploy:doctor [-- --prod] [--json]');
@@ -46,6 +143,8 @@ function main() {
   routeLogsToStderrWhenJson(json);
   let ok = true;
   const checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }> = [];
+  let convexDevEnvOutput: string | null = null;
+  let convexProdEnvOutput: string | null = null;
 
   console.log('\n🔎 Deploy doctor\n');
   console.log(
@@ -85,7 +184,7 @@ function main() {
   }
 
   try {
-    convexEnvList(false);
+    convexDevEnvOutput = convexEnvList(false);
     console.log('✅ Convex CLI: dev env list');
     checks.push({ check: 'Convex dev env list', status: 'pass' });
   } catch {
@@ -139,7 +238,7 @@ function main() {
     }
 
     try {
-      convexEnvList(true);
+      convexProdEnvOutput = convexEnvList(true);
       console.log('✅ Convex CLI: production env list');
       checks.push({ check: 'Convex production env list', status: 'pass' });
     } catch {
@@ -194,6 +293,21 @@ function main() {
   } else {
     console.log('⚠️  .env.local missing — run pnpm run setup:env');
     checks.push({ check: '.env.local present', status: 'warn', detail: '.env.local missing' });
+  }
+
+  ok = checkNetlifyHardening(checks) && ok;
+
+  if (convexDevEnvOutput) {
+    ok = checkStorageRuntimeEnv('Convex dev', parseConvexEnvList(convexDevEnvOutput), checks) && ok;
+  }
+
+  if (convexProdEnvOutput) {
+    ok =
+      checkStorageRuntimeEnv(
+        'Convex production',
+        parseConvexEnvList(convexProdEnvOutput),
+        checks,
+      ) && ok;
   }
 
   console.log('');

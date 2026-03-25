@@ -60,7 +60,7 @@ import {
   buildOrganizationAuditProjection,
   getOrganizationAuditEventLabel as getOrganizationAuditEventLabelFromLib,
   parseAuditMetadata as parseAuditMetadataFromLib,
-} from './lib/organizationAuditEvents';
+} from './lib/organizationAuditProjection';
 import { listStandaloneAttachmentsForOrganization } from './lib/organizationCleanup';
 import {
   getOrganizationMembershipStateRecord,

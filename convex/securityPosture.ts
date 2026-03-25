@@ -16,7 +16,11 @@ import {
   securityWorkspaceOverviewValidator,
 } from './lib/security/validators';
 import { v } from 'convex/values';
-import { getSecurityScopeFields, normalizeSecurityScope } from './lib/security/core';
+import {
+  getLatestEvidenceReportExportsByReportId,
+  getSecurityScopeFields,
+  normalizeSecurityScope,
+} from './lib/security/core';
 import {
   buildSecurityWorkspaceControlSummary,
   buildSecurityWorkspaceFindingSummary,
@@ -39,14 +43,7 @@ export const createEvidenceReport = internalMutation({
     return await ctx.db.insert('evidenceReports', {
       ...getSecurityScopeFields(),
       ...args,
-      exportHash: undefined,
-      exportIntegritySummary: undefined,
-      exportManifestJson: undefined,
-      exportManifestHash: undefined,
       internalReviewNotes: null,
-      latestExportArtifactId: undefined,
-      exportedAt: null,
-      exportedByUserId: null,
       reviewStatus: 'pending',
       reviewedAt: null,
       reviewedByUserId: null,
@@ -191,6 +188,10 @@ export const getSecurityReportsBoard = query({
           .withIndex('by_created_at')
           .order('desc')
           .take(10);
+        const latestExportsByReportId = await getLatestEvidenceReportExportsByReportId(
+          ctx,
+          reports.map((report) => report._id),
+        );
         return reports.map((report) => ({
           id: report._id,
           createdAt: report.createdAt,
@@ -201,10 +202,7 @@ export const getSecurityReportsBoard = query({
           scopeType: normalizeSecurityScope(report).scopeType,
           reportKind: report.reportKind,
           contentHash: report.contentHash,
-          exportHash: report.exportHash ?? null,
-          exportManifestHash: report.exportManifestHash ?? null,
-          exportedAt: report.exportedAt ?? null,
-          exportedByUserId: report.exportedByUserId ?? null,
+          latestExport: latestExportsByReportId.get(report._id) ?? null,
           reviewStatus: report.reviewStatus,
           reviewedAt: report.reviewedAt ?? null,
           reviewedByUserId: report.reviewedByUserId ?? null,

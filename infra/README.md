@@ -196,6 +196,7 @@ The application storage platform expects these runtime variables when `FILE_STOR
 - `FILE_STORAGE_BACKEND`
 - `AWS_REGION`
 - `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
 - `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 - `CONVEX_SITE_URL`

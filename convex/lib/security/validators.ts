@@ -362,8 +362,17 @@ async function enforceSecurityEvidenceUploadRateLimit(
 
 const evidenceReportValidator = v.object({
   createdAt: v.number(),
-  exportHash: v.union(v.string(), v.null()),
   id: v.id('evidenceReports'),
+  latestExport: v.union(
+    v.object({
+      exportHash: v.string(),
+      exportedAt: v.number(),
+      exportedByUserId: v.string(),
+      id: v.id('exportArtifacts'),
+      manifestHash: v.string(),
+    }),
+    v.null(),
+  ),
   report: v.string(),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
@@ -397,19 +406,38 @@ const evidenceReportRecordValidator = v.object({
   ),
   contentJson: v.string(),
   contentHash: v.string(),
-  exportHash: v.optional(v.string()),
-  exportIntegritySummary: v.optional(v.string()),
-  exportManifestJson: v.optional(v.string()),
-  exportManifestHash: v.optional(v.string()),
-  latestExportArtifactId: v.optional(v.id('exportArtifacts')),
-  exportedAt: v.union(v.number(), v.null()),
-  exportedByUserId: v.union(v.string(), v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByUserId: v.union(v.string(), v.null()),
   customerSummary: v.optional(v.union(v.string(), v.null())),
   internalReviewNotes: v.optional(v.union(v.string(), v.null())),
   createdAt: v.number(),
+});
+
+const evidenceReportLatestExportSummaryValidator = v.object({
+  exportHash: v.string(),
+  exportedAt: v.number(),
+  exportedByUserId: v.string(),
+  id: v.id('exportArtifacts'),
+  manifestHash: v.string(),
+});
+
+const evidenceReportLatestExportDetailValidator = v.object({
+  exportHash: v.string(),
+  exportedAt: v.number(),
+  exportedByUserId: v.string(),
+  id: v.id('exportArtifacts'),
+  integritySummary: v.union(
+    v.object({
+      checkedAt: v.union(v.string(), v.null()),
+      failureCount: v.number(),
+      verified: v.boolean(),
+    }),
+    v.null(),
+  ),
+  manifestHash: v.string(),
+  manifestJson: v.string(),
+  schemaVersion: v.string(),
 });
 
 const evidenceReportListItemValidator = v.object({
@@ -430,10 +458,7 @@ const evidenceReportListItemValidator = v.object({
     v.literal('control_workspace_snapshot'),
   ),
   contentHash: v.string(),
-  exportHash: v.union(v.string(), v.null()),
-  exportManifestHash: v.union(v.string(), v.null()),
-  exportedAt: v.union(v.number(), v.null()),
-  exportedByUserId: v.union(v.string(), v.null()),
+  latestExport: v.union(evidenceReportLatestExportSummaryValidator, v.null()),
   reviewStatus: v.union(v.literal('pending'), v.literal('reviewed'), v.literal('needs_follow_up')),
   reviewedAt: v.union(v.number(), v.null()),
   reviewedByUserId: v.union(v.string(), v.null()),
@@ -1020,14 +1045,9 @@ const evidenceReportDetailValidator = v.object({
   contentHash: v.string(),
   contentJson: v.string(),
   createdAt: v.number(),
-  exportHash: v.union(v.string(), v.null()),
-  exportIntegritySummary: v.union(v.string(), v.null()),
-  exportManifestHash: v.union(v.string(), v.null()),
-  exportManifestJson: v.union(v.string(), v.null()),
-  exportedAt: v.union(v.number(), v.null()),
-  exportedByUserId: v.union(v.string(), v.null()),
   generatedByUserId: v.string(),
   id: v.id('evidenceReports'),
+  latestExport: v.union(evidenceReportLatestExportDetailValidator, v.null()),
   linkedTasks: v.array(reviewTaskLinkedSummaryValidator),
   scopeId: securityScopeIdValidator,
   scopeType: securityScopeTypeValidator,
@@ -1095,11 +1115,7 @@ const auditReadinessSnapshotValidator = v.object({
     v.object({
       createdAt: v.number(),
       details: v.optional(v.string()),
-      jobKind: v.union(
-        v.literal('attachment_purge'),
-        v.literal('quarantine_cleanup'),
-        v.literal('audit_export_cleanup'),
-      ),
+      jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
       processedCount: v.number(),
       scopeId: securityScopeIdValidator,
       scopeType: securityScopeTypeValidator,

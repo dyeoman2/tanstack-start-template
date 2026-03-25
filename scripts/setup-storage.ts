@@ -55,6 +55,18 @@ async function askWithDefault(question: string, fallback: string) {
   return answer || fallback;
 }
 
+async function askRequired(question: string, fallback?: string) {
+  while (true) {
+    const answer = fallback ? await ask(`${question}: `, fallback) : await ask(`${question}: `);
+    const value = (answer || fallback || '').trim();
+    if (value) {
+      return value;
+    }
+
+    console.log('This value is required.');
+  }
+}
+
 async function askYesNo(question: string, fallback = false) {
   const suffix = fallback ? 'Y/n' : 'y/N';
   const answer = (await ask(`${question} (${suffix}): `)).toLowerCase();
@@ -87,9 +99,23 @@ const CONVEX_SYNC_STORAGE_ENV_NAMES = [
   'FILE_STORAGE_BACKEND',
   'AWS_REGION',
   'AWS_S3_FILES_BUCKET',
+  'AWS_S3_FILES_KMS_KEY_ARN',
   'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
   'AWS_FILE_SERVE_SIGNING_SECRET',
 ] as const;
+
+function buildStorageKmsAliasArn(input: {
+  accountId?: string;
+  awsRegion: string;
+  projectSlug: string;
+  stage: 'dev' | 'prod';
+}) {
+  if (!input.accountId) {
+    return null;
+  }
+
+  return `arn:aws:kms:${input.awsRegion}:${input.accountId}:alias/${input.projectSlug}-${input.stage}-files`;
+}
 
 function run(command: string, env?: NodeJS.ProcessEnv) {
   execSync(command, {
@@ -388,9 +414,21 @@ async function main() {
   const awsProfile = await chooseAwsProfile(
     readEnvValue(envContent, 'AWS_PROFILE') ?? process.env.AWS_PROFILE?.trim() ?? null,
   );
+  const awsIdentity = getAwsIdentity(awsRegion, awsProfile ?? undefined);
   const bucket = await askWithDefault(
     'AWS S3 files bucket',
     readEnvValue(envContent, 'AWS_S3_FILES_BUCKET') ?? 'tanstack-start-template-dev-files-bucket',
+  );
+  const kmsKeyArn = await askRequired(
+    'AWS S3 files KMS key ARN or alias ARN',
+    readEnvValue(envContent, 'AWS_S3_FILES_KMS_KEY_ARN') ??
+      buildStorageKmsAliasArn({
+        accountId: awsIdentity?.accountId,
+        awsRegion,
+        projectSlug: 'tanstack-start-template',
+        stage: 'dev',
+      }) ??
+      undefined,
   );
   const convexSiteUrl = await askWithDefault('Convex site URL', convexSiteUrlFallback);
   const webhookSecret = await askWithDefault(
@@ -411,6 +449,9 @@ async function main() {
     });
   }
   envContent = upsertStructuredEnvValue(envContent, 'AWS_S3_FILES_BUCKET', bucket, {
+    sectionMarker: '# STORAGE',
+  });
+  envContent = upsertStructuredEnvValue(envContent, 'AWS_S3_FILES_KMS_KEY_ARN', kmsKeyArn, {
     sectionMarker: '# STORAGE',
   });
   envContent = upsertStructuredEnvValue(
@@ -446,6 +487,7 @@ async function main() {
     console.log(`   AWS_PROFILE=${awsProfile}`);
   }
   console.log(`   AWS_S3_FILES_BUCKET=${bucket}`);
+  console.log(`   AWS_S3_FILES_KMS_KEY_ARN=${kmsKeyArn}`);
   console.log('   AWS_MALWARE_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_FILE_SERVE_SIGNING_SECRET=[set]');
   console.log(`   CONVEX_SITE_URL=${convexSiteUrl}`);
@@ -467,6 +509,7 @@ async function main() {
     console.log(`   pnpm exec convex env set FILE_STORAGE_BACKEND "${storageMode}"`);
     console.log(`   pnpm exec convex env set AWS_REGION "${awsRegion}"`);
     console.log(`   pnpm exec convex env set AWS_S3_FILES_BUCKET "${bucket}"`);
+    console.log(`   pnpm exec convex env set AWS_S3_FILES_KMS_KEY_ARN "${kmsKeyArn}"`);
     console.log('   pnpm exec convex env set AWS_MALWARE_WEBHOOK_SHARED_SECRET "<secret>"');
     console.log('   pnpm exec convex env set AWS_FILE_SERVE_SIGNING_SECRET "<secret>"');
   } else {
@@ -475,6 +518,7 @@ async function main() {
         FILE_STORAGE_BACKEND: storageMode,
         AWS_REGION: awsRegion,
         AWS_S3_FILES_BUCKET: bucket,
+        AWS_S3_FILES_KMS_KEY_ARN: kmsKeyArn,
         AWS_MALWARE_WEBHOOK_SHARED_SECRET: webhookSecret,
         AWS_FILE_SERVE_SIGNING_SECRET: serveSecret,
       } satisfies Record<(typeof CONVEX_SYNC_STORAGE_ENV_NAMES)[number], string>;
@@ -523,7 +567,6 @@ async function main() {
   );
   console.log('');
 
-  const awsIdentity = getAwsIdentity(storageDeployEnv.AWS_REGION, storageDeployEnv.AWS_PROFILE);
   if (awsIdentity) {
     console.log('Resolved AWS deploy target:');
     console.log(`   Account=${awsIdentity.accountId ?? '[unknown]'}`);

@@ -353,7 +353,7 @@ export function AdminSecurityReportsTab(props: {
               </p>
               <div className="mt-2 flex min-h-8 items-center text-2xl font-semibold">
                 {renderCardStatValue(
-                  props.evidenceReports?.filter((item) => item.exportedAt !== null).length,
+                  props.evidenceReports?.filter((item) => item.latestExport !== null).length,
                 )}
               </div>
               <p className="mt-1 text-sm text-muted-foreground">Reports already packaged</p>
@@ -387,7 +387,9 @@ export function AdminSecurityReportsTab(props: {
                               >
                                 {formatEvidenceQueueReviewStatus(item.reviewStatus)}
                               </Badge>
-                              {item.exportedAt ? <Badge variant="secondary">Exported</Badge> : null}
+                              {item.latestExport ? (
+                                <Badge variant="secondary">Exported</Badge>
+                              ) : null}
                             </div>
                             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                               <p>Created {new Date(item.createdAt).toLocaleString()}</p>
@@ -403,7 +405,9 @@ export function AdminSecurityReportsTab(props: {
                                 Export bundle
                               </p>
                               <p className="mt-1 text-foreground">
-                                {item.exportHash ? truncateHash(item.exportHash) : 'Not exported'}
+                                {item.latestExport
+                                  ? truncateHash(item.latestExport.exportHash)
+                                  : 'Not exported'}
                               </p>
                             </div>
                             <div>
@@ -492,7 +496,7 @@ export function AdminSecurityReportsTab(props: {
                                 Manifest hash
                               </p>
                               <p className="mt-2 break-all font-mono text-xs">
-                                {item.exportManifestHash ?? 'Not recorded yet'}
+                                {item.latestExport?.manifestHash ?? 'Not recorded yet'}
                               </p>
                             </div>
                           </div>
@@ -546,7 +550,7 @@ export function AdminSecurityReportsTab(props: {
                                 Export status
                               </p>
                               <p className="mt-1 text-foreground">
-                                {item.exportHash ? 'Bundle recorded' : 'Not exported yet'}
+                                {item.latestExport ? 'Bundle recorded' : 'Not exported yet'}
                               </p>
                             </div>
                             <div>
@@ -554,7 +558,7 @@ export function AdminSecurityReportsTab(props: {
                                 Manifest
                               </p>
                               <p className="mt-1 text-foreground">
-                                {item.exportManifestHash ? 'Recorded' : 'Not recorded yet'}
+                                {item.latestExport ? 'Recorded' : 'Not recorded yet'}
                               </p>
                             </div>
                           </div>

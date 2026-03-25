@@ -29,7 +29,7 @@ async function buildPlaywrightAuthPayload(request: Request, principal: 'user' | 
   };
 }
 
-export const Route = createFileRoute('/api/test/e2e-auth')({
+export const Route = createFileRoute('/api/test/e2e-auth' as never)({
   server: {
     handlers: {
       POST: async ({ request }) => {

@@ -15,8 +15,8 @@ export function AdminSecurityReportDetail(props: {
           <p>{new Date(props.report.createdAt).toLocaleString()}</p>
           <p>Content hash: {props.report.contentHash}</p>
           <p>Review: {props.report.reviewStatus}</p>
-          {'exportManifestHash' in props.report && props.report.exportManifestHash ? (
-            <p>Manifest hash: {props.report.exportManifestHash}</p>
+          {props.report.latestExport ? (
+            <p>Manifest hash: {props.report.latestExport.manifestHash}</p>
           ) : null}
         </div>
       </div>

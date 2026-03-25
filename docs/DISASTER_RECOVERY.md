@@ -61,7 +61,10 @@ This starter supports three storage modes:
 DR can reuse the existing S3-backed serving path. Recovery should preserve:
 
 - `FILE_STORAGE_BACKEND`
+- `AWS_REGION`
 - `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - `CONVEX_SITE_URL`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
 

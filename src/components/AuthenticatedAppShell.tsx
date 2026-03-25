@@ -1,6 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { useQueryClient } from '@tanstack/react-query';
-import { Link, useLocation, useNavigate, useRouter } from '@tanstack/react-router';
+import { useLocation, useNavigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Loader2 } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -118,10 +118,10 @@ function AppBreadcrumbs() {
             <BreadcrumbItem key={item.key}>
               {item.href && !isLast ? (
                 <BreadcrumbLink
-                  asChild
                   className={cn(index < items.length - 2 && 'hidden md:inline')}
+                  href={item.href}
                 >
-                  <Link to={item.href}>{item.label}</Link>
+                  {item.label}
                 </BreadcrumbLink>
               ) : (
                 <BreadcrumbPage>{item.label}</BreadcrumbPage>

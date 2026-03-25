@@ -322,11 +322,7 @@ export const recordDocumentScanEvent = mutation({
 export const recordRetentionJob = internalMutation({
   args: {
     details: v.optional(v.string()),
-    jobKind: v.union(
-      v.literal('attachment_purge'),
-      v.literal('quarantine_cleanup'),
-      v.literal('audit_export_cleanup'),
-    ),
+    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
     processedCount: v.number(),
     status: v.union(v.literal('success'), v.literal('failure')),
   },

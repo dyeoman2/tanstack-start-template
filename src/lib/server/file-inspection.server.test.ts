@@ -5,11 +5,26 @@ function makeBlob(bytes: number[], type: string) {
   return new Blob([Uint8Array.from(bytes)], { type });
 }
 
+function makePdfBlob(type = 'application/pdf') {
+  return new Blob(
+    [
+      `%PDF-1.7
+1 0 obj
+<< /Type /Catalog >>
+endobj
+startxref
+0
+%%EOF`,
+    ],
+    { type },
+  );
+}
+
 describe('inspectFile', () => {
   it('accepts valid PDFs for PDF-only workflows', async () => {
     const result = await inspectFile({
       allowedKinds: ['pdf'],
-      blob: makeBlob([0x25, 0x50, 0x44, 0x46, 0x2d], 'application/pdf'),
+      blob: makePdfBlob(),
       fileName: 'report.pdf',
       maxBytes: 1024,
       mimeType: 'application/pdf',

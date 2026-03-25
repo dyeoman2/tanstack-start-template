@@ -106,6 +106,7 @@ describe('storage helpers', () => {
       'FILE_STORAGE_BACKEND',
       'AWS_REGION',
       'AWS_S3_FILES_BUCKET',
+      'AWS_S3_FILES_KMS_KEY_ARN',
       'AWS_FILE_SERVE_SIGNING_SECRET',
       'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ]);
@@ -140,6 +141,8 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
           FILE_STORAGE_BACKEND: 's3-primary',
           AWS_REGION: 'us-west-1',
           AWS_S3_FILES_BUCKET: 'bucket',
+          AWS_S3_FILES_KMS_KEY_ARN:
+            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-files',
           AWS_MALWARE_WEBHOOK_SHARED_SECRET: 'webhook',
           AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
         },
@@ -158,6 +161,8 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       FILE_STORAGE_BACKEND: 's3-primary',
       AWS_REGION: 'us-west-1',
       AWS_S3_FILES_BUCKET: 'bucket',
+      AWS_S3_FILES_KMS_KEY_ARN:
+        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-files',
       AWS_MALWARE_WEBHOOK_SHARED_SECRET: 'webhook',
       AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
     });

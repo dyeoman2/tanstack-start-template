@@ -15,6 +15,28 @@ export const malwareStatusValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
 );
+export const inspectionStatusValidator = v.union(
+  v.literal('PENDING'),
+  v.literal('PASSED'),
+  v.literal('REJECTED'),
+  v.literal('FAILED'),
+);
+export const inspectionReasonValidator = v.union(
+  v.literal('checksum_mismatch'),
+  v.literal('file_signature_mismatch'),
+  v.literal('inspection_error'),
+  v.literal('pdf_active_content'),
+  v.literal('pdf_embedded_files'),
+  v.literal('pdf_encrypted'),
+  v.literal('pdf_javascript'),
+  v.literal('pdf_launch_action'),
+  v.literal('pdf_malformed'),
+  v.literal('pdf_open_action'),
+  v.literal('pdf_rich_media'),
+  v.literal('pdf_xfa'),
+  v.literal('size_limit_exceeded'),
+  v.literal('unsupported_type'),
+);
 export const mirrorStatusValidator = v.union(
   v.literal('PENDING'),
   v.literal('MIRRORED'),
@@ -23,8 +45,13 @@ export const mirrorStatusValidator = v.union(
 export const quarantineReasonValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
+  v.literal('INSPECTION_REJECTED'),
 );
-export const storagePlacementValidator = v.union(v.literal('QUARANTINE'), v.literal('PROMOTED'));
+export const storagePlacementValidator = v.union(
+  v.literal('QUARANTINE'),
+  v.literal('PROMOTED'),
+  v.literal('REJECTED'),
+);
 
 export const uploadTargetResultValidator = v.object({
   backend: uploadBackendValidator,
@@ -50,9 +77,25 @@ export type MalwareStatus =
   | 'CLEAN'
   | 'INFECTED'
   | 'QUARANTINED_UNSCANNED';
+export type InspectionStatus = 'PENDING' | 'PASSED' | 'REJECTED' | 'FAILED';
+export type InspectionReason =
+  | 'checksum_mismatch'
+  | 'file_signature_mismatch'
+  | 'inspection_error'
+  | 'pdf_active_content'
+  | 'pdf_embedded_files'
+  | 'pdf_encrypted'
+  | 'pdf_javascript'
+  | 'pdf_launch_action'
+  | 'pdf_malformed'
+  | 'pdf_open_action'
+  | 'pdf_rich_media'
+  | 'pdf_xfa'
+  | 'size_limit_exceeded'
+  | 'unsupported_type';
 export type MirrorStatus = 'PENDING' | 'MIRRORED' | 'FAILED';
-export type QuarantineReason = 'INFECTED' | 'QUARANTINED_UNSCANNED';
-export type StoragePlacement = 'QUARANTINE' | 'PROMOTED';
+export type QuarantineReason = 'INFECTED' | 'QUARANTINED_UNSCANNED' | 'INSPECTION_REJECTED';
+export type StoragePlacement = 'QUARANTINE' | 'PROMOTED' | 'REJECTED';
 
 export type CreateUploadTargetArgs = {
   contentType: string;
@@ -84,6 +127,7 @@ export type FinalizeUploadArgs = {
   fileName: string;
   fileSize: number;
   mimeType: string;
+  sha256Hex?: string;
   uploadedById?: string;
 };
 
@@ -104,6 +148,11 @@ export type StorageLifecycleRecord = {
   canonicalVersionId?: string;
   deletedAt?: number;
   fileSize?: number;
+  inspectionDetails?: string;
+  inspectionEngine?: string;
+  inspectionReason?: InspectionReason;
+  inspectionScannedAt?: number;
+  inspectionStatus?: InspectionStatus;
   malwareDetectedAt?: number;
   malwareFindingId?: string;
   malwareScannedAt?: number;
@@ -119,9 +168,13 @@ export type StorageLifecycleRecord = {
   parentStorageId?: string;
   organizationId?: string;
   originalFileName: string;
+  rejectedBucket?: string;
+  rejectedKey?: string;
+  rejectedVersionId?: string;
   quarantineBucket?: string;
   quarantineKey?: string;
   quarantineVersionId?: string;
+  sha256Hex?: string;
   quarantinedAt?: number;
   quarantineReason?: QuarantineReason;
   sourceId: string;

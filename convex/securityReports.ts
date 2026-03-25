@@ -1,4 +1,4 @@
-import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
+import { action, internalQuery, mutation, query } from './_generated/server';
 import { v } from 'convex/values';
 import { getVendorBoundarySnapshot } from '../src/lib/server/vendor-boundary.server';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from './auth/access';
@@ -16,6 +16,7 @@ import {
 } from './lib/security/vendors_core';
 import { exportEvidenceReportHandler, generateEvidenceReportHandler } from './lib/security/reports';
 import {
+  getLatestEvidenceReportExportsByReportId,
   getSecurityScopeFields,
   normalizeSecurityScope,
   stringifyStable,
@@ -45,13 +46,6 @@ function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
     reportKind: report.reportKind,
     contentJson: report.contentJson,
     contentHash: report.contentHash,
-    exportHash: report.exportHash,
-    exportIntegritySummary: report.exportIntegritySummary,
-    exportManifestJson: report.exportManifestJson,
-    exportManifestHash: report.exportManifestHash,
-    latestExportArtifactId: report.latestExportArtifactId,
-    exportedAt: report.exportedAt,
-    exportedByUserId: report.exportedByUserId,
     reviewStatus: report.reviewStatus,
     reviewedAt: report.reviewedAt,
     reviewedByUserId: report.reviewedByUserId,
@@ -74,6 +68,10 @@ export const listEvidenceReports = query({
       .withIndex('by_created_at')
       .order('desc')
       .take(limit);
+    const latestExportsByReportId = await getLatestEvidenceReportExportsByReportId(
+      ctx,
+      reports.map((report) => report._id),
+    );
     return reports.map((report) => ({
       id: report._id,
       createdAt: report.createdAt,
@@ -84,10 +82,7 @@ export const listEvidenceReports = query({
       scopeType: normalizeSecurityScope(report).scopeType,
       reportKind: report.reportKind,
       contentHash: report.contentHash,
-      exportHash: report.exportHash ?? null,
-      exportManifestHash: report.exportManifestHash ?? null,
-      exportedAt: report.exportedAt ?? null,
-      exportedByUserId: report.exportedByUserId ?? null,
+      latestExport: latestExportsByReportId.get(report._id) ?? null,
       reviewStatus: report.reviewStatus,
       reviewedAt: report.reviewedAt ?? null,
       reviewedByUserId: report.reviewedByUserId ?? null,
@@ -270,32 +265,6 @@ export const getEvidenceReportInternal = internalQuery({
   handler: async (ctx, args) => {
     const report = await ctx.db.get(args.id);
     return report ? toEvidenceReportRecord(report) : null;
-  },
-});
-
-export const storeEvidenceReportExport = internalMutation({
-  args: {
-    id: v.id('evidenceReports'),
-    exportHash: v.string(),
-    exportIntegritySummary: v.string(),
-    exportManifestHash: v.string(),
-    exportManifestJson: v.string(),
-    exportedAt: v.number(),
-    exportedByUserId: v.string(),
-    latestExportArtifactId: v.id('exportArtifacts'),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.id, {
-      exportHash: args.exportHash,
-      exportIntegritySummary: args.exportIntegritySummary,
-      exportManifestHash: args.exportManifestHash,
-      exportManifestJson: args.exportManifestJson,
-      exportedAt: args.exportedAt,
-      exportedByUserId: args.exportedByUserId,
-      latestExportArtifactId: args.latestExportArtifactId,
-    });
-    return null;
   },
 });
 

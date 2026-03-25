@@ -3,6 +3,7 @@ import {
   buildMirrorStorageKey,
   buildPromotedStorageKey,
   buildQuarantineStorageKey,
+  buildRejectedStorageKey,
 } from './storageS3Primary';
 
 describe('s3-primary key builders', () => {
@@ -34,5 +35,15 @@ describe('s3-primary key builders', () => {
         storageId: 'file_1',
       }),
     ).toBe('mirror/org/org_123/chat_attachment/file_1');
+  });
+
+  it('builds rejected keys under the rejected prefix', () => {
+    expect(
+      buildRejectedStorageKey({
+        organizationId: 'org_123',
+        sourceType: 'chat_attachment',
+        storageId: 'file_1',
+      }),
+    ).toBe('rejected/org/org_123/chat_attachment/file_1');
   });
 });

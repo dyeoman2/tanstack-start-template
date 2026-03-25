@@ -294,7 +294,7 @@ export type AuditReadinessOverview = {
   latestRetentionJob: {
     createdAt: number;
     details?: string;
-    jobKind: 'attachment_purge' | 'quarantine_cleanup' | 'audit_export_cleanup';
+    jobKind: 'attachment_purge' | 'quarantine_cleanup';
     processedCount: number;
     status: 'failure' | 'success';
   } | null;
@@ -327,10 +327,13 @@ export type EvidenceReportListItem = {
   internalNotes: string | null;
   reportKind: EvidenceReportKind;
   contentHash: string;
-  exportHash: string | null;
-  exportManifestHash: string | null;
-  exportedAt: number | null;
-  exportedByUserId: string | null;
+  latestExport: {
+    exportHash: string;
+    exportedAt: number;
+    exportedByUserId: string;
+    id: Id<'exportArtifacts'>;
+    manifestHash: string;
+  } | null;
   reviewStatus: 'needs_follow_up' | 'pending' | 'reviewed';
   reviewedAt: number | null;
   reviewedByUserId: string | null;
@@ -340,14 +343,22 @@ export type EvidenceReportDetail = {
   contentHash: string;
   contentJson: string;
   createdAt: number;
-  exportHash: string | null;
-  exportIntegritySummary: string | null;
-  exportManifestHash: string | null;
-  exportManifestJson: string | null;
-  exportedAt: number | null;
-  exportedByUserId: string | null;
   generatedByUserId: string;
   id: Id<'evidenceReports'>;
+  latestExport: {
+    exportHash: string;
+    exportedAt: number;
+    exportedByUserId: string;
+    id: Id<'exportArtifacts'>;
+    integritySummary: {
+      checkedAt: string | null;
+      failureCount: number;
+      verified: boolean;
+    } | null;
+    manifestHash: string;
+    manifestJson: string;
+    schemaVersion: string;
+  } | null;
   linkedTasks: Array<{
     controlLinks: Array<{
       controlTitle: string | null;

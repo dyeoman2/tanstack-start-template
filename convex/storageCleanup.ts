@@ -65,11 +65,7 @@ export const enforceMalwareDeadlinesInternal = internalAction({
       await ctx.runMutation(internal.storageLifecycle.markDeadlineMissedInternal, {
         storageId: row.storageId,
       });
-      await ctx.runMutation(internal.agentChat.quarantineAttachmentByStorageIdInternal, {
-        reason: 'Attachment quarantined because malware scan SLA elapsed.',
-        storageId: row.storageId,
-      });
-      await ctx.runAction(internal.pdfParseActions.processPendingPdfParseJobInternal, {
+      await ctx.runAction(internal.storageDecision.tryFinalizeStorageDecisionInternal, {
         storageId: row.storageId,
       });
     }

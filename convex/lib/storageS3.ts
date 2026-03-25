@@ -19,6 +19,11 @@ type AwsCredentials = {
   sessionToken?: string;
 };
 
+type S3EncryptionSettings = {
+  kmsKeyArn: string;
+  serverSideEncryption: 'aws:kms';
+};
+
 const PRESIGN_EXPIRY_SECONDS = 60 * 60;
 
 function encodeRfc3986(value: string) {
@@ -117,6 +122,28 @@ export function getS3Client(config?: Partial<S3ClientConfig>) {
   });
 }
 
+export function getRequiredS3EncryptionSettings(): S3EncryptionSettings {
+  const runtimeConfig = getStorageRuntimeConfig();
+  if (!runtimeConfig.s3FilesKmsKeyArn) {
+    throw new Error(
+      'AWS_S3_FILES_KMS_KEY_ARN environment variable is required for S3-backed storage.',
+    );
+  }
+
+  return {
+    kmsKeyArn: runtimeConfig.s3FilesKmsKeyArn,
+    serverSideEncryption: 'aws:kms',
+  };
+}
+
+export function getRequiredS3EncryptionHeaders(): Record<string, string> {
+  const settings = getRequiredS3EncryptionSettings();
+  return {
+    'x-amz-server-side-encryption': settings.serverSideEncryption,
+    'x-amz-server-side-encryption-aws-kms-key-id': settings.kmsKeyArn,
+  };
+}
+
 export async function createPresignedS3Url(args: {
   bucket: string;
   contentType?: string;
@@ -208,12 +235,15 @@ export async function putS3Object(args: {
   key: string;
 }) {
   const client = getS3Client();
+  const encryption = getRequiredS3EncryptionSettings();
   return await client.send(
     new PutObjectCommand({
       Body: args.body,
       Bucket: args.bucket,
       ContentType: args.contentType,
       Key: args.key,
+      SSEKMSKeyId: encryption.kmsKeyArn,
+      ServerSideEncryption: encryption.serverSideEncryption,
     }),
   );
 }
@@ -226,6 +256,7 @@ export async function copyS3Object(args: {
   sourceKey: string;
 }) {
   const client = getS3Client();
+  const encryption = getRequiredS3EncryptionSettings();
   return await client.send(
     new CopyObjectCommand({
       Bucket: args.bucket,
@@ -233,6 +264,8 @@ export async function copyS3Object(args: {
       CopySource: encodeS3CopySource(args.sourceBucket, args.sourceKey),
       Key: args.destinationKey,
       MetadataDirective: args.contentType ? 'REPLACE' : 'COPY',
+      SSEKMSKeyId: encryption.kmsKeyArn,
+      ServerSideEncryption: encryption.serverSideEncryption,
     }),
   );
 }

@@ -12,14 +12,16 @@ import {
   SidebarMenuSubItem,
 } from '~/components/ui/sidebar';
 
+type NavMainRoute = '/app' | '/app/chat';
+
 export type NavMainItem = {
   title: string;
-  to?: string;
+  to?: NavMainRoute;
   icon?: LucideIcon;
   isActive?: boolean;
   items?: {
     title: string;
-    to: string;
+    to: NavMainRoute;
   }[];
 };
 
@@ -64,7 +66,7 @@ export function NavMain({ items }: { items: NavMainItem[] }) {
           ) : (
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton asChild tooltip={item.title} isActive={item.isActive}>
-                <Link to={item.to ?? '/'}>
+                <Link to={item.to ?? '/app'}>
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
                 </Link>

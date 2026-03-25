@@ -6,6 +6,7 @@ type StorageLifecycleLike = Pick<
   | 'canonicalBucket'
   | 'canonicalKey'
   | 'deletedAt'
+  | 'inspectionStatus'
   | 'malwareStatus'
   | 'mirrorStatus'
   | 'storagePlacement'
@@ -41,6 +42,8 @@ export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageRea
   }
 
   if (
+    lifecycle.inspectionStatus === 'REJECTED' ||
+    lifecycle.inspectionStatus === 'FAILED' ||
     lifecycle.malwareStatus === 'INFECTED' ||
     lifecycle.malwareStatus === 'QUARANTINED_UNSCANNED'
   ) {
@@ -54,12 +57,21 @@ export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageRea
   if (
     lifecycle.backendMode === 's3-primary' &&
     (lifecycle.storagePlacement === 'QUARANTINE' ||
+      lifecycle.storagePlacement === 'REJECTED' ||
       lifecycle.storagePlacement === undefined ||
       (lifecycle.storagePlacement === 'PROMOTED' &&
         (!lifecycle.canonicalBucket || !lifecycle.canonicalKey)))
   ) {
     return {
       message: 'Stored file is pending malware scan.',
+      readable: false,
+      reason: 'pending_scan',
+    };
+  }
+
+  if (lifecycle.inspectionStatus !== undefined && lifecycle.inspectionStatus !== 'PASSED') {
+    return {
+      message: 'Stored file is pending security review.',
       readable: false,
       reason: 'pending_scan',
     };

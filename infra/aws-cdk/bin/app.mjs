@@ -32,6 +32,7 @@ function createStageConfig(projectSlug, stage) {
       account: process.env.CDK_DEFAULT_ACCOUNT,
       region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-1',
     },
+    inspectionWebhookUrl: readTrimmedEnv('AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL'),
     malwareWebhookSharedSecret: readTrimmedEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
     projectSlug,
     stage,
@@ -55,9 +56,14 @@ const drHostnameStrategy = readTrimmedEnv('AWS_DR_HOSTNAME_STRATEGY') || 'custom
 const storageStage = readTrimmedEnv('STORAGE_STAGE');
 if (storageStage === 'dev' || storageStage === 'prod') {
   const config = createStageConfig(storageProjectSlug, storageStage);
-  if (!config.bucketName || !config.webhookUrl || !config.malwareWebhookSharedSecret) {
+  if (
+    !config.bucketName ||
+    !config.inspectionWebhookUrl ||
+    !config.webhookUrl ||
+    !config.malwareWebhookSharedSecret
+  ) {
     throw new Error(
-      'AWS_S3_FILES_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, and AWS_MALWARE_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
+      'AWS_S3_FILES_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL, and AWS_MALWARE_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
     );
   }
 

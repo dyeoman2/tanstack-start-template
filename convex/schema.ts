@@ -14,6 +14,28 @@ const storageLifecycleMalwareStatusValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
 );
+const storageLifecycleInspectionStatusValidator = v.union(
+  v.literal('PENDING'),
+  v.literal('PASSED'),
+  v.literal('REJECTED'),
+  v.literal('FAILED'),
+);
+const storageLifecycleInspectionReasonValidator = v.union(
+  v.literal('checksum_mismatch'),
+  v.literal('file_signature_mismatch'),
+  v.literal('inspection_error'),
+  v.literal('pdf_active_content'),
+  v.literal('pdf_embedded_files'),
+  v.literal('pdf_encrypted'),
+  v.literal('pdf_javascript'),
+  v.literal('pdf_launch_action'),
+  v.literal('pdf_malformed'),
+  v.literal('pdf_open_action'),
+  v.literal('pdf_rich_media'),
+  v.literal('pdf_xfa'),
+  v.literal('size_limit_exceeded'),
+  v.literal('unsupported_type'),
+);
 const storageLifecycleMirrorStatusValidator = v.union(
   v.literal('PENDING'),
   v.literal('MIRRORED'),
@@ -22,8 +44,13 @@ const storageLifecycleMirrorStatusValidator = v.union(
 const storageLifecycleQuarantineReasonValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
+  v.literal('INSPECTION_REJECTED'),
 );
-const storageLifecyclePlacementValidator = v.union(v.literal('QUARANTINE'), v.literal('PROMOTED'));
+const storageLifecyclePlacementValidator = v.union(
+  v.literal('QUARANTINE'),
+  v.literal('PROMOTED'),
+  v.literal('REJECTED'),
+);
 const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('pending_scan'),
@@ -500,9 +527,17 @@ export default defineSchema({
     quarantineBucket: v.optional(v.string()),
     quarantineKey: v.optional(v.string()),
     quarantineVersionId: v.optional(v.string()),
+    rejectedBucket: v.optional(v.string()),
+    rejectedKey: v.optional(v.string()),
+    rejectedVersionId: v.optional(v.string()),
     mirrorBucket: v.optional(v.string()),
     mirrorKey: v.optional(v.string()),
     mirrorVersionId: v.optional(v.string()),
+    inspectionStatus: v.optional(storageLifecycleInspectionStatusValidator),
+    inspectionReason: v.optional(storageLifecycleInspectionReasonValidator),
+    inspectionEngine: v.optional(v.string()),
+    inspectionScannedAt: v.optional(v.number()),
+    inspectionDetails: v.optional(v.string()),
     malwareStatus: v.optional(storageLifecycleMalwareStatusValidator),
     mirrorStatus: v.optional(storageLifecycleMirrorStatusValidator),
     mirrorAttempts: v.optional(v.number()),
@@ -511,6 +546,7 @@ export default defineSchema({
     malwareFindingId: v.optional(v.string()),
     malwareScannedAt: v.optional(v.number()),
     malwareDetectedAt: v.optional(v.number()),
+    sha256Hex: v.optional(v.string()),
     quarantinedAt: v.optional(v.number()),
     quarantineReason: v.optional(storageLifecycleQuarantineReasonValidator),
     storagePlacement: v.optional(storageLifecyclePlacementValidator),
@@ -524,8 +560,10 @@ export default defineSchema({
     .index('by_s3Key', ['canonicalBucket', 'canonicalKey'])
     .index('by_mirrorS3Key', ['mirrorBucket', 'mirrorKey'])
     .index('by_quarantineS3Key', ['quarantineBucket', 'quarantineKey'])
+    .index('by_rejectedS3Key', ['rejectedBucket', 'rejectedKey'])
     .index('by_mirrorDeadlineAt', ['mirrorDeadlineAt'])
     .index('by_malwareStatus', ['malwareStatus'])
+    .index('by_inspectionStatus', ['inspectionStatus'])
     .index('by_deletedAt', ['deletedAt']),
 
   fileAccessTickets: defineTable({
@@ -734,13 +772,6 @@ export default defineSchema({
     ),
     contentJson: v.string(),
     contentHash: v.string(),
-    exportHash: v.optional(v.string()),
-    exportIntegritySummary: v.optional(v.string()),
-    exportManifestJson: v.optional(v.string()),
-    exportManifestHash: v.optional(v.string()),
-    latestExportArtifactId: v.optional(v.id('exportArtifacts')),
-    exportedAt: v.union(v.number(), v.null()),
-    exportedByUserId: v.union(v.string(), v.null()),
     reviewStatus: v.union(
       v.literal('pending'),
       v.literal('reviewed'),
@@ -776,7 +807,7 @@ export default defineSchema({
     .index('by_artifact_type_and_created_at', ['artifactType', 'createdAt'])
     .index('by_created_at', ['createdAt'])
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
-    .index('by_source_report_id', ['sourceReportId']),
+    .index('by_source_report_id_and_created_at', ['sourceReportId', 'createdAt']),
 
   securityControlChecklistItems: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
@@ -1160,11 +1191,7 @@ export default defineSchema({
   retentionJobs: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
     scopeId: v.optional(v.string()),
-    jobKind: v.union(
-      v.literal('attachment_purge'),
-      v.literal('quarantine_cleanup'),
-      v.literal('audit_export_cleanup'),
-    ),
+    jobKind: v.union(v.literal('attachment_purge'), v.literal('quarantine_cleanup')),
     status: v.union(v.literal('success'), v.literal('failure')),
     details: v.optional(v.string()),
     processedCount: v.number(),

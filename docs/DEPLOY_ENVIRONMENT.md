@@ -142,6 +142,16 @@ pnpm run deploy:doctor
 
 Add `-- --prod` to include production Convex env list + JWKS checks, plus hints when `CONVEX_DEPLOY_KEY` / `NETLIFY_AUTH_TOKEN` are unset.
 
+For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is missing any required runtime variables:
+
+- `AWS_REGION`
+- `AWS_S3_FILES_BUCKET`
+- `AWS_S3_FILES_KMS_KEY_ARN`
+- `AWS_FILE_SERVE_SIGNING_SECRET`
+- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+
+It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
+
 ### `setup:prod` flags
 
 Non-interactive-oriented options (combine as needed):

@@ -57,6 +57,18 @@ async function askWithDefault(question: string, fallback: string) {
   return answer || fallback;
 }
 
+async function askRequired(question: string, fallback?: string) {
+  while (true) {
+    const answer = fallback ? await ask(`${question}: `, fallback) : await ask(`${question}: `);
+    const value = (answer || fallback || '').trim();
+    if (value) {
+      return value;
+    }
+
+    console.log('This value is required.');
+  }
+}
+
 async function askYesNo(question: string, fallback = false) {
   const suffix = fallback ? 'Y/n' : 'y/N';
   const answer = (await ask(`${question} (${suffix}): `)).toLowerCase();
@@ -117,6 +129,19 @@ function buildStorageDeployEnv(input: {
     AWS_MALWARE_WEBHOOK_SHARED_SECRET: input.webhookSecret,
     AWS_S3_FILES_BUCKET_NAME: input.bucket,
   };
+}
+
+function buildStorageKmsAliasArn(input: {
+  accountId?: string;
+  awsRegion: string;
+  projectSlug: string;
+  stage: 'dev' | 'prod';
+}) {
+  if (!input.accountId) {
+    return null;
+  }
+
+  return `arn:aws:kms:${input.awsRegion}:${input.accountId}:alias/${input.projectSlug}-${input.stage}-files`;
 }
 
 function formatEnvValue(value: string) {
@@ -357,6 +382,8 @@ async function main() {
     process.env.AWS_REGION?.trim() || 'us-west-1',
   );
   const awsProfile = await chooseAwsProfile(process.env.AWS_PROFILE?.trim() || null);
+  const awsIdentity =
+    storageMode === 'convex' ? null : getAwsIdentity(awsRegion, awsProfile ?? undefined);
 
   const runtimeEnvVars: Record<string, string> = {
     FILE_STORAGE_BACKEND: storageMode,
@@ -372,6 +399,17 @@ async function main() {
       'AWS S3 files bucket',
       'tanstack-start-template-prod-files-bucket',
     );
+    const kmsKeyArn = await askRequired(
+      'AWS S3 files KMS key ARN or alias ARN',
+      process.env.AWS_S3_FILES_KMS_KEY_ARN?.trim() ||
+        buildStorageKmsAliasArn({
+          accountId: awsIdentity?.accountId,
+          awsRegion,
+          projectSlug: 'tanstack-start-template',
+          stage: 'prod',
+        }) ||
+        undefined,
+    );
     const convexSiteUrl = await askWithDefault('Convex site URL', getDefaultConvexSiteUrl());
     const webhookSecret = await askWithDefault(
       'AWS malware webhook shared secret',
@@ -384,12 +422,14 @@ async function main() {
 
     runtimeEnvVars.AWS_REGION = awsRegion;
     runtimeEnvVars.AWS_S3_FILES_BUCKET = bucket;
+    runtimeEnvVars.AWS_S3_FILES_KMS_KEY_ARN = kmsKeyArn;
     runtimeEnvVars.AWS_MALWARE_WEBHOOK_SHARED_SECRET = webhookSecret;
     runtimeEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
     runtimeEnvVars.CONVEX_SITE_URL = convexSiteUrl;
 
     convexProdEnvVars.AWS_REGION = awsRegion;
     convexProdEnvVars.AWS_S3_FILES_BUCKET = bucket;
+    convexProdEnvVars.AWS_S3_FILES_KMS_KEY_ARN = kmsKeyArn;
     convexProdEnvVars.AWS_MALWARE_WEBHOOK_SHARED_SECRET = webhookSecret;
     convexProdEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
 
@@ -492,15 +532,15 @@ async function main() {
   console.log(`   AWS_S3_FILES_BUCKET_NAME=${storageDeployEnv.AWS_S3_FILES_BUCKET_NAME}`);
   console.log('');
 
-  const awsIdentity = getAwsIdentity(
+  const deployTargetIdentity = getAwsIdentity(
     String(storageDeployEnv.AWS_REGION),
     storageDeployEnv.AWS_PROFILE ? String(storageDeployEnv.AWS_PROFILE) : undefined,
   );
-  if (awsIdentity) {
+  if (deployTargetIdentity) {
     console.log('Resolved AWS deploy target:');
-    console.log(`   Account=${awsIdentity.accountId ?? '[unknown]'}`);
-    console.log(`   ARN=${awsIdentity.arn ?? '[unknown]'}`);
-    console.log(`   Region=${awsIdentity.region}`);
+    console.log(`   Account=${deployTargetIdentity.accountId ?? '[unknown]'}`);
+    console.log(`   ARN=${deployTargetIdentity.arn ?? '[unknown]'}`);
+    console.log(`   Region=${deployTargetIdentity.region}`);
     if (storageDeployEnv.AWS_PROFILE) {
       console.log(`   AWS_PROFILE=${storageDeployEnv.AWS_PROFILE}`);
     }

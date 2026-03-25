@@ -120,6 +120,7 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # AWS_REGION=us-west-1
 # AWS_PROFILE=default
 # AWS_S3_FILES_BUCKET=your-dev-bucket
+# AWS_S3_FILES_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files
 # AWS_MALWARE_WEBHOOK_SHARED_SECRET=<generated-secret>
 # AWS_FILE_SERVE_SIGNING_SECRET=<generated-secret>
 # CONVEX_SITE_URL=https://your-project.convex.site
