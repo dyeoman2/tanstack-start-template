@@ -16,6 +16,62 @@ const fileAccessTicketRecordValidator = v.object({
   userAgent: v.union(v.string(), v.null()),
 });
 
+type FileAccessTicketRecord = {
+  createdAt: number;
+  expiresAt: number;
+  ipAddress?: string | null;
+  issuedFromSessionId?: string | null;
+  issuedToUserId: string;
+  organizationId?: string | null;
+  purpose: string;
+  redeemedAt?: number | null;
+  sourceSurface: string;
+  storageId: string;
+  ticketId: string;
+  userAgent?: string | null;
+};
+
+function toFileAccessTicketRecord(
+  ticket: FileAccessTicketRecord,
+  redeemedAt: number | null = ticket.redeemedAt ?? null,
+) {
+  return {
+    ...ticket,
+    organizationId: ticket.organizationId ?? null,
+    redeemedAt,
+    ipAddress: ticket.ipAddress ?? null,
+    issuedFromSessionId: ticket.issuedFromSessionId ?? null,
+    userAgent: ticket.userAgent ?? null,
+  };
+}
+
+export function validateFileAccessTicketRedemption(
+  ticket: FileAccessTicketRecord,
+  args: {
+    expectedSessionId: string;
+    expectedUserId: string;
+    redeemedAt: number;
+  },
+) {
+  if (ticket.redeemedAt) {
+    throw new ConvexError('File access ticket has already been redeemed.');
+  }
+
+  if (ticket.expiresAt <= args.redeemedAt) {
+    throw new ConvexError('File access ticket has expired.');
+  }
+
+  if (ticket.issuedToUserId !== args.expectedUserId) {
+    throw new ConvexError('File access ticket does not belong to the current user.');
+  }
+
+  if (ticket.issuedFromSessionId !== args.expectedSessionId) {
+    throw new ConvexError('File access ticket must be redeemed from the issuing session.');
+  }
+
+  return toFileAccessTicketRecord(ticket, args.redeemedAt);
+}
+
 export const getByTicketIdInternal = internalQuery({
   args: {
     ticketId: v.string(),
@@ -31,14 +87,7 @@ export const getByTicketIdInternal = internalQuery({
       return null;
     }
 
-    return {
-      ...ticket,
-      organizationId: ticket.organizationId ?? null,
-      redeemedAt: ticket.redeemedAt ?? null,
-      ipAddress: ticket.ipAddress ?? null,
-      issuedFromSessionId: ticket.issuedFromSessionId ?? null,
-      userAgent: ticket.userAgent ?? null,
-    };
+    return toFileAccessTicketRecord(ticket);
   },
 });
 
@@ -71,8 +120,10 @@ export const createInternal = internalMutation({
   },
 });
 
-export const redeemInternal = internalMutation({
+export const redeemAuthorizedInternal = internalMutation({
   args: {
+    expectedSessionId: v.string(),
+    expectedUserId: v.string(),
     redeemedAt: v.number(),
     ticketId: v.string(),
   },
@@ -87,25 +138,12 @@ export const redeemInternal = internalMutation({
       return null;
     }
 
-    if (ticket.redeemedAt) {
-      throw new ConvexError('File access ticket has already been redeemed.');
-    }
-
-    if (ticket.expiresAt <= args.redeemedAt) {
-      throw new ConvexError('File access ticket has expired.');
-    }
+    const redeemedTicket = validateFileAccessTicketRedemption(ticket, args);
 
     await ctx.db.patch(ticket._id, {
       redeemedAt: args.redeemedAt,
     });
 
-    return {
-      ...ticket,
-      organizationId: ticket.organizationId ?? null,
-      redeemedAt: args.redeemedAt,
-      ipAddress: ticket.ipAddress ?? null,
-      issuedFromSessionId: ticket.issuedFromSessionId ?? null,
-      userAgent: ticket.userAgent ?? null,
-    };
+    return redeemedTicket;
   },
 });

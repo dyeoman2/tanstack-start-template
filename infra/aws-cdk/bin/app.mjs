@@ -27,14 +27,18 @@ function readTrimmedEnv(name) {
 
 function createStageConfig(projectSlug, stage) {
   return {
-    bucketName: readTrimmedEnv('AWS_S3_FILES_BUCKET_NAME'),
+    cleanBucketName: readTrimmedEnv('AWS_S3_CLEAN_BUCKET_NAME'),
     env: {
       account: process.env.CDK_DEFAULT_ACCOUNT,
       region: process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-1',
     },
+    guardDutyWebhookSharedSecret: readTrimmedEnv('AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET'),
     inspectionWebhookUrl: readTrimmedEnv('AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL'),
-    malwareWebhookSharedSecret: readTrimmedEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
+    inspectionWebhookSharedSecret: readTrimmedEnv('AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET'),
+    mirrorBucketName: readTrimmedEnv('AWS_S3_MIRROR_BUCKET_NAME'),
     projectSlug,
+    quarantineBucketName: readTrimmedEnv('AWS_S3_QUARANTINE_BUCKET_NAME'),
+    rejectedBucketName: readTrimmedEnv('AWS_S3_REJECTED_BUCKET_NAME'),
     stage,
     webhookUrl: readTrimmedEnv('AWS_CONVEX_GUARDDUTY_WEBHOOK_URL'),
   };
@@ -57,13 +61,17 @@ const storageStage = readTrimmedEnv('STORAGE_STAGE');
 if (storageStage === 'dev' || storageStage === 'prod') {
   const config = createStageConfig(storageProjectSlug, storageStage);
   if (
-    !config.bucketName ||
+    !config.quarantineBucketName ||
+    !config.cleanBucketName ||
+    !config.rejectedBucketName ||
+    !config.mirrorBucketName ||
     !config.inspectionWebhookUrl ||
     !config.webhookUrl ||
-    !config.malwareWebhookSharedSecret
+    !config.guardDutyWebhookSharedSecret ||
+    !config.inspectionWebhookSharedSecret
   ) {
     throw new Error(
-      'AWS_S3_FILES_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL, and AWS_MALWARE_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
+      'AWS_S3_QUARANTINE_BUCKET_NAME, AWS_S3_CLEAN_BUCKET_NAME, AWS_S3_REJECTED_BUCKET_NAME, AWS_S3_MIRROR_BUCKET_NAME, AWS_CONVEX_GUARDDUTY_WEBHOOK_URL, AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL, AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET, and AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET are required when STORAGE_STAGE is set.',
     );
   }
 

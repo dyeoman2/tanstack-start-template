@@ -115,25 +115,36 @@ function buildGuardDutyWebhookUrl(convexSiteUrl: string) {
 function buildStorageDeployEnv(input: {
   awsRegion: string;
   awsProfile?: string;
-  bucket: string;
+  buckets: {
+    clean: string;
+    mirror: string;
+    quarantine: string;
+    rejected: string;
+  };
   convexSiteUrl: string;
-  webhookSecret: string;
+  guardDutyWebhookSecret: string;
+  inspectionWebhookSecret: string;
 }) {
   return {
     AWS_REGION: input.awsRegion,
     ...(input.awsProfile ? { AWS_PROFILE: input.awsProfile } : {}),
-    AWS_S3_FILES_BUCKET: input.bucket,
     CONVEX_SITE_URL: input.convexSiteUrl,
     CDK_DEFAULT_REGION: process.env.CDK_DEFAULT_REGION || input.awsRegion,
     AWS_CONVEX_GUARDDUTY_WEBHOOK_URL: buildGuardDutyWebhookUrl(input.convexSiteUrl),
-    AWS_MALWARE_WEBHOOK_SHARED_SECRET: input.webhookSecret,
-    AWS_S3_FILES_BUCKET_NAME: input.bucket,
+    AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(input.convexSiteUrl)}/aws/storage-inspection`,
+    AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: input.guardDutyWebhookSecret,
+    AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: input.inspectionWebhookSecret,
+    AWS_S3_QUARANTINE_BUCKET_NAME: input.buckets.quarantine,
+    AWS_S3_CLEAN_BUCKET_NAME: input.buckets.clean,
+    AWS_S3_REJECTED_BUCKET_NAME: input.buckets.rejected,
+    AWS_S3_MIRROR_BUCKET_NAME: input.buckets.mirror,
   };
 }
 
-function buildStorageKmsAliasArn(input: {
+function buildStorageKmsKeyArn(input: {
   accountId?: string;
   awsRegion: string;
+  kind: 'clean' | 'mirror' | 'quarantine' | 'rejected';
   projectSlug: string;
   stage: 'dev' | 'prod';
 }) {
@@ -141,7 +152,35 @@ function buildStorageKmsAliasArn(input: {
     return null;
   }
 
-  return `arn:aws:kms:${input.awsRegion}:${input.accountId}:alias/${input.projectSlug}-${input.stage}-files`;
+  return `arn:aws:kms:${input.awsRegion}:${input.accountId}:alias/${input.projectSlug}-${input.stage}-${input.kind}`;
+}
+
+function buildStorageRoleArn(input: {
+  accountId?: string;
+  capability:
+    | 'cleanup'
+    | 'download-presign'
+    | 'mirror'
+    | 'promotion'
+    | 'rejection'
+    | 'upload-presign';
+  projectSlug: string;
+  stage: 'dev' | 'prod';
+}) {
+  if (!input.accountId) {
+    return null;
+  }
+
+  return `arn:aws:iam::${input.accountId}:role/${input.projectSlug}-${input.stage}-storage-${input.capability}`;
+}
+
+function buildScopedBucketNames(bucketBase: string) {
+  return {
+    clean: `${bucketBase}-clean`,
+    mirror: `${bucketBase}-mirror`,
+    quarantine: `${bucketBase}-quarantine`,
+    rejected: `${bucketBase}-rejected`,
+  };
 }
 
 function formatEnvValue(value: string) {
@@ -395,57 +434,180 @@ async function main() {
   let storageDeployEnv: NodeJS.ProcessEnv | null = null;
 
   if (storageMode !== 'convex') {
-    const bucket = await askWithDefault(
-      'AWS S3 files bucket',
-      'tanstack-start-template-prod-files-bucket',
+    const bucketBase = await askWithDefault(
+      'AWS S3 storage bucket base name',
+      'tanstack-start-template-prod-storage',
     );
-    const kmsKeyArn = await askRequired(
-      'AWS S3 files KMS key ARN or alias ARN',
-      process.env.AWS_S3_FILES_KMS_KEY_ARN?.trim() ||
-        buildStorageKmsAliasArn({
+    const buckets = buildScopedBucketNames(bucketBase);
+    const quarantineKmsKeyArn = await askRequired(
+      'AWS quarantine bucket KMS key ARN or alias ARN',
+      process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN?.trim() ||
+        buildStorageKmsKeyArn({
           accountId: awsIdentity?.accountId,
           awsRegion,
+          kind: 'quarantine',
+          projectSlug: 'tanstack-start-template',
+          stage: 'prod',
+        }) ||
+        undefined,
+    );
+    const cleanKmsKeyArn = await askRequired(
+      'AWS clean bucket KMS key ARN or alias ARN',
+      process.env.AWS_S3_CLEAN_KMS_KEY_ARN?.trim() ||
+        buildStorageKmsKeyArn({
+          accountId: awsIdentity?.accountId,
+          awsRegion,
+          kind: 'clean',
+          projectSlug: 'tanstack-start-template',
+          stage: 'prod',
+        }) ||
+        undefined,
+    );
+    const rejectedKmsKeyArn = await askRequired(
+      'AWS rejected bucket KMS key ARN or alias ARN',
+      process.env.AWS_S3_REJECTED_KMS_KEY_ARN?.trim() ||
+        buildStorageKmsKeyArn({
+          accountId: awsIdentity?.accountId,
+          awsRegion,
+          kind: 'rejected',
+          projectSlug: 'tanstack-start-template',
+          stage: 'prod',
+        }) ||
+        undefined,
+    );
+    const mirrorKmsKeyArn = await askRequired(
+      'AWS mirror bucket KMS key ARN or alias ARN',
+      process.env.AWS_S3_MIRROR_KMS_KEY_ARN?.trim() ||
+        buildStorageKmsKeyArn({
+          accountId: awsIdentity?.accountId,
+          awsRegion,
+          kind: 'mirror',
           projectSlug: 'tanstack-start-template',
           stage: 'prod',
         }) ||
         undefined,
     );
     const convexSiteUrl = await askWithDefault('Convex site URL', getDefaultConvexSiteUrl());
-    const webhookSecret = await askWithDefault(
-      'AWS malware webhook shared secret',
+    const guardDutyWebhookSecret = await askWithDefault(
+      'AWS GuardDuty webhook shared secret',
+      await generateSecret(32),
+    );
+    const inspectionWebhookSecret = await askWithDefault(
+      'AWS storage inspection webhook shared secret',
       await generateSecret(32),
     );
     const serveSecret = await askWithDefault(
       'AWS file serve signing secret',
       await generateSecret(32),
     );
+    const uploadPresignRoleArn = await askRequired(
+      'AWS upload presign role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'upload-presign',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
+    const downloadPresignRoleArn = await askRequired(
+      'AWS download presign role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'download-presign',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
+    const promotionRoleArn = await askRequired(
+      'AWS promotion role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'promotion',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
+    const rejectionRoleArn = await askRequired(
+      'AWS rejection role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'rejection',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
+    const cleanupRoleArn = await askRequired(
+      'AWS cleanup role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'cleanup',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
+    const mirrorRoleArn = await askRequired(
+      'AWS mirror role ARN',
+      buildStorageRoleArn({
+        accountId: awsIdentity?.accountId,
+        capability: 'mirror',
+        projectSlug: 'tanstack-start-template',
+        stage: 'prod',
+      }) || undefined,
+    );
 
     runtimeEnvVars.AWS_REGION = awsRegion;
-    runtimeEnvVars.AWS_S3_FILES_BUCKET = bucket;
-    runtimeEnvVars.AWS_S3_FILES_KMS_KEY_ARN = kmsKeyArn;
-    runtimeEnvVars.AWS_MALWARE_WEBHOOK_SHARED_SECRET = webhookSecret;
+    runtimeEnvVars.AWS_S3_QUARANTINE_BUCKET = buckets.quarantine;
+    runtimeEnvVars.AWS_S3_CLEAN_BUCKET = buckets.clean;
+    runtimeEnvVars.AWS_S3_REJECTED_BUCKET = buckets.rejected;
+    runtimeEnvVars.AWS_S3_MIRROR_BUCKET = buckets.mirror;
+    runtimeEnvVars.AWS_S3_QUARANTINE_KMS_KEY_ARN = quarantineKmsKeyArn;
+    runtimeEnvVars.AWS_S3_CLEAN_KMS_KEY_ARN = cleanKmsKeyArn;
+    runtimeEnvVars.AWS_S3_REJECTED_KMS_KEY_ARN = rejectedKmsKeyArn;
+    runtimeEnvVars.AWS_S3_MIRROR_KMS_KEY_ARN = mirrorKmsKeyArn;
+    runtimeEnvVars.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET = guardDutyWebhookSecret;
+    runtimeEnvVars.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET = inspectionWebhookSecret;
     runtimeEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN = uploadPresignRoleArn;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN = downloadPresignRoleArn;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_PROMOTION = promotionRoleArn;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_REJECTION = rejectionRoleArn;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_CLEANUP = cleanupRoleArn;
+    runtimeEnvVars.AWS_STORAGE_ROLE_ARN_MIRROR = mirrorRoleArn;
     runtimeEnvVars.CONVEX_SITE_URL = convexSiteUrl;
 
     convexProdEnvVars.AWS_REGION = awsRegion;
-    convexProdEnvVars.AWS_S3_FILES_BUCKET = bucket;
-    convexProdEnvVars.AWS_S3_FILES_KMS_KEY_ARN = kmsKeyArn;
-    convexProdEnvVars.AWS_MALWARE_WEBHOOK_SHARED_SECRET = webhookSecret;
+    convexProdEnvVars.AWS_S3_QUARANTINE_BUCKET = buckets.quarantine;
+    convexProdEnvVars.AWS_S3_CLEAN_BUCKET = buckets.clean;
+    convexProdEnvVars.AWS_S3_REJECTED_BUCKET = buckets.rejected;
+    convexProdEnvVars.AWS_S3_MIRROR_BUCKET = buckets.mirror;
+    convexProdEnvVars.AWS_S3_QUARANTINE_KMS_KEY_ARN = quarantineKmsKeyArn;
+    convexProdEnvVars.AWS_S3_CLEAN_KMS_KEY_ARN = cleanKmsKeyArn;
+    convexProdEnvVars.AWS_S3_REJECTED_KMS_KEY_ARN = rejectedKmsKeyArn;
+    convexProdEnvVars.AWS_S3_MIRROR_KMS_KEY_ARN = mirrorKmsKeyArn;
+    convexProdEnvVars.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET = guardDutyWebhookSecret;
+    convexProdEnvVars.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET = inspectionWebhookSecret;
     convexProdEnvVars.AWS_FILE_SERVE_SIGNING_SECRET = serveSecret;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN = uploadPresignRoleArn;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN = downloadPresignRoleArn;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_PROMOTION = promotionRoleArn;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_REJECTION = rejectionRoleArn;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_CLEANUP = cleanupRoleArn;
+    convexProdEnvVars.AWS_STORAGE_ROLE_ARN_MIRROR = mirrorRoleArn;
 
     storageDeployEnv = buildStorageDeployEnv({
       awsRegion,
       awsProfile: awsProfile ?? undefined,
-      bucket,
+      buckets,
       convexSiteUrl,
-      webhookSecret,
+      guardDutyWebhookSecret,
+      inspectionWebhookSecret,
     });
   }
   printTargetSummary('Provider target summary', [
     `Storage mode: ${storageMode}`,
     `AWS region: ${awsRegion}`,
     `AWS profile: ${awsProfile ?? 'current shell/default'}`,
-    `Bucket: ${runtimeEnvVars.AWS_S3_FILES_BUCKET ?? 'n/a'}`,
+    `Quarantine bucket: ${runtimeEnvVars.AWS_S3_QUARANTINE_BUCKET ?? 'n/a'}`,
     `Netlify env sync: linked site required if enabled`,
   ]);
 
@@ -528,8 +690,15 @@ async function main() {
   console.log(
     `   AWS_CONVEX_GUARDDUTY_WEBHOOK_URL=${storageDeployEnv.AWS_CONVEX_GUARDDUTY_WEBHOOK_URL}`,
   );
-  console.log('   AWS_MALWARE_WEBHOOK_SHARED_SECRET=[set]');
-  console.log(`   AWS_S3_FILES_BUCKET_NAME=${storageDeployEnv.AWS_S3_FILES_BUCKET_NAME}`);
+  console.log(
+    `   AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL=${storageDeployEnv.AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL}`,
+  );
+  console.log('   AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=[set]');
+  console.log('   AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=[set]');
+  console.log(`   AWS_S3_QUARANTINE_BUCKET_NAME=${storageDeployEnv.AWS_S3_QUARANTINE_BUCKET_NAME}`);
+  console.log(`   AWS_S3_CLEAN_BUCKET_NAME=${storageDeployEnv.AWS_S3_CLEAN_BUCKET_NAME}`);
+  console.log(`   AWS_S3_REJECTED_BUCKET_NAME=${storageDeployEnv.AWS_S3_REJECTED_BUCKET_NAME}`);
+  console.log(`   AWS_S3_MIRROR_BUCKET_NAME=${storageDeployEnv.AWS_S3_MIRROR_BUCKET_NAME}`);
   console.log('');
 
   const deployTargetIdentity = getAwsIdentity(

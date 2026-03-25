@@ -15,7 +15,7 @@ import {
   finalizeS3PrimaryUpload,
   generateS3PrimaryUploadTarget,
 } from './storageS3Primary';
-import { getS3Object, putS3Object } from './lib/storageS3';
+import { getCleanObject, putCleanObject } from './lib/storageS3';
 import {
   type CreateUploadTargetArgs,
   type DeleteStoredFileArgs,
@@ -109,15 +109,11 @@ export async function finalizeUploadWithMode(ctx: ActionCtx, args: FinalizeUploa
 async function loadS3ObjectBlob(
   _ctx: ActionCtx,
   args: {
-    bucket: string;
     fallbackMimeType: string;
     key: string;
   },
 ) {
-  const object = await getS3Object({
-    bucket: args.bucket,
-    key: args.key,
-  });
+  const object = await getCleanObject({ key: args.key });
   const body = object.Body;
   if (!body) {
     return null;
@@ -175,7 +171,6 @@ export async function loadStoredFileBlobWithMode(
   }
 
   const blob = await loadS3ObjectBlob(ctx, {
-    bucket: lifecycle.canonicalBucket,
     fallbackMimeType: lifecycle.mimeType ?? args.fallbackMimeType ?? 'application/octet-stream',
     key: lifecycle.canonicalKey,
   });
@@ -223,10 +218,10 @@ export async function storeDerivedFileWithMode(
 
   if (backendMode === 's3-primary') {
     const runtimeConfig = getStorageRuntimeConfig();
-    const bucket = runtimeConfig.s3FilesBucket;
+    const bucket = runtimeConfig.storageBuckets.clean.bucket;
     if (!bucket) {
       throw new Error(
-        'AWS_S3_FILES_BUCKET environment variable is required for S3-backed storage.',
+        'AWS_S3_CLEAN_BUCKET environment variable is required for S3-backed storage.',
       );
     }
     const storageId = crypto.randomUUID();
@@ -236,9 +231,8 @@ export async function storeDerivedFileWithMode(
       storageId,
     });
     const body = new Uint8Array(await args.blob.arrayBuffer());
-    const result = await putS3Object({
+    const result = await putCleanObject({
       body,
-      bucket,
       contentType: args.mimeType,
       key,
     });

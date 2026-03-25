@@ -173,17 +173,56 @@ describe('Better Auth env helpers', () => {
   });
 
   it('reads storage runtime settings from the AWS-prefixed env names', () => {
-    process.env.AWS_S3_FILES_BUCKET = 'canonical-bucket';
+    process.env.AWS_S3_FILES_BUCKET = 'legacy-bucket';
     process.env.AWS_S3_FILES_KMS_KEY_ARN =
       'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files';
     process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
+    process.env.AWS_MALWARE_WEBHOOK_SHARED_SECRET = 'legacy-webhook-secret';
 
     const config = getStorageRuntimeConfig();
 
-    expect(config.s3FilesBucket).toBe('canonical-bucket');
-    expect(config.s3FilesKmsKeyArn).toBe(
+    expect(config.storageBuckets.clean.bucket).toBe('legacy-bucket');
+    expect(config.storageBuckets.quarantine.bucket).toBe('legacy-bucket');
+    expect(config.storageBuckets.clean.kmsKeyArn).toBe(
       'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files',
     );
     expect(config.fileServeSigningSecret).toBe('canonical-secret');
+    expect(config.guardDutyWebhookSharedSecret).toBe('legacy-webhook-secret');
+    expect(config.storageInspectionWebhookSharedSecret).toBe('legacy-webhook-secret');
+  });
+
+  it('prefers the split storage env names over deprecated fallbacks', () => {
+    process.env.FILE_STORAGE_BACKEND = 's3-primary';
+    process.env.AWS_REGION = 'us-west-1';
+    process.env.CONVEX_SITE_URL = 'https://example.convex.site';
+    process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
+    process.env.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET = 'guardduty-secret';
+    process.env.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET = 'inspection-secret';
+    process.env.AWS_S3_FILES_BUCKET = 'legacy-bucket';
+    process.env.AWS_S3_CLEAN_BUCKET = 'clean-bucket';
+    process.env.AWS_S3_MIRROR_BUCKET = 'mirror-bucket';
+    process.env.AWS_S3_QUARANTINE_BUCKET = 'quarantine-bucket';
+    process.env.AWS_S3_REJECTED_BUCKET = 'rejected-bucket';
+    process.env.AWS_S3_FILES_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/legacy';
+    process.env.AWS_S3_CLEAN_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/clean';
+    process.env.AWS_S3_MIRROR_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/mirror';
+    process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/quarantine';
+    process.env.AWS_S3_REJECTED_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/rejected';
+    process.env.AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN = 'arn:aws:iam::123456789012:role/upload';
+    process.env.AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN = 'arn:aws:iam::123456789012:role/download';
+    process.env.AWS_STORAGE_ROLE_ARN_PROMOTION = 'arn:aws:iam::123456789012:role/promotion';
+    process.env.AWS_STORAGE_ROLE_ARN_REJECTION = 'arn:aws:iam::123456789012:role/rejection';
+    process.env.AWS_STORAGE_ROLE_ARN_CLEANUP = 'arn:aws:iam::123456789012:role/cleanup';
+    process.env.AWS_STORAGE_ROLE_ARN_MIRROR = 'arn:aws:iam::123456789012:role/mirror';
+
+    const config = getStorageRuntimeConfig();
+
+    expect(config.storageBuckets.clean.bucket).toBe('clean-bucket');
+    expect(config.storageBuckets.quarantine.bucket).toBe('quarantine-bucket');
+    expect(config.storageBuckets.rejected.bucket).toBe('rejected-bucket');
+    expect(config.storageBuckets.mirror.bucket).toBe('mirror-bucket');
+    expect(config.guardDutyWebhookSharedSecret).toBe('guardduty-secret');
+    expect(config.storageInspectionWebhookSharedSecret).toBe('inspection-secret');
+    expect(config.storageRoleArns.downloadPresign).toBe('arn:aws:iam::123456789012:role/download');
   });
 });

@@ -31,6 +31,7 @@ import type * as fileServing from "../fileServing.js";
 import type * as health from "../health.js";
 import type * as http from "../http.js";
 import type * as lib_agentChat from "../lib/agentChat.js";
+import type * as lib_auditEmitters from "../lib/auditEmitters.js";
 import type * as lib_authAudit from "../lib/authAudit.js";
 import type * as lib_authRateLimits from "../lib/authRateLimits.js";
 import type * as lib_betterAuth from "../lib/betterAuth.js";
@@ -121,6 +122,7 @@ declare const fullApi: ApiFromModules<{
   health: typeof health;
   http: typeof http;
   "lib/agentChat": typeof lib_agentChat;
+  "lib/auditEmitters": typeof lib_auditEmitters;
   "lib/authAudit": typeof lib_authAudit;
   "lib/authRateLimits": typeof lib_authRateLimits;
   "lib/betterAuth": typeof lib_betterAuth;

@@ -33,6 +33,7 @@ import {
   systemStatsValidator,
   userProfileSyncStateDocValidator,
 } from './lib/returnValidators';
+import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
 
 const ADMIN_USER_INDEX_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 const DEFAULT_CHAT_TASK = 'Text Generation';
@@ -753,8 +754,9 @@ export const recordAdminUserSessionsViewed = siteAdminAction({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+    await recordSiteAdminAuditEvent(ctx, {
       actorUserId: ctx.user.authUserId,
+      emitter: 'admin.user_sessions',
       eventType: 'admin_user_sessions_viewed',
       metadata: JSON.stringify({
         sessionCount: args.sessionCount,

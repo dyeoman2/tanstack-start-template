@@ -230,22 +230,33 @@ async function main() {
   const projectSlug = process.env.AWS_STORAGE_PROJECT_SLUG?.trim() || 'tanstack-start-template';
   const stackName = `${projectSlug}-${stage}-guardduty-stack`;
   const outputs = getStackOutputs(stackName, region);
-  const bucketName =
-    outputs?.S3FilesBucketName ??
-    (stage === 'dev' ? readEnvValue(envContent, 'AWS_S3_FILES_BUCKET') : null);
+  const bucketNames = [
+    outputs?.S3QuarantineBucketName ??
+      (stage === 'dev' ? readEnvValue(envContent, 'AWS_S3_QUARANTINE_BUCKET') : null),
+    outputs?.S3CleanBucketName ??
+      (stage === 'dev' ? readEnvValue(envContent, 'AWS_S3_CLEAN_BUCKET') : null),
+    outputs?.S3RejectedBucketName ??
+      (stage === 'dev' ? readEnvValue(envContent, 'AWS_S3_REJECTED_BUCKET') : null),
+    outputs?.S3MirrorBucketName ??
+      (stage === 'dev' ? readEnvValue(envContent, 'AWS_S3_MIRROR_BUCKET') : null),
+  ].filter(Boolean) as string[];
   const forwarderName =
     outputs?.GuardDutyForwarderFunctionName ?? `${projectSlug}-${stage}-guardduty-forwarder`;
+  const inspectorName =
+    outputs?.IngressInspectorForwarderFunctionName ??
+    `${projectSlug}-${stage}-ingress-inspector-forwarder`;
   const logGroupName = `/aws/lambda/${forwarderName}`;
+  const inspectorLogGroupName = `/aws/lambda/${inspectorName}`;
 
   console.log(`Storage destroy target: ${stackName}`);
   console.log(`AWS region: ${region}`);
   if (profile) {
     console.log(`AWS profile: ${profile}`);
   }
-  if (bucketName) {
-    console.log(`Bucket cleanup: ${bucketName}`);
+  if (bucketNames.length > 0) {
+    console.log(`Bucket cleanup: ${bucketNames.join(', ')}`);
   }
-  console.log(`Log group cleanup: ${logGroupName}`);
+  console.log(`Log group cleanup: ${logGroupName}, ${inspectorLogGroupName}`);
 
   if (!yes) {
     const confirmed = await askYesNo(
@@ -265,13 +276,15 @@ async function main() {
     console.log(`Stack ${stackName} was not present.`);
   }
 
-  if (bucketName) {
+  for (const bucketName of bucketNames) {
     deleteBucket(bucketName, region);
     console.log(`Deleted bucket ${bucketName}.`);
   }
 
   deleteLogGroup(logGroupName, region);
+  deleteLogGroup(inspectorLogGroupName, region);
   console.log(`Deleted log group ${logGroupName} if it existed.`);
+  console.log(`Deleted log group ${inspectorLogGroupName} if it existed.`);
 }
 
 main().catch((error) => {

@@ -65,10 +65,12 @@ jobs:
           aws s3 cp \
             "${ZIP_FILE}" \
             "s3://${AWS_DR_BACKUP_S3_BUCKET}/${s3_key}" \
-            --sse AES256
+            --sse aws:kms \
+            --sse-kms-key-id "${AWS_DR_BACKUP_KMS_KEY_ARN}"
 
           echo "s3_key=${s3_key}" >> "$GITHUB_OUTPUT"
         env:
+          AWS_DR_BACKUP_KMS_KEY_ARN: ${{ secrets.AWS_DR_BACKUP_KMS_KEY_ARN }}
           AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
           ZIP_FILE: ${{ steps.export.outputs.zip_file }}
 
@@ -77,17 +79,30 @@ jobs:
           result=$(aws s3api head-object \
             --bucket "${AWS_DR_BACKUP_S3_BUCKET}" \
             --key "${S3_KEY}" \
-            --query '{Size: ContentLength, ETag: ETag, SSE: ServerSideEncryption}' \
+            --query '{Size: ContentLength, ETag: ETag, SSE: ServerSideEncryption, SSEKMSKeyId: SSEKMSKeyId}' \
             --output json)
 
           echo "$result" | jq .
 
           s3_size=$(echo "$result" | jq -r '.Size')
+          sse=$(echo "$result" | jq -r '.SSE')
+          sse_kms_key_id=$(echo "$result" | jq -r '.SSEKMSKeyId')
           if [[ "$s3_size" -lt 100 ]]; then
             echo "ERROR: Uploaded file is suspiciously small (${s3_size} bytes)"
             exit 1
           fi
+
+          if [[ "$sse" != "aws:kms" ]]; then
+            echo "ERROR: Expected aws:kms encryption, found ${sse}"
+            exit 1
+          fi
+
+          if [[ "$sse_kms_key_id" != "${AWS_DR_BACKUP_KMS_KEY_ARN}" ]]; then
+            echo "ERROR: Expected KMS key ${AWS_DR_BACKUP_KMS_KEY_ARN}, found ${sse_kms_key_id}"
+            exit 1
+          fi
         env:
+          AWS_DR_BACKUP_KMS_KEY_ARN: ${{ secrets.AWS_DR_BACKUP_KMS_KEY_ARN }}
           AWS_DR_BACKUP_S3_BUCKET: ${{ secrets.AWS_DR_BACKUP_S3_BUCKET }}
           S3_KEY: ${{ steps.upload.outputs.s3_key }}
 

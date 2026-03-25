@@ -7,6 +7,11 @@ describe('regulated audit validation', () => {
       validateRegulatedAuditFields({
         actorUserId: 'admin-user',
         eventType: 'audit_log_exported',
+        provenance: {
+          actorUserId: 'admin-user',
+          emitter: 'test',
+          kind: 'site_admin',
+        },
         metadata: JSON.stringify({
           exportHash: 'payload-hash',
           exportId: 'export-1',
@@ -30,6 +35,11 @@ describe('regulated audit validation', () => {
       validateRegulatedAuditFields({
         actorUserId: 'admin-user',
         eventType: 'audit_log_exported',
+        provenance: {
+          actorUserId: 'admin-user',
+          emitter: 'test',
+          kind: 'site_admin',
+        },
         metadata: JSON.stringify({
           exportHash: 'payload-hash',
           rowCount: 10,
@@ -49,6 +59,11 @@ describe('regulated audit validation', () => {
       validateRegulatedAuditFields({
         actorUserId: 'user-1',
         eventType: 'authorization_denied',
+        provenance: {
+          actorUserId: 'user-1',
+          emitter: 'test',
+          kind: 'user',
+        },
         metadata: JSON.stringify({
           permission: 'viewAudit',
         }),

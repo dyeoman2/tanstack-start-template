@@ -39,6 +39,9 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'organization_policy_updated',
   'enterprise_auth_mode_updated',
   'enterprise_break_glass_used',
+  'support_access_granted',
+  'support_access_revoked',
+  'support_access_used',
   'enterprise_login_succeeded',
   'enterprise_scim_token_generated',
   'enterprise_scim_token_deleted',
@@ -87,6 +90,7 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'step_up_consumed',
   'backup_restore_drill_completed',
   'backup_restore_drill_failed',
+  'security_review_run_finalized',
 ] as const;
 
 export type AuthAuditEventType = (typeof AUTH_AUDIT_EVENT_TYPES)[number];
@@ -99,10 +103,23 @@ export const AUTH_AUDIT_HANDLER_OWNERS = [
 ] as const;
 export type AuthAuditHandlerOwner = (typeof AUTH_AUDIT_HANDLER_OWNERS)[number];
 
+export type AuditProvenanceKind = 'user' | 'site_admin' | 'system' | 'scim_service';
+
+export type AuditProvenance = {
+  kind: AuditProvenanceKind;
+  emitter: string;
+  actorUserId?: string;
+  sessionId?: string;
+  identifier?: string;
+  initiatedByUserId?: string;
+  scimProviderId?: string;
+};
+
 export type AuthAuditEvent = {
   id: string;
   sequence: number;
   eventType: AuthAuditEventType;
+  provenance: AuditProvenance;
   userId?: string;
   actorUserId?: string;
   targetUserId?: string;
@@ -168,6 +185,9 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   organization_policy_updated: ['organization'],
   enterprise_auth_mode_updated: ['organization'],
   enterprise_break_glass_used: ['organization'],
+  support_access_granted: ['organization'],
+  support_access_revoked: ['organization'],
+  support_access_used: ['organization'],
   enterprise_login_succeeded: ['organization'],
   enterprise_scim_token_generated: ['organization'],
   enterprise_scim_token_deleted: ['organization'],
@@ -216,6 +236,7 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   step_up_consumed: ['organization'],
   backup_restore_drill_completed: ['organization'],
   backup_restore_drill_failed: ['organization'],
+  security_review_run_finalized: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;
 
 export function isAuthAuditEventType(value: string): value is AuthAuditEventType {

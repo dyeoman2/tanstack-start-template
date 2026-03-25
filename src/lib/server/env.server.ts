@@ -323,6 +323,21 @@ export function getBetterAuthSecret(): string {
 
 export type E2EPrincipalType = 'user' | 'admin';
 export type FileStorageBackendMode = 'convex' | 's3-primary' | 's3-mirror';
+export type StorageBucketKind = 'clean' | 'mirror' | 'quarantine' | 'rejected';
+export type StorageCapability =
+  | 'cleanup'
+  | 'downloadPresign'
+  | 'mirror'
+  | 'promotion'
+  | 'rejection'
+  | 'uploadPresign';
+
+export type StorageBucketConfig = {
+  bucket: string | null;
+  kmsKeyArn: string | null;
+};
+
+export type StorageRoleConfig = Record<StorageCapability, string | null>;
 
 export type StorageRuntimeConfig = {
   awsRegion: string | null;
@@ -330,15 +345,16 @@ export type StorageRuntimeConfig = {
   convexSiteUrl: string | null;
   fileServeSigningSecret: string | null;
   fileUploadMaxBytes: number;
+  guardDutyWebhookSharedSecret: string | null;
   malwareScanSlaMs: number;
-  malwareWebhookSharedSecret: string | null;
   mirrorRetryBaseDelayMs: number;
   mirrorRetryMaxDelayMs: number;
   s3DeleteMaxAttempts: number;
-  s3FilesBucket: string | null;
-  s3FilesKmsKeyArn: string | null;
   s3OrphanCleanupMaxScan: number;
   s3OrphanCleanupMinAgeMs: number;
+  storageBuckets: Record<StorageBucketKind, StorageBucketConfig>;
+  storageInspectionWebhookSharedSecret: string | null;
+  storageRoleArns: StorageRoleConfig;
   storageStaleUploadTtlMs: number;
 };
 
@@ -406,6 +422,59 @@ function readRequiredStorageEnv(name: string, mode: FileStorageBackendMode): str
   return value;
 }
 
+function readOptionalStorageEnv(name: string, legacyName?: string): string | null {
+  return readOptionalServerEnv(name) ?? (legacyName ? readOptionalServerEnv(legacyName) : null);
+}
+
+function readRequiredStorageEnvWithFallback(
+  name: string,
+  mode: FileStorageBackendMode,
+  legacyName?: string,
+): string {
+  const value = readOptionalStorageEnv(name, legacyName);
+  if (!value) {
+    const fallbackNote = legacyName ? ` (deprecated fallback: ${legacyName})` : '';
+    throw new Error(
+      `${name} environment variable is required for FILE_STORAGE_BACKEND=${mode}.${fallbackNote}`,
+    );
+  }
+  return value;
+}
+
+function readStorageBucketConfig(
+  kind: StorageBucketKind,
+  mode: FileStorageBackendMode,
+): StorageBucketConfig {
+  const bucketEnv = `AWS_S3_${kind.toUpperCase()}_BUCKET`;
+  const kmsEnv = `AWS_S3_${kind.toUpperCase()}_KMS_KEY_ARN`;
+
+  if (mode === 'convex') {
+    return {
+      bucket: readOptionalStorageEnv(bucketEnv, 'AWS_S3_FILES_BUCKET'),
+      kmsKeyArn: readOptionalStorageEnv(kmsEnv, 'AWS_S3_FILES_KMS_KEY_ARN'),
+    };
+  }
+
+  return {
+    bucket: readRequiredStorageEnvWithFallback(bucketEnv, mode, 'AWS_S3_FILES_BUCKET'),
+    kmsKeyArn: readRequiredStorageEnvWithFallback(kmsEnv, mode, 'AWS_S3_FILES_KMS_KEY_ARN'),
+  };
+}
+
+function readStorageRoleConfig(mode: FileStorageBackendMode): StorageRoleConfig {
+  const readRole = (name: string) =>
+    mode === 'convex' ? readOptionalServerEnv(name) : readRequiredStorageEnv(name, mode);
+
+  return {
+    cleanup: readRole('AWS_STORAGE_ROLE_ARN_CLEANUP'),
+    downloadPresign: readRole('AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN'),
+    mirror: readRole('AWS_STORAGE_ROLE_ARN_MIRROR'),
+    promotion: readRole('AWS_STORAGE_ROLE_ARN_PROMOTION'),
+    rejection: readRole('AWS_STORAGE_ROLE_ARN_REJECTION'),
+    uploadPresign: readRole('AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN'),
+  };
+}
+
 export function getFileStorageBackendMode(): FileStorageBackendMode {
   const configured = readOptionalServerEnv('FILE_STORAGE_BACKEND');
   if (!configured) {
@@ -431,12 +500,15 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       'FILE_UPLOAD_MAX_BYTES',
       10 * 1024 * 1024,
     ),
+    guardDutyWebhookSharedSecret: readOptionalStorageEnv(
+      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+    ),
     malwareScanSlaMs: parsePositiveInteger(
       readOptionalServerEnv('AWS_MALWARE_SCAN_SLA_MS'),
       'AWS_MALWARE_SCAN_SLA_MS',
       5 * 60 * 1000,
     ),
-    malwareWebhookSharedSecret: readOptionalServerEnv('AWS_MALWARE_WEBHOOK_SHARED_SECRET'),
     mirrorRetryBaseDelayMs: parsePositiveInteger(
       readOptionalServerEnv('AWS_MIRROR_RETRY_BASE_DELAY_MS'),
       'AWS_MIRROR_RETRY_BASE_DELAY_MS',
@@ -452,8 +524,6 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       'AWS_S3_DELETE_MAX_ATTEMPTS',
       3,
     ),
-    s3FilesBucket: readOptionalServerEnv('AWS_S3_FILES_BUCKET'),
-    s3FilesKmsKeyArn: readOptionalServerEnv('AWS_S3_FILES_KMS_KEY_ARN'),
     s3OrphanCleanupMaxScan: parsePositiveInteger(
       readOptionalServerEnv('AWS_S3_ORPHAN_CLEANUP_MAX_SCAN'),
       'AWS_S3_ORPHAN_CLEANUP_MAX_SCAN',
@@ -469,6 +539,17 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
       'STORAGE_STALE_UPLOAD_TTL_MS',
       60 * 60 * 1000,
     ),
+    storageBuckets: {
+      clean: readStorageBucketConfig('clean', backendMode),
+      mirror: readStorageBucketConfig('mirror', backendMode),
+      quarantine: readStorageBucketConfig('quarantine', backendMode),
+      rejected: readStorageBucketConfig('rejected', backendMode),
+    },
+    storageInspectionWebhookSharedSecret: readOptionalStorageEnv(
+      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+    ),
+    storageRoleArns: readStorageRoleConfig(backendMode),
   };
 
   if (backendMode === 'convex') {
@@ -480,12 +561,16 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
     awsRegion: readRequiredStorageEnv('AWS_REGION', backendMode),
     convexSiteUrl: readRequiredStorageEnv('CONVEX_SITE_URL', backendMode),
     fileServeSigningSecret: readRequiredStorageEnv('AWS_FILE_SERVE_SIGNING_SECRET', backendMode),
-    malwareWebhookSharedSecret: readRequiredStorageEnv(
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+    guardDutyWebhookSharedSecret: readRequiredStorageEnvWithFallback(
+      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
       backendMode,
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
     ),
-    s3FilesBucket: readRequiredStorageEnv('AWS_S3_FILES_BUCKET', backendMode),
-    s3FilesKmsKeyArn: readRequiredStorageEnv('AWS_S3_FILES_KMS_KEY_ARN', backendMode),
+    storageInspectionWebhookSharedSecret: readRequiredStorageEnvWithFallback(
+      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
+      backendMode,
+      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+    ),
   };
 }
 

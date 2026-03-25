@@ -95,6 +95,7 @@ import {
   resolveOrganizationEnterpriseAccess,
   type OrganizationSupportAccessScope,
 } from './lib/enterpriseAccess';
+import { recordUserAuditEvent } from './lib/auditEmitters';
 
 type OrganizationDirectorySortField = 'name' | 'email' | 'kind' | 'role' | 'status' | 'createdAt';
 type OrganizationDirectorySortDirection = 'asc' | 'desc';
@@ -1164,11 +1165,18 @@ async function insertOrganizationAuditLog(
     metadata?: Record<string, unknown>;
   },
 ) {
-  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+  if (!input.userId) {
+    return;
+  }
+
+  await recordUserAuditEvent(ctx, {
+    actorUserId: input.userId,
+    emitter: 'organization.domain',
     eventType: input.eventType,
+    metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
     organizationId: input.organizationId,
-    ...(input.userId ? { userId: input.userId } : {}),
-    ...(input.metadata ? { metadata: JSON.stringify(input.metadata) } : {}),
+    sourceSurface: 'organization.domain',
+    userId: input.userId,
   });
 }
 
@@ -1919,46 +1927,48 @@ export const updateOrganizationPolicies = mutation({
       });
     }
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'organization_policy_updated',
-      organizationId: args.organizationId,
-      userId: context.user.authUserId,
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
       actorUserId: context.user.authUserId,
-      identifier: context.user.authUser.email?.toLowerCase(),
-      outcome: 'success',
-      severity: 'info',
-      resourceType: 'organization_policy',
-      resourceId: args.organizationId,
-      resourceLabel: args.organizationId,
-      sourceSurface: 'organization.policy_update',
-      sessionId: context.user.authSession?.id ?? undefined,
+      emitter: 'organization.policy',
+      eventType: 'organization_policy_updated',
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         changedKeys,
         previousPolicies: currentPolicies,
         nextPolicies,
       }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: args.organizationId,
+      resourceLabel: args.organizationId,
+      resourceType: 'organization_policy',
+      severity: 'info',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.policy_update',
+      userId: context.user.authUserId,
     });
 
     if (currentPolicies.enterpriseAuthMode !== nextPolicies.enterpriseAuthMode) {
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'enterprise_auth_mode_updated',
-        organizationId: args.organizationId,
-        userId: context.user.authUserId,
+      await recordUserAuditEvent(ctx, {
+        actorIdentifier: context.user.authUser.email?.toLowerCase(),
         actorUserId: context.user.authUserId,
-        identifier: context.user.authUser.email?.toLowerCase(),
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'organization_policy',
-        resourceId: args.organizationId,
-        resourceLabel: args.organizationId,
-        sourceSurface: 'organization.policy_update',
-        sessionId: context.user.authSession?.id ?? undefined,
+        emitter: 'organization.policy',
+        eventType: 'enterprise_auth_mode_updated',
         metadata: JSON.stringify({
           nextMode: nextPolicies.enterpriseAuthMode,
           previousMode: currentPolicies.enterpriseAuthMode,
           providerKey: nextPolicies.enterpriseProviderKey,
         }),
+        organizationId: args.organizationId,
+        outcome: 'success',
+        resourceId: args.organizationId,
+        resourceLabel: args.organizationId,
+        resourceType: 'organization_policy',
+        severity: 'info',
+        sessionId: context.user.authSession?.id ?? undefined,
+        sourceSurface: 'organization.policy_update',
+        userId: context.user.authUserId,
       });
     }
 
@@ -2052,19 +2062,11 @@ export const createOrganizationSupportAccessGrant = mutation({
       },
     ]);
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'support_access_granted',
-      organizationId: args.organizationId,
-      userId: context.user.authUserId,
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
       actorUserId: context.user.authUserId,
-      identifier: context.user.authUser.email?.toLowerCase(),
-      outcome: 'success',
-      severity: 'warning',
-      resourceType: 'organization_support_access_grant',
-      resourceId: grantId,
-      resourceLabel: args.scope,
-      sourceSurface: 'organization.support_access_grant.create',
-      sessionId: context.user.authSession?.id ?? undefined,
+      emitter: 'organization.support_access',
+      eventType: 'support_access_granted',
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         expiresAt: args.expiresAt,
@@ -2074,6 +2076,15 @@ export const createOrganizationSupportAccessGrant = mutation({
         siteAdminEmail: siteAdminProfile.email,
         siteAdminUserId: args.siteAdminUserId,
       }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: grantId,
+      resourceLabel: args.scope,
+      resourceType: 'organization_support_access_grant',
+      severity: 'warning',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.support_access_grant.create',
+      userId: context.user.authUserId,
     });
 
     return {
@@ -2140,19 +2151,11 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       .unique();
     const reason = args.reason?.trim() ? args.reason.trim() : null;
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'support_access_revoked',
-      organizationId: args.organizationId,
-      userId: context.user.authUserId,
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
       actorUserId: context.user.authUserId,
-      identifier: context.user.authUser.email?.toLowerCase(),
-      outcome: 'success',
-      severity: 'warning',
-      resourceType: 'organization_support_access_grant',
-      resourceId: normalizedGrantId,
-      resourceLabel: grant.scope,
-      sourceSurface: 'organization.support_access_grant.revoke',
-      sessionId: context.user.authSession?.id ?? undefined,
+      emitter: 'organization.support_access',
+      eventType: 'support_access_revoked',
       metadata: JSON.stringify({
         actorEmail: context.user.authUser.email ?? undefined,
         grantId: normalizedGrantId,
@@ -2162,6 +2165,15 @@ export const revokeOrganizationSupportAccessGrant = mutation({
         siteAdminEmail: siteAdminProfile?.email ?? undefined,
         siteAdminUserId: grant.siteAdminUserId,
       }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: normalizedGrantId,
+      resourceLabel: grant.scope,
+      resourceType: 'organization_support_access_grant',
+      severity: 'warning',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.support_access_grant.revoke',
+      userId: context.user.authUserId,
     });
 
     return {
@@ -2992,11 +3004,11 @@ async function recordOrganizationBulkAuditEventsMutation(
 
   await Promise.all(
     args.entries.map(async (entry) => {
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: args.eventType,
-        organizationId: args.organizationId,
-        userId: args.actorUserId,
+      await recordUserAuditEvent(ctx, {
+        actorIdentifier: args.actorEmail?.toLowerCase(),
         actorUserId: args.actorUserId,
+        emitter: 'organization.bulk_membership',
+        eventType: args.eventType,
         identifier: entry.targetEmail.toLowerCase(),
         metadata: JSON.stringify({
           actorEmail: args.actorEmail,
@@ -3004,6 +3016,9 @@ async function recordOrganizationBulkAuditEventsMutation(
           targetEmail: entry.targetEmail,
           ...(entry.targetRole ? { targetRole: entry.targetRole } : {}),
         }),
+        organizationId: args.organizationId,
+        sourceSurface: 'organization.bulk_membership',
+        userId: args.actorUserId,
       });
     }),
   );
@@ -3121,10 +3136,11 @@ async function changeOrganizationMemberStatus(
         ? 'member_suspended'
         : 'member_deactivated';
 
-  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: context.user.authUser.email?.toLowerCase(),
+    actorUserId: context.user.authUserId,
+    emitter: 'organization.member_status',
     eventType,
-    organizationId: args.organizationId,
-    userId: context.user.authUserId,
     identifier: targetEmail?.toLowerCase(),
     metadata: JSON.stringify({
       actorEmail: context.user.authUser.email ?? undefined,
@@ -3136,6 +3152,9 @@ async function changeOrganizationMemberStatus(
       nextStatus: args.targetStatus,
       reason: args.reason?.trim() ? args.reason.trim() : undefined,
     }),
+    organizationId: args.organizationId,
+    sourceSurface: 'organization.member_status',
+    userId: context.user.authUserId,
   });
 
   return {
@@ -3672,20 +3691,12 @@ export const exportOrganizationAuditCsv = action({
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'audit_log_exported',
-      userId: currentUser.authUserId,
-      actorUserId: currentUser.authUserId,
-      organizationId: exportedOrganizationId,
-      identifier:
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier:
         typeof currentUser.authUser.email === 'string' ? currentUser.authUser.email : undefined,
-      sessionId: currentUser.authSession?.id ?? undefined,
-      outcome: 'success',
-      severity: 'info',
-      resourceType: 'audit_export',
-      resourceId: organizationName,
-      resourceLabel: `${organizationName}-audit`,
-      sourceSurface: 'organization.audit_export',
+      actorUserId: currentUser.authUserId,
+      emitter: 'organization.audit_export',
+      eventType: 'audit_log_exported',
       metadata: stringifyStable({
         exportHash,
         exportId,
@@ -3701,6 +3712,15 @@ export const exportOrganizationAuditCsv = action({
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
       }),
+      organizationId: exportedOrganizationId,
+      outcome: 'success',
+      resourceId: organizationName,
+      resourceLabel: `${organizationName}-audit`,
+      resourceType: 'audit_export',
+      severity: 'info',
+      sessionId: currentUser.authSession?.id ?? undefined,
+      sourceSurface: 'organization.audit_export',
+      userId: currentUser.authUserId,
     });
 
     return {
@@ -3844,20 +3864,12 @@ export const exportOrganizationDirectoryCsv = action({
       schemaVersion: EXPORT_ARTIFACT_SCHEMA_VERSION,
     });
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'directory_exported',
-      userId: currentUser.authUserId,
-      actorUserId: currentUser.authUserId,
-      organizationId: exportedOrganizationId,
-      identifier:
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier:
         typeof currentUser.authUser.email === 'string' ? currentUser.authUser.email : undefined,
-      sessionId: currentUser.authSession?.id ?? undefined,
-      outcome: 'success',
-      severity: 'info',
-      resourceType: 'directory_export',
-      resourceId: organizationName,
-      resourceLabel: `${organizationName}-directory`,
-      sourceSurface: 'organization.directory_export',
+      actorUserId: currentUser.authUserId,
+      emitter: 'organization.directory_export',
+      eventType: 'directory_exported',
       metadata: stringifyStable({
         exportHash,
         exportId,
@@ -3873,6 +3885,15 @@ export const exportOrganizationDirectoryCsv = action({
         rowCount: rows.length,
         scope: exportedOrganizationId ?? organizationName,
       }),
+      organizationId: exportedOrganizationId,
+      outcome: 'success',
+      resourceId: organizationName,
+      resourceLabel: `${organizationName}-directory`,
+      resourceType: 'directory_export',
+      severity: 'info',
+      sessionId: currentUser.authSession?.id ?? undefined,
+      sourceSurface: 'organization.directory_export',
+      userId: currentUser.authUserId,
     });
 
     return {

@@ -3,8 +3,11 @@ import { applyGuardDutyFinding, applyGuardDutyPromotionResult } from './storageW
 
 const { getStorageRuntimeConfigMock } = vi.hoisted(() => ({
   getStorageRuntimeConfigMock: vi.fn(() => ({
-    malwareWebhookSharedSecret: 'secret',
-    s3FilesBucket: 'bucket',
+    guardDutyWebhookSharedSecret: 'guardduty-secret',
+    storageBuckets: {
+      quarantine: { bucket: 'bucket', kmsKeyArn: 'kms' },
+    },
+    storageInspectionWebhookSharedSecret: 'inspection-secret',
   })),
 }));
 

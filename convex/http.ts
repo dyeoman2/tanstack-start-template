@@ -53,6 +53,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const rawBody = await request.text();
     await verifyWebhookSignature({
+      kind: 'guardduty',
       payload: rawBody,
       signature: request.headers.get('X-Scriptflow-Signature'),
       timestamp: request.headers.get('X-Scriptflow-Timestamp'),
@@ -74,6 +75,7 @@ http.route({
   handler: httpAction(async (ctx, request) => {
     const rawBody = await request.text();
     await verifyWebhookSignature({
+      kind: 'inspection',
       payload: rawBody,
       signature: request.headers.get('X-Scriptflow-Signature'),
       timestamp: request.headers.get('X-Scriptflow-Timestamp'),

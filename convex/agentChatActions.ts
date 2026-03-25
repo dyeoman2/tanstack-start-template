@@ -29,7 +29,8 @@ import {
 } from './lib/chatAttachments';
 import { enforceChatAttachmentProcessingRateLimitOrThrow } from './lib/chatRateLimits';
 import { chatAttachmentWithPreviewValidator } from './lib/returnValidators';
-import { getS3Object } from './lib/storageS3';
+import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
+import { getCleanObject } from './lib/storageS3';
 import {
   finalizeUploadWithMode,
   resolveFileUrlWithMode,
@@ -202,10 +203,7 @@ async function loadAttachmentProcessingBlob(
       throw new ConvexError('Stored file does not have an S3 backing object.');
     }
 
-    const object = await getS3Object({
-      bucket: args.lifecycle.canonicalBucket,
-      key: args.lifecycle.canonicalKey,
-    });
+    const object = await getCleanObject({ key: args.lifecycle.canonicalKey });
     return await toBlob(object.Body, args.attachment.mimeType);
   }
 
@@ -814,24 +812,25 @@ export const createChatAttachmentFromUpload = action({
       createdAt: now,
     })) as Id<'chatAttachments'>;
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'chat_attachment_uploaded',
-      userId,
+    await recordUserAuditEvent(ctx, {
       actorUserId: userId,
-      organizationId,
-      sessionId,
-      outcome: 'success',
-      severity: 'info',
-      resourceType: 'chat_attachment',
-      resourceId: attachmentId,
-      resourceLabel: validatedAttachment.normalizedName,
-      sourceSurface: 'chat.attachment_upload',
+      emitter: 'chat.attachment',
+      eventType: 'chat_attachment_uploaded',
       metadata: JSON.stringify({
         attachmentId,
         kind,
         mimeType: validatedAttachment.mimeType,
         sizeBytes: validatedAttachment.sizeBytes,
       }),
+      organizationId,
+      outcome: 'success',
+      resourceId: attachmentId,
+      resourceLabel: validatedAttachment.normalizedName,
+      resourceType: 'chat_attachment',
+      sessionId,
+      severity: 'info',
+      sourceSurface: 'chat.attachment_upload',
+      userId,
     });
 
     const allowedKinds = kind === 'image' ? (['image'] as const) : (['document', 'pdf'] as const);
@@ -876,22 +875,23 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'chat_attachment_quarantined',
-        userId,
+      await recordUserAuditEvent(ctx, {
         actorUserId: userId,
-        organizationId,
-        sessionId,
-        outcome: 'failure',
-        severity: 'warning',
-        resourceType: 'chat_attachment',
-        resourceId: attachmentId,
-        resourceLabel: validatedAttachment.normalizedName,
-        sourceSurface: 'chat.attachment_inspection',
+        emitter: 'chat.attachment',
+        eventType: 'chat_attachment_quarantined',
         metadata: JSON.stringify({
           attachmentId,
           reason: inspectionResult.details ?? 'file_signature_mismatch',
         }),
+        organizationId,
+        outcome: 'failure',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        resourceType: 'chat_attachment',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: 'chat.attachment_inspection',
+        userId,
       });
       throw new ConvexError(
         inspectionResult.details ?? 'Attachment quarantined during file inspection.',
@@ -909,45 +909,47 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'chat_attachment_scan_failed',
-        userId,
+      await recordUserAuditEvent(ctx, {
         actorUserId: userId,
-        organizationId,
-        sessionId,
-        outcome: 'failure',
-        severity: 'warning',
-        resourceType: 'chat_attachment',
-        resourceId: attachmentId,
-        resourceLabel: validatedAttachment.normalizedName,
-        sourceSurface: 'chat.attachment_inspection',
+        emitter: 'chat.attachment',
+        eventType: 'chat_attachment_scan_failed',
         metadata: JSON.stringify({
           attachmentId,
           error: errorMessage,
           inspectionStatus: inspectionResult.status,
         }),
+        organizationId,
+        outcome: 'failure',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        resourceType: 'chat_attachment',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: 'chat.attachment_inspection',
+        userId,
       });
       throw new ConvexError(errorMessage);
     }
 
     try {
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'chat_attachment_scan_passed',
-        userId,
+      await recordUserAuditEvent(ctx, {
         actorUserId: userId,
-        organizationId,
-        sessionId,
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'chat_attachment',
-        resourceId: attachmentId,
-        resourceLabel: validatedAttachment.normalizedName,
-        sourceSurface: 'chat.attachment_inspection',
+        emitter: 'chat.attachment',
+        eventType: 'chat_attachment_scan_passed',
         metadata: JSON.stringify({
           attachmentId,
           mimeType: validatedAttachment.mimeType,
           inspectionEngine: inspectionResult.engine,
         }),
+        organizationId,
+        outcome: 'success',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        resourceType: 'chat_attachment',
+        sessionId,
+        severity: 'info',
+        sourceSurface: 'chat.attachment_inspection',
+        userId,
       });
 
       await finalizeUploadWithMode(ctx, {
@@ -983,23 +985,24 @@ export const createChatAttachmentFromUpload = action({
       );
 
       if (kind === 'image') {
-        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-          eventType: 'attachment_access_url_issued',
-          userId,
+        await recordUserAuditEvent(ctx, {
           actorUserId: userId,
-          organizationId,
-          sessionId,
-          outcome: 'success',
-          severity: 'info',
-          resourceType: 'chat_attachment',
-          resourceId: attachmentId,
-          resourceLabel: validatedAttachment.normalizedName,
-          sourceSurface: 'chat.attachment_preview',
+          emitter: 'chat.attachment',
+          eventType: 'attachment_access_url_issued',
           metadata: JSON.stringify({
             attachmentId,
             expiresInMinutes: getRetentionPolicyConfig().attachmentUrlTtlMinutes,
             purpose: 'image_preview',
           }),
+          organizationId,
+          outcome: 'success',
+          resourceId: attachmentId,
+          resourceLabel: validatedAttachment.normalizedName,
+          resourceType: 'chat_attachment',
+          sessionId,
+          severity: 'info',
+          sourceSurface: 'chat.attachment_preview',
+          userId,
         });
       }
 
@@ -1021,22 +1024,23 @@ export const createChatAttachmentFromUpload = action({
           updatedAt: Date.now(),
         },
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'chat_attachment_scan_failed',
-        userId,
+      await recordUserAuditEvent(ctx, {
         actorUserId: userId,
-        organizationId,
-        sessionId,
-        outcome: 'failure',
-        severity: 'warning',
-        resourceType: 'chat_attachment',
-        resourceId: attachmentId,
-        resourceLabel: validatedAttachment.normalizedName,
-        sourceSurface: 'chat.attachment_processing',
+        emitter: 'chat.attachment',
+        eventType: 'chat_attachment_scan_failed',
         metadata: JSON.stringify({
           attachmentId,
           error: error instanceof Error ? error.message : 'Failed to process attachment.',
         }),
+        organizationId,
+        outcome: 'failure',
+        resourceId: attachmentId,
+        resourceLabel: validatedAttachment.normalizedName,
+        resourceType: 'chat_attachment',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: 'chat.attachment_processing',
+        userId,
       });
 
       throw error;
@@ -1259,61 +1263,61 @@ export const runChatGenerationInternal = internalAction({
           ...(assistantMessage?._id ? { activeAssistantMessageId: assistantMessage._id } : {}),
         },
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      await recordSystemAuditEvent(ctx, {
+        emitter: 'chat.run_worker',
         eventType: 'chat_run_completed',
-        userId: run.initiatedByUserId,
-        actorUserId: run.initiatedByUserId,
-        organizationId: run.organizationId,
-        sessionId: run.ownerSessionId,
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'chat_run',
-        resourceId: args.runId,
-        resourceLabel: run.model ?? 'chat run',
-        sourceSurface: 'chat.run_generation',
+        initiatedByUserId: run.initiatedByUserId,
         metadata: JSON.stringify({
           runId: args.runId,
           model: run.model ?? null,
           provider: run.provider ?? null,
           useWebSearch: run.useWebSearch,
         }),
+        organizationId: run.organizationId,
+        outcome: 'success',
+        resourceId: args.runId,
+        resourceLabel: run.model ?? 'chat run',
+        resourceType: 'chat_run',
+        severity: 'info',
+        sourceSurface: 'chat.run_generation',
+        userId: run.initiatedByUserId,
       });
       if (run.useWebSearch) {
-        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+        await recordSystemAuditEvent(ctx, {
+          emitter: 'chat.run_worker',
           eventType: 'chat_web_search_used',
-          userId: run.initiatedByUserId,
-          actorUserId: run.initiatedByUserId,
-          organizationId: run.organizationId,
-          sessionId: run.ownerSessionId,
-          outcome: 'success',
-          severity: 'info',
-          resourceType: 'chat_run',
-          resourceId: args.runId,
-          resourceLabel: run.model ?? 'chat run',
-          sourceSurface: 'chat.web_search',
+          initiatedByUserId: run.initiatedByUserId,
           metadata: JSON.stringify({
             runId: args.runId,
             model: run.model ?? null,
           }),
+          organizationId: run.organizationId,
+          outcome: 'success',
+          resourceId: args.runId,
+          resourceLabel: run.model ?? 'chat run',
+          resourceType: 'chat_run',
+          severity: 'info',
+          sourceSurface: 'chat.web_search',
+          userId: run.initiatedByUserId,
         });
       }
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      await recordSystemAuditEvent(ctx, {
+        emitter: 'chat.run_worker',
         eventType: 'outbound_vendor_access_used',
-        userId: run.initiatedByUserId,
-        actorUserId: run.initiatedByUserId,
-        organizationId: run.organizationId,
-        sessionId: run.ownerSessionId,
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'vendor',
-        resourceId: 'openrouter',
-        resourceLabel: 'OpenRouter',
-        sourceSurface: 'chat.run_generation',
+        initiatedByUserId: run.initiatedByUserId,
         metadata: JSON.stringify({
           runId: args.runId,
           useWebSearch: run.useWebSearch,
           vendor: 'openrouter',
         }),
+        organizationId: run.organizationId,
+        outcome: 'success',
+        resourceId: 'openrouter',
+        resourceLabel: 'OpenRouter',
+        resourceType: 'vendor',
+        severity: 'info',
+        sourceSurface: 'chat.run_generation',
+        userId: run.initiatedByUserId,
       });
       await ctx.runMutation(internal.agentChat.patchThreadInternal, {
         threadId: run.threadId,
@@ -1340,43 +1344,43 @@ export const runChatGenerationInternal = internalAction({
         status: 'error',
         failureKind: classifyChatRunFailure(error),
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      await recordSystemAuditEvent(ctx, {
+        emitter: 'chat.run_worker',
         eventType: 'chat_run_failed',
-        userId: latestRun.initiatedByUserId,
-        actorUserId: latestRun.initiatedByUserId,
-        organizationId: latestRun.organizationId,
-        sessionId: latestRun.ownerSessionId,
-        outcome: 'failure',
-        severity: 'warning',
-        resourceType: 'chat_run',
-        resourceId: args.runId,
-        resourceLabel: latestRun.model ?? 'chat run',
-        sourceSurface: 'chat.run_generation',
+        initiatedByUserId: latestRun.initiatedByUserId,
         metadata: JSON.stringify({
           runId: args.runId,
           reason: error instanceof Error ? error.message : 'Streaming failed.',
           failureKind: classifyChatRunFailure(error),
           model: latestRun.model ?? null,
         }),
+        organizationId: latestRun.organizationId,
+        outcome: 'failure',
+        resourceId: args.runId,
+        resourceLabel: latestRun.model ?? 'chat run',
+        resourceType: 'chat_run',
+        severity: 'warning',
+        sourceSurface: 'chat.run_generation',
+        userId: latestRun.initiatedByUserId,
       });
       if (error instanceof Error && error.name === 'VendorBoundaryError') {
-        await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+        await recordSystemAuditEvent(ctx, {
+          emitter: 'chat.run_worker',
           eventType: 'outbound_vendor_access_denied',
-          userId: latestRun.initiatedByUserId,
-          actorUserId: latestRun.initiatedByUserId,
-          organizationId: latestRun.organizationId,
-          sessionId: latestRun.ownerSessionId,
-          outcome: 'failure',
-          severity: 'warning',
-          resourceType: 'vendor',
-          resourceId: 'openrouter',
-          resourceLabel: 'OpenRouter',
-          sourceSurface: 'chat.run_generation',
+          initiatedByUserId: latestRun.initiatedByUserId,
           metadata: JSON.stringify({
             reason: error.message,
             runId: args.runId,
             vendor: 'openrouter',
           }),
+          organizationId: latestRun.organizationId,
+          outcome: 'failure',
+          resourceId: 'openrouter',
+          resourceLabel: 'OpenRouter',
+          resourceType: 'vendor',
+          severity: 'warning',
+          sourceSurface: 'chat.run_generation',
+          userId: latestRun.initiatedByUserId,
         });
       }
     }

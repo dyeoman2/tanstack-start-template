@@ -5,9 +5,9 @@ import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { issueFileAccessUrlForCurrentUser } from './fileServing';
 import {
-  createPresignedS3Url,
-  deleteS3Object,
-  getRequiredS3EncryptionHeaders,
+  createQuarantineUploadPresignedUrl,
+  deleteStorageObject,
+  getRequiredStorageEncryptionHeaders,
 } from './lib/storageS3';
 import type { FinalizeUploadArgs, ResolveFileUrlArgs, UploadTargetResult } from './storageTypes';
 
@@ -91,9 +91,11 @@ export async function generateS3PrimaryUploadTarget(args: {
   storageId: string;
 }): Promise<UploadTargetResult> {
   const runtimeConfig = getStorageRuntimeConfig();
-  const bucket = runtimeConfig.s3FilesBucket;
+  const bucket = runtimeConfig.storageBuckets.quarantine.bucket;
   if (!bucket) {
-    throw new Error('AWS_S3_FILES_BUCKET environment variable is required for S3-backed storage.');
+    throw new Error(
+      'AWS_S3_QUARANTINE_BUCKET environment variable is required for S3-backed storage.',
+    );
   }
   const quarantineKey = buildQuarantineStorageKey({
     organizationId: args.organizationId,
@@ -105,16 +107,14 @@ export async function generateS3PrimaryUploadTarget(args: {
         'x-amz-checksum-sha256': hexSha256ToBase64(args.sha256Hex),
       }
     : undefined;
-  const encryptionHeaders = getRequiredS3EncryptionHeaders();
-  const presigned = await createPresignedS3Url({
-    bucket,
+  const encryptionHeaders = getRequiredStorageEncryptionHeaders('quarantine');
+  const presigned = await createQuarantineUploadPresignedUrl({
     contentType: args.contentType,
     headers: {
       ...encryptionHeaders,
       ...checksumHeader,
     },
     key: quarantineKey,
-    method: 'PUT',
   });
 
   return {
@@ -133,9 +133,11 @@ export async function generateS3PrimaryUploadTarget(args: {
 
 export async function finalizeS3PrimaryUpload(ctx: ActionCtx, args: FinalizeUploadArgs) {
   const runtimeConfig = getStorageRuntimeConfig();
-  const bucket = runtimeConfig.s3FilesBucket;
+  const bucket = runtimeConfig.storageBuckets.quarantine.bucket;
   if (!bucket) {
-    throw new Error('AWS_S3_FILES_BUCKET environment variable is required for S3-backed storage.');
+    throw new Error(
+      'AWS_S3_QUARANTINE_BUCKET environment variable is required for S3-backed storage.',
+    );
   }
 
   const quarantineKey = buildQuarantineStorageKey({
@@ -199,24 +201,24 @@ export async function deleteS3PrimaryObject(ctx: ActionCtx, args: { storageId: s
   }
 
   if (lifecycle.canonicalBucket && lifecycle.canonicalKey) {
-    await deleteS3Object({
-      bucket: lifecycle.canonicalBucket,
+    await deleteStorageObject({
+      bucketKind: 'clean',
       key: lifecycle.canonicalKey,
       versionId: lifecycle.canonicalVersionId,
     });
   }
 
   if (lifecycle.quarantineBucket && lifecycle.quarantineKey) {
-    await deleteS3Object({
-      bucket: lifecycle.quarantineBucket,
+    await deleteStorageObject({
+      bucketKind: 'quarantine',
       key: lifecycle.quarantineKey,
       versionId: lifecycle.quarantineVersionId,
     });
   }
 
   if (lifecycle.rejectedBucket && lifecycle.rejectedKey) {
-    await deleteS3Object({
-      bucket: lifecycle.rejectedBucket,
+    await deleteStorageObject({
+      bucketKind: 'rejected',
       key: lifecycle.rejectedKey,
       versionId: lifecycle.rejectedVersionId,
     });

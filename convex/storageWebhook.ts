@@ -37,6 +37,8 @@ export const guardDutyWebhookPayloadValidator = v.union(
   guardDutyPromotionResultPayloadValidator,
 );
 
+export type StorageWebhookKind = 'guardduty' | 'inspection';
+
 function timingSafeEqual(left: string, right: string) {
   const leftBytes = new TextEncoder().encode(left);
   const rightBytes = new TextEncoder().encode(right);
@@ -71,13 +73,22 @@ async function sign(secret: string, payload: string) {
 }
 
 export async function verifyWebhookSignature(args: {
+  kind: StorageWebhookKind;
   payload: string;
   signature: string | null;
   timestamp: string | null;
 }) {
   const runtimeConfig = getStorageRuntimeConfig();
-  if (!runtimeConfig.malwareWebhookSharedSecret) {
-    throw new ConvexError('AWS_MALWARE_WEBHOOK_SHARED_SECRET is not configured.');
+  const sharedSecret =
+    args.kind === 'guardduty'
+      ? runtimeConfig.guardDutyWebhookSharedSecret
+      : runtimeConfig.storageInspectionWebhookSharedSecret;
+  if (!sharedSecret) {
+    throw new ConvexError(
+      args.kind === 'guardduty'
+        ? 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET is not configured.'
+        : 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET is not configured.',
+    );
   }
   if (!args.signature || !args.timestamp) {
     throw new ConvexError('Missing required webhook signature headers.');
@@ -88,10 +99,7 @@ export async function verifyWebhookSignature(args: {
     throw new ConvexError('Webhook timestamp is stale.');
   }
 
-  const expected = await sign(
-    runtimeConfig.malwareWebhookSharedSecret,
-    `${args.timestamp}.${args.payload}`,
-  );
+  const expected = await sign(sharedSecret, `${args.timestamp}.${args.payload}`);
   if (!timingSafeEqual(expected, args.signature)) {
     throw new ConvexError('Webhook signature verification failed.');
   }
@@ -172,7 +180,10 @@ export async function applyGuardDutyFinding(
   },
 ) {
   const runtimeConfig = getStorageRuntimeConfig();
-  if (runtimeConfig.s3FilesBucket && args.bucket !== runtimeConfig.s3FilesBucket) {
+  if (
+    runtimeConfig.storageBuckets.quarantine.bucket &&
+    args.bucket !== runtimeConfig.storageBuckets.quarantine.bucket
+  ) {
     return { applied: false, reason: 'wrong_bucket' as const };
   }
 
@@ -244,7 +255,10 @@ export async function applyGuardDutyPromotionResult(
   },
 ) {
   const runtimeConfig = getStorageRuntimeConfig();
-  if (runtimeConfig.s3FilesBucket && args.bucket !== runtimeConfig.s3FilesBucket) {
+  if (
+    runtimeConfig.storageBuckets.quarantine.bucket &&
+    args.bucket !== runtimeConfig.storageBuckets.quarantine.bucket
+  ) {
     return { applied: false, reason: 'wrong_bucket' as const };
   }
 
@@ -327,16 +341,25 @@ export const applyGuardDutyPromotionResultInternal = internalAction({
 });
 
 export const createWebhookSignatureForPayload = internalAction({
-  args: { payload: v.string(), timestamp: v.string() },
+  args: {
+    kind: v.union(v.literal('guardduty'), v.literal('inspection')),
+    payload: v.string(),
+    timestamp: v.string(),
+  },
   returns: v.string(),
   handler: async (_ctx, args) => {
     const runtimeConfig = getStorageRuntimeConfig();
-    if (!runtimeConfig.malwareWebhookSharedSecret) {
-      throw new ConvexError('AWS_MALWARE_WEBHOOK_SHARED_SECRET is not configured.');
+    const secret =
+      args.kind === 'guardduty'
+        ? runtimeConfig.guardDutyWebhookSharedSecret
+        : runtimeConfig.storageInspectionWebhookSharedSecret;
+    if (!secret) {
+      throw new ConvexError(
+        args.kind === 'guardduty'
+          ? 'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET is not configured.'
+          : 'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET is not configured.',
+      );
     }
-    return await sign(
-      runtimeConfig.malwareWebhookSharedSecret,
-      `${args.timestamp}.${args.payload}`,
-    );
+    return await sign(secret, `${args.timestamp}.${args.payload}`);
   },
 });

@@ -1,13 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { tryFinalizeStorageDecision } from './storageDecision';
 
-const { copyS3ObjectMock, deleteS3ObjectMock, getStorageRuntimeConfigMock } = vi.hoisted(() => ({
-  copyS3ObjectMock: vi.fn(async () => ({ VersionId: 'copied-version' })),
-  deleteS3ObjectMock: vi.fn(async () => undefined),
+const {
+  deleteStorageObjectMock,
+  getStorageRuntimeConfigMock,
+  promoteQuarantineObjectMock,
+  rejectQuarantineObjectMock,
+} = vi.hoisted(() => ({
+  deleteStorageObjectMock: vi.fn(async () => undefined),
   getStorageRuntimeConfigMock: vi.fn(() => ({
     fileUploadMaxBytes: 10 * 1024 * 1024,
-    s3FilesBucket: 'bucket',
+    storageBuckets: {
+      quarantine: { bucket: 'bucket', kmsKeyArn: 'kms' },
+    },
   })),
+  promoteQuarantineObjectMock: vi.fn(async () => ({ VersionId: 'copied-version' })),
+  rejectQuarantineObjectMock: vi.fn(async () => ({ VersionId: 'copied-version' })),
 }));
 
 vi.mock('../src/lib/server/env.server', () => ({
@@ -15,9 +23,10 @@ vi.mock('../src/lib/server/env.server', () => ({
 }));
 
 vi.mock('./lib/storageS3', () => ({
-  copyS3Object: copyS3ObjectMock,
-  deleteS3Object: deleteS3ObjectMock,
-  getS3Object: vi.fn(),
+  deleteStorageObject: deleteStorageObjectMock,
+  getQuarantineObject: vi.fn(),
+  promoteQuarantineObject: promoteQuarantineObjectMock,
+  rejectQuarantineObject: rejectQuarantineObjectMock,
 }));
 
 describe('tryFinalizeStorageDecision', () => {
@@ -53,13 +62,12 @@ describe('tryFinalizeStorageDecision', () => {
       reason: 'promoted',
     });
 
-    expect(copyS3ObjectMock).toHaveBeenCalledWith(
+    expect(promoteQuarantineObjectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        bucket: 'bucket',
         destinationKey: 'clean/org/org_123/chat_attachment/file_1',
       }),
     );
-    expect(deleteS3ObjectMock).toHaveBeenCalled();
+    expect(deleteStorageObjectMock).toHaveBeenCalled();
     expect(ctx.runAction).toHaveBeenCalled();
   });
 
@@ -89,9 +97,8 @@ describe('tryFinalizeStorageDecision', () => {
       reason: 'rejected',
     });
 
-    expect(copyS3ObjectMock).toHaveBeenCalledWith(
+    expect(rejectQuarantineObjectMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        bucket: 'bucket',
         destinationKey: 'rejected/org/org_123/chat_attachment/file_1',
       }),
     );
@@ -121,7 +128,8 @@ describe('tryFinalizeStorageDecision', () => {
       reason: 'awaiting_verdicts',
     });
 
-    expect(copyS3ObjectMock).not.toHaveBeenCalled();
+    expect(promoteQuarantineObjectMock).not.toHaveBeenCalled();
+    expect(rejectQuarantineObjectMock).not.toHaveBeenCalled();
     expect(ctx.runMutation).not.toHaveBeenCalled();
   });
 });

@@ -31,9 +31,9 @@ import {
   vendorWorkspaceListValidator,
   vendorWorkspaceValidator,
 } from './lib/security/validators';
-import { anyApi } from 'convex/server';
 import type { Doc } from './_generated/dataModel';
 import { throwConvexError } from './auth/errors';
+import { recordSiteAdminAuditEvent } from './lib/auditEmitters';
 
 function toEvidenceReportRecord(report: Doc<'evidenceReports'>) {
   return {
@@ -143,10 +143,16 @@ export const reviewEvidenceReport = mutation({
       });
     }
 
-    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+    await recordSiteAdminAuditEvent(ctx, {
+      actorIdentifier: currentUser.authUser.email ?? undefined,
       actorUserId: currentUser.authUserId,
+      emitter: 'security.reports',
       eventType: 'evidence_report_reviewed',
-      identifier: currentUser.authUser.email ?? undefined,
+      metadata: stringifyStable({
+        customerSummary: args.customerSummary?.trim() || null,
+        internalNotes,
+        reviewStatus: args.reviewStatus,
+      }),
       organizationId: currentUser.activeOrganizationId ?? undefined,
       outcome: 'success',
       resourceId: report._id,
@@ -155,11 +161,6 @@ export const reviewEvidenceReport = mutation({
       severity: args.reviewStatus === 'reviewed' ? 'info' : 'warning',
       sourceSurface: 'admin.security',
       userId: currentUser.authUserId,
-      metadata: stringifyStable({
-        customerSummary: args.customerSummary?.trim() || null,
-        internalNotes,
-        reviewStatus: args.reviewStatus,
-      }),
     });
 
     const updated = await ctx.db.get(args.id);

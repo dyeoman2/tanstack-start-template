@@ -56,6 +56,7 @@ import {
 import { organizationPermissionDecisionValidator } from '../lib/returnValidators';
 import { getActiveStepUpClaim, getCompatibilityStepUpClaim } from '../stepUp';
 import { throwConvexError } from './errors';
+import { recordUserAuditEvent } from '../lib/auditEmitters';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
 type BetterAuthUserRecord = BetterAuthDoc<'user'> & Partial<BetterAuthSessionUser>;
@@ -899,23 +900,24 @@ async function recordAuthorizationDenied(
     user: CurrentUser;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
-    eventType: 'authorization_denied',
-    userId: input.user.authUserId,
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: input.user.authUser.email?.toLowerCase(),
     actorUserId: input.user.authUserId,
-    organizationId: input.organizationId,
-    identifier: input.user.authUser.email?.toLowerCase(),
-    sessionId: input.user.authSession?.id ?? undefined,
-    outcome: 'failure',
-    severity: 'warning',
-    resourceType: 'organization_permission',
-    resourceId: input.organizationId,
-    resourceLabel: input.permission,
-    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    emitter: 'auth.authorization',
+    eventType: 'authorization_denied',
     metadata: JSON.stringify({
       permission: input.permission,
       reason: input.reason,
     }),
+    organizationId: input.organizationId,
+    outcome: 'failure',
+    resourceId: input.organizationId,
+    resourceLabel: input.permission,
+    resourceType: 'organization_permission',
+    severity: 'warning',
+    sessionId: input.user.authSession?.id ?? undefined,
+    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    userId: input.user.authUserId,
   });
 }
 
@@ -930,23 +932,24 @@ async function recordEnterpriseBreakGlassUsed(
     return;
   }
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
-    eventType: 'enterprise_break_glass_used',
-    userId: input.decision.user.authUserId,
+  await recordUserAuditEvent(ctx, {
+    actorIdentifier: input.decision.user.authUser.email?.toLowerCase(),
     actorUserId: input.decision.user.authUserId,
-    organizationId: input.decision.organizationId,
-    identifier: input.decision.user.authUser.email?.toLowerCase(),
-    sessionId: input.decision.user.authSession?.id ?? undefined,
-    outcome: 'success',
-    severity: 'warning',
-    resourceType: 'organization_permission',
-    resourceId: input.decision.organizationId,
-    resourceLabel: input.decision.permission,
-    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    emitter: 'auth.authorization',
+    eventType: 'enterprise_break_glass_used',
     metadata: JSON.stringify({
       permission: input.decision.permission,
       satisfactionPath: 'owner_break_glass',
     }),
+    organizationId: input.decision.organizationId,
+    outcome: 'success',
+    resourceId: input.decision.organizationId,
+    resourceLabel: input.decision.permission,
+    resourceType: 'organization_permission',
+    severity: 'warning',
+    sessionId: input.decision.user.authSession?.id ?? undefined,
+    sourceSurface: input.sourceSurface ?? 'auth.authorization',
+    userId: input.decision.user.authUserId,
   });
 }
 

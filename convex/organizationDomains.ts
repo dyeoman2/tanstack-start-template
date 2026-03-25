@@ -14,6 +14,7 @@ import { action } from './_generated/server';
 import { getVerifiedCurrentUserFromActionOrThrow } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import { getOpenRouterProvider, getOpenRouterProviderOptions } from './lib/agentChat';
+import { recordUserAuditEvent } from './lib/auditEmitters';
 import { findBetterAuthMember, findBetterAuthOrganizationById } from './lib/betterAuth';
 import { organizationDomainVerificationResultValidator } from './lib/returnValidators';
 
@@ -316,16 +317,19 @@ async function verifyOrganizationDomainHandler(
     const matched = resolvedValues.includes(expectedValue);
 
     if (!matched) {
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+      await recordUserAuditEvent(ctx, {
+        actorUserId: user.authUserId,
+        emitter: 'organization.domain_verification',
         eventType: 'domain_verification_failed',
-        organizationId: args.organizationId,
-        userId: user.authUserId,
         metadata: JSON.stringify({
           domain: domain.domain,
           domainId: args.domainId,
           recordName,
           expectedValue,
         }),
+        organizationId: args.organizationId,
+        sourceSurface: 'organization.domain_verification',
+        userId: user.authUserId,
       });
 
       return {
@@ -349,10 +353,10 @@ async function verifyOrganizationDomainHandler(
       };
     }
   } catch (error) {
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+    await recordUserAuditEvent(ctx, {
+      actorUserId: user.authUserId,
+      emitter: 'organization.domain_verification',
       eventType: 'domain_verification_failed',
-      organizationId: args.organizationId,
-      userId: user.authUserId,
       metadata: JSON.stringify({
         domain: domain.domain,
         domainId: args.domainId,
@@ -360,6 +364,9 @@ async function verifyOrganizationDomainHandler(
         expectedValue,
         error: error instanceof Error ? error.message : 'resolver_unavailable',
       }),
+      organizationId: args.organizationId,
+      sourceSurface: 'organization.domain_verification',
+      userId: user.authUserId,
     });
 
     return {
@@ -391,15 +398,18 @@ async function verifyOrganizationDomainHandler(
     },
   );
 
-  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+  await recordUserAuditEvent(ctx, {
+    actorUserId: user.authUserId,
+    emitter: 'organization.domain_verification',
     eventType: 'domain_verification_succeeded',
-    organizationId: args.organizationId,
-    userId: user.authUserId,
     metadata: JSON.stringify({
       domain: domain.domain,
       domainId: args.domainId,
       recordName,
     }),
+    organizationId: args.organizationId,
+    sourceSurface: 'organization.domain_verification',
+    userId: user.authUserId,
   });
 
   return {

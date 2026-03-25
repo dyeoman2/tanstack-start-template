@@ -28,6 +28,7 @@ import {
 } from './review_runs_core';
 import { SECURITY_SCOPE_ID, SECURITY_SCOPE_TYPE } from './validators';
 import { anyApi } from 'convex/server';
+import { recordSiteAdminAuditEvent } from '../auditEmitters';
 
 export async function exportEvidenceReportHandler(
   ctx: ActionCtx,
@@ -90,18 +91,11 @@ export async function exportEvidenceReportHandler(
     sourceReportId: args.id,
   });
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordSiteAdminAuditEvent(ctx, {
+    actorIdentifier: currentUser.authUser.email ?? undefined,
     actorUserId: currentUser.authUserId,
+    emitter: 'security.reports',
     eventType: 'evidence_report_exported',
-    identifier: currentUser.authUser.email ?? undefined,
-    organizationId: currentUser.activeOrganizationId ?? undefined,
-    outcome: 'success',
-    resourceId: report._id,
-    resourceLabel: report.reportKind,
-    resourceType: 'evidence_report',
-    severity: 'info',
-    sourceSurface: 'admin.security',
-    userId: currentUser.authUserId,
     metadata: stringifyStable({
       exportHash,
       exportId,
@@ -110,6 +104,14 @@ export async function exportEvidenceReportHandler(
       rowCount: manifest.rowCount,
       scope: manifest.organizationScope,
     }),
+    organizationId: currentUser.activeOrganizationId ?? undefined,
+    outcome: 'success',
+    resourceId: report._id,
+    resourceLabel: report.reportKind,
+    resourceType: 'evidence_report',
+    severity: 'info',
+    sourceSurface: 'admin.security',
+    userId: currentUser.authUserId,
   });
 
   return {
@@ -405,10 +407,15 @@ export async function generateEvidenceReportHandler(
     reportKind,
   });
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordSiteAdminAuditEvent(ctx, {
+    actorIdentifier: currentUser.authUser.email ?? undefined,
     actorUserId: currentUser.authUserId,
+    emitter: 'security.reports',
     eventType: 'evidence_report_generated',
-    identifier: currentUser.authUser.email ?? undefined,
+    metadata: stringifyStable({
+      contentHash,
+      filters: { reportKind },
+    }),
     organizationId: currentUser.activeOrganizationId ?? undefined,
     outcome: 'success',
     resourceId: id,
@@ -417,10 +424,6 @@ export async function generateEvidenceReportHandler(
     severity: 'info',
     sourceSurface: 'admin.security',
     userId: currentUser.authUserId,
-    metadata: stringifyStable({
-      contentHash,
-      filters: { reportKind },
-    }),
   });
 
   return {
@@ -725,10 +728,15 @@ export async function finalizeReviewRunHandler(
     reviewRunId: args.reviewRunId,
   });
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordSiteAdminAuditEvent(ctx, {
+    actorIdentifier: currentUser.authUser.email ?? undefined,
     actorUserId: currentUser.authUserId,
-    eventType: 'security_review_run_finalized',
-    identifier: currentUser.authUser.email ?? undefined,
+    emitter: 'security.reports',
+    eventType: 'security_review_run_finalized' as never,
+    metadata: stringifyStable({
+      finalReportId: reportId,
+      reviewRunId: args.reviewRunId,
+    }),
     organizationId: currentUser.activeOrganizationId ?? undefined,
     outcome: 'success',
     resourceId: args.reviewRunId,
@@ -737,10 +745,6 @@ export async function finalizeReviewRunHandler(
     severity: 'info',
     sourceSurface: REVIEW_RUN_SOURCE_SURFACE,
     userId: currentUser.authUserId,
-    metadata: stringifyStable({
-      finalReportId: reportId,
-      reviewRunId: args.reviewRunId,
-    }),
   });
 
   return await ctx.runQuery(anyApi.securityReviews.getReviewRunDetail, {

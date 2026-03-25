@@ -1380,6 +1380,13 @@ async function main() {
           'AWS_DR_BACKUP_S3_BUCKET',
           freshBackupOutputs?.DrBackupBucketName ?? backupBucketName,
         );
+        if (freshBackupOutputs?.DrBackupBucketKeyArn) {
+          setGitHubSecret(
+            githubRepo,
+            'AWS_DR_BACKUP_KMS_KEY_ARN',
+            freshBackupOutputs.DrBackupBucketKeyArn,
+          );
+        }
         summary.completed.push('Configured AWS DR backup secrets in GitHub Actions.');
       } else if (
         !secretNamesInRepo.has('AWS_DR_BACKUP_ACCESS_KEY_ID') ||

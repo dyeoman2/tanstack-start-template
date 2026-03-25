@@ -1,6 +1,5 @@
 'use node';
 
-import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
@@ -12,7 +11,8 @@ import {
   getVerifiedCurrentUserFromActionOrThrow,
   requireStorageReadAccessFromActionOrThrow,
 } from './auth/access';
-import { createPresignedS3Url } from './lib/storageS3';
+import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
+import { createDownloadPresignedStorageUrl } from './lib/storageS3';
 import { getStorageReadiness } from './storageReadiness';
 
 const FILE_ACCESS_TICKET_MAX_TTL_MINUTES = 15;
@@ -156,8 +156,27 @@ async function recordFileAccessAuditEvent(
     userId?: string | null;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
-    actorUserId: args.userId ?? undefined,
+  if (args.userId) {
+    await recordUserAuditEvent(ctx, {
+      actorUserId: args.userId,
+      emitter: 'file.access',
+      eventType: args.eventType,
+      metadata: JSON.stringify(args.metadata),
+      organizationId: args.organizationId ?? undefined,
+      outcome: args.outcome,
+      resourceId: args.resourceId,
+      resourceLabel: args.resourceLabel ?? undefined,
+      resourceType: args.resourceType,
+      sessionId: args.sessionId ?? undefined,
+      severity: args.severity ?? (args.outcome === 'success' ? 'info' : 'warning'),
+      sourceSurface: args.sourceSurface,
+      userId: args.userId,
+    });
+    return;
+  }
+
+  await recordSystemAuditEvent(ctx, {
+    emitter: 'file.access',
     eventType: args.eventType,
     metadata: JSON.stringify(args.metadata),
     organizationId: args.organizationId ?? undefined,
@@ -168,7 +187,6 @@ async function recordFileAccessAuditEvent(
     sessionId: args.sessionId ?? undefined,
     severity: args.severity ?? (args.outcome === 'success' ? 'info' : 'warning'),
     sourceSurface: args.sourceSurface,
-    userId: args.userId ?? undefined,
   });
 }
 
@@ -187,8 +205,9 @@ async function recordSupportAccessUsage(
     userId: string;
   },
 ) {
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordUserAuditEvent(ctx, {
     actorUserId: args.userId,
+    emitter: 'file.support_access',
     eventType: 'support_access_used',
     metadata: JSON.stringify({
       grantId: args.grantId,
@@ -228,11 +247,10 @@ async function resolveServeRedirect(ctx: FileServingCtx, storageId: string) {
     throw new ConvexError('Stored file does not have an S3 backing object.');
   }
 
-  const presigned = await createPresignedS3Url({
-    bucket,
+  const presigned = await createDownloadPresignedStorageUrl({
+    bucketKind: lifecycle.backendMode === 's3-primary' ? 'clean' : 'mirror',
     expiresInSeconds: FILE_DOWNLOAD_PRESIGN_EXPIRY_SECONDS,
     key,
-    method: 'GET',
   });
 
   return {
@@ -277,8 +295,9 @@ export async function issueFileAccessUrlForCurrentUser(
     args.purpose === 'external_share' &&
     !(await isAttachmentSharingAllowed(ctx, organizationId))
   ) {
-    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+    await recordUserAuditEvent(ctx, {
       actorUserId: currentUser.authUserId,
+      emitter: 'file.access',
       eventType: 'authorization_denied',
       metadata: JSON.stringify({
         policy: 'attachmentSharingAllowed',
@@ -365,8 +384,9 @@ export async function issueFileAccessUrlForCurrentUser(
       requirement: STEP_UP_REQUIREMENTS.attachmentAccess,
       sessionId: issuedFromSessionId,
     });
-    await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+    await recordUserAuditEvent(ctx, {
       actorUserId: currentUser.authUserId,
+      emitter: 'file.access',
       eventType: 'step_up_consumed',
       metadata: JSON.stringify({
         purpose: args.purpose,
@@ -439,20 +459,14 @@ export async function redeemFileAccessTicketOrThrow(
 ) {
   await verifyFileAccessTicketSignature(args.ticketId, args.signature, args.expiresAt);
 
-  const ticket = await ctx.runMutation(internal.fileAccessTickets.redeemInternal, {
+  const ticket = await ctx.runMutation(internal.fileAccessTickets.redeemAuthorizedInternal, {
+    expectedSessionId: args.authenticatedSessionId,
+    expectedUserId: args.authenticatedUserId,
     redeemedAt: Date.now(),
     ticketId: args.ticketId,
   });
   if (!ticket) {
     throw new ConvexError('File access ticket not found.');
-  }
-
-  if (ticket.issuedToUserId !== args.authenticatedUserId) {
-    throw new ConvexError('File access ticket does not belong to the current user.');
-  }
-
-  if (ticket.issuedFromSessionId !== args.authenticatedSessionId) {
-    throw new ConvexError('File access ticket must be redeemed from the issuing session.');
   }
 
   const redirect = await resolveServeRedirect(ctx, ticket.storageId);

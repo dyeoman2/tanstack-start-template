@@ -86,6 +86,12 @@ import {
   organizationRoleValidator,
   rateLimitResultValidator,
 } from './lib/returnValidators';
+import {
+  recordScimAuditEvent as emitScimAuditEvent,
+  recordSiteAdminAuditEvent,
+  recordSystemAuditEvent,
+  recordUserAuditEvent,
+} from './lib/auditEmitters';
 
 export const authComponent = createClient<DataModel, typeof betterAuthSchema>(
   components.betterAuth,
@@ -672,8 +678,9 @@ async function recordAdminStepUpChallenge(
   },
 ) {
   const currentUser = await getVerifiedCurrentSiteAdminUserFromActionOrThrow(ctx);
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordSiteAdminAuditEvent(ctx, {
     actorUserId: currentUser.authUserId,
+    emitter: 'auth.admin',
     eventType: 'admin_step_up_challenged',
     metadata: JSON.stringify({
       reason: args.reason,
@@ -1811,9 +1818,58 @@ export const createAuth = (
     if (!ctxWithRunMutation.runMutation) {
       return;
     }
+    const auditCtx = ctxWithRunMutation as MutationCtx &
+      Pick<typeof ctxWithRunMutation, 'runMutation'>;
 
-    await ctxWithRunMutation.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
-      ...event,
+    const emitter = event.sourceSurface?.startsWith('admin.')
+      ? 'auth.admin'
+      : event.sourceSurface?.startsWith('better_auth')
+        ? 'auth.better_auth'
+        : 'auth.lifecycle';
+
+    if (event.actorUserId) {
+      await recordUserAuditEvent(auditCtx, {
+        actorIdentifier: event.identifier,
+        actorUserId: event.actorUserId,
+        emitter,
+        eventType: event.eventType as never,
+        identifier: event.identifier,
+        ipAddress: event.ipAddress,
+        metadata: event.metadata,
+        organizationId: event.organizationId,
+        outcome: event.outcome,
+        requestId: event.requestId,
+        resourceId: event.resourceId,
+        resourceLabel: event.resourceLabel,
+        resourceType: event.resourceType,
+        sessionId: event.sessionId,
+        severity: event.severity,
+        sourceSurface: event.sourceSurface ?? 'auth.lifecycle',
+        targetUserId: event.targetUserId,
+        userAgent: event.userAgent,
+        userId: event.userId,
+      });
+      return;
+    }
+
+    await recordSystemAuditEvent(auditCtx, {
+      actorIdentifier: event.identifier,
+      emitter,
+      eventType: event.eventType as never,
+      identifier: event.identifier,
+      ipAddress: event.ipAddress,
+      metadata: event.metadata,
+      organizationId: event.organizationId,
+      outcome: event.outcome,
+      requestId: event.requestId,
+      resourceId: event.resourceId,
+      resourceLabel: event.resourceLabel,
+      resourceType: event.resourceType,
+      severity: event.severity,
+      sourceSurface: event.sourceSurface ?? 'auth.lifecycle',
+      targetUserId: event.targetUserId,
+      userAgent: event.userAgent,
+      userId: event.userId,
     });
   };
 
@@ -3243,10 +3299,11 @@ export const deleteOrganizationScimProviderServer = action({
 
       if (result.ok) {
         const currentUser = await getCurrentBetterAuthUserOrThrow(ctx);
-        await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+        await recordSiteAdminAuditEvent(ctx, {
+          actorIdentifier: providerId,
           actorUserId: currentUser.id,
+          emitter: 'auth.scim_admin',
           eventType: 'enterprise_scim_token_deleted',
-          identifier: providerId,
           metadata: JSON.stringify({
             organizationId: args.organizationId,
             providerKey: args.providerKey,
@@ -3302,11 +3359,14 @@ async function handleScimOrganizationLifecycleImpl(ctx: ActionCtx, args: ScimLif
     metadata?: Record<string, unknown>;
     userId?: string;
   }) => {
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: input.eventType,
+    await emitScimAuditEvent(ctx, {
+      emitter: 'auth.scim',
+      eventType: input.eventType as never,
       identifier: input.identifier,
       metadata: input.metadata ? JSON.stringify(input.metadata) : undefined,
       organizationId,
+      scimProviderId: scimContext.providerId,
+      sourceSurface: 'auth.scim',
       userId: input.userId,
     });
   };

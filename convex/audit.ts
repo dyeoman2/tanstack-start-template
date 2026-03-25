@@ -2,6 +2,7 @@ import { anyApi, type PaginationResult } from 'convex/server';
 import { v } from 'convex/values';
 import { deriveIsSiteAdmin, normalizeUserRole } from '../src/features/auth/lib/user-role';
 import {
+  type AuditProvenance,
   type AuthAuditEvent,
   isAuthAuditEventType,
   normalizeAuditIdentifier,
@@ -39,6 +40,20 @@ const SECURITY_EXPORT_BATCH_SIZE = 100;
 const AUDIT_LEDGER_CHAIN_ID = 'primary';
 const AUDIT_SEVERITY_VALUES = ['info', 'warning', 'critical'] as const;
 const AUDIT_OUTCOME_VALUES = ['success', 'failure'] as const;
+const auditProvenanceValidator = v.object({
+  kind: v.union(
+    v.literal('user'),
+    v.literal('site_admin'),
+    v.literal('system'),
+    v.literal('scim_service'),
+  ),
+  emitter: v.string(),
+  actorUserId: v.optional(v.string()),
+  sessionId: v.optional(v.string()),
+  identifier: v.optional(v.string()),
+  initiatedByUserId: v.optional(v.string()),
+  scimProviderId: v.optional(v.string()),
+});
 type AuditLedgerStateSnapshot = {
   chainId: string;
   chainVersion: number;
@@ -483,6 +498,7 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
 }
 
 export function validateRegulatedAuditFields(record: {
+  provenance: AuditProvenance;
   actorUserId?: string;
   eventType: string;
   metadata?: string;
@@ -493,6 +509,10 @@ export function validateRegulatedAuditFields(record: {
   severity?: string;
   sourceSurface?: string;
 }) {
+  if (!record.provenance.emitter.trim()) {
+    throw new Error(`Audit event ${record.eventType} is missing provenance emitter`);
+  }
+
   const requiredFields = REGULATED_BASELINE_REQUIRED_FIELDS.get(record.eventType);
   if (!requiredFields) {
     return;
@@ -521,6 +541,7 @@ function toAuditEvent(log: AuditLedgerEventDoc): AuthAuditEvent | null {
     id: log.id,
     sequence: log.sequence,
     eventType: log.eventType,
+    provenance: log.provenance,
     ...(log.userId ? { userId: log.userId } : {}),
     ...(log.actorUserId ? { actorUserId: log.actorUserId } : {}),
     ...(log.targetUserId ? { targetUserId: log.targetUserId } : {}),
@@ -557,6 +578,7 @@ function buildAuditHashPayload(input: {
   sequence: number;
   eventType: string;
   recordedAt: number;
+  provenance: AuditProvenance;
   userId?: string;
   actorUserId?: string;
   targetUserId?: string;
@@ -581,6 +603,7 @@ function buildAuditHashPayload(input: {
     sequence: input.sequence,
     eventType: input.eventType,
     recordedAt: input.recordedAt,
+    provenance: input.provenance,
     userId: input.userId ?? null,
     actorUserId: input.actorUserId ?? null,
     targetUserId: input.targetUserId ?? null,
@@ -720,6 +743,7 @@ async function collectAuditLedgerPageForUser(
 
 const appendAuditLedgerEventArgs = {
   eventType: v.string(),
+  provenance: auditProvenanceValidator,
   userId: v.optional(v.string()),
   actorUserId: v.optional(v.string()),
   targetUserId: v.optional(v.string()),
@@ -741,6 +765,7 @@ const appendAuditLedgerEventArgs = {
 async function appendAuditLedgerEvent(
   ctx: MutationCtx,
   args: {
+    provenance: AuditProvenance;
     eventType: string;
     userId?: string;
     actorUserId?: string;
@@ -777,6 +802,7 @@ async function appendAuditLedgerEvent(
     id: crypto.randomUUID(),
     sequence,
     eventType: args.eventType,
+    provenance: args.provenance,
     ...(normalizeOptionalString(args.userId)
       ? { userId: normalizeOptionalString(args.userId) }
       : {}),
@@ -1418,6 +1444,7 @@ export const verifyAuditLedgerIntegrityInternal = internalAction({
             sequence: event.sequence,
             eventType: event.eventType,
             recordedAt: event.recordedAt,
+            provenance: event.provenance,
             userId: event.userId,
             actorUserId: event.actorUserId,
             targetUserId: event.targetUserId,

@@ -105,10 +105,23 @@ describe('storage helpers', () => {
     expect(getRequiredStorageDrEnvKeys({ FILE_STORAGE_BACKEND: 's3-primary' })).toEqual([
       'FILE_STORAGE_BACKEND',
       'AWS_REGION',
-      'AWS_S3_FILES_BUCKET',
-      'AWS_S3_FILES_KMS_KEY_ARN',
+      'AWS_S3_QUARANTINE_BUCKET',
+      'AWS_S3_CLEAN_BUCKET',
+      'AWS_S3_REJECTED_BUCKET',
+      'AWS_S3_MIRROR_BUCKET',
+      'AWS_S3_QUARANTINE_KMS_KEY_ARN',
+      'AWS_S3_CLEAN_KMS_KEY_ARN',
+      'AWS_S3_REJECTED_KMS_KEY_ARN',
+      'AWS_S3_MIRROR_KMS_KEY_ARN',
       'AWS_FILE_SERVE_SIGNING_SECRET',
-      'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+      'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
+      'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
+      'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
+      'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
+      'AWS_STORAGE_ROLE_ARN_PROMOTION',
+      'AWS_STORAGE_ROLE_ARN_REJECTION',
+      'AWS_STORAGE_ROLE_ARN_CLEANUP',
+      'AWS_STORAGE_ROLE_ARN_MIRROR',
     ]);
   });
 
@@ -140,11 +153,27 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
           BETTER_AUTH_SECRET: 'secret',
           FILE_STORAGE_BACKEND: 's3-primary',
           AWS_REGION: 'us-west-1',
-          AWS_S3_FILES_BUCKET: 'bucket',
-          AWS_S3_FILES_KMS_KEY_ARN:
-            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-files',
-          AWS_MALWARE_WEBHOOK_SHARED_SECRET: 'webhook',
+          AWS_S3_QUARANTINE_BUCKET: 'bucket-quarantine',
+          AWS_S3_CLEAN_BUCKET: 'bucket-clean',
+          AWS_S3_REJECTED_BUCKET: 'bucket-rejected',
+          AWS_S3_MIRROR_BUCKET: 'bucket-mirror',
+          AWS_S3_QUARANTINE_KMS_KEY_ARN:
+            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-quarantine',
+          AWS_S3_CLEAN_KMS_KEY_ARN:
+            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-clean',
+          AWS_S3_REJECTED_KMS_KEY_ARN:
+            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-rejected',
+          AWS_S3_MIRROR_KMS_KEY_ARN:
+            'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-mirror',
+          AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: 'guardduty',
+          AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: 'inspection',
           AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
+          AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN: 'arn:aws:iam::123:role/upload',
+          AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN: 'arn:aws:iam::123:role/download',
+          AWS_STORAGE_ROLE_ARN_PROMOTION: 'arn:aws:iam::123:role/promotion',
+          AWS_STORAGE_ROLE_ARN_REJECTION: 'arn:aws:iam::123:role/rejection',
+          AWS_STORAGE_ROLE_ARN_CLEANUP: 'arn:aws:iam::123:role/cleanup',
+          AWS_STORAGE_ROLE_ARN_MIRROR: 'arn:aws:iam::123:role/mirror',
         },
         {
           backendOrigin: 'https://dr-backend.example.com',
@@ -160,11 +189,27 @@ describe('buildRequiredNetlifyDrEnvVars', () => {
       VITE_CONVEX_URL: 'https://dr-backend.example.com',
       FILE_STORAGE_BACKEND: 's3-primary',
       AWS_REGION: 'us-west-1',
-      AWS_S3_FILES_BUCKET: 'bucket',
-      AWS_S3_FILES_KMS_KEY_ARN:
-        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-files',
-      AWS_MALWARE_WEBHOOK_SHARED_SECRET: 'webhook',
+      AWS_S3_QUARANTINE_BUCKET: 'bucket-quarantine',
+      AWS_S3_CLEAN_BUCKET: 'bucket-clean',
+      AWS_S3_REJECTED_BUCKET: 'bucket-rejected',
+      AWS_S3_MIRROR_BUCKET: 'bucket-mirror',
+      AWS_S3_QUARANTINE_KMS_KEY_ARN:
+        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-quarantine',
+      AWS_S3_CLEAN_KMS_KEY_ARN:
+        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-clean',
+      AWS_S3_REJECTED_KMS_KEY_ARN:
+        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-rejected',
+      AWS_S3_MIRROR_KMS_KEY_ARN:
+        'arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-prod-mirror',
+      AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: 'guardduty',
+      AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: 'inspection',
       AWS_FILE_SERVE_SIGNING_SECRET: 'serve',
+      AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN: 'arn:aws:iam::123:role/upload',
+      AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN: 'arn:aws:iam::123:role/download',
+      AWS_STORAGE_ROLE_ARN_PROMOTION: 'arn:aws:iam::123:role/promotion',
+      AWS_STORAGE_ROLE_ARN_REJECTION: 'arn:aws:iam::123:role/rejection',
+      AWS_STORAGE_ROLE_ARN_CLEANUP: 'arn:aws:iam::123:role/cleanup',
+      AWS_STORAGE_ROLE_ARN_MIRROR: 'arn:aws:iam::123:role/mirror',
     });
   });
 });

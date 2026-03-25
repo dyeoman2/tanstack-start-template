@@ -152,15 +152,24 @@ The storage wrapper takes an explicit stage via `--stage dev|prod`, then derives
 
 - `AWS_REGION`
 - `CONVEX_SITE_URL`
-- `AWS_S3_FILES_BUCKET`
-- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_S3_QUARANTINE_BUCKET`
+- `AWS_S3_CLEAN_BUCKET`
+- `AWS_S3_REJECTED_BUCKET`
+- `AWS_S3_MIRROR_BUCKET`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
 - optional `AWS_PROFILE`
 
 Those are transformed into the CDK app inputs:
 
 - `AWS_CONVEX_GUARDDUTY_WEBHOOK_URL`
-- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
-- `AWS_S3_FILES_BUCKET_NAME`
+- `AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
+- `AWS_S3_QUARANTINE_BUCKET_NAME`
+- `AWS_S3_CLEAN_BUCKET_NAME`
+- `AWS_S3_REJECTED_BUCKET_NAME`
+- `AWS_S3_MIRROR_BUCKET_NAME`
 - `STORAGE_STAGE`
 
 ### DR backup stack
@@ -195,10 +204,23 @@ The application storage platform expects these runtime variables when `FILE_STOR
 
 - `FILE_STORAGE_BACKEND`
 - `AWS_REGION`
-- `AWS_S3_FILES_BUCKET`
-- `AWS_S3_FILES_KMS_KEY_ARN`
-- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_S3_QUARANTINE_BUCKET`
+- `AWS_S3_CLEAN_BUCKET`
+- `AWS_S3_REJECTED_BUCKET`
+- `AWS_S3_MIRROR_BUCKET`
+- `AWS_S3_QUARANTINE_KMS_KEY_ARN`
+- `AWS_S3_CLEAN_KMS_KEY_ARN`
+- `AWS_S3_REJECTED_KMS_KEY_ARN`
+- `AWS_S3_MIRROR_KMS_KEY_ARN`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
+- `AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN`
+- `AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN`
+- `AWS_STORAGE_ROLE_ARN_PROMOTION`
+- `AWS_STORAGE_ROLE_ARN_REJECTION`
+- `AWS_STORAGE_ROLE_ARN_CLEANUP`
+- `AWS_STORAGE_ROLE_ARN_MIRROR`
 - `CONVEX_SITE_URL`
 
 Optional runtime tuning:
@@ -228,6 +250,7 @@ See the DR docs for the full operator flow:
 - [Disaster Recovery Overview](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY.md)
 - [Disaster Recovery Runbook](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_RUNBOOK.md)
 - [Disaster Recovery Configuration](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/DISASTER_RECOVERY_CONFIG.md)
+- [Storage IAM Report](/Users/yeoman/Desktop/tanstack/tanstack-start-template/docs/generated/storage-iam-report.md)
 
 ## Notes
 

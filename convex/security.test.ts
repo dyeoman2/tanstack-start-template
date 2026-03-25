@@ -1,7 +1,6 @@
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { anyApi } from 'convex/server';
 import { ACTIVE_CONTROL_REGISTER } from '../src/lib/shared/compliance/control-register';
-import { internal } from './_generated/api';
 
 vi.mock('./auth/access', () => ({
   getVerifiedCurrentSiteAdminUserFromActionOrThrow: vi.fn(),

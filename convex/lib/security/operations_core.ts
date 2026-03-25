@@ -14,9 +14,9 @@ import {
   upsertSecurityRelationship,
 } from './core';
 import { SECURITY_METRICS_KEY } from './validators';
-import { anyApi } from 'convex/server';
 import { v } from 'convex/values';
 import { buildVendorWorkspaceRows } from './vendors_core';
+import { recordSiteAdminAuditEvent, recordSystemAuditEvent } from '../auditEmitters';
 
 const SEEDED_EVIDENCE_VALIDITY_MONTHS = 12 as const;
 
@@ -256,18 +256,10 @@ async function recordSecurityControlEvidenceAuditEvent(
   const auditEventId = crypto.randomUUID();
   const createdAt = Date.now();
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
+  await recordSiteAdminAuditEvent(ctx, {
     actorUserId: args.actorUserId,
-    userId: args.actorUserId,
-    organizationId: args.organizationId,
-    requestId: auditEventId,
-    outcome: 'success',
-    severity: 'info',
+    emitter: 'security.controls',
     eventType: args.eventType,
-    resourceType: 'security_control_evidence',
-    resourceId: args.evidenceId,
-    resourceLabel: args.evidenceTitle,
-    sourceSurface: 'security_admin_controls',
     metadata: stringifyStable({
       internalControlId: args.internalControlId,
       itemId: args.itemId,
@@ -277,6 +269,15 @@ async function recordSecurityControlEvidenceAuditEvent(
       renewedFromEvidenceId: args.renewedFromEvidenceId ?? null,
       replacedByEvidenceId: args.replacedByEvidenceId ?? null,
     }),
+    organizationId: args.organizationId,
+    outcome: 'success',
+    requestId: auditEventId,
+    resourceId: args.evidenceId,
+    resourceLabel: args.evidenceTitle,
+    resourceType: 'security_control_evidence',
+    severity: 'info',
+    sourceSurface: 'security_admin_controls',
+    userId: args.actorUserId,
   });
 
   await upsertSecurityControlEvidenceActivity(ctx, {
@@ -1000,17 +1001,11 @@ export async function recordBackupVerificationHandler(
     initiatedByUserId: args.initiatedByUserId ?? null,
   });
 
-  await ctx.runMutation(anyApi.audit.appendAuditLedgerEventInternal, {
-    actorUserId: args.initiatedByUserId ?? undefined,
-    userId: args.initiatedByUserId ?? undefined,
+  await recordSystemAuditEvent(ctx, {
+    emitter: 'security.backup_drill',
     eventType:
       args.status === 'success' ? 'backup_restore_drill_completed' : 'backup_restore_drill_failed',
-    outcome: args.status === 'success' ? 'success' : 'failure',
-    resourceType: 'backup_restore_drill',
-    resourceId: args.drillId,
-    resourceLabel: args.sourceDataset,
-    severity: args.status === 'success' ? 'info' : 'warning',
-    sourceSurface: 'admin.security',
+    initiatedByUserId: args.initiatedByUserId ?? undefined,
     metadata: stringifyStable({
       artifactHash: args.artifactHash ?? null,
       checkedAt: args.checkedAt,
@@ -1022,6 +1017,13 @@ export async function recordBackupVerificationHandler(
       targetEnvironment: args.targetEnvironment,
       verificationMethod: args.verificationMethod,
     }),
+    outcome: args.status === 'success' ? 'success' : 'failure',
+    resourceId: args.drillId,
+    resourceLabel: args.sourceDataset,
+    resourceType: 'backup_restore_drill',
+    severity: args.status === 'success' ? 'info' : 'warning',
+    sourceSurface: 'admin.security',
+    userId: args.initiatedByUserId ?? undefined,
   });
 
   return recordId;

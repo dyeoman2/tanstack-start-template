@@ -16,6 +16,7 @@ import {
 } from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
 import { parsePdfBlob } from '../src/lib/server/pdf-parse.server';
+import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
 
 const pdfParseJobStatusValidator = v.union(
   v.literal('queued'),
@@ -47,11 +48,21 @@ const PDF_PARSE_STATUS_RATE_LIMIT = {
   capacity: 60,
 };
 
+const PDF_PARSE_AUDIT_EVENT_RATE_LIMIT = {
+  kind: 'token bucket' as const,
+  rate: 30,
+  period: 5 * 60 * 1000,
+  capacity: 30,
+};
+
 async function enforcePdfParseActionRateLimit(
   ctx: Pick<ActionCtx, 'runAction'>,
   args: {
     authUserId: string;
-    limiter: typeof PDF_PARSE_ENQUEUE_RATE_LIMIT | typeof PDF_PARSE_STATUS_RATE_LIMIT;
+    limiter:
+      | typeof PDF_PARSE_ENQUEUE_RATE_LIMIT
+      | typeof PDF_PARSE_STATUS_RATE_LIMIT
+      | typeof PDF_PARSE_AUDIT_EVENT_RATE_LIMIT;
     name: string;
     subject: string;
   },
@@ -191,9 +202,10 @@ export const processPendingPdfParseJobInternal = internalAction({
         updatedAt: Date.now(),
       });
 
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        actorUserId: job.requestedByUserId,
+      await recordSystemAuditEvent(ctx, {
+        emitter: 'pdf.parse.worker',
         eventType: 'pdf_parse_succeeded',
+        initiatedByUserId: job.requestedByUserId,
         metadata: JSON.stringify({
           imageCount: parsed.images.length,
           pageCount: parsed.pages,
@@ -218,9 +230,10 @@ export const processPendingPdfParseJobInternal = internalAction({
         storageId: args.storageId,
         updatedAt: Date.now(),
       });
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        actorUserId: job.requestedByUserId,
+      await recordSystemAuditEvent(ctx, {
+        emitter: 'pdf.parse.worker',
         eventType: 'pdf_parse_failed',
+        initiatedByUserId: job.requestedByUserId,
         metadata: JSON.stringify({
           error: error instanceof Error ? error.message : 'Failed to parse PDF',
         }),
@@ -283,8 +296,9 @@ export const enqueuePdfParseJob = action({
       updatedAt: Date.now(),
     });
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+    await recordUserAuditEvent(ctx, {
       actorUserId: user.authUserId,
+      emitter: 'pdf.parse',
       eventType: 'pdf_parse_requested',
       metadata: JSON.stringify({
         storageId: args.storageId,
@@ -336,9 +350,16 @@ export const recordDirectPdfParseAuditEvent = action({
   returns: v.null(),
   handler: async (ctx, args) => {
     const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    await enforcePdfParseActionRateLimit(ctx, {
+      authUserId: user.authUserId,
+      limiter: PDF_PARSE_AUDIT_EVENT_RATE_LIMIT,
+      name: 'pdfParseAuditEvent',
+      subject: 'PDF parse audit event',
+    });
 
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
+    await recordUserAuditEvent(ctx, {
       actorUserId: user.authUserId,
+      emitter: 'pdf.parse.route',
       eventType: args.eventType,
       metadata: args.metadata,
       organizationId: args.organizationId ?? user.activeOrganizationId ?? undefined,
@@ -348,7 +369,7 @@ export const recordDirectPdfParseAuditEvent = action({
       resourceLabel: args.resourceLabel,
       resourceType: args.resourceType,
       severity: args.severity,
-      sourceSurface: args.sourceSurface,
+      sourceSurface: args.sourceSurface ?? 'api.parse_pdf',
       userId: user.authUserId,
     });
 

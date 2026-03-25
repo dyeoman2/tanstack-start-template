@@ -145,10 +145,23 @@ Add `-- --prod` to include production Convex env list + JWKS checks, plus hints 
 For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is missing any required runtime variables:
 
 - `AWS_REGION`
-- `AWS_S3_FILES_BUCKET`
-- `AWS_S3_FILES_KMS_KEY_ARN`
+- `AWS_S3_QUARANTINE_BUCKET`
+- `AWS_S3_CLEAN_BUCKET`
+- `AWS_S3_REJECTED_BUCKET`
+- `AWS_S3_MIRROR_BUCKET`
+- `AWS_S3_QUARANTINE_KMS_KEY_ARN`
+- `AWS_S3_CLEAN_KMS_KEY_ARN`
+- `AWS_S3_REJECTED_KMS_KEY_ARN`
+- `AWS_S3_MIRROR_KMS_KEY_ARN`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
-- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN`
+- `AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN`
+- `AWS_STORAGE_ROLE_ARN_PROMOTION`
+- `AWS_STORAGE_ROLE_ARN_REJECTION`
+- `AWS_STORAGE_ROLE_ARN_CLEANUP`
+- `AWS_STORAGE_ROLE_ARN_MIRROR`
 
 It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
 

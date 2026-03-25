@@ -6,7 +6,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
-import { deleteS3Object, listS3Objects, putS3Object } from './lib/storageS3';
+import { deleteStorageObject, listStorageObjects, putMirrorObject } from './lib/storageS3';
 import { buildMirrorStorageKey } from './storageS3Primary';
 import type { FinalizeUploadArgs } from './storageTypes';
 
@@ -46,9 +46,9 @@ export async function finalizeS3MirrorUpload(ctx: ActionCtx, args: FinalizeUploa
 
 export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: string }) {
   const runtimeConfig = getStorageRuntimeConfig();
-  const bucket = runtimeConfig.s3FilesBucket;
+  const bucket = runtimeConfig.storageBuckets.mirror.bucket;
   if (!bucket) {
-    throw new Error('AWS_S3_FILES_BUCKET environment variable is required for mirrored storage.');
+    throw new Error('AWS_S3_MIRROR_BUCKET environment variable is required for mirrored storage.');
   }
 
   const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
@@ -69,9 +69,8 @@ export async function mirrorConvexFileToS3(ctx: ActionCtx, args: { storageId: st
     storageId: args.storageId,
   });
   const content = toUint8Array(await blob.arrayBuffer());
-  const result = await putS3Object({
+  const result = await putMirrorObject({
     body: content,
-    bucket,
     contentType: blob.type || lifecycle.mimeType || 'application/octet-stream',
     key,
   });
@@ -118,8 +117,8 @@ export async function deleteMirrorObject(ctx: ActionCtx, args: { storageId: stri
     return;
   }
 
-  await deleteS3Object({
-    bucket: lifecycle.mirrorBucket,
+  await deleteStorageObject({
+    bucketKind: 'mirror',
     key: lifecycle.mirrorKey,
     versionId: lifecycle.mirrorVersionId,
   });
@@ -127,26 +126,37 @@ export async function deleteMirrorObject(ctx: ActionCtx, args: { storageId: stri
 
 export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
   const runtimeConfig = getStorageRuntimeConfig();
-  const bucket = runtimeConfig.s3FilesBucket;
-  if (!bucket) {
+  const bucketKinds = ['quarantine', 'clean', 'mirror', 'rejected'] as const;
+  if (bucketKinds.every((kind) => !runtimeConfig.storageBuckets[kind].bucket)) {
     return;
   }
 
   const contents = (
     await Promise.all(
-      ['quarantine/', 'clean/', 'mirror/'].map(async (prefix) => {
-        const listed = await listS3Objects({
-          bucket,
+      bucketKinds.map(async (bucketKind) => {
+        const bucket = runtimeConfig.storageBuckets[bucketKind].bucket;
+        if (!bucket) {
+          return [];
+        }
+
+        const prefix = `${bucketKind}/`;
+        const listed = await listStorageObjects({
+          bucketKind,
           maxKeys: runtimeConfig.s3OrphanCleanupMaxScan,
           prefix,
         });
-        return listed.Contents ?? [];
+        return (listed.Contents ?? []).map((object) => ({
+          bucket,
+          bucketKind,
+          object,
+        }));
       }),
     )
   ).flat();
   const cutoff = Date.now() - runtimeConfig.s3OrphanCleanupMinAgeMs;
 
-  for (const object of contents) {
+  for (const entry of contents) {
+    const { bucket, bucketKind, object } = entry;
     if (!object.Key || !object.LastModified || object.LastModified.getTime() > cutoff) {
       continue;
     }
@@ -156,7 +166,7 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
       key: object.Key,
     });
     if (!lifecycle || lifecycle.deletedAt) {
-      await deleteS3Object({ bucket, key: object.Key });
+      await deleteStorageObject({ bucketKind, key: object.Key });
     }
   }
 }

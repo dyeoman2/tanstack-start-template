@@ -65,6 +65,7 @@ import {
   personaWithAccessValidator,
   threadWithAccessValidator,
 } from './lib/returnValidators';
+import { recordUserAuditEvent } from './lib/auditEmitters';
 import { getOrganizationPolicies } from './organizationManagement';
 import { createUploadTargetWithMode } from './storagePlatform';
 import { uploadTargetResultValidator } from './storageTypes';
@@ -168,23 +169,24 @@ async function recordSupportAccessUsageIfNeeded(
     return;
   }
 
-  await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-    eventType: 'support_access_used',
-    userId: input.userId,
+  await recordUserAuditEvent(ctx, {
     actorUserId: input.userId,
-    organizationId: input.organizationId,
-    outcome: 'success',
-    severity: 'info',
-    resourceType: input.resourceType,
-    resourceId: input.resourceId,
-    resourceLabel: input.resourceLabel ?? undefined,
-    sessionId: input.sessionId ?? undefined,
-    sourceSurface: input.sourceSurface,
+    emitter: 'chat.support_access',
+    eventType: 'support_access_used',
     metadata: JSON.stringify({
       grantId: input.decision.assurance.supportGrantId,
       permission: input.permission,
       scope: input.decision.assurance.supportGrantScope,
     }),
+    organizationId: input.organizationId,
+    outcome: 'success',
+    resourceId: input.resourceId,
+    resourceLabel: input.resourceLabel ?? undefined,
+    resourceType: input.resourceType,
+    sessionId: input.sessionId ?? undefined,
+    severity: 'info',
+    sourceSurface: input.sourceSurface,
+    userId: input.userId,
   });
 }
 
@@ -1583,24 +1585,25 @@ export const precreateThread = mutation({
     });
 
     if (created) {
-      await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-        eventType: 'chat_thread_created',
-        userId,
+      await recordUserAuditEvent(ctx, {
         actorUserId: userId,
-        organizationId,
-        sessionId,
-        outcome: 'success',
-        severity: 'info',
-        resourceType: 'chat_thread',
-        resourceId: thread._id,
-        resourceLabel: thread.title,
-        sourceSurface: 'chat.precreate_thread',
+        emitter: 'chat.thread',
+        eventType: 'chat_thread_created',
         metadata: JSON.stringify({
           threadId: thread._id,
           title: thread.title,
           personaId: args.personaId ?? null,
           model: args.model ?? null,
         }),
+        organizationId,
+        outcome: 'success',
+        resourceId: thread._id,
+        resourceLabel: thread.title,
+        resourceType: 'chat_thread',
+        sessionId,
+        severity: 'info',
+        sourceSurface: 'chat.precreate_thread',
+        userId,
       });
     }
     await recordSupportAccessUsageIfNeeded(ctx, {
@@ -2340,22 +2343,23 @@ export const deleteThread = mutation({
         updatedAt: Date.now(),
       },
     });
-    await ctx.runMutation(internal.audit.appendAuditLedgerEventInternal, {
-      eventType: 'chat_thread_deleted',
-      userId: viewer.userId,
+    await recordUserAuditEvent(ctx, {
       actorUserId: viewer.userId,
-      organizationId: viewer.organizationId,
-      sessionId: viewer.sessionId,
-      outcome: 'success',
-      severity: 'warning',
-      resourceType: 'chat_thread',
-      resourceId: args.threadId,
-      resourceLabel: thread.title,
-      sourceSurface: 'chat.thread_delete',
+      emitter: 'chat.thread',
+      eventType: 'chat_thread_deleted',
       metadata: JSON.stringify({
         threadId: args.threadId,
         title: thread.title,
       }),
+      organizationId: viewer.organizationId,
+      outcome: 'success',
+      resourceId: args.threadId,
+      resourceLabel: thread.title,
+      resourceType: 'chat_thread',
+      sessionId: viewer.sessionId,
+      severity: 'warning',
+      sourceSurface: 'chat.thread_delete',
+      userId: viewer.userId,
     });
     await recordSupportAccessUsageIfNeeded(ctx, {
       decision,

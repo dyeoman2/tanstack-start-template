@@ -10,7 +10,12 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
-import { copyS3Object, deleteS3Object, getS3Object } from './lib/storageS3';
+import {
+  deleteStorageObject,
+  getQuarantineObject,
+  promoteQuarantineObject,
+  rejectQuarantineObject,
+} from './lib/storageS3';
 import { buildPromotedStorageKey, buildRejectedStorageKey } from './storageS3Primary';
 
 type LifecycleDoc = Doc<'storageLifecycle'>;
@@ -45,8 +50,8 @@ export function parseStorageInspectionWebhookPayload(payload: string) {
   };
 }
 
-async function readObjectBytes(args: { bucket: string; key: string }): Promise<Uint8Array | null> {
-  const object = await getS3Object(args);
+async function readObjectBytes(args: { key: string }): Promise<Uint8Array | null> {
+  const object = await getQuarantineObject({ key: args.key });
   const body = object.Body;
   if (!body) {
     return null;
@@ -150,15 +155,13 @@ async function promoteCleanObject(ctx: ActionCtx, lifecycle: LifecycleDoc) {
     return { applied: false, reason: 'already_promoted' as const };
   }
 
-  const result = await copyS3Object({
-    bucket: lifecycle.quarantineBucket,
+  const result = await promoteQuarantineObject({
     contentType: lifecycle.mimeType ?? undefined,
     destinationKey: promotedKey,
-    sourceBucket: lifecycle.quarantineBucket,
     sourceKey: lifecycle.quarantineKey,
   });
-  await deleteS3Object({
-    bucket: lifecycle.quarantineBucket,
+  await deleteStorageObject({
+    bucketKind: 'quarantine',
     key: lifecycle.quarantineKey,
     versionId: lifecycle.quarantineVersionId,
   });
@@ -207,16 +210,14 @@ async function moveToRejected(ctx: ActionCtx, lifecycle: LifecycleDoc) {
 
   let versionId: string | null | undefined = lifecycle.rejectedVersionId;
   if (lifecycle.quarantineBucket && lifecycle.quarantineKey) {
-    const copied = await copyS3Object({
-      bucket: lifecycle.quarantineBucket,
+    const copied = await rejectQuarantineObject({
       contentType: lifecycle.mimeType ?? undefined,
       destinationKey: rejectedKey,
-      sourceBucket: lifecycle.quarantineBucket,
       sourceKey: lifecycle.quarantineKey,
     });
     versionId = copied.VersionId ?? null;
-    await deleteS3Object({
-      bucket: lifecycle.quarantineBucket,
+    await deleteStorageObject({
+      bucketKind: 'quarantine',
       key: lifecycle.quarantineKey,
       versionId: lifecycle.quarantineVersionId,
     });
@@ -271,7 +272,10 @@ async function inspectLifecycle(ctx: ActionCtx, lifecycle: LifecycleDoc) {
   if (!lifecycle.quarantineBucket || !lifecycle.quarantineKey) {
     return { applied: false, reason: 'missing_quarantine_object' as const };
   }
-  if (runtimeConfig.s3FilesBucket && lifecycle.quarantineBucket !== runtimeConfig.s3FilesBucket) {
+  if (
+    runtimeConfig.storageBuckets.quarantine.bucket &&
+    lifecycle.quarantineBucket !== runtimeConfig.storageBuckets.quarantine.bucket
+  ) {
     return { applied: false, reason: 'wrong_bucket' as const };
   }
   if (
@@ -283,7 +287,6 @@ async function inspectLifecycle(ctx: ActionCtx, lifecycle: LifecycleDoc) {
   }
 
   const bytes = await readObjectBytes({
-    bucket: lifecycle.quarantineBucket,
     key: lifecycle.quarantineKey,
   });
   if (!bytes) {

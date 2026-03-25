@@ -387,12 +387,41 @@ jobs:
     outputs:
       bundle_sha: ${{ steps.sign_bundle.outputs.bundle_sha }}
 
+  predeploy_doctor_prod:
+    name: 🩺 Predeploy Doctor (Production)
+    runs-on: ubuntu-22.04
+    needs: prepare
+    if: needs.prepare.outputs.environment == 'production'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run deploy doctor policy gate
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+        run: pnpm run deploy:doctor -- --prod --json
+
   deploy_netlify:
     name: 🚀 Deploy to Netlify
     runs-on: ubuntu-22.04
     needs:
       - prepare
       - sign_source_bundle
+      - predeploy_doctor_prod
     if: needs.prepare.outputs.environment == 'production'
     environment: production
     steps:
@@ -456,6 +485,26 @@ jobs:
         env:
           DEPLOY_SMOKE_BASE_URL: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
         run: node ./scripts/post-deploy-smoke.mjs
+
+  post_deploy_security:
+    name: 🛡️ Post-Deploy Security Check
+    runs-on: ubuntu-22.04
+    needs: deploy_netlify
+    if: needs.deploy_netlify.result == 'success'
+    environment: production
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Validate live production security headers
+        env:
+          DEPLOY_SMOKE_BASE_URL: ${{ vars.DEPLOY_SMOKE_BASE_URL }}
+        run: node ./scripts/post-deploy-security.mjs
 
   deploy_staging:
     name: 🚀 Deploy to Staging
@@ -554,6 +603,7 @@ jobs:
       - prepare
       - sign_source_bundle
       - deploy_netlify
+      - post_deploy_security
       - deploy_staging
       - dast
     if: >
@@ -600,12 +650,13 @@ jobs:
             --arg sign_outcome "${{ needs.sign_source_bundle.result }}" \
             --arg deploy_outcome "${deploy_result}" \
             --arg dast_outcome "${DAST_RESULT}" \
+            --arg post_deploy_security_outcome "${{ needs.post_deploy_security.result }}" \
             --arg target_environment "${TARGET_ENVIRONMENT}" \
             '[
               ["sign", $sign_outcome],
               ["deploy", $deploy_outcome]
             ]
-            + (if $target_environment == "production" then [["dast", $dast_outcome]] else [] end)
+            + (if $target_environment == "production" then [["post_deploy_security", $post_deploy_security_outcome], ["dast", $dast_outcome]] else [] end)
             | map(select(.[1] != "success" and .[1] != "skipped") | "\(.[0]):\(.[1])")
             | if length == 0 then "" else join(", ") end')
 
@@ -622,6 +673,7 @@ jobs:
             --arg deploy_outcome "${deploy_result}" \
             --arg event_name "${GITHUB_EVENT_NAME}" \
             --arg failure_reason "${failure_reason}" \
+            --arg post_deploy_security_outcome "${{ needs.post_deploy_security.result }}" \
             --arg ref_name "${GITHUB_REF_NAME}" \
             --arg run_number "${GITHUB_RUN_NUMBER}" \
             --arg run_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
@@ -639,7 +691,7 @@ jobs:
               "Signed source bundle SHA-256: \($bundle_sha)",
               "Step outcomes: sign=\($sign_outcome), deploy=\($deploy_outcome)"
             ]
-            + (if $target_environment == "production" then ["DAST outcome: \($dast_outcome)"] else [] end)
+            + (if $target_environment == "production" then ["Post-deploy security outcome: \($post_deploy_security_outcome)", "DAST outcome: \($dast_outcome)"] else [] end)
             + (if $failure_reason == "" then [] else ["Failures: \($failure_reason)"] end)
             | join("\n")')
 

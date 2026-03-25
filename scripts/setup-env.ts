@@ -119,10 +119,23 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # FILE_STORAGE_BACKEND=convex
 # AWS_REGION=us-west-1
 # AWS_PROFILE=default
-# AWS_S3_FILES_BUCKET=your-dev-bucket
-# AWS_S3_FILES_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-files
-# AWS_MALWARE_WEBHOOK_SHARED_SECRET=<generated-secret>
+# AWS_S3_QUARANTINE_BUCKET=your-dev-storage-quarantine
+# AWS_S3_CLEAN_BUCKET=your-dev-storage-clean
+# AWS_S3_REJECTED_BUCKET=your-dev-storage-rejected
+# AWS_S3_MIRROR_BUCKET=your-dev-storage-mirror
+# AWS_S3_QUARANTINE_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-quarantine
+# AWS_S3_CLEAN_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-clean
+# AWS_S3_REJECTED_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-rejected
+# AWS_S3_MIRROR_KMS_KEY_ARN=arn:aws:kms:us-west-1:123456789012:alias/tanstack-start-template-dev-mirror
+# AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=<generated-secret>
+# AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=<generated-secret>
 # AWS_FILE_SERVE_SIGNING_SECRET=<generated-secret>
+# AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-upload-presign
+# AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-download-presign
+# AWS_STORAGE_ROLE_ARN_PROMOTION=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-promotion
+# AWS_STORAGE_ROLE_ARN_REJECTION=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-rejection
+# AWS_STORAGE_ROLE_ARN_CLEANUP=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-cleanup
+# AWS_STORAGE_ROLE_ARN_MIRROR=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-mirror
 # CONVEX_SITE_URL=https://your-project.convex.site
 
 # ==========================================
