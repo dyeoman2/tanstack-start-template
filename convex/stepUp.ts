@@ -16,6 +16,7 @@ import {
   stepUpMethodValidator,
   stepUpRequirementValidator,
 } from './lib/returnValidators';
+import { getCurrentUserOrNull } from './auth/access';
 
 type StepUpClaimDoc = Doc<'authStepUpClaims'>;
 
@@ -128,19 +129,19 @@ export const hasCurrentClaim = query({
   },
   returns: v.boolean(),
   handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.subject || typeof identity.subject !== 'string') {
+    const currentUser = await getCurrentUserOrNull(ctx);
+    if (!currentUser?.authUserId) {
       return false;
     }
 
-    if (!identity.sessionId || typeof identity.sessionId !== 'string') {
+    if (!currentUser.authSession?.id) {
       return false;
     }
 
     const claim = await getActiveStepUpClaim(ctx, {
-      authUserId: identity.subject,
+      authUserId: currentUser.authUserId,
       requirement: args.requirement,
-      sessionId: identity.sessionId,
+      sessionId: currentUser.authSession.id,
     });
 
     return claim !== null;
@@ -151,18 +152,18 @@ export const getCurrentCompatibilityClaim = query({
   args: {},
   returns: v.union(authStepUpClaimsDocValidator, v.null()),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.subject || typeof identity.subject !== 'string') {
+    const currentUser = await getCurrentUserOrNull(ctx);
+    if (!currentUser?.authUserId) {
       return null;
     }
 
-    if (!identity.sessionId || typeof identity.sessionId !== 'string') {
+    if (!currentUser.authSession?.id) {
       return null;
     }
 
     return await getCompatibilityStepUpClaim(ctx, {
-      authUserId: identity.subject,
-      sessionId: identity.sessionId,
+      authUserId: currentUser.authUserId,
+      sessionId: currentUser.authSession.id,
     });
   },
 });
@@ -255,18 +256,18 @@ export const listCurrentClaimMethods = query({
   args: {},
   returns: v.array(stepUpMethodValidator),
   handler: async (ctx) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity?.subject || typeof identity.subject !== 'string') {
+    const currentUser = await getCurrentUserOrNull(ctx);
+    if (!currentUser?.authUserId) {
       return [];
     }
 
-    if (!identity.sessionId || typeof identity.sessionId !== 'string') {
+    if (!currentUser.authSession?.id) {
       return [];
     }
 
     const latestClaim = await getLatestClaimForSession(ctx, {
-      authUserId: identity.subject,
-      sessionId: identity.sessionId,
+      authUserId: currentUser.authUserId,
+      sessionId: currentUser.authSession.id,
     });
 
     return latestClaim ? [latestClaim.method] : [];
