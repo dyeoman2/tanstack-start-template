@@ -127,6 +127,7 @@ Those commands derive storage CDK inputs from the runtime storage env for the se
 - `AWS_S3_MIRROR_BUCKET`
 - `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
 - `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_TRUSTED_PRINCIPAL_ARN`
 - optional `AWS_PROFILE`
 
 ### DR backup stack

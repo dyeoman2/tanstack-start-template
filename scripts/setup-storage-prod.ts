@@ -124,6 +124,7 @@ function buildStorageDeployEnv(input: {
   convexSiteUrl: string;
   guardDutyWebhookSecret: string;
   inspectionWebhookSecret: string;
+  trustedPrincipalArn: string;
 }) {
   return {
     AWS_REGION: input.awsRegion,
@@ -134,6 +135,7 @@ function buildStorageDeployEnv(input: {
     AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(input.convexSiteUrl)}/aws/storage-inspection`,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: input.guardDutyWebhookSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: input.inspectionWebhookSecret,
+    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN: input.trustedPrincipalArn,
     AWS_S3_QUARANTINE_BUCKET_NAME: input.buckets.quarantine,
     AWS_S3_CLEAN_BUCKET_NAME: input.buckets.clean,
     AWS_S3_REJECTED_BUCKET_NAME: input.buckets.rejected,
@@ -427,6 +429,7 @@ async function main() {
   const runtimeEnvVars: Record<string, string> = {
     FILE_STORAGE_BACKEND: storageMode,
   };
+  const operatorEnvVars: Record<string, string> = {};
   const convexProdEnvVars: Record<string, string> = {
     FILE_STORAGE_BACKEND: storageMode,
   };
@@ -554,6 +557,10 @@ async function main() {
         stage: 'prod',
       }) || undefined,
     );
+    const trustedPrincipalArn = await askRequired(
+      'AWS storage trusted principal ARN',
+      process.env.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN?.trim() || awsIdentity?.arn || undefined,
+    );
 
     runtimeEnvVars.AWS_REGION = awsRegion;
     runtimeEnvVars.AWS_S3_QUARANTINE_BUCKET = buckets.quarantine;
@@ -574,6 +581,7 @@ async function main() {
     runtimeEnvVars.AWS_STORAGE_ROLE_ARN_CLEANUP = cleanupRoleArn;
     runtimeEnvVars.AWS_STORAGE_ROLE_ARN_MIRROR = mirrorRoleArn;
     runtimeEnvVars.CONVEX_SITE_URL = convexSiteUrl;
+    operatorEnvVars.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN = trustedPrincipalArn;
 
     convexProdEnvVars.AWS_REGION = awsRegion;
     convexProdEnvVars.AWS_S3_QUARANTINE_BUCKET = buckets.quarantine;
@@ -601,6 +609,7 @@ async function main() {
       convexSiteUrl,
       guardDutyWebhookSecret,
       inspectionWebhookSecret,
+      trustedPrincipalArn,
     });
   }
   printTargetSummary('Provider target summary', [
@@ -611,15 +620,20 @@ async function main() {
     `Netlify env sync: linked site required if enabled`,
   ]);
 
-  console.log('\nProduction runtime env values:');
-  for (const [name, value] of Object.entries(runtimeEnvVars)) {
+  const persistedEnvVars = {
+    ...operatorEnvVars,
+    ...runtimeEnvVars,
+  };
+
+  console.log('\nProduction env values:');
+  for (const [name, value] of Object.entries(persistedEnvVars)) {
     const displayValue = name.includes('SECRET') ? '[generated/set]' : value;
     console.log(`   ${name}=${displayValue}`);
   }
 
-  const prodEnvPath = writeProdEnvFile(runtimeEnvVars);
-  changedLocally.push(`Wrote ${prodEnvPath} with production storage runtime env`);
-  console.log(`\n📝 Saved production runtime env to ${prodEnvPath}`);
+  const prodEnvPath = writeProdEnvFile(persistedEnvVars);
+  changedLocally.push(`Wrote ${prodEnvPath} with production storage operator env`);
+  console.log(`\n📝 Saved production operator env to ${prodEnvPath}`);
   console.log(
     '   Standalone `pnpm storage:preview:prod` and `pnpm storage:deploy:prod` reuse this file.',
   );
@@ -695,6 +709,9 @@ async function main() {
   );
   console.log('   AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=[set]');
+  console.log(
+    `   AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=${storageDeployEnv.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN}`,
+  );
   console.log(`   AWS_S3_QUARANTINE_BUCKET_NAME=${storageDeployEnv.AWS_S3_QUARANTINE_BUCKET_NAME}`);
   console.log(`   AWS_S3_CLEAN_BUCKET_NAME=${storageDeployEnv.AWS_S3_CLEAN_BUCKET_NAME}`);
   console.log(`   AWS_S3_REJECTED_BUCKET_NAME=${storageDeployEnv.AWS_S3_REJECTED_BUCKET_NAME}`);

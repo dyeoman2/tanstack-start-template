@@ -70,6 +70,9 @@ function loadSynthTemplate(options: GenerateOptions = {}) {
       process.env.AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET ?? 'guardduty-secret',
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET:
       process.env.AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET ?? 'inspection-secret',
+    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN:
+      process.env.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN ??
+      'arn:aws:iam::111111111111:role/tanstack-start-template-app',
     AWS_S3_QUARANTINE_BUCKET_NAME:
       process.env.AWS_S3_QUARANTINE_BUCKET_NAME ?? `${projectSlug}-${stage}-quarantine`,
     AWS_S3_CLEAN_BUCKET_NAME:

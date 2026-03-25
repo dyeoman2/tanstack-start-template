@@ -102,6 +102,7 @@ describe('auth audit coverage', () => {
       'admin_user_sessions_viewed',
       'directory_exported',
       'audit_log_exported',
+      'audit_ledger_segment_archived',
       'security_control_evidence_created',
       'security_control_evidence_reviewed',
       'security_control_evidence_archived',

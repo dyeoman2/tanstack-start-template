@@ -136,6 +136,7 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # AWS_STORAGE_ROLE_ARN_REJECTION=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-rejection
 # AWS_STORAGE_ROLE_ARN_CLEANUP=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-cleanup
 # AWS_STORAGE_ROLE_ARN_MIRROR=arn:aws:iam::123456789012:role/tanstack-start-template-dev-storage-mirror
+# AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=arn:aws:iam::123456789012:role/your-app-runtime-role
 # CONVEX_SITE_URL=https://your-project.convex.site
 
 # ==========================================

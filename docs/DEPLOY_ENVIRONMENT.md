@@ -173,6 +173,12 @@ If immutable audit archiving is enabled, `deploy:doctor` also requires:
 
 `AWS_AUDIT_ARCHIVE_PREFIX` is optional and defaults to `audit-ledger/`.
 
+For AWS storage infrastructure preview/deploy, the operator environment also needs:
+
+- `AWS_STORAGE_TRUSTED_PRINCIPAL_ARN`
+
+The storage CDK stack uses that ARN as the only principal allowed to assume the per-capability storage roles.
+
 ### `setup:prod` flags
 
 Non-interactive-oriented options (combine as needed):

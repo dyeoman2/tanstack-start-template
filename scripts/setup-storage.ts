@@ -186,6 +186,7 @@ function buildStorageDeployEnv(input: {
   convexSiteUrl: string;
   guardDutyWebhookSecret: string;
   inspectionWebhookSecret: string;
+  trustedPrincipalArn: string;
 }) {
   return {
     AWS_REGION: input.awsRegion,
@@ -195,6 +196,7 @@ function buildStorageDeployEnv(input: {
     AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(input.convexSiteUrl)}/aws/storage-inspection`,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: input.guardDutyWebhookSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: input.inspectionWebhookSecret,
+    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN: input.trustedPrincipalArn,
     AWS_S3_QUARANTINE_BUCKET_NAME: input.buckets.quarantine,
     AWS_S3_CLEAN_BUCKET_NAME: input.buckets.clean,
     AWS_S3_REJECTED_BUCKET_NAME: input.buckets.rejected,
@@ -606,6 +608,10 @@ async function main() {
       }) ??
       undefined,
   );
+  const trustedPrincipalArn = await askRequired(
+    'AWS storage trusted principal ARN',
+    readEnvValue(envContent, 'AWS_STORAGE_TRUSTED_PRINCIPAL_ARN') ?? awsIdentity?.arn ?? undefined,
+  );
 
   envContent = upsertStructuredEnvValue(envContent, 'AWS_REGION', awsRegion, {
     sectionMarker: '# STORAGE',
@@ -714,14 +720,20 @@ async function main() {
   envContent = upsertStructuredEnvValue(envContent, 'AWS_STORAGE_ROLE_ARN_MIRROR', mirrorRoleArn, {
     sectionMarker: '# STORAGE',
   });
+  envContent = upsertStructuredEnvValue(
+    envContent,
+    'AWS_STORAGE_TRUSTED_PRINCIPAL_ARN',
+    trustedPrincipalArn,
+    { sectionMarker: '# STORAGE' },
+  );
 
   writeFileSync(envPath, envContent, 'utf8');
-  changedLocally.push(`Updated ${envPath} with storage runtime vars for ${storageMode}`);
+  changedLocally.push(`Updated ${envPath} with storage env for ${storageMode}`);
 
   console.log(`\n✅ Storage configured for ${storageMode}.`);
   console.log(`   Updated: ${envPath}`);
   console.log('');
-  console.log('Runtime envs written locally:');
+  console.log('Storage env written locally:');
   console.log(`   FILE_STORAGE_BACKEND=${storageMode}`);
   console.log(`   AWS_REGION=${awsRegion}`);
   if (awsProfile) {
@@ -744,6 +756,7 @@ async function main() {
   console.log(`   AWS_STORAGE_ROLE_ARN_REJECTION=${rejectionRoleArn}`);
   console.log(`   AWS_STORAGE_ROLE_ARN_CLEANUP=${cleanupRoleArn}`);
   console.log(`   AWS_STORAGE_ROLE_ARN_MIRROR=${mirrorRoleArn}`);
+  console.log(`   AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=${trustedPrincipalArn}`);
   console.log(`   CONVEX_SITE_URL=${convexSiteUrl}`);
   console.log('');
   console.log(
@@ -822,6 +835,7 @@ async function main() {
     convexSiteUrl,
     guardDutyWebhookSecret,
     inspectionWebhookSecret,
+    trustedPrincipalArn,
   });
 
   console.log('Derived storage deploy env for this local setup:');
@@ -837,6 +851,9 @@ async function main() {
   );
   console.log('   AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET=[set]');
   console.log('   AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET=[set]');
+  console.log(
+    `   AWS_STORAGE_TRUSTED_PRINCIPAL_ARN=${storageDeployEnv.AWS_STORAGE_TRUSTED_PRINCIPAL_ARN}`,
+  );
   console.log(`   AWS_S3_QUARANTINE_BUCKET_NAME=${storageDeployEnv.AWS_S3_QUARANTINE_BUCKET_NAME}`);
   console.log(`   AWS_S3_CLEAN_BUCKET_NAME=${storageDeployEnv.AWS_S3_CLEAN_BUCKET_NAME}`);
   console.log(`   AWS_S3_REJECTED_BUCKET_NAME=${storageDeployEnv.AWS_S3_REJECTED_BUCKET_NAME}`);

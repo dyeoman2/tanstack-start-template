@@ -70,6 +70,7 @@ const rejectedBucket = requireEnv('AWS_S3_REJECTED_BUCKET');
 const mirrorBucket = requireEnv('AWS_S3_MIRROR_BUCKET');
 const guardDutyWebhookSharedSecret = requireEnv('AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET');
 const inspectionWebhookSharedSecret = requireEnv('AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET');
+const storageTrustedPrincipalArn = requireEnv('AWS_STORAGE_TRUSTED_PRINCIPAL_ARN');
 const convexSiteUrl = requireEnv('CONVEX_SITE_URL');
 const awsRegion = requireEnv('AWS_REGION');
 
@@ -92,6 +93,7 @@ const result = spawnSync('pnpm', cdkArgs, {
     AWS_CONVEX_STORAGE_INSPECTION_WEBHOOK_URL: `${trimTrailingSlashes(convexSiteUrl)}/aws/storage-inspection`,
     AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET: guardDutyWebhookSharedSecret,
     AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET: inspectionWebhookSharedSecret,
+    AWS_STORAGE_TRUSTED_PRINCIPAL_ARN: storageTrustedPrincipalArn,
     AWS_S3_QUARANTINE_BUCKET_NAME: quarantineBucket,
     AWS_S3_CLEAN_BUCKET_NAME: cleanBucket,
     AWS_S3_REJECTED_BUCKET_NAME: rejectedBucket,
