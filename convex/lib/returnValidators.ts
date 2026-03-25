@@ -833,6 +833,41 @@ export const currentUserOrganizationSummaryValidator = v.object({
   role: v.string(),
 });
 
+export const stepUpMethodValidator = v.union(
+  v.literal('passkey'),
+  v.literal('password_only'),
+  v.literal('password_plus_totp'),
+  v.literal('totp'),
+);
+
+export const stepUpRequirementValidator = v.union(
+  v.literal('account_email_change'),
+  v.literal('audit_export'),
+  v.literal('attachment_access'),
+  v.literal('document_export'),
+  v.literal('document_deletion'),
+  v.literal('organization_admin'),
+  v.literal('session_administration'),
+  v.literal('user_administration'),
+);
+
+export const authStepUpClaimsDocValidator = v.object({
+  _id: v.id('authStepUpClaims'),
+  _creationTime: v.number(),
+  authUserId: v.string(),
+  claimId: v.string(),
+  consumedAt: v.union(v.number(), v.null()),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  method: stepUpMethodValidator,
+  requirement: stepUpRequirementValidator,
+  resourceId: v.union(v.string(), v.null()),
+  resourceType: v.union(v.string(), v.null()),
+  sessionId: v.string(),
+  updatedAt: v.number(),
+  verifiedAt: v.number(),
+});
+
 export const currentUserProfileValidator = v.object({
   id: v.string(),
   email: v.string(),

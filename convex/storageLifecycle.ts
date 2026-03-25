@@ -11,6 +11,7 @@ import {
   mirrorStatusValidator,
   quarantineReasonValidator,
   storageBackendModeValidator,
+  storagePlacementValidator,
 } from './storageTypes';
 
 type LifecycleCtx = MutationCtx | QueryCtx;
@@ -35,6 +36,9 @@ const lifecyclePatchValidator = v.object({
   mirrorLastError: v.optional(v.union(v.string(), v.null())),
   mirrorStatus: v.optional(v.union(mirrorStatusValidator, v.null())),
   mirrorVersionId: v.optional(v.union(v.string(), v.null())),
+  quarantineBucket: v.optional(v.union(v.string(), v.null())),
+  quarantineKey: v.optional(v.union(v.string(), v.null())),
+  quarantineVersionId: v.optional(v.union(v.string(), v.null())),
   parentStorageId: v.optional(v.union(v.string(), v.null())),
   organizationId: v.optional(v.union(v.string(), v.null())),
   originalFileName: v.optional(v.string()),
@@ -42,6 +46,7 @@ const lifecyclePatchValidator = v.object({
   quarantineReason: v.optional(v.union(quarantineReasonValidator, v.null())),
   sourceId: v.optional(v.string()),
   sourceType: v.optional(v.string()),
+  storagePlacement: v.optional(v.union(storagePlacementValidator, v.null())),
   uploadedById: v.optional(v.union(v.id('users'), v.null())),
   updatedAt: v.number(),
 });
@@ -88,6 +93,46 @@ export async function getLifecycleByS3Key(
     .query('storageLifecycle')
     .withIndex('by_s3Key', (q) => q.eq('canonicalBucket', bucket).eq('canonicalKey', key))
     .unique();
+}
+
+export async function getLifecycleByQuarantineS3Key(
+  ctx: LifecycleCtx,
+  bucket: string,
+  key: string,
+): Promise<StorageLifecycleDoc | null> {
+  return await ctx.db
+    .query('storageLifecycle')
+    .withIndex('by_quarantineS3Key', (q) =>
+      q.eq('quarantineBucket', bucket).eq('quarantineKey', key),
+    )
+    .unique();
+}
+
+export async function getLifecycleByMirrorS3Key(
+  ctx: LifecycleCtx,
+  bucket: string,
+  key: string,
+): Promise<StorageLifecycleDoc | null> {
+  return await ctx.db
+    .query('storageLifecycle')
+    .withIndex('by_mirrorS3Key', (q) => q.eq('mirrorBucket', bucket).eq('mirrorKey', key))
+    .unique();
+}
+
+export async function getLifecycleByAnyS3Key(
+  ctx: LifecycleCtx,
+  bucket: string,
+  key: string,
+): Promise<StorageLifecycleDoc | null> {
+  const quarantineLifecycle = await getLifecycleByQuarantineS3Key(ctx, bucket, key);
+  if (quarantineLifecycle) {
+    return quarantineLifecycle;
+  }
+  const canonicalLifecycle = await getLifecycleByS3Key(ctx, bucket, key);
+  if (canonicalLifecycle) {
+    return canonicalLifecycle;
+  }
+  return await getLifecycleByMirrorS3Key(ctx, bucket, key);
 }
 
 export async function listLifecycleByParentStorageId(
@@ -143,12 +188,16 @@ export async function upsertLifecycle(
     mirrorKey?: string;
     mirrorStatus?: StorageLifecycleDoc['mirrorStatus'];
     mirrorVersionId?: string;
+    quarantineBucket?: string;
+    quarantineKey?: string;
+    quarantineVersionId?: string;
     parentStorageId?: string | null;
     organizationId?: string | null;
     originalFileName: string;
     sourceId: string;
     sourceType: string;
     storageId: string;
+    storagePlacement?: StorageLifecycleDoc['storagePlacement'];
     uploadedById?: Id<'users'>;
   },
 ) {
@@ -169,11 +218,15 @@ export async function upsertLifecycle(
       mirrorKey: args.mirrorKey ?? existing.mirrorKey,
       mirrorStatus: args.mirrorStatus ?? existing.mirrorStatus,
       mirrorVersionId: args.mirrorVersionId ?? existing.mirrorVersionId,
+      quarantineBucket: args.quarantineBucket ?? existing.quarantineBucket,
+      quarantineKey: args.quarantineKey ?? existing.quarantineKey,
+      quarantineVersionId: args.quarantineVersionId ?? existing.quarantineVersionId,
       parentStorageId: args.parentStorageId ?? existing.parentStorageId,
       organizationId: args.organizationId ?? existing.organizationId,
       originalFileName: args.originalFileName,
       sourceId: args.sourceId,
       sourceType: args.sourceType,
+      storagePlacement: args.storagePlacement ?? existing.storagePlacement,
       updatedAt: now,
       uploadedById: args.uploadedById ?? existing.uploadedById,
     });
@@ -197,6 +250,9 @@ export async function upsertLifecycle(
     mirrorLastError: undefined,
     mirrorStatus: args.mirrorStatus,
     mirrorVersionId: args.mirrorVersionId,
+    quarantineBucket: args.quarantineBucket,
+    quarantineKey: args.quarantineKey,
+    quarantineVersionId: args.quarantineVersionId,
     parentStorageId: nullableToOptional(args.parentStorageId),
     organizationId: nullableToOptional(args.organizationId),
     originalFileName: args.originalFileName,
@@ -205,6 +261,7 @@ export async function upsertLifecycle(
     sourceId: args.sourceId,
     sourceType: args.sourceType,
     storageId: args.storageId,
+    storagePlacement: args.storagePlacement,
     updatedAt: now,
     uploadedById: args.uploadedById,
   });
@@ -232,6 +289,9 @@ async function applyLifecyclePatch(
       mirrorLastError?: string | null;
       mirrorStatus?: StorageLifecycleDoc['mirrorStatus'] | null;
       mirrorVersionId?: string | null;
+      quarantineBucket?: string | null;
+      quarantineKey?: string | null;
+      quarantineVersionId?: string | null;
       parentStorageId?: string | null;
       organizationId?: string | null;
       originalFileName?: string;
@@ -239,6 +299,7 @@ async function applyLifecyclePatch(
       quarantineReason?: StorageLifecycleDoc['quarantineReason'] | null;
       sourceId?: string;
       sourceType?: string;
+      storagePlacement?: StorageLifecycleDoc['storagePlacement'] | null;
       updatedAt: number;
       uploadedById?: Id<'users'> | null;
     };
@@ -320,6 +381,18 @@ async function applyLifecyclePatch(
       args.patch.mirrorVersionId !== undefined
         ? nullableToOptional(args.patch.mirrorVersionId)
         : lifecycle.mirrorVersionId,
+    quarantineBucket:
+      args.patch.quarantineBucket !== undefined
+        ? nullableToOptional(args.patch.quarantineBucket)
+        : lifecycle.quarantineBucket,
+    quarantineKey:
+      args.patch.quarantineKey !== undefined
+        ? nullableToOptional(args.patch.quarantineKey)
+        : lifecycle.quarantineKey,
+    quarantineVersionId:
+      args.patch.quarantineVersionId !== undefined
+        ? nullableToOptional(args.patch.quarantineVersionId)
+        : lifecycle.quarantineVersionId,
     parentStorageId:
       args.patch.parentStorageId !== undefined
         ? nullableToOptional(args.patch.parentStorageId)
@@ -339,6 +412,10 @@ async function applyLifecyclePatch(
         : lifecycle.quarantineReason,
     sourceId: args.patch.sourceId ?? lifecycle.sourceId,
     sourceType: args.patch.sourceType ?? lifecycle.sourceType,
+    storagePlacement:
+      args.patch.storagePlacement !== undefined
+        ? nullableToOptional(args.patch.storagePlacement)
+        : lifecycle.storagePlacement,
     updatedAt: args.patch.updatedAt,
     uploadedById:
       args.patch.uploadedById !== undefined
@@ -376,6 +453,22 @@ export const getByS3Key = internalQuery({
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     return await getLifecycleByS3Key(ctx, args.bucket, args.key);
+  },
+});
+
+export const getByQuarantineS3KeyInternal = internalQuery({
+  args: { bucket: v.string(), key: v.string() },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await getLifecycleByQuarantineS3Key(ctx, args.bucket, args.key);
+  },
+});
+
+export const getByAnyS3KeyInternal = internalQuery({
+  args: { bucket: v.string(), key: v.string() },
+  returns: v.union(v.any(), v.null()),
+  handler: async (ctx, args) => {
+    return await getLifecycleByAnyS3Key(ctx, args.bucket, args.key);
   },
 });
 
@@ -468,12 +561,16 @@ export const upsertLifecycleInternal = internalMutation({
     mirrorKey: v.optional(v.string()),
     mirrorStatus: v.optional(mirrorStatusValidator),
     mirrorVersionId: v.optional(v.string()),
+    quarantineBucket: v.optional(v.string()),
+    quarantineKey: v.optional(v.string()),
+    quarantineVersionId: v.optional(v.string()),
     parentStorageId: v.optional(v.union(v.string(), v.null())),
     organizationId: v.optional(v.union(v.string(), v.null())),
     originalFileName: v.string(),
     sourceId: v.string(),
     sourceType: v.string(),
     storageId: v.string(),
+    storagePlacement: v.optional(storagePlacementValidator),
     uploadedById: v.optional(v.id('users')),
   },
   returns: v.id('storageLifecycle'),
@@ -534,18 +631,29 @@ async function patchDescendantLifecycleState(
 }
 
 export const markCleanInternal = internalMutation({
-  args: { scannedAt: v.number(), storageId: v.string() },
+  args: {
+    canonicalBucket: v.optional(v.union(v.string(), v.null())),
+    canonicalKey: v.optional(v.union(v.string(), v.null())),
+    canonicalVersionId: v.optional(v.union(v.string(), v.null())),
+    scannedAt: v.number(),
+    storageId: v.string(),
+    storagePlacement: v.optional(v.union(storagePlacementValidator, v.null())),
+  },
   returns: v.null(),
   handler: async (ctx, args) => {
     const now = Date.now();
     await applyLifecyclePatch(ctx, {
       patch: {
+        canonicalBucket: args.canonicalBucket ?? undefined,
+        canonicalKey: args.canonicalKey ?? undefined,
+        canonicalVersionId: args.canonicalVersionId ?? undefined,
         malwareDetectedAt: null,
         malwareFindingId: null,
         malwareScannedAt: args.scannedAt,
         malwareStatus: 'CLEAN',
         quarantinedAt: null,
         quarantineReason: null,
+        storagePlacement: args.storagePlacement ?? undefined,
         updatedAt: now,
       },
       storageId: args.storageId,
@@ -584,6 +692,7 @@ export const markInfectedInternal = internalMutation({
         malwareStatus: 'INFECTED',
         quarantinedAt: now,
         quarantineReason: 'INFECTED',
+        storagePlacement: 'QUARANTINE',
         updatedAt: now,
       },
       storageId: args.storageId,
@@ -620,6 +729,7 @@ export const markDeadlineMissedInternal = internalMutation({
         malwareStatus: 'QUARANTINED_UNSCANNED',
         quarantinedAt: now,
         quarantineReason: 'QUARANTINED_UNSCANNED',
+        storagePlacement: 'QUARANTINE',
         updatedAt: now,
       },
       storageId: args.storageId,

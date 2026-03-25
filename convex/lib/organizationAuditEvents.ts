@@ -176,6 +176,14 @@ export function getOrganizationAuditEventLabel(eventType: string) {
       return 'Backup restore drill failed';
     case 'admin_step_up_challenged':
       return 'Admin step-up challenged';
+    case 'step_up_challenge_required':
+      return 'Step-up challenge required';
+    case 'step_up_challenge_completed':
+      return 'Step-up challenge completed';
+    case 'step_up_challenge_failed':
+      return 'Step-up challenge failed';
+    case 'step_up_consumed':
+      return 'Step-up consumed';
     default:
       return eventType;
   }

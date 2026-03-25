@@ -10,6 +10,13 @@ const ORIGINAL_ENV = { ...process.env };
 
 function createOptions() {
   return createSharedBetterAuthOptions({
+    consumeStepUpClaim: async () => {},
+    issueStepUpClaim: async () => {},
+    recordStepUpCompletion: async () => {},
+    recordStepUpConsumed: async () => {},
+    recordStepUpFailure: async () => {},
+    recordStepUpRequired: async () => {},
+    resolveStepUpClaimStatus: async () => false,
     sendChangeEmailConfirmation: async () => {},
     sendInvitationEmail: async () => {},
     sendResetPassword: async () => {},
@@ -204,7 +211,7 @@ describe('createSharedBetterAuthOptions', () => {
     });
   });
 
-  it('blocks change-email through the before hook when the session is no longer fresh', async () => {
+  it('blocks change-email through the before hook when the explicit step-up claim is missing', async () => {
     const options = createOptions();
     const beforeHook = options.hooks?.before;
     if (!beforeHook) {
@@ -216,8 +223,7 @@ describe('createSharedBetterAuthOptions', () => {
         context: {
           session: {
             session: {
-              createdAt: Date.now() - 30 * 60 * 1000,
-              updatedAt: Date.now() - 30 * 60 * 1000,
+              id: 'session_1',
             },
             user: {
               id: 'user_1',
@@ -234,8 +240,20 @@ describe('createSharedBetterAuthOptions', () => {
     });
   });
 
-  it('allows change-email through the before hook when the session is still fresh', async () => {
-    const options = createOptions();
+  it('allows change-email through the before hook when the step-up claim exists', async () => {
+    const options = createSharedBetterAuthOptions({
+      consumeStepUpClaim: async () => {},
+      issueStepUpClaim: async () => {},
+      recordStepUpCompletion: async () => {},
+      recordStepUpConsumed: async () => {},
+      recordStepUpFailure: async () => {},
+      recordStepUpRequired: async () => {},
+      resolveStepUpClaimStatus: async () => true,
+      sendChangeEmailConfirmation: async () => {},
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
     const beforeHook = options.hooks?.before;
     if (!beforeHook) {
       throw new Error('Expected Better Auth before hook to be configured');
@@ -246,8 +264,7 @@ describe('createSharedBetterAuthOptions', () => {
         context: {
           session: {
             session: {
-              createdAt: Date.now() - 60 * 1000,
-              updatedAt: Date.now() - 60 * 1000,
+              id: 'session_1',
             },
             user: {
               id: 'user_1',

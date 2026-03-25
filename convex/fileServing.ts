@@ -4,6 +4,7 @@ import { anyApi } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
 import { getRetentionPolicyConfig } from '../src/lib/server/security-config.server';
 import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
+import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
@@ -307,6 +308,31 @@ export async function issueFileAccessUrlForCurrentUser(
     sourceSurface: args.sourceSurface,
     userId: currentUser.authUserId,
   });
+
+  if (args.purpose === 'external_share') {
+    await ctx.runMutation(internal.stepUp.consumeClaimInternal, {
+      authUserId: currentUser.authUserId,
+      requirement: STEP_UP_REQUIREMENTS.attachmentAccess,
+      sessionId: issuedFromSessionId,
+    });
+    await ctx.runMutation(anyApi.audit.insertAuditLog, {
+      actorUserId: currentUser.authUserId,
+      eventType: 'step_up_consumed',
+      metadata: JSON.stringify({
+        purpose: args.purpose,
+        requirement: STEP_UP_REQUIREMENTS.attachmentAccess,
+      }),
+      organizationId: organizationId ?? undefined,
+      outcome: 'success',
+      resourceId: args.storageId,
+      resourceLabel: lifecycle?.originalFileName ?? undefined,
+      resourceType: lifecycle?.sourceType ?? 'stored_file',
+      sessionId: issuedFromSessionId,
+      severity: 'info',
+      sourceSurface: args.sourceSurface,
+      userId: currentUser.authUserId,
+    });
+  }
 
   return {
     expiresAt,

@@ -10,7 +10,7 @@ import { issueFileAccessUrlForCurrentUser } from './fileServing';
 import { getStorageReadiness } from './storageReadiness';
 import { deleteMirrorObject, finalizeS3MirrorUpload } from './storageS3Mirror';
 import {
-  buildDeterministicStorageKey,
+  buildPromotedStorageKey,
   deleteS3PrimaryObject,
   finalizeS3PrimaryUpload,
   generateS3PrimaryUploadTarget,
@@ -69,15 +69,6 @@ export async function registerFileForLifecycleTracking(
 ) {
   await ctx.runMutation(internal.storageLifecycle.upsertLifecycleInternal, {
     backendMode: args.backendMode,
-    canonicalBucket: args.backendMode === 's3-primary' ? undefined : undefined,
-    canonicalKey:
-      args.backendMode === 's3-primary'
-        ? buildDeterministicStorageKey({
-            organizationId: args.organizationId,
-            sourceType: args.sourceType,
-            storageId: args.storageId,
-          })
-        : undefined,
     fileSize: args.fileSize,
     malwareStatus: args.backendMode === 'convex' ? 'NOT_STARTED' : 'PENDING',
     mimeType: args.mimeType,
@@ -236,7 +227,7 @@ export async function storeDerivedFileWithMode(
       );
     }
     const storageId = crypto.randomUUID();
-    const key = buildDeterministicStorageKey({
+    const key = buildPromotedStorageKey({
       organizationId: args.organizationId,
       sourceType: args.sourceType,
       storageId,
@@ -262,6 +253,7 @@ export async function storeDerivedFileWithMode(
       sourceId: args.sourceId,
       sourceType: args.sourceType,
       storageId,
+      storagePlacement: 'PROMOTED',
     });
     await ctx.runMutation(internal.storageLifecycle.appendLifecycleEventInternal, {
       actionResult: 'success',

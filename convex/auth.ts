@@ -16,7 +16,11 @@ import {
   getBetterAuthSecret,
   isGoogleWorkspaceOAuthConfigured,
 } from '../src/lib/server/env.server';
-import { STEP_UP_REQUIREMENTS, type StepUpRequirement } from '../src/lib/shared/auth-policy';
+import {
+  STEP_UP_REQUIREMENTS,
+  type StepUpMethod,
+  type StepUpRequirement,
+} from '../src/lib/shared/auth-policy';
 import { assertUserId } from '../src/lib/shared/user-id';
 import { components, internal } from './_generated/api';
 import type { DataModel } from './_generated/dataModel';
@@ -1864,6 +1868,120 @@ export const createAuth = (
         severity: 'warning',
         sourceSurface: `better_auth${path}`,
         userId,
+      });
+    },
+    recordStepUpCompletion: async ({ method, path, requirement, sessionId, userId }) => {
+      await recordAuditEvent({
+        actorUserId: userId,
+        createdAt: Date.now(),
+        eventType: 'step_up_challenge_completed',
+        metadata: JSON.stringify({
+          method,
+          path,
+          requirement,
+        }),
+        outcome: 'success',
+        resourceId: requirement,
+        resourceType: 'step_up_requirement',
+        sessionId,
+        severity: 'info',
+        sourceSurface: `better_auth${path}`,
+        userId,
+      });
+    },
+    recordStepUpRequired: async ({ path, reason, requirement, sessionId, userId }) => {
+      await recordAuditEvent({
+        actorUserId: userId,
+        createdAt: Date.now(),
+        eventType: 'step_up_challenge_required',
+        metadata: JSON.stringify({
+          path,
+          reason,
+          requirement,
+        }),
+        outcome: 'failure',
+        resourceId: requirement,
+        resourceType: 'step_up_requirement',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: `better_auth${path}`,
+        userId,
+      });
+    },
+    recordStepUpConsumed: async ({ path, requirement, sessionId, userId }) => {
+      await recordAuditEvent({
+        actorUserId: userId,
+        createdAt: Date.now(),
+        eventType: 'step_up_consumed',
+        metadata: JSON.stringify({
+          path,
+          requirement,
+        }),
+        outcome: 'success',
+        resourceId: requirement,
+        resourceType: 'step_up_requirement',
+        sessionId,
+        severity: 'info',
+        sourceSurface: `better_auth${path}`,
+        userId,
+      });
+    },
+    recordStepUpFailure: async ({ path, reason, requirement, sessionId, userId }) => {
+      await recordAuditEvent({
+        actorUserId: userId,
+        createdAt: Date.now(),
+        eventType: 'step_up_challenge_failed',
+        metadata: JSON.stringify({
+          path,
+          reason,
+          requirement,
+        }),
+        outcome: 'failure',
+        resourceId: requirement,
+        resourceType: 'step_up_requirement',
+        sessionId,
+        severity: 'warning',
+        sourceSurface: `better_auth${path}`,
+        userId,
+      });
+    },
+    resolveStepUpClaimStatus: async ({ requirement, sessionId, userId }) => {
+      const claim = await ctx.runQuery(internal.stepUp.getActiveClaimInternal, {
+        authUserId: userId,
+        requirement,
+        sessionId,
+      });
+      return claim !== null;
+    },
+    issueStepUpClaim: async ({
+      method,
+      requirement,
+      sessionId,
+      userId,
+    }: {
+      method: StepUpMethod;
+      requirement: StepUpRequirement;
+      sessionId: string;
+      userId: string;
+    }) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return;
+      }
+      await ctxWithRunMutation.runMutation(internal.stepUp.issueClaimInternal, {
+        authUserId: userId,
+        method,
+        requirement,
+        sessionId,
+      });
+    },
+    consumeStepUpClaim: async ({ requirement, sessionId, userId }) => {
+      if (!ctxWithRunMutation.runMutation) {
+        return;
+      }
+      await ctxWithRunMutation.runMutation(internal.stepUp.consumeClaimInternal, {
+        authUserId: userId,
+        requirement,
+        sessionId,
       });
     },
     assertSCIMManagementAccess: async ({ organizationId, providerId, userId }) => {

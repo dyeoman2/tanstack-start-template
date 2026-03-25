@@ -134,7 +134,7 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
 
   const contents = (
     await Promise.all(
-      ['org/', 'site-admin/'].map(async (prefix) => {
+      ['quarantine/', 'clean/', 'org/', 'site-admin/'].map(async (prefix) => {
         const listed = await listS3Objects({
           bucket,
           maxKeys: runtimeConfig.s3OrphanCleanupMaxScan,
@@ -151,14 +151,9 @@ export async function reconcileOrphanedMirrorObjects(ctx: ActionCtx) {
       continue;
     }
 
-    const keyParts = object.Key.split('/');
-    const storageId = keyParts[keyParts.length - 1];
-    if (!storageId) {
-      continue;
-    }
-
-    const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByStorageIdInternal, {
-      storageId,
+    const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByAnyS3KeyInternal, {
+      bucket,
+      key: object.Key,
     });
     if (!lifecycle || lifecycle.deletedAt) {
       await deleteS3Object({ bucket, key: object.Key });

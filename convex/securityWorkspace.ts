@@ -3,8 +3,7 @@ import type { Id } from './_generated/dataModel';
 import { action, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import type { MutationCtx, QueryCtx } from './_generated/server';
 import { v } from 'convex/values';
-import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
-import { evaluateFreshSession, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
+import { evaluateStepUpClaim, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { siteAdminMutation, siteAdminQuery } from './auth/authorized';
 import {
   getVerifiedCurrentSiteAdminUserFromActionOrThrow,
@@ -12,6 +11,7 @@ import {
   requireStepUpFromActionOrThrow,
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
+import { getActiveStepUpClaim } from './stepUp';
 import { createUploadTargetWithMode } from './storagePlatform';
 import {
   getSecurityControlWorkspaceRecord,
@@ -55,22 +55,41 @@ import {
   validateSecurityEvidenceUploadInput,
 } from './lib/security/validators';
 
-function assertFreshEvidenceAdminSessionOrThrow(
+async function assertFreshEvidenceAdminSessionOrThrow(
+  ctx: QueryCtx,
   currentUser: Awaited<ReturnType<typeof getVerifiedCurrentSiteAdminUserOrThrow>>,
 ) {
   if (currentUser.authSession?.impersonatedBy) {
     throwConvexError('FORBIDDEN', 'Impersonated sessions cannot manage evidence.');
   }
 
-  const freshness = evaluateFreshSession({
-    createdAt: currentUser.authSession?.createdAt,
-    updatedAt: currentUser.authSession?.updatedAt,
-    recentStepUpWindowMs: getRecentStepUpWindowMs(),
-    requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
-  });
+  const sessionId = currentUser.authSession?.id ?? null;
+  const claim =
+    sessionId === null
+      ? null
+      : await getActiveStepUpClaim(ctx, {
+          authUserId: currentUser.authUserId,
+          requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+          sessionId,
+        });
 
-  if (!freshness.satisfied) {
-    throwConvexError('FORBIDDEN', 'Recent step-up authentication is required.');
+  if (
+    !evaluateStepUpClaim({
+      claim: claim
+        ? {
+            consumedAt: claim.consumedAt,
+            expiresAt: claim.expiresAt,
+            method: claim.method,
+            requirement: claim.requirement,
+            sessionId: claim.sessionId,
+            verifiedAt: claim.verifiedAt,
+          }
+        : null,
+      requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+      sessionId,
+    }).satisfied
+  ) {
+    throwConvexError('FORBIDDEN', 'Step-up authentication is required.');
   }
 }
 
@@ -369,7 +388,7 @@ export const reviewSecurityControlEvidence = mutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    assertFreshEvidenceAdminSessionOrThrow(currentUser);
+    await assertFreshEvidenceAdminSessionOrThrow(ctx, currentUser);
     const evidence = await ctx.db.get(args.evidenceId);
     if (!evidence) {
       throwConvexError('NOT_FOUND', 'Evidence not found.');
@@ -417,7 +436,7 @@ export const archiveSecurityControlEvidence = siteAdminMutation({
   },
   returns: v.null(),
   handler: async (ctx, args) => {
-    assertFreshEvidenceAdminSessionOrThrow(ctx.user);
+    await assertFreshEvidenceAdminSessionOrThrow(ctx as MutationCtx, ctx.user);
     await archiveSecurityControlEvidenceHandler(ctx as MutationCtx, args);
     return null;
   },
@@ -432,7 +451,7 @@ export const renewSecurityControlEvidence = mutation({
   returns: v.id('securityControlEvidence'),
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
-    assertFreshEvidenceAdminSessionOrThrow(currentUser);
+    await assertFreshEvidenceAdminSessionOrThrow(ctx, currentUser);
     return await renewSecurityControlEvidenceHandler(ctx, args);
   },
 });

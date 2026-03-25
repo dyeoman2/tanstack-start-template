@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as VerifyEmailPendingRouteImport } from './routes/verify-email-pending'
 import { Route as TwoFactorRouteImport } from './routes/two-factor'
 import { Route as TestSentryRouteImport } from './routes/test-sentry'
+import { Route as StepUpRouteImport } from './routes/step-up'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as RecoverAccountRouteImport } from './routes/recover-account'
@@ -42,6 +43,7 @@ import { Route as AppAdminEmailsRouteImport } from './routes/app/admin/emails'
 import { Route as AppAdminLayoutRouteImport } from './routes/app/admin/_layout'
 import { Route as ApiTestE2eAuthRouteImport } from './routes/api/test/e2e-auth'
 import { Route as ApiTestAgentAuthRouteImport } from './routes/api/test/agent-auth'
+import { Route as ApiAuthStepUpRouteImport } from './routes/api/auth/step-up'
 import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 import { Route as AppOrganizationsSlugIndexRouteImport } from './routes/app/organizations/$slug/index'
 import { Route as AppAdminSecurityIndexRouteImport } from './routes/app/admin/security.index'
@@ -71,6 +73,11 @@ const TwoFactorRoute = TwoFactorRouteImport.update({
 const TestSentryRoute = TestSentryRouteImport.update({
   id: '/test-sentry',
   path: '/test-sentry',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StepUpRoute = StepUpRouteImport.update({
+  id: '/step-up',
+  path: '/step-up',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ResetPasswordRoute = ResetPasswordRouteImport.update({
@@ -223,6 +230,11 @@ const ApiTestAgentAuthRoute = ApiTestAgentAuthRouteImport.update({
   path: '/api/test/agent-auth',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthStepUpRoute = ApiAuthStepUpRouteImport.update({
+  id: '/api/auth/step-up',
+  path: '/api/auth/step-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
   id: '/api/auth/$',
   path: '/api/auth/$',
@@ -318,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/recover-account': typeof RecoverAccountRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/step-up': typeof StepUpRoute
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
@@ -331,6 +344,7 @@ export interface FileRoutesByFullPath {
   '/invite/$token': typeof InviteTokenRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
   '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin': typeof AppAdminLayoutRoute
@@ -367,6 +381,7 @@ export interface FileRoutesByTo {
   '/recover-account': typeof RecoverAccountRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/step-up': typeof StepUpRoute
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
@@ -380,6 +395,7 @@ export interface FileRoutesByTo {
   '/invite/$token': typeof InviteTokenRoute
   '/app': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
   '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin': typeof AppAdminIndexRoute
@@ -415,6 +431,7 @@ export interface FileRoutesById {
   '/recover-account': typeof RecoverAccountRoute
   '/register': typeof RegisterRoute
   '/reset-password': typeof ResetPasswordRoute
+  '/step-up': typeof StepUpRoute
   '/test-sentry': typeof TestSentryRoute
   '/two-factor': typeof TwoFactorRoute
   '/verify-email-pending': typeof VerifyEmailPendingRoute
@@ -428,6 +445,7 @@ export interface FileRoutesById {
   '/invite/$token': typeof InviteTokenRoute
   '/app/': typeof AppIndexRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
+  '/api/auth/step-up': typeof ApiAuthStepUpRoute
   '/api/test/agent-auth': typeof ApiTestAgentAuthRoute
   '/api/test/e2e-auth': typeof ApiTestE2eAuthRoute
   '/app/admin/_layout': typeof AppAdminLayoutRoute
@@ -467,6 +485,7 @@ export interface FileRouteTypes {
     | '/recover-account'
     | '/register'
     | '/reset-password'
+    | '/step-up'
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
@@ -480,6 +499,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/app/'
     | '/api/auth/$'
+    | '/api/auth/step-up'
     | '/api/test/agent-auth'
     | '/api/test/e2e-auth'
     | '/app/admin'
@@ -516,6 +536,7 @@ export interface FileRouteTypes {
     | '/recover-account'
     | '/register'
     | '/reset-password'
+    | '/step-up'
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
@@ -529,6 +550,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/app'
     | '/api/auth/$'
+    | '/api/auth/step-up'
     | '/api/test/agent-auth'
     | '/api/test/e2e-auth'
     | '/app/admin'
@@ -563,6 +585,7 @@ export interface FileRouteTypes {
     | '/recover-account'
     | '/register'
     | '/reset-password'
+    | '/step-up'
     | '/test-sentry'
     | '/two-factor'
     | '/verify-email-pending'
@@ -576,6 +599,7 @@ export interface FileRouteTypes {
     | '/invite/$token'
     | '/app/'
     | '/api/auth/$'
+    | '/api/auth/step-up'
     | '/api/test/agent-auth'
     | '/api/test/e2e-auth'
     | '/app/admin/_layout'
@@ -614,6 +638,7 @@ export interface RootRouteChildren {
   RecoverAccountRoute: typeof RecoverAccountRoute
   RegisterRoute: typeof RegisterRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  StepUpRoute: typeof StepUpRoute
   TestSentryRoute: typeof TestSentryRoute
   TwoFactorRoute: typeof TwoFactorRoute
   VerifyEmailPendingRoute: typeof VerifyEmailPendingRoute
@@ -625,6 +650,7 @@ export interface RootRouteChildren {
   ApiSentryExampleRoute: typeof ApiSentryExampleRoute
   InviteTokenRoute: typeof InviteTokenRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
+  ApiAuthStepUpRoute: typeof ApiAuthStepUpRoute
   ApiTestAgentAuthRoute: typeof ApiTestAgentAuthRoute
   ApiTestE2eAuthRoute: typeof ApiTestE2eAuthRoute
 }
@@ -650,6 +676,13 @@ declare module '@tanstack/react-router' {
       path: '/test-sentry'
       fullPath: '/test-sentry'
       preLoaderRoute: typeof TestSentryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/step-up': {
+      id: '/step-up'
+      path: '/step-up'
+      fullPath: '/step-up'
+      preLoaderRoute: typeof StepUpRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reset-password': {
@@ -862,6 +895,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTestAgentAuthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/step-up': {
+      id: '/api/auth/step-up'
+      path: '/api/auth/step-up'
+      fullPath: '/api/auth/step-up'
+      preLoaderRoute: typeof ApiAuthStepUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/auth/$': {
       id: '/api/auth/$'
       path: '/api/auth/$'
@@ -1050,6 +1090,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecoverAccountRoute: RecoverAccountRoute,
   RegisterRoute: RegisterRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  StepUpRoute: StepUpRoute,
   TestSentryRoute: TestSentryRoute,
   TwoFactorRoute: TwoFactorRoute,
   VerifyEmailPendingRoute: VerifyEmailPendingRoute,
@@ -1061,6 +1102,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSentryExampleRoute: ApiSentryExampleRoute,
   InviteTokenRoute: InviteTokenRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,
+  ApiAuthStepUpRoute: ApiAuthStepUpRoute,
   ApiTestAgentAuthRoute: ApiTestAgentAuthRoute,
   ApiTestE2eAuthRoute: ApiTestE2eAuthRoute,
 }

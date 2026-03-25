@@ -23,6 +23,7 @@ const storageLifecycleQuarantineReasonValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
 );
+const storageLifecyclePlacementValidator = v.union(v.literal('QUARANTINE'), v.literal('PROMOTED'));
 const chatAttachmentStatusValidator = v.union(
   v.literal('pending'),
   v.literal('pending_scan'),
@@ -452,6 +453,9 @@ export default defineSchema({
     canonicalBucket: v.optional(v.string()),
     canonicalKey: v.optional(v.string()),
     canonicalVersionId: v.optional(v.string()),
+    quarantineBucket: v.optional(v.string()),
+    quarantineKey: v.optional(v.string()),
+    quarantineVersionId: v.optional(v.string()),
     mirrorBucket: v.optional(v.string()),
     mirrorKey: v.optional(v.string()),
     mirrorVersionId: v.optional(v.string()),
@@ -465,6 +469,7 @@ export default defineSchema({
     malwareDetectedAt: v.optional(v.number()),
     quarantinedAt: v.optional(v.number()),
     quarantineReason: v.optional(storageLifecycleQuarantineReasonValidator),
+    storagePlacement: v.optional(storageLifecyclePlacementValidator),
     uploadedById: v.optional(v.id('users')),
   })
     .index('by_storageId', ['storageId'])
@@ -472,6 +477,8 @@ export default defineSchema({
     .index('by_organizationId', ['organizationId'])
     .index('by_source', ['sourceType', 'sourceId'])
     .index('by_s3Key', ['canonicalBucket', 'canonicalKey'])
+    .index('by_mirrorS3Key', ['mirrorBucket', 'mirrorKey'])
+    .index('by_quarantineS3Key', ['quarantineBucket', 'quarantineKey'])
     .index('by_mirrorDeadlineAt', ['mirrorDeadlineAt'])
     .index('by_malwareStatus', ['malwareStatus'])
     .index('by_deletedAt', ['deletedAt']),
@@ -557,6 +564,42 @@ export default defineSchema({
     recentStepUpValidUntil: v.union(v.number(), v.null()),
     updatedAt: v.number(),
   }).index('by_auth_user_id', ['authUserId']),
+
+  authStepUpClaims: defineTable({
+    authUserId: v.string(),
+    claimId: v.string(),
+    consumedAt: v.union(v.number(), v.null()),
+    createdAt: v.number(),
+    expiresAt: v.number(),
+    method: v.union(
+      v.literal('passkey'),
+      v.literal('password_only'),
+      v.literal('password_plus_totp'),
+      v.literal('totp'),
+    ),
+    requirement: v.union(
+      v.literal('account_email_change'),
+      v.literal('audit_export'),
+      v.literal('attachment_access'),
+      v.literal('document_export'),
+      v.literal('document_deletion'),
+      v.literal('organization_admin'),
+      v.literal('session_administration'),
+      v.literal('user_administration'),
+    ),
+    resourceId: v.union(v.string(), v.null()),
+    resourceType: v.union(v.string(), v.null()),
+    sessionId: v.string(),
+    updatedAt: v.number(),
+    verifiedAt: v.number(),
+  })
+    .index('by_auth_user_id', ['authUserId'])
+    .index('by_auth_user_id_and_session_id_and_requirement', [
+      'authUserId',
+      'sessionId',
+      'requirement',
+    ])
+    .index('by_claim_id', ['claimId']),
 
   documentScanEvents: defineTable({
     attachmentId: v.optional(v.id('chatAttachments')),

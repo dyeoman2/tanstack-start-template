@@ -15,10 +15,15 @@ import {
   isTrustedBetterAuthOrigin,
   shouldUseSecureAuthCookies,
 } from '../../src/lib/server/env.server';
-import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
 import {
-  evaluateFreshSession,
+  clearPendingStepUpCookie,
+  parsePendingStepUpCookie,
+} from '../../src/lib/server/step-up-cookie.server';
+import {
+  getStepUpRequirementPolicy,
   STEP_UP_REQUIREMENTS,
+  STEP_UP_METHODS,
+  type StepUpMethod,
   type StepUpRequirement,
 } from '../../src/lib/shared/auth-policy';
 import {
@@ -78,6 +83,49 @@ type SharedBetterAuthCallbacks = {
     sessionId?: string;
     userId?: string;
   }) => Promise<void>;
+  recordStepUpCompletion?: (input: {
+    method: StepUpMethod;
+    path: string;
+    requirement: StepUpRequirement;
+    sessionId: string;
+    userId: string;
+  }) => Promise<void>;
+  recordStepUpRequired?: (input: {
+    path: string;
+    reason: string;
+    requirement: StepUpRequirement;
+    sessionId?: string;
+    userId?: string;
+  }) => Promise<void>;
+  recordStepUpConsumed?: (input: {
+    path: string;
+    requirement: StepUpRequirement;
+    sessionId: string;
+    userId: string;
+  }) => Promise<void>;
+  recordStepUpFailure?: (input: {
+    path: string;
+    reason: string;
+    requirement: StepUpRequirement;
+    sessionId?: string;
+    userId?: string;
+  }) => Promise<void>;
+  resolveStepUpClaimStatus?: (input: {
+    requirement: StepUpRequirement;
+    sessionId: string;
+    userId: string;
+  }) => Promise<boolean>;
+  issueStepUpClaim?: (input: {
+    method: StepUpMethod;
+    requirement: StepUpRequirement;
+    sessionId: string;
+    userId: string;
+  }) => Promise<void>;
+  consumeStepUpClaim?: (input: {
+    requirement: StepUpRequirement;
+    sessionId: string;
+    userId: string;
+  }) => Promise<void>;
   sendInvitationEmail: NonNullable<OrganizationPluginOptions['sendInvitationEmail']>;
   sendResetPassword: NonNullable<BetterAuthEmailAndPasswordOptions['sendResetPassword']>;
   sendVerificationEmail: NonNullable<BetterAuthEmailVerificationOptions['sendVerificationEmail']>;
@@ -99,74 +147,89 @@ const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
 const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey']);
+const STEP_UP_TOTP_PATHS = new Set(['/two-factor/verify-totp']);
 const CALLBACK_AUTH_PATH_PREFIXES = ['/callback/', '/oauth2/callback/'] as const;
 const ADMIN_STEP_UP_ROUTE_CONFIG = {
   '/admin/list-users': {
+    consumeOnSuccess: false,
     message: 'Verify your account again before viewing the user directory.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'limit',
   },
   '/admin/get-user': {
+    consumeOnSuccess: false,
     message: 'Verify your account again before viewing another user record.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'id',
   },
   '/admin/create-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before creating a user.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'email',
   },
   '/admin/update-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before updating another user.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/set-role': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before changing a user role.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/ban-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before banning a user.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/unban-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before unbanning a user.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/remove-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before deleting a user.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/set-user-password': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before resetting a user password.',
     requirement: STEP_UP_REQUIREMENTS.userAdministration,
     resourceField: 'userId',
   },
   '/admin/impersonate-user': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before impersonating another user.',
     requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
     resourceField: 'userId',
   },
   '/admin/stop-impersonating': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before stopping impersonation.',
     requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
     resourceField: 'sessionId',
   },
   '/admin/list-user-sessions': {
+    consumeOnSuccess: false,
     message: "Verify your account again before viewing another user's sessions.",
     requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
     resourceField: 'userId',
   },
   '/admin/revoke-user-session': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before revoking a user session.',
     requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
     resourceField: 'sessionId',
   },
   '/admin/revoke-user-sessions': {
+    consumeOnSuccess: true,
     message: 'Verify your account again before revoking all user sessions.',
     requirement: STEP_UP_REQUIREMENTS.sessionAdministration,
     resourceField: 'userId',
@@ -174,6 +237,7 @@ const ADMIN_STEP_UP_ROUTE_CONFIG = {
 } as const satisfies Record<
   string,
   {
+    consumeOnSuccess: boolean;
     message: string;
     requirement: StepUpRequirement;
     resourceField: string;
@@ -323,7 +387,8 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
   };
 }
 
-function assertFreshSessionForChangeEmail(
+async function assertStepUpClaimForChangeEmail(
+  callbacks: Pick<SharedBetterAuthCallbacks, 'recordStepUpRequired' | 'resolveStepUpClaimStatus'>,
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ) {
   if (ctx.path !== '/change-email') {
@@ -331,15 +396,32 @@ function assertFreshSessionForChangeEmail(
   }
 
   const currentSession = ctx.context.session?.session;
-  const freshness = evaluateFreshSession({
-    createdAt: currentSession?.createdAt,
-    updatedAt: currentSession?.updatedAt,
-    recentStepUpWindowMs: getRecentStepUpWindowMs(),
+  const actorUserId = ctx.context.session?.user?.id;
+  const sessionId = currentSession?.id;
+
+  if (!actorUserId || !sessionId) {
+    throw new APIError('FORBIDDEN', {
+      message: 'Verify your account again before changing your sign-in email address.',
+    });
+  }
+
+  const satisfied = await callbacks.resolveStepUpClaimStatus?.({
+    requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+    sessionId,
+    userId: actorUserId,
   });
 
-  if (freshness.satisfied) {
+  if (satisfied) {
     return;
   }
+
+  await callbacks.recordStepUpRequired?.({
+    path: ctx.path,
+    reason: 'Verify your account again before changing your sign-in email address.',
+    requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+    sessionId,
+    userId: actorUserId,
+  });
 
   throw new APIError('FORBIDDEN', {
     message: 'Verify your account again before changing your sign-in email address.',
@@ -347,7 +429,10 @@ function assertFreshSessionForChangeEmail(
 }
 
 async function assertProtectedAdminRouteSession(
-  callbacks: Pick<SharedBetterAuthCallbacks, 'recordAdminStepUpChallenge'>,
+  callbacks: Pick<
+    SharedBetterAuthCallbacks,
+    'recordAdminStepUpChallenge' | 'resolveStepUpClaimStatus'
+  >,
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ) {
   const routeConfig =
@@ -376,14 +461,15 @@ async function assertProtectedAdminRouteSession(
     });
   }
 
-  const freshness = evaluateFreshSession({
-    createdAt: currentSession?.createdAt,
-    updatedAt: currentSession?.updatedAt,
-    recentStepUpWindowMs: getRecentStepUpWindowMs(),
-    requirement: routeConfig.requirement,
-  });
-
-  if (freshness.satisfied) {
+  if (
+    actorUserId &&
+    currentSession?.id &&
+    (await callbacks.resolveStepUpClaimStatus?.({
+      requirement: routeConfig.requirement,
+      sessionId: currentSession.id,
+      userId: actorUserId,
+    }))
+  ) {
     return;
   }
 
@@ -484,6 +570,116 @@ async function handleSessionEnrichmentAfterHook(
   await ctx.context.internalAdapter.updateSession(newSession.session.token, updatePayload);
 }
 
+function appendResponseCookie(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+  cookie: string,
+) {
+  if (ctx.context.responseHeaders instanceof Headers) {
+    ctx.context.responseHeaders.append('set-cookie', cookie);
+    return;
+  }
+
+  if ('setHeader' in ctx && typeof ctx.setHeader === 'function') {
+    ctx.setHeader('set-cookie', cookie);
+  }
+}
+
+function resolveStepUpSessionContext(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const newSession = ctx.context.newSession;
+  const currentSession = ctx.context.session;
+
+  return {
+    sessionId: newSession?.session?.id ?? currentSession?.session?.id ?? null,
+    userId: newSession?.user?.id ?? currentSession?.user?.id ?? null,
+  };
+}
+
+function resolveStepUpMethod(
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+): StepUpMethod | null {
+  if (PASSKEY_AUTH_PATHS.has(ctx.path)) {
+    return STEP_UP_METHODS.passkey;
+  }
+
+  if (STEP_UP_TOTP_PATHS.has(ctx.path)) {
+    return ctx.context.newSession?.session?.id
+      ? STEP_UP_METHODS.passwordPlusTotp
+      : STEP_UP_METHODS.totp;
+  }
+
+  return null;
+}
+
+async function handleStepUpAfterHook(
+  callbacks: SharedBetterAuthCallbacks,
+  ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
+) {
+  const sessionContext = resolveStepUpSessionContext(ctx);
+  const pendingStepUp = parsePendingStepUpCookie(ctx.headers?.get('cookie'));
+  const issuedMethod = resolveStepUpMethod(ctx);
+
+  if (pendingStepUp && sessionContext.sessionId && sessionContext.userId && issuedMethod) {
+    const allowedMethods = getStepUpRequirementPolicy(pendingStepUp.requirement).allowedMethods;
+    if (allowedMethods.includes(issuedMethod)) {
+      await callbacks.issueStepUpClaim?.({
+        method: issuedMethod,
+        requirement: pendingStepUp.requirement,
+        sessionId: sessionContext.sessionId,
+        userId: sessionContext.userId,
+      });
+      await callbacks.recordStepUpCompletion?.({
+        method: issuedMethod,
+        path: ctx.path,
+        requirement: pendingStepUp.requirement,
+        sessionId: sessionContext.sessionId,
+        userId: sessionContext.userId,
+      });
+      appendResponseCookie(ctx, clearPendingStepUpCookie());
+    } else {
+      await callbacks.recordStepUpFailure?.({
+        path: ctx.path,
+        reason: `Step-up method ${issuedMethod} is not allowed for ${pendingStepUp.requirement}.`,
+        requirement: pendingStepUp.requirement,
+        sessionId: sessionContext.sessionId,
+        userId: sessionContext.userId,
+      });
+      appendResponseCookie(ctx, clearPendingStepUpCookie());
+    }
+  }
+
+  if (ctx.path === '/change-email' && sessionContext.sessionId && sessionContext.userId) {
+    await callbacks.consumeStepUpClaim?.({
+      requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+      sessionId: sessionContext.sessionId,
+      userId: sessionContext.userId,
+    });
+    await callbacks.recordStepUpConsumed?.({
+      path: ctx.path,
+      requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+      sessionId: sessionContext.sessionId,
+      userId: sessionContext.userId,
+    });
+  }
+
+  const adminRouteConfig =
+    ADMIN_STEP_UP_ROUTE_CONFIG[ctx.path as keyof typeof ADMIN_STEP_UP_ROUTE_CONFIG];
+  if (adminRouteConfig?.consumeOnSuccess && sessionContext.sessionId && sessionContext.userId) {
+    await callbacks.consumeStepUpClaim?.({
+      requirement: adminRouteConfig.requirement,
+      sessionId: sessionContext.sessionId,
+      userId: sessionContext.userId,
+    });
+    await callbacks.recordStepUpConsumed?.({
+      path: ctx.path,
+      requirement: adminRouteConfig.requirement,
+      sessionId: sessionContext.sessionId,
+      userId: sessionContext.userId,
+    });
+  }
+}
+
 export function createSharedBetterAuthOptions(
   callbacks: SharedBetterAuthCallbacks,
   options?: {
@@ -569,7 +765,7 @@ export function createSharedBetterAuthOptions(
           }
         }
 
-        assertFreshSessionForChangeEmail(ctx);
+        await assertStepUpClaimForChangeEmail(callbacks, ctx);
         await assertProtectedAdminRouteSession(callbacks, ctx);
 
         if (
@@ -594,6 +790,7 @@ export function createSharedBetterAuthOptions(
       }),
       after: createAuthMiddleware(async (ctx) => {
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
+        await handleStepUpAfterHook(callbacks, ctx);
       }),
     },
     emailAndPassword: {

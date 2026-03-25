@@ -1,116 +1,145 @@
-import { describe, expect, it } from 'vitest';
-import { USER_ROLES } from '~/features/auth/types';
-import type { AdminListUser } from '../lib/admin-user-shaping';
-import { normalizeAdminUser, shapeAdminUsers } from './admin-management';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-describe('normalizeAdminUser', () => {
-  it('maps Better Auth admin users into app-safe user objects', () => {
-    const result = normalizeAdminUser({
-      id: 'user_123',
-      email: 'admin@example.com',
-      name: 'Admin',
-      role: ['admin'],
-      emailVerified: true,
-      banned: true,
-      banReason: 'Abuse',
-      banExpires: Date.parse('2026-03-12T10:00:00.000Z'),
-      createdAt: Date.parse('2026-03-10T10:00:00.000Z'),
-      updatedAt: Date.parse('2026-03-11T10:00:00.000Z'),
-    });
+const {
+  fetchAuthActionMock,
+  fetchAuthMutationMock,
+  handleServerErrorMock,
+  listBetterAuthUserSessionsMock,
+  requireAdminMock,
+} = vi.hoisted(() => ({
+  fetchAuthActionMock: vi.fn(),
+  fetchAuthMutationMock: vi.fn(),
+  handleServerErrorMock: vi.fn((error: unknown) => error),
+  listBetterAuthUserSessionsMock: vi.fn(),
+  requireAdminMock: vi.fn(),
+}));
 
-    expect(result).toMatchObject({
-      id: 'user_123',
-      email: 'admin@example.com',
-      name: 'Admin',
-      role: USER_ROLES.ADMIN,
-      emailVerified: true,
-      banned: true,
-      banReason: 'Abuse',
-    });
-    expect(result.banExpires).toBeTypeOf('number');
-    expect(result.createdAt).toBeTypeOf('number');
-    expect(result.updatedAt).toBeTypeOf('number');
-  });
-});
-
-describe('shapeAdminUsers', () => {
-  const users: AdminListUser[] = [
-    {
-      id: '1',
-      email: 'zoe@example.com',
-      name: 'Zoe',
-      role: USER_ROLES.USER,
-      emailVerified: false,
-      banned: false,
-      banReason: null,
-      banExpires: null,
-      onboardingStatus: 'not_started',
-      onboardingDeliveryError: null,
-      createdAt: 3,
-      updatedAt: 3,
+vi.mock('@tanstack/react-start', () => ({
+  createServerFn: () => ({
+    inputValidator() {
+      return this;
     },
-    {
-      id: '2',
-      email: 'adam@example.com',
-      name: 'Adam',
-      role: USER_ROLES.ADMIN,
-      emailVerified: true,
-      banned: false,
-      banReason: null,
-      banExpires: null,
-      onboardingStatus: 'not_started',
-      onboardingDeliveryError: null,
-      createdAt: 1,
-      updatedAt: 1,
-    },
-    {
-      id: '3',
-      email: 'maria@example.com',
-      name: 'Maria',
-      role: USER_ROLES.USER,
-      emailVerified: true,
-      banned: false,
-      banReason: null,
-      banExpires: null,
-      onboardingStatus: 'not_started',
-      onboardingDeliveryError: null,
-      createdAt: 2,
-      updatedAt: 2,
-    },
-  ];
+    handler: (handler: (...args: unknown[]) => unknown) => handler,
+  }),
+}));
 
-  it('filters by role and search, then sorts and paginates', () => {
-    const result = shapeAdminUsers(users, {
-      page: 1,
-      pageSize: 10,
-      sortBy: 'name',
-      sortOrder: 'asc',
-      secondarySortBy: 'email',
-      secondarySortOrder: 'asc',
-      search: 'ma',
-      role: 'all',
-      cursor: undefined,
-    });
+vi.mock('@convex/_generated/api', () => ({
+  api: {
+    admin: {
+      deleteUserIndexEntry: 'deleteUserIndexEntry',
+      setUserOnboardingStatus: 'setUserOnboardingStatus',
+      syncUserIndexEntry: 'syncUserIndexEntry',
+    },
+    audit: {
+      recordClientAuditEvent: 'recordClientAuditEvent',
+    },
+  },
+}));
 
-    expect(result.users.map((user) => user.id)).toEqual(['3']);
-    expect(result.pagination.total).toBe(1);
+vi.mock('~/features/auth/server/auth-guards', () => ({
+  requireAdmin: requireAdminMock,
+}));
+
+vi.mock('~/features/auth/server/convex-better-auth-react-start', () => ({
+  convexAuthReactStart: {
+    fetchAuthAction: fetchAuthActionMock,
+    fetchAuthMutation: fetchAuthMutationMock,
+    fetchAuthQuery: vi.fn(),
+  },
+}));
+
+vi.mock('~/lib/server/error-utils.server', () => ({
+  ServerError: class ServerError extends Error {
+    statusCode: number;
+    payload: unknown;
+
+    constructor(message: string, statusCode: number, payload?: unknown) {
+      super(message);
+      this.statusCode = statusCode;
+      this.payload = payload;
+    }
+  },
+  handleServerError: handleServerErrorMock,
+}));
+
+vi.mock('~/lib/server/better-auth/http', () => ({
+  getBetterAuthRequest: vi.fn(),
+}));
+
+vi.mock('~/lib/server/better-auth/api', () => ({
+  banBetterAuthUser: vi.fn(),
+  createBetterAuthUser: vi.fn(),
+  getBetterAuthUser: vi.fn(),
+  listBetterAuthUserSessions: listBetterAuthUserSessionsMock,
+  listBetterAuthUsers: vi.fn(),
+  removeBetterAuthUser: vi.fn(),
+  requestBetterAuthPasswordReset: vi.fn(),
+  revokeBetterAuthUserSession: vi.fn(),
+  revokeBetterAuthUserSessions: vi.fn(),
+  setBetterAuthUserPassword: vi.fn(),
+  setBetterAuthUserRole: vi.fn(),
+  unbanBetterAuthUser: vi.fn(),
+  updateBetterAuthUser: vi.fn(),
+}));
+
+import { listAdminUserSessionsServerFn } from './admin-management';
+
+describe('listAdminUserSessionsServerFn', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  it('keeps pagination metadata aligned with the page slice', () => {
-    const result = shapeAdminUsers(users, {
-      page: 2,
-      pageSize: 1,
-      sortBy: 'createdAt',
-      sortOrder: 'asc',
-      secondarySortBy: 'email',
-      secondarySortOrder: 'asc',
-      search: '',
-      role: 'all',
-      cursor: undefined,
+  it('records the audit event through the authenticated public audit action', async () => {
+    requireAdminMock.mockResolvedValue({
+      user: {
+        id: 'admin_1',
+      },
+    });
+    listBetterAuthUserSessionsMock.mockResolvedValue({
+      sessions: [
+        {
+          id: 'session_1',
+          userId: 'user_1',
+          expiresAt: 1_710_000_000_000,
+          createdAt: 1_700_000_000_000,
+          updatedAt: 1_705_000_000_000,
+          ipAddress: null,
+          userAgent: null,
+          impersonatedBy: undefined,
+        },
+      ],
     });
 
-    expect(result.users.map((user) => user.id)).toEqual(['3']);
-    expect(result.pagination.totalPages).toBe(3);
-    expect(result.pagination.hasNextPage).toBe(true);
+    const result = await listAdminUserSessionsServerFn({
+      data: {
+        userId: 'user_1',
+      },
+    });
+
+    expect(listBetterAuthUserSessionsMock).toHaveBeenCalledWith('user_1', expect.any(Function));
+    expect(fetchAuthActionMock).toHaveBeenCalledWith('recordClientAuditEvent', {
+      eventType: 'admin_user_sessions_viewed',
+      metadata: {
+        sessionCount: 1,
+        targetUserId: 'user_1',
+      },
+      outcome: 'success',
+      resourceId: 'user_1',
+      resourceType: 'user_session',
+      severity: 'info',
+      sourceSurface: 'admin.user_sessions',
+    });
+    expect(result).toEqual([
+      {
+        id: 'session_1',
+        userId: 'user_1',
+        expiresAt: 1_710_000_000_000,
+        createdAt: 1_700_000_000_000,
+        updatedAt: 1_705_000_000_000,
+        ipAddress: null,
+        userAgent: null,
+        impersonatedBy: undefined,
+      },
+    ]);
   });
 });

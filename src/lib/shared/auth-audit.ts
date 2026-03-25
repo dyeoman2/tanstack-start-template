@@ -83,6 +83,8 @@ export const AUTH_AUDIT_EVENT_TYPES = [
   'admin_step_up_challenged',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'step_up_challenge_failed',
+  'step_up_consumed',
   'backup_restore_drill_completed',
   'backup_restore_drill_failed',
 ] as const;
@@ -209,6 +211,8 @@ export const AUTH_AUDIT_EVENT_OWNERS = {
   admin_step_up_challenged: ['organization'],
   step_up_challenge_required: ['organization'],
   step_up_challenge_completed: ['organization'],
+  step_up_challenge_failed: ['organization'],
+  step_up_consumed: ['organization'],
   backup_restore_drill_completed: ['organization'],
   backup_restore_drill_failed: ['organization'],
 } as const satisfies Record<AuthAuditEventType, readonly AuthAuditHandlerOwner[]>;

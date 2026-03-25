@@ -2,8 +2,23 @@ import type { Doc } from './_generated/dataModel';
 
 type StorageLifecycleLike = Pick<
   Doc<'storageLifecycle'>,
-  'backendMode' | 'deletedAt' | 'malwareStatus' | 'mirrorStatus'
+  | 'backendMode'
+  | 'canonicalBucket'
+  | 'canonicalKey'
+  | 'deletedAt'
+  | 'malwareStatus'
+  | 'mirrorStatus'
+  | 'storagePlacement'
 > | null;
+
+function isLegacyPromotedS3Primary(lifecycle: Exclude<StorageLifecycleLike, null>) {
+  return (
+    lifecycle.backendMode === 's3-primary' &&
+    lifecycle.storagePlacement === undefined &&
+    lifecycle.malwareStatus === 'CLEAN' &&
+    Boolean(lifecycle.canonicalBucket && lifecycle.canonicalKey)
+  );
+}
 
 export type StorageReadiness =
   | {
@@ -34,6 +49,14 @@ export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageRea
     };
   }
 
+  if (isLegacyPromotedS3Primary(lifecycle)) {
+    return {
+      message: null,
+      readable: true,
+      reason: null,
+    };
+  }
+
   if (
     lifecycle.malwareStatus === 'INFECTED' ||
     lifecycle.malwareStatus === 'QUARANTINED_UNSCANNED'
@@ -42,6 +65,20 @@ export function getStorageReadiness(lifecycle: StorageLifecycleLike): StorageRea
       message: 'Stored file is quarantined.',
       readable: false,
       reason: 'quarantined',
+    };
+  }
+
+  if (
+    lifecycle.backendMode === 's3-primary' &&
+    (lifecycle.storagePlacement === 'QUARANTINE' ||
+      lifecycle.storagePlacement === undefined ||
+      (lifecycle.storagePlacement === 'PROMOTED' &&
+        (!lifecycle.canonicalBucket || !lifecycle.canonicalKey)))
+  ) {
+    return {
+      message: 'Stored file is pending malware scan.',
+      readable: false,
+      reason: 'pending_scan',
     };
   }
 

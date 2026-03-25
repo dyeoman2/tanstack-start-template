@@ -18,12 +18,11 @@ import {
   type OrganizationViewerRole,
 } from '../src/features/organizations/lib/organization-permissions';
 import { isGoogleWorkspaceOAuthConfigured } from '../src/lib/server/env.server';
-import { getRecentStepUpWindowMs } from '../src/lib/server/security-config.server';
 import {
   applyAlwaysOnRegulatedBaseline,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
-import { evaluateFreshSession } from '../src/lib/shared/auth-policy';
+import { evaluateStepUpClaim, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
@@ -35,6 +34,7 @@ import {
   mutation,
   query,
 } from './_generated/server';
+import { getActiveStepUpClaim } from './stepUp';
 import {
   checkOrganizationAccess,
   getVerifiedCurrentUserFromActionOrThrow,
@@ -277,6 +277,8 @@ const ORGANIZATION_AUDIT_EVENT_TYPES = new Set([
   'admin_step_up_challenged',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'step_up_challenge_failed',
+  'step_up_consumed',
   'backup_restore_drill_completed',
   'backup_restore_drill_failed',
 ]);
@@ -337,6 +339,8 @@ const ORGANIZATION_AUDIT_SECURITY_EVENT_TYPES = new Set([
   'admin_step_up_challenged',
   'step_up_challenge_required',
   'step_up_challenge_completed',
+  'step_up_challenge_failed',
+  'step_up_consumed',
   'backup_restore_drill_completed',
   'backup_restore_drill_failed',
 ]);
@@ -1919,17 +1923,34 @@ export const getOrganizationWriteAccess = query({
       args.action === 'reactivate-member' ||
       args.action === 'manage-scim' ||
       args.action === 'delete-organization';
+    const stepUpClaim =
+      requiresRecentStepUp && user.authSession?.id
+        ? await getActiveStepUpClaim(ctx, {
+            authUserId: user.authUserId,
+            requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+            sessionId: user.authSession.id,
+          })
+        : null;
     if (
       requiresRecentStepUp &&
-      !evaluateFreshSession({
-        createdAt: user.authSession?.createdAt,
-        updatedAt: user.authSession?.updatedAt,
-        recentStepUpWindowMs: getRecentStepUpWindowMs(),
+      !evaluateStepUpClaim({
+        claim: stepUpClaim
+          ? {
+              consumedAt: stepUpClaim.consumedAt,
+              expiresAt: stepUpClaim.expiresAt,
+              method: stepUpClaim.method,
+              requirement: stepUpClaim.requirement,
+              sessionId: stepUpClaim.sessionId,
+              verifiedAt: stepUpClaim.verifiedAt,
+            }
+          : null,
+        requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+        sessionId: user.authSession?.id ?? null,
       }).satisfied
     ) {
       return {
         allowed: false as const,
-        reason: 'Recent step-up authentication is required',
+        reason: 'Step-up authentication is required',
       };
     }
 
@@ -2954,6 +2975,10 @@ export const listOrganizationAuditEvents = query({
       v.literal('chat_web_search_used'),
       v.literal('audit_integrity_check_failed'),
       v.literal('admin_step_up_challenged'),
+      v.literal('step_up_challenge_required'),
+      v.literal('step_up_challenge_completed'),
+      v.literal('step_up_challenge_failed'),
+      v.literal('step_up_consumed'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),
@@ -3212,6 +3237,10 @@ export const exportOrganizationAuditCsv = action({
       v.literal('chat_web_search_used'),
       v.literal('audit_integrity_check_failed'),
       v.literal('admin_step_up_challenged'),
+      v.literal('step_up_challenge_required'),
+      v.literal('step_up_challenge_completed'),
+      v.literal('step_up_challenge_failed'),
+      v.literal('step_up_consumed'),
     ),
     search: v.string(),
     startDate: v.optional(v.string()),

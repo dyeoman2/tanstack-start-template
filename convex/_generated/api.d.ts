@@ -76,6 +76,7 @@ import type * as securityReports from "../securityReports.js";
 import type * as securityReviews from "../securityReviews.js";
 import type * as securityWorkspace from "../securityWorkspace.js";
 import type * as seed_index from "../seed/index.js";
+import type * as stepUp from "../stepUp.js";
 import type * as storageCleanup from "../storageCleanup.js";
 import type * as storageCleanupData from "../storageCleanupData.js";
 import type * as storageLifecycle from "../storageLifecycle.js";
@@ -162,6 +163,7 @@ declare const fullApi: ApiFromModules<{
   securityReviews: typeof securityReviews;
   securityWorkspace: typeof securityWorkspace;
   "seed/index": typeof seed_index;
+  stepUp: typeof stepUp;
   storageCleanup: typeof storageCleanup;
   storageCleanupData: typeof storageCleanupData;
   storageLifecycle: typeof storageLifecycle;

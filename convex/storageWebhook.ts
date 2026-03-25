@@ -5,6 +5,7 @@ import { getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { internal } from './_generated/api';
 import type { ActionCtx } from './_generated/server';
 import { internalAction } from './_generated/server';
+import { promoteS3PrimaryObject } from './storageS3Primary';
 
 const WEBHOOK_MAX_AGE_MS = 5 * 60 * 1000;
 
@@ -128,7 +129,7 @@ export async function applyGuardDutyFinding(
     return { applied: false, reason: 'wrong_bucket' as const };
   }
 
-  const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByS3Key, {
+  const lifecycle = await ctx.runQuery(internal.storageLifecycle.getByAnyS3KeyInternal, {
     bucket: args.bucket,
     key: args.key,
   });
@@ -141,10 +142,20 @@ export async function applyGuardDutyFinding(
   }
 
   if (args.status === 'CLEAN') {
-    await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
-      scannedAt: args.scannedAt,
-      storageId: lifecycle.storageId,
-    });
+    if (lifecycle.backendMode === 's3-primary') {
+      const promoted = await promoteS3PrimaryObject(ctx, {
+        scannedAt: args.scannedAt,
+        storageId: lifecycle.storageId,
+      });
+      if (promoted.reason === 'already_promoted') {
+        return { applied: false, reason: 'already_promoted' as const };
+      }
+    } else {
+      await ctx.runMutation(internal.storageLifecycle.markCleanInternal, {
+        scannedAt: args.scannedAt,
+        storageId: lifecycle.storageId,
+      });
+    }
     await ctx.runAction(internal.agentChatActions.processPendingChatAttachmentInternal, {
       storageId: lifecycle.storageId,
     });

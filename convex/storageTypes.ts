@@ -24,6 +24,7 @@ export const quarantineReasonValidator = v.union(
   v.literal('INFECTED'),
   v.literal('QUARANTINED_UNSCANNED'),
 );
+export const storagePlacementValidator = v.union(v.literal('QUARANTINE'), v.literal('PROMOTED'));
 
 export const uploadTargetResultValidator = v.object({
   backend: uploadBackendValidator,
@@ -51,6 +52,7 @@ export type MalwareStatus =
   | 'QUARANTINED_UNSCANNED';
 export type MirrorStatus = 'PENDING' | 'MIRRORED' | 'FAILED';
 export type QuarantineReason = 'INFECTED' | 'QUARANTINED_UNSCANNED';
+export type StoragePlacement = 'QUARANTINE' | 'PROMOTED';
 
 export type CreateUploadTargetArgs = {
   contentType: string;
@@ -116,11 +118,15 @@ export type StorageLifecycleRecord = {
   parentStorageId?: string;
   organizationId?: string;
   originalFileName: string;
+  quarantineBucket?: string;
+  quarantineKey?: string;
+  quarantineVersionId?: string;
   quarantinedAt?: number;
   quarantineReason?: QuarantineReason;
   sourceId: string;
   sourceType: string;
   storageId: string;
+  storagePlacement?: StoragePlacement;
   uploadedById?: string;
   updatedAt: number;
 };

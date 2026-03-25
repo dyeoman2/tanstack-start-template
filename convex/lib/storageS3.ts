@@ -1,6 +1,7 @@
 'use node';
 
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
@@ -25,6 +26,10 @@ function encodeRfc3986(value: string) {
     /[!*'()]/g,
     (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
   );
+}
+
+function encodeS3CopySource(bucket: string, key: string) {
+  return `${bucket}/${key.split('/').map(encodeRfc3986).join('/')}`;
 }
 
 function toAmzDate(date: Date) {
@@ -209,15 +214,46 @@ export async function putS3Object(args: {
   );
 }
 
-export async function deleteS3Object(args: { bucket: string; key: string; versionId?: string }) {
+export async function copyS3Object(args: {
+  bucket: string;
+  contentType?: string;
+  destinationKey: string;
+  sourceBucket: string;
+  sourceKey: string;
+}) {
   const client = getS3Client();
-  await client.send(
-    new DeleteObjectCommand({
+  return await client.send(
+    new CopyObjectCommand({
       Bucket: args.bucket,
-      Key: args.key,
-      VersionId: args.versionId,
+      ContentType: args.contentType,
+      CopySource: encodeS3CopySource(args.sourceBucket, args.sourceKey),
+      Key: args.destinationKey,
+      MetadataDirective: args.contentType ? 'REPLACE' : 'COPY',
     }),
   );
+}
+
+export async function deleteS3Object(args: { bucket: string; key: string; versionId?: string }) {
+  const client = getS3Client();
+  try {
+    await client.send(
+      new DeleteObjectCommand({
+        Bucket: args.bucket,
+        Key: args.key,
+        VersionId: args.versionId,
+      }),
+    );
+  } catch (error) {
+    if (
+      error &&
+      typeof error === 'object' &&
+      'name' in error &&
+      (error.name === 'NoSuchKey' || error.name === 'NoSuchVersion' || error.name === 'NotFound')
+    ) {
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function listS3Objects(args: {

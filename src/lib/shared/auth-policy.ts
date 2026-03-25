@@ -10,6 +10,14 @@ export const STEP_UP_REQUIREMENTS = {
 } as const;
 
 export type StepUpRequirement = (typeof STEP_UP_REQUIREMENTS)[keyof typeof STEP_UP_REQUIREMENTS];
+export const STEP_UP_METHODS = {
+  passkey: 'passkey',
+  passwordOnly: 'password_only',
+  passwordPlusTotp: 'password_plus_totp',
+  totp: 'totp',
+} as const;
+
+export type StepUpMethod = (typeof STEP_UP_METHODS)[keyof typeof STEP_UP_METHODS];
 
 export type AuthAssuranceState = {
   emailVerified: boolean;
@@ -21,6 +29,7 @@ export type StepUpEvaluation = {
   requirement: StepUpRequirement | null;
   required: boolean;
   satisfied: boolean;
+  method: StepUpMethod | null;
   verifiedAt: number | null;
   validUntil: number | null;
 };
@@ -31,6 +40,97 @@ export type AuthPolicyEvaluation = {
 };
 
 type TimestampLike = Date | number | string | null | undefined;
+type StepUpClaimSnapshot = {
+  consumedAt?: TimestampLike;
+  expiresAt: TimestampLike;
+  method: StepUpMethod | null;
+  requirement: StepUpRequirement;
+  sessionId?: string | null;
+  verifiedAt: TimestampLike;
+};
+
+type StepUpRequirementPolicy = {
+  allowedMethods: readonly StepUpMethod[];
+  reusable: boolean;
+  ttlMs: number;
+};
+
+const FIVE_MINUTES_MS = 5 * 60 * 1000;
+
+export const STEP_UP_REQUIREMENT_POLICIES = {
+  [STEP_UP_REQUIREMENTS.accountEmailChange]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.auditExport]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.attachmentAccess]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.documentDeletion]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.documentExport]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.organizationAdmin]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: true,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.sessionAdministration]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.userAdministration]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+} as const satisfies Record<StepUpRequirement, StepUpRequirementPolicy>;
 
 export function buildStepUpRedirectSearch(requirement: StepUpRequirement) {
   return {
@@ -71,6 +171,54 @@ export function evaluateFreshSession(input: {
     requirement: input.requirement ?? null,
     required: input.requirement !== undefined && input.requirement !== null,
     satisfied: validUntil !== null && validUntil > now,
+    method: null,
+    verifiedAt,
+    validUntil,
+  };
+}
+
+export function getStepUpRequirementPolicy(
+  requirement: StepUpRequirement,
+): StepUpRequirementPolicy {
+  return STEP_UP_REQUIREMENT_POLICIES[requirement];
+}
+
+export function isStepUpMethodAllowed(
+  requirement: StepUpRequirement,
+  method: StepUpMethod,
+): boolean {
+  return getStepUpRequirementPolicy(requirement).allowedMethods.includes(method);
+}
+
+export function evaluateStepUpClaim(input: {
+  claim: StepUpClaimSnapshot | null;
+  now?: number;
+  requirement?: StepUpRequirement | null;
+  sessionId?: string | null;
+}): StepUpEvaluation {
+  const now = input.now ?? Date.now();
+  const claim = input.claim;
+  const verifiedAt = claim ? toTimestamp(claim.verifiedAt) : null;
+  const validUntil = claim ? toTimestamp(claim.expiresAt) : null;
+  const consumedAt = claim ? toTimestamp(claim.consumedAt) : null;
+  const sessionMatches =
+    !input.sessionId || !claim?.sessionId || input.sessionId === claim.sessionId;
+  const requirementMatches =
+    input.requirement === undefined || input.requirement === null
+      ? true
+      : claim?.requirement === input.requirement;
+
+  return {
+    requirement: input.requirement ?? claim?.requirement ?? null,
+    required: input.requirement !== undefined && input.requirement !== null,
+    satisfied:
+      claim !== null &&
+      sessionMatches &&
+      requirementMatches &&
+      consumedAt === null &&
+      validUntil !== null &&
+      validUntil > now,
+    method: claim?.method ?? null,
     verifiedAt,
     validUntil,
   };
@@ -91,6 +239,7 @@ function evaluateStepUpRequirement(input: {
     requirement: input.requirement ?? null,
     required: input.requirement !== undefined && input.requirement !== null,
     satisfied,
+    method: null,
     verifiedAt,
     validUntil,
   };

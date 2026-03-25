@@ -18,9 +18,8 @@ import {
 import { getRecentStepUpWindowMs } from '../../src/lib/server/security-config.server';
 import {
   type AuthAssuranceState,
-  buildStepUpRedirectSearch,
   evaluateAuthPolicy,
-  evaluateFreshSession,
+  evaluateStepUpClaim,
   STEP_UP_REQUIREMENTS,
   type StepUpRequirement,
 } from '../../src/lib/shared/auth-policy';
@@ -46,6 +45,7 @@ import {
   getOrganizationMembershipStatuses,
 } from '../lib/organizationMembershipState';
 import { organizationPermissionDecisionValidator } from '../lib/returnValidators';
+import { getActiveStepUpClaim, getCompatibilityStepUpClaim } from '../stepUp';
 import { throwConvexError } from './errors';
 
 type AuthzCtx = QueryCtx | MutationCtx | ActionCtx;
@@ -368,18 +368,13 @@ function toMillis(value: string | number | Date | undefined, fallback: number = 
 
 function buildAuthAssuranceState(input: {
   authUser: BetterAuthUserRecord;
-  authSession: BetterAuthSessionRecord | null;
   mfaEnabled: boolean;
+  recentStepUpAt: number | null;
 }): AuthAssuranceState {
-  const recentStepUpAt =
-    input.authSession === null
-      ? null
-      : toMillis(input.authSession.updatedAt ?? input.authSession.createdAt, 0) || null;
-
   return {
     emailVerified: input.authUser.emailVerified ?? false,
     mfaEnabled: input.mfaEnabled,
-    recentStepUpAt,
+    recentStepUpAt: input.recentStepUpAt,
   };
 }
 
@@ -574,39 +569,34 @@ export async function requireStepUpFromActionOrThrow(
   requirement: StepUpRequirement,
 ): Promise<CurrentUser> {
   const user = await getVerifiedCurrentUserFromActionOrThrow(ctx);
-  const sessionResult = (await ctx.runAction(anyApi.auth.getCurrentSessionServer, {})) as
-    | {
-        data: {
-          session: {
-            createdAt: number;
-            updatedAt: number | null;
-          } | null;
-        } | null;
-        ok: true;
-      }
-    | {
-        error?: {
-          message?: string;
-        };
-        ok?: false;
-      };
+  const sessionId = user.authSession?.id;
+  if (!sessionId) {
+    throwConvexError('FORBIDDEN', `Step-up authentication is required (${requirement})`);
+  }
 
-  const freshSessionEvaluation =
-    sessionResult && sessionResult.ok === true && sessionResult.data?.session
-      ? evaluateFreshSession({
-          createdAt: sessionResult.data.session.createdAt,
-          updatedAt: sessionResult.data.session.updatedAt,
-          recentStepUpWindowMs: getRecentStepUpWindowMs(),
-          requirement,
-        })
-      : null;
+  const activeClaim = await ctx.runQuery(internal.stepUp.getActiveClaimInternal, {
+    authUserId: user.authUserId,
+    requirement,
+    sessionId,
+  });
 
-  if (!freshSessionEvaluation?.satisfied) {
-    const redirectSearch = buildStepUpRedirectSearch(requirement);
-    throwConvexError(
-      'FORBIDDEN',
-      `Recent step-up authentication is required (${redirectSearch.requirement})`,
-    );
+  if (
+    !evaluateStepUpClaim({
+      claim: activeClaim
+        ? {
+            consumedAt: activeClaim.consumedAt,
+            expiresAt: activeClaim.expiresAt,
+            method: activeClaim.method,
+            requirement: activeClaim.requirement,
+            sessionId: activeClaim.sessionId,
+            verifiedAt: activeClaim.verifiedAt,
+          }
+        : null,
+      requirement,
+      sessionId,
+    }).satisfied
+  ) {
+    throwConvexError('FORBIDDEN', `Step-up authentication is required (${requirement})`);
   }
 
   return user;
@@ -761,11 +751,18 @@ async function resolveUserAuthAssuranceState(
 ): Promise<AuthAssuranceState> {
   const passkeyCount =
     user.authUser.twoFactorEnabled === true ? 0 : await countPasskeysForUser(ctx, user.authUserId);
+  const compatibilityClaim =
+    user.authSession?.id && 'db' in ctx
+      ? await getCompatibilityStepUpClaim(ctx as QueryCtx | MutationCtx, {
+          authUserId: user.authUserId,
+          sessionId: user.authSession.id,
+        })
+      : null;
 
   return buildAuthAssuranceState({
     authUser: user.authUser,
-    authSession: user.authSession,
     mfaEnabled: user.authUser.twoFactorEnabled === true || passkeyCount > 0,
+    recentStepUpAt: compatibilityClaim?.verifiedAt ?? null,
   });
 }
 
@@ -843,10 +840,32 @@ async function buildOrganizationPermissionDecision(
   });
 
   const assuranceState = await resolveUserAuthAssuranceState(ctx, user);
+  const stepUpRequirement = getPermissionStepUpRequirement(input.permission);
+  const stepUpClaim =
+    stepUpRequirement && user.authSession?.id
+      ? await getActiveStepUpClaim(ctx, {
+          authUserId: user.authUserId,
+          requirement: stepUpRequirement,
+          sessionId: user.authSession.id,
+        })
+      : null;
   const authPolicy = evaluateAuthPolicy({
     assurance: assuranceState,
     recentStepUpWindowMs: getRecentStepUpWindowMs(),
-    requirement: getPermissionStepUpRequirement(input.permission),
+  });
+  const stepUpEvaluation = evaluateStepUpClaim({
+    claim: stepUpClaim
+      ? {
+          consumedAt: stepUpClaim.consumedAt,
+          expiresAt: stepUpClaim.expiresAt,
+          method: stepUpClaim.method,
+          requirement: stepUpClaim.requirement,
+          sessionId: stepUpClaim.sessionId,
+          verifiedAt: stepUpClaim.verifiedAt,
+        }
+      : null,
+    requirement: stepUpRequirement,
+    sessionId: user.authSession?.id ?? null,
   });
   const enterpriseSatisfied = await evaluateEnterpriseAuthorization(ctx, {
     membership,
@@ -859,7 +878,7 @@ async function buildOrganizationPermissionDecision(
       emailVerified: assuranceState.emailVerified,
       enterpriseSatisfied,
       mfaSatisfied: !authPolicy.requiresMfaSetup,
-      recentStepUpSatisfied: authPolicy.stepUp.required ? authPolicy.stepUp.satisfied : true,
+      recentStepUpSatisfied: stepUpEvaluation.required ? stepUpEvaluation.satisfied : true,
     },
     membership,
     membershipStatus,
@@ -1004,11 +1023,17 @@ export async function buildCurrentUserProfile(
     ? (organizations.find((organization) => organization.id === user.activeOrganizationId) ?? null)
     : null;
   const mfaEnabled = user.authUser.twoFactorEnabled === true || passkeyCount > 0;
+  const compatibilityClaim = user.authSession?.id
+    ? await getCompatibilityStepUpClaim(ctx, {
+        authUserId: user.authUserId,
+        sessionId: user.authSession.id,
+      })
+    : null;
   const authPolicy = evaluateAuthPolicy({
     assurance: buildAuthAssuranceState({
       authUser: user.authUser,
-      authSession: user.authSession,
       mfaEnabled,
+      recentStepUpAt: compatibilityClaim?.verifiedAt ?? null,
     }),
     recentStepUpWindowMs: getRecentStepUpWindowMs(),
   });
@@ -1030,8 +1055,8 @@ export async function buildCurrentUserProfile(
     mfaEnabled,
     mfaRequired: true,
     requiresMfaSetup: authPolicy.requiresMfaSetup,
-    recentStepUpAt: authPolicy.stepUp.verifiedAt,
-    recentStepUpValidUntil: authPolicy.stepUp.validUntil,
+    recentStepUpAt: compatibilityClaim?.verifiedAt ?? null,
+    recentStepUpValidUntil: compatibilityClaim?.expiresAt ?? null,
     currentOrganization,
     organizations,
   };
@@ -1326,10 +1351,30 @@ export const resolveStorageReadAccess = query({
 
       if (lifecycle.sourceType === 'security_control_evidence') {
         const assurance = await resolveUserAuthAssuranceState(ctx, user);
+        const evidenceClaim = user.authSession?.id
+          ? await getActiveStepUpClaim(ctx, {
+              authUserId: user.authUserId,
+              requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+              sessionId: user.authSession.id,
+            })
+          : null;
         const authPolicy = evaluateAuthPolicy({
           assurance,
           recentStepUpWindowMs: getRecentStepUpWindowMs(),
-          requirement: getPermissionStepUpRequirement('manageEvidence'),
+        });
+        const evidenceStepUp = evaluateStepUpClaim({
+          claim: evidenceClaim
+            ? {
+                consumedAt: evidenceClaim.consumedAt,
+                expiresAt: evidenceClaim.expiresAt,
+                method: evidenceClaim.method,
+                requirement: evidenceClaim.requirement,
+                sessionId: evidenceClaim.sessionId,
+                verifiedAt: evidenceClaim.verifiedAt,
+              }
+            : null,
+          requirement: STEP_UP_REQUIREMENTS.organizationAdmin,
+          sessionId: user.authSession?.id ?? null,
         });
 
         if (!user.isSiteAdmin) {
@@ -1350,12 +1395,12 @@ export const resolveStorageReadAccess = query({
           };
         }
 
-        if (!authPolicy.stepUp.satisfied) {
+        if (!evidenceStepUp.satisfied) {
           return {
             allowed: false,
             organizationId: lifecycle.organizationId ?? user.activeOrganizationId,
             permission: 'manageEvidence' as const,
-            reason: 'Recent step-up authentication is required',
+            reason: 'Step-up authentication is required',
           };
         }
 

@@ -2,11 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const getRequestMock = vi.fn();
 const fetchAuthQueryMock = vi.fn();
-const authHandlerMock = vi.fn();
 const redirectMock = vi.fn((options: unknown) => {
   return new Response(JSON.stringify(options), { status: 302 });
 });
-const hasFreshBetterAuthSessionForCurrentRequestMock = vi.fn();
+const hasStepUpClaimForCurrentRequestMock = vi.fn();
 
 vi.mock('@tanstack/react-start/server', () => ({
   getRequest: () => getRequestMock(),
@@ -18,6 +17,9 @@ vi.mock('@tanstack/react-router', () => ({
 
 vi.mock('@convex/_generated/api', () => ({
   api: {
+    stepUp: {
+      hasCurrentClaim: 'stepUp.hasCurrentClaim',
+    },
     users: {
       getCurrentUserProfile: 'getCurrentUserProfile',
     },
@@ -26,14 +28,12 @@ vi.mock('@convex/_generated/api', () => ({
 
 vi.mock('./convex-better-auth-react-start', () => ({
   convexAuthReactStart: {
-    handler: (...args: unknown[]) => authHandlerMock(...args),
     fetchAuthQuery: (...args: unknown[]) => fetchAuthQueryMock(...args),
   },
 }));
 
 vi.mock('~/lib/server/better-auth/fresh-session.server', () => ({
-  hasFreshBetterAuthSessionForCurrentRequest: () =>
-    hasFreshBetterAuthSessionForCurrentRequestMock(),
+  hasStepUpClaimForCurrentRequest: () => hasStepUpClaimForCurrentRequestMock(),
 }));
 
 import { USER_ROLES } from '../types';
@@ -51,18 +51,7 @@ describe('auth-guards', () => {
       },
     );
     getRequestMock.mockReturnValue(new Request('http://127.0.0.1:3000/app'));
-    authHandlerMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          session: {
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(false);
+    hasStepUpClaimForCurrentRequestMock.mockResolvedValue(false);
   });
 
   it('redirects to login when the profile is missing required session fields', async () => {
@@ -138,19 +127,7 @@ describe('auth-guards', () => {
       role: USER_ROLES.USER,
       emailVerified: true,
     });
-    authHandlerMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          session: {
-            createdAt: Date.now() - 60 * 60 * 1000,
-            updatedAt: Date.now() - 60 * 60 * 1000,
-          },
-        }),
-        { status: 200 },
-      ),
-    );
-
-    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(false);
+    hasStepUpClaimForCurrentRequestMock.mockResolvedValue(false);
     await expect(requireRecentStepUp()).rejects.toMatchObject({ status: 302 });
     expect(redirectMock).toHaveBeenCalledWith({
       to: '/app/profile',
@@ -168,7 +145,7 @@ describe('auth-guards', () => {
       role: USER_ROLES.USER,
       emailVerified: true,
     });
-    hasFreshBetterAuthSessionForCurrentRequestMock.mockResolvedValue(true);
+    hasStepUpClaimForCurrentRequestMock.mockResolvedValue(true);
 
     await expect(requireRecentStepUp()).resolves.toHaveProperty('user');
     expect(redirectMock).not.toHaveBeenCalled();

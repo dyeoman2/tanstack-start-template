@@ -2,7 +2,7 @@ import { api } from '@convex/_generated/api';
 import { redirect } from '@tanstack/react-router';
 import { getRequest } from '@tanstack/react-start/server';
 import { deriveIsSiteAdmin, normalizeUserRole } from '~/features/auth/lib/user-role';
-import { hasFreshBetterAuthSessionForCurrentRequest } from '~/lib/server/better-auth/fresh-session.server';
+import { hasStepUpClaimForCurrentRequest } from '~/lib/server/better-auth/fresh-session.server';
 import {
   buildStepUpRedirectSearch,
   STEP_UP_REQUIREMENTS,
@@ -150,9 +150,9 @@ export async function requireRecentStepUp(
   requirement: StepUpRequirement = STEP_UP_REQUIREMENTS.organizationAdmin,
 ): Promise<AuthResult> {
   const result = await requireAuth();
-  const isFresh = await hasFreshBetterAuthSessionForCurrentRequest().catch(() => false);
+  const isSatisfied = await hasStepUpClaimForCurrentRequest(requirement).catch(() => false);
 
-  if (!isFresh) {
+  if (!isSatisfied) {
     throw redirect({
       to: '/app/profile',
       search: buildStepUpRedirectSearch(requirement),

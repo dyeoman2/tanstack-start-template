@@ -14,6 +14,7 @@ import { authClient, useSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
+import { STEP_UP_REQUIREMENTS } from '~/lib/shared/auth-policy';
 
 export const Route = createFileRoute('/two-factor')({
   staticData: true,
@@ -22,6 +23,18 @@ export const Route = createFileRoute('/two-factor')({
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
     redirectTo: z.string().optional(),
+    stepUpRequirement: z
+      .enum([
+        STEP_UP_REQUIREMENTS.accountEmailChange,
+        STEP_UP_REQUIREMENTS.auditExport,
+        STEP_UP_REQUIREMENTS.attachmentAccess,
+        STEP_UP_REQUIREMENTS.documentExport,
+        STEP_UP_REQUIREMENTS.documentDeletion,
+        STEP_UP_REQUIREMENTS.organizationAdmin,
+        STEP_UP_REQUIREMENTS.sessionAdministration,
+        STEP_UP_REQUIREMENTS.userAdministration,
+      ])
+      .optional(),
     totpURI: z.string().optional(),
   }),
 });
@@ -64,7 +77,7 @@ function getTotpMetadata(totpUri?: string) {
 }
 
 function TwoFactorPage() {
-  const { redirectTo, totpURI } = Route.useSearch();
+  const { redirectTo, stepUpRequirement, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();
   const { data: sessionData } = useSession();
@@ -135,6 +148,23 @@ function TwoFactorPage() {
     setIsSubmitting(true);
 
     try {
+      if (stepUpRequirement) {
+        const stepUpResponse = await fetch('/api/auth/step-up', {
+          body: JSON.stringify({
+            ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
+            requirement: stepUpRequirement,
+          }),
+          headers: {
+            'content-type': 'application/json',
+          },
+          method: 'POST',
+        });
+
+        if (!stepUpResponse.ok) {
+          throw new Error('Unable to prepare the verification challenge.');
+        }
+      }
+
       await authClient.twoFactor.verifyTotp({
         code: code.trim(),
         trustDevice,

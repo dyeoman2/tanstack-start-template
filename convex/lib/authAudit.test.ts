@@ -89,6 +89,8 @@ describe('auth audit coverage', () => {
       'admin_step_up_challenged',
       'step_up_challenge_required',
       'step_up_challenge_completed',
+      'step_up_challenge_failed',
+      'step_up_consumed',
       'backup_restore_drill_completed',
       'backup_restore_drill_failed',
       'authorization_denied',
