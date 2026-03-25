@@ -14,6 +14,7 @@ import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
   getAccountSetupHref,
+  getAppStepUpSearch,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
@@ -38,8 +39,14 @@ function RegisterPage() {
   const nameId = `${uid}-name`;
   const emailId = `${uid}-email`;
   const passwordId = `${uid}-password`;
-  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup, user } =
-    useAuth();
+  const {
+    isAuthenticated,
+    isPending,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    requiresMfaVerification,
+    user,
+  } = useAuth();
   const navigate = useNavigate();
   const redirectTarget = normalizeAppRedirectTarget(redirectTo);
 
@@ -192,6 +199,15 @@ function RegisterPage() {
       return;
     }
 
+    if (requiresMfaVerification) {
+      void navigate({
+        to: '/step-up',
+        search: getAppStepUpSearch({ redirectTo: redirectTarget }),
+        replace: true,
+      });
+      return;
+    }
+
     void navigate({ to: redirectTarget, replace: true });
   }, [
     isAuthenticated,
@@ -199,6 +215,7 @@ function RegisterPage() {
     redirectTarget,
     requiresEmailVerification,
     requiresMfaSetup,
+    requiresMfaVerification,
     user?.email,
   ]);
 

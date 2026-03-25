@@ -3216,6 +3216,8 @@ export const leaveOrganizationServer = action({
     }),
   ),
   handler: async (ctx, args) => {
+    await getVerifiedCurrentUserFromActionOrThrow(ctx);
+
     return await runBetterAuthAction(ctx, async ({ auth, headers }) => {
       return await auth.api.leaveOrganization({
         body: args,

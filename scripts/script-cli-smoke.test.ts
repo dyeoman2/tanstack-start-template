@@ -32,6 +32,18 @@ describe('script cli smoke', () => {
     expect(result.stdout).toContain('Usage: pnpm run dr:setup');
   });
 
+  it('prints help for audit-archive:setup', () => {
+    const result = runTsxScript(['scripts/setup-audit-archive.ts', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: pnpm run audit-archive:setup');
+  });
+
+  it('prints help for aws:destroy:all', () => {
+    const result = runTsxScript(['scripts/aws-destroy-all.ts', '--help']);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('Usage: pnpm run aws:destroy:all');
+  });
+
   it('prints help for deploy:doctor', () => {
     const result = runTsxScript(['scripts/deploy-doctor.ts', '--help']);
     expect(result.status).toBe(0);

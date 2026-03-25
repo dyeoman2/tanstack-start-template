@@ -37,6 +37,13 @@ describe('audit emitters', () => {
         }),
       }),
     );
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.not.objectContaining({
+        actorIdentifier: expect.anything(),
+        emitter: expect.anything(),
+      }),
+    );
   });
 
   it('binds site admin provenance separately from user provenance', async () => {

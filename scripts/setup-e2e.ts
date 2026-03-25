@@ -1,10 +1,11 @@
 #!/usr/bin/env tsx
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { requirePnpmAndConvexCli } from './lib/cli-preflight';
 import { convexEnvSet } from './lib/convex-cli';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { loadProjectEnvFiles } from './lib/load-project-env-files';
 import { generateSecret } from '../src/lib/server/crypto.server';
 import { emitStructuredOutput, routeLogsToStderrWhenJson } from './lib/script-ux';
@@ -21,6 +22,41 @@ const DEFAULT_E2E_VALUES = {
   E2E_ADMIN_PASSWORD: 'E2EAdmin!1234',
   E2E_ADMIN_NAME: 'E2E Admin',
 } as const;
+
+function createPrompt() {
+  return createInterface({
+    input: process.stdin,
+    output: process.stdout,
+  });
+}
+
+async function ask(question: string, initialValue?: string) {
+  const rl = createPrompt();
+  return await new Promise<string>((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+    if (initialValue) {
+      rl.write(initialValue);
+    }
+  });
+}
+
+async function askWithDefault(question: string, fallback: string) {
+  const answer = await ask(`${question}: `, fallback);
+  return answer || fallback;
+}
+
+async function askYesNo(question: string, fallback = false) {
+  const suffix = fallback ? 'Y/n' : 'y/N';
+  const answer = (await ask(`${question} (${suffix}): `)).toLowerCase();
+  if (!answer) {
+    return fallback;
+  }
+
+  return answer === 'y' || answer === 'yes';
+}
 
 function loadLocalEnv() {
   loadProjectEnvFiles();
@@ -45,9 +81,7 @@ function printUsage() {
   console.log('- Ensures .env.local exists');
   console.log('- Writes authenticated E2E defaults locally');
   console.log('- Syncs ENABLE_E2E_TEST_AUTH and E2E_TEST_SECRET to Convex');
-  console.log(
-    '- Leaves principal provisioning to `pnpm run e2e:provision` or the browser helper scripts',
-  );
+  console.log('- Optionally provisions the deterministic user/admin principals immediately');
   console.log('');
   console.log('Examples:');
   console.log('- pnpm run setup:e2e');
@@ -100,6 +134,9 @@ async function main() {
 
   const prod = process.argv.includes('--prod');
   const convexTarget = prod ? 'production' : 'current development';
+  const defaultBaseUrl = prod
+    ? process.env.BETTER_AUTH_URL?.trim() || 'https://app.example.com'
+    : 'http://127.0.0.1:3000';
 
   console.log(`✅ Updated local E2E values in ${envPath}`);
   console.log(`🔧 Syncing required E2E gate vars to the ${convexTarget} Convex deployment...`);
@@ -114,6 +151,46 @@ async function main() {
     convexEnvSet(name, value, prod);
   }
 
+  let provisioningAttempted = false;
+  let provisioningSucceeded = false;
+  let provisioningBaseUrl: string | null = null;
+  const shouldProvisionPrincipals = json
+    ? false
+    : await askYesNo(
+        `Provision the deterministic E2E principals now? This requires the ${prod ? 'target app URL' : 'local app'} to be reachable.`,
+        false,
+      );
+  if (shouldProvisionPrincipals) {
+    provisioningAttempted = true;
+    provisioningBaseUrl = await askWithDefault(
+      prod ? 'Base URL for E2E provisioning' : 'Base URL for local E2E provisioning',
+      defaultBaseUrl,
+    );
+    try {
+      const provisionArgs = [
+        'run',
+        'e2e:provision',
+        '--',
+        '--base-url',
+        provisioningBaseUrl,
+        ...(prod ? ['--prod'] : []),
+      ];
+      const result = spawnSync('pnpm', provisionArgs, {
+        cwd: process.cwd(),
+        stdio: 'inherit',
+      });
+      provisioningSucceeded = result.status === 0;
+      if (result.status !== 0) {
+        throw new Error(`pnpm ${provisionArgs.join(' ')} failed with status ${result.status ?? 1}`);
+      }
+    } catch {
+      console.log('⚠️  E2E principal provisioning did not complete.');
+      console.log(
+        `   Start the app at ${provisioningBaseUrl} and rerun \`pnpm run e2e:provision -- --base-url ${provisioningBaseUrl}${prod ? ' --prod' : ''}\` when ready.`,
+      );
+    }
+  }
+
   console.log('\n✅ Authenticated Playwright E2E setup complete!');
   console.log('────────────────────────────────────────────────');
   console.log(`ENABLE_E2E_TEST_AUTH=${localValues.ENABLE_E2E_TEST_AUTH}`);
@@ -121,10 +198,14 @@ async function main() {
   console.log(`E2E_USER_EMAIL=${localValues.E2E_USER_EMAIL}`);
   console.log(`E2E_ADMIN_EMAIL=${localValues.E2E_ADMIN_EMAIL}`);
   console.log('────────────────────────────────────────────────');
-  console.log(
-    'Run `pnpm run e2e:provision` to pre-create the deterministic principals if you want to verify setup explicitly.',
-  );
-  console.log('The browser helper scripts also auto-provision those principals on first use.');
+  if (provisioningSucceeded) {
+    console.log(`Deterministic E2E principals provisioned at ${provisioningBaseUrl}.`);
+  } else {
+    console.log(
+      'Run `pnpm run e2e:provision` to pre-create the deterministic principals if you want to verify setup explicitly.',
+    );
+    console.log('The browser helper scripts also auto-provision those principals on first use.');
+  }
   console.log('Run `pnpm test:e2e` to execute the authenticated Playwright suite.');
   if (json) {
     emitStructuredOutput({
@@ -134,6 +215,9 @@ async function main() {
       e2eUserEmail: localValues.E2E_USER_EMAIL,
       e2eAdminEmail: localValues.E2E_ADMIN_EMAIL,
       provisioningCommand: 'pnpm run e2e:provision',
+      provisioningAttempted,
+      provisioningSucceeded,
+      provisioningBaseUrl,
     });
   }
 }

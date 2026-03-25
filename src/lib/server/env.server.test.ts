@@ -215,6 +215,9 @@ describe('Better Auth env helpers', () => {
     process.env.AWS_S3_MIRROR_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/mirror';
     process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/quarantine';
     process.env.AWS_S3_REJECTED_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/rejected';
+    process.env.AWS_AUDIT_ARCHIVE_BUCKET = 'audit-archive-bucket';
+    process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/audit';
+    process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN = 'arn:aws:iam::123456789012:role/audit-archive';
 
     expect(() => getStorageRuntimeConfig()).toThrow(
       'STORAGE_BROKER_URL environment variable is required for FILE_STORAGE_BACKEND=s3-primary.',
@@ -238,6 +241,50 @@ describe('Better Auth env helpers', () => {
     expect(config.services.worker.baseUrl).toBe('https://worker.example.com');
     expect(config.services.worker.sharedSecret).toBe('worker-secret');
     expect(config.services.convexCallbackSharedSecret).toBe('convex-callback-secret');
+  });
+
+  it('requires immutable audit archive wiring for s3-backed storage even when no archive env is set', () => {
+    process.env.FILE_STORAGE_BACKEND = 's3-primary';
+    process.env.AWS_S3_CLEAN_BUCKET = 'clean-bucket';
+    process.env.AWS_S3_MIRROR_BUCKET = 'mirror-bucket';
+    process.env.AWS_S3_QUARANTINE_BUCKET = 'quarantine-bucket';
+    process.env.AWS_S3_REJECTED_BUCKET = 'rejected-bucket';
+    process.env.AWS_S3_CLEAN_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/clean';
+    process.env.AWS_S3_MIRROR_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/mirror';
+    process.env.AWS_S3_QUARANTINE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/quarantine';
+    process.env.AWS_S3_REJECTED_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/rejected';
+    process.env.CONVEX_SITE_URL = 'https://example.convex.site';
+    process.env.AWS_FILE_SERVE_SIGNING_SECRET = 'canonical-secret';
+    process.env.STORAGE_BROKER_URL = 'https://broker.example.com';
+    process.env.STORAGE_BROKER_SHARED_SECRET = 'broker-secret';
+    process.env.STORAGE_WORKER_URL = 'https://worker.example.com';
+    process.env.STORAGE_WORKER_SHARED_SECRET = 'worker-secret';
+    process.env.CONVEX_STORAGE_CALLBACK_SHARED_SECRET = 'convex-callback-secret';
+
+    expect(() => getAuditArchiveRuntimeConfig()).toThrow(
+      'AWS_REGION environment variable is required when FILE_STORAGE_BACKEND=s3-primary.',
+    );
+
+    process.env.AWS_REGION = 'us-west-1';
+
+    expect(() => getAuditArchiveRuntimeConfig()).toThrow(
+      'AWS_AUDIT_ARCHIVE_BUCKET environment variable is required when FILE_STORAGE_BACKEND=s3-primary.',
+    );
+    expect(() => getStorageRuntimeConfig()).toThrow(
+      'AWS_AUDIT_ARCHIVE_BUCKET environment variable is required when FILE_STORAGE_BACKEND=s3-primary.',
+    );
+  });
+
+  it('keeps immutable audit archive optional for convex-backed storage', () => {
+    process.env.FILE_STORAGE_BACKEND = 'convex';
+
+    expect(getAuditArchiveRuntimeConfig()).toEqual({
+      awsRegion: null,
+      bucket: null,
+      kmsKeyArn: null,
+      prefix: 'audit-ledger/',
+      roleArn: null,
+    });
   });
 
   it('reads audit archive runtime settings when configured', () => {

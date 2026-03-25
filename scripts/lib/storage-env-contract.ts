@@ -1,0 +1,72 @@
+export const CONVEX_STORAGE_RUNTIME_ENV_NAMES = [
+  'FILE_STORAGE_BACKEND',
+  'AWS_REGION',
+  'AWS_S3_QUARANTINE_BUCKET',
+  'AWS_S3_CLEAN_BUCKET',
+  'AWS_S3_REJECTED_BUCKET',
+  'AWS_S3_MIRROR_BUCKET',
+  'AWS_S3_QUARANTINE_KMS_KEY_ARN',
+  'AWS_S3_CLEAN_KMS_KEY_ARN',
+  'AWS_S3_REJECTED_KMS_KEY_ARN',
+  'AWS_S3_MIRROR_KMS_KEY_ARN',
+  'AWS_FILE_SERVE_SIGNING_SECRET',
+  'STORAGE_BROKER_URL',
+  'STORAGE_BROKER_SHARED_SECRET',
+  'STORAGE_WORKER_URL',
+  'STORAGE_WORKER_SHARED_SECRET',
+  'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
+] as const;
+
+export const NETLIFY_RUNTIME_ENV_NAMES = ['VITE_CONVEX_URL'] as const;
+export type NetlifyRuntimeEnvName = (typeof NETLIFY_RUNTIME_ENV_NAMES)[number];
+
+export const STORAGE_OPERATOR_DEPLOY_ENV_NAMES = [
+  'AWS_REGION',
+  'CDK_DEFAULT_REGION',
+  'AWS_S3_QUARANTINE_BUCKET_NAME',
+  'AWS_S3_CLEAN_BUCKET_NAME',
+  'AWS_S3_REJECTED_BUCKET_NAME',
+  'AWS_S3_MIRROR_BUCKET_NAME',
+  'AWS_FILE_SERVE_SIGNING_SECRET',
+  'AWS_CONVEX_STORAGE_CALLBACK_BASE_URL',
+  'AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
+  'AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET',
+  'AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET',
+  'AWS_STORAGE_BROKER_SHARED_SECRET',
+  'AWS_STORAGE_WORKER_SHARED_SECRET',
+  'AWS_STORAGE_ALERT_EMAIL',
+] as const;
+export type StorageOperatorDeployEnvName = (typeof STORAGE_OPERATOR_DEPLOY_ENV_NAMES)[number];
+
+export const LEGACY_FORBIDDEN_STORAGE_ENV_NAMES = [
+  'AWS_MALWARE_WEBHOOK_SHARED_SECRET',
+  'AWS_STORAGE_TRUSTED_PRINCIPAL_ARN',
+  'AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN',
+  'AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN',
+  'AWS_STORAGE_ROLE_ARN_PROMOTION',
+  'AWS_STORAGE_ROLE_ARN_REJECTION',
+  'AWS_STORAGE_ROLE_ARN_CLEANUP',
+  'AWS_STORAGE_ROLE_ARN_MIRROR',
+] as const;
+
+export const STORAGE_STACK_OUTPUT_NAMES = {
+  brokerRuntimeUrl: 'StorageBrokerRuntimeUrl',
+  workerRuntimeUrl: 'StorageWorkerRuntimeUrl',
+} as const;
+
+export function findPresentStorageEnvNames(
+  envVars: Record<string, string | null | undefined>,
+  names: readonly string[],
+): string[] {
+  return names.filter((name) => (envVars[name] ?? '').trim().length > 0);
+}
+
+export function findForbiddenStorageEnvNames(
+  envVars: Record<string, string | null | undefined>,
+): string[] {
+  return findPresentStorageEnvNames(envVars, LEGACY_FORBIDDEN_STORAGE_ENV_NAMES);
+}
+
+export function buildStorageStackName(projectSlug: string, stage: 'dev' | 'prod') {
+  return `${projectSlug}-${stage}-guardduty-stack`;
+}

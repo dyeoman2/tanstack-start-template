@@ -226,12 +226,13 @@ export function OrganizationSsoEnforcementManagement({
             Break-glass password login is disabled by the regulated baseline and cannot be enabled
             per organization.
           </p>
-          <p className="mt-2 text-muted-foreground">
-            Provider support access also requires an owner-issued temporary grant before any tenant
-            PHI paths can be opened.
-          </p>
         </div>
       ) : null}
+
+      <p className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+        Provider support access to tenant PHI always requires an owner-issued temporary grant before
+        any tenant data-plane paths can be opened.
+      </p>
 
       {saveError ? (
         <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">

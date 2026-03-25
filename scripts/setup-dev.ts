@@ -7,7 +7,7 @@
  * Run: pnpm run setup:dev
  */
 
-import { execSync } from 'node:child_process';
+import { execSync, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -18,15 +18,19 @@ import {
   requirePnpmAndConvexCli,
 } from './lib/cli-preflight';
 import { upsertStructuredEnvValue } from './lib/env-file';
+import { printFinalChangeSummary } from './lib/script-ux';
 
 function printUsage() {
   console.log('Usage: pnpm run setup:dev');
   console.log('');
   console.log('What this does:');
   console.log('- Runs setup:env');
+  console.log('- Offers optional vendor setup');
   console.log('- Runs convex project bootstrap');
   console.log('- Runs setup:convex');
-  console.log('- Optionally runs storage:setup and setup:e2e');
+  console.log('- Runs guided storage:setup');
+  console.log('- Optionally runs setup:e2e');
+  console.log('- Finishes with convex:env:verify and deploy:doctor checks');
   console.log('');
   console.log('Examples:');
   console.log('- pnpm run setup:dev');
@@ -176,6 +180,15 @@ function run(command: string, cwd: string) {
   execSync(command, { stdio: 'inherit', cwd });
 }
 
+function runCheck(command: string, cwd: string) {
+  const result = spawnSync('/bin/zsh', ['-lc', command], {
+    cwd,
+    stdio: 'inherit',
+  });
+
+  return result.status === 0;
+}
+
 async function main() {
   if (process.argv.includes('--help') || process.argv.includes('-h')) {
     printUsage();
@@ -189,6 +202,10 @@ async function main() {
   console.log('Safe to rerun: yes; this script is now configuration-only.\n');
 
   const cwd = process.cwd();
+  const changedLocally: string[] = [];
+  const changedRemotely: string[] = [];
+  const nextCommands: string[] = [];
+  const warnings: string[] = [];
   requireCommands([{ cmd: 'pnpm' }]);
 
   if (!pnpmExecConvexWorks(cwd)) {
@@ -202,6 +219,7 @@ async function main() {
 
     try {
       run('pnpm install', cwd);
+      changedLocally.push('Installed project dependencies with pnpm');
       console.log('✅ Dependencies installed.\n');
     } catch {
       console.log('❌ `pnpm install` failed. Please fix the install issue and rerun setup.');
@@ -215,6 +233,7 @@ async function main() {
   console.log('📦 Step 1: Setting up local environment...');
   try {
     run('pnpm run setup:env', cwd);
+    changedLocally.push('Updated .env.local through setup:env');
     console.log('✅ Environment setup complete!\n');
   } catch {
     console.log('❌ Environment setup failed. Please fix any issues and try again.');
@@ -236,6 +255,7 @@ async function main() {
   requirePnpmAndConvexCli(cwd);
   try {
     run('pnpm exec convex dev --once', cwd);
+    changedRemotely.push('Bootstrapped or linked the Convex development project');
     console.log('✅ Convex project setup complete!\n');
   } catch {
     console.log('ℹ️  Convex setup completed.\n');
@@ -245,6 +265,7 @@ async function main() {
   console.log('⚙️  Step 4: Configuring development URLs and environment variables...');
   try {
     run('pnpm run setup:convex', cwd);
+    changedRemotely.push('Synced local app env into Convex development');
     console.log('✅ Convex configuration complete!\n');
   } catch {
     console.log('❌ Convex configuration failed. Please check your setup and try again.');
@@ -262,6 +283,7 @@ async function main() {
   console.log('🗂️  Step 5: 🔧 Storage setup');
   try {
     run('pnpm run storage:setup', cwd);
+    changedLocally.push('Ran guided local storage setup');
     console.log('✅ Storage setup complete!\n');
   } catch {
     console.log('❌ Storage setup failed. Please check the output and try again.');
@@ -277,6 +299,8 @@ async function main() {
   if (shouldSetupE2E) {
     try {
       run('pnpm run setup:e2e', cwd);
+      changedLocally.push('Configured authenticated Playwright E2E env');
+      changedRemotely.push('Synced E2E gate env into Convex development');
       console.log('✅ Playwright E2E setup complete!\n');
     } catch {
       console.log('❌ Playwright E2E setup failed. Please check the output and try again.');
@@ -284,24 +308,50 @@ async function main() {
     }
   } else {
     console.log('ℹ️  Skipping Playwright E2E setup. Run `pnpm run setup:e2e` any time.\n');
+    nextCommands.push('pnpm run setup:e2e');
   }
 
-  console.log('🎉 Local development setup is complete!');
-  console.log('');
-  console.log('Run this next:');
-  console.log('  pnpm dev');
-  console.log('');
-  console.log('Optional follow-ups:');
-  console.log('  • If you need the Docker-backed local storage path: pnpm run dev:docker');
-  console.log('  • If you need admin access: pnpm make-admin <email>');
-  console.log('  • If you want an authenticated browser-agent session:');
-  console.log(
-    '    pnpm run agent:auth -- --session-name local-app --principal user --redirect-to /app',
+  console.log('🩺 Step 7: Final readiness checks');
+  const convexEnvReady = runCheck('pnpm run convex:env:verify', cwd);
+  const deployDoctorReady = runCheck('pnpm run deploy:doctor', cwd);
+
+  if (!convexEnvReady) {
+    warnings.push(
+      'Convex dev env drift check failed. Rerun `pnpm run setup:convex` after fixing the missing or drifted values.',
+    );
+    nextCommands.push('pnpm run setup:convex');
+    nextCommands.push('pnpm run convex:env:verify');
+  }
+  if (!deployDoctorReady) {
+    warnings.push(
+      'Deploy doctor found local readiness issues. Review the failed checks and rerun it after addressing them.',
+    );
+    nextCommands.push('pnpm run deploy:doctor');
+  }
+
+  nextCommands.push('pnpm dev');
+  nextCommands.push('pnpm run dev:docker');
+  nextCommands.push('pnpm make-admin <email>');
+  nextCommands.push(
+    'pnpm run agent:auth -- --session-name local-app --principal user --redirect-to /app',
   );
-  console.log(
-    '  • If you later edit .env.local and want to verify Convex sync: pnpm run convex:env:verify',
-  );
-  console.log('  • When you are ready for production wiring: pnpm run setup:prod');
+  nextCommands.push('pnpm run setup:prod');
+
+  const finalSummary = {
+    changedLocally,
+    changedRemotely,
+    nextCommands: [...new Set(nextCommands)],
+    readiness: {
+      convexEnv: convexEnvReady ? 'ready' : 'needs attention',
+      e2e: shouldSetupE2E ? 'configured' : 'skipped',
+      localSetup: 'ready',
+      localReadiness: deployDoctorReady ? 'ready' : 'needs attention',
+    },
+    warnings,
+  };
+
+  console.log('\n🎉 Local development setup is complete.\n');
+  printFinalChangeSummary(finalSummary);
 }
 
 main().catch((error) => {

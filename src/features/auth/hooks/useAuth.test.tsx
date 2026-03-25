@@ -134,4 +134,83 @@ describe('useAuth', () => {
     expect(result.current.isAuthenticated).toBe(false);
     expect(result.current.isPending).toBe(false);
   });
+
+  it('marks authenticated password-only sessions as requiring MFA verification', async () => {
+    useAuthStateMock.mockReturnValue({
+      isAuthenticated: true,
+      isPending: false,
+      error: null,
+      userId: 'user-1',
+    });
+    useSessionMock.mockReturnValue({
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          name: 'Person Example',
+        },
+        session: {
+          authMethod: 'password',
+          mfaVerified: false,
+        },
+      },
+      isPending: false,
+      error: null,
+    });
+    useQueryMock.mockReturnValue({
+      role: 'user',
+      isSiteAdmin: false,
+      phoneNumber: null,
+      currentOrganization: null,
+      mfaRequired: true,
+      requiresMfaSetup: false,
+    });
+
+    const { useAuth } = await import('./useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.isAuthenticated).toBe(true);
+    expect(result.current.requiresMfaVerification).toBe(true);
+    expect(result.current.user?.requiresMfaVerification).toBe(true);
+  });
+
+  it('treats a fresh recent step-up claim as satisfying MFA verification', async () => {
+    useAuthStateMock.mockReturnValue({
+      isAuthenticated: true,
+      isPending: false,
+      error: null,
+      userId: 'user-1',
+    });
+    useSessionMock.mockReturnValue({
+      data: {
+        user: {
+          id: 'user-1',
+          email: 'person@example.com',
+          name: 'Person Example',
+        },
+        session: {
+          authMethod: 'password',
+          mfaVerified: false,
+        },
+      },
+      isPending: false,
+      error: null,
+    });
+    useQueryMock.mockReturnValue({
+      role: 'user',
+      isSiteAdmin: false,
+      phoneNumber: null,
+      currentOrganization: null,
+      mfaRequired: true,
+      recentStepUpValidUntil: Date.now() + 60_000,
+      requiresMfaSetup: false,
+    });
+
+    const { useAuth } = await import('./useAuth');
+    const { result } = renderHook(() => useAuth());
+
+    expect(result.current.hasRecentStepUp).toBe(true);
+    expect(result.current.requiresMfaVerification).toBe(false);
+    expect(result.current.user?.requiresMfaVerification).toBe(false);
+  });
 });

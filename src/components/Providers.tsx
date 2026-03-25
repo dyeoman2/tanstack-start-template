@@ -1,11 +1,11 @@
 import { api } from '@convex/_generated/api';
 import { ConvexBetterAuthProvider } from '@convex-dev/better-auth/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { getGlobalStartContext } from '@tanstack/react-start';
 import { useAction, useConvexAuth } from 'convex/react';
 import { createContext, type ReactNode, useContext, useEffect, useRef, useState } from 'react';
 import { ErrorBoundaryWrapper } from '~/components/ErrorBoundary';
 import { ThemeProvider } from '~/components/theme-provider';
-import { Toaster } from '~/components/ui/sonner';
 import { ToastProvider } from '~/components/ui/toast';
 import { rawAuthClient } from '~/features/auth/auth-client-internal';
 import { DevAuthOriginWarning } from '~/features/auth/components/DevAuthOriginWarning';
@@ -149,7 +149,17 @@ function QueryProvider({ children }: { children: ReactNode }) {
   return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
 }
 
+function getCspNonce() {
+  try {
+    return getGlobalStartContext()?.nonce;
+  } catch {
+    return undefined;
+  }
+}
+
 export function Providers({ children }: { children: ReactNode }) {
+  const nonce = getCspNonce();
+
   return (
     <ErrorBoundaryWrapper
       title="Application Error"
@@ -159,16 +169,10 @@ export function Providers({ children }: { children: ReactNode }) {
       <ConvexBetterAuthProvider client={convexClient} authClient={rawAuthClient}>
         <QueryProvider>
           <AuthProvider>
-            <ThemeProvider
-              attribute="class"
-              defaultTheme="system"
-              enableSystem
-              disableTransitionOnChange
-            >
+            <ThemeProvider nonce={nonce} attribute="class" defaultTheme="system" enableSystem>
               <ToastProvider>
                 <DevAuthOriginWarning />
                 {children}
-                <Toaster richColors />
               </ToastProvider>
             </ThemeProvider>
           </AuthProvider>

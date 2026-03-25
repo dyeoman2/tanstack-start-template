@@ -1,7 +1,6 @@
 import { api } from '@convex/_generated/api';
 import { createFileRoute } from '@tanstack/react-router';
 import { convexAuthReactStart } from '~/features/auth/server/convex-better-auth-react-start';
-import { getFileStorageBackendMode } from '~/lib/server/env.server';
 import { inspectFile } from '~/lib/server/file-inspection.server';
 import { logSecurityEvent } from '~/lib/server/observability.server';
 import { parsePdfBlob } from '~/lib/server/pdf-parse.server';
@@ -10,6 +9,10 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : 'Failed to parse PDF';
+}
+
+async function getPdfParseBackendMode() {
+  return await convexAuthReactStart.fetchAuthAction(api.pdfParseActions.getPdfParseBackendMode, {});
 }
 
 async function recordDirectPdfParseAuditEvent(input: {
@@ -51,7 +54,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
             return Response.json({ error: 'Authentication required' }, { status: 401 });
           }
 
-          if (getFileStorageBackendMode() === 'convex') {
+          if ((await getPdfParseBackendMode()) === 'convex') {
             return Response.json(
               { error: 'PDF parse job status is only available for S3-backed storage.' },
               { status: 405 },
@@ -107,7 +110,7 @@ export const Route = createFileRoute('/api/parse-pdf')({
             return Response.json({ error: getErrorMessage(error) }, { status: 429 });
           }
 
-          const backendMode = getFileStorageBackendMode();
+          const backendMode = await getPdfParseBackendMode();
           if (backendMode !== 'convex') {
             const payload = (await request.json().catch(() => null)) as {
               storageId?: unknown;

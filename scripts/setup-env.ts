@@ -145,6 +145,8 @@ APP_NAME="${DEFAULT_APP_NAME}"
 # Optional: Sentry DSN for error monitoring and performance tracking
 # Get from: https://sentry.io/settings/projects/YOUR_PROJECT/keys/
 # VITE_SENTRY_DSN=https://your-project-dsn.ingest.sentry.io/project-id
+# VITE_ENABLE_ROUTER_DEVTOOLS=true
+# Router devtools inject inline styles, so leave this commented when CSP is enforced
 # Leave commented out to disable Sentry monitoring
 
 # ==========================================

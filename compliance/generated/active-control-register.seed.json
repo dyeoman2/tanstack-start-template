@@ -881,7 +881,7 @@
               },
               {
                 "title": "Audit log immutability guardrail",
-                "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against audit log storage.",
+                "description": "Audit log immutability guardrail Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null

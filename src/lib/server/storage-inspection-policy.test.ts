@@ -83,6 +83,30 @@ describe('inspectStorageUploadBytes', () => {
     expect(result.status).toBe('PASSED');
   });
 
+  it('passes plain text documents', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['document'],
+      bytes: makeBytes('hello world'),
+      fileName: 'notes.txt',
+      maxBytes: 1024,
+      mimeType: 'text/plain',
+    });
+
+    expect(result.status).toBe('PASSED');
+  });
+
+  it('passes png images', async () => {
+    const result = await inspectStorageUploadBytes({
+      allowedKinds: ['image'],
+      bytes: new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00]),
+      fileName: 'scan.png',
+      maxBytes: 1024,
+      mimeType: 'image/png',
+    });
+
+    expect(result.status).toBe('PASSED');
+  });
+
   it('rejects xlsx documents as unsupported', async () => {
     const result = await inspectStorageUploadBytes({
       allowedKinds: ['document'],
@@ -146,6 +170,18 @@ describe('inspectStorageUploadBytes', () => {
 });
 
 describe('resolveStorageInspectionPolicy', () => {
+  it('keeps the default regulated upload boundary narrow', () => {
+    expect(
+      resolveStorageInspectionPolicy({
+        defaultMaxBytes: 10 * 1024 * 1024,
+        sourceType: 'chat_attachment',
+      }),
+    ).toEqual({
+      allowedKinds: ['document', 'image', 'pdf'],
+      maxBytes: 10 * 1024 * 1024,
+    });
+  });
+
   it('uses the evidence upload size limit for security control evidence', () => {
     expect(
       resolveStorageInspectionPolicy({

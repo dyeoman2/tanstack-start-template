@@ -46,16 +46,17 @@ export async function recordUserAuditEvent(
     actorIdentifier?: string;
   },
 ) {
+  const { actorIdentifier, emitter, ...event } = input;
   await appendAuditEvent(ctx, {
-    ...input,
+    ...event,
     actorUserId: input.actorUserId,
     sessionId: input.sessionId,
     provenance: {
       kind: 'user',
-      emitter: input.emitter,
+      emitter,
       actorUserId: input.actorUserId,
       sessionId: input.sessionId,
-      identifier: input.actorIdentifier,
+      identifier: actorIdentifier,
     },
   });
 }
@@ -69,16 +70,17 @@ export async function recordSiteAdminAuditEvent(
     actorIdentifier?: string;
   },
 ) {
+  const { actorIdentifier, emitter, ...event } = input;
   await appendAuditEvent(ctx, {
-    ...input,
+    ...event,
     actorUserId: input.actorUserId,
     sessionId: input.sessionId,
     provenance: {
       kind: 'site_admin',
-      emitter: input.emitter,
+      emitter,
       actorUserId: input.actorUserId,
       sessionId: input.sessionId,
-      identifier: input.actorIdentifier,
+      identifier: actorIdentifier,
     },
   });
 }
@@ -93,17 +95,18 @@ export async function recordSystemAuditEvent(
     sessionId?: string;
   },
 ) {
+  const { actorIdentifier, emitter, initiatedByUserId, ...event } = input;
   await appendAuditEvent(ctx, {
-    ...input,
+    ...event,
     actorUserId: input.actorUserId,
     sessionId: input.sessionId,
     provenance: {
       kind: 'system',
-      emitter: input.emitter,
+      emitter,
       actorUserId: input.actorUserId,
       sessionId: input.sessionId,
-      identifier: input.actorIdentifier,
-      initiatedByUserId: input.initiatedByUserId,
+      identifier: actorIdentifier,
+      initiatedByUserId,
     },
   });
 }
@@ -117,14 +120,15 @@ export async function recordScimAuditEvent(
     actorIdentifier?: string;
   },
 ) {
+  const { actorIdentifier, emitter, initiatedByUserId, scimProviderId, ...event } = input;
   await appendAuditEvent(ctx, {
-    ...input,
+    ...event,
     provenance: {
       kind: 'scim_service',
-      emitter: input.emitter,
-      identifier: input.actorIdentifier,
-      initiatedByUserId: input.initiatedByUserId,
-      scimProviderId: input.scimProviderId,
+      emitter,
+      identifier: actorIdentifier,
+      initiatedByUserId,
+      scimProviderId,
     },
   });
 }

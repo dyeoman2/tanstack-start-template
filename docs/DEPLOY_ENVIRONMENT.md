@@ -79,6 +79,7 @@ Production builds and SSR need:
 - `VITE_CONVEX_URL`
 
 `pnpm run setup:prod` can push this to your Netlify **production** context when you opt in, using your Netlify personal access token and site id (`NETLIFY_AUTH_TOKEN` and linked site are auto-detected when possible). The `.convex.site` origin is derived from `VITE_CONVEX_URL` where needed.
+`setup:prod` also orchestrates the guided production storage flow, the optional immutable audit archive flow, and the optional DR flow, and now reports their child-script readiness back in the final summary instead of treating “the child exited” as success.
 
 ### Creating a site from the CLI
 
@@ -160,7 +161,7 @@ For S3-backed storage, `deploy:doctor` also fails if the Convex deployment is mi
 
 It also verifies the repo-pinned Netlify hardening headers in [`netlify.toml`](/Users/yeoman/Desktop/tanstack/tanstack-start-template/netlify.toml).
 
-If immutable audit archiving is enabled, `deploy:doctor` also requires:
+For S3-backed storage, immutable audit archiving is required and `deploy:doctor` also requires:
 
 - `AWS_AUDIT_ARCHIVE_BUCKET`
 - `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`
@@ -178,6 +179,16 @@ For AWS storage infrastructure preview/deploy, the operator environment also nee
 - `AWS_CONVEX_STORAGE_CALLBACK_BASE_URL`
 - `AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
 - optional `AWS_STORAGE_ALERT_EMAIL`
+
+For S3-backed storage setup, `pnpm run storage:setup:prod` now tries to auto-discover `StorageBrokerRuntimeUrl` and `StorageWorkerRuntimeUrl` from the deployed CloudFormation stack before prompting, persists them to `.env.prod` once available, and reports `needs attention` when those runtime URLs are still missing.
+
+For immutable audit archiving, use the dedicated guided flow:
+
+```bash
+pnpm run audit-archive:setup -- --prod
+```
+
+That flow persists both deploy-time inputs and the runtime outputs (`AWS_AUDIT_ARCHIVE_BUCKET`, `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`, `AWS_AUDIT_ARCHIVE_ROLE_ARN`) to `.env.prod`, and can sync the runtime values into Convex production when the stack outputs are available.
 
 The storage CDK stack creates dedicated broker and worker runtime roles and scopes the
 per-capability storage roles so only those runtime roles can assume them.

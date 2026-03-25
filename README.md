@@ -123,7 +123,7 @@ pnpm run setup:prod
 - ✅ Deploys Convex functions to production
 - ✅ Prompts for optional `RESEND_API_KEY` on Convex production
 - ✅ Verifies `JWKS` on Convex production after deploy and tries `pnpm run convex:jwks:sync` when missing
-- ✅ Optionally sets `BETTER_AUTH_SECRET` and `VITE_CONVEX_URL` on Netlify (production context)
+- ✅ Optionally sets `VITE_CONVEX_URL` on Netlify (production context)
 - ✅ Guides GitHub Actions deploy environments and Netlify hooks
 
 **🎉 Result:** Your app will be live with authentication, database, and real-time features!
@@ -304,9 +304,14 @@ That flow now:
 
 The dev storage commands derive these deploy-time values at runtime:
 
-- `AWS_CONVEX_GUARDDUTY_WEBHOOK_URL`
-- `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
-- `AWS_S3_FILES_BUCKET_NAME`
+- `AWS_CONVEX_STORAGE_CALLBACK_BASE_URL`
+- `AWS_CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
+- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
+- `AWS_STORAGE_BROKER_SHARED_SECRET`
+- `AWS_STORAGE_WORKER_SHARED_SECRET`
+- `AWS_FILE_SERVE_SIGNING_SECRET`
+- bucket names for quarantine, clean, rejected, and mirror storage
 
 For guided production runtime env setup across Convex prod and Netlify, run:
 
@@ -314,10 +319,11 @@ For guided production runtime env setup across Convex prod and Netlify, run:
 pnpm run storage:setup:prod
 ```
 
-That flow now follows the same storage setup model as local/dev, but writes runtime env to production targets instead:
+That flow now follows the same storage setup model as local/dev, but writes runtime env to the production storage targets instead:
 
 - sets runtime storage env in Convex prod
-- sets runtime storage env in Netlify
+- writes the storage operator/deploy env contract to `.env.prod`
+- auto-discovers `StorageBrokerRuntimeUrl` and `StorageWorkerRuntimeUrl` from the deployed stack when available
 - derives the production storage CDK deploy-time env from the collected runtime values
 - can preview and deploy the prod storage stack directly
 

@@ -141,16 +141,12 @@ If production uses `s3-primary` or `s3-mirror`, make sure the resulting secret i
 - `AWS_S3_CLEAN_KMS_KEY_ARN`
 - `AWS_S3_REJECTED_KMS_KEY_ARN`
 - `AWS_S3_MIRROR_KMS_KEY_ARN`
-- `AWS_GUARDDUTY_WEBHOOK_SHARED_SECRET`
-- `AWS_STORAGE_INSPECTION_WEBHOOK_SHARED_SECRET`
-- `AWS_STORAGE_ROLE_ARN_UPLOAD_PRESIGN`
-- `AWS_STORAGE_ROLE_ARN_DOWNLOAD_PRESIGN`
-- `AWS_STORAGE_ROLE_ARN_PROMOTION`
-- `AWS_STORAGE_ROLE_ARN_REJECTION`
-- `AWS_STORAGE_ROLE_ARN_CLEANUP`
-- `AWS_STORAGE_ROLE_ARN_MIRROR`
-- `CONVEX_SITE_URL`
 - `AWS_FILE_SERVE_SIGNING_SECRET`
+- `STORAGE_BROKER_URL`
+- `STORAGE_BROKER_SHARED_SECRET`
+- `STORAGE_WORKER_URL`
+- `STORAGE_WORKER_SHARED_SECRET`
+- `CONVEX_STORAGE_CALLBACK_SHARED_SECRET`
 
 ## Trigger a Manual Backup
 
@@ -184,6 +180,10 @@ Recommended optional env vars:
 export BETTER_AUTH_SECRET=your-production-better-auth-secret
 export JWKS='{"keys":[...]}'
 ```
+
+When the storage stack is already deployed, treat the CloudFormation outputs
+`StorageBrokerRuntimeUrl` and `StorageWorkerRuntimeUrl` as the canonical source for the
+runtime URLs you restore into Convex.
 
 `AWS_DR_FRONTEND_CNAME_TARGET` remains available as an override, but `pnpm run dr:setup` now persists the Netlify frontend hostname in Secrets Manager so manual export is usually unnecessary.
 

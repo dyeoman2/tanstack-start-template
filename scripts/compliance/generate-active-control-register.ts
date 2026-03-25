@@ -3003,7 +3003,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Audit log immutability guardrail',
-              'Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against audit log storage.',
+              'Automated guardrail script and deployment workflow step fail CI if direct runtime patch, replace, or delete operations are introduced against protected audit ledger tables.',
               { sufficiency: 'sufficient' },
             ),
           ],

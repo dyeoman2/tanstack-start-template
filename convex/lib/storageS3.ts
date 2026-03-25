@@ -1,6 +1,5 @@
 'use node';
 
-import { Buffer } from 'node:buffer';
 import { getStorageRuntimeConfig } from '../../src/lib/server/env.server';
 import { buildInternalServiceAuthorizationHeader } from '../../src/lib/server/internal-service-auth';
 import type {

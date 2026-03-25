@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ServerError } from '~/lib/server/error-utils.server';
 
 const {
   requireAuthMock,
@@ -103,5 +104,26 @@ describe('leaveOrganizationServerFn', () => {
       }),
     ).rejects.toBe(failure);
     expect(handleServerErrorMock).toHaveBeenCalledWith(expect.any(Error), 'Leave organization');
+  });
+
+  it('does not refresh user context when leave is blocked by MFA enforcement', async () => {
+    const failure = new ServerError(
+      'Multi-factor authentication is required for this session',
+      403,
+      {
+        code: 'MFA_REQUIRED',
+      },
+    );
+    leaveBetterAuthOrganizationMock.mockRejectedValue(failure);
+    handleServerErrorMock.mockReturnValue(failure);
+
+    await expect(
+      leaveOrganizationServerFn({
+        data: { organizationId: 'org_current' },
+      }),
+    ).rejects.toBe(failure);
+
+    expect(fetchAuthActionMock).not.toHaveBeenCalled();
+    expect(fetchAuthQueryMock).not.toHaveBeenCalled();
   });
 });

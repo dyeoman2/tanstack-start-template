@@ -6,14 +6,14 @@ This template documents the implemented safeguards that ship out of the box and 
 
 - Workforce access and role boundaries: Better Auth roles, Convex auth guards, organization access checks documented above; deployers must still define HR/operations policies outside the codebase.
 - Security awareness and stronger authentication: enforced MFA posture, MFA-gated site-admin access, and recent-step-up checks for high-risk exports with evidence captured in the posture dashboard.
-- Evaluation and audit review: audit log exports and hash-chain integrity checks are available, but incident response reporting and third-party reviews remain deployer tasks.
+- Evaluation and audit review: hash-chain integrity checks, immutable audit archive exports for S3-backed storage, and audit log exports are available, but incident response reporting and third-party reviews remain deployer tasks.
 
 ### Physical and technical safeguards (app scope)
 
 - Unique user identification and session controls: Better Auth session management with secure cookies, database-backed sessions, verified-email enforcement, MFA-gated admin access, and repo-pinned edge security headers; deployers still need to operate WAF, TLS certs, and key rotation.
 - Transmission and access protection: strict trusted-origin checks, canonical Better Auth base URL validation, short-lived session freshness, and policy-driven attachment lifecycle controls; external VPNs or network ACLs must be layered externally.
 - Audit controls: hash-linked audit events, export logging, document scan records, and retention job history generate the raw evidence for an audit file; deployers still need centralized log aggregation, retention, and review processes.
-- Integrity: file-type/signature verification plus quarantining hooks support the document flow, and the default regulated upload boundary is limited to PDF, plain text, CSV, and JPEG/PNG/GIF/WEBP images; any broader Office-style intake or production malware/DLP scanning remains the deployer’s responsibility.
+- Integrity: file-type/signature verification plus quarantining hooks support the document flow, and the shipped regulated upload boundary is limited to PDF, plain text, CSV, and JPEG/PNG/GIF/WEBP images; broader Office-style intake and production malware/DLP scanning are outside the shipped baseline and remain the deployer’s responsibility.
 
 ### Operational evidence
 

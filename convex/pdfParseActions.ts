@@ -5,6 +5,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalAction } from './_generated/server';
+import { getFileStorageBackendMode } from '../src/lib/server/env.server';
 import {
   getVerifiedCurrentUserFromActionOrThrow,
   requireStorageReadAccessFromActionOrThrow,
@@ -15,6 +16,7 @@ import {
   storeDerivedFileWithMode,
 } from './storagePlatform';
 import { getStorageReadiness } from './storageReadiness';
+import { storageBackendModeValidator } from './storageTypes';
 import { parsePdfBlob } from '../src/lib/server/pdf-parse.server';
 import { recordSystemAuditEvent, recordUserAuditEvent } from './lib/auditEmitters';
 
@@ -117,6 +119,16 @@ async function loadPdfSourceBlob(
     storageId: lifecycle.storageId,
   });
 }
+
+export const getPdfParseBackendMode = action({
+  args: {},
+  returns: storageBackendModeValidator,
+  handler: async (ctx) => {
+    /* security-lint-ok: no-rate-limit-needed reason: this only returns a static server configuration value after authentication and does not amplify user-controlled work. */
+    await getVerifiedCurrentUserFromActionOrThrow(ctx);
+    return getFileStorageBackendMode();
+  },
+});
 
 export const processPendingPdfParseJobInternal = internalAction({
   args: {

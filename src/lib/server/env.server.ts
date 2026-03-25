@@ -532,6 +532,10 @@ export function getFileStorageBackendMode(): FileStorageBackendMode {
   throw new Error('FILE_STORAGE_BACKEND must be one of: convex, s3-primary, s3-mirror.');
 }
 
+function isS3BackedFileStorageBackendMode(mode: FileStorageBackendMode) {
+  return mode === 's3-primary' || mode === 's3-mirror';
+}
+
 export function getStorageRuntimeConfig(): StorageRuntimeConfig {
   const backendMode = getFileStorageBackendMode();
   assertNoLegacyStorageWebhookSecret();
@@ -593,6 +597,9 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
     return baseConfig;
   }
 
+  // S3-backed deployments must also provide immutable audit archive wiring.
+  getAuditArchiveRuntimeConfig();
+
   return {
     ...baseConfig,
     awsRegion: readRequiredStorageEnv('AWS_REGION', backendMode),
@@ -603,6 +610,7 @@ export function getStorageRuntimeConfig(): StorageRuntimeConfig {
 }
 
 export function getAuditArchiveRuntimeConfig(): AuditArchiveRuntimeConfig {
+  const backendMode = getFileStorageBackendMode();
   const prefix = readOptionalServerEnv('AWS_AUDIT_ARCHIVE_PREFIX')?.trim() || 'audit-ledger/';
   const normalizedPrefix = prefix.endsWith('/') ? prefix : `${prefix}/`;
   const baseConfig: AuditArchiveRuntimeConfig = {
@@ -613,32 +621,43 @@ export function getAuditArchiveRuntimeConfig(): AuditArchiveRuntimeConfig {
     roleArn: readOptionalServerEnv('AWS_AUDIT_ARCHIVE_ROLE_ARN'),
   };
 
+  const requiredForS3BackedStorage = isS3BackedFileStorageBackendMode(backendMode);
   const configuredValues = [
     baseConfig.awsRegion,
     baseConfig.bucket,
     baseConfig.kmsKeyArn,
     baseConfig.roleArn,
   ].filter((value) => (value ?? '').trim().length > 0);
-  if (configuredValues.length === 0) {
+  if (!requiredForS3BackedStorage && configuredValues.length === 0) {
     return baseConfig;
   }
 
   if (!baseConfig.awsRegion) {
-    throw new Error('AWS_REGION environment variable is required for audit archive operations.');
+    throw new Error(
+      requiredForS3BackedStorage
+        ? `AWS_REGION environment variable is required when FILE_STORAGE_BACKEND=${backendMode}.`
+        : 'AWS_REGION environment variable is required for audit archive operations.',
+    );
   }
   if (!baseConfig.bucket) {
     throw new Error(
-      'AWS_AUDIT_ARCHIVE_BUCKET environment variable is required for audit archive operations.',
+      requiredForS3BackedStorage
+        ? `AWS_AUDIT_ARCHIVE_BUCKET environment variable is required when FILE_STORAGE_BACKEND=${backendMode}.`
+        : 'AWS_AUDIT_ARCHIVE_BUCKET environment variable is required for audit archive operations.',
     );
   }
   if (!baseConfig.kmsKeyArn) {
     throw new Error(
-      'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required for audit archive operations.',
+      requiredForS3BackedStorage
+        ? `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required when FILE_STORAGE_BACKEND=${backendMode}.`
+        : 'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN environment variable is required for audit archive operations.',
     );
   }
   if (!baseConfig.roleArn) {
     throw new Error(
-      'AWS_AUDIT_ARCHIVE_ROLE_ARN environment variable is required for audit archive operations.',
+      requiredForS3BackedStorage
+        ? `AWS_AUDIT_ARCHIVE_ROLE_ARN environment variable is required when FILE_STORAGE_BACKEND=${backendMode}.`
+        : 'AWS_AUDIT_ARCHIVE_ROLE_ARN environment variable is required for audit archive operations.',
     );
   }
 

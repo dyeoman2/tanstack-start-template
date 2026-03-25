@@ -52,8 +52,18 @@ function lineNumberAt(source, index) {
 function main() {
   const failures = [];
   const files = listTsFiles(convexRoot);
-  const directMutationPattern =
-    /ctx\.db\.(delete|patch|replace)\([\s\S]{0,220}?['"`]auditLogs['"`][\s\S]{0,120}?\)/g;
+  const protectedTables = [
+    'auditLedgerEvents',
+    'auditLedgerState',
+    'auditLedgerCheckpoints',
+    'auditLedgerSeals',
+    'auditLedgerImmutableExports',
+  ];
+  const tablePattern = protectedTables.map((table) => `['"\`]${table}['"\`]`).join('|');
+  const directMutationPattern = new RegExp(
+    `ctx\\.db\\.(delete|patch|replace)\\([\\s\\S]{0,220}?(?:${tablePattern})[\\s\\S]{0,120}?\\)`,
+    'g',
+  );
 
   for (const filePath of files) {
     const source = readFileSync(filePath, 'utf8');
@@ -62,8 +72,15 @@ function main() {
     while (match) {
       const relativePath = path.relative(repoRoot, filePath);
       const line = lineNumberAt(source, match.index);
+      const table =
+        protectedTables.find(
+          (name) =>
+            match?.[0].includes(`'${name}'`) ||
+            match?.[0].includes(`"${name}"`) ||
+            match?.[0].includes(`\`${name}\``),
+        ) ?? 'protected audit ledger table';
       failures.push(
-        `${relativePath}:${line} direct runtime mutation of auditLogs detected via ctx.db.${match[1]}(...)`,
+        `${relativePath}:${line} direct runtime mutation of ${table} detected via ctx.db.${match[1]}(...)`,
       );
       match = directMutationPattern.exec(source);
     }

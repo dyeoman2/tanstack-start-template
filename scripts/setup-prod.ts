@@ -13,7 +13,8 @@
  */
 
 import { execSync, spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { convexDeployYes } from './lib/convex-cli';
@@ -299,6 +300,41 @@ function runInteractiveCommand(command: string, env?: NodeJS.ProcessEnv) {
   });
 }
 
+type ChildSetupSummary = {
+  changedLocally?: string[];
+  changedRemotely?: string[];
+  nextCommands?: string[];
+  readiness?: Record<string, string>;
+  warnings?: string[];
+};
+
+function appendUnique(target: string[], values?: string[]) {
+  for (const value of values ?? []) {
+    if (!target.includes(value)) {
+      target.push(value);
+    }
+  }
+}
+
+function runInteractiveCommandWithSummary(command: string, env?: NodeJS.ProcessEnv) {
+  const outputDir = mkdtempSync(path.join(os.tmpdir(), 'setup-prod-'));
+  const outputPath = path.join(outputDir, 'summary.json');
+  try {
+    runInteractiveCommand(command, {
+      ...env,
+      SCRIPT_OUTPUT_PATH: outputPath,
+    });
+    if (!existsSync(outputPath)) {
+      return null;
+    }
+    return JSON.parse(readFileSync(outputPath, 'utf8')) as ChildSetupSummary & {
+      schemaVersion?: number;
+    };
+  } finally {
+    rmSync(outputDir, { force: true, recursive: true });
+  }
+}
+
 function isNetlifyCliReady() {
   if (!commandOnPath('netlify')) {
     return false;
@@ -425,6 +461,7 @@ async function main() {
   const warnings: string[] = [];
   const readiness: Record<string, string> = {
     ai: 'pending',
+    auditArchive: 'skipped',
     convex: 'pending',
     email: 'pending',
     github: opts.skipGithubDeploy ? 'skipped' : 'pending',
@@ -492,6 +529,7 @@ async function main() {
           email: planEnvFromFile.RESEND_API_KEY?.trim() ? 'would configure' : 'optional / unknown',
           github: opts.skipGithubDeploy ? 'skipped' : 'would configure',
           netlify: commandOnPath('netlify') ? getNetlifyAuthStatus() : 'cli missing',
+          auditArchive: 'optional',
           storage: 'optional',
           dr: 'optional',
         },
@@ -801,12 +839,21 @@ async function main() {
 
     console.log('\n📦 Production storage setup');
     try {
-      runInteractiveCommand('pnpm run storage:setup:prod', {
+      const storageSummary = runInteractiveCommandWithSummary('pnpm run storage:setup:prod', {
         ...(convexInfo?.convexSiteUrl ? { CONVEX_SITE_URL: convexInfo.convexSiteUrl } : {}),
         ...(convexInfo?.convexUrl ? { VITE_CONVEX_URL: convexInfo.convexUrl } : {}),
       });
       changedRemotely.push('Ran guided production storage setup');
-      readiness.storage = 'configured in follow-up flow';
+      appendUnique(changedLocally, storageSummary?.changedLocally);
+      appendUnique(changedRemotely, storageSummary?.changedRemotely);
+      appendUnique(nextCommands, storageSummary?.nextCommands);
+      appendUnique(warnings, storageSummary?.warnings);
+      readiness.storage = storageSummary?.readiness?.storage ?? 'needs attention';
+      if (readiness.storage !== 'ready') {
+        warnings.push(
+          'Production storage setup completed, but storage is not fully ready yet. Review the child summary for missing broker/worker runtime URLs or skipped sync steps.',
+        );
+      }
     } catch {
       console.log(
         '⚠️  Production storage setup did not complete. You can rerun `pnpm run storage:setup:prod` later.',
@@ -816,6 +863,46 @@ async function main() {
     }
 
     console.log('\n📦 Optional production extras');
+    if (!opts.yes) {
+      const shouldSetupAuditArchive = await askYesNo(
+        'Configure immutable audit archive now?',
+        false,
+      );
+      if (shouldSetupAuditArchive) {
+        try {
+          const auditArchiveSummary = runInteractiveCommandWithSummary(
+            'pnpm run audit-archive:setup -- --prod',
+          );
+          changedRemotely.push('Ran guided audit archive setup');
+          appendUnique(changedLocally, auditArchiveSummary?.changedLocally);
+          appendUnique(changedRemotely, auditArchiveSummary?.changedRemotely);
+          appendUnique(nextCommands, auditArchiveSummary?.nextCommands);
+          appendUnique(warnings, auditArchiveSummary?.warnings);
+          readiness.auditArchive =
+            auditArchiveSummary?.readiness?.auditArchive ?? 'needs attention';
+          if (readiness.auditArchive !== 'ready') {
+            warnings.push(
+              'Audit archive setup ran, but immutable archive runtime outputs or Convex sync still need attention.',
+            );
+          }
+        } catch {
+          console.log(
+            '⚠️  Audit archive setup did not complete. You can rerun `pnpm run audit-archive:setup -- --prod` later.',
+          );
+          readiness.auditArchive = 'needs attention';
+          warnings.push('Audit archive setup was started but did not complete.');
+        }
+      } else {
+        console.log(
+          'ℹ️  Skipping immutable audit archive setup. Run `pnpm run audit-archive:setup -- --prod` any time.',
+        );
+        readiness.auditArchive = 'skipped';
+      }
+    } else {
+      console.log('ℹ️  Skipping optional audit archive setup in non-interactive mode.');
+      readiness.auditArchive = 'skipped';
+    }
+
     if (!opts.yes) {
       console.log('Disaster recovery setup is optional.');
       console.log(
@@ -848,10 +935,17 @@ async function main() {
       warnings.push('Disaster recovery setup was skipped in non-interactive mode.');
     }
 
-    if (!nextCommands.includes('pnpm run storage:setup:prod')) {
+    if (readiness.storage !== 'ready' && !nextCommands.includes('pnpm run storage:setup:prod')) {
       nextCommands.push('pnpm run storage:setup:prod');
     }
-    if (!nextCommands.includes('pnpm run dr:setup')) {
+    if (
+      readiness.auditArchive !== 'ready' &&
+      readiness.auditArchive !== 'skipped' &&
+      !nextCommands.includes('pnpm run audit-archive:setup -- --prod')
+    ) {
+      nextCommands.push('pnpm run audit-archive:setup -- --prod');
+    }
+    if (readiness.dr !== 'ready' && !nextCommands.includes('pnpm run dr:setup')) {
       nextCommands.push('pnpm run dr:setup');
     }
     const finalSummary = { changedLocally, changedRemotely, nextCommands, readiness, warnings };

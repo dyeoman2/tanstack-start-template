@@ -1,3 +1,5 @@
+import { writeFileSync } from 'node:fs';
+
 export function hasHelpFlag(argv = process.argv): boolean {
   return argv.includes('--help') || argv.includes('-h');
 }
@@ -61,10 +63,21 @@ export function printStatusSummary(
 
 export const SCRIPT_OUTPUT_SCHEMA_VERSION = 1;
 
+export function buildStructuredOutputText(payload: Record<string, unknown>) {
+  return `${JSON.stringify({ schemaVersion: SCRIPT_OUTPUT_SCHEMA_VERSION, ...payload }, null, 2)}\n`;
+}
+
+export function maybeWriteStructuredOutputArtifact(payload: Record<string, unknown>) {
+  const outputPath = process.env.SCRIPT_OUTPUT_PATH?.trim();
+  if (!outputPath) {
+    return;
+  }
+
+  writeFileSync(outputPath, buildStructuredOutputText(payload), 'utf8');
+}
+
 export function emitStructuredOutput(payload: Record<string, unknown>) {
-  process.stdout.write(
-    `${JSON.stringify({ schemaVersion: SCRIPT_OUTPUT_SCHEMA_VERSION, ...payload }, null, 2)}\n`,
-  );
+  process.stdout.write(buildStructuredOutputText(payload));
 }
 
 export function printFinalChangeSummary(input: {

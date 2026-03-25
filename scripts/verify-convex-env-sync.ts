@@ -10,6 +10,10 @@ import { join } from 'node:path';
 import { requirePnpmAndConvexCli } from './lib/cli-preflight';
 import { convexEnvList } from './lib/convex-cli';
 import { getConvexDeploymentEnvValue, parseConvexEnvListNames } from './lib/deploy-env-helpers';
+import {
+  findForbiddenStorageEnvNames,
+  LEGACY_FORBIDDEN_STORAGE_ENV_NAMES,
+} from './lib/storage-env-contract';
 
 const SYNC_KEYS = [
   'APP_NAME',
@@ -92,6 +96,31 @@ function main() {
 
   const envContent = readFileSync(envPath, 'utf8');
   const convexNames = new Set(parseConvexEnvListNames(convexList));
+  const forbiddenLocalStorageEnv = findForbiddenStorageEnvNames(
+    Object.fromEntries(
+      LEGACY_FORBIDDEN_STORAGE_ENV_NAMES.map((name) => [
+        name,
+        readOptionalEnvValue(envContent, name),
+      ]),
+    ),
+  );
+  const forbiddenConvexStorageEnv = findForbiddenStorageEnvNames(
+    Object.fromEntries([...convexNames].map((name) => [name, name])),
+  );
+
+  if (forbiddenLocalStorageEnv.length > 0 || forbiddenConvexStorageEnv.length > 0) {
+    if (forbiddenLocalStorageEnv.length > 0) {
+      console.log(
+        `❌ Forbidden legacy storage envs still exist in .env.local: ${forbiddenLocalStorageEnv.join(', ')}`,
+      );
+    }
+    if (forbiddenConvexStorageEnv.length > 0) {
+      console.log(
+        `❌ Forbidden legacy storage envs still exist on Convex dev: ${forbiddenConvexStorageEnv.join(', ')}`,
+      );
+    }
+    process.exit(1);
+  }
 
   const missingOnConvex: string[] = [];
   for (const key of SYNC_KEYS) {

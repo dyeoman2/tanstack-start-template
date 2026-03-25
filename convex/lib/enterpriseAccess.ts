@@ -243,6 +243,27 @@ export async function resolveOrganizationEnterpriseAccess(
   ctx: QueryCtx | MutationCtx,
   input: ResolveOrganizationEnterpriseAccessInput,
 ): Promise<OrganizationEnterpriseAccessResult> {
+  if (input.user.isSiteAdmin && isEnterpriseDataPlanePermission(input.permission)) {
+    const supportGrantState = await resolveSupportGrantState(ctx, {
+      organizationId: input.organizationId,
+      permission: input.permission,
+      siteAdminUserId: input.user.authUserId,
+    });
+
+    return buildEnterpriseAccessResult({
+      enterpriseAuthMode: input.policies.enterpriseAuthMode,
+      providerKey: input.policies.enterpriseProviderKey,
+      status:
+        supportGrantState.status === 'active'
+          ? 'satisfied'
+          : supportGrantState.status === 'expired'
+            ? 'support_grant_expired'
+            : 'support_grant_required',
+      supportGrant: supportGrantState.grant,
+      satisfactionPath: supportGrantState.status === 'active' ? 'support_grant' : null,
+    });
+  }
+
   if (input.policies.enterpriseAuthMode !== 'required') {
     return buildEnterpriseAccessResult({
       enterpriseAuthMode: input.policies.enterpriseAuthMode,
@@ -262,32 +283,11 @@ export async function resolveOrganizationEnterpriseAccess(
   }
 
   if (input.user.isSiteAdmin) {
-    if (!isEnterpriseDataPlanePermission(input.permission)) {
-      return buildEnterpriseAccessResult({
-        enterpriseAuthMode: input.policies.enterpriseAuthMode,
-        providerKey: input.policies.enterpriseProviderKey,
-        satisfactionPath: 'site_admin',
-        status: 'satisfied',
-      });
-    }
-
-    const supportGrantState = await resolveSupportGrantState(ctx, {
-      organizationId: input.organizationId,
-      permission: input.permission,
-      siteAdminUserId: input.user.authUserId,
-    });
-
     return buildEnterpriseAccessResult({
       enterpriseAuthMode: input.policies.enterpriseAuthMode,
       providerKey: input.policies.enterpriseProviderKey,
-      status:
-        supportGrantState.status === 'active'
-          ? 'satisfied'
-          : supportGrantState.status === 'expired'
-            ? 'support_grant_expired'
-            : 'support_grant_required',
-      supportGrant: supportGrantState.grant,
-      satisfactionPath: supportGrantState.status === 'active' ? 'support_grant' : null,
+      satisfactionPath: 'site_admin',
+      status: 'satisfied',
     });
   }
 

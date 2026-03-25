@@ -22,6 +22,7 @@ import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
+  getAppStepUpSearch,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
@@ -207,6 +208,7 @@ export function AccountSetupPage({
     isPending,
     requiresEmailVerification,
     requiresMfaSetup,
+    requiresMfaVerification,
     user,
   } = useAuth();
   const emailServiceStatus = useQuery(api.emails.checkEmailServiceConfigured, {});
@@ -402,6 +404,16 @@ export function AccountSetupPage({
   }
 
   if (isAuthenticated && !requiresEmailVerification && !requiresMfaSetup) {
+    if (requiresMfaVerification) {
+      return (
+        <Navigate
+          to="/step-up"
+          search={getAppStepUpSearch({ redirectTo: redirectTarget })}
+          replace
+        />
+      );
+    }
+
     return <Navigate to={redirectTarget} replace />;
   }
 

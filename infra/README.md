@@ -74,6 +74,18 @@ For guided DR setup across AWS, GitHub, Convex, and Netlify:
 pnpm run dr:setup
 ```
 
+For guided immutable audit archive setup:
+
+```bash
+pnpm run audit-archive:setup -- --prod
+```
+
+Destroy:
+
+```bash
+pnpm run audit-archive:destroy
+```
+
 ### Storage / malware scan
 
 Preview:
@@ -93,6 +105,7 @@ pnpm run storage:deploy:prod
 Destroy:
 
 ```bash
+pnpm run aws:destroy:all
 pnpm run storage:destroy:dev
 pnpm run storage:destroy:prod
 ```
@@ -231,6 +244,12 @@ per-capability storage role trust policies to those runtime roles.
 - `AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN`
 - optional `AWS_AUDIT_ARCHIVE_RETENTION_DAYS`
 
+The guided setup flow persists those deploy-time values into `.env.prod`, then captures these stack outputs after deploy when available:
+
+- `AuditArchiveBucketName`
+- `AuditArchiveBucketKeyArn`
+- `AuditArchiveRoleArn`
+
 ## Runtime/App Environment Contract
 
 The application storage platform expects these runtime variables when `FILE_STORAGE_BACKEND` is `s3-primary` or `s3-mirror`:
@@ -259,6 +278,43 @@ When immutable audit archiving is enabled, the application also expects:
 - `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`
 - `AWS_AUDIT_ARCHIVE_ROLE_ARN`
 - optional `AWS_AUDIT_ARCHIVE_PREFIX`
+
+`pnpm run setup:prod` now orchestrates:
+
+- guided production storage setup
+- optional immutable audit archive setup
+- optional disaster recovery setup
+
+and carries forward the child-script readiness/warning summaries so the top-level result reflects whether those AWS surfaces are actually configured.
+
+Repo-managed teardown uses the matching destroy scripts and includes legacy storage bucket cleanup for older `*-files-bucket` layouts that may survive stack deletion.
+
+Shared/account-level AWS resources remain out of scope for repo teardown, including:
+
+- `CDKToolkit`
+- the CDK asset bucket
+- AWS service-linked roles
+- unrelated account resources created outside this repo
+
+Successful repo-managed teardown means the repo leaves behind no AWS resources whose names still contain `tanstack-start-template`. The acceptance check is:
+
+```bash
+pnpm run aws:destroy:all -- --yes
+
+aws cloudformation list-stacks --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --query "StackSummaries[?contains(StackName, 'tanstack-start-template')].[StackName,StackStatus]" --output json
+aws s3api list-buckets --query "Buckets[?contains(Name, 'tanstack-start-template')].[Name]" --output json
+aws secretsmanager list-secrets --query "SecretList[?contains(Name, 'tanstack-start-template')].[Name]" --output json
+aws iam list-roles --query "Roles[?contains(RoleName, 'tanstack-start-template')].[RoleName]" --output json
+```
+
+Expected result after a successful repo-managed teardown:
+
+```json
+[]
+[]
+[]
+[]
+```
 
 Optional runtime tuning:
 

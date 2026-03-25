@@ -31,6 +31,7 @@ export interface AuthResult {
     mfaEnabled?: boolean;
     mfaRequired?: boolean;
     requiresMfaSetup?: boolean;
+    requiresMfaVerification?: boolean;
     recentStepUpAt?: number | null;
     recentStepUpValidUntil?: number | null;
   } | null;
@@ -39,6 +40,7 @@ export interface AuthResult {
   isSiteAdmin: boolean;
   requiresEmailVerification: boolean;
   requiresMfaSetup: boolean;
+  requiresMfaVerification: boolean;
   hasRecentStepUp: boolean;
   isImpersonating: boolean;
   impersonatedByUserId?: string;
@@ -66,6 +68,20 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   // Only use profile data when we should be fetching it
   const profile = shouldFetchProfile ? profileQuery : undefined;
   const sessionData: AuthSessionData | undefined = session?.session;
+  const sessionAuthMethod =
+    typeof sessionData === 'object' &&
+    sessionData !== null &&
+    'authMethod' in sessionData &&
+    typeof sessionData.authMethod === 'string'
+      ? sessionData.authMethod
+      : null;
+  const sessionMfaVerified =
+    typeof sessionData === 'object' &&
+    sessionData !== null &&
+    'mfaVerified' in sessionData &&
+    typeof sessionData.mfaVerified === 'boolean'
+      ? sessionData.mfaVerified
+      : false;
   const impersonatedByUserId =
     typeof sessionData?.impersonatedBy === 'string' && sessionData.impersonatedBy.length > 0
       ? sessionData.impersonatedBy
@@ -95,6 +111,14 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       ? typeof profile?.recentStepUpValidUntil === 'number' &&
         profile.recentStepUpValidUntil > Date.now()
       : false);
+  const requiresMfaVerification =
+    !!session?.user &&
+    shouldFetchProfile &&
+    (profile?.mfaRequired ?? false) &&
+    !requiresMfaSetup &&
+    !hasRecentStepUp &&
+    sessionAuthMethod !== 'passkey' &&
+    !sessionMfaVerified;
 
   // Memoize return value to prevent unnecessary re-renders
   return useMemo(
@@ -111,6 +135,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
             mfaEnabled: shouldFetchProfile ? (profile?.mfaEnabled ?? false) : false,
             mfaRequired: shouldFetchProfile ? (profile?.mfaRequired ?? true) : true,
             requiresMfaSetup,
+            requiresMfaVerification,
             recentStepUpAt: shouldFetchProfile ? (profile?.recentStepUpAt ?? null) : null,
             recentStepUpValidUntil: shouldFetchProfile
               ? (profile?.recentStepUpValidUntil ?? null)
@@ -122,6 +147,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       isSiteAdmin,
       requiresEmailVerification,
       requiresMfaSetup,
+      requiresMfaVerification,
       hasRecentStepUp,
       isImpersonating,
       impersonatedByUserId,
@@ -134,6 +160,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
       isSiteAdmin,
       requiresEmailVerification,
       requiresMfaSetup,
+      requiresMfaVerification,
       hasRecentStepUp,
       profile?.currentOrganization,
       profile?.mfaEnabled,

@@ -5,7 +5,10 @@ import { NotFound } from '~/components/NotFound';
 import { DashboardErrorBoundary } from '~/components/RouteErrorBoundaries';
 import { Spinner } from '~/components/ui/spinner';
 import { useAuth } from '~/features/auth/hooks/useAuth';
-import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
+import {
+  getAppStepUpSearch,
+  normalizeAppRedirectTarget,
+} from '~/features/auth/lib/account-setup-routing';
 
 export const Route = createFileRoute('/app')({
   pendingMs: 150,
@@ -19,8 +22,14 @@ export const Route = createFileRoute('/app')({
 function AppLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup, user } =
-    useAuth();
+  const {
+    isAuthenticated,
+    isPending,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    requiresMfaVerification,
+    user,
+  } = useAuth();
   const redirectRef = useRef(false);
   const redirectTarget = normalizeAppRedirectTarget(location.pathname);
 
@@ -44,8 +53,20 @@ function AppLayout() {
       return;
     }
 
+    if (isAuthenticated && requiresMfaVerification) {
+      redirectRef.current = true;
+      void navigate({
+        to: '/step-up',
+        search: getAppStepUpSearch({ redirectTo: redirectTarget }),
+        replace: true,
+      }).catch(() => {
+        redirectRef.current = false;
+      });
+      return;
+    }
+
     if (isAuthenticated) {
-      if (!requiresEmailVerification && !requiresMfaSetup) {
+      if (!requiresEmailVerification && !requiresMfaSetup && !requiresMfaVerification) {
         redirectRef.current = false;
       }
       return;
@@ -66,10 +87,17 @@ function AppLayout() {
     redirectTarget,
     requiresEmailVerification,
     requiresMfaSetup,
+    requiresMfaVerification,
     user?.email,
   ]);
 
-  if (isPending || !isAuthenticated || requiresEmailVerification || requiresMfaSetup) {
+  if (
+    isPending ||
+    !isAuthenticated ||
+    requiresEmailVerification ||
+    requiresMfaSetup ||
+    requiresMfaVerification
+  ) {
     return <AppLayoutSkeleton />;
   }
 

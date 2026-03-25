@@ -19,31 +19,7 @@ import {
 } from './lib/netlify-cli';
 import { parseConvexEnvList } from './lib/setup-dr';
 import { emitStructuredOutput, hasFlag, routeLogsToStderrWhenJson } from './lib/script-ux';
-
-const REQUIRED_S3_RUNTIME_ENV_NAMES = [
-  'AWS_REGION',
-  'AWS_S3_QUARANTINE_BUCKET',
-  'AWS_S3_CLEAN_BUCKET',
-  'AWS_S3_REJECTED_BUCKET',
-  'AWS_S3_MIRROR_BUCKET',
-  'AWS_S3_QUARANTINE_KMS_KEY_ARN',
-  'AWS_S3_CLEAN_KMS_KEY_ARN',
-  'AWS_S3_REJECTED_KMS_KEY_ARN',
-  'AWS_S3_MIRROR_KMS_KEY_ARN',
-  'AWS_FILE_SERVE_SIGNING_SECRET',
-  'STORAGE_BROKER_URL',
-  'STORAGE_BROKER_SHARED_SECRET',
-  'STORAGE_WORKER_URL',
-  'STORAGE_WORKER_SHARED_SECRET',
-  'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
-] as const;
-
-const REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES = [
-  'AWS_REGION',
-  'AWS_AUDIT_ARCHIVE_BUCKET',
-  'AWS_AUDIT_ARCHIVE_KMS_KEY_ARN',
-  'AWS_AUDIT_ARCHIVE_ROLE_ARN',
-] as const;
+import { checkAuditArchiveRuntimeEnv, checkStorageRuntimeEnv } from './lib/deploy-doctor-checks';
 
 const REQUIRED_NETLIFY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -94,81 +70,6 @@ function checkNetlifyHardening(
 
   console.log('✅ Netlify hardening headers pinned in netlify.toml');
   checks.push({ check: 'Netlify hardening headers', status: 'pass' });
-  return true;
-}
-
-function checkStorageRuntimeEnv(
-  label: string,
-  envVars: Record<string, string>,
-  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
-) {
-  const backend = (envVars.FILE_STORAGE_BACKEND ?? 'convex').trim() || 'convex';
-  if (backend !== 's3-primary' && backend !== 's3-mirror') {
-    console.log(`✅ S3 runtime env (${label}) not required for FILE_STORAGE_BACKEND=${backend}`);
-    checks.push({
-      check: `S3 runtime env (${label})`,
-      status: 'pass',
-      detail: `FILE_STORAGE_BACKEND=${backend}`,
-    });
-    return true;
-  }
-
-  const missing = REQUIRED_S3_RUNTIME_ENV_NAMES.filter((name) => !(envVars[name] ?? '').trim());
-  if (missing.length > 0) {
-    console.log(`❌ Missing S3 runtime env (${label}): ${missing.join(', ')}`);
-    checks.push({
-      check: `S3 runtime env (${label})`,
-      status: 'fail',
-      detail: `FILE_STORAGE_BACKEND=${backend}; missing ${missing.join(', ')}`,
-    });
-    return false;
-  }
-
-  console.log(`✅ S3 runtime env complete (${label})`);
-  checks.push({
-    check: `S3 runtime env (${label})`,
-    status: 'pass',
-    detail: `FILE_STORAGE_BACKEND=${backend}`,
-  });
-  return true;
-}
-
-function checkAuditArchiveRuntimeEnv(
-  label: string,
-  envVars: Record<string, string>,
-  checks: Array<{ check: string; status: 'pass' | 'warn' | 'fail'; detail?: string }>,
-) {
-  const configured = REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES.some((name) =>
-    (envVars[name] ?? '').trim(),
-  );
-  if (!configured) {
-    console.log(`✅ Audit archive runtime env (${label}) not configured`);
-    checks.push({
-      check: `Audit archive runtime env (${label})`,
-      status: 'pass',
-      detail: 'Audit archive disabled',
-    });
-    return true;
-  }
-
-  const missing = REQUIRED_AUDIT_ARCHIVE_RUNTIME_ENV_NAMES.filter(
-    (name) => !(envVars[name] ?? '').trim(),
-  );
-  if (missing.length > 0) {
-    console.log(`❌ Missing audit archive runtime env (${label}): ${missing.join(', ')}`);
-    checks.push({
-      check: `Audit archive runtime env (${label})`,
-      status: 'fail',
-      detail: `Missing ${missing.join(', ')}`,
-    });
-    return false;
-  }
-
-  console.log(`✅ Audit archive runtime env complete (${label})`);
-  checks.push({
-    check: `Audit archive runtime env (${label})`,
-    status: 'pass',
-  });
   return true;
 }
 

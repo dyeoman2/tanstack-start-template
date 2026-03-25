@@ -1,3 +1,5 @@
+import { CONVEX_STORAGE_RUNTIME_ENV_NAMES } from './storage-env-contract';
+
 export type DrHostnameStrategy = 'custom-domain' | 'provider-hostnames';
 
 export type DrSetupFlags = {
@@ -178,24 +180,7 @@ export function getStorageCoverageWarning(envVars: Record<string, string>): stri
 export function getRequiredStorageDrEnvKeys(envVars: Record<string, string>): string[] {
   const backend = (envVars.FILE_STORAGE_BACKEND ?? 'convex').trim();
   if (backend === 's3-primary' || backend === 's3-mirror') {
-    return [
-      'FILE_STORAGE_BACKEND',
-      'AWS_REGION',
-      'AWS_S3_QUARANTINE_BUCKET',
-      'AWS_S3_CLEAN_BUCKET',
-      'AWS_S3_REJECTED_BUCKET',
-      'AWS_S3_MIRROR_BUCKET',
-      'AWS_S3_QUARANTINE_KMS_KEY_ARN',
-      'AWS_S3_CLEAN_KMS_KEY_ARN',
-      'AWS_S3_REJECTED_KMS_KEY_ARN',
-      'AWS_S3_MIRROR_KMS_KEY_ARN',
-      'AWS_FILE_SERVE_SIGNING_SECRET',
-      'STORAGE_BROKER_URL',
-      'STORAGE_BROKER_SHARED_SECRET',
-      'STORAGE_WORKER_URL',
-      'STORAGE_WORKER_SHARED_SECRET',
-      'CONVEX_STORAGE_CALLBACK_SHARED_SECRET',
-    ];
+    return [...CONVEX_STORAGE_RUNTIME_ENV_NAMES];
   }
 
   return [];

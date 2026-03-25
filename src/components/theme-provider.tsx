@@ -10,6 +10,8 @@ export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
       defaultTheme="system"
       // Use class attribute for better compatibility
       attribute="class"
+      // Avoid documentElement.style mutations that violate our strict CSP.
+      enableColorScheme={false}
       storageKey="theme"
     >
       {children}

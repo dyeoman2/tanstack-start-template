@@ -23,6 +23,7 @@ import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import {
   getAccountSetupCallbackUrl,
+  getAppStepUpSearch,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
 import { useAuth } from '~/features/auth/hooks/useAuth';
@@ -92,7 +93,13 @@ function getGoogleSignInError(
 
 function LoginPage() {
   const { email, redirectTo, reset, verified } = Route.useSearch();
-  const { isAuthenticated, isPending, requiresEmailVerification, requiresMfaSetup } = useAuth();
+  const {
+    isAuthenticated,
+    isPending,
+    requiresEmailVerification,
+    requiresMfaSetup,
+    requiresMfaVerification,
+  } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
   const redirectTarget = normalizeAppRedirectTarget(redirectTo);
@@ -156,6 +163,16 @@ function LoginPage() {
             ...(redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}),
             ...(verified === 'success' ? { verified: 'success' } : {}),
           }}
+          replace
+        />
+      );
+    }
+
+    if (requiresMfaVerification) {
+      return (
+        <Navigate
+          to="/step-up"
+          search={getAppStepUpSearch({ redirectTo: redirectTarget })}
           replace
         />
       );

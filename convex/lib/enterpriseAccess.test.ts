@@ -242,61 +242,81 @@ describe('enterprise access', () => {
     expect(dataPlaneResult.status).toBe('missing_enterprise_session');
   });
 
-  it('requires a support grant for site-admin PHI access', async () => {
-    const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
-      membership: null,
-      organizationId: 'org-1',
-      permission: 'readThread',
-      policies: basePolicies,
-      user: {
-        ...baseUser,
-        authUserId: 'site-admin-1',
-        isSiteAdmin: true,
-      },
-    });
-
-    expect(result.allowed).toBe(false);
-    expect(result.status).toBe('support_grant_required');
-  });
-
-  it('allows site-admin read access with an active read-only grant', async () => {
-    const now = Date.now();
-    const result = await resolveOrganizationEnterpriseAccess(
-      createCtx({
-        grants: [
-          {
-            _id: 'grant-1',
-            organizationId: 'org-1',
-            siteAdminUserId: 'site-admin-1',
-            scope: 'read_only',
-            reason: 'Urgent support review',
-            grantedByUserId: 'owner-1',
-            createdAt: now,
-            expiresAt: now + 60_000,
-            revokedAt: null,
-            revokedByUserId: null,
+  it.each(['off', 'optional', 'required'] as const)(
+    'requires a support grant for site-admin data-plane access when enterpriseAuthMode=%s',
+    async (enterpriseAuthMode) => {
+      for (const permission of [
+        'readThread',
+        'writeThread',
+        'readAttachment',
+        'deleteAttachment',
+        'issueAttachmentAccessUrl',
+      ] as const) {
+        const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
+          membership: null,
+          organizationId: 'org-1',
+          permission,
+          policies: {
+            ...basePolicies,
+            enterpriseAuthMode,
           },
-        ],
-      }),
-      {
-        membership: null,
-        organizationId: 'org-1',
-        permission: 'readThread',
-        policies: basePolicies,
-        user: {
-          ...baseUser,
-          authUserId: 'site-admin-1',
-          isSiteAdmin: true,
-        },
-      },
-    );
+          user: {
+            ...baseUser,
+            authUserId: 'site-admin-1',
+            isSiteAdmin: true,
+          },
+        });
 
-    expect(result.allowed).toBe(true);
-    expect(result.satisfactionPath).toBe('support_grant');
-    expect(result.status).toBe('satisfied');
-    expect(result.supportGrant?.id).toBe('grant-1');
-    expect(result.supportGrant?.scope).toBe('read_only');
-  });
+        expect(result.allowed).toBe(false);
+        expect(result.status).toBe('support_grant_required');
+      }
+    },
+  );
+
+  it.each(['off', 'optional', 'required'] as const)(
+    'allows site-admin read access with an active read-only grant when enterpriseAuthMode=%s',
+    async (enterpriseAuthMode) => {
+      const now = Date.now();
+      const result = await resolveOrganizationEnterpriseAccess(
+        createCtx({
+          grants: [
+            {
+              _id: 'grant-1',
+              organizationId: 'org-1',
+              siteAdminUserId: 'site-admin-1',
+              scope: 'read_only',
+              reason: 'Urgent support review',
+              grantedByUserId: 'owner-1',
+              createdAt: now,
+              expiresAt: now + 60_000,
+              revokedAt: null,
+              revokedByUserId: null,
+            },
+          ],
+        }),
+        {
+          membership: null,
+          organizationId: 'org-1',
+          permission: 'readThread',
+          policies: {
+            ...basePolicies,
+            enterpriseAuthMode,
+          },
+          user: {
+            ...baseUser,
+            authUserId: 'site-admin-1',
+            isSiteAdmin: true,
+          },
+        },
+      );
+
+      expect(result.allowed).toBe(true);
+      expect(result.satisfactionPath).toBe('support_grant');
+      expect(result.status).toBe('satisfied');
+      expect(result.supportGrant?.id).toBe('grant-1');
+      expect(result.supportGrant?.scope).toBe('read_only');
+    },
+  );
 
   it('marks site-admin non-data-plane access as a separate satisfaction path', async () => {
     const result = await resolveOrganizationEnterpriseAccess(createCtx(), {
@@ -320,6 +340,49 @@ describe('enterprise access', () => {
     expect(doesSupportGrantCoverPermission('read_only', 'readThread')).toBe(true);
     expect(doesSupportGrantCoverPermission('read_only', 'writeThread')).toBe(false);
   });
+
+  it.each(['off', 'optional', 'required'] as const)(
+    'allows site-admin write access only with a read-write grant when enterpriseAuthMode=%s',
+    async (enterpriseAuthMode) => {
+      const now = Date.now();
+      const result = await resolveOrganizationEnterpriseAccess(
+        createCtx({
+          grants: [
+            {
+              _id: 'grant-1',
+              organizationId: 'org-1',
+              siteAdminUserId: 'site-admin-1',
+              scope: 'read_write',
+              reason: 'Escalated investigation',
+              grantedByUserId: 'owner-1',
+              createdAt: now,
+              expiresAt: now + 60_000,
+              revokedAt: null,
+              revokedByUserId: null,
+            },
+          ],
+        }),
+        {
+          membership: null,
+          organizationId: 'org-1',
+          permission: 'writeThread',
+          policies: {
+            ...basePolicies,
+            enterpriseAuthMode,
+          },
+          user: {
+            ...baseUser,
+            authUserId: 'site-admin-1',
+            isSiteAdmin: true,
+          },
+        },
+      );
+
+      expect(result.allowed).toBe(true);
+      expect(result.status).toBe('satisfied');
+      expect(result.supportGrant?.scope).toBe('read_write');
+    },
+  );
 
   it('marks expired site-admin grants distinctly', async () => {
     const now = Date.now();

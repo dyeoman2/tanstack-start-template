@@ -1,4 +1,5 @@
 import { ensureNetlifyOk, runNetlify } from './netlify-cli';
+import { NETLIFY_RUNTIME_ENV_NAMES } from './storage-env-contract';
 
 export type NetlifyEnvSyncInput = {
   authToken: string;
@@ -52,11 +53,17 @@ export function syncNetlifyProductionRuntimeAndBuildVars(
       : (input.contexts ?? DEFAULT_CONTEXTS);
 
   for (const context of contexts) {
-    netlifyEnvSet({
-      ...input,
-      context,
-      key: 'VITE_CONVEX_URL',
-      value: input.viteConvexUrl,
-    });
+    const values = {
+      VITE_CONVEX_URL: input.viteConvexUrl,
+    } satisfies Record<(typeof NETLIFY_RUNTIME_ENV_NAMES)[number], string>;
+
+    for (const key of NETLIFY_RUNTIME_ENV_NAMES) {
+      netlifyEnvSet({
+        ...input,
+        context,
+        key,
+        value: values[key],
+      });
+    }
   }
 }

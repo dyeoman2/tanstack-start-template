@@ -17,6 +17,10 @@ const AUTH_ROUTES = new Set([
   '/verify-email-pending',
 ]);
 
+const routerDevtoolsEnabled =
+  import.meta.env.DEV &&
+  String(import.meta.env.VITE_ENABLE_ROUTER_DEVTOOLS ?? '').toLowerCase() === 'true';
+
 /**
  * Application shell component following TanStack Start best practices
  * Handles the main app layout with navigation and content area
@@ -75,8 +79,9 @@ export function AppShell() {
           </>
         )}
       </div>
-      {import.meta.env.DEV && (
+      {routerDevtoolsEnabled && (
         <ClientOnly>
+          {/* TanStack Router Devtools currently rely on inline styles, which our strict CSP blocks. */}
           <TanStackRouterDevtools position="bottom-right" />
         </ClientOnly>
       )}

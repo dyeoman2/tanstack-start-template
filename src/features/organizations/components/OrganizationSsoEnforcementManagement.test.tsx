@@ -123,6 +123,11 @@ describe('OrganizationSsoEnforcementManagement', () => {
 
     expect(screen.getByText('Emergency password fallback disabled')).toBeInTheDocument();
     expect(
+      screen.getByText(
+        'Provider support access to tenant PHI always requires an owner-issued temporary grant before any tenant data-plane paths can be opened.',
+      ),
+    ).toBeInTheDocument();
+    expect(
       screen.queryByRole('switch', { name: 'Keep Emergency Admin Sign-In Enabled' }),
     ).not.toBeInTheDocument();
   });
@@ -130,6 +135,11 @@ describe('OrganizationSsoEnforcementManagement', () => {
   it('hides the emergency admin sign-in switch unless SSO is required', () => {
     render(<OrganizationSsoEnforcementManagement slug="cottage-hospital" />);
 
+    expect(
+      screen.getByText(
+        'Provider support access to tenant PHI always requires an owner-issued temporary grant before any tenant data-plane paths can be opened.',
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole('switch', { name: 'Keep Emergency Admin Sign-In Enabled' }),
     ).not.toBeInTheDocument();
