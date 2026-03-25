@@ -73,8 +73,6 @@
     "setup:github-deploy": "tsx scripts/setup-github-deploy.ts",
     "storage:setup": "tsx scripts/setup-storage.ts",
     "storage:setup:prod": "tsx scripts/setup-storage-prod.ts",
-    "storage:backfill:clean-prefixes": "tsx scripts/backfill-s3-primary-clean-prefixes.ts",
-    "storage:backfill:mirror-prefixes": "tsx scripts/backfill-s3-mirror-prefixes.ts",
     "setup:e2e": "tsx scripts/setup-e2e.ts",
     "setup:convex": "tsx scripts/setup-convex.ts",
     "convex:env:hygiene": "tsx scripts/convex-env-hygiene.ts",

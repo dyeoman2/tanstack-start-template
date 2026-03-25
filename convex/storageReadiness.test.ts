@@ -76,23 +76,6 @@ describe('getStorageReadiness', () => {
     });
   });
 
-  it('fails closed for legacy clean canonical objects by default', () => {
-    expect(
-      getStorageReadiness(
-        createLifecycle({
-          canonicalBucket: 'bucket',
-          canonicalKey: 'org/acme/report/file-legacy',
-          malwareStatus: 'CLEAN',
-          storagePlacement: undefined,
-        }),
-      ),
-    ).toEqual({
-      message: 'Stored file is pending malware scan.',
-      readable: false,
-      reason: 'pending_scan',
-    });
-  });
-
   it('fails closed when a promoted row is missing its canonical clean object', () => {
     expect(
       getStorageReadiness(

@@ -75,17 +75,6 @@ pnpm run storage:deploy:dev
 pnpm run storage:deploy:prod
 ```
 
-Legacy `s3-primary` clean-prefix backfill:
-
-```bash
-pnpm run storage:backfill:clean-prefixes
-pnpm run storage:backfill:clean-prefixes -- --apply
-pnpm run storage:backfill:clean-prefixes -- --apply --prod
-pnpm run storage:backfill:mirror-prefixes
-pnpm run storage:backfill:mirror-prefixes -- --apply
-pnpm run storage:backfill:mirror-prefixes -- --apply --prod
-```
-
 Destroy:
 
 ```bash
@@ -166,11 +155,6 @@ The storage wrapper takes an explicit stage via `--stage dev|prod`, then derives
 - `AWS_S3_FILES_BUCKET`
 - `AWS_MALWARE_WEBHOOK_SHARED_SECRET`
 - optional `AWS_PROFILE`
-
-Legacy-prefix access is no longer a deploy-time toggle. Run both backfills to zero before the final app + infra redeploy:
-
-- `pnpm run storage:backfill:clean-prefixes -- --apply`
-- `pnpm run storage:backfill:mirror-prefixes -- --apply`
 
 Those are transformed into the CDK app inputs:
 
