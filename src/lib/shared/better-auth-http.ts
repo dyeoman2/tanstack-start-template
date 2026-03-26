@@ -210,9 +210,12 @@ export async function buildBetterAuthProxyHeaders(
 export async function buildTrustedConvexAuthRequest(request: Request): Promise<Request> {
   const headers = copyAllowedAuthHeaders(request.headers);
   const verifiedProxyIp = await resolveVerifiedProxyIp(request);
-  const forwardedProxyIp = resolveForwardedClientIp(request.headers);
+  const isBetterAuthRequest = new URL(request.url).pathname.startsWith('/api/auth/');
+  const forwardedProxyIp = isBetterAuthRequest ? resolveForwardedClientIp(request.headers) : null;
   const canonicalClientIp =
-    verifiedProxyIp ?? forwardedProxyIp ?? (isDevelopmentOrTestDeployment() ? LOCALHOST_IP : null);
+    verifiedProxyIp ??
+    forwardedProxyIp ??
+    (isBetterAuthRequest && isDevelopmentOrTestDeployment() ? LOCALHOST_IP : null);
 
   if (canonicalClientIp) {
     headers.set(AUTH_PROXY_IP_HEADER, canonicalClientIp);
