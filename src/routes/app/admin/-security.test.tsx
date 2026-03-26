@@ -19,6 +19,7 @@ const {
   useActionMock,
   useMutationMock,
   useConvexMock,
+  useAuthMock,
   showToastMock,
   exportEvidenceReportServerFnMock,
   generateEvidenceReportServerFnMock,
@@ -33,6 +34,7 @@ const {
   useActionMock: vi.fn(),
   useMutationMock: vi.fn(),
   useConvexMock: vi.fn(),
+  useAuthMock: vi.fn(),
   showToastMock: vi.fn(),
   exportEvidenceReportServerFnMock: vi.fn(),
   generateEvidenceReportServerFnMock: vi.fn(),
@@ -55,6 +57,10 @@ vi.mock('convex/react', () => ({
   useAction: (...args: unknown[]) => useActionMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
   useConvex: () => useConvexMock(),
+}));
+
+vi.mock('~/features/auth/hooks/useAuth', () => ({
+  useAuth: () => useAuthMock(),
 }));
 
 vi.mock('~/components/data-table', () => ({
@@ -133,6 +139,7 @@ type SearchState = {
     | 'investigating'
     | 'pending_review'
     | 'resolved';
+  findingFollowUp?: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up';
   findingSearch?: string;
   findingSeverity?: 'all' | 'critical' | 'warning' | 'info';
   findingStatus?: 'all' | 'open' | 'resolved';
@@ -175,6 +182,7 @@ type SearchState = {
 const defaultSearch: SearchState = {
   tab: 'reports',
   findingDisposition: 'all',
+  findingFollowUp: 'all',
   findingSearch: '',
   findingSeverity: 'all',
   findingStatus: 'all',
@@ -558,6 +566,9 @@ function buildSecurityFinding(overrides?: Partial<Record<string, unknown>>) {
     findingKey: 'audit_integrity_failures',
     findingType: 'audit_integrity_failures',
     firstObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
+    activeFollowUp: null,
+    followUpOverdue: false,
+    hasOpenFollowUp: false,
     internalNotes: null,
     lastObservedAt: Date.parse('2026-03-18T08:00:00.000Z'),
     latestLinkedReviewRun: null,
@@ -718,8 +729,14 @@ function buildFindingsBoard(args: { findings?: unknown[] }) {
   return {
     findings,
     summary: {
+      activeFollowUpCount: (findings as Array<{ hasOpenFollowUp?: boolean }>).filter(
+        (finding) => finding.hasOpenFollowUp,
+      ).length,
       openCount: (findings as Array<{ status: string }>).filter(
         (finding) => finding.status === 'open',
+      ).length,
+      overdueFollowUpCount: (findings as Array<{ followUpOverdue?: boolean }>).filter(
+        (finding) => finding.followUpOverdue,
       ).length,
       reviewPendingCount: (findings as Array<{ disposition: string }>).filter(
         (finding) => finding.disposition === 'pending_review',
@@ -846,6 +863,7 @@ function renderRoute() {
         <AdminSecurityFindingsRoute
           search={{
             findingDisposition: search.findingDisposition ?? 'all',
+            findingFollowUp: search.findingFollowUp ?? 'all',
             findingSearch: search.findingSearch ?? '',
             findingSeverity: search.findingSeverity ?? 'all',
             findingStatus: search.findingStatus ?? 'all',
@@ -964,6 +982,7 @@ describe('Admin security route', () => {
     useMutationMock.mockReset();
     useQueryMock.mockReset();
     useConvexMock.mockReset();
+    useAuthMock.mockReset();
     exportEvidenceReportServerFnMock.mockReset();
     generateEvidenceReportServerFnMock.mockReset();
     reviewEvidenceReportServerFnMock.mockReset();
@@ -971,6 +990,25 @@ describe('Admin security route', () => {
     finalizeReviewRunServerFnMock.mockReset();
     useConvexMock.mockReturnValue({
       query: vi.fn(),
+    });
+    useAuthMock.mockReturnValue({
+      error: null,
+      hasRecentStepUp: false,
+      hasSession: true,
+      impersonatedByUserId: undefined,
+      isAuthenticated: true,
+      isImpersonating: false,
+      isPending: false,
+      isSiteAdmin: true,
+      requiresEmailVerification: false,
+      requiresMfaSetup: false,
+      requiresMfaVerification: false,
+      user: {
+        email: 'admin@example.com',
+        id: 'admin-user-1',
+        isSiteAdmin: true,
+        role: 'admin',
+      },
     });
     useLocationMock.mockReturnValue({ pathname: '/app/admin/security/reports' });
   });
@@ -1460,6 +1498,60 @@ describe('Admin security route', () => {
       },
       to: '/app/admin/security/reviews',
     });
+  });
+
+  it('shows tracked follow-up state on retained findings', () => {
+    useSearchMock.mockReturnValue({
+      ...defaultSearch,
+      tab: 'findings',
+    });
+
+    mockSecurityQueries({
+      auditReadiness: buildAuditReadiness(),
+      controls: [buildControl()],
+      evidenceReports: [buildEvidenceReport()],
+      findings: [
+        buildSecurityFinding({
+          activeFollowUp: {
+            assigneeDisplay: 'Admin User',
+            assigneeUserId: 'admin-user-1',
+            controlLinks: [
+              {
+                internalControlId: 'CTRL-AU-006',
+                itemId: 'provider-review-procedure',
+                itemLabel: 'Provider review procedure',
+                nist80053Id: 'AU-6',
+                title: 'Audit Review Procedure',
+              },
+            ],
+            dueAt: Date.parse('2026-03-10T00:00:00.000Z'),
+            id: 'follow-up-1',
+            isOverdue: true,
+            latestNote: 'Waiting on evidence review',
+            openedAt: Date.parse('2026-03-01T00:00:00.000Z'),
+            resolutionNote: null,
+            resolvedAt: null,
+            reviewedEvidence: [],
+            reviewedEvidenceCount: 0,
+            reviewRunId: null,
+            reviewTaskId: null,
+            status: 'open',
+            summary: 'Track remediation through closure evidence.',
+            title: 'Audit integrity remediation',
+            updatedAt: Date.parse('2026-03-08T00:00:00.000Z'),
+          },
+          followUpOverdue: true,
+          hasOpenFollowUp: true,
+        }),
+      ],
+    });
+    mockSecurityActions({});
+    mockSecurityMutations({});
+
+    renderRoute();
+
+    expect(screen.getByText(/open · overdue/i)).toBeInTheDocument();
+    expect(screen.getByText('Active follow-up')).toBeInTheDocument();
   });
 
   it('lets admins record partial evidence sufficiency from the control workspace', async () => {

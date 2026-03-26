@@ -222,6 +222,7 @@ async function patchSecurityScopeDefaults(
     | 'securityControlChecklistItems'
     | 'securityControlEvidence'
     | 'securityControlEvidenceActivity'
+    | 'followUpActions'
     | 'reviewRuns'
     | 'reviewTasks'
     | 'reviewTaskResults'

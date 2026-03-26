@@ -112,7 +112,7 @@ function buildSettingsResponse(
       invitePolicy: 'owners_admins',
       verifiedDomainsOnly: false,
       memberCap: null,
-      mfaRequired: false,
+      mfaRequired: true,
       enterpriseAuthMode: overrides?.enterpriseAuthMode ?? 'required',
       enterpriseProviderKey: 'google-workspace',
       enterpriseProtocol: 'oidc',

@@ -111,7 +111,7 @@ const directoryResponse = {
     invitePolicy: 'owners_admins' as const,
     verifiedDomainsOnly: false,
     memberCap: null,
-    mfaRequired: false,
+    mfaRequired: true,
   },
   viewerRole: 'site-admin' as const,
   rows: [

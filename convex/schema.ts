@@ -483,7 +483,7 @@ export default defineSchema({
     personaId: v.optional(v.id('aiPersonas')),
     model: v.optional(v.string()),
     titleManuallyEdited: v.boolean(),
-    summary: v.optional(v.string()),
+    summary: v.optional(v.union(v.string(), v.null())),
     summaryUpdatedAt: v.optional(v.number()),
     summaryThroughOrder: v.optional(v.number()),
     deletedAt: v.optional(v.number()),
@@ -1045,6 +1045,7 @@ export default defineSchema({
         v.literal('security_control_evidence'),
         v.literal('evidence_report'),
         v.literal('security_finding'),
+        v.literal('follow_up_action'),
         v.literal('backup_verification_report'),
         v.literal('external_document'),
         v.literal('review_task'),
@@ -1071,7 +1072,11 @@ export default defineSchema({
   })
     .index('by_internal_control_id', ['internalControlId'])
     .index('by_internal_control_id_and_item_id', ['internalControlId', 'itemId'])
-    .index('by_review_origin_review_task_id', ['reviewOriginReviewTaskId']),
+    .index('by_review_origin_review_task_id', ['reviewOriginReviewTaskId'])
+    .index('by_review_origin_source_type_and_source_id', [
+      'reviewOriginSourceType',
+      'reviewOriginSourceId',
+    ]),
 
   securityControlEvidenceActivity: defineTable({
     scopeType: v.optional(v.literal('provider_global')),
@@ -1163,6 +1168,43 @@ export default defineSchema({
   })
     .index('by_vendor_key', ['vendorKey'])
     .index('by_internal_control_id', ['internalControlId']),
+
+  followUpActions: defineTable({
+    scopeType: v.optional(v.literal('provider_global')),
+    scopeId: v.optional(v.string()),
+    findingId: v.id('securityFindings'),
+    findingKey: v.string(),
+    reviewRunId: v.optional(v.id('reviewRuns')),
+    reviewTaskId: v.optional(v.id('reviewTasks')),
+    title: v.string(),
+    summary: v.optional(v.string()),
+    assigneeUserId: v.optional(v.union(v.string(), v.null())),
+    dueAt: v.optional(v.union(v.number(), v.null())),
+    status: v.union(
+      v.literal('open'),
+      v.literal('in_progress'),
+      v.literal('blocked'),
+      v.literal('resolved'),
+    ),
+    controlLinks: v.array(
+      v.object({
+        internalControlId: v.string(),
+        itemId: v.string(),
+      }),
+    ),
+    latestNote: v.optional(v.union(v.string(), v.null())),
+    resolutionNote: v.optional(v.union(v.string(), v.null())),
+    openedAt: v.number(),
+    openedByUserId: v.string(),
+    updatedAt: v.number(),
+    updatedByUserId: v.string(),
+    resolvedAt: v.optional(v.union(v.number(), v.null())),
+    resolvedByUserId: v.optional(v.union(v.string(), v.null())),
+  })
+    .index('by_finding_key_and_opened_at', ['findingKey', 'openedAt'])
+    .index('by_finding_id_and_opened_at', ['findingId', 'openedAt'])
+    .index('by_status_and_updated_at', ['status', 'updatedAt'])
+    .index('by_review_run_id', ['reviewRunId']),
 
   reviewRuns: defineTable({
     scopeType: v.optional(v.literal('provider_global')),

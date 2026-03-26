@@ -160,7 +160,9 @@ export const getSecurityFindingsBoard = query({
     await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const findings = await listSecurityFindingsHandler(ctx);
     const summary = {
+      activeFollowUpCount: findings.filter((finding) => finding.hasOpenFollowUp).length,
       openCount: findings.filter((finding) => finding.status === 'open').length,
+      overdueFollowUpCount: findings.filter((finding) => finding.followUpOverdue).length,
       reviewPendingCount: findings.filter((finding) => finding.disposition === 'pending_review')
         .length,
       totalCount: findings.length,

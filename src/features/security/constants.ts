@@ -41,6 +41,12 @@ export const CONTROL_RESPONSIBILITY_FILTER_VALUES = [
 
 export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'missing'] as const;
 export const FINDING_STATUS_FILTER_VALUES = ['all', 'open', 'resolved'] as const;
+export const FINDING_FOLLOW_UP_FILTER_VALUES = [
+  'all',
+  'has_follow_up',
+  'no_follow_up',
+  'overdue_follow_up',
+] as const;
 export const FINDING_TYPE_FILTER_VALUES = [
   'all',
   'audit_archive_health',

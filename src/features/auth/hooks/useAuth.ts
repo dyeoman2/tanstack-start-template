@@ -114,7 +114,7 @@ export function useAuth(options: AuthOptions = {}): AuthResult {
   const requiresMfaVerification =
     !!session?.user &&
     shouldFetchProfile &&
-    (profile?.mfaRequired ?? false) &&
+    (profile?.mfaRequired ?? true) &&
     !requiresMfaSetup &&
     !hasRecentStepUp &&
     sessionAuthMethod !== 'passkey' &&

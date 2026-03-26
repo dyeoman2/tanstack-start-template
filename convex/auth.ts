@@ -1998,6 +1998,23 @@ export const createAuth = (
         userId,
       });
     },
+    recordAccountLockout: async ({ email, reason, userId }) => {
+      await recordAuditEvent({
+        eventType: 'account_locked_out',
+        identifier: email,
+        metadata: JSON.stringify({
+          reason,
+        }),
+        outcome: 'failure',
+        resourceId: userId ?? email,
+        resourceLabel: email,
+        resourceType: 'user_account',
+        severity: 'warning',
+        sourceSurface: 'better_auth/sign-in/email',
+        targetUserId: userId,
+        userId,
+      });
+    },
     recordAdminStepUpChallenge: async ({
       ipAddress,
       path,

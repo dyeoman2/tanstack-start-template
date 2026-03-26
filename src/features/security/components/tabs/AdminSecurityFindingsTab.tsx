@@ -74,8 +74,10 @@ function getFindingDispositionBadgeVariant(
 }
 
 export function AdminSecurityFindingsTab(props: {
+  busyAction: string | null;
   busyFindingKey: string | null;
   findingDispositionFilter: 'all' | SecurityFindingListItem['disposition'];
+  findingFollowUpFilter: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up';
   findingSearch: string;
   findingSeverityFilter: 'all' | SecurityFindingListItem['severity'];
   findingStatusFilter: 'all' | SecurityFindingListItem['status'];
@@ -88,13 +90,18 @@ export function AdminSecurityFindingsTab(props: {
   findingNotes: Record<string, string>;
   findings: SecurityFindingListItem[] | undefined;
   summary: {
+    activeFollowUpCount: number | undefined;
     openCount: number | undefined;
+    overdueFollowUpCount: number | undefined;
     reviewPendingCount: number | undefined;
     totalCount: number | undefined;
   };
   navigateToControl: (internalControlId: string) => void;
   navigateToReviews: (selectedReviewRun?: string) => void;
   onChangeFindingDispositionFilter: (value: 'all' | SecurityFindingListItem['disposition']) => void;
+  onChangeFindingFollowUpFilter: (
+    value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
+  ) => void;
   onChangeFindingSearch: (value: string) => void;
   onChangeFindingSeverityFilter: (value: 'all' | SecurityFindingListItem['severity']) => void;
   onChangeFindingStatusFilter: (value: 'all' | SecurityFindingListItem['status']) => void;
@@ -117,7 +124,7 @@ export function AdminSecurityFindingsTab(props: {
         description="Open gaps, disposition notes, and review follow-up entry points for provider security posture."
       />
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <AdminSecuritySummaryCard
           title="Tracked findings"
           description="Items currently in review scope."
@@ -133,9 +140,14 @@ export function AdminSecurityFindingsTab(props: {
           description="Findings without a recorded decision."
           value={renderCardStatValue(props.summary.reviewPendingCount)}
         />
+        <AdminSecuritySummaryCard
+          title="Active follow-up"
+          description="Findings with tracked remediation."
+          value={renderCardStatValue(props.summary.activeFollowUpCount)}
+        />
       </div>
 
-      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,0.7fr))]">
+      <div className="grid gap-3 rounded-xl border bg-muted/20 p-3 lg:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,0.7fr))]">
         <Input
           value={props.findingSearch}
           onChange={(event) => {
@@ -192,6 +204,27 @@ export function AdminSecurityFindingsTab(props: {
             <SelectItem value="critical">Critical</SelectItem>
             <SelectItem value="warning">Warning</SelectItem>
             <SelectItem value="info">Info</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select
+          value={props.findingFollowUpFilter}
+          onValueChange={(
+            value: 'all' | 'has_follow_up' | 'no_follow_up' | 'overdue_follow_up',
+          ) => {
+            props.onChangeFindingFollowUpFilter(value);
+          }}
+        >
+          <SelectTrigger
+            aria-label="Filter findings by tracked follow-up"
+            className="bg-background"
+          >
+            <SelectValue placeholder="All follow-up states" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All follow-up states</SelectItem>
+            <SelectItem value="has_follow_up">Has follow-up</SelectItem>
+            <SelectItem value="no_follow_up">No follow-up</SelectItem>
+            <SelectItem value="overdue_follow_up">Overdue follow-up</SelectItem>
           </SelectContent>
         </Select>
         <Select
@@ -293,9 +326,9 @@ export function AdminSecurityFindingsTab(props: {
                               Follow-up
                             </p>
                             <p className="mt-1 text-foreground">
-                              {finding.latestLinkedReviewRun
-                                ? finding.latestLinkedReviewRun.title
-                                : 'Not linked'}
+                              {finding.activeFollowUp
+                                ? `${finding.activeFollowUp.status.replaceAll('_', ' ')}${finding.followUpOverdue ? ' · overdue' : ''}`
+                                : 'Not tracked'}
                             </p>
                           </div>
                         </div>
@@ -418,9 +451,18 @@ export function AdminSecurityFindingsTab(props: {
                           <p className="text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
                             Actions
                           </p>
+                          {finding.activeFollowUp ? (
+                            <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
+                              Tracked follow-up:{' '}
+                              <span className="font-medium text-foreground">
+                                {finding.activeFollowUp.title}
+                              </span>{' '}
+                              ({finding.activeFollowUp.status.replaceAll('_', ' ')})
+                            </div>
+                          ) : null}
                           {finding.latestLinkedReviewRun ? (
                             <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-                              Linked follow-up:{' '}
+                              Linked review run:{' '}
                               <span className="font-medium text-foreground">
                                 {finding.latestLinkedReviewRun.title}
                               </span>{' '}
@@ -444,7 +486,7 @@ export function AdminSecurityFindingsTab(props: {
                             <Button
                               type="button"
                               variant="outline"
-                              disabled={props.busyFindingKey !== null}
+                              disabled={props.busyFindingKey !== null || props.busyAction !== null}
                               onClick={() => {
                                 if (finding.latestLinkedReviewRun) {
                                   props.navigateToReviews(finding.latestLinkedReviewRun.id);
@@ -456,7 +498,7 @@ export function AdminSecurityFindingsTab(props: {
                               {props.busyFindingKey === finding.findingKey
                                 ? 'Opening…'
                                 : finding.latestLinkedReviewRun
-                                  ? 'Open linked follow-up'
+                                  ? 'Open linked review run'
                                   : 'Open follow-up in reviews'}
                             </Button>
                             <Button

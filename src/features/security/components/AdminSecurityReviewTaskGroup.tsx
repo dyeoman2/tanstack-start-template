@@ -175,6 +175,13 @@ export function AdminSecurityReviewTaskGroup(props: {
                             Undispositioned open findings:{' '}
                             {task.findingsSummary.undispositionedCount}
                           </p>
+                          <p>
+                            Active tracked follow-up: {task.findingsSummary.activeFollowUpCount}
+                            {' · '}Overdue follow-up: {task.findingsSummary.overdueFollowUpCount}
+                          </p>
+                          <p>
+                            Blocking critical findings: {task.findingsSummary.blockingCriticalCount}
+                          </p>
                         </div>
                       </div>
                     ) : null}

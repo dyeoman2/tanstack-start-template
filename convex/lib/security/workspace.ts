@@ -2,6 +2,7 @@ import type { Id } from '../../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
 import { getVerifiedCurrentSiteAdminUserOrThrow } from '../../auth/access';
+import { throwConvexError } from '../../auth/errors';
 import {
   getSecurityFindingControlLinks,
   getSecurityScopeFields,
@@ -9,6 +10,7 @@ import {
   upsertSecurityRelationship,
 } from './core';
 import {
+  buildActorDisplayMap,
   buildCurrentSecurityFindings,
   getActorDisplayName,
   getSeededEvidenceEntry,
@@ -20,6 +22,19 @@ const securityFindingRelatedControlMetadataById = new Map(
   ACTIVE_CONTROL_REGISTER.controls.map((control) => [control.internalControlId, control] as const),
 );
 
+function getSecurityControlLinkSummary(controlLink: { internalControlId: string; itemId: string }) {
+  const control = securityFindingRelatedControlMetadataById.get(controlLink.internalControlId);
+  return {
+    internalControlId: controlLink.internalControlId,
+    itemId: controlLink.itemId,
+    itemLabel:
+      control?.platformChecklistItems.find((item) => item.itemId === controlLink.itemId)?.label ??
+      null,
+    nist80053Id: control?.nist80053Id ?? controlLink.internalControlId,
+    title: control?.title ?? controlLink.internalControlId,
+  };
+}
+
 function getSecurityFindingRelatedControls(
   findingType:
     | 'audit_integrity_failures'
@@ -29,23 +44,191 @@ function getSecurityFindingRelatedControls(
     | 'document_scan_rejections'
     | 'release_security_validation',
 ) {
-  return getSecurityFindingControlLinks(findingType).map((controlLink) => {
-    const control = securityFindingRelatedControlMetadataById.get(controlLink.internalControlId);
-    return {
-      internalControlId: controlLink.internalControlId,
-      itemId: controlLink.itemId,
-      itemLabel:
-        control?.platformChecklistItems.find((item) => item.itemId === controlLink.itemId)?.label ??
-        null,
-      nist80053Id: control?.nist80053Id ?? controlLink.internalControlId,
-      title: control?.title ?? controlLink.internalControlId,
-    };
-  });
+  return getSecurityFindingControlLinks(findingType).map((controlLink) =>
+    getSecurityControlLinkSummary(controlLink),
+  );
+}
+
+function hasMatchingControlLink(
+  controlLinks: Array<{ internalControlId: string; itemId: string }>,
+  input: { internalControlId: string; itemId: string },
+) {
+  return controlLinks.some(
+    (entry) => entry.internalControlId === input.internalControlId && entry.itemId === input.itemId,
+  );
+}
+
+async function safeCollectTableRows<
+  TTableName extends 'followUpActions' | 'securityControlEvidence',
+>(ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>, tableName: TTableName) {
+  const queryResult = ctx.db.query(tableName) as {
+    collect?: () => Promise<unknown[]>;
+  };
+  return typeof queryResult.collect === 'function' ? await queryResult.collect() : [];
+}
+
+async function buildFollowUpActionSummaries(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  options?: {
+    findingKey?: string;
+  },
+) {
+  const followUpActions = options?.findingKey
+    ? await ctx.db
+        .query('followUpActions')
+        .withIndex('by_finding_key_and_opened_at', (q) => q.eq('findingKey', options.findingKey!))
+        .order('desc')
+        .collect()
+    : await (async () => {
+        return (await safeCollectTableRows(ctx, 'followUpActions')) as Array<{
+          _id: Id<'followUpActions'>;
+          assigneeUserId?: string | null;
+          controlLinks: Array<{ internalControlId: string; itemId: string }>;
+          dueAt?: number | null;
+          findingId: Id<'securityFindings'>;
+          findingKey: string;
+          latestNote?: string | null;
+          openedAt: number;
+          resolutionNote?: string | null;
+          resolvedAt?: number | null;
+          reviewRunId?: Id<'reviewRuns'>;
+          reviewTaskId?: Id<'reviewTasks'>;
+          status: 'open' | 'in_progress' | 'blocked' | 'resolved';
+          summary?: string | null;
+          title: string;
+          updatedAt: number;
+        }>;
+      })();
+  const followUpIds = new Set(followUpActions.map((action) => action._id));
+  const assigneeIds = Array.from(
+    new Set(
+      followUpActions
+        .map((action) => action.assigneeUserId)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ),
+  );
+  const [actorDisplayById, evidenceRows] = await Promise.all([
+    buildActorDisplayMap(ctx, assigneeIds),
+    safeCollectTableRows(ctx, 'securityControlEvidence') as Promise<
+      Array<{
+        _id: Id<'securityControlEvidence'>;
+        internalControlId: string;
+        itemId: string;
+        lifecycleStatus?: 'active' | 'archived' | 'superseded';
+        reviewOriginSourceId?: string;
+        reviewOriginSourceType?:
+          | 'security_control_evidence'
+          | 'evidence_report'
+          | 'security_finding'
+          | 'follow_up_action'
+          | 'backup_verification_report'
+          | 'external_document'
+          | 'review_task'
+          | 'vendor';
+        reviewStatus?: 'pending' | 'reviewed';
+        reviewedAt?: number | null;
+        title: string;
+      }>
+    >,
+  ]);
+  const reviewedEvidenceByActionId = evidenceRows.reduce<
+    Map<
+      string,
+      Array<{
+        id: Id<'securityControlEvidence'>;
+        internalControlId: string;
+        itemId: string;
+        reviewedAt: number | null;
+        title: string;
+      }>
+    >
+  >((accumulator, evidence) => {
+    if (
+      evidence.reviewOriginSourceType !== 'follow_up_action' ||
+      !evidence.reviewOriginSourceId ||
+      !followUpIds.has(evidence.reviewOriginSourceId as Id<'followUpActions'>) ||
+      evidence.reviewStatus !== 'reviewed' ||
+      (evidence.lifecycleStatus ?? 'active') !== 'active'
+    ) {
+      return accumulator;
+    }
+    const current = accumulator.get(evidence.reviewOriginSourceId) ?? [];
+    current.push({
+      id: evidence._id,
+      internalControlId: evidence.internalControlId,
+      itemId: evidence.itemId,
+      reviewedAt: evidence.reviewedAt ?? null,
+      title: evidence.title,
+    });
+    accumulator.set(evidence.reviewOriginSourceId, current);
+    return accumulator;
+  }, new Map());
+
+  const now = Date.now();
+  return followUpActions
+    .map((action) => {
+      const reviewedEvidence = (reviewedEvidenceByActionId.get(action._id) ?? [])
+        .filter((entry) => hasMatchingControlLink(action.controlLinks, entry))
+        .sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
+
+      return {
+        assigneeDisplay: getActorDisplayName(actorDisplayById, action.assigneeUserId ?? undefined),
+        assigneeUserId: action.assigneeUserId ?? null,
+        controlLinks: action.controlLinks.map((controlLink) =>
+          getSecurityControlLinkSummary(controlLink),
+        ),
+        dueAt: action.dueAt ?? null,
+        findingKey: action.findingKey,
+        id: action._id,
+        isOverdue:
+          action.status !== 'resolved' && typeof action.dueAt === 'number' && action.dueAt < now,
+        latestNote: action.latestNote ?? null,
+        openedAt: action.openedAt,
+        resolutionNote: action.resolutionNote ?? null,
+        resolvedAt: action.resolvedAt ?? null,
+        reviewedEvidence,
+        reviewedEvidenceCount: reviewedEvidence.length,
+        reviewRunId: action.reviewRunId ?? null,
+        reviewTaskId: action.reviewTaskId ?? null,
+        status: action.status,
+        summary: action.summary ?? null,
+        title: action.title,
+        updatedAt: action.updatedAt,
+      };
+    })
+    .sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
+function getActiveFollowUpByFindingKey(
+  followUpActions: Awaited<ReturnType<typeof buildFollowUpActionSummaries>>,
+) {
+  return followUpActions.reduce<Map<string, (typeof followUpActions)[number]>>(
+    (accumulator, action) => {
+      if (action.status === 'resolved') {
+        return accumulator;
+      }
+      const existing = accumulator.get(action.findingKey);
+      if (existing && existing.updatedAt >= action.updatedAt) {
+        return accumulator;
+      }
+      accumulator.set(action.findingKey, action);
+      return accumulator;
+    },
+    new Map(),
+  );
+}
+
+function toPublicFollowUpActionSummary(
+  followUpAction: Awaited<ReturnType<typeof buildFollowUpActionSummaries>>[number],
+) {
+  const { findingKey: _findingKey, ...summary } = followUpAction;
+  return summary;
 }
 
 async function buildSecurityFindingListRecords(ctx: QueryCtx) {
-  const [currentFindings, relationships] = await Promise.all([
+  const [currentFindings, followUpActions, relationships] = await Promise.all([
     buildCurrentSecurityFindings(ctx),
+    buildFollowUpActionSummaries(ctx),
     ctx.db
       .query('securityRelationships')
       .withIndex('by_from', (q) => q.eq('fromType', 'finding'))
@@ -68,6 +251,7 @@ async function buildSecurityFindingListRecords(ctx: QueryCtx) {
         .filter((value): value is string => typeof value === 'string' && value.length > 0),
     ),
   );
+  const activeFollowUpByFindingKey = getActiveFollowUpByFindingKey(followUpActions);
   const followUpRelationships = relationships.filter(
     (relationship) =>
       relationship.relationshipType === 'follow_up_for' && relationship.toType === 'review_run',
@@ -121,6 +305,7 @@ async function buildSecurityFindingListRecords(ctx: QueryCtx) {
 
   return currentFindings.map((finding) => {
     const record = storedFindingByKey.get(finding.findingKey) ?? null;
+    const activeFollowUp = activeFollowUpByFindingKey.get(finding.findingKey) ?? null;
     return {
       customerSummary: record?.customerSummary ?? null,
       description: finding.description,
@@ -130,11 +315,14 @@ async function buildSecurityFindingListRecords(ctx: QueryCtx) {
       firstObservedAt: record
         ? Math.min(record.firstObservedAt, finding.firstObservedAt)
         : finding.firstObservedAt,
+      followUpOverdue: activeFollowUpByFindingKey.get(finding.findingKey)?.isOverdue ?? false,
+      hasOpenFollowUp: activeFollowUpByFindingKey.has(finding.findingKey),
       internalNotes: record?.internalReviewNotes ?? null,
       lastObservedAt: Math.max(
         record?.lastObservedAt ?? finding.lastObservedAt,
         finding.lastObservedAt,
       ),
+      activeFollowUp: activeFollowUp ? toPublicFollowUpActionSummary(activeFollowUp) : null,
       latestLinkedReviewRun: latestFollowUpByFindingKey.get(finding.findingKey) ?? null,
       relatedControls: getSecurityFindingRelatedControls(finding.findingType),
       scopeId: normalizeSecurityScope(record ?? {}).scopeId,
@@ -252,6 +440,254 @@ export async function listSecurityFindingsHandler(ctx: QueryCtx) {
   return await buildSecurityFindingListRecords(ctx);
 }
 
+export async function listFollowUpActionsHandler(
+  ctx: QueryCtx,
+  args: {
+    findingKey?: string;
+  },
+) {
+  await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  return (await buildFollowUpActionSummaries(ctx, args)).map((entry) =>
+    toPublicFollowUpActionSummary(entry),
+  );
+}
+
+async function getStoredFindingRecordOrThrow(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: string;
+    findingKey: string;
+  },
+) {
+  await syncCurrentSecurityFindings(ctx, args.actorUserId);
+  const findingRecord = await ctx.db
+    .query('securityFindings')
+    .withIndex('by_finding_key', (q) => q.eq('findingKey', args.findingKey))
+    .unique();
+  if (!findingRecord) {
+    throwConvexError('NOT_FOUND', 'Security finding not found.');
+  }
+  return findingRecord;
+}
+
+async function validateFollowUpActionControlLinksOrThrow(args: {
+  findingType:
+    | 'audit_integrity_failures'
+    | 'audit_archive_health'
+    | 'audit_request_context_gaps'
+    | 'document_scan_quarantines'
+    | 'document_scan_rejections'
+    | 'release_security_validation';
+  controlLinks: Array<{ internalControlId: string; itemId: string }>;
+}) {
+  if (args.controlLinks.length === 0) {
+    throwConvexError('VALIDATION', 'Select at least one checklist item for tracked follow-up.');
+  }
+  const allowedLinks = getSecurityFindingControlLinks(args.findingType);
+  const invalidLink = args.controlLinks.find(
+    (controlLink) => !hasMatchingControlLink(allowedLinks, controlLink),
+  );
+  if (invalidLink) {
+    throwConvexError('VALIDATION', 'Follow-up links must match the finding control mapping.');
+  }
+}
+
+async function assertFollowUpAssigneeOrThrow(
+  ctx: MutationCtx,
+  assigneeUserId: string | null | undefined,
+) {
+  if (!assigneeUserId) {
+    return null;
+  }
+  const profile = await ctx.db
+    .query('userProfiles')
+    .withIndex('by_auth_user_id', (q) => q.eq('authUserId', assigneeUserId))
+    .first();
+  if (!profile?.isSiteAdmin || profile.banned) {
+    throwConvexError('VALIDATION', 'Select an active site admin assignee.');
+  }
+  return assigneeUserId;
+}
+
+export async function createFollowUpActionHandler(
+  ctx: MutationCtx,
+  args: {
+    findingKey: string;
+    controlLinks: Array<{ internalControlId: string; itemId: string }>;
+    dueAt?: number | null;
+    reviewRunId?: Id<'reviewRuns'>;
+    reviewTaskId?: Id<'reviewTasks'>;
+    summary?: string | null;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const findingRecord = await getStoredFindingRecordOrThrow(ctx, {
+    actorUserId: currentUser.authUserId,
+    findingKey: args.findingKey,
+  });
+  if (findingRecord.status !== 'open') {
+    throwConvexError('VALIDATION', 'Tracked follow-up can only be opened for open findings.');
+  }
+  await validateFollowUpActionControlLinksOrThrow({
+    controlLinks: args.controlLinks,
+    findingType: findingRecord.findingType,
+  });
+  const existingActions = await ctx.db
+    .query('followUpActions')
+    .withIndex('by_finding_key_and_opened_at', (q) => q.eq('findingKey', args.findingKey))
+    .collect();
+  if (existingActions.some((action) => action.status !== 'resolved')) {
+    throwConvexError('VALIDATION', 'This finding already has an active tracked follow-up.');
+  }
+
+  const now = Date.now();
+  await ctx.db.insert('followUpActions', {
+    ...getSecurityScopeFields(),
+    assigneeUserId: currentUser.authUserId,
+    controlLinks: args.controlLinks,
+    dueAt: args.dueAt ?? null,
+    findingId: findingRecord._id,
+    findingKey: findingRecord.findingKey,
+    latestNote: null,
+    openedAt: now,
+    openedByUserId: currentUser.authUserId,
+    resolutionNote: null,
+    resolvedAt: null,
+    resolvedByUserId: null,
+    reviewRunId: args.reviewRunId,
+    reviewTaskId: args.reviewTaskId,
+    status: 'open',
+    summary: args.summary?.trim() || undefined,
+    title: `${findingRecord.title} remediation`,
+    updatedAt: now,
+    updatedByUserId: currentUser.authUserId,
+  });
+
+  return (await buildSecurityFindingListRecords(ctx as QueryCtx)).find(
+    (entry) => entry.findingKey === findingRecord.findingKey,
+  )!;
+}
+
+export async function updateFollowUpActionHandler(
+  ctx: MutationCtx,
+  args: {
+    assigneeUserId?: string | null;
+    dueAt?: number | null;
+    followUpActionId: Id<'followUpActions'>;
+    latestNote?: string | null;
+    status?: 'open' | 'in_progress' | 'blocked';
+    summary?: string | null;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const action = await ctx.db.get(args.followUpActionId);
+  if (!action) {
+    throwConvexError('NOT_FOUND', 'Tracked follow-up not found.');
+  }
+  if (action.status === 'resolved') {
+    throwConvexError('VALIDATION', 'Resolved follow-up actions cannot be edited.');
+  }
+
+  const assigneeUserId =
+    args.assigneeUserId === undefined
+      ? undefined
+      : await assertFollowUpAssigneeOrThrow(ctx, args.assigneeUserId);
+  const now = Date.now();
+  await ctx.db.patch(action._id, {
+    assigneeUserId,
+    dueAt: args.dueAt ?? undefined,
+    latestNote: args.latestNote === undefined ? undefined : args.latestNote?.trim() || null,
+    status: args.status ?? undefined,
+    summary: args.summary === undefined ? undefined : args.summary?.trim() || undefined,
+    updatedAt: now,
+    updatedByUserId: currentUser.authUserId,
+  });
+
+  return toPublicFollowUpActionSummary(
+    (await buildFollowUpActionSummaries(ctx, { findingKey: action.findingKey })).find(
+      (entry) => entry.id === action._id,
+    )!,
+  );
+}
+
+export async function resolveFollowUpActionHandler(
+  ctx: MutationCtx,
+  args: {
+    followUpActionId: Id<'followUpActions'>;
+    resolutionNote?: string | null;
+  },
+) {
+  const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
+  const action = await ctx.db.get(args.followUpActionId);
+  if (!action) {
+    throwConvexError('NOT_FOUND', 'Tracked follow-up not found.');
+  }
+  if (action.status === 'resolved') {
+    throwConvexError('VALIDATION', 'Tracked follow-up is already resolved.');
+  }
+  const evidenceRows = await ctx.db
+    .query('securityControlEvidence')
+    .withIndex('by_review_origin_source_type_and_source_id', (q) =>
+      q.eq('reviewOriginSourceType', 'follow_up_action').eq('reviewOriginSourceId', action._id),
+    )
+    .collect();
+  const reviewedEvidence = evidenceRows.filter(
+    (entry) =>
+      entry.reviewStatus === 'reviewed' &&
+      (entry.lifecycleStatus ?? 'active') === 'active' &&
+      hasMatchingControlLink(action.controlLinks, entry),
+  );
+  if (reviewedEvidence.length === 0) {
+    throwConvexError(
+      'VALIDATION',
+      'Resolve the tracked follow-up only after reviewed closure evidence is attached.',
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(action._id, {
+    resolutionNote: args.resolutionNote?.trim() || null,
+    resolvedAt: now,
+    resolvedByUserId: currentUser.authUserId,
+    status: 'resolved',
+    updatedAt: now,
+    updatedByUserId: currentUser.authUserId,
+  });
+
+  return toPublicFollowUpActionSummary(
+    (await buildFollowUpActionSummaries(ctx, { findingKey: action.findingKey })).find(
+      (entry) => entry.id === action._id,
+    )!,
+  );
+}
+
+export async function validateFollowUpActionEvidenceContextOrThrow(
+  ctx: Pick<QueryCtx, 'db'> | Pick<MutationCtx, 'db'>,
+  args: {
+    followUpActionId?: Id<'followUpActions'>;
+    internalControlId: string;
+    itemId: string;
+  },
+) {
+  if (!args.followUpActionId) {
+    return null;
+  }
+  const action = await ctx.db.get(args.followUpActionId);
+  if (!action) {
+    throwConvexError('NOT_FOUND', 'Tracked follow-up not found.');
+  }
+  if (action.status === 'resolved') {
+    throwConvexError('VALIDATION', 'Resolved follow-up actions cannot accept new evidence.');
+  }
+  if (!hasMatchingControlLink(action.controlLinks, args)) {
+    throwConvexError(
+      'VALIDATION',
+      'Closure evidence must target one of the tracked follow-up checklist items.',
+    );
+  }
+  return action;
+}
+
 export async function reviewSecurityFindingHandler(
   ctx: MutationCtx,
   args: {
@@ -356,6 +792,7 @@ export async function reviewSecurityFindingHandler(
   }
 
   return {
+    activeFollowUp: null,
     customerSummary: args.customerSummary?.trim() || null,
     description: finding.description,
     disposition: args.disposition,
@@ -364,6 +801,8 @@ export async function reviewSecurityFindingHandler(
     firstObservedAt: existing
       ? Math.min(existing.firstObservedAt, finding.firstObservedAt)
       : finding.firstObservedAt,
+    followUpOverdue: false,
+    hasOpenFollowUp: false,
     internalNotes,
     lastObservedAt: existing
       ? Math.max(existing.lastObservedAt, finding.lastObservedAt)

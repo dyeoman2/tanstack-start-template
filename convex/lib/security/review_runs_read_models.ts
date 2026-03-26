@@ -9,7 +9,6 @@ import {
 } from './core';
 import {
   buildActorDisplayMap,
-  buildCurrentSecurityFindings,
   getActorDisplayName,
   listReviewTaskEvidenceLinksBySource,
 } from './operations_core';
@@ -21,6 +20,7 @@ import {
   type ReviewTaskDoc,
 } from './review_runs_task_sync';
 import { buildVendorWorkspaceRows } from './review_runs_migrations';
+import { buildSecurityFindingListRecords } from './workspace';
 
 export function getAutomationEvidenceLabel(blueprint: ReviewTaskBlueprint) {
   switch (blueprint.automationKind) {
@@ -66,29 +66,21 @@ export async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'revie
     return null;
   }
 
-  const [
-    tasks,
-    evidenceLinks,
-    attestations,
-    policyGovernanceContexts,
-    vendorWorkspaces,
-    currentFindings,
-    storedFindings,
-  ] = await Promise.all([
-    listReviewTasksByRunId(ctx, reviewRunId),
-    ctx.db
-      .query('reviewTaskEvidenceLinks')
-      .withIndex('by_review_run_id_and_linked_at', (q) => q.eq('reviewRunId', reviewRunId))
-      .collect(),
-    ctx.db
-      .query('reviewAttestations')
-      .withIndex('by_review_run_id_and_attested_at', (q) => q.eq('reviewRunId', reviewRunId))
-      .collect(),
-    run.kind === 'annual' ? listSecurityPolicyGovernanceContexts(ctx) : Promise.resolve([]),
-    run.kind === 'annual' ? buildVendorWorkspaceRows(ctx) : Promise.resolve([]),
-    run.kind === 'annual' ? buildCurrentSecurityFindings(ctx) : Promise.resolve([]),
-    run.kind === 'annual' ? ctx.db.query('securityFindings').collect() : Promise.resolve([]),
-  ]);
+  const [tasks, evidenceLinks, attestations, policyGovernanceContexts, vendorWorkspaces, findings] =
+    await Promise.all([
+      listReviewTasksByRunId(ctx, reviewRunId),
+      ctx.db
+        .query('reviewTaskEvidenceLinks')
+        .withIndex('by_review_run_id_and_linked_at', (q) => q.eq('reviewRunId', reviewRunId))
+        .collect(),
+      ctx.db
+        .query('reviewAttestations')
+        .withIndex('by_review_run_id_and_attested_at', (q) => q.eq('reviewRunId', reviewRunId))
+        .collect(),
+      run.kind === 'annual' ? listSecurityPolicyGovernanceContexts(ctx) : Promise.resolve([]),
+      run.kind === 'annual' ? buildVendorWorkspaceRows(ctx) : Promise.resolve([]),
+      run.kind === 'annual' ? buildSecurityFindingListRecords(ctx) : Promise.resolve([]),
+    ]);
   const policyGovernanceContextById = new Map(
     policyGovernanceContexts.map((entry) => [entry.policy.policyId, entry] as const),
   );
@@ -158,21 +150,28 @@ export async function buildReviewRunDetail(ctx: QueryCtx, reviewRunId: Id<'revie
     };
   };
   const findingsSummary = (() => {
-    const storedFindingByKey = new Map(
-      storedFindings.map((finding) => [finding.findingKey, finding] as const),
-    );
-    const openFindings = currentFindings.filter((finding) => finding.status === 'open');
+    const openFindings = findings.filter((finding) => finding.status === 'open');
     const criticalOpenCount = openFindings.filter(
       (finding) => finding.severity === 'critical',
     ).length;
-    const undispositionedCount = openFindings.filter((finding) => {
-      const disposition =
-        storedFindingByKey.get(finding.findingKey)?.disposition ?? 'pending_review';
-      return disposition === 'pending_review' || disposition === 'investigating';
-    }).length;
+    const activeFollowUpCount = openFindings.filter((finding) => finding.hasOpenFollowUp).length;
+    const overdueFollowUpCount = openFindings.filter((finding) => finding.followUpOverdue).length;
+    const undispositionedCount = openFindings.filter(
+      (finding) =>
+        finding.disposition === 'pending_review' || finding.disposition === 'investigating',
+    ).length;
+    const blockingCriticalCount = openFindings.filter(
+      (finding) =>
+        finding.severity === 'critical' &&
+        (finding.disposition === 'pending_review' || finding.disposition === 'investigating') &&
+        !finding.hasOpenFollowUp,
+    ).length;
     return {
+      activeFollowUpCount,
+      blockingCriticalCount,
       criticalOpenCount,
       lowerSeverityOpenCount: Math.max(0, openFindings.length - criticalOpenCount),
+      overdueFollowUpCount,
       totalOpenCount: openFindings.length,
       undispositionedCount,
     };

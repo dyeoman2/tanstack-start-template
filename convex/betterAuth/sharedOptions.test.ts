@@ -470,6 +470,49 @@ describe('createSharedBetterAuthOptions', () => {
     });
   });
 
+  it('records account lockout after the configured failed sign-in threshold', async () => {
+    const recordAccountLockout = vi.fn(async () => {});
+    const options = createSharedBetterAuthOptions({
+      recordAccountLockout,
+      sendInvitationEmail: async () => {},
+      sendResetPassword: async () => {},
+      sendVerificationEmail: async () => {},
+    });
+    const updateUser = vi.fn(async () => {});
+    const findUserByEmail = vi.fn(async () => ({
+      user: {
+        id: 'user_lockout_1',
+      },
+    }));
+    const afterHook = getAfterHook(options);
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      await afterHook({
+        body: { email: 'lockout-user@example.com' },
+        context: {
+          internalAdapter: {
+            findUserByEmail,
+            updateUser,
+          },
+          returned: new Response('{}', { status: 401 }),
+        },
+        path: '/sign-in/email',
+      } as never);
+    }
+
+    expect(findUserByEmail).toHaveBeenCalledTimes(1);
+    expect(updateUser).toHaveBeenCalledWith('user_lockout_1', {
+      banExpires: expect.any(Number),
+      banReason: 'Too many failed sign-in attempts',
+      banned: true,
+    });
+    expect(recordAccountLockout).toHaveBeenCalledWith({
+      email: 'lockout-user@example.com',
+      reason: 'Too many failed sign-in attempts',
+      userId: 'user_lockout_1',
+    });
+  });
+
   it('enriches callback sessions with enterprise metadata when resolved', async () => {
     const resolveEnterpriseAuthSession = vi.fn(async () => ({
       organizationId: 'org_1',

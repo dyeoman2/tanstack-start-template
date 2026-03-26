@@ -72,6 +72,43 @@ export type LinkedEntitySummary = {
   status: string | null;
 };
 
+export type FindingFollowUpStatus = 'open' | 'in_progress' | 'blocked' | 'resolved';
+
+export type SecurityFindingFollowUpEvidence = {
+  id: Id<'securityControlEvidence'>;
+  internalControlId: string;
+  itemId: string;
+  reviewedAt: number | null;
+  title: string;
+};
+
+export type SecurityFindingFollowUpAction = {
+  assigneeDisplay: string | null;
+  assigneeUserId: string | null;
+  controlLinks: Array<{
+    internalControlId: string;
+    itemId: string;
+    itemLabel: string | null;
+    nist80053Id: string;
+    title: string;
+  }>;
+  dueAt: number | null;
+  id: Id<'followUpActions'>;
+  isOverdue: boolean;
+  latestNote: string | null;
+  openedAt: number;
+  resolutionNote: string | null;
+  resolvedAt: number | null;
+  reviewedEvidence: SecurityFindingFollowUpEvidence[];
+  reviewedEvidenceCount: number;
+  reviewRunId: Id<'reviewRuns'> | null;
+  reviewTaskId: Id<'reviewTasks'> | null;
+  status: FindingFollowUpStatus;
+  summary: string | null;
+  title: string;
+  updatedAt: number;
+};
+
 export type SecurityChecklistEvidence = {
   archivedAt: number | null;
   archivedByDisplay: string | null;
@@ -97,6 +134,7 @@ export type SecurityChecklistEvidence = {
     | 'security_control_evidence'
     | 'evidence_report'
     | 'security_finding'
+    | 'follow_up_action'
     | 'backup_verification_report'
     | 'external_document'
     | 'review_task'
@@ -446,6 +484,7 @@ export type EvidenceReportDetail = {
 } & SecurityScope;
 
 export type SecurityFindingListItem = {
+  activeFollowUp: SecurityFindingFollowUpAction | null;
   customerSummary: string | null;
   description: string;
   disposition: 'accepted_risk' | 'false_positive' | 'investigating' | 'pending_review' | 'resolved';
@@ -458,6 +497,8 @@ export type SecurityFindingListItem = {
     | 'document_scan_rejections'
     | 'release_security_validation';
   firstObservedAt: number;
+  followUpOverdue: boolean;
+  hasOpenFollowUp: boolean;
   internalNotes: string | null;
   lastObservedAt: number;
   latestLinkedReviewRun: {
@@ -565,8 +606,11 @@ export type ReviewTaskDetail = {
     vendorKey: VendorKey;
   } | null;
   findingsSummary: {
+    activeFollowUpCount: number;
+    blockingCriticalCount: number;
     criticalOpenCount: number;
     lowerSeverityOpenCount: number;
+    overdueFollowUpCount: number;
     totalOpenCount: number;
     undispositionedCount: number;
   } | null;
@@ -718,7 +762,9 @@ export type SecurityPolicyDetail = {
 export type SecurityFindingsBoard = {
   findings: SecurityFindingListItem[];
   summary: {
+    activeFollowUpCount: number;
     openCount: number;
+    overdueFollowUpCount: number;
     reviewPendingCount: number;
     totalCount: number;
   };

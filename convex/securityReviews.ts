@@ -346,25 +346,27 @@ export const attestReviewTask = mutation({
         internal.securityWorkspace.listSecurityFindingsInternal,
         {},
       )) as Array<{
+        hasOpenFollowUp: boolean;
         disposition:
           | 'accepted_risk'
           | 'false_positive'
           | 'investigating'
           | 'pending_review'
           | 'resolved';
-        severity: 'critical' | 'high' | 'info' | 'low' | 'medium';
+        severity: 'critical' | 'info' | 'warning';
         status: 'open' | 'resolved';
       }>;
       const unresolvedCritical = currentFindings.filter(
         (finding) =>
           finding.status === 'open' &&
           finding.severity === 'critical' &&
-          (finding.disposition === 'pending_review' || finding.disposition === 'investigating'),
+          (finding.disposition === 'pending_review' || finding.disposition === 'investigating') &&
+          !finding.hasOpenFollowUp,
       );
       if (unresolvedCritical.length > 0) {
         throwConvexError(
           'VALIDATION',
-          'Critical open findings must be resolved or dispositioned before attesting.',
+          'Critical open findings must be resolved, dispositioned, or tracked with active follow-up before attesting.',
         );
       }
     }

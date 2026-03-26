@@ -66,7 +66,7 @@ function buildSettings(overrides?: Record<string, unknown>) {
       invitePolicy: 'owners_admins',
       verifiedDomainsOnly: false,
       memberCap: null,
-      mfaRequired: false,
+      mfaRequired: true,
       enterpriseAuthMode: 'off',
       enterpriseProviderKey: 'google-workspace',
       enterpriseProtocol: 'oidc',

@@ -5,6 +5,7 @@ import { convex } from '@convex-dev/better-auth/plugins';
 import type { BetterAuthOptions } from 'better-auth';
 import { APIError, createAuthMiddleware } from 'better-auth/api';
 import { admin } from 'better-auth/plugins/admin';
+import { haveIBeenPwned } from 'better-auth/plugins';
 import { organization } from 'better-auth/plugins/organization';
 import { twoFactor } from 'better-auth/plugins/two-factor';
 import {
@@ -149,6 +150,11 @@ type SharedBetterAuthCallbacks = {
       }
   >;
   finalizeOAuthAccountState?: (input: { providerId: string; userId: string }) => Promise<void>;
+  recordAccountLockout?: (input: {
+    email: string;
+    reason: string;
+    userId?: string;
+  }) => Promise<void>;
   consumeStepUpClaim?: (input: {
     requirement: StepUpRequirement;
     sessionId: string;
@@ -194,6 +200,35 @@ export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
+
+// ---------------------------------------------------------------------------
+// Account lockout: temporary ban after consecutive failed sign-in attempts.
+// Tracked per-email in memory. Better Auth's native ban/banExpires fields
+// handle the actual blocking once a lockout threshold is reached.
+// ---------------------------------------------------------------------------
+
+const LOCKOUT_MAX_FAILURES = 5;
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1_000; // 15 minutes
+const LOCKOUT_DURATION_MS = 30 * 60 * 1_000; // 30 minutes
+
+interface FailedAttemptRecord {
+  attempts: number[];
+}
+
+const failedSignInAttempts = new Map<string, FailedAttemptRecord>();
+
+function recordFailedSignIn(email: string): { shouldLock: boolean } {
+  const now = Date.now();
+  const record = failedSignInAttempts.get(email) ?? { attempts: [] };
+  record.attempts = record.attempts.filter((ts) => now - ts < LOCKOUT_WINDOW_MS);
+  record.attempts.push(now);
+  failedSignInAttempts.set(email, record);
+  return { shouldLock: record.attempts.length >= LOCKOUT_MAX_FAILURES };
+}
+
+function clearFailedSignIn(email: string): void {
+  failedSignInAttempts.delete(email);
+}
 
 /** Endpoints that accept a new password in the request body and must enforce complexity rules. */
 const PASSWORD_COMPLEXITY_PATHS: Record<string, string> = {
@@ -899,7 +934,7 @@ export function createSharedBetterAuthOptions(
       defaultCookieAttributes: {
         secure: secureCookies,
         httpOnly: true,
-        sameSite: 'lax',
+        sameSite: 'strict',
         path: '/',
       },
     },
@@ -984,6 +1019,42 @@ export function createSharedBetterAuthOptions(
       after: createAuthMiddleware(async (ctx) => {
         await handleSessionEnrichmentAfterHook(callbacks, ctx);
         await handleStepUpAfterHook(callbacks, ctx);
+
+        // Account lockout: track failed sign-in attempts and temporarily ban
+        // the user after LOCKOUT_MAX_FAILURES consecutive failures within the
+        // lockout window. Better Auth's native ban/banExpires handle blocking.
+        if (ctx.path === '/sign-in/email') {
+          const email = getStringField(ctx.body, 'email')?.trim().toLowerCase();
+          if (email) {
+            const returned = ctx.context.returned as { status?: number } | undefined;
+            const responseStatus = returned?.status;
+            if (responseStatus && responseStatus >= 400) {
+              const { shouldLock } = recordFailedSignIn(email);
+              if (shouldLock) {
+                clearFailedSignIn(email);
+                try {
+                  const user = await ctx.context.internalAdapter.findUserByEmail(email);
+                  if (user?.user) {
+                    await ctx.context.internalAdapter.updateUser(user.user.id, {
+                      banned: true,
+                      banReason: 'Too many failed sign-in attempts',
+                      banExpires: Date.now() + LOCKOUT_DURATION_MS,
+                    });
+                    await callbacks.recordAccountLockout?.({
+                      email,
+                      reason: 'Too many failed sign-in attempts',
+                      userId: user.user.id,
+                    });
+                  }
+                } catch (err) {
+                  console.warn('[account-lockout] Failed to apply temporary ban:', err);
+                }
+              }
+            } else if (responseStatus === 200) {
+              clearFailedSignIn(email);
+            }
+          }
+        }
       }),
     },
     emailAndPassword: {
@@ -1117,6 +1188,10 @@ export function createSharedBetterAuthOptions(
       twoFactor({
         issuer: process.env.APP_NAME?.trim() || 'TanStack Start Template',
       }),
+      // NIST 800-63B: reject passwords found in known data breaches via the
+      // HaveIBeenPwned k-anonymity range API (free, no API key required).
+      // Only the first 5 characters of the SHA-1 hash are transmitted.
+      haveIBeenPwned(),
       passkey(getPasskeyOptions(betterAuthUrl)),
       convex({
         authConfig,

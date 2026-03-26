@@ -252,13 +252,57 @@ const securityFindingSourceTypeValidator = v.union(
   v.literal('security_metric'),
   v.literal('security_control_evidence'),
 );
+const followUpActionStatusValidator = v.union(
+  v.literal('open'),
+  v.literal('in_progress'),
+  v.literal('blocked'),
+  v.literal('resolved'),
+);
+const followUpActionEvidenceSummaryValidator = v.object({
+  id: v.id('securityControlEvidence'),
+  internalControlId: v.string(),
+  itemId: v.string(),
+  reviewedAt: v.union(v.number(), v.null()),
+  title: v.string(),
+});
+const followUpActionSummaryValidator = v.object({
+  assigneeDisplay: v.union(v.string(), v.null()),
+  assigneeUserId: v.union(v.string(), v.null()),
+  controlLinks: v.array(
+    v.object({
+      internalControlId: v.string(),
+      itemId: v.string(),
+      itemLabel: v.union(v.string(), v.null()),
+      nist80053Id: v.string(),
+      title: v.string(),
+    }),
+  ),
+  dueAt: v.union(v.number(), v.null()),
+  id: v.id('followUpActions'),
+  isOverdue: v.boolean(),
+  latestNote: v.union(v.string(), v.null()),
+  openedAt: v.number(),
+  resolutionNote: v.union(v.string(), v.null()),
+  resolvedAt: v.union(v.number(), v.null()),
+  reviewedEvidence: v.array(followUpActionEvidenceSummaryValidator),
+  reviewedEvidenceCount: v.number(),
+  reviewRunId: v.union(v.id('reviewRuns'), v.null()),
+  reviewTaskId: v.union(v.id('reviewTasks'), v.null()),
+  status: followUpActionStatusValidator,
+  summary: v.union(v.string(), v.null()),
+  title: v.string(),
+  updatedAt: v.number(),
+});
 const securityFindingListItemValidator = v.object({
+  activeFollowUp: v.union(followUpActionSummaryValidator, v.null()),
   customerSummary: v.union(v.string(), v.null()),
   description: v.string(),
   disposition: securityFindingDispositionValidator,
   findingKey: v.string(),
   findingType: securityFindingTypeValidator,
   firstObservedAt: v.number(),
+  followUpOverdue: v.boolean(),
+  hasOpenFollowUp: v.boolean(),
   internalNotes: v.union(v.string(), v.null()),
   lastObservedAt: v.number(),
   latestLinkedReviewRun: v.union(
@@ -282,6 +326,7 @@ const securityFindingListItemValidator = v.object({
   title: v.string(),
 });
 const securityFindingListValidator = v.array(securityFindingListItemValidator);
+const followUpActionListValidator = v.array(followUpActionSummaryValidator);
 
 const SECURITY_EVIDENCE_ALLOWED_MIME_TYPES = new Set([
   'application/pdf',
@@ -549,6 +594,7 @@ const controlEvidenceValidator = v.object({
     v.literal('security_control_evidence'),
     v.literal('evidence_report'),
     v.literal('security_finding'),
+    v.literal('follow_up_action'),
     v.literal('backup_verification_report'),
     v.literal('external_document'),
     v.literal('review_task'),
@@ -998,8 +1044,11 @@ const reviewTaskValidator = v.object({
   ),
   findingsSummary: v.union(
     v.object({
+      activeFollowUpCount: v.number(),
+      blockingCriticalCount: v.number(),
       criticalOpenCount: v.number(),
       lowerSeverityOpenCount: v.number(),
+      overdueFollowUpCount: v.number(),
       totalOpenCount: v.number(),
       undispositionedCount: v.number(),
     }),
@@ -1260,7 +1309,9 @@ const securityWorkspaceOverviewValidator = v.object({
 const securityFindingsBoardValidator = v.object({
   findings: securityFindingListValidator,
   summary: v.object({
+    activeFollowUpCount: v.number(),
     openCount: v.number(),
+    overdueFollowUpCount: v.number(),
     reviewPendingCount: v.number(),
     totalCount: v.number(),
   }),
@@ -1310,6 +1361,9 @@ export {
   exportArtifactTypeValidator,
   getLowercaseFileExtension,
   linkedEntitySummaryValidator,
+  followUpActionListValidator,
+  followUpActionStatusValidator,
+  followUpActionSummaryValidator,
   releaseProvenanceEvidenceSummaryValidator,
   reviewAttestationValidator,
   reviewRunDetailValidator,

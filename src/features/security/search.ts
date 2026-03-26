@@ -4,6 +4,7 @@ import {
   CONTROL_RESPONSIBILITY_FILTER_VALUES,
   CONTROL_TABLE_SORT_FIELDS,
   FINDING_DISPOSITION_FILTER_VALUES,
+  FINDING_FOLLOW_UP_FILTER_VALUES,
   FINDING_SEVERITY_FILTER_VALUES,
   FINDING_STATUS_FILTER_VALUES,
   FINDING_TYPE_FILTER_VALUES,
@@ -33,6 +34,7 @@ export const securityPoliciesSearchSchema = z.object({
 
 export const securityFindingsSearchSchema = z.object({
   findingDisposition: z.enum(FINDING_DISPOSITION_FILTER_VALUES).default('all'),
+  findingFollowUp: z.enum(FINDING_FOLLOW_UP_FILTER_VALUES).default('all'),
   findingSearch: z.string().default(''),
   findingSeverity: z.enum(FINDING_SEVERITY_FILTER_VALUES).default('all'),
   findingStatus: z.enum(FINDING_STATUS_FILTER_VALUES).default('all'),

@@ -91,6 +91,7 @@ describe('auth audit coverage', () => {
       'outbound_vendor_access_used',
       'mfa_enrollment_enforced',
       'email_verification_enforced',
+      'account_locked_out',
       'admin_step_up_challenged',
       'step_up_challenge_required',
       'step_up_challenge_completed',

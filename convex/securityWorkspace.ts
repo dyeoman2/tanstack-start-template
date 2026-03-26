@@ -33,17 +33,25 @@ import {
 import {
   archiveSecurityControlEvidenceHandler,
   buildSecurityFindingListRecords,
+  createFollowUpActionHandler,
   listSecurityControlEvidenceActivityHandler,
+  listFollowUpActionsHandler,
   listSecurityFindingsHandler,
+  resolveFollowUpActionHandler,
   renewSecurityControlEvidenceHandler,
   reviewSecurityFindingHandler,
+  updateFollowUpActionHandler,
+  validateFollowUpActionEvidenceContextOrThrow,
 } from './lib/security/workspace';
 import {
   enforceSecurityEvidenceUploadRateLimit,
   evidenceReviewDueIntervalValidator,
   evidenceSourceValidator,
   evidenceSufficiencyValidator,
+  followUpActionListValidator,
+  followUpActionSummaryValidator,
   releaseProvenanceEvidenceSummaryValidator,
+  reviewTaskControlReferenceValidator,
   securityControlEvidenceActivityListValidator,
   securityControlWorkspaceExportListValidator,
   securityControlWorkspaceSummaryListValidator,
@@ -168,6 +176,49 @@ export const listSecurityFindingsInternal = internalQuery({
   handler: async (ctx) => await buildSecurityFindingListRecords(ctx as QueryCtx),
 });
 
+export const listSecurityFollowUpActions = siteAdminQuery({
+  args: {
+    findingKey: v.optional(v.string()),
+  },
+  returns: followUpActionListValidator,
+  handler: listFollowUpActionsHandler,
+});
+
+export const createSecurityFindingFollowUpAction = siteAdminMutation({
+  args: {
+    controlLinks: v.array(reviewTaskControlReferenceValidator),
+    dueAt: v.optional(v.union(v.number(), v.null())),
+    findingKey: v.string(),
+    reviewRunId: v.optional(v.id('reviewRuns')),
+    reviewTaskId: v.optional(v.id('reviewTasks')),
+    summary: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: securityFindingListItemValidator,
+  handler: createFollowUpActionHandler,
+});
+
+export const updateSecurityFindingFollowUpAction = siteAdminMutation({
+  args: {
+    assigneeUserId: v.optional(v.union(v.string(), v.null())),
+    dueAt: v.optional(v.union(v.number(), v.null())),
+    followUpActionId: v.id('followUpActions'),
+    latestNote: v.optional(v.union(v.string(), v.null())),
+    status: v.optional(v.union(v.literal('open'), v.literal('in_progress'), v.literal('blocked'))),
+    summary: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: followUpActionSummaryValidator,
+  handler: updateFollowUpActionHandler,
+});
+
+export const resolveSecurityFindingFollowUpAction = siteAdminMutation({
+  args: {
+    followUpActionId: v.id('followUpActions'),
+    resolutionNote: v.optional(v.union(v.string(), v.null())),
+  },
+  returns: followUpActionSummaryValidator,
+  handler: resolveFollowUpActionHandler,
+});
+
 export const reviewSecurityFinding = siteAdminMutation({
   args: {
     customerSummary: v.optional(v.string()),
@@ -232,6 +283,7 @@ export const addSecurityControlEvidenceLink = mutation({
   args: {
     description: v.optional(v.string()),
     evidenceDate: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
     reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
@@ -244,6 +296,11 @@ export const addSecurityControlEvidenceLink = mutation({
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const now = Date.now();
+    const followUpAction = await validateFollowUpActionEvidenceContextOrThrow(ctx, {
+      followUpActionId: args.followUpActionId,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+    });
     const evidenceId = await ctx.db.insert('securityControlEvidence', {
       ...getSecurityScopeFields(),
       internalControlId: args.internalControlId,
@@ -258,6 +315,9 @@ export const addSecurityControlEvidenceLink = mutation({
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
       validUntil: undefined,
+      reviewOriginSourceId: followUpAction?._id,
+      reviewOriginSourceLabel: followUpAction?.title,
+      reviewOriginSourceType: followUpAction ? 'follow_up_action' : undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -284,6 +344,7 @@ export const createSecurityControlEvidenceLinkInternal = internalMutation({
   args: {
     description: v.optional(v.string()),
     evidenceDate: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
     organizationId: v.optional(v.string()),
@@ -297,6 +358,11 @@ export const createSecurityControlEvidenceLinkInternal = internalMutation({
   returns: v.id('securityControlEvidence'),
   handler: async (ctx, args) => {
     const now = Date.now();
+    const followUpAction = await validateFollowUpActionEvidenceContextOrThrow(ctx, {
+      followUpActionId: args.followUpActionId,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+    });
     const evidenceId = await ctx.db.insert('securityControlEvidence', {
       ...getSecurityScopeFields(),
       internalControlId: args.internalControlId,
@@ -311,6 +377,9 @@ export const createSecurityControlEvidenceLinkInternal = internalMutation({
       sufficiency: args.sufficiency,
       uploadedByUserId: args.uploadedByUserId,
       validUntil: undefined,
+      reviewOriginSourceId: followUpAction?._id,
+      reviewOriginSourceLabel: followUpAction?.title,
+      reviewOriginSourceType: followUpAction ? 'follow_up_action' : undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -336,6 +405,7 @@ export const addSecurityControlEvidenceNote = mutation({
   args: {
     description: v.string(),
     evidenceDate: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
     reviewDueIntervalMonths: evidenceReviewDueIntervalValidator,
@@ -347,6 +417,11 @@ export const addSecurityControlEvidenceNote = mutation({
   handler: async (ctx, args) => {
     const currentUser = await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
     const now = Date.now();
+    const followUpAction = await validateFollowUpActionEvidenceContextOrThrow(ctx, {
+      followUpActionId: args.followUpActionId,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+    });
     const evidenceId = await ctx.db.insert('securityControlEvidence', {
       ...getSecurityScopeFields(),
       internalControlId: args.internalControlId,
@@ -360,6 +435,9 @@ export const addSecurityControlEvidenceNote = mutation({
       sufficiency: args.sufficiency,
       uploadedByUserId: currentUser.authUserId,
       validUntil: undefined,
+      reviewOriginSourceId: followUpAction?._id,
+      reviewOriginSourceLabel: followUpAction?.title,
+      reviewOriginSourceType: followUpAction ? 'follow_up_action' : undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,
@@ -464,6 +542,7 @@ export const createSecurityControlEvidenceUploadTarget = action({
     contentType: v.string(),
     fileName: v.string(),
     fileSize: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
   },
@@ -511,6 +590,7 @@ export const finalizeSecurityControlEvidenceUpload = action({
     evidenceDate: v.number(),
     fileName: v.string(),
     fileSize: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
     mimeType: v.string(),
@@ -542,6 +622,7 @@ export const finalizeSecurityControlEvidenceUpload = action({
         evidenceDate: args.evidenceDate,
         fileName: args.fileName,
         fileSize: args.fileSize,
+        followUpActionId: args.followUpActionId,
         internalControlId: args.internalControlId,
         itemId: args.itemId,
         mimeType: args.mimeType,
@@ -563,6 +644,7 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
     evidenceDate: v.number(),
     fileName: v.string(),
     fileSize: v.number(),
+    followUpActionId: v.optional(v.id('followUpActions')),
     internalControlId: v.string(),
     itemId: v.string(),
     mimeType: v.string(),
@@ -577,6 +659,11 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
   returns: v.id('securityControlEvidence'),
   handler: async (ctx, args) => {
     const now = Date.now();
+    const followUpAction = await validateFollowUpActionEvidenceContextOrThrow(ctx, {
+      followUpActionId: args.followUpActionId,
+      internalControlId: args.internalControlId,
+      itemId: args.itemId,
+    });
     const evidenceId = await ctx.db.insert('securityControlEvidence', {
       ...getSecurityScopeFields(),
       internalControlId: args.internalControlId,
@@ -594,6 +681,9 @@ export const createSecurityControlEvidenceFileInternal = internalMutation({
       sufficiency: args.sufficiency,
       uploadedByUserId: args.uploadedByUserId,
       validUntil: undefined,
+      reviewOriginSourceId: followUpAction?._id,
+      reviewOriginSourceLabel: followUpAction?.title,
+      reviewOriginSourceType: followUpAction ? 'follow_up_action' : undefined,
       reviewStatus: 'pending',
       lifecycleStatus: 'active',
       createdAt: now,

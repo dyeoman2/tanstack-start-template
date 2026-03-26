@@ -8,6 +8,7 @@ const elbv2 = require('aws-cdk-lib/aws-elasticloadbalancingv2');
 const logs = require('aws-cdk-lib/aws-logs');
 const rds = require('aws-cdk-lib/aws-rds');
 const secretsmanager = require('aws-cdk-lib/aws-secretsmanager');
+const wafv2 = require('aws-cdk-lib/aws-wafv2');
 
 /**
  * @typedef {{
@@ -27,6 +28,7 @@ const secretsmanager = require('aws-cdk-lib/aws-secretsmanager');
  *   projectSlug?: string;
  *   rdsCaBundlePath?: string;
  *   siteSubdomain?: string;
+ *   enableWaf?: boolean;
  * }} DrEcsStackProps
  */
 
@@ -266,6 +268,99 @@ class DrEcsStack extends cdk.Stack {
         healthyHttpCodes: '200-499',
       },
     });
+
+    // -----------------------------------------------------------------------
+    // WAF: AWS Managed Rules + IP rate limiting for the DR ALB.
+    // Enabled by default — set enableWaf: false to skip for cost savings
+    // during non-production DR testing.
+    // -----------------------------------------------------------------------
+    const enableWaf = props.enableWaf ?? true;
+    if (enableWaf) {
+      const webAcl = new wafv2.CfnWebACL(this, 'DrWafWebAcl', {
+        defaultAction: { allow: {} },
+        scope: 'REGIONAL',
+        visibilityConfig: {
+          cloudWatchMetricsEnabled: true,
+          metricName: `${resourcePrefix}-waf`,
+          sampledRequestsEnabled: true,
+        },
+        rules: [
+          {
+            name: 'AWSManagedRulesCommonRuleSet',
+            priority: 10,
+            overrideAction: { none: {} },
+            statement: {
+              managedRuleGroupStatement: {
+                vendorName: 'AWS',
+                name: 'AWSManagedRulesCommonRuleSet',
+              },
+            },
+            visibilityConfig: {
+              cloudWatchMetricsEnabled: true,
+              metricName: `${resourcePrefix}-waf-common`,
+              sampledRequestsEnabled: true,
+            },
+          },
+          {
+            name: 'AWSManagedRulesKnownBadInputsRuleSet',
+            priority: 20,
+            overrideAction: { none: {} },
+            statement: {
+              managedRuleGroupStatement: {
+                vendorName: 'AWS',
+                name: 'AWSManagedRulesKnownBadInputsRuleSet',
+              },
+            },
+            visibilityConfig: {
+              cloudWatchMetricsEnabled: true,
+              metricName: `${resourcePrefix}-waf-bad-inputs`,
+              sampledRequestsEnabled: true,
+            },
+          },
+          {
+            name: 'AWSManagedRulesSQLiRuleSet',
+            priority: 30,
+            overrideAction: { none: {} },
+            statement: {
+              managedRuleGroupStatement: {
+                vendorName: 'AWS',
+                name: 'AWSManagedRulesSQLiRuleSet',
+              },
+            },
+            visibilityConfig: {
+              cloudWatchMetricsEnabled: true,
+              metricName: `${resourcePrefix}-waf-sqli`,
+              sampledRequestsEnabled: true,
+            },
+          },
+          {
+            name: 'RateLimitPerIP',
+            priority: 40,
+            action: { block: {} },
+            statement: {
+              rateBasedStatement: {
+                limit: 2000,
+                aggregateKeyType: 'IP',
+              },
+            },
+            visibilityConfig: {
+              cloudWatchMetricsEnabled: true,
+              metricName: `${resourcePrefix}-waf-rate-limit`,
+              sampledRequestsEnabled: true,
+            },
+          },
+        ],
+      });
+
+      new wafv2.CfnWebACLAssociation(this, 'DrWafAlbAssociation', {
+        resourceArn: alb.loadBalancerArn,
+        webAclArn: webAcl.attrArn,
+      });
+
+      new cdk.CfnOutput(this, 'WafWebAclArn', {
+        value: webAcl.attrArn,
+      });
+    }
 
     const backendUrl = `https://${backendFqdn}`;
     const siteUrl = `https://${siteFqdn}`;

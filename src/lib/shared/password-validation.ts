@@ -4,6 +4,10 @@
  * NIST SP 800-63B recommends minimum 8 characters. We additionally require
  * mixed case, a digit, and a symbol to defend against credential-stuffing
  * attacks that rely on weak/common passwords.
+ *
+ * Breach checking is handled by the Better Auth `haveIBeenPwned()` plugin,
+ * which uses the HIBP k-anonymity range API (free, no API key) to reject
+ * passwords that appear in known data breaches.
  */
 
 export const PASSWORD_MIN_LENGTH = 8;
