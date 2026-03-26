@@ -851,7 +851,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AT-2',
     internalControlId: 'CTRL-AT-002',
     implementationSummary:
-      'This control addresses provider security awareness and literacy training for use of the hosted service and its privileged security features. The repo-backed workspace currently provides training-supporting reference material through auth-security notes, control-matrix guidance, and site admin security posture surfaces, but it does not evidence a formal provider training program, completion records, or recurring update cadence.',
+      'This control addresses provider security awareness and literacy training for use of the hosted service and its privileged security features. The repo-backed workspace currently provides training-supporting reference material, site admin security posture surfaces, and a documented provider awareness policy, but it does not yet evidence attendance records or fuller program-administration detail for personnel supporting the hosted service.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -918,9 +918,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a provider-owned security awareness training program, attendance evidence, or recurring update cadence.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented provider security awareness policy and annual review expectation, but it does not yet include attendance evidence or fuller program-administration detail.',
+          [
+            seededEvidence(
+              'Security awareness and training policy',
+              'Provider policy describing the security awareness program, annual role-based review expectation, and retained review evidence for personnel supporting the hosted service.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual awareness review task',
+              'Annual review task definition requiring the provider security-awareness training program to be reviewed and attested as current during the site admin security review cycle.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Awareness and Training',
         ),
       },
@@ -932,7 +943,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AT-3',
     internalControlId: 'CTRL-AT-003',
     implementationSummary:
-      'This control ensures privileged and support personnel can be trained on the specific security responsibilities tied to their hosted-service roles. The hosted service supports that objective through documented admin-only boundaries, privileged-authentication expectations, and site admin security posture views that can anchor role-based walkthroughs, but a formal provider role-based training program and completion records are not yet evidenced in this workspace.',
+      'This control ensures privileged and support personnel can be trained on the specific security responsibilities tied to their hosted-service roles. The hosted service supports that objective through documented admin-only boundaries, privileged-authentication expectations, site admin security posture views, and a documented provider training policy, but completion records and fuller role-specific program detail are not yet evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -999,9 +1010,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The workspace does not yet include a documented provider role-based security training program, completion records, or refresher cadence for privileged and support personnel.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented provider training policy covering role-based expectations and annual review, but it does not yet include completion records or fuller role-specific refresher detail for privileged and support personnel.',
+          [
+            seededEvidence(
+              'Security awareness and training policy',
+              'Provider policy describing role-based security training expectations and annual review for personnel supporting privileged hosted-service functions.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Awareness and Training',
         ),
       },
@@ -1290,7 +1307,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'AU-6',
     internalControlId: 'CTRL-AU-006',
     implementationSummary:
-      'This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views and evidence-report review workflows, but a formal provider review cadence and escalation procedure are not yet evidenced in this workspace.',
+      'This control ensures the hosted service provides reviewable audit history and retains review-state artifacts that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, and a documented audit-review policy, but detailed provider cadence and escalation workflow evidence are not yet fully attached in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -1353,9 +1370,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No provider-owned documented review cadence or escalation procedure is attached in the repo-backed control workspace yet.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented provider audit-review policy and annual review task, but it does not yet attach fuller cadence and escalation workflow detail.',
+          [
+            seededEvidence(
+              'Audit logging and log review policy',
+              'Provider policy describing audit-log review expectations and documented review procedures for the hosted service environment.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual audit review task',
+              'Annual review task definition requiring the provider audit review procedure to be reviewed and attested as current during the site admin security review cycle.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Operations',
         ),
       },
@@ -1452,7 +1480,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Privileged admin routes, evidence-management actions, and regulated step-up checks require a recent authenticated session before they proceed.',
+          'Privileged admin routes, evidence-management actions, regulated step-up checks, and other sensitive credential changes require a recent authenticated session before they proceed.',
           [
             seededEvidence(
               'Privileged admin step-up enforcement',
@@ -1461,6 +1489,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Fresh evidence review protection',
               'Site admin evidence review, archive, and renewal workflows require a fresh privileged session before security-control evidence state can be changed.',
+            ),
+            seededEvidence(
+              'Sensitive credential-change step-up protection',
+              'Authentication route protections require a recent step-up session before sign-in email or password changes are accepted.',
             ),
           ],
           'Authentication',
@@ -1533,15 +1565,19 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['system', 'file'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Sensitive auth endpoints are rate-limited, sign-in email changes require a fresh session, and authenticator onboarding issues backup codes for controlled recovery.',
+          'Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, and authenticator onboarding issues backup codes for controlled recovery.',
           [
             seededEvidence(
               'Authentication recovery rate-limit rules',
-              'Authentication server configuration in `convex/betterAuth/sharedOptions.ts` applies per-route rate limits to password reset, verification email, and other credential-management endpoints.',
+              'Authentication runtime rate-limit rules constrain repeated sign-in, sign-up, password-reset request, password-reset completion, verification-email, and password-change attempts.',
             ),
             seededEvidence(
               'Fresh-session credential-change protection',
-              'Change-email handling in `convex/betterAuth/sharedOptions.ts` blocks sign-in email updates unless the current session satisfies the recent step-up freshness window.',
+              'Credential-change protections block sign-in email and password updates unless the current session satisfies the recent step-up requirement.',
+            ),
+            seededEvidence(
+              'Password reset token handling protections',
+              'Password reset flow removes reset tokens from the browser address bar after capture and applies a no-referrer policy while the reset form is displayed.',
             ),
             seededEvidence(
               'Authenticator backup-code recovery workflow',
@@ -1583,7 +1619,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-2',
     internalControlId: 'CTRL-CP-002',
     implementationSummary:
-      'This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency-plan approval record and recurring revision workflow are not yet evidenced in this workspace.',
+      'This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -1674,23 +1710,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The workspace includes provider disaster recovery overview, configuration guidance, and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.',
+          'done',
+          'The workspace includes provider contingency-planning documentation through disaster recovery policy, overview, configuration guidance, and runbook material tied to current recovery evidence.',
           [
+            seededEvidence(
+              'Backup, contingency, and disaster recovery policy',
+              'Provider policy defining backup, contingency-planning, annual restoration-review, and recovery-evidence expectations for the hosted service.',
+            ),
             seededEvidence(
               'Disaster recovery overview',
               'Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.',
-              { sufficiency: 'partial' },
             ),
             seededEvidence(
               'Disaster recovery configuration guide',
               'Configuration guide describing required provider secrets, DR infrastructure inputs, frontend failover prerequisites, and recovery-time environment overrides for the hosted service.',
-              { sufficiency: 'partial' },
             ),
             seededEvidence(
               'Disaster recovery runbook',
               'Runbook describing prerequisites, backup infrastructure, recovery steps, post-recovery checks, and known limitations for provider disaster recovery operations.',
-              { sufficiency: 'partial' },
             ),
           ],
           'Infrastructure Operations',
@@ -1704,7 +1741,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CP-4',
     internalControlId: 'CTRL-CP-004',
     implementationSummary:
-      'This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, and site-admin review surfaces for recent contingency evidence, but a formal provider corrective-action and revision workflow is not yet evidenced in this workspace.',
+      'This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, site-admin review surfaces for recent contingency evidence, and documented provider contingency-test expectations.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -1799,23 +1836,24 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'in_progress',
-          'The repo-backed workspace includes a recurring backup-and-restore verification workflow, guided DR setup material, and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.',
+          'done',
+          'The workspace includes documented provider contingency-test expectations, a recurring backup-and-restore verification workflow, and explicit success criteria for hosted-service recovery exercises.',
           [
+            seededEvidence(
+              'Backup, contingency, and disaster recovery policy',
+              'Provider policy defining contingency-planning and recovery-testing expectations for the hosted service.',
+            ),
             seededEvidence(
               'Weekly DR backup workflow',
               'Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.',
-              { sufficiency: 'partial' },
             ),
             seededEvidence(
               'Guided disaster recovery setup workflow',
               'Guided setup flow and configuration guide describing how the provider provisions DR backup, backend failover, frontend failover, and recovery prerequisites before running recovery verification.',
-              { sufficiency: 'partial' },
             ),
             seededEvidence(
               'Disaster recovery runbook test criteria',
               'Runbook guidance stating that the backup workflow is only successful when export, upload, deploy-test, and restore-test all pass.',
-              { sufficiency: 'partial' },
             ),
           ],
           'Infrastructure Operations',
@@ -1935,7 +1973,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-2',
     internalControlId: 'CTRL-IR-002',
     implementationSummary:
-      'This control ensures incident responders can be trained using current hosted-service investigation artifacts and response-supporting context. The hosted service supports that objective through generated evidence reports, audit-readiness exports, and retained integrity-linked investigation records, but a formal provider incident response training program and completion records are not yet evidenced in this workspace.',
+      'This control ensures incident responders can be trained using current hosted-service investigation artifacts and response-supporting context. The hosted service supports that objective through generated evidence reports, audit-readiness exports, retained integrity-linked investigation records, and a documented incident-response policy, but fuller provider training-program administration evidence is not yet attached in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -2002,9 +2040,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The workspace does not yet include a provider incident response training program, completion records, or documented refresher cadence.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented incident-response policy describing training cadence, but it does not yet include completion records or fuller program-administration evidence for provider responders.',
+          [
+            seededEvidence(
+              'Incident response policy',
+              'Provider policy defining incident-response planning, training, testing, and retained evidence expectations for the hosted service environment.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Incident Response',
         ),
       },
@@ -2128,7 +2172,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-4',
     internalControlId: 'CTRL-IR-004',
     implementationSummary:
-      'This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, and retained review artifacts that can assist incident analysis, but provider incident response procedures and customer-side response workflows must be documented and operated outside these repo-backed product artifacts.',
+      'This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, and a documented provider incident-response policy that can assist incident analysis, but fuller provider procedures and customer-side response workflows must still be documented and operated outside these repo-backed product artifacts.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p0' as const,
@@ -2211,9 +2255,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No provider-owned incident response procedure is attached in the repo-backed control workspace yet.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented provider incident-response policy, but it does not yet attach fuller procedure detail covering triage, escalation, containment, customer coordination, and post-incident follow-up.',
+          [
+            seededEvidence(
+              'Incident response policy',
+              'Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Annual incident response procedure task',
+              'Annual review task definition requiring the provider incident-response procedure to be reviewed and attested as current during the site admin security review cycle.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Incident Response',
         ),
       },
@@ -2225,7 +2280,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'IR-8',
     internalControlId: 'CTRL-IR-008',
     implementationSummary:
-      'This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, and audit-readiness artifacts that can support provider or customer incident response planning, but a formal provider incident response plan, plan review cadence, and customer coordination procedure are not yet evidenced in this repo-backed workspace.',
+      'This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, and a documented provider incident-response plan that can support provider or customer incident response planning, but a formal plan review cadence and customer coordination procedure are not yet evidenced in this repo-backed workspace.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -2297,9 +2352,14 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a provider-owned incident response plan document.',
-          [],
+          'done',
+          'The workspace includes a documented provider incident-response plan through the provider incident-response policy.',
+          [
+            seededEvidence(
+              'Incident response policy',
+              'Provider policy defining the incident-response plan, planning expectations, training and testing cadence, and retained evidence expectations for the hosted service environment.',
+            ),
+          ],
           'Security Incident Response',
         ),
       },
@@ -2326,7 +2386,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'RA-5',
     internalControlId: 'CTRL-RA-005',
     implementationSummary:
-      'This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, and production deployment verification, but hosted-service remediation tracking and formal risk treatment still require provider processes outside this workspace.',
+      'This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, production deployment verification, and retained findings workflow state for remediation and risk treatment.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p0' as const,
@@ -2380,9 +2440,22 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'link', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No remediation-tracking or risk-acceptance artifact is attached from the codebase.',
-          [],
+          'done',
+          'The site admin workspace retains provider finding disposition, accepted-risk state, review notes, and linked follow-up review runs that support remediation and risk-treatment tracking.',
+          [
+            seededEvidence(
+              'Security finding disposition record structure',
+              'Stored security findings retain status, provider disposition, review notes, reviewer attribution, and timestamps for remediation and risk-treatment tracking.',
+            ),
+            seededEvidence(
+              'Security findings review interface',
+              'Administrative security interface allows providers to record pending-review, investigating, accepted-risk, false-positive, or resolved disposition decisions with review notes.',
+            ),
+            seededEvidence(
+              'Triggered follow-up review workflow',
+              'Security findings can open remediation-focused follow-up review runs, and annual findings attestation blocks completion until critical open findings are resolved or dispositioned.',
+            ),
+          ],
           'Security Engineering',
         ),
       },
@@ -2501,7 +2574,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'SC-12',
     internalControlId: 'CTRL-SC-012',
     implementationSummary:
-      'This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, and it provisions customer-managed KMS keys for protected file and backup storage, but secret generation, secure custody, rotation procedures, and broader deployment key governance remain only partially evidenced in this workspace.',
+      'This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, provisions customer-managed KMS keys for protected file and backup storage, and now includes documented production secret custody and rotation guidance for provider-operated deployment paths.',
     coverage: 'partial' as const,
     responsibility: 'shared-responsibility' as const,
     priority: 'p1' as const,
@@ -2597,9 +2670,18 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo does not currently attach a documented secret-custody or rotation procedure for production cryptographic material.',
-          [],
+          'done',
+          'The workspace includes documented production secret-custody rules, quarterly access review expectations, and rotation sequences for deployment and Better Auth secret material.',
+          [
+            seededEvidence(
+              'Convex secret-tier access runbook',
+              'Provider runbook describing named-operator custody rules, quarterly access review, and break-glass rotation expectations for production Convex and deployment-secret access.',
+            ),
+            seededEvidence(
+              'Deployment environment rotation guidance',
+              'Deployment guidance documenting Better Auth signing-key rotation, versioned Better Auth secret rotation, and production deployment-key handling expectations.',
+            ),
+          ],
           'Infrastructure and Platform Security',
         ),
       },
@@ -2698,9 +2780,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo shows cryptographic mechanisms in use, but it does not attach a provider-owned cryptography standard-selection or approved-module policy to this workspace.',
-          [],
+          'in_progress',
+          'The workspace now includes a documented cryptography policy, but it does not yet attach fuller approved-standard or approved-module selection detail.',
+          [
+            seededEvidence(
+              'Cryptography and data protection policy',
+              'Provider policy documenting required cryptographic uses and key-management expectations for information in transit, at rest, and in protected hosted-service workflows.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Infrastructure and Platform Security',
         ),
       },
@@ -3210,8 +3298,12 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
               'src/lib/server/vendor-boundary.server.ts rejects outbound access when vendor approval, environment, or data-class policy is not satisfied.',
             ),
             seededEvidence(
-              'Outbound service call guardrails',
-              'src/lib/server/openrouter.ts and convex/emails.ts invoke assertVendorBoundary before outbound vendor access.',
+              'OpenRouter privacy and vendor guardrails',
+              'OpenRouter runtime validation fails closed unless strict privacy mode is in effect, and outbound request settings apply Zero Data Retention and deny vendor data collection on every request.',
+            ),
+            seededEvidence(
+              'Outbound service call boundary checks',
+              'OpenRouter and email delivery paths invoke vendor-boundary enforcement before outbound vendor access proceeds.',
             ),
           ],
           'Vendor Risk Management',
@@ -3366,9 +3458,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider review cadence, exception workflow, or replacement plan process for unsupported components.',
-          [],
+          'in_progress',
+          'The workspace now includes documented unsupported-component expectations, but it does not yet attach fuller review cadence, exception workflow, or replacement-plan detail.',
+          [
+            seededEvidence(
+              'Configuration and change management policy',
+              'Provider policy documenting that unsupported components must be identified and addressed within the provider-managed hosted-service environment.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Secure Engineering',
         ),
       },
@@ -3409,6 +3507,10 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             seededEvidence(
               'Auth middleware origin rejection',
               'convex/betterAuth/sharedOptions.ts rejects authentication requests from untrusted origins before processing credentials.',
+            ),
+            seededEvidence(
+              'Redirect target boundary normalization',
+              'Authentication redirect handling limits post-authentication destinations to approved in-app routes and rejects agent-auth redirects that are not same-origin relative paths.',
             ),
           ],
           'Infrastructure and Platform Security',
@@ -3568,7 +3670,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-2',
     internalControlId: 'CTRL-CM-002',
     implementationSummary:
-      'This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, and site-admin-visible baseline posture summaries, but a formal provider baseline review and approval procedure is not yet evidenced in this workspace.',
+      'This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site-admin-visible baseline posture summaries, and a documented provider baseline policy, but fuller review cadence and approval workflow detail are not yet evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -3667,9 +3769,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider procedure for baseline review cadence, approval, or update triggers.',
-          [],
+          'in_progress',
+          'The workspace now includes documented baseline-review expectations, but it does not yet attach fuller cadence, approval, or update-trigger detail.',
+          [
+            seededEvidence(
+              'Configuration and change management policy',
+              'Provider policy documenting that managed baselines are documented and reviewed for provider-managed hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Configuration Management',
         ),
       },
@@ -3722,7 +3830,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'system'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments, and the verification workflow can retain reviewable records of those checks in the control workspace.',
+          'The auth runtime rejects malformed origins, enforces explicit server-side session lifetime controls for regulated deployments, and can retain reviewable verification records for those checks in the control workspace.',
           [
             seededEvidence(
               'Fail-closed Better Auth env validation',
@@ -3730,7 +3838,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Explicit secure session settings',
-              'Authentication configuration describing explicit session expiry, refresh, freshness, database-backed session storage, and cookie-cache behavior for security-sensitive revocation flows.',
+              'Authentication configuration describing an eight-hour absolute session ceiling, a fifteen-minute server-side idle timeout and freshness window, database-backed session storage, and cookie-cache behavior for security-sensitive revocation flows.',
             ),
             seededEvidence(
               'Retained Better Auth verification workflow record',
@@ -3750,7 +3858,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
           'done',
-          'Security-sensitive runtime configuration is validated for auth origins and vendor configuration before protected paths proceed.',
+          'Security-sensitive runtime configuration is validated for auth origins, session posture, and vendor privacy configuration before protected paths proceed.',
           [
             seededEvidence(
               'Auth and site URL validation',
@@ -3758,7 +3866,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
             ),
             seededEvidence(
               'Vendor runtime validation',
-              'src/lib/server/openrouter.ts validates OpenRouter privacy mode and API key presence before outbound model use.',
+              'OpenRouter runtime validation requires an API key and fails startup unless strict privacy mode is configured for PHI-sensitive outbound model use.',
             ),
           ],
           'Secure Configuration',
@@ -3772,7 +3880,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-8',
     internalControlId: 'CTRL-CM-008',
     implementationSummary:
-      'This control ensures the hosted service maintains a partial inventory foundation for the components and managed services that make up the deployed system boundary. The platform currently documents architecture scope, approved external services, and selected security-relevant managed components, but a complete component inventory with formal review cadence and accountability records is not yet evidenced in this workspace.',
+      'This control ensures the hosted service maintains a partial inventory foundation for the components and managed services that make up the deployed system boundary. The platform currently documents architecture scope, approved external services, selected security-relevant managed components, and documented inventory expectations, but a complete component inventory with formal review cadence and accountability records is not yet evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -3897,9 +4005,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'No provider-owned review cadence or update procedure for a full system component inventory is attached in the repo-backed control workspace yet.',
-          [],
+          'in_progress',
+          'The workspace now includes documented component-inventory expectations, but it does not yet attach fuller review cadence or update-procedure detail for a complete system inventory.',
+          [
+            seededEvidence(
+              'Configuration and change management policy',
+              'Provider policy documenting that the provider-managed component inventory remains current for hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Configuration Management',
         ),
       },
@@ -4346,7 +4460,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'CM-3',
     internalControlId: 'CTRL-CM-003',
     implementationSummary:
-      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, and reproducible compliance generation workflows, while formal approval records and provider change-management procedures are not yet fully evidenced in this workspace.',
+      'This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, and a documented provider change policy, while fuller approval, rollback, and emergency-change procedure detail is not yet fully evidenced in this workspace.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4390,9 +4504,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The workspace does not yet include a provider-owned change approval, rollback, or emergency-change procedure for hosted-service changes.',
-          [],
+          'in_progress',
+          'The workspace now includes documented approved-change expectations, but it does not yet attach fuller rollback and emergency-change procedure detail for hosted-service changes.',
+          [
+            seededEvidence(
+              'Configuration and change management policy',
+              'Provider policy documenting that production-impacting changes follow an approved change path for provider-managed hosted-service systems.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Change Management',
         ),
       },
@@ -4457,7 +4577,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'PL-2',
     internalControlId: 'CTRL-PL-002',
     implementationSummary:
-      'This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, and control-matrix documentation, but formal plan approval and recurring review workflow evidence are not yet attached here.',
+      'This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, and a documented governance policy, but formal plan approval and fuller recurring review workflow evidence are not yet attached here.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4532,9 +4652,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a formal provider review cadence, approval record, or update procedure for these planning artifacts.',
-          [],
+          'in_progress',
+          'The workspace now includes documented governance review expectations, but it does not yet attach a formal approval record or fuller update procedure for these planning artifacts.',
+          [
+            seededEvidence(
+              'Information security governance policy',
+              'Provider governance policy documenting annual review expectations for the security program and retained review outcomes for planning and control artifacts.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Security Planning',
         ),
       },
@@ -4546,7 +4672,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'PS-3',
     internalControlId: 'CTRL-PS-003',
     implementationSummary:
-      'This control addresses provider personnel-screening documentation for workforce members who may administer or support the hosted service. The repo-backed workspace can retain, review, and export provider evidence artifacts related to workforce security controls, but the repo does not itself evidence a formal personnel-screening policy, completed screening records, or provider approval workflow for workforce access.',
+      'This control addresses provider personnel-screening documentation for workforce members who may administer or support the hosted service. The repo-backed workspace can retain, review, and export provider evidence artifacts related to workforce security controls, and it now includes a documented personnel-security policy, but completed screening records and provider approval workflow evidence are still not attached here.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4613,9 +4739,14 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a provider-owned personnel-screening policy artifact.',
-          [],
+          'done',
+          'The workspace includes a documented provider personnel-security policy covering workforce screening expectations.',
+          [
+            seededEvidence(
+              'Personnel security policy',
+              'Provider policy documenting workforce-screening requirements for relevant provider access to the hosted service.',
+            ),
+          ],
           'Workforce Security',
         ),
       },
@@ -4742,9 +4873,15 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a documented provider or customer termination procedure tied to hosted-service access removal.',
-          [],
+          'in_progress',
+          'The workspace now includes documented provider offboarding expectations, but it does not yet attach customer-specific termination procedures or fuller hosted-service coordination detail.',
+          [
+            seededEvidence(
+              'Personnel security policy',
+              'Provider policy documenting termination and offboarding steps for provider personnel with hosted-service access.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Workforce Access Governance',
         ),
       },
@@ -4756,7 +4893,7 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
     nist80053Id: 'PS-7',
     internalControlId: 'CTRL-PS-007',
     implementationSummary:
-      'This control addresses documentation and review of provider requirements for third-party personnel who may support or administer hosted-service components through approved external services. The repo-backed workspace can document approved vendor boundaries, retain and review provider evidence artifacts, and audit vendor-use paths, but it does not itself evidence a formal third-party personnel security policy, completed screening or training records, or provider approval workflow for third-party personnel access.',
+      'This control addresses documentation and review of provider requirements for third-party personnel who may support or administer hosted-service components through approved external services. The repo-backed workspace can document approved vendor boundaries, retain and review provider evidence artifacts, audit vendor-use paths, and now includes documented third-party risk and external-personnel policy expectations, but completed screening or training records and fuller provider approval workflow evidence are still not attached here.',
     coverage: 'partial' as const,
     responsibility: 'platform' as const,
     priority: 'p1' as const,
@@ -4848,9 +4985,20 @@ const ACTIVE_CONTROL_BLUEPRINTS: ReadonlyArray<{
         required: true,
         suggestedEvidenceTypes: ['file', 'note'] as ChecklistEvidenceType[],
         seed: seededChecklist(
-          'not_started',
-          'The repo-backed workspace does not yet include a provider-owned third-party personnel security policy, completed screening or training records, or approval workflow for third-party personnel access.',
-          [],
+          'in_progress',
+          'The workspace now includes documented external-personnel and third-party risk expectations, but it does not yet attach completed screening or training records or a fuller approval workflow for third-party personnel access.',
+          [
+            seededEvidence(
+              'Third-party risk management policy',
+              'Provider policy documenting approval, review, and monitoring expectations for third-party services and external personnel supporting the hosted service.',
+              { sufficiency: 'partial' },
+            ),
+            seededEvidence(
+              'Personnel security policy',
+              'Provider policy documenting external-personnel security expectations for workforce members with system access.',
+              { sufficiency: 'partial' },
+            ),
+          ],
           'Workforce Security',
         ),
       },

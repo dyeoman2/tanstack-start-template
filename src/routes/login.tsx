@@ -1,9 +1,9 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@convex/_generated/api';
+import { useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link, Navigate, useRouter } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { Fingerprint, Loader2 } from 'lucide-react';
-import { type FormEvent, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useMemo, useState } from 'react';
 import { z } from 'zod';
 import { AuthSkeleton } from '~/components/AuthSkeleton';
 import { Button } from '~/components/ui/button';
@@ -20,13 +20,12 @@ import { Input } from '~/components/ui/input';
 import { Separator } from '~/components/ui/separator';
 import { authClient, refreshAuthClientSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
-import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
+import { useAuth } from '~/features/auth/hooks/useAuth';
 import {
   getAccountSetupCallbackUrl,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
-import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
-import { useAuth } from '~/features/auth/hooks/useAuth';
+import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 
 export const Route = createFileRoute('/login')({
   staticData: true,
@@ -38,10 +37,7 @@ export const Route = createFileRoute('/login')({
       .string()
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
       .optional(),
-    redirectTo: z
-      .string()
-      .regex(/^\/|https?:\/\/.*$/)
-      .optional(),
+    redirectTo: z.string().regex(/^\/.*/).optional(),
     reset: z.string().optional(),
     verified: z.string().optional(),
   }),
@@ -111,7 +107,6 @@ function LoginPage() {
   const [isSubmittingPassword, setIsSubmittingPassword] = useState(false);
   const [isSubmittingGoogle, setIsSubmittingGoogle] = useState(false);
   const [isSubmittingPasskey, setIsSubmittingPasskey] = useState(false);
-  const stepUpRedirectRef = useRef(false);
   const emailId = useId();
   const passwordId = useId();
   const normalizedEmail = normalizeEmail(emailInput);
@@ -151,30 +146,6 @@ function LoginPage() {
     router.history.replace(nextHref);
   }, [reset, router, verified]);
 
-  useEffect(() => {
-    if (!isAuthenticated || !requiresMfaVerification || stepUpRedirectRef.current) {
-      return;
-    }
-
-    stepUpRedirectRef.current = true;
-    void (async () => {
-      try {
-        const challenge = await createOrganizationAdminStepUpChallengeServerFn({
-          data: {
-            redirectTo: redirectTarget,
-          },
-        });
-        await router.navigate({
-          to: '/step-up',
-          search: { challengeId: challenge.challengeId },
-          replace: true,
-        });
-      } catch {
-        stepUpRedirectRef.current = false;
-      }
-    })();
-  }, [isAuthenticated, redirectTarget, requiresMfaVerification, router]);
-
   if (isPending) {
     return <AuthSkeleton />;
   }
@@ -194,7 +165,13 @@ function LoginPage() {
     }
 
     if (requiresMfaVerification) {
-      return <AuthSkeleton />;
+      return (
+        <Navigate
+          to="/two-factor"
+          search={redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {}}
+          replace
+        />
+      );
     }
 
     return <Navigate to={redirectTarget} replace />;
@@ -302,6 +279,7 @@ function LoginPage() {
         fetchOptions: { throw: true },
       });
 
+      await refreshAuthClientSession(queryClient);
       await router.invalidate();
       router.history.replace(redirectTarget);
     } catch (passkeyError) {

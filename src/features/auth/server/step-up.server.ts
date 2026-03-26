@@ -59,6 +59,20 @@ async function createCurrentChallenge(
           redirectTo: normalizedRedirectTo,
         },
       );
+    case STEP_UP_REQUIREMENTS.passwordChange:
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.stepUp.createCurrentPasswordChangeChallenge,
+        {
+          redirectTo: normalizedRedirectTo,
+        },
+      );
+    case STEP_UP_REQUIREMENTS.supportAccessApproval:
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.stepUp.createCurrentSupportAccessApprovalChallenge,
+        {
+          redirectTo: normalizedRedirectTo,
+        },
+      );
     case STEP_UP_REQUIREMENTS.sessionAdministration:
       return await convexAuthReactStart.fetchAuthMutation(
         api.stepUp.createCurrentSessionAdministrationChallenge,

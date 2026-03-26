@@ -21,7 +21,10 @@ export const Route = createFileRoute('/forgot-password')({
       .string()
       .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)
       .optional(),
-    redirectTo: z.string().regex(/^\/.*/).optional(),
+    redirectTo: z
+      .string()
+      .regex(/^\/[a-zA-Z]/)
+      .optional(),
   }),
 });
 

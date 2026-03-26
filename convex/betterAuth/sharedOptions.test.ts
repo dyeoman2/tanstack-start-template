@@ -394,7 +394,7 @@ describe('createSharedBetterAuthOptions', () => {
         },
         returned: new Response('{}', { status: 200 }),
       },
-      path: '/sign-in/passkey',
+      path: '/passkey/verify-authentication',
     } as never);
 
     expect(updateSession).toHaveBeenCalledWith('session_token', {
@@ -669,7 +669,7 @@ describe('createSharedBetterAuthOptions', () => {
       headers: new Headers({
         cookie: `${STEP_UP_COOKIE_NAME}=550e8400-e29b-41d4-a716-446655440000`,
       }),
-      path: '/sign-in/passkey',
+      path: '/passkey/verify-authentication',
     } as never);
 
     expect(completeStepUpChallenge).toHaveBeenCalledWith({
@@ -680,7 +680,7 @@ describe('createSharedBetterAuthOptions', () => {
     });
     expect(recordStepUpCompletion).toHaveBeenCalledWith({
       method: 'passkey',
-      path: '/sign-in/passkey',
+      path: '/passkey/verify-authentication',
       requirement: 'organization_admin',
       sessionId: 'session_1',
       userId: 'user_1',
@@ -735,7 +735,7 @@ describe('createSharedBetterAuthOptions', () => {
       headers: new Headers({
         cookie: `${STEP_UP_COOKIE_NAME}=${legacyCookieValue}`,
       }),
-      path: '/sign-in/passkey',
+      path: '/passkey/verify-authentication',
     } as never);
 
     expect(completeStepUpChallenge).not.toHaveBeenCalled();

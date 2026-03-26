@@ -42,6 +42,8 @@ function formatFindingDisposition(disposition: SecurityFindingListItem['disposit
 
 function formatFindingType(findingType: SecurityFindingListItem['findingType']) {
   switch (findingType) {
+    case 'audit_archive_health':
+      return 'Archive health';
     case 'audit_request_context_gaps':
       return 'Request context gaps';
     case 'audit_integrity_failures':
@@ -203,6 +205,7 @@ export function AdminSecurityFindingsTab(props: {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All finding types</SelectItem>
+            <SelectItem value="audit_archive_health">Archive health</SelectItem>
             <SelectItem value="audit_request_context_gaps">Request context gaps</SelectItem>
             <SelectItem value="audit_integrity_failures">Audit integrity</SelectItem>
             <SelectItem value="document_scan_quarantines">Scan quarantines</SelectItem>

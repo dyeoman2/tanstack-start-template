@@ -13,6 +13,7 @@ const {
   refreshAuthClientSessionMock,
   sendVerificationEmailMock,
   addPasskeyMock,
+  createOrganizationAdminStepUpChallengeMock,
   beginAuthenticatorOnboardingMock,
   signOutMock,
   useAuthMock,
@@ -26,6 +27,7 @@ const {
   refreshAuthClientSessionMock: vi.fn(),
   sendVerificationEmailMock: vi.fn(),
   addPasskeyMock: vi.fn(),
+  createOrganizationAdminStepUpChallengeMock: vi.fn(),
   beginAuthenticatorOnboardingMock: vi.fn(),
   signOutMock: vi.fn(),
   useAuthMock: vi.fn(),
@@ -90,6 +92,7 @@ vi.mock('@tanstack/react-query', () => ({
 
 vi.mock('convex/react', () => ({
   useQuery: useQueryMock,
+  useMutation: () => createOrganizationAdminStepUpChallengeMock,
 }));
 
 vi.mock('~/features/auth/hooks/useAuth', () => ({
@@ -149,6 +152,11 @@ describe('AccountSetupPage', () => {
     useQueryMock.mockReturnValue({ isConfigured: true });
     sendVerificationEmailMock.mockResolvedValue({ success: true });
     addPasskeyMock.mockResolvedValue({});
+    createOrganizationAdminStepUpChallengeMock.mockResolvedValue({
+      challengeId: 'challenge-1',
+      redirectTo: '/app',
+      requirement: 'organizationAdmin',
+    });
     beginAuthenticatorOnboardingMock.mockResolvedValue({
       backupCodes: [],
       totpURI: null,

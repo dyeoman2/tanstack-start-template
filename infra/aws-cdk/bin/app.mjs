@@ -109,6 +109,7 @@ new DrBackupStack(app, buildDrBackupStackName(drProjectSlug), {
 const auditArchiveTrustedPrincipalArn = readTrimmedEnv('AWS_AUDIT_ARCHIVE_TRUSTED_PRINCIPAL_ARN');
 if (auditArchiveTrustedPrincipalArn) {
   new AuditArchiveStack(app, buildAuditArchiveStackName(auditArchiveProjectSlug), {
+    alertEmailAddress: readTrimmedEnv('AWS_STORAGE_ALERT_EMAIL') || undefined,
     bucketName: readTrimmedEnv('AWS_AUDIT_ARCHIVE_BUCKET_NAME') || undefined,
     description: 'TanStack Start immutable audit archive bucket',
     env: awsEnv,

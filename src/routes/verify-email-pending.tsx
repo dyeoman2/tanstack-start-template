@@ -7,7 +7,10 @@ export const Route = createFileRoute('/verify-email-pending')({
   errorComponent: () => <div>Something went wrong</div>,
   validateSearch: z.object({
     email: z.string().email().optional(),
-    redirectTo: z.string().regex(/^\/.*/).optional(),
+    redirectTo: z
+      .string()
+      .regex(/^\/[a-zA-Z]/)
+      .optional(),
   }),
 });
 

@@ -52,4 +52,18 @@ crons.interval(
   {},
 );
 
+crons.interval(
+  'verify immutable audit archive',
+  { hours: 1 },
+  internal.auditArchive.verifyLatestSealedAuditLedgerSegmentInImmutableStoreInternal,
+  {},
+);
+
+crons.interval(
+  'notify expired support access grants',
+  { hours: 1 },
+  internal.organizationManagement.notifyExpiredOrganizationSupportAccessGrantsInternal,
+  {},
+);
+
 export default crons;

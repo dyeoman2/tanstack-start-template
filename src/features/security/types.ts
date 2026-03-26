@@ -329,6 +329,26 @@ export type AuditReadinessOverview = {
     headHash: string | null;
     objectKey: string;
   } | null;
+  archiveStatus: {
+    required: boolean;
+    configured: boolean;
+    exporterEnabled: boolean;
+    latestSealEndSequence: number | null;
+    latestExportEndSequence: number | null;
+    lagCount: number;
+    driftDetected: boolean;
+    lastVerifiedAt: number | null;
+    lastVerifiedSealEndSequence: number | null;
+    lastVerificationStatus:
+      | 'verified'
+      | 'missing_object'
+      | 'hash_mismatch'
+      | 'no_seal'
+      | 'disabled';
+    latestManifestObjectKey: string | null;
+    latestPayloadObjectKey: string | null;
+    failureReason: string | null;
+  };
   lastIntegrityFailure: {
     checkedAt: number;
     eventId: string;
@@ -432,6 +452,7 @@ export type SecurityFindingListItem = {
   findingKey: string;
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_archive_health'
     | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'

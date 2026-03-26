@@ -255,21 +255,35 @@ export type OrganizationEnterpriseAccessResult = {
 
 export type OrganizationSupportAccessGrantRow = {
   id: Id<'organizationSupportAccessGrants'>;
+  approvalMethod: 'single_owner';
+  approvedAt: number;
   createdAt: number;
   expiresAt: number;
+  expiredNotificationSentAt: number | null;
+  firstUsedAt: number | null;
   grantedByEmail: string | null;
   grantedByName: string | null;
   grantedByUserId: string;
   reason: string;
+  reasonCategory:
+    | 'incident_response'
+    | 'customer_requested_change'
+    | 'data_repair'
+    | 'account_recovery'
+    | 'other';
+  reasonDetails: string;
+  lastUsedAt: number | null;
   revokedAt: number | null;
   revokedByEmail: string | null;
   revokedByName: string | null;
+  revocationReason: string | null;
   revokedByUserId: string | null;
   scope: OrganizationSupportAccessScope;
   siteAdminEmail: string;
   siteAdminName: string | null;
   siteAdminUserId: string;
   ticketId: string;
+  useCount: number;
 };
 
 export type OrganizationLegalHoldSummary = {
@@ -303,5 +317,12 @@ export type OrganizationSupportAccessSiteAdminOption = {
   email: string;
   name: string | null;
 };
+
+export type OrganizationSupportAccessReasonCategory =
+  | 'incident_response'
+  | 'customer_requested_change'
+  | 'data_repair'
+  | 'account_recovery'
+  | 'other';
 
 export type OrganizationAuditEventType = (typeof ORGANIZATION_AUDIT_EVENT_TYPES)[number];

@@ -5,7 +5,9 @@ export const STEP_UP_REQUIREMENTS = {
   documentExport: 'document_export',
   documentDeletion: 'document_deletion',
   organizationAdmin: 'organization_admin',
+  passwordChange: 'password_change',
   sessionAdministration: 'session_administration',
+  supportAccessApproval: 'support_access_approval',
   userAdministration: 'user_administration',
 } as const;
 
@@ -112,7 +114,25 @@ export const STEP_UP_REQUIREMENT_POLICIES = {
     reusable: true,
     ttlMs: FIVE_MINUTES_MS,
   },
+  [STEP_UP_REQUIREMENTS.passwordChange]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
   [STEP_UP_REQUIREMENTS.sessionAdministration]: {
+    allowedMethods: [
+      STEP_UP_METHODS.passkey,
+      STEP_UP_METHODS.passwordPlusTotp,
+      STEP_UP_METHODS.totp,
+    ],
+    reusable: false,
+    ttlMs: FIVE_MINUTES_MS,
+  },
+  [STEP_UP_REQUIREMENTS.supportAccessApproval]: {
     allowedMethods: [
       STEP_UP_METHODS.passkey,
       STEP_UP_METHODS.passwordPlusTotp,

@@ -26,7 +26,6 @@ import {
 } from '~/features/auth/lib/account-setup-routing';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 import { beginAuthenticatorOnboardingServerFn } from '~/features/auth/server/onboarding';
-import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import { cn } from '~/lib/utils';
 
 function getEnrollmentErrorMessage(error: unknown) {
@@ -276,22 +275,15 @@ export function AccountSetupPage({
     }
 
     stepUpRedirectRef.current = true;
-    void (async () => {
-      try {
-        const challenge = await createOrganizationAdminStepUpChallengeServerFn({
-          data: {
-            redirectTo: redirectTarget,
-          },
-        });
-        await router.navigate({
-          to: '/step-up',
-          search: { challengeId: challenge.challengeId },
-          replace: true,
-        });
-      } catch {
+    void router
+      .navigate({
+        to: '/two-factor',
+        search: redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {},
+        replace: true,
+      })
+      .catch(() => {
         stepUpRedirectRef.current = false;
-      }
-    })();
+      });
   }, [
     isAuthenticated,
     redirectTarget,

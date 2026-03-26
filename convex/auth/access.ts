@@ -1062,6 +1062,13 @@ async function recordSupportGrantUsed(
     requestContext: input.requestContext,
     session: input.decision.user.authSession,
   });
+  const supportGrantUsage = await ctx.runMutation(
+    internal.organizationManagement.recordOrganizationSupportAccessUseInternal,
+    {
+      grantId: input.decision.assurance.supportGrantId,
+      usedAt: Date.now(),
+    },
+  );
 
   await recordUserAuditEvent(ctx, {
     actorIdentifier: input.decision.user.authUser.email?.toLowerCase(),
@@ -1069,10 +1076,14 @@ async function recordSupportGrantUsed(
     emitter: 'auth.authorization',
     eventType: 'support_access_used',
     metadata: JSON.stringify({
+      firstUse: supportGrantUsage.firstUse,
       grantId: input.decision.assurance.supportGrantId,
       permission: input.decision.permission,
+      reasonCategory: supportGrantUsage.grant?.reasonCategory ?? null,
+      reasonDetails: supportGrantUsage.grant?.reasonDetails ?? null,
       scope: input.decision.assurance.supportGrantScope,
       ticketId: input.decision.assurance.supportGrantTicketId,
+      usedAt: supportGrantUsage.grant?.lastUsedAt ?? null,
     }),
     organizationId: input.decision.organizationId,
     outcome: 'success',

@@ -72,13 +72,12 @@ function getModelCacheKey(modelId: ChatModelId, supportsWebSearch: boolean) {
     : `${modelId}:${config.privacyMode}`;
 }
 
+/**
+ * ZDR (Zero Data Retention) and data_collection: 'deny' are applied
+ * unconditionally to every OpenRouter request. This ensures no user
+ * content is retained by the vendor regardless of configuration.
+ */
 function getOpenRouterProviderRoutingSettings() {
-  const config = getOpenRouterConfig();
-
-  if (config.privacyMode !== 'strict') {
-    return undefined;
-  }
-
   return {
     provider: {
       zdr: true,

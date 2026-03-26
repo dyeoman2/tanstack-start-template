@@ -1,6 +1,12 @@
 'use node';
 
-import { HeadObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CloudWatchClient, PutMetricDataCommand } from '@aws-sdk/client-cloudwatch';
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from '@aws-sdk/client-s3';
 import { AssumeRoleCommand, STSClient } from '@aws-sdk/client-sts';
 import { getAuditArchiveRuntimeConfig } from '../../src/lib/server/env.server';
 
@@ -16,8 +22,10 @@ type CachedCredentials = {
 };
 
 const ASSUME_ROLE_REFRESH_WINDOW_MS = 60 * 1000;
+export const AUDIT_ARCHIVE_METRIC_NAMESPACE = 'TanStackStart/AuditArchive';
 
 let cachedClient: S3Client | null = null;
+let cachedCloudWatchClient: CloudWatchClient | null = null;
 let cachedStsClient: STSClient | null = null;
 let cachedCredentialsPromise: Promise<CachedCredentials> | null = null;
 
@@ -108,6 +116,19 @@ function getAuditArchiveClient() {
   return cachedClient;
 }
 
+function getAuditArchiveCloudWatchClient() {
+  if (cachedCloudWatchClient) {
+    return cachedCloudWatchClient;
+  }
+
+  const { awsRegion } = getRequiredArchiveConfig();
+  cachedCloudWatchClient = new CloudWatchClient({
+    credentials: async () => await getArchiveCredentials(),
+    region: awsRegion,
+  });
+  return cachedCloudWatchClient;
+}
+
 export async function headAuditArchiveObject(args: { key: string }) {
   const { bucket } = getRequiredArchiveConfig();
   return await getAuditArchiveClient().send(
@@ -129,6 +150,21 @@ export async function getAuditArchiveObjectMetadata(args: { key: string }) {
   };
 }
 
+export async function getAuditArchiveObjectBytes(args: { key: string }) {
+  const { bucket } = getRequiredArchiveConfig();
+  const response = await getAuditArchiveClient().send(
+    new GetObjectCommand({
+      Bucket: bucket,
+      Key: args.key,
+    }),
+  );
+  if (!response.Body) {
+    throw new Error(`Audit archive object body missing for ${args.key}.`);
+  }
+
+  return await response.Body.transformToByteArray();
+}
+
 export async function putAuditArchiveObject(args: {
   body: Uint8Array;
   contentEncoding?: string;
@@ -145,6 +181,32 @@ export async function putAuditArchiveObject(args: {
       Key: args.key,
       SSEKMSKeyId: kmsKeyArn,
       ServerSideEncryption: 'aws:kms',
+    }),
+  );
+}
+
+export async function putAuditArchiveMetricData(args: {
+  bucketName: string;
+  metrics: Array<{
+    metricName: string;
+    unit: 'Count' | 'None';
+    value: number;
+  }>;
+}) {
+  if (args.metrics.length === 0) {
+    return;
+  }
+
+  await getAuditArchiveCloudWatchClient().send(
+    new PutMetricDataCommand({
+      MetricData: args.metrics.map((metric) => ({
+        Dimensions: [{ Name: 'BucketName', Value: args.bucketName }],
+        MetricName: metric.metricName,
+        Timestamp: new Date(),
+        Unit: metric.unit,
+        Value: metric.value,
+      })),
+      Namespace: AUDIT_ARCHIVE_METRIC_NAMESPACE,
     }),
   );
 }

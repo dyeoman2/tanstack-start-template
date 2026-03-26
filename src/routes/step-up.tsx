@@ -34,6 +34,8 @@ function getRequirementMessage(
       return 'Verify your account again before exporting regulated audit records.';
     case STEP_UP_REQUIREMENTS.attachmentAccess:
       return 'Verify your account again before issuing a file access link.';
+    case STEP_UP_REQUIREMENTS.supportAccessApproval:
+      return 'Verify your account again before approving temporary provider support access.';
     case STEP_UP_REQUIREMENTS.sessionAdministration:
       return 'Verify your account again before managing user sessions.';
     case STEP_UP_REQUIREMENTS.userAdministration:

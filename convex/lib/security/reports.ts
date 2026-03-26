@@ -262,6 +262,20 @@ export async function generateEvidenceReportHandler(
         organizationId: currentUser.activeOrganizationId,
       })
     : null;
+  const archiveStatus = auditReadinessSnapshot.archiveStatus ?? {
+    configured: false,
+    driftDetected: false,
+    exporterEnabled: false,
+    failureReason: null,
+    lagCount: 0,
+    lastVerifiedAt: null,
+    lastVerifiedSealEndSequence: null,
+    lastVerificationStatus: 'disabled' as const,
+    latestManifestObjectKey: null,
+    latestPayloadObjectKey: null,
+    latestSealEndSequence: null,
+    required: false,
+  };
   const vendorPosture = getVendorBoundarySnapshot();
   const vendorWorkspaces = (
     reportKind === 'vendor_posture_snapshot' || reportKind === 'annual_review'
@@ -337,8 +351,12 @@ export async function generateEvidenceReportHandler(
                 BACKUP_DRILL_STALE_WINDOW_MS,
             latest: auditReadinessSnapshot.latestBackupDrill,
           },
+          archiveStatus,
           metadataGaps: auditReadinessSnapshot.metadataGaps,
           summary: {
+            archiveDriftDetected: archiveStatus.driftDetected,
+            archiveLagCount: archiveStatus.lagCount,
+            archiveVerificationStatus: archiveStatus.lastVerificationStatus,
             backupDrillStatus: auditReadinessSnapshot.latestBackupDrill?.status ?? null,
             deniedActionCount: auditReadinessSnapshot.recentDeniedActions.length,
             exportCount: auditReadinessSnapshot.recentExports.length,

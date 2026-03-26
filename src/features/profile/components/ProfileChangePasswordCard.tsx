@@ -16,6 +16,7 @@ import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from '~/compo
 import { InputGroup, InputGroupAddon, InputGroupInput } from '~/components/ui/input-group';
 import { useToast } from '~/components/ui/toast';
 import { authClient, authHooks, useSession } from '~/features/auth/auth-client';
+import { validatePasswordComplexity } from '~/lib/shared/password-validation';
 
 type SubmitState = {
   variant: 'success' | 'warning' | 'destructive';
@@ -48,12 +49,9 @@ function validatePassword(value: string) {
     return 'Password is required.';
   }
 
-  if (value.length < 8) {
-    return 'Password must be at least 8 characters.';
-  }
-
-  if (value.length > 128) {
-    return 'Password must be less than 128 characters.';
+  const result = validatePasswordComplexity(value);
+  if (!result.valid) {
+    return result.errors[0];
   }
 
   return undefined;

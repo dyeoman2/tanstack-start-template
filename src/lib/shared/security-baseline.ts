@@ -30,6 +30,8 @@ export const REGULATED_ORGANIZATION_POLICY_DEFAULTS = {
   enterpriseEnforcedAt: null,
   allowBreakGlassPasswordLogin: ALWAYS_ON_REGULATED_BASELINE.allowBreakGlassPasswordLogin,
   temporaryLinkTtlMinutes: REGULATED_RETENTION_DEFAULTS.attachmentUrlTtlMinutes,
+  supportAccessApprovalModel: 'single_owner',
+  supportAccessEnabled: true,
   webSearchAllowed: ALWAYS_ON_REGULATED_BASELINE.webSearchAllowed,
 } as const;
 
@@ -46,6 +48,8 @@ export type RegulatedOrganizationPolicies = {
   invitePolicy: 'owners_admins' | 'owners_only';
   memberCap: number | null;
   mfaRequired: boolean;
+  supportAccessApprovalModel: 'single_owner';
+  supportAccessEnabled: boolean;
   temporaryLinkTtlMinutes: number;
   verifiedDomainsOnly: boolean;
   webSearchAllowed: boolean;

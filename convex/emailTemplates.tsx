@@ -26,6 +26,7 @@ import {
   type SignInOtpTemplateArgs,
   type StaleAccountAdminTemplateArgs,
   type StaleAccountUserTemplateArgs,
+  type SupportAccessLifecycleTemplateArgs,
   type TwoFactorTemplateArgs,
   type VerifyEmailOtpTemplateArgs,
   type VerifyEmailTemplateArgs,
@@ -96,6 +97,35 @@ function getEmailAppName(appName: string) {
 
 function createGreeting(name: string | null) {
   return `Hi ${name || 'there'},`;
+}
+
+function formatSupportAccessScope(scope: 'read_only' | 'read_write') {
+  return scope === 'read_write' ? 'read / write' : 'read only';
+}
+
+function formatSupportAccessReasonCategory(
+  category: SupportAccessLifecycleTemplateArgs['reasonCategory'],
+) {
+  switch (category) {
+    case 'incident_response':
+      return 'Incident response';
+    case 'customer_requested_change':
+      return 'Customer-requested change';
+    case 'data_repair':
+      return 'Data repair';
+    case 'account_recovery':
+      return 'Account recovery';
+    case 'other':
+      return 'Other';
+  }
+}
+
+function formatSupportAccessTimestamp(value: number) {
+  return new Intl.DateTimeFormat('en-US', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'UTC',
+  }).format(new Date(value));
 }
 
 const emailTheme = brandTheme.email;
@@ -609,6 +639,106 @@ export async function buildApplicationInviteTemplate(args: ApplicationInviteTemp
     subject,
     preview,
   );
+}
+
+export async function buildSupportAccessLifecycleTemplate(
+  templateId:
+    | 'support-access-expired'
+    | 'support-access-granted'
+    | 'support-access-revoked'
+    | 'support-access-used',
+  args: SupportAccessLifecycleTemplateArgs,
+) {
+  const supportActor = args.siteAdminName
+    ? `${args.siteAdminName} (${args.siteAdminEmail})`
+    : args.siteAdminEmail;
+  const approver = args.approverName ?? 'An organization owner';
+  const scope = formatSupportAccessScope(args.scope);
+  const reasonCategory = formatSupportAccessReasonCategory(args.reasonCategory);
+  const expiresAt = formatSupportAccessTimestamp(args.expiresAt);
+  const subject =
+    args.event === 'granted'
+      ? `${args.organizationName} support access was approved`
+      : args.event === 'used'
+        ? `${args.organizationName} support access was used`
+        : args.event === 'revoked'
+          ? `${args.organizationName} support access was revoked`
+          : `${args.organizationName} support access expired`;
+  const preview =
+    args.event === 'granted'
+      ? 'Temporary provider access has been opened'
+      : args.event === 'used'
+        ? 'Provider support has started using the temporary grant'
+        : args.event === 'revoked'
+          ? 'Temporary provider access has been closed'
+          : 'A temporary provider access grant expired';
+  const paragraphs =
+    args.event === 'granted'
+      ? [
+          `${approver} approved temporary ${scope} provider access for ${supportActor}.`,
+          `Ticket ${args.ticketId} is open under the ${reasonCategory.toLowerCase()} category.`,
+          `The current grant is scheduled to expire on ${expiresAt}.`,
+        ]
+      : args.event === 'used'
+        ? [
+            `Provider support started using the temporary ${scope} grant approved for ${supportActor}.`,
+            `The access remains tied to ticket ${args.ticketId} and is scheduled to expire on ${expiresAt}.`,
+            'Review the in-product support access log if you need to revoke access immediately.',
+          ]
+        : args.event === 'revoked'
+          ? [
+              `${approver} revoked the temporary ${scope} provider access for ${supportActor}.`,
+              `This grant was originally tied to ticket ${args.ticketId}.`,
+              args.revokeReason
+                ? `Revocation reason: ${args.revokeReason}`
+                : 'The grant has been closed.',
+            ]
+          : [
+              `The temporary ${scope} provider access grant for ${supportActor} expired automatically.`,
+              `This grant was tied to ticket ${args.ticketId}.`,
+              'If support still needs access, issue a new time-bounded grant from the organization settings page.',
+            ];
+
+  return await renderTemplate(
+    <NoticeEmailTemplate
+      appName={args.appName}
+      title={subject}
+      preview={preview}
+      greeting="Hello,"
+      paragraphs={[...paragraphs, `Reason details: ${args.reasonDetails}`]}
+      footnote={`Approval model: single-owner. Reason category: ${reasonCategory}. Template: ${templateId}.`}
+    />,
+    subject,
+    preview,
+  );
+}
+
+export async function buildSupportAccessGrantedTemplate(args: SupportAccessLifecycleTemplateArgs) {
+  return await buildSupportAccessLifecycleTemplate('support-access-granted', {
+    ...args,
+    event: 'granted',
+  });
+}
+
+export async function buildSupportAccessUsedTemplate(args: SupportAccessLifecycleTemplateArgs) {
+  return await buildSupportAccessLifecycleTemplate('support-access-used', {
+    ...args,
+    event: 'used',
+  });
+}
+
+export async function buildSupportAccessRevokedTemplate(args: SupportAccessLifecycleTemplateArgs) {
+  return await buildSupportAccessLifecycleTemplate('support-access-revoked', {
+    ...args,
+    event: 'revoked',
+  });
+}
+
+export async function buildSupportAccessExpiredTemplate(args: SupportAccessLifecycleTemplateArgs) {
+  return await buildSupportAccessLifecycleTemplate('support-access-expired', {
+    ...args,
+    event: 'expired',
+  });
 }
 
 export async function buildDeleteAccountTemplate(args: DeleteAccountTemplateArgs) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkAuditArchiveRuntimeEnv } from './deploy-doctor-checks';
+import { checkAuditArchiveReleaseGate, checkAuditArchiveRuntimeEnv } from './deploy-doctor-checks';
 
 describe('deploy doctor audit archive checks', () => {
   it('fails when s3-backed storage is missing immutable archive env', () => {
@@ -90,5 +90,67 @@ describe('deploy doctor audit archive checks', () => {
         status: 'pass',
       },
     ]);
+  });
+
+  it('fails the release gate when the latest seal is not verified', () => {
+    const checks: Array<{ check: string; detail?: string; status: 'pass' | 'warn' | 'fail' }> = [];
+
+    const ok = checkAuditArchiveReleaseGate(
+      'Convex production',
+      {
+        archiveStatus: {
+          configured: true,
+          driftDetected: false,
+          exporterEnabled: true,
+          failureReason: null,
+          lagCount: 0,
+          lastVerifiedAt: null,
+          lastVerifiedSealEndSequence: null,
+          lastVerificationStatus: 'missing_object',
+          latestExportEndSequence: 12,
+          latestSealEndSequence: 12,
+          required: true,
+        },
+      },
+      checks,
+    );
+
+    expect(ok).toBe(false);
+    expect(checks[0]).toEqual({
+      check: 'Audit archive release gate (Convex production)',
+      detail: 'verification missing_object',
+      status: 'fail',
+    });
+  });
+
+  it('passes the release gate when the latest seal is verified', () => {
+    const checks: Array<{ check: string; detail?: string; status: 'pass' | 'warn' | 'fail' }> = [];
+
+    const ok = checkAuditArchiveReleaseGate(
+      'Convex production',
+      {
+        archiveStatus: {
+          configured: true,
+          driftDetected: false,
+          exporterEnabled: true,
+          failureReason: null,
+          lagCount: 0,
+          lastVerifiedAt: 1700000000000,
+          lastVerifiedSealEndSequence: 12,
+          lastVerificationStatus: 'verified',
+          latestExportEndSequence: 12,
+          latestSealEndSequence: 12,
+          required: true,
+        },
+      },
+      checks,
+    );
+
+    expect(ok).toBe(true);
+    expect(checks[0]).toEqual({
+      check: 'Audit archive release gate (Convex production)',
+      detail: 'verified through seal 12',
+      status: 'pass',
+    });
   });
 });

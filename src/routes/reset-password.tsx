@@ -17,6 +17,7 @@ import {
   markCurrentUserOnboardingCompleteServerFn,
   resolvePasswordResetEmailServerFn,
 } from '~/features/auth/server/onboarding';
+import { validatePasswordComplexity } from '~/lib/shared/password-validation';
 
 export const Route = createFileRoute('/reset-password')({
   staticData: true,
@@ -56,18 +57,9 @@ function ResetPasswordPage() {
       // Validate password
       if (!value.password) {
         errors.push('Password is required');
-      } else if (value.password.length < 8) {
-        errors.push('Password must be at least 8 characters long');
-      } else if (value.password.length > 128) {
-        errors.push('Password must be less than 128 characters');
-      } else if (!/(?=.*[a-z])/.test(value.password)) {
-        errors.push('Password must contain at least one lowercase letter');
-      } else if (!/(?=.*[A-Z])/.test(value.password)) {
-        errors.push('Password must contain at least one uppercase letter');
-      } else if (!/(?=.*\d)/.test(value.password)) {
-        errors.push('Password must contain at least one number');
-      } else if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(value.password)) {
-        errors.push('Password must contain at least one symbol');
+      } else {
+        const result = validatePasswordComplexity(value.password);
+        errors.push(...result.errors);
       }
 
       // Validate password confirmation
@@ -174,7 +166,15 @@ function ResetPasswordPage() {
       setError('Invalid or missing reset token. Please request a new password reset.');
       return;
     }
-    // Token validation is handled by Better Auth internally
+
+    // Strip the token from the URL bar to prevent leakage via referrer headers,
+    // browser history, or shoulder-surfing. The token is already captured in the
+    // search params and held in component state for form submission.
+    if (typeof window !== 'undefined' && window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('token');
+      window.history.replaceState(window.history.state, '', url.toString());
+    }
   }, [token]);
 
   // Check if user is already logged in after password reset
@@ -218,116 +218,120 @@ function ResetPasswordPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-md w-full space-y-8">
-        <div>
-          <div className="flex justify-center">
-            <Link
-              to="/"
-              className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-            >
-              <img
-                src="/android-chrome-192x192.png"
-                alt="TanStack Start Template Logo"
-                className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
-              />
-            </Link>
-          </div>
-          <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
-            Reset your password
-          </h2>
-          <p className="mt-2 text-center text-sm text-muted-foreground">
-            Enter your new password below
-          </p>
-        </div>
-        <form
-          className="mt-8 space-y-6"
-          onSubmit={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            void form.handleSubmit();
-          }}
-        >
-          {error && (
-            <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
-              {error}
+    <>
+      {/* Prevent token leakage via referrer headers to external resources */}
+      <meta name="referrer" content="no-referrer" />
+      <div className="min-h-screen flex items-center justify-center bg-background py-12 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-md w-full space-y-8">
+          <div>
+            <div className="flex justify-center">
+              <Link
+                to="/"
+                className="focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+              >
+                <img
+                  src="/android-chrome-192x192.png"
+                  alt="TanStack Start Template Logo"
+                  className="w-12 h-12 rounded hover:opacity-80 transition-opacity"
+                />
+              </Link>
             </div>
-          )}
-
-          <form.Field name="password">
-            {(field) => (
-              <Field>
-                <FieldLabel className="sr-only">New Password</FieldLabel>
-                <InputGroup>
-                  <InputGroupIcon>
-                    <Lock />
-                  </InputGroupIcon>
-                  <InputGroupInput
-                    id={newPasswordId}
-                    name={field.name}
-                    type="password"
-                    required
-                    autoComplete="new-password"
-                    placeholder="New password"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
-                </InputGroup>
-                {field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
-                )}
-                {!field.state.meta.errors.length && field.state.value && (
-                  <div className="text-xs text-muted-foreground">
-                    Password must contain: 8+ characters, uppercase, lowercase, number, and symbol
-                  </div>
-                )}
-              </Field>
-            )}
-          </form.Field>
-
-          <form.Field name="confirmPassword">
-            {(field) => (
-              <Field>
-                <FieldLabel className="sr-only">Confirm New Password</FieldLabel>
-                <InputGroup>
-                  <InputGroupIcon>
-                    <Lock />
-                  </InputGroupIcon>
-                  <InputGroupInput
-                    id={confirmPasswordId}
-                    name={field.name}
-                    type="password"
-                    required
-                    autoComplete="new-password"
-                    placeholder="Confirm new password"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
-                </InputGroup>
-                {field.state.meta.errors.length > 0 && (
-                  <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
-                )}
-              </Field>
-            )}
-          </form.Field>
-
-          <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
-            {([canSubmit, isSubmitting]) => (
-              <Button type="submit" disabled={!canSubmit || !token} className="w-full">
-                {isSubmitting ? 'Resetting password...' : 'Reset password'}
-              </Button>
-            )}
-          </form.Subscribe>
-
-          <div className="text-center">
-            <Link to="/login" className="font-medium  hover:text-muted-foreground">
-              Back to sign in
-            </Link>
+            <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
+              Reset your password
+            </h2>
+            <p className="mt-2 text-center text-sm text-muted-foreground">
+              Enter your new password below
+            </p>
           </div>
-        </form>
+          <form
+            className="mt-8 space-y-6"
+            onSubmit={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              void form.handleSubmit();
+            }}
+          >
+            {error && (
+              <div className="bg-destructive/10 border border-destructive text-destructive px-4 py-3 rounded">
+                {error}
+              </div>
+            )}
+
+            <form.Field name="password">
+              {(field) => (
+                <Field>
+                  <FieldLabel className="sr-only">New Password</FieldLabel>
+                  <InputGroup>
+                    <InputGroupIcon>
+                      <Lock />
+                    </InputGroupIcon>
+                    <InputGroupInput
+                      id={newPasswordId}
+                      name={field.name}
+                      type="password"
+                      required
+                      autoComplete="new-password"
+                      placeholder="New password"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                    />
+                  </InputGroup>
+                  {field.state.meta.errors.length > 0 && (
+                    <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
+                  )}
+                  {!field.state.meta.errors.length && field.state.value && (
+                    <div className="text-xs text-muted-foreground">
+                      Password must contain: 8+ characters, uppercase, lowercase, number, and symbol
+                    </div>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Field name="confirmPassword">
+              {(field) => (
+                <Field>
+                  <FieldLabel className="sr-only">Confirm New Password</FieldLabel>
+                  <InputGroup>
+                    <InputGroupIcon>
+                      <Lock />
+                    </InputGroupIcon>
+                    <InputGroupInput
+                      id={confirmPasswordId}
+                      name={field.name}
+                      type="password"
+                      required
+                      autoComplete="new-password"
+                      placeholder="Confirm new password"
+                      value={field.state.value}
+                      onChange={(e) => field.handleChange(e.target.value)}
+                      onBlur={field.handleBlur}
+                    />
+                  </InputGroup>
+                  {field.state.meta.errors.length > 0 && (
+                    <p className="text-sm text-destructive">{field.state.meta.errors[0]}</p>
+                  )}
+                </Field>
+              )}
+            </form.Field>
+
+            <form.Subscribe selector={(state) => [state.canSubmit, state.isSubmitting]}>
+              {([canSubmit, isSubmitting]) => (
+                <Button type="submit" disabled={!canSubmit || !token} className="w-full">
+                  {isSubmitting ? 'Resetting password...' : 'Reset password'}
+                </Button>
+              )}
+            </form.Subscribe>
+
+            <div className="text-center">
+              <Link to="/login" className="font-medium  hover:text-muted-foreground">
+                Back to sign in
+              </Link>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </>
   );
 }

@@ -64,6 +64,7 @@ The archive stack provisions:
 - an Object Lock S3 bucket in compliance mode
 - a dedicated KMS key
 - a dedicated write role trusted by one explicit principal ARN
+- optional SNS-backed CloudWatch alarms when `AWS_STORAGE_ALERT_EMAIL` is configured
 - blocked public access, SSL-only access, bucket-owner-enforced ownership, and versioning
 
 ## Commands
@@ -252,6 +253,10 @@ The guided setup flow persists those deploy-time values into `.env.prod`, then c
 - `AuditArchiveBucketName`
 - `AuditArchiveBucketKeyArn`
 - `AuditArchiveRoleArn`
+
+For S3-backed production, immutable archive readiness is enforced as a release gate through
+`pnpm run deploy:doctor -- --prod`. The gate requires complete runtime wiring plus a verified
+latest sealed segment in immutable storage.
 
 ## Runtime/App Environment Contract
 

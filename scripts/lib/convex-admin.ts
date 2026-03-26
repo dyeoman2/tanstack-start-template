@@ -17,8 +17,8 @@ type InternalConvexHttpClient = {
   ): Promise<FunctionReturnType<Action>>;
 };
 
-function getRequiredServerEnv(name: 'CONVEX_DEPLOY_KEY' | 'VITE_CONVEX_URL') {
-  const value = process.env[name];
+function getRequiredServerEnv(name: 'CONVEX_DEPLOY_KEY' | 'VITE_CONVEX_URL', fallback?: string) {
+  const value = fallback ?? process.env[name];
   if (!value || value.trim().length === 0) {
     throw new Error(`${name} environment variable is required`);
   }
@@ -26,10 +26,13 @@ function getRequiredServerEnv(name: 'CONVEX_DEPLOY_KEY' | 'VITE_CONVEX_URL') {
   return value.trim();
 }
 
-export function createConvexAdminClient(): InternalConvexHttpClient {
-  const client = new ConvexHttpClient(getRequiredServerEnv('VITE_CONVEX_URL'), {
+export function createConvexAdminClient(input?: {
+  deployKey?: string;
+  convexUrl?: string;
+}): InternalConvexHttpClient {
+  const client = new ConvexHttpClient(getRequiredServerEnv('VITE_CONVEX_URL', input?.convexUrl), {
     logger: false,
   }) as unknown as InternalConvexHttpClient;
-  client.setAdminAuth(getRequiredServerEnv('CONVEX_DEPLOY_KEY'));
+  client.setAdminAuth(getRequiredServerEnv('CONVEX_DEPLOY_KEY', input?.deployKey));
   return client;
 }

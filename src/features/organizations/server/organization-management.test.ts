@@ -65,6 +65,7 @@ vi.mock('@convex/_generated/api', () => ({
       reactivateOrganizationMember: 'reactivateOrganizationMember',
       revokeOrganizationSupportAccessGrant: 'revokeOrganizationSupportAccessGrant',
       suspendOrganizationMember: 'suspendOrganizationMember',
+      updateOrganizationSupportAccessPolicy: 'updateOrganizationSupportAccessPolicy',
       updateOrganizationPolicies: 'updateOrganizationPolicies',
     },
   },
@@ -140,6 +141,7 @@ import {
   suspendOrganizationMemberServerFn,
   updateOrganizationMemberRoleServerFn,
   updateOrganizationPoliciesServerFn,
+  updateOrganizationSupportAccessPolicyServerFn,
   updateOrganizationSettingsServerFn,
 } from './organization-management';
 
@@ -343,8 +345,9 @@ describe('organization management server functions', () => {
         organizationId: 'org_1',
         siteAdminUserId: 'admin_1',
         scope: 'read_only',
+        reasonCategory: 'incident_response',
         ticketId: 'INC-42',
-        reason: 'Investigate ticket INC-42',
+        reasonDetails: 'Investigate ticket INC-42',
         expiresAt: 1_710_000_000_000,
       },
     });
@@ -353,9 +356,29 @@ describe('organization management server functions', () => {
       organizationId: 'org_1',
       siteAdminUserId: 'admin_1',
       scope: 'read_only',
+      reasonCategory: 'incident_response',
       ticketId: 'INC-42',
-      reason: 'Investigate ticket INC-42',
+      reasonDetails: 'Investigate ticket INC-42',
       expiresAt: 1_710_000_000_000,
+      requestContext: {
+        requestId: 'req-123',
+        ipAddress: '203.0.113.9',
+        userAgent: 'Vitest',
+      },
+    });
+  });
+
+  it('updates support access policy through Convex auth mutations', async () => {
+    await updateOrganizationSupportAccessPolicyServerFn({
+      data: {
+        organizationId: 'org_1',
+        supportAccessEnabled: false,
+      },
+    });
+
+    expect(fetchAuthMutationMock).toHaveBeenCalledWith('updateOrganizationSupportAccessPolicy', {
+      organizationId: 'org_1',
+      supportAccessEnabled: false,
       requestContext: {
         requestId: 'req-123',
         ipAddress: '203.0.113.9',

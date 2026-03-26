@@ -130,6 +130,7 @@ type EvidenceActivityDoc = {
 };
 
 type TableMap = {
+  auditLedgerArchiveVerifications: Map<DocId, Record<string, unknown>>;
   auditLedgerEvents: Map<DocId, Record<string, unknown>>;
   securityControlChecklistItems: Map<DocId, ChecklistItemDoc>;
   securityControlEvidence: Map<DocId, SecurityEvidenceDoc>;
@@ -143,12 +144,19 @@ function clone<T>(value: T): T {
 }
 
 function createSecurityDb(seed?: {
+  auditLedgerArchiveVerifications?: Array<Record<string, unknown>>;
   auditLedgerEvents?: Array<Record<string, unknown>>;
   checklistItems?: ChecklistItemDoc[];
   evidence?: SecurityEvidenceDoc[];
   evidenceActivity?: EvidenceActivityDoc[];
 }) {
   const tables: TableMap = {
+    auditLedgerArchiveVerifications: new Map(
+      (seed?.auditLedgerArchiveVerifications ?? []).map((doc, index) => [
+        String(doc._id ?? `auditLedgerArchiveVerifications-${index + 1}`),
+        clone(doc),
+      ]),
+    ),
     auditLedgerEvents: new Map(
       (seed?.auditLedgerEvents ?? []).map((doc, index) => [
         String(doc._id ?? `auditLedgerEvents-${index + 1}`),
@@ -437,6 +445,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  process.env.FILE_STORAGE_BACKEND = 'convex';
+  delete process.env.AWS_REGION;
+  delete process.env.AWS_AUDIT_ARCHIVE_BUCKET;
+  delete process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN;
+  delete process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN;
   getVerifiedCurrentSiteAdminUserFromActionOrThrowMock.mockResolvedValue({
     activeOrganizationId: 'org-1',
     authUser: {
@@ -720,6 +733,18 @@ describe('audit evidence helpers', () => {
   });
 
   it('surfaces metadata gaps and ledger health in the readiness snapshot', async () => {
+    const previousEnv = {
+      AWS_AUDIT_ARCHIVE_BUCKET: process.env.AWS_AUDIT_ARCHIVE_BUCKET,
+      AWS_AUDIT_ARCHIVE_KMS_KEY_ARN: process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN,
+      AWS_AUDIT_ARCHIVE_ROLE_ARN: process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN,
+      AWS_REGION: process.env.AWS_REGION,
+      FILE_STORAGE_BACKEND: process.env.FILE_STORAGE_BACKEND,
+    };
+    process.env.FILE_STORAGE_BACKEND = 's3-primary';
+    process.env.AWS_REGION = 'us-west-1';
+    process.env.AWS_AUDIT_ARCHIVE_BUCKET = 'audit-archive-bucket';
+    process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN = 'arn:aws:kms:us-west-1:123456789012:key/audit';
+    process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN = 'arn:aws:iam::123456789012:role/audit-archive';
     const backupReports = [
       {
         artifactHash: 'artifact-hash',
@@ -844,6 +869,29 @@ describe('audit evidence helpers', () => {
         manifestSha256: 'manifest-sha',
       },
     ];
+    const auditLedgerArchiveVerifications: Array<Record<string, unknown>> = [
+      {
+        _id: 'archive-verification-1',
+        chainId: 'primary',
+        checkedAt: Date.parse('2026-03-18T04:14:00.000Z'),
+        required: true,
+        configured: true,
+        exporterEnabled: true,
+        latestSealEndSequence: 16,
+        latestExportEndSequence: 16,
+        lagCount: 0,
+        driftDetected: false,
+        lastVerificationStatus: 'verified',
+        lastVerifiedSealEndSequence: 16,
+        latestManifestObjectKey:
+          'audit-ledger/primary/000000000001-000000000016-head-hash-0.manifest.json',
+        latestPayloadObjectKey:
+          'audit-ledger/primary/000000000001-000000000016-head-hash-0.jsonl.gz',
+        payloadSha256: 'payload-sha',
+        manifestSha256: 'manifest-sha',
+        failureReason: null,
+      },
+    ];
     const ctx = {
       db: {
         query: (table: string) => ({
@@ -883,6 +931,10 @@ describe('audit evidence helpers', () => {
               );
             } else if (table === 'auditLedgerImmutableExports') {
               rows = auditLedgerImmutableExports.filter((row) =>
+                filters.every(([field, value]) => row[field] === value),
+              );
+            } else if (table === 'auditLedgerArchiveVerifications') {
+              rows = auditLedgerArchiveVerifications.filter((row) =>
                 filters.every(([field, value]) => row[field] === value),
               );
             } else {
@@ -930,6 +982,11 @@ describe('audit evidence helpers', () => {
       endSequence: 16,
       exportedAt: Date.parse('2026-03-18T04:12:00.000Z'),
     });
+    expect(snapshot.archiveStatus).toMatchObject({
+      driftDetected: false,
+      lastVerificationStatus: 'verified',
+      latestSealEndSequence: 16,
+    });
     expect(snapshot.immutableExportHealthy).toBe(true);
     expect(snapshot.immutableExportLagCount).toBe(0);
     expect(snapshot.sealCount).toBe(1);
@@ -948,6 +1005,31 @@ describe('audit evidence helpers', () => {
       drillId: 'drill-1',
       status: 'success',
     });
+    if (previousEnv.FILE_STORAGE_BACKEND === undefined) {
+      delete process.env.FILE_STORAGE_BACKEND;
+    } else {
+      process.env.FILE_STORAGE_BACKEND = previousEnv.FILE_STORAGE_BACKEND;
+    }
+    if (previousEnv.AWS_REGION === undefined) {
+      delete process.env.AWS_REGION;
+    } else {
+      process.env.AWS_REGION = previousEnv.AWS_REGION;
+    }
+    if (previousEnv.AWS_AUDIT_ARCHIVE_BUCKET === undefined) {
+      delete process.env.AWS_AUDIT_ARCHIVE_BUCKET;
+    } else {
+      process.env.AWS_AUDIT_ARCHIVE_BUCKET = previousEnv.AWS_AUDIT_ARCHIVE_BUCKET;
+    }
+    if (previousEnv.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN === undefined) {
+      delete process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN;
+    } else {
+      process.env.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN = previousEnv.AWS_AUDIT_ARCHIVE_KMS_KEY_ARN;
+    }
+    if (previousEnv.AWS_AUDIT_ARCHIVE_ROLE_ARN === undefined) {
+      delete process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN;
+    } else {
+      process.env.AWS_AUDIT_ARCHIVE_ROLE_ARN = previousEnv.AWS_AUDIT_ARCHIVE_ROLE_ARN;
+    }
   });
 
   it('creates an ok checkpoint and seal for a verified incremental segment', async () => {
@@ -1364,6 +1446,65 @@ describe('audit evidence helpers', () => {
               };
             }
 
+            if (table === 'auditLedgerSeals') {
+              return {
+                order: () => ({
+                  first: async () => ({
+                    _id: 'seal-1',
+                    chainId: 'primary',
+                    endSequence: 5,
+                    headHash: 'head-hash-1',
+                    sealedAt: 94,
+                  }),
+                }),
+              };
+            }
+
+            if (table === 'auditLedgerImmutableExports') {
+              return {
+                order: () => ({
+                  first: async () => ({
+                    _id: 'immutable-export-1',
+                    chainId: 'primary',
+                    endSequence: 5,
+                    headHash: 'head-hash-1',
+                    exportedAt: 95,
+                    manifestObjectKey: 'manifest-1',
+                    objectKey: 'payload-1',
+                  }),
+                }),
+              };
+            }
+
+            if (table === 'auditLedgerArchiveVerifications') {
+              const statusFilter = filters.find(
+                ([field]) => field === 'lastVerificationStatus',
+              )?.[1];
+              return {
+                order: () => ({
+                  first: async () =>
+                    statusFilter === 'verified'
+                      ? {
+                          _id: 'archive-verification-ok-1',
+                          checkedAt: 95,
+                          lastVerifiedSealEndSequence: 5,
+                        }
+                      : {
+                          _id: 'archive-verification-1',
+                          checkedAt: 95,
+                          driftDetected: false,
+                          exporterEnabled: true,
+                          failureReason: null,
+                          lagCount: 0,
+                          lastVerificationStatus: 'verified',
+                          latestExportEndSequence: 5,
+                          latestSealEndSequence: 5,
+                          required: true,
+                        },
+                }),
+              };
+            }
+
             if (table === 'securityControlEvidence') {
               return {
                 collect: async () => [
@@ -1587,6 +1728,24 @@ describe('audit evidence helpers', () => {
               };
             }
 
+            if (table === 'auditLedgerSeals') {
+              return {
+                order: () => ({ first: async () => null }),
+              };
+            }
+
+            if (table === 'auditLedgerImmutableExports') {
+              return {
+                order: () => ({ first: async () => null }),
+              };
+            }
+
+            if (table === 'auditLedgerArchiveVerifications') {
+              return {
+                order: () => ({ first: async () => null }),
+              };
+            }
+
             if (table === 'auditLedgerEvents') {
               return {
                 order: () => ({
@@ -1703,6 +1862,20 @@ describe('audit evidence helpers', () => {
           jobKind: 'attachment_purge',
           processedCount: 2,
           status: 'success',
+        },
+        archiveStatus: {
+          configured: true,
+          driftDetected: false,
+          exporterEnabled: true,
+          failureReason: null,
+          lagCount: 0,
+          lastVerifiedAt: Date.parse('2026-03-18T14:54:00.000Z'),
+          lastVerifiedSealEndSequence: 18,
+          lastVerificationStatus: 'verified',
+          latestManifestObjectKey: 'manifest-1',
+          latestPayloadObjectKey: 'payload-1',
+          latestSealEndSequence: 18,
+          required: true,
         },
         metadataGaps: [
           {

@@ -130,6 +130,8 @@ describe('auth audit coverage', () => {
       'chat_run_completed',
       'chat_run_failed',
       'chat_web_search_used',
+      'audit_archive_verification_failed',
+      'audit_archive_verification_recovered',
     ] as const;
     for (const handler of AUTH_AUDIT_ALL_HANDLER_REGISTRY) {
       for (const eventType of handler.events) {

@@ -1,8 +1,6 @@
 import { Outlet, useLocation, useRouter } from '@tanstack/react-router';
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { useEffect, useRef } from 'react';
 import { AppNavigation } from '~/components/AppNavigation';
-import { ClientOnly } from '~/components/ClientOnly';
 import { useAuthContext } from '~/components/Providers';
 
 const AUTH_ROUTE_PREFIXES = ['/invite/'] as const;
@@ -16,10 +14,6 @@ const AUTH_ROUTES = new Set([
   '/two-factor',
   '/verify-email-pending',
 ]);
-
-const routerDevtoolsEnabled =
-  import.meta.env.DEV &&
-  String(import.meta.env.VITE_ENABLE_ROUTER_DEVTOOLS ?? '').toLowerCase() === 'true';
 
 /**
  * Application shell component following TanStack Start best practices
@@ -79,12 +73,6 @@ export function AppShell() {
           </>
         )}
       </div>
-      {routerDevtoolsEnabled && (
-        <ClientOnly>
-          {/* TanStack Router Devtools currently rely on inline styles, which our strict CSP blocks. */}
-          <TanStackRouterDevtools position="bottom-right" />
-        </ClientOnly>
-      )}
     </>
   );
 }

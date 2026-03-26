@@ -712,14 +712,16 @@ export function ChatComposer({
                 size="icon"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={disabled || isEditing}
+                aria-label="Attach files"
                 className="size-9 rounded-full border-0 text-[#8e8a84] shadow-none hover:bg-black/5 hover:text-[#4d4b46]"
               >
                 <Paperclip className="size-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Attach files</TooltipContent>
+            <TooltipContent>
+              Attach files. Allowed: PDF, TXT, CSV, JPG, PNG, GIF, WEBP.
+            </TooltipContent>
           </Tooltip>
-          <p className="text-xs text-[#8e8a84]">Allowed: PDF, TXT, CSV, JPG, PNG, GIF, WEBP</p>
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="inline-flex">

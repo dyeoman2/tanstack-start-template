@@ -28,6 +28,46 @@ function sortModels<
   });
 }
 
+type CatalogEntrySource = {
+  access: 'public' | 'admin';
+  beta?: boolean;
+  contextWindow?: number;
+  deprecated?: boolean;
+  deprecationDate?: string;
+  description: string;
+  isActive: boolean;
+  label: string;
+  modelId: string;
+  priceLabel?: string;
+  prices?: ChatModelCatalogEntry['prices'];
+  refreshedAt: number;
+  source: string;
+  supportsWebSearch?: boolean;
+  task: string;
+};
+
+function toCatalogEntry(model: CatalogEntrySource): ChatModelCatalogEntry {
+  return {
+    access: model.access,
+    ...(model.beta !== undefined ? { beta: model.beta } : {}),
+    ...(model.contextWindow !== undefined ? { contextWindow: model.contextWindow } : {}),
+    ...(model.deprecated !== undefined ? { deprecated: model.deprecated } : {}),
+    ...(model.deprecationDate !== undefined ? { deprecationDate: model.deprecationDate } : {}),
+    description: model.description,
+    isActive: model.isActive,
+    label: model.label,
+    modelId: model.modelId,
+    ...(model.priceLabel !== undefined ? { priceLabel: model.priceLabel } : {}),
+    ...(model.prices !== undefined ? { prices: model.prices } : {}),
+    refreshedAt: model.refreshedAt,
+    source: model.source,
+    ...(model.supportsWebSearch !== undefined
+      ? { supportsWebSearch: model.supportsWebSearch }
+      : {}),
+    task: model.task,
+  };
+}
+
 export function filterVisibleModels(
   models: ChatModelCatalogEntry[],
   isSiteAdmin: boolean,
@@ -45,7 +85,7 @@ async function getActiveCatalogModels(ctx: QueryCtx) {
     .withIndex('by_isActive', (q) => q.eq('isActive', true))
     .collect();
 
-  return sortModels(selectActiveChatModelCatalogEntries(activeModels));
+  return sortModels(selectActiveChatModelCatalogEntries(activeModels.map(toCatalogEntry)));
 }
 
 export const listActiveChatModelsInternal = internalQuery({

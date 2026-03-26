@@ -269,6 +269,7 @@ export declare const components: {
                   expiresAt: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token: string;
                   updatedAt: number;
                   userAgent?: null | string;
@@ -492,6 +493,7 @@ export declare const components: {
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1015,6 +1017,7 @@ export declare const components: {
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1650,6 +1653,7 @@ export declare const components: {
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token?: string;
                   updatedAt?: number;
                   userAgent?: null | string;
@@ -1671,6 +1675,7 @@ export declare const components: {
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -2316,6 +2321,7 @@ export declare const components: {
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token?: string;
                   updatedAt?: number;
                   userAgent?: null | string;
@@ -2337,6 +2343,7 @@ export declare const components: {
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"

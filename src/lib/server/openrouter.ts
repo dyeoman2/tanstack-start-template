@@ -4,21 +4,30 @@ export type OpenRouterConfig = {
   apiKey: string;
   headers?: Record<string, string>;
   compatibility: 'strict';
-  privacyMode: 'standard' | 'strict';
+  /** Always 'strict' — ZDR is enforced on all requests. */
+  privacyMode: 'strict';
 };
 
+/**
+ * Privacy mode is always strict — ZDR (Zero Data Retention) and
+ * data_collection: 'deny' are applied to every OpenRouter request.
+ *
+ * This is a non-negotiable baseline for PHI-sensitive deployments.
+ * The OPENROUTER_PRIVACY_MODE env var is accepted for backwards
+ * compatibility but only 'strict' is allowed in production; any
+ * other value causes a hard startup error.
+ */
 function getOpenRouterPrivacyMode() {
   const privacyMode = process.env.OPENROUTER_PRIVACY_MODE?.trim();
 
-  if (!privacyMode) {
-    return 'standard' as const;
+  if (!privacyMode || privacyMode === 'strict') {
+    return 'strict' as const;
   }
 
-  if (privacyMode === 'standard' || privacyMode === 'strict') {
-    return privacyMode;
-  }
-
-  throw new Error('OPENROUTER_PRIVACY_MODE must be "standard" or "strict"');
+  throw new Error(
+    'OPENROUTER_PRIVACY_MODE must be "strict" (or unset, which defaults to strict). ' +
+      'ZDR is required for all deployments to satisfy PHI-sensitive data handling requirements.',
+  );
 }
 
 export function getOpenRouterConfig(): OpenRouterConfig {

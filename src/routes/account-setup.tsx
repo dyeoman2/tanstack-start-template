@@ -10,7 +10,10 @@ export const Route = createFileRoute('/account-setup')({
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
     email: z.string().email().optional(),
-    redirectTo: z.string().regex(/^\/.*/).optional(),
+    redirectTo: z
+      .string()
+      .regex(/^\/[a-zA-Z]/)
+      .optional(),
     verified: z.string().optional(),
   }),
 });

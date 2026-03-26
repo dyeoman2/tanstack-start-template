@@ -311,6 +311,33 @@ export const auditLedgerImmutableExportDocValidator = v.object({
   manifestSha256: v.string(),
 });
 
+export const auditLedgerArchiveVerificationDocValidator = v.object({
+  _id: v.id('auditLedgerArchiveVerifications'),
+  _creationTime: v.number(),
+  chainId: v.string(),
+  checkedAt: v.number(),
+  required: v.boolean(),
+  configured: v.boolean(),
+  exporterEnabled: v.boolean(),
+  latestSealEndSequence: v.union(v.number(), v.null()),
+  latestExportEndSequence: v.union(v.number(), v.null()),
+  lagCount: v.number(),
+  driftDetected: v.boolean(),
+  lastVerificationStatus: v.union(
+    v.literal('verified'),
+    v.literal('missing_object'),
+    v.literal('hash_mismatch'),
+    v.literal('no_seal'),
+    v.literal('disabled'),
+  ),
+  lastVerifiedSealEndSequence: v.union(v.number(), v.null()),
+  latestManifestObjectKey: v.union(v.string(), v.null()),
+  latestPayloadObjectKey: v.union(v.string(), v.null()),
+  payloadSha256: v.union(v.string(), v.null()),
+  manifestSha256: v.union(v.string(), v.null()),
+  failureReason: v.union(v.string(), v.null()),
+});
+
 export const dashboardStatsDocValidator = v.object({
   _id: v.id('dashboardStats'),
   _creationTime: v.number(),
@@ -922,7 +949,9 @@ export const stepUpRequirementValidator = v.union(
   v.literal('document_export'),
   v.literal('document_deletion'),
   v.literal('organization_admin'),
+  v.literal('password_change'),
   v.literal('session_administration'),
+  v.literal('support_access_approval'),
   v.literal('user_administration'),
 );
 
@@ -1051,21 +1080,36 @@ export const organizationPermissionDecisionValidator = v.object({
 
 export const organizationSupportAccessGrantRowValidator = v.object({
   id: v.id('organizationSupportAccessGrants'),
+  approvalMethod: v.literal('single_owner'),
+  approvedAt: v.number(),
   createdAt: v.number(),
   expiresAt: v.number(),
+  expiredNotificationSentAt: v.union(v.number(), v.null()),
+  firstUsedAt: v.union(v.number(), v.null()),
   grantedByEmail: v.union(v.string(), v.null()),
   grantedByName: v.union(v.string(), v.null()),
   grantedByUserId: v.string(),
   reason: v.string(),
+  reasonCategory: v.union(
+    v.literal('incident_response'),
+    v.literal('customer_requested_change'),
+    v.literal('data_repair'),
+    v.literal('account_recovery'),
+    v.literal('other'),
+  ),
+  reasonDetails: v.string(),
+  lastUsedAt: v.union(v.number(), v.null()),
   revokedAt: v.union(v.number(), v.null()),
   revokedByEmail: v.union(v.string(), v.null()),
   revokedByName: v.union(v.string(), v.null()),
+  revocationReason: v.union(v.string(), v.null()),
   revokedByUserId: v.union(v.string(), v.null()),
   scope: organizationSupportAccessScopeValidator,
   siteAdminEmail: v.string(),
   siteAdminName: v.union(v.string(), v.null()),
   siteAdminUserId: v.string(),
   ticketId: v.string(),
+  useCount: v.number(),
 });
 
 export const organizationSupportAccessSiteAdminOptionValidator = v.object({
@@ -1075,10 +1119,14 @@ export const organizationSupportAccessSiteAdminOptionValidator = v.object({
 });
 
 export const organizationSupportAccessSettingsValidator = v.object({
+  approvalModel: v.literal('single_owner'),
   availableSiteAdmins: v.array(organizationSupportAccessSiteAdminOptionValidator),
   canManageSupportAccess: v.boolean(),
   grants: v.array(organizationSupportAccessGrantRowValidator),
   organization: organizationSummaryValidator,
+  supportAccessEnabled: v.boolean(),
+  stepUpSatisfied: v.boolean(),
+  stepUpValidUntil: v.union(v.number(), v.null()),
 });
 
 export const organizationLegalHoldStatusValidator = v.union(

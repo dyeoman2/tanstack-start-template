@@ -19,7 +19,11 @@ import {
 } from './lib/netlify-cli';
 import { parseConvexEnvList } from './lib/setup-dr';
 import { emitStructuredOutput, hasFlag, routeLogsToStderrWhenJson } from './lib/script-ux';
-import { checkAuditArchiveRuntimeEnv, checkStorageRuntimeEnv } from './lib/deploy-doctor-checks';
+import {
+  checkAuditArchiveReleaseGate,
+  checkAuditArchiveRuntimeEnv,
+  checkStorageRuntimeEnv,
+} from './lib/deploy-doctor-checks';
 import { getCloudFormationStackOutputs } from './lib/aws-cloudformation';
 import { checkSnsEmailSubscriptionConfirmed } from './lib/provider-preflight';
 import { buildStorageStackName } from './lib/storage-env-contract';
@@ -28,6 +32,8 @@ import {
   hasSecretTierAcknowledgment,
   validateSecretTierDocumentation,
 } from './lib/secret-tier';
+import { createConvexAdminClient } from './lib/convex-admin';
+import { internal } from '../convex/_generated/api';
 
 const REQUIRED_NETLIFY_HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -255,7 +261,7 @@ function checkStorageAlertSubscription(
   return result.ok;
 }
 
-function main() {
+async function main() {
   if (hasFlag('--help') || hasFlag('-h')) {
     printUsage();
     return;
@@ -451,6 +457,8 @@ function main() {
 
   if (convexProdEnvOutput) {
     const prodEnvVars = parseConvexEnvList(convexProdEnvOutput);
+    const prodConvexUrl =
+      prodEnvVars.VITE_CONVEX_URL?.trim() || process.env.VITE_CONVEX_URL?.trim() || '';
     ok =
       checkStorageRuntimeEnv('Convex production', prodEnvVars, checks) &&
       checkRequiredEnvPresence(checks, {
@@ -461,6 +469,36 @@ function main() {
       }) &&
       checkAuditArchiveRuntimeEnv('Convex production', prodEnvVars, checks) &&
       ok;
+    if (prodConvexUrl) {
+      try {
+        const adminClient = createConvexAdminClient({
+          convexUrl: prodConvexUrl,
+          deployKey: process.env.CONVEX_DEPLOY_KEY?.trim(),
+        });
+        const auditReadiness = await adminClient.query(
+          internal.securityPosture.getAuditReadinessSnapshot,
+          {},
+        );
+        ok = checkAuditArchiveReleaseGate('Convex production', auditReadiness, checks) && ok;
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'unknown error';
+        checks.push({
+          check: 'Audit archive release gate (Convex production)',
+          detail,
+          status: 'fail',
+        });
+        console.log(`❌ Audit archive release gate (Convex production): ${detail}`);
+        ok = false;
+      }
+    } else {
+      checks.push({
+        check: 'Audit archive release gate (Convex production)',
+        detail: 'VITE_CONVEX_URL missing from Convex production env.',
+        status: 'fail',
+      });
+      console.log('❌ Audit archive release gate (Convex production): VITE_CONVEX_URL missing');
+      ok = false;
+    }
   }
 
   console.log('');
@@ -475,4 +513,4 @@ function main() {
   console.log('All required checks passed.\n');
 }
 
-main();
+void main();

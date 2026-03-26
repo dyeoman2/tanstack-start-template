@@ -1082,6 +1082,15 @@ async function main() {
       },
     );
     const failedDoctorChecks = summarizeFailedDeployDoctorChecks(doctorResult.parsed.checks ?? []);
+    if (
+      failedDoctorChecks.some(
+        (check) =>
+          check.startsWith('Audit archive runtime env (Convex production)') ||
+          check.startsWith('Audit archive release gate (Convex production)'),
+      )
+    ) {
+      readiness.auditArchive = 'failed';
+    }
     readiness.validation = hasFailedDeployDoctorChecks(doctorResult.parsed.checks ?? [])
       ? 'failed'
       : 'ready';

@@ -19,6 +19,7 @@ import { Button } from '~/components/ui/button';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from '~/components/ui/sidebar';
 import { useToast } from '~/components/ui/toast';
 import { authClient } from '~/features/auth/auth-client';
+import { InactivityWarningDialog } from '~/features/auth/components/InactivityWarningDialog';
 import { useAuth } from '~/features/auth/hooks/useAuth';
 import { useOptimisticThreadTitle } from '~/features/chat/lib/optimistic-threads';
 import { getOrganizationBreadcrumbName } from '~/features/organizations/lib/organization-breadcrumb-state';
@@ -202,6 +203,7 @@ export function AuthenticatedAppShell({ children }: { children: ReactNode }) {
 
   return (
     <SidebarProvider defaultOpen>
+      <InactivityWarningDialog />
       <AppSidebar />
       <SidebarInset className="h-svh overflow-hidden">
         {isImpersonating ? (

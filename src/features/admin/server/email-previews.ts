@@ -18,6 +18,10 @@ import {
   buildSignInOtpTemplate,
   buildStaleAccountAdminTemplate,
   buildStaleAccountUserTemplate,
+  buildSupportAccessExpiredTemplate,
+  buildSupportAccessGrantedTemplate,
+  buildSupportAccessRevokedTemplate,
+  buildSupportAccessUsedTemplate,
   buildTwoFactorTemplate,
   buildVerifyEmailOtpTemplate,
   buildVerifyEmailTemplate,
@@ -130,6 +134,42 @@ export async function renderEmailPreview(args: EmailPreviewRequest): Promise<Ema
           candidate.id === 'delete-account',
       );
       return await buildDeleteAccountTemplate(getScenarioOrThrow(template, args.scenario).props);
+    }
+    case 'support-access-granted': {
+      const template = EMAIL_PREVIEW_TEMPLATES.find(
+        (candidate): candidate is EmailPreviewTemplateDefinition<'support-access-granted'> =>
+          candidate.id === 'support-access-granted',
+      );
+      return await buildSupportAccessGrantedTemplate(
+        getScenarioOrThrow(template, args.scenario).props,
+      );
+    }
+    case 'support-access-used': {
+      const template = EMAIL_PREVIEW_TEMPLATES.find(
+        (candidate): candidate is EmailPreviewTemplateDefinition<'support-access-used'> =>
+          candidate.id === 'support-access-used',
+      );
+      return await buildSupportAccessUsedTemplate(
+        getScenarioOrThrow(template, args.scenario).props,
+      );
+    }
+    case 'support-access-revoked': {
+      const template = EMAIL_PREVIEW_TEMPLATES.find(
+        (candidate): candidate is EmailPreviewTemplateDefinition<'support-access-revoked'> =>
+          candidate.id === 'support-access-revoked',
+      );
+      return await buildSupportAccessRevokedTemplate(
+        getScenarioOrThrow(template, args.scenario).props,
+      );
+    }
+    case 'support-access-expired': {
+      const template = EMAIL_PREVIEW_TEMPLATES.find(
+        (candidate): candidate is EmailPreviewTemplateDefinition<'support-access-expired'> =>
+          candidate.id === 'support-access-expired',
+      );
+      return await buildSupportAccessExpiredTemplate(
+        getScenarioOrThrow(template, args.scenario).props,
+      );
     }
     case 'stale-account-user': {
       const template = EMAIL_PREVIEW_TEMPLATES.find(

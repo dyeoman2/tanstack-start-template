@@ -6,6 +6,10 @@ import { components, internal } from './_generated/api';
 import { internalAction, internalMutation, query } from './_generated/server';
 import {
   buildChangeEmailTemplate,
+  buildSupportAccessExpiredTemplate,
+  buildSupportAccessGrantedTemplate,
+  buildSupportAccessRevokedTemplate,
+  buildSupportAccessUsedTemplate,
   buildInvitationTemplate,
   buildResetPasswordTemplate,
   buildVerifyEmailTemplate,
@@ -25,6 +29,10 @@ export {
   buildSignInOtpTemplate,
   buildStaleAccountAdminTemplate,
   buildStaleAccountUserTemplate,
+  buildSupportAccessExpiredTemplate,
+  buildSupportAccessGrantedTemplate,
+  buildSupportAccessRevokedTemplate,
+  buildSupportAccessUsedTemplate,
   buildTwoFactorTemplate,
   buildVerifyEmailOtpTemplate,
   buildVerifyEmailTemplate,
@@ -427,6 +435,98 @@ export const sendOrganizationInviteEmailMutation = internalMutation({
       replyTo: [supportEmail],
       headers: buildEmailHeaders('invitation', appName),
     });
+
+    return { success: true };
+  },
+});
+
+export const sendSupportAccessLifecycleNotifications = internalAction({
+  args: {
+    approvalMethod: v.literal('single_owner'),
+    approverEmail: v.union(v.string(), v.null()),
+    approverName: v.union(v.string(), v.null()),
+    event: v.union(
+      v.literal('expired'),
+      v.literal('granted'),
+      v.literal('revoked'),
+      v.literal('used'),
+    ),
+    expiresAt: v.number(),
+    grantId: v.string(),
+    organizationName: v.string(),
+    reasonCategory: v.union(
+      v.literal('incident_response'),
+      v.literal('customer_requested_change'),
+      v.literal('data_repair'),
+      v.literal('account_recovery'),
+      v.literal('other'),
+    ),
+    reasonDetails: v.string(),
+    recipients: v.array(
+      v.object({
+        email: v.string(),
+        name: v.union(v.string(), v.null()),
+      }),
+    ),
+    revokeReason: v.union(v.string(), v.null()),
+    scope: v.union(v.literal('read_only'), v.literal('read_write')),
+    siteAdminEmail: v.string(),
+    siteAdminName: v.union(v.string(), v.null()),
+    ticketId: v.string(),
+  },
+  returns: successTrueValidator,
+  handler: async (ctx, args) => {
+    if (!process.env.RESEND_API_KEY || args.recipients.length === 0) {
+      return { success: true };
+    }
+
+    const appName = process.env.APP_NAME || 'Hackathon';
+    const emailSender = process.env.RESEND_EMAIL_SENDER || 'onboarding@resend.dev';
+    const supportEmail = getSupportEmail();
+    const templateId =
+      args.event === 'granted'
+        ? 'support-access-granted'
+        : args.event === 'used'
+          ? 'support-access-used'
+          : args.event === 'revoked'
+            ? 'support-access-revoked'
+            : 'support-access-expired';
+    const builderArgs = {
+      appName,
+      approvalMethod: args.approvalMethod,
+      approverName: args.approverName,
+      event: args.event,
+      expiresAt: args.expiresAt,
+      organizationName: args.organizationName,
+      reasonCategory: args.reasonCategory,
+      reasonDetails: args.reasonDetails,
+      revokeReason: args.revokeReason,
+      scope: args.scope,
+      siteAdminEmail: args.siteAdminEmail,
+      siteAdminName: args.siteAdminName,
+      ticketId: args.ticketId,
+    } as const;
+    const content =
+      args.event === 'granted'
+        ? await buildSupportAccessGrantedTemplate(builderArgs)
+        : args.event === 'used'
+          ? await buildSupportAccessUsedTemplate(builderArgs)
+          : args.event === 'revoked'
+            ? await buildSupportAccessRevokedTemplate(builderArgs)
+            : await buildSupportAccessExpiredTemplate(builderArgs);
+    const headers = buildEmailHeaders(templateId, appName);
+
+    for (const recipient of args.recipients) {
+      await resend.sendEmail(ctx, {
+        from: `${appName} <${emailSender}>`,
+        to: recipient.email,
+        subject: content.subject,
+        html: content.html,
+        text: content.text,
+        replyTo: [supportEmail],
+        headers: [...headers, { name: 'X-Support-Access-Grant-Id', value: args.grantId }],
+      });
+    }
 
     return { success: true };
   },

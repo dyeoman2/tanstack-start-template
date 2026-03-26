@@ -228,6 +228,7 @@ const securityPostureSummaryValidator = v.object({
 
 const securityFindingTypeValidator = v.union(
   v.literal('audit_integrity_failures'),
+  v.literal('audit_archive_health'),
   v.literal('audit_request_context_gaps'),
   v.literal('document_scan_quarantines'),
   v.literal('document_scan_rejections'),
@@ -1116,6 +1117,27 @@ const auditReadinessIntegrityFailureSummaryValidator = v.object({
   eventId: v.string(),
   expectedSequence: v.number(),
 });
+const auditArchiveStatusValidator = v.object({
+  required: v.boolean(),
+  configured: v.boolean(),
+  exporterEnabled: v.boolean(),
+  latestSealEndSequence: v.union(v.number(), v.null()),
+  latestExportEndSequence: v.union(v.number(), v.null()),
+  lagCount: v.number(),
+  driftDetected: v.boolean(),
+  lastVerifiedAt: v.union(v.number(), v.null()),
+  lastVerifiedSealEndSequence: v.union(v.number(), v.null()),
+  lastVerificationStatus: v.union(
+    v.literal('verified'),
+    v.literal('missing_object'),
+    v.literal('hash_mismatch'),
+    v.literal('no_seal'),
+    v.literal('disabled'),
+  ),
+  latestManifestObjectKey: v.union(v.string(), v.null()),
+  latestPayloadObjectKey: v.union(v.string(), v.null()),
+  failureReason: v.union(v.string(), v.null()),
+});
 const auditReadinessSnapshotValidator = v.object({
   currentHead: v.union(auditReadinessHeadSummaryValidator, v.null()),
   latestBackupDrill: v.union(
@@ -1165,6 +1187,7 @@ const auditReadinessSnapshotValidator = v.object({
     }),
     v.null(),
   ),
+  archiveStatus: auditArchiveStatusValidator,
   lastIntegrityFailure: v.union(auditReadinessIntegrityFailureSummaryValidator, v.null()),
   lastSealAt: v.union(v.number(), v.null()),
   metadataGaps: v.array(

@@ -23,7 +23,12 @@ import {
   applyAlwaysOnRegulatedBaseline,
   REGULATED_ORGANIZATION_POLICY_DEFAULTS,
 } from '../src/lib/shared/security-baseline';
-import { evaluateStepUpClaim, STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
+import {
+  evaluateStepUpClaim,
+  STEP_UP_REQUIREMENTS,
+  type StepUpMethod,
+  type StepUpRequirement,
+} from '../src/lib/shared/auth-policy';
 import { components, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx, QueryCtx } from './_generated/server';
@@ -207,25 +212,43 @@ type OrganizationPolicies = {
   enterpriseEnforcedAt: number | null;
   allowBreakGlassPasswordLogin: boolean;
   temporaryLinkTtlMinutes: number;
+  supportAccessApprovalModel: 'single_owner';
+  supportAccessEnabled: boolean;
   webSearchAllowed: boolean;
 };
+type OrganizationSupportAccessApprovalModel = 'single_owner';
+type OrganizationSupportAccessReasonCategory =
+  | 'incident_response'
+  | 'customer_requested_change'
+  | 'data_repair'
+  | 'account_recovery'
+  | 'other';
 type OrganizationSupportAccessGrantRow = {
   id: Id<'organizationSupportAccessGrants'>;
+  approvalMethod: OrganizationSupportAccessApprovalModel;
+  approvedAt: number;
   createdAt: number;
   expiresAt: number;
+  expiredNotificationSentAt: number | null;
+  firstUsedAt: number | null;
   grantedByEmail: string | null;
   grantedByName: string | null;
   grantedByUserId: string;
   reason: string;
+  reasonCategory: OrganizationSupportAccessReasonCategory;
+  reasonDetails: string;
+  lastUsedAt: number | null;
   revokedAt: number | null;
   revokedByEmail: string | null;
   revokedByName: string | null;
+  revocationReason: string | null;
   revokedByUserId: string | null;
   scope: OrganizationSupportAccessScope;
   siteAdminEmail: string;
   siteAdminName: string | null;
   siteAdminUserId: string;
   ticketId: string;
+  useCount: number;
 };
 type OrganizationLegalHoldStatus = (typeof ORGANIZATION_LEGAL_HOLD_STATUS_VALUES)[number];
 type OrganizationLegalHoldRow = {
@@ -258,9 +281,25 @@ const organizationPoliciesValidator = v.object({
   enterpriseEnforcedAt: v.union(v.number(), v.null()),
   allowBreakGlassPasswordLogin: v.boolean(),
   temporaryLinkTtlMinutes: v.number(),
+  supportAccessApprovalModel: v.literal('single_owner'),
+  supportAccessEnabled: v.boolean(),
   webSearchAllowed: v.boolean(),
 });
-const ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_TTL_MS = 8 * 60 * 60 * 1000;
+const organizationSupportAccessReasonCategoryValidator = v.union(
+  v.literal('incident_response'),
+  v.literal('customer_requested_change'),
+  v.literal('data_repair'),
+  v.literal('account_recovery'),
+  v.literal('other'),
+);
+const ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL = 'single_owner' as const;
+const ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_READ_ONLY_TTL_MS = 8 * 60 * 60 * 1000;
+const ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_READ_WRITE_TTL_MS = 60 * 60 * 1000;
+const supportAccessPolicyMutationResultValidator = v.object({
+  approvalModel: v.literal('single_owner'),
+  success: v.literal(true),
+  supportAccessEnabled: v.boolean(),
+});
 const organizationLegalHoldMutationResultValidator = v.object({
   success: v.literal(true),
   hold: organizationLegalHoldSummaryValidator,
@@ -494,6 +533,11 @@ function toOrganizationPolicies(
       DEFAULT_ORGANIZATION_POLICIES.allowBreakGlassPasswordLogin,
     temporaryLinkTtlMinutes:
       policy?.temporaryLinkTtlMinutes ?? DEFAULT_ORGANIZATION_POLICIES.temporaryLinkTtlMinutes,
+    supportAccessApprovalModel:
+      policy?.supportAccessApprovalModel ??
+      DEFAULT_ORGANIZATION_POLICIES.supportAccessApprovalModel,
+    supportAccessEnabled:
+      policy?.supportAccessEnabled ?? DEFAULT_ORGANIZATION_POLICIES.supportAccessEnabled,
     webSearchAllowed: policy?.webSearchAllowed ?? DEFAULT_ORGANIZATION_POLICIES.webSearchAllowed,
   });
 }
@@ -567,6 +611,36 @@ async function countActiveOwners(ctx: QueryCtx | MutationCtx, memberships: Bette
       membership.role === 'owner' &&
       (membershipStatuses.get(membership._id) ?? 'active') === 'active',
   ).length;
+}
+
+async function listOrganizationOwnerNotificationRecipients(
+  ctx: QueryCtx | MutationCtx,
+  organizationId: string,
+) {
+  const memberships = await listOrganizationMembers(ctx, organizationId);
+  const membershipStatuses = await getMembershipStatusMap(ctx, memberships);
+  const ownerUserIds = memberships
+    .filter(
+      (membership) =>
+        membership.role === 'owner' &&
+        (membershipStatuses.get(membership._id) ?? 'active') === 'active',
+    )
+    .map((membership) => membership.userId);
+  const ownerUsers =
+    ownerUserIds.length > 0 ? await fetchBetterAuthUsersByIds(ctx, ownerUserIds) : [];
+
+  return ownerUsers
+    .filter(
+      (
+        user,
+      ): user is typeof user & {
+        email: string;
+      } => typeof user.email === 'string' && user.email.trim().length > 0,
+    )
+    .map((user) => ({
+      email: user.email.trim().toLowerCase(),
+      name: typeof user.name === 'string' && user.name.trim().length > 0 ? user.name.trim() : null,
+    }));
 }
 
 async function getMembershipStatusMap(
@@ -858,23 +932,56 @@ async function buildOrganizationSupportAccessGrantRows(
 
       return {
         id: grant._id,
+        approvalMethod: grant.approvalMethod,
+        approvedAt: grant.approvedAt,
         createdAt: grant.createdAt,
         expiresAt: grant.expiresAt,
+        expiredNotificationSentAt: grant.expiredNotificationSentAt,
+        firstUsedAt: grant.firstUsedAt,
         grantedByEmail: grantedByProfile?.email ?? null,
         grantedByName: grantedByProfile?.name ?? null,
         grantedByUserId: grant.grantedByUserId,
         reason: grant.reason,
+        reasonCategory: grant.reasonCategory,
+        reasonDetails: grant.reasonDetails,
+        lastUsedAt: grant.lastUsedAt,
         revokedAt: grant.revokedAt,
         revokedByEmail: revokedByProfile?.email ?? null,
         revokedByName: revokedByProfile?.name ?? null,
+        revocationReason: grant.revocationReason,
         revokedByUserId: grant.revokedByUserId,
         scope: grant.scope,
         siteAdminEmail: siteAdminProfile?.email ?? grant.siteAdminUserId,
         siteAdminName: siteAdminProfile?.name ?? null,
         siteAdminUserId: grant.siteAdminUserId,
         ticketId: grant.ticketId,
+        useCount: grant.useCount,
       } satisfies OrganizationSupportAccessGrantRow;
     });
+}
+
+function getSupportAccessMaxTtlMs(scope: OrganizationSupportAccessScope) {
+  return scope === 'read_write'
+    ? ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_READ_WRITE_TTL_MS
+    : ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_READ_ONLY_TTL_MS;
+}
+
+function getSupportAccessStepUpEvaluation(input: {
+  claim: {
+    consumedAt: number | null;
+    expiresAt: number;
+    method: StepUpMethod;
+    requirement: StepUpRequirement;
+    sessionId: string;
+    verifiedAt: number;
+  } | null;
+  sessionId: string | null;
+}) {
+  return evaluateStepUpClaim({
+    claim: input.claim,
+    requirement: STEP_UP_REQUIREMENTS.supportAccessApproval,
+    sessionId: input.sessionId,
+  });
 }
 
 export function buildSupportGrantAuditMetadata(
@@ -1718,7 +1825,7 @@ export const getOrganizationSupportAccessSettings = query({
       throw new Error('Organization is missing an id');
     }
 
-    const [availableSiteAdmins, grants] = await Promise.all([
+    const [availableSiteAdmins, grants, policies, stepUpClaim] = await Promise.all([
       listSiteAdminOptions(ctx, organizationId),
       ctx.db
         .query('organizationSupportAccessGrants')
@@ -1727,9 +1834,31 @@ export const getOrganizationSupportAccessSettings = query({
         )
         .order('desc')
         .take(50),
+      getOrganizationPolicies(ctx, organizationId),
+      context.user.authSession?.id
+        ? getActiveStepUpClaim(ctx, {
+            authUserId: context.user.authUserId,
+            requirement: STEP_UP_REQUIREMENTS.supportAccessApproval,
+            sessionId: context.user.authSession.id,
+          })
+        : null,
     ]);
+    const stepUp = getSupportAccessStepUpEvaluation({
+      claim: stepUpClaim
+        ? {
+            consumedAt: stepUpClaim.consumedAt,
+            expiresAt: stepUpClaim.expiresAt,
+            method: stepUpClaim.method,
+            requirement: stepUpClaim.requirement,
+            sessionId: stepUpClaim.sessionId,
+            verifiedAt: stepUpClaim.verifiedAt,
+          }
+        : null,
+      sessionId: context.user.authSession?.id ?? null,
+    });
 
     return {
+      approvalModel: policies.supportAccessApprovalModel,
       availableSiteAdmins,
       canManageSupportAccess: true,
       grants: await buildOrganizationSupportAccessGrantRows(ctx, grants),
@@ -1739,6 +1868,9 @@ export const getOrganizationSupportAccessSettings = query({
         name: context.organization.name,
         logo: context.organization.logo ?? null,
       },
+      supportAccessEnabled: policies.supportAccessEnabled,
+      stepUpSatisfied: stepUp.satisfied,
+      stepUpValidUntil: stepUp.validUntil,
     };
   },
 });
@@ -1865,6 +1997,8 @@ export const updateOrganizationPolicies = mutation({
       enterpriseEnforcedAt: v.union(v.number(), v.null()),
       allowBreakGlassPasswordLogin: v.boolean(),
       temporaryLinkTtlMinutes: v.number(),
+      supportAccessApprovalModel: v.literal('single_owner'),
+      supportAccessEnabled: v.boolean(),
       webSearchAllowed: v.boolean(),
     }),
   }),
@@ -1961,6 +2095,8 @@ export const updateOrganizationPolicies = mutation({
           : null,
       allowBreakGlassPasswordLogin: args.allowBreakGlassPasswordLogin,
       temporaryLinkTtlMinutes: args.temporaryLinkTtlMinutes,
+      supportAccessApprovalModel: currentPolicies.supportAccessApprovalModel,
+      supportAccessEnabled: currentPolicies.supportAccessEnabled,
       webSearchAllowed: args.webSearchAllowed,
     }) satisfies OrganizationPolicies;
     const changedKeys = (Object.keys(nextPolicies) as Array<keyof OrganizationPolicies>).filter(
@@ -2214,13 +2350,104 @@ export const releaseOrganizationLegalHold = mutation({
   handler: releaseOrganizationLegalHoldHandler,
 });
 
+export const updateOrganizationSupportAccessPolicy = mutation({
+  args: {
+    organizationId: v.string(),
+    requestContext: v.optional(requestAuditContextValidator),
+    supportAccessEnabled: v.boolean(),
+  },
+  returns: supportAccessPolicyMutationResultValidator,
+  handler: async (ctx, args) => {
+    await requireOrganizationPermission(ctx, {
+      organizationId: args.organizationId,
+      permission: 'managePolicies',
+      sourceSurface: 'organization.support_access_policy.update',
+    });
+    const context = await getOrganizationAccessContextById(ctx, args.organizationId);
+    if (!context || !context.access.view) {
+      throwConvexError('NOT_FOUND', 'Organization not found');
+    }
+
+    if (context.viewerRole !== 'owner') {
+      throwConvexError('FORBIDDEN', 'Organization owner access required');
+    }
+
+    const currentPolicies = await getOrganizationPolicies(ctx, args.organizationId);
+    const nextPolicies = {
+      ...currentPolicies,
+      supportAccessApprovalModel: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+      supportAccessEnabled: args.supportAccessEnabled,
+    } satisfies OrganizationPolicies;
+    const existing = await ctx.db
+      .query('organizationPolicies')
+      .withIndex('by_organization_id', (query) => query.eq('organizationId', args.organizationId))
+      .first();
+    const now = Date.now();
+    const auditRequestContext = resolveAuditRequestContext({
+      requestContext: args.requestContext,
+      session: context.user.authSession,
+    });
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        supportAccessApprovalModel: nextPolicies.supportAccessApprovalModel,
+        supportAccessEnabled: nextPolicies.supportAccessEnabled,
+        updatedAt: now,
+      });
+    } else {
+      await ctx.db.insert('organizationPolicies', {
+        organizationId: args.organizationId,
+        ...nextPolicies,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+
+    await recordUserAuditEvent(ctx, {
+      actorIdentifier: context.user.authUser.email?.toLowerCase(),
+      actorUserId: context.user.authUserId,
+      emitter: 'organization.support_access',
+      eventType: 'organization_policy_updated',
+      metadata: JSON.stringify({
+        actorEmail: context.user.authUser.email ?? undefined,
+        changedKeys: ['supportAccessEnabled'],
+        nextPolicies: {
+          supportAccessApprovalModel: nextPolicies.supportAccessApprovalModel,
+          supportAccessEnabled: nextPolicies.supportAccessEnabled,
+        },
+        previousPolicies: {
+          supportAccessApprovalModel: currentPolicies.supportAccessApprovalModel,
+          supportAccessEnabled: currentPolicies.supportAccessEnabled,
+        },
+      }),
+      organizationId: args.organizationId,
+      outcome: 'success',
+      resourceId: args.organizationId,
+      resourceLabel: 'support_access_policy',
+      resourceType: 'organization_policy',
+      severity: 'info',
+      sessionId: context.user.authSession?.id ?? undefined,
+      sourceSurface: 'organization.support_access_policy.update',
+      userId: context.user.authUserId,
+      ...auditRequestContext,
+    });
+
+    return {
+      approvalModel: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+      success: true as const,
+      supportAccessEnabled: nextPolicies.supportAccessEnabled,
+    };
+  },
+});
+
 export const createOrganizationSupportAccessGrant = mutation({
   args: {
     organizationId: v.string(),
     siteAdminUserId: v.string(),
     scope: organizationSupportAccessScopeValidator,
     ticketId: v.string(),
-    reason: v.string(),
+    reasonCategory: organizationSupportAccessReasonCategoryValidator,
+    reasonDetails: v.string(),
     expiresAt: v.number(),
     requestContext: v.optional(requestAuditContextValidator),
   },
@@ -2243,6 +2470,38 @@ export const createOrganizationSupportAccessGrant = mutation({
       throwConvexError('FORBIDDEN', 'Organization owner access required');
     }
 
+    const policies = await getOrganizationPolicies(ctx, args.organizationId);
+    if (!policies.supportAccessEnabled) {
+      throwConvexError('FORBIDDEN', 'Provider support access is disabled by organization policy');
+    }
+
+    const stepUpClaim = context.user.authSession?.id
+      ? await getActiveStepUpClaim(ctx, {
+          authUserId: context.user.authUserId,
+          requirement: STEP_UP_REQUIREMENTS.supportAccessApproval,
+          sessionId: context.user.authSession.id,
+        })
+      : null;
+    const stepUp = getSupportAccessStepUpEvaluation({
+      claim: stepUpClaim
+        ? {
+            consumedAt: stepUpClaim.consumedAt,
+            expiresAt: stepUpClaim.expiresAt,
+            method: stepUpClaim.method,
+            requirement: stepUpClaim.requirement,
+            sessionId: stepUpClaim.sessionId,
+            verifiedAt: stepUpClaim.verifiedAt,
+          }
+        : null,
+      sessionId: context.user.authSession?.id ?? null,
+    });
+    if (!stepUp.satisfied) {
+      throwConvexError(
+        'FORBIDDEN',
+        'Recent support access approval verification is required before issuing a grant',
+      );
+    }
+
     if (context.user.authUserId === args.siteAdminUserId) {
       throwConvexError(
         'VALIDATION',
@@ -2258,13 +2517,13 @@ export const createOrganizationSupportAccessGrant = mutation({
       throwConvexError('VALIDATION', 'Select an active site admin account');
     }
 
-    const reason = args.reason.trim();
+    const reasonDetails = args.reasonDetails.trim();
     const ticketId = args.ticketId.trim();
     const auditRequestContext = resolveAuditRequestContext({
       requestContext: args.requestContext,
       session: context.user.authSession,
     });
-    if (!reason) {
+    if (!reasonDetails) {
       throwConvexError('VALIDATION', 'Provide a reason for this support access grant');
     }
     if (!ticketId) {
@@ -2275,39 +2534,66 @@ export const createOrganizationSupportAccessGrant = mutation({
     if (args.expiresAt <= now) {
       throwConvexError('VALIDATION', 'Support access must expire in the future');
     }
-    if (args.expiresAt > now + ORGANIZATION_SUPPORT_ACCESS_GRANT_MAX_TTL_MS) {
-      throwConvexError('VALIDATION', 'Support access grants cannot exceed 8 hours');
+    if (args.expiresAt > now + getSupportAccessMaxTtlMs(args.scope)) {
+      throwConvexError(
+        'VALIDATION',
+        args.scope === 'read_write'
+          ? 'Read / write support access cannot exceed 1 hour'
+          : 'Read only support access cannot exceed 8 hours',
+      );
     }
 
     const grantId = await ctx.db.insert('organizationSupportAccessGrants', {
+      approvalMethod: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+      approvedAt: now,
       organizationId: args.organizationId,
       siteAdminUserId: args.siteAdminUserId,
       scope: args.scope,
       ticketId,
-      reason,
+      reason: reasonDetails,
+      reasonCategory: args.reasonCategory,
+      reasonDetails,
       grantedByUserId: context.user.authUserId,
       createdAt: now,
       expiresAt: args.expiresAt,
+      firstUsedAt: null,
+      lastUsedAt: null,
+      useCount: 0,
+      expiredNotificationSentAt: null,
       revokedAt: null,
       revokedByUserId: null,
+      revocationReason: null,
     });
 
     const [grant] = await buildOrganizationSupportAccessGrantRows(ctx, [
       {
         _id: grantId,
         _creationTime: now,
+        approvalMethod: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+        approvedAt: now,
         organizationId: args.organizationId,
         siteAdminUserId: args.siteAdminUserId,
         scope: args.scope,
         ticketId,
-        reason,
+        reason: reasonDetails,
+        reasonCategory: args.reasonCategory,
+        reasonDetails,
         grantedByUserId: context.user.authUserId,
         createdAt: now,
         expiresAt: args.expiresAt,
+        firstUsedAt: null,
+        lastUsedAt: null,
+        useCount: 0,
+        expiredNotificationSentAt: null,
         revokedAt: null,
         revokedByUserId: null,
+        revocationReason: null,
       },
     ]);
+    const ownerRecipients = await listOrganizationOwnerNotificationRecipients(
+      ctx,
+      args.organizationId,
+    );
 
     await recordUserAuditEvent(ctx, {
       actorIdentifier: context.user.authUser.email?.toLowerCase(),
@@ -2315,10 +2601,14 @@ export const createOrganizationSupportAccessGrant = mutation({
       emitter: 'organization.support_access',
       eventType: 'support_access_granted',
       metadata: JSON.stringify({
+        approvalMethod: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+        approverUserId: context.user.authUserId,
         actorEmail: context.user.authUser.email ?? undefined,
         expiresAt: args.expiresAt,
         grantId,
-        reason,
+        reason: reasonDetails,
+        reasonCategory: args.reasonCategory,
+        reasonDetails,
         scope: args.scope,
         siteAdminEmail: siteAdminProfile.email,
         siteAdminUserId: args.siteAdminUserId,
@@ -2336,6 +2626,26 @@ export const createOrganizationSupportAccessGrant = mutation({
       ...auditRequestContext,
     });
 
+    if (ownerRecipients.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendSupportAccessLifecycleNotifications, {
+        approvalMethod: ORGANIZATION_SUPPORT_ACCESS_APPROVAL_MODEL,
+        approverEmail: context.user.authUser.email ?? null,
+        approverName: context.user.authUser.name ?? null,
+        event: 'granted',
+        expiresAt: args.expiresAt,
+        grantId,
+        organizationName: context.organization.name,
+        recipients: ownerRecipients,
+        reasonCategory: args.reasonCategory,
+        reasonDetails,
+        revokeReason: null,
+        scope: args.scope,
+        siteAdminEmail: siteAdminProfile.email,
+        siteAdminName: siteAdminProfile.name ?? null,
+        ticketId,
+      });
+    }
+
     return {
       success: true as const,
       grant,
@@ -2347,7 +2657,7 @@ export const revokeOrganizationSupportAccessGrant = mutation({
   args: {
     organizationId: v.string(),
     grantId: v.string(),
-    reason: v.optional(v.union(v.string(), v.null())),
+    reason: v.string(),
     requestContext: v.optional(requestAuditContextValidator),
   },
   returns: v.object({
@@ -2369,6 +2679,33 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       throwConvexError('FORBIDDEN', 'Organization owner access required');
     }
 
+    const stepUpClaim = context.user.authSession?.id
+      ? await getActiveStepUpClaim(ctx, {
+          authUserId: context.user.authUserId,
+          requirement: STEP_UP_REQUIREMENTS.supportAccessApproval,
+          sessionId: context.user.authSession.id,
+        })
+      : null;
+    const stepUp = getSupportAccessStepUpEvaluation({
+      claim: stepUpClaim
+        ? {
+            consumedAt: stepUpClaim.consumedAt,
+            expiresAt: stepUpClaim.expiresAt,
+            method: stepUpClaim.method,
+            requirement: stepUpClaim.requirement,
+            sessionId: stepUpClaim.sessionId,
+            verifiedAt: stepUpClaim.verifiedAt,
+          }
+        : null,
+      sessionId: context.user.authSession?.id ?? null,
+    });
+    if (!stepUp.satisfied) {
+      throwConvexError(
+        'FORBIDDEN',
+        'Recent support access approval verification is required before revoking a grant',
+      );
+    }
+
     const normalizedGrantId = ctx.db.normalizeId('organizationSupportAccessGrants', args.grantId);
     if (!normalizedGrantId) {
       throwConvexError('NOT_FOUND', 'Support access grant not found');
@@ -2380,10 +2717,15 @@ export const revokeOrganizationSupportAccessGrant = mutation({
     }
 
     const now = Date.now();
+    const revokeReason = args.reason.trim();
+    if (!revokeReason) {
+      throwConvexError('VALIDATION', 'Provide a reason for revoking this support access grant');
+    }
     if (grant.revokedAt === null) {
       await ctx.db.patch(normalizedGrantId, {
         revokedAt: now,
         revokedByUserId: context.user.authUserId,
+        revocationReason: revokeReason,
       });
     }
 
@@ -2392,6 +2734,7 @@ export const revokeOrganizationSupportAccessGrant = mutation({
         ...grant,
         revokedAt: grant.revokedAt ?? now,
         revokedByUserId: grant.revokedByUserId ?? context.user.authUserId,
+        revocationReason: grant.revocationReason ?? revokeReason,
       },
     ]);
 
@@ -2399,11 +2742,14 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       .query('userProfiles')
       .withIndex('by_auth_user_id', (query) => query.eq('authUserId', grant.siteAdminUserId))
       .unique();
-    const reason = args.reason?.trim() ? args.reason.trim() : null;
     const auditRequestContext = resolveAuditRequestContext({
       requestContext: args.requestContext,
       session: context.user.authSession,
     });
+    const ownerRecipients = await listOrganizationOwnerNotificationRecipients(
+      ctx,
+      args.organizationId,
+    );
 
     await recordUserAuditEvent(ctx, {
       actorIdentifier: context.user.authUser.email?.toLowerCase(),
@@ -2411,13 +2757,19 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       emitter: 'organization.support_access',
       eventType: 'support_access_revoked',
       metadata: JSON.stringify({
+        approvalMethod: grant.approvalMethod,
+        approverUserId: grant.grantedByUserId,
         actorEmail: context.user.authUser.email ?? undefined,
         grantId: normalizedGrantId,
-        reason,
+        reason: revokeReason,
+        reasonCategory: grant.reasonCategory,
+        reasonDetails: grant.reasonDetails,
         revokedAt: grant.revokedAt ?? now,
+        revocationReason: revokeReason,
         scope: grant.scope,
         siteAdminEmail: siteAdminProfile?.email ?? undefined,
         siteAdminUserId: grant.siteAdminUserId,
+        ticketId: grant.ticketId,
       }),
       organizationId: args.organizationId,
       outcome: 'success',
@@ -2431,10 +2783,162 @@ export const revokeOrganizationSupportAccessGrant = mutation({
       ...auditRequestContext,
     });
 
+    if (ownerRecipients.length > 0) {
+      await ctx.scheduler.runAfter(0, internal.emails.sendSupportAccessLifecycleNotifications, {
+        approvalMethod: grant.approvalMethod,
+        approverEmail: context.user.authUser.email ?? null,
+        approverName: context.user.authUser.name ?? null,
+        event: 'revoked',
+        expiresAt: grant.expiresAt,
+        grantId: normalizedGrantId,
+        organizationName: context.organization.name,
+        recipients: ownerRecipients,
+        reasonCategory: grant.reasonCategory,
+        reasonDetails: grant.reasonDetails,
+        revokeReason,
+        scope: grant.scope,
+        siteAdminEmail: siteAdminProfile?.email ?? grant.siteAdminUserId,
+        siteAdminName: siteAdminProfile?.name ?? null,
+        ticketId: grant.ticketId,
+      });
+    }
+
     return {
       success: true as const,
       grant: grantRow,
     };
+  },
+});
+
+export const recordOrganizationSupportAccessUseInternal = internalMutation({
+  args: {
+    grantId: v.id('organizationSupportAccessGrants'),
+    usedAt: v.number(),
+  },
+  returns: v.object({
+    firstUse: v.boolean(),
+    grant: v.union(organizationSupportAccessGrantRowValidator, v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const grant = await ctx.db.get(args.grantId);
+    if (!grant) {
+      return {
+        firstUse: false,
+        grant: null,
+      };
+    }
+
+    const firstUse = grant.firstUsedAt === null;
+    await ctx.db.patch(args.grantId, {
+      firstUsedAt: grant.firstUsedAt ?? args.usedAt,
+      lastUsedAt: args.usedAt,
+      useCount: grant.useCount + 1,
+    });
+    const updatedGrant = await ctx.db.get(args.grantId);
+    if (!updatedGrant) {
+      return {
+        firstUse,
+        grant: null,
+      };
+    }
+
+    const [grantRow] = await buildOrganizationSupportAccessGrantRows(ctx, [updatedGrant]);
+    if (firstUse && grantRow) {
+      const organization = await findBetterAuthOrganizationById(ctx, updatedGrant.organizationId);
+      const recipients = await listOrganizationOwnerNotificationRecipients(
+        ctx,
+        updatedGrant.organizationId,
+      );
+      if (organization && recipients.length > 0) {
+        await ctx.scheduler.runAfter(0, internal.emails.sendSupportAccessLifecycleNotifications, {
+          approvalMethod: updatedGrant.approvalMethod,
+          approverEmail: grantRow.grantedByEmail,
+          approverName: grantRow.grantedByName,
+          event: 'used',
+          expiresAt: updatedGrant.expiresAt,
+          grantId: updatedGrant._id,
+          organizationName: organization.name,
+          recipients,
+          reasonCategory: updatedGrant.reasonCategory,
+          reasonDetails: updatedGrant.reasonDetails,
+          revokeReason: updatedGrant.revocationReason,
+          scope: updatedGrant.scope,
+          siteAdminEmail: grantRow.siteAdminEmail,
+          siteAdminName: grantRow.siteAdminName,
+          ticketId: updatedGrant.ticketId,
+        });
+      }
+    }
+
+    return {
+      firstUse,
+      grant: grantRow ?? null,
+    };
+  },
+});
+
+export const notifyExpiredOrganizationSupportAccessGrantsInternal = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    const expiredGrants = await ctx.db
+      .query('organizationSupportAccessGrants')
+      .withIndex('by_expired_notification_sent_at', (query) =>
+        query.eq('expiredNotificationSentAt', null),
+      )
+      .collect();
+
+    for (const grant of expiredGrants) {
+      if (grant.revokedAt !== null || grant.expiresAt > now) {
+        continue;
+      }
+      const organization = await findBetterAuthOrganizationById(ctx, grant.organizationId);
+      if (!organization) {
+        continue;
+      }
+      const recipients = await listOrganizationOwnerNotificationRecipients(
+        ctx,
+        grant.organizationId,
+      );
+      if (recipients.length === 0) {
+        await ctx.db.patch(grant._id, {
+          expiredNotificationSentAt: now,
+        });
+        continue;
+      }
+
+      const siteAdminProfile = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (query) => query.eq('authUserId', grant.siteAdminUserId))
+        .unique();
+      const approverProfile = await ctx.db
+        .query('userProfiles')
+        .withIndex('by_auth_user_id', (query) => query.eq('authUserId', grant.grantedByUserId))
+        .unique();
+      await ctx.db.patch(grant._id, {
+        expiredNotificationSentAt: now,
+      });
+      await ctx.scheduler.runAfter(0, internal.emails.sendSupportAccessLifecycleNotifications, {
+        approvalMethod: grant.approvalMethod,
+        approverEmail: approverProfile?.email ?? null,
+        approverName: approverProfile?.name ?? null,
+        event: 'expired',
+        expiresAt: grant.expiresAt,
+        grantId: grant._id,
+        organizationName: organization.name,
+        recipients,
+        reasonCategory: grant.reasonCategory,
+        reasonDetails: grant.reasonDetails,
+        revokeReason: grant.revocationReason,
+        scope: grant.scope,
+        siteAdminEmail: siteAdminProfile?.email ?? grant.siteAdminUserId,
+        siteAdminName: siteAdminProfile?.name ?? null,
+        ticketId: grant.ticketId,
+      });
+    }
+
+    return null;
   },
 });
 

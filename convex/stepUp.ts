@@ -272,6 +272,12 @@ export const createCurrentDocumentDeletionChallenge = createCurrentChallengeMuta
 export const createCurrentOrganizationAdminChallenge = createCurrentChallengeMutation(
   STEP_UP_REQUIREMENTS.organizationAdmin,
 );
+export const createCurrentPasswordChangeChallenge = createCurrentChallengeMutation(
+  STEP_UP_REQUIREMENTS.passwordChange,
+);
+export const createCurrentSupportAccessApprovalChallenge = createCurrentChallengeMutation(
+  STEP_UP_REQUIREMENTS.supportAccessApproval,
+);
 export const createCurrentSessionAdministrationChallenge = createCurrentChallengeMutation(
   STEP_UP_REQUIREMENTS.sessionAdministration,
 );

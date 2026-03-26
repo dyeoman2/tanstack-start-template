@@ -14,23 +14,9 @@ describe('getOpenRouterProviderOptions', () => {
     restoreEnv('OPENROUTER_PRIVACY_MODE', originalOpenRouterPrivacyMode);
   });
 
-  it('omits strict provider routing in standard mode', () => {
+  it('applies ZDR and data_collection deny on every request', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
     delete process.env.OPENROUTER_PRIVACY_MODE;
-
-    expect(
-      getOpenRouterProviderOptions({
-        modelId: 'openai/gpt-4o-mini',
-        useWebSearch: false,
-      }),
-    ).toEqual({
-      openrouter: {},
-    });
-  });
-
-  it('includes strict provider routing in strict mode', () => {
-    process.env.OPENROUTER_API_KEY = 'test-key';
-    process.env.OPENROUTER_PRIVACY_MODE = 'strict';
 
     expect(
       getOpenRouterProviderOptions({

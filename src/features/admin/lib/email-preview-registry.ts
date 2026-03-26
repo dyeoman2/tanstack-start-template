@@ -10,6 +10,10 @@ export const AVAILABLE_EMAIL_TEMPLATE_IDS = [
   'invitation',
   'application-invite',
   'delete-account',
+  'support-access-granted',
+  'support-access-used',
+  'support-access-revoked',
+  'support-access-expired',
   'stale-account-user',
   'stale-account-admin',
 ] as const;
@@ -94,6 +98,27 @@ export type DeleteAccountTemplateArgs = {
   expiryNotice?: string;
 };
 
+export type SupportAccessLifecycleTemplateArgs = {
+  appName: string;
+  approvalMethod: 'single_owner';
+  approverName: string | null;
+  event: 'expired' | 'granted' | 'revoked' | 'used';
+  expiresAt: number;
+  organizationName: string;
+  reasonCategory:
+    | 'incident_response'
+    | 'customer_requested_change'
+    | 'data_repair'
+    | 'account_recovery'
+    | 'other';
+  reasonDetails: string;
+  revokeReason?: string | null;
+  scope: 'read_only' | 'read_write';
+  siteAdminEmail: string;
+  siteAdminName: string | null;
+  ticketId: string;
+};
+
 export type StaleAccountUserTemplateArgs = {
   appName: string;
   userName: string | null;
@@ -121,6 +146,10 @@ export type EmailTemplateArgsById = {
   invitation: InvitationTemplateArgs;
   'application-invite': ApplicationInviteTemplateArgs;
   'delete-account': DeleteAccountTemplateArgs;
+  'support-access-granted': SupportAccessLifecycleTemplateArgs;
+  'support-access-used': SupportAccessLifecycleTemplateArgs;
+  'support-access-revoked': SupportAccessLifecycleTemplateArgs;
+  'support-access-expired': SupportAccessLifecycleTemplateArgs;
   'stale-account-user': StaleAccountUserTemplateArgs;
   'stale-account-admin': StaleAccountAdminTemplateArgs;
 };
@@ -365,6 +394,114 @@ export const EMAIL_PREVIEW_TEMPLATES = [
           userName: 'Quinn',
           deleteUrl: 'https://app.acme.test/delete-account?token=delete_account_123',
           expiryNotice: 'This account deletion link will expire in 30 minutes.',
+        },
+      },
+    ],
+  }),
+  defineTemplate({
+    id: 'support-access-granted',
+    label: 'Support Access Granted',
+    description: 'Owner-approved provider support access notification.',
+    scenarios: [
+      {
+        id: 'single-owner-approval',
+        label: 'Single owner approval',
+        description: 'A temporary provider support grant has been approved.',
+        props: {
+          appName: 'Acme Workspace',
+          approvalMethod: 'single_owner',
+          approverName: 'Morgan',
+          event: 'granted',
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          organizationName: 'Cottage Hospital',
+          reasonCategory: 'incident_response',
+          reasonDetails: 'Investigate a regulated document ingestion issue tied to INC-42.',
+          revokeReason: null,
+          scope: 'read_write',
+          siteAdminEmail: 'support@example.com',
+          siteAdminName: 'Support Admin',
+          ticketId: 'INC-42',
+        },
+      },
+    ],
+  }),
+  defineTemplate({
+    id: 'support-access-used',
+    label: 'Support Access Used',
+    description: 'Notification that provider support has started using an approved grant.',
+    scenarios: [
+      {
+        id: 'first-use',
+        label: 'First use',
+        description: 'Provider support exercised the temporary access grant.',
+        props: {
+          appName: 'Acme Workspace',
+          approvalMethod: 'single_owner',
+          approverName: 'Morgan',
+          event: 'used',
+          expiresAt: Date.now() + 45 * 60 * 1000,
+          organizationName: 'Cottage Hospital',
+          reasonCategory: 'data_repair',
+          reasonDetails: 'Validate data repair steps requested by the customer.',
+          revokeReason: null,
+          scope: 'read_only',
+          siteAdminEmail: 'support@example.com',
+          siteAdminName: 'Support Admin',
+          ticketId: 'INC-77',
+        },
+      },
+    ],
+  }),
+  defineTemplate({
+    id: 'support-access-revoked',
+    label: 'Support Access Revoked',
+    description: 'Notification that a temporary support grant was manually revoked.',
+    scenarios: [
+      {
+        id: 'manual-revoke',
+        label: 'Manual revoke',
+        description: 'The owner revoked provider support access before expiry.',
+        props: {
+          appName: 'Acme Workspace',
+          approvalMethod: 'single_owner',
+          approverName: 'Morgan',
+          event: 'revoked',
+          expiresAt: Date.now() + 30 * 60 * 1000,
+          organizationName: 'Cottage Hospital',
+          reasonCategory: 'customer_requested_change',
+          reasonDetails: 'Carry out a customer-requested configuration change.',
+          revokeReason: 'Issue resolved; support no longer needs write access.',
+          scope: 'read_write',
+          siteAdminEmail: 'support@example.com',
+          siteAdminName: 'Support Admin',
+          ticketId: 'CHG-9',
+        },
+      },
+    ],
+  }),
+  defineTemplate({
+    id: 'support-access-expired',
+    label: 'Support Access Expired',
+    description: 'Notification that a temporary support grant expired automatically.',
+    scenarios: [
+      {
+        id: 'automatic-expiry',
+        label: 'Automatic expiry',
+        description: 'The temporary provider support grant expired without manual revocation.',
+        props: {
+          appName: 'Acme Workspace',
+          approvalMethod: 'single_owner',
+          approverName: 'Morgan',
+          event: 'expired',
+          expiresAt: Date.now() - 5 * 60 * 1000,
+          organizationName: 'Cottage Hospital',
+          reasonCategory: 'account_recovery',
+          reasonDetails: 'Review account recovery artifacts for a locked-out user.',
+          revokeReason: null,
+          scope: 'read_only',
+          siteAdminEmail: 'support@example.com',
+          siteAdminName: 'Support Admin',
+          ticketId: 'ACC-88',
         },
       },
     ],

@@ -86,6 +86,10 @@ describe('available email templates', () => {
       'invitation',
       'application-invite',
       'delete-account',
+      'support-access-granted',
+      'support-access-used',
+      'support-access-revoked',
+      'support-access-expired',
       'stale-account-user',
       'stale-account-admin',
     ]);

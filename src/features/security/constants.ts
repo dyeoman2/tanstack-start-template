@@ -43,6 +43,7 @@ export const CONTROL_SUPPORT_FILTER_VALUES = ['all', 'complete', 'partial', 'mis
 export const FINDING_STATUS_FILTER_VALUES = ['all', 'open', 'resolved'] as const;
 export const FINDING_TYPE_FILTER_VALUES = [
   'all',
+  'audit_archive_health',
   'audit_request_context_gaps',
   'audit_integrity_failures',
   'document_scan_quarantines',

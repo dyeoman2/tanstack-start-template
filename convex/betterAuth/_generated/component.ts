@@ -62,6 +62,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   expiresAt: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token: string;
                   updatedAt: number;
                   userAgent?: null | string;
@@ -286,6 +287,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -810,6 +812,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -1448,6 +1451,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token?: string;
                   updatedAt?: number;
                   userAgent?: null | string;
@@ -1469,6 +1473,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"
@@ -2115,6 +2120,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                   expiresAt?: number;
                   impersonatedBy?: null | string;
                   ipAddress?: null | string;
+                  mfaVerified?: null | boolean;
                   token?: string;
                   updatedAt?: number;
                   userAgent?: null | string;
@@ -2136,6 +2142,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
                     | "enterpriseOrganizationId"
                     | "enterpriseProviderKey"
                     | "enterpriseProtocol"
+                    | "mfaVerified"
                     | "_id";
                   operator?:
                     | "lt"

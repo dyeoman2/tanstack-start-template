@@ -18,7 +18,10 @@ export const Route = createFileRoute('/recover-account')({
   errorComponent: () => <div>Something went wrong</div>,
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
-    redirectTo: z.string().optional(),
+    redirectTo: z
+      .string()
+      .regex(/^\/[a-zA-Z]/)
+      .optional(),
     totpURI: z.string().optional(),
   }),
 });

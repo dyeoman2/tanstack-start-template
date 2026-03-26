@@ -1,16 +1,9 @@
 import type { FunctionReference, FunctionReturnType, OptionalRestArgs } from 'convex/server';
 import { ConvexHttpClient } from 'convex/browser';
-import React from 'react';
 import { deriveConvexSiteUrl } from '~/lib/convex-url';
 import { buildBetterAuthProxyHeaders, getBetterAuthRequest } from '~/lib/server/better-auth/http';
 
 type ConvexFunctionType = 'action' | 'mutation' | 'query';
-
-const cache =
-  React.cache ||
-  ((fn: (...args: never[]) => unknown) => {
-    return (...args: never[]) => fn(...args);
-  });
 
 function getRequiredClientEnv(name: 'VITE_CONVEX_URL'): string {
   const value = import.meta.env[name];
@@ -25,6 +18,12 @@ function hasBody(method: string) {
   const normalizedMethod = method.toUpperCase();
   return normalizedMethod !== 'GET' && normalizedMethod !== 'HEAD';
 }
+
+const PROXY_RESPONSE_HEADER_NAMES_TO_STRIP = [
+  'content-encoding',
+  'content-length',
+  'transfer-encoding',
+] as const;
 
 function setupClient(token?: string) {
   const client = new ConvexHttpClient(getRequiredClientEnv('VITE_CONVEX_URL'));
@@ -50,11 +49,33 @@ async function readTokenResponse(response: Response) {
   return typeof payload.token === 'string' && payload.token.length > 0 ? payload.token : undefined;
 }
 
-const getAuthToken = cache(async (convexSiteUrl: string) => {
-  const request = getBetterAuthRequest();
+export function normalizeAuthProxyResponse(response: Response) {
+  const headers = new Headers(response.headers);
+
+  for (const headerName of PROXY_RESPONSE_HEADER_NAMES_TO_STRIP) {
+    headers.delete(headerName);
+  }
+
+  return new Response(response.body, {
+    headers,
+    status: response.status,
+    statusText: response.statusText,
+  });
+}
+
+export function getAuthTokenCacheKey(request: Request) {
+  return JSON.stringify({
+    authorization: request.headers.get('authorization') ?? '',
+    betterAuthCookie: request.headers.get('better-auth-cookie') ?? '',
+    cookie: request.headers.get('cookie') ?? '',
+  });
+}
+
+async function getAuthToken(convexSiteUrl: string, request: Request) {
   const headers = await buildBetterAuthProxyHeaders(request, {
     targetPath: '/api/auth/convex/token',
   });
+  headers.set('accept-encoding', 'identity');
   const response = await fetch(new URL('/api/auth/convex/token', convexSiteUrl), {
     headers,
     method: 'GET',
@@ -62,13 +83,17 @@ const getAuthToken = cache(async (convexSiteUrl: string) => {
   });
 
   return await readTokenResponse(response);
-});
+}
 
 async function callWithToken<
   FnType extends ConvexFunctionType,
   Fn extends FunctionReference<FnType>,
 >(kind: FnType, fn: Fn, args: OptionalRestArgs<Fn>): Promise<FunctionReturnType<Fn>> {
-  const token = await getAuthToken(deriveConvexSiteUrl(getRequiredClientEnv('VITE_CONVEX_URL')));
+  const request = getBetterAuthRequest();
+  const token = await getAuthToken(
+    deriveConvexSiteUrl(getRequiredClientEnv('VITE_CONVEX_URL')),
+    request,
+  );
   const client = setupClient(token);
 
   if (kind === 'query') {
@@ -89,8 +114,9 @@ async function proxyAuthRequest(request: Request) {
   const target = new URL(request.url);
   const convexSiteUrl = deriveConvexSiteUrl(getRequiredClientEnv('VITE_CONVEX_URL'));
   const headers = await buildBetterAuthProxyHeaders(request);
+  headers.set('accept-encoding', 'identity');
 
-  return await fetch(new URL(`${target.pathname}${target.search}`, convexSiteUrl), {
+  const response = await fetch(new URL(`${target.pathname}${target.search}`, convexSiteUrl), {
     body: hasBody(request.method) ? request.body : undefined,
     // @ts-expect-error duplex is required when streaming a request body through fetch
     duplex: hasBody(request.method) ? 'half' : undefined,
@@ -98,6 +124,8 @@ async function proxyAuthRequest(request: Request) {
     method: request.method,
     redirect: 'manual',
   });
+
+  return normalizeAuthProxyResponse(response);
 }
 
 export const convexAuthReactStart = {

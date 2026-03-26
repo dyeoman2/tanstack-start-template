@@ -88,6 +88,22 @@ export function AdminSecurityReportsTab(props: {
   setReportCustomerSummaries: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setReportNotes: React.Dispatch<React.SetStateAction<Record<string, string>>>;
 }) {
+  const archiveStatus = props.auditReadiness?.archiveStatus ?? {
+    configured: false,
+    driftDetected: false,
+    exporterEnabled: false,
+    failureReason: null,
+    lagCount: 0,
+    lastVerifiedAt: null,
+    lastVerifiedSealEndSequence: null,
+    lastVerificationStatus: 'disabled' as const,
+    latestExportEndSequence: null,
+    latestManifestObjectKey: null,
+    latestPayloadObjectKey: null,
+    latestSealEndSequence: null,
+    required: false,
+  };
+
   return (
     <>
       <AdminSecurityTabHeader
@@ -257,6 +273,9 @@ export function AdminSecurityReportsTab(props: {
                       {props.auditReadiness.immutableExportHealthy ? 'healthy' : 'lagging'}
                     </p>
                     <p>Immutable archive lag: {props.auditReadiness.immutableExportLagCount}</p>
+                    <p>Archive verification: {archiveStatus.lastVerificationStatus}</p>
+                    <p>Archive configured: {archiveStatus.configured ? 'yes' : 'no'}</p>
+                    <p>Archive drift: {archiveStatus.driftDetected ? 'detected' : 'none'}</p>
                     <p>
                       Last immutable export:{' '}
                       {props.auditReadiness.latestImmutableExport
@@ -265,6 +284,16 @@ export function AdminSecurityReportsTab(props: {
                           ).toLocaleString()
                         : 'none'}
                     </p>
+                    <p>
+                      Last archive verification:{' '}
+                      {archiveStatus.lastVerifiedAt
+                        ? new Date(archiveStatus.lastVerifiedAt).toLocaleString()
+                        : 'none'}
+                    </p>
+                    <p>Last verified seal: {archiveStatus.lastVerifiedSealEndSequence ?? 'none'}</p>
+                    {archiveStatus.failureReason ? (
+                      <p>Archive issue: {archiveStatus.failureReason}</p>
+                    ) : null}
                     {props.auditReadiness.lastIntegrityFailure ? (
                       <p>
                         Last failure: #{props.auditReadiness.lastIntegrityFailure.expectedSequence}{' '}

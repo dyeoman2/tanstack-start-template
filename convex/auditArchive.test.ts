@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   getAuditArchiveRuntimeConfigMock,
+  getFileStorageBackendModeMock,
   headAuditArchiveObjectMock,
+  getAuditArchiveObjectBytesMock,
+  putAuditArchiveMetricDataMock,
   putAuditArchiveObjectMock,
   recordSystemAuditEventMock,
 } = vi.hoisted(() => ({
@@ -13,17 +16,24 @@ const {
     prefix: 'audit-ledger/',
     roleArn: 'arn:aws:iam::123456789012:role/audit-archive',
   })),
+  getFileStorageBackendModeMock: vi.fn(() => 's3-primary'),
   headAuditArchiveObjectMock: vi.fn(),
+  getAuditArchiveObjectBytesMock: vi.fn(),
+  putAuditArchiveMetricDataMock: vi.fn(),
   putAuditArchiveObjectMock: vi.fn(),
   recordSystemAuditEventMock: vi.fn(),
 }));
 
 vi.mock('../src/lib/server/env.server', () => ({
   getAuditArchiveRuntimeConfig: getAuditArchiveRuntimeConfigMock,
+  getFileStorageBackendMode: getFileStorageBackendModeMock,
+  isS3BackedFileStorageBackendMode: (mode: string) => mode === 's3-primary' || mode === 's3-mirror',
 }));
 
 vi.mock('./lib/auditArchiveS3', () => ({
+  getAuditArchiveObjectBytes: getAuditArchiveObjectBytesMock,
   headAuditArchiveObject: headAuditArchiveObjectMock,
+  putAuditArchiveMetricData: putAuditArchiveMetricDataMock,
   putAuditArchiveObject: putAuditArchiveObjectMock,
 }));
 
@@ -31,7 +41,10 @@ vi.mock('./lib/auditEmitters', () => ({
   recordSystemAuditEvent: recordSystemAuditEventMock,
 }));
 
-import { exportSealedAuditLedgerSegmentToImmutableStoreInternal } from './auditArchive';
+import {
+  exportSealedAuditLedgerSegmentToImmutableStoreInternal,
+  verifyLatestSealedAuditLedgerSegmentInImmutableStoreInternal,
+} from './auditArchive';
 
 describe('audit archive export worker', () => {
   beforeEach(() => {
@@ -45,6 +58,7 @@ describe('audit archive export worker', () => {
       runQuery: vi
         .fn()
         .mockResolvedValueOnce({ chainVersion: 1, headEventHash: 'head', headSequence: 10 })
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce(null),
     };
@@ -99,6 +113,7 @@ describe('audit archive export worker', () => {
           sealedAt: 1690000000000,
           startSequence: 1,
         })
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           continueCursor: '',
           isDone: true,
@@ -216,6 +231,7 @@ describe('audit archive export worker', () => {
           startSequence: 1,
         })
         .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           continueCursor: '',
           isDone: true,
@@ -269,6 +285,121 @@ describe('audit archive export worker', () => {
       expect.objectContaining({
         endSequence: 2,
         startSequence: 1,
+      }),
+    );
+  });
+
+  it('verifies the latest sealed segment in immutable storage', async () => {
+    const payloadBytes = new Uint8Array([1, 2, 3]);
+    const manifestJson = JSON.stringify({
+      endSequence: 8,
+      headHash: 'head-hash',
+      manifestObjectKey: 'audit-ledger/primary/000000000006-000000000008-head-hash.manifest.json',
+      objectKey: 'audit-ledger/primary/000000000006-000000000008-head-hash.jsonl.gz',
+      payloadSha256: '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+      startSequence: 6,
+    });
+    getAuditArchiveObjectBytesMock
+      .mockResolvedValueOnce(payloadBytes)
+      .mockResolvedValueOnce(new TextEncoder().encode(manifestJson));
+    headAuditArchiveObjectMock.mockResolvedValue({});
+
+    const handler = (verifyLatestSealedAuditLedgerSegmentInImmutableStoreInternal as any)._handler;
+    const ctx = {
+      runMutation: vi.fn(),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          chainId: 'primary',
+          endSequence: 8,
+          eventCount: 3,
+          headHash: 'head-hash',
+          sealedAt: 1700000000000,
+          startSequence: 6,
+        })
+        .mockResolvedValueOnce({
+          bucket: 'audit-archive-bucket',
+          chainId: 'primary',
+          endSequence: 8,
+          eventCount: 3,
+          exportedAt: 1700000000100,
+          headHash: 'head-hash',
+          manifestObjectKey:
+            'audit-ledger/primary/000000000006-000000000008-head-hash.manifest.json',
+          manifestSha256: '029f3a2c02df1b69bc6eeb3fe9c58e95d50ef1a20bb281fb33eac123c1b75445',
+          objectKey: 'audit-ledger/primary/000000000006-000000000008-head-hash.jsonl.gz',
+          payloadSha256: '039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81',
+          sealedAt: 1700000000000,
+          startSequence: 6,
+        })
+        .mockResolvedValueOnce(null),
+    };
+
+    await expect(handler(ctx, {})).resolves.toMatchObject({
+      driftDetected: false,
+      lagCount: 0,
+      lastVerificationStatus: 'verified',
+      lastVerifiedSealEndSequence: 8,
+      latestSealEndSequence: 8,
+    });
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        lastVerificationStatus: 'verified',
+        latestSealEndSequence: 8,
+      }),
+    );
+  });
+
+  it('records a hash mismatch when immutable contents drift from the export row', async () => {
+    getAuditArchiveObjectBytesMock
+      .mockResolvedValueOnce(new Uint8Array([9, 9, 9]))
+      .mockResolvedValueOnce(new TextEncoder().encode('{"bad":true}'));
+    headAuditArchiveObjectMock.mockResolvedValue({});
+
+    const handler = (verifyLatestSealedAuditLedgerSegmentInImmutableStoreInternal as any)._handler;
+    const ctx = {
+      runMutation: vi.fn(),
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          chainId: 'primary',
+          endSequence: 8,
+          eventCount: 3,
+          headHash: 'head-hash',
+          sealedAt: 1700000000000,
+          startSequence: 6,
+        })
+        .mockResolvedValueOnce({
+          bucket: 'audit-archive-bucket',
+          chainId: 'primary',
+          endSequence: 8,
+          eventCount: 3,
+          exportedAt: 1700000000100,
+          headHash: 'head-hash',
+          manifestObjectKey:
+            'audit-ledger/primary/000000000006-000000000008-head-hash.manifest.json',
+          manifestSha256: 'expected-manifest',
+          objectKey: 'audit-ledger/primary/000000000006-000000000008-head-hash.jsonl.gz',
+          payloadSha256: 'expected-payload',
+          sealedAt: 1700000000000,
+          startSequence: 6,
+        })
+        .mockResolvedValueOnce({
+          _id: 'verification-1',
+          checkedAt: 1699999999000,
+          lastVerificationStatus: 'verified',
+        }),
+    };
+
+    await expect(handler(ctx, {})).resolves.toMatchObject({
+      driftDetected: true,
+      lastVerificationStatus: 'hash_mismatch',
+    });
+    expect(recordSystemAuditEventMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        eventType: 'audit_archive_verification_failed',
       }),
     );
   });

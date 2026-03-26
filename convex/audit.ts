@@ -25,6 +25,7 @@ import {
 } from './auth/access';
 import { throwConvexError } from './auth/errors';
 import {
+  auditLedgerArchiveVerificationDocValidator,
   auditLedgerEventDocValidator,
   auditLedgerEventsResponseValidator,
   auditLedgerExportValidator,
@@ -205,6 +206,14 @@ const REGULATED_BASELINE_REQUIRED_FIELDS = new Map<
   ],
   [
     'audit_ledger_segment_archived',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'audit_archive_verification_failed',
+    ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
+  ],
+  [
+    'audit_archive_verification_recovered',
     ['outcome', 'resourceType', 'resourceId', 'severity', 'sourceSurface'],
   ],
   [
@@ -418,6 +427,15 @@ function validateEventSpecificMetadata(record: { eventType: string; metadata?: s
       requireMetadataKey(record.eventType, parsed, 'bucket', 'string');
       requireMetadataKey(record.eventType, parsed, 'objectKey', 'string');
       requireMetadataKey(record.eventType, parsed, 'manifestSha256', 'string');
+      return;
+    }
+    case 'audit_archive_verification_failed':
+    case 'audit_archive_verification_recovered': {
+      const parsed = requireMetadataObject(record.eventType, metadata);
+      requireMetadataKey(record.eventType, parsed, 'verificationStatus', 'string');
+      requireMetadataKey(record.eventType, parsed, 'latestSealEndSequence', 'number');
+      requireMetadataKey(record.eventType, parsed, 'lagCount', 'number');
+      requireMetadataKey(record.eventType, parsed, 'driftDetected', 'string');
       return;
     }
     case 'evidence_report_generated': {
@@ -1203,6 +1221,20 @@ export const getLatestImmutableAuditExportInternal = internalQuery({
   },
 });
 
+export const getLatestAuditLedgerArchiveVerificationInternal = internalQuery({
+  args: {},
+  returns: v.union(auditLedgerArchiveVerificationDocValidator, v.null()),
+  handler: async (ctx) => {
+    return (
+      (await ctx.db
+        .query('auditLedgerArchiveVerifications')
+        .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', AUDIT_LEDGER_CHAIN_ID))
+        .order('desc')
+        .first()) ?? null
+    );
+  },
+});
+
 export const listAuditLedgerEventsForVerificationInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -1364,6 +1396,56 @@ export const recordImmutableAuditExportInternal = internalMutation({
     }
 
     await ctx.db.insert('auditLedgerImmutableExports', args);
+    return null;
+  },
+});
+
+export const createAuditLedgerArchiveVerificationInternal = internalMutation({
+  args: {
+    chainId: v.string(),
+    checkedAt: v.number(),
+    required: v.boolean(),
+    configured: v.boolean(),
+    exporterEnabled: v.boolean(),
+    latestSealEndSequence: v.union(v.number(), v.null()),
+    latestExportEndSequence: v.union(v.number(), v.null()),
+    lagCount: v.number(),
+    driftDetected: v.boolean(),
+    lastVerificationStatus: v.union(
+      v.literal('verified'),
+      v.literal('missing_object'),
+      v.literal('hash_mismatch'),
+      v.literal('no_seal'),
+      v.literal('disabled'),
+    ),
+    lastVerifiedSealEndSequence: v.union(v.number(), v.null()),
+    latestManifestObjectKey: v.union(v.string(), v.null()),
+    latestPayloadObjectKey: v.union(v.string(), v.null()),
+    payloadSha256: v.union(v.string(), v.null()),
+    manifestSha256: v.union(v.string(), v.null()),
+    failureReason: v.union(v.string(), v.null()),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const latestVerification = await ctx.db
+      .query('auditLedgerArchiveVerifications')
+      .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', args.chainId))
+      .order('desc')
+      .first();
+
+    if (
+      latestVerification &&
+      latestVerification.checkedAt === args.checkedAt &&
+      latestVerification.lastVerificationStatus === args.lastVerificationStatus &&
+      latestVerification.latestSealEndSequence === args.latestSealEndSequence &&
+      latestVerification.latestExportEndSequence === args.latestExportEndSequence &&
+      latestVerification.manifestSha256 === args.manifestSha256 &&
+      latestVerification.payloadSha256 === args.payloadSha256
+    ) {
+      return null;
+    }
+
+    await ctx.db.insert('auditLedgerArchiveVerifications', args);
     return null;
   },
 });

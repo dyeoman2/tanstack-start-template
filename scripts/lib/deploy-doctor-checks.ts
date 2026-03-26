@@ -16,6 +16,27 @@ export type DeployDoctorCheck = {
   status: 'pass' | 'warn' | 'fail';
 };
 
+export type AuditArchiveReleaseGateSnapshot = {
+  archiveStatus: {
+    configured: boolean;
+    driftDetected: boolean;
+    exporterEnabled: boolean;
+    failureReason: string | null;
+    lagCount: number;
+    lastVerifiedAt: number | null;
+    lastVerifiedSealEndSequence: number | null;
+    lastVerificationStatus:
+      | 'verified'
+      | 'missing_object'
+      | 'hash_mismatch'
+      | 'no_seal'
+      | 'disabled';
+    latestExportEndSequence: number | null;
+    latestSealEndSequence: number | null;
+    required: boolean;
+  };
+};
+
 export function isS3BackedStorageBackend(backend: string) {
   return backend === 's3-primary' || backend === 's3-mirror';
 }
@@ -108,5 +129,77 @@ export function checkAuditArchiveRuntimeEnv(
     status: 'pass',
     detail: archiveRequired ? `FILE_STORAGE_BACKEND=${backend}` : undefined,
   });
+  return true;
+}
+
+export function checkAuditArchiveReleaseGate(
+  label: string,
+  snapshot: AuditArchiveReleaseGateSnapshot | null,
+  checks: DeployDoctorCheck[],
+) {
+  if (!snapshot) {
+    checks.push({
+      check: `Audit archive release gate (${label})`,
+      detail: 'Audit archive runtime status could not be loaded from Convex.',
+      status: 'fail',
+    });
+    console.log(`❌ Audit archive release gate (${label}) could not load runtime status`);
+    return false;
+  }
+
+  const status = snapshot.archiveStatus;
+  if (!status.required) {
+    checks.push({
+      check: `Audit archive release gate (${label})`,
+      detail: 'Audit archive not required for current storage backend',
+      status: 'pass',
+    });
+    console.log(`✅ Audit archive release gate (${label}) not required`);
+    return true;
+  }
+
+  const failures: string[] = [];
+  if (!status.configured) {
+    failures.push(status.failureReason ?? 'archive config missing');
+  }
+  if (!status.exporterEnabled) {
+    failures.push('exporter disabled');
+  }
+  if (status.latestSealEndSequence !== null && status.latestExportEndSequence === null) {
+    failures.push('latest seal has not been exported');
+  }
+  if (status.lagCount > 0) {
+    failures.push(`lag ${status.lagCount}`);
+  }
+  if (status.driftDetected) {
+    failures.push('seal/export drift detected');
+  }
+  if (
+    status.latestSealEndSequence !== null &&
+    (status.lastVerificationStatus !== 'verified' ||
+      status.lastVerifiedSealEndSequence !== status.latestSealEndSequence ||
+      status.lastVerifiedAt === null)
+  ) {
+    failures.push(`verification ${status.lastVerificationStatus}`);
+  }
+
+  if (failures.length > 0) {
+    checks.push({
+      check: `Audit archive release gate (${label})`,
+      detail: failures.join('; '),
+      status: 'fail',
+    });
+    console.log(`❌ Audit archive release gate (${label}): ${failures.join('; ')}`);
+    return false;
+  }
+
+  checks.push({
+    check: `Audit archive release gate (${label})`,
+    detail: `verified through seal ${status.latestSealEndSequence ?? 'none'}`,
+    status: 'pass',
+  });
+  console.log(
+    `✅ Audit archive release gate (${label}) verified through seal ${status.latestSealEndSequence ?? 'none'}`,
+  );
   return true;
 }

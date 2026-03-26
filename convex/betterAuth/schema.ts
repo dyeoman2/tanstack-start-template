@@ -47,6 +47,7 @@ export const tables = {
     enterpriseOrganizationId: v.optional(v.union(v.null(), v.string())),
     enterpriseProviderKey: v.optional(v.union(v.null(), v.string())),
     enterpriseProtocol: v.optional(v.union(v.null(), v.string())),
+    mfaVerified: v.optional(v.union(v.null(), v.boolean())),
   })
     .index('expiresAt', ['expiresAt'])
     .index('expiresAt_userId', ['expiresAt', 'userId'])

@@ -697,7 +697,7 @@ export function getFileStorageBackendMode(): FileStorageBackendMode {
   throw new Error('FILE_STORAGE_BACKEND must be one of: convex, s3-primary, s3-mirror.');
 }
 
-function isS3BackedFileStorageBackendMode(mode: FileStorageBackendMode) {
+export function isS3BackedFileStorageBackendMode(mode: FileStorageBackendMode) {
   return mode === 's3-primary' || mode === 's3-mirror';
 }
 

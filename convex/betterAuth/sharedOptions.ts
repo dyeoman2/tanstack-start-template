@@ -44,6 +44,11 @@ import {
   organizationOwnerRole,
   userRole,
 } from '../../src/lib/shared/better-auth-access';
+import {
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  validatePasswordComplexity,
+} from '../../src/lib/shared/password-validation';
 import authConfig from '../auth.config';
 import { resolveBetterAuthPluginJwks } from './staticJwks';
 
@@ -161,15 +166,43 @@ type SharedBetterAuthCallbacks = {
 export type SharedSendInvitationEmail = SharedBetterAuthCallbacks['sendInvitationEmail'];
 
 export const ADMIN_IMPERSONATION_SESSION_DURATION_SECONDS = 30 * 60;
-export const AUTH_SESSION_EXPIRES_IN_SECONDS = 24 * 60 * 60;
-export const AUTH_SESSION_UPDATE_AGE_SECONDS = 4 * 60 * 60;
+
+/**
+ * Server-side session ceiling: maximum absolute session lifetime.
+ *
+ * Even with continuous activity, a session cannot live longer than this.
+ * Users must re-authenticate after this period regardless of activity.
+ * This is a HIPAA compliance backstop — the client-side inactivity timer
+ * handles UX, but the server enforces the hard ceiling.
+ */
+export const AUTH_SESSION_EXPIRES_IN_SECONDS = 8 * 60 * 60;
+
+/**
+ * Server-side idle timeout: sessions are only extended when a request
+ * arrives within this window of the last refresh.
+ *
+ * Set to 15 minutes to match the HIPAA inactivity timeout requirement
+ * (§164.312(a)(2)(iii)). If no authenticated request arrives within
+ * 15 minutes, the session expires server-side even if the client timer
+ * was bypassed.
+ */
+export const AUTH_SESSION_UPDATE_AGE_SECONDS = 15 * 60;
+
 export const AUTH_SESSION_FRESH_AGE_SECONDS = 15 * 60;
 export const ORGANIZATION_INVITATION_EXPIRES_IN_SECONDS = 7 * 24 * 60 * 60;
 
 const DEFAULT_RATE_LIMIT_WINDOW_SECONDS = 60 * 60;
 const DEFAULT_RATE_LIMIT_MAX_REQUESTS = 100;
 const PASSWORD_AUTH_PATHS = new Set(['/sign-in/email', '/sign-up/email']);
-const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey']);
+
+/** Endpoints that accept a new password in the request body and must enforce complexity rules. */
+const PASSWORD_COMPLEXITY_PATHS: Record<string, string> = {
+  '/sign-up/email': 'password',
+  '/reset-password': 'newPassword',
+  '/change-password': 'newPassword',
+  '/admin/set-user-password': 'newPassword',
+};
+const PASSKEY_AUTH_PATHS = new Set(['/sign-in/passkey', '/passkey/verify-authentication']);
 const STEP_UP_TOTP_PATHS = new Set(['/two-factor/verify-totp']);
 const STEP_UP_BACKUP_CODE_PATHS = new Set(['/two-factor/verify-backup-code']);
 const CALLBACK_AUTH_PATH_PREFIXES = ['/callback/', '/oauth2/callback/'] as const;
@@ -327,6 +360,10 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
       window: 15 * 60,
       max: 20,
     },
+    '/passkey/verify-authentication': {
+      window: 15 * 60,
+      max: 20,
+    },
     '/sign-up/email': {
       window: 60 * 60,
       max: 5,
@@ -426,11 +463,24 @@ function createCustomRateLimitRules(): NonNullable<BetterAuthOptions['rateLimit'
   };
 }
 
-async function assertStepUpClaimForChangeEmail(
+const STEP_UP_PROTECTED_PATHS: Record<string, { message: string; requirement: StepUpRequirement }> =
+  {
+    '/change-email': {
+      message: 'Verify your account again before changing your sign-in email address.',
+      requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+    },
+    '/change-password': {
+      message: 'Verify your account again before changing your password.',
+      requirement: STEP_UP_REQUIREMENTS.passwordChange,
+    },
+  };
+
+async function assertStepUpClaimForProtectedPath(
   callbacks: Pick<SharedBetterAuthCallbacks, 'recordStepUpRequired' | 'resolveStepUpClaimStatus'>,
   ctx: Parameters<Parameters<typeof createAuthMiddleware>[0]>[0],
 ) {
-  if (ctx.path !== '/change-email') {
+  const config = STEP_UP_PROTECTED_PATHS[ctx.path];
+  if (!config) {
     return;
   }
 
@@ -440,12 +490,12 @@ async function assertStepUpClaimForChangeEmail(
 
   if (!actorUserId || !sessionId) {
     throw new APIError('FORBIDDEN', {
-      message: 'Verify your account again before changing your sign-in email address.',
+      message: config.message,
     });
   }
 
   const satisfied = await callbacks.resolveStepUpClaimStatus?.({
-    requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+    requirement: config.requirement,
     sessionId,
     userId: actorUserId,
   });
@@ -456,14 +506,14 @@ async function assertStepUpClaimForChangeEmail(
 
   await callbacks.recordStepUpRequired?.({
     path: ctx.path,
-    reason: 'Verify your account again before changing your sign-in email address.',
-    requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+    reason: config.message,
+    requirement: config.requirement,
     sessionId,
     userId: actorUserId,
   });
 
   throw new APIError('FORBIDDEN', {
-    message: 'Verify your account again before changing your sign-in email address.',
+    message: config.message,
   });
 }
 
@@ -771,15 +821,16 @@ async function handleStepUpAfterHook(
     appendResponseCookie(ctx, clearPendingStepUpCookie());
   }
 
-  if (ctx.path === '/change-email' && sessionContext.sessionId && sessionContext.userId) {
+  const stepUpProtectedConfig = STEP_UP_PROTECTED_PATHS[ctx.path];
+  if (stepUpProtectedConfig && sessionContext.sessionId && sessionContext.userId) {
     await callbacks.consumeStepUpClaim?.({
-      requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+      requirement: stepUpProtectedConfig.requirement,
       sessionId: sessionContext.sessionId,
       userId: sessionContext.userId,
     });
     await callbacks.recordStepUpConsumed?.({
       path: ctx.path,
-      requirement: STEP_UP_REQUIREMENTS.accountEmailChange,
+      requirement: stepUpProtectedConfig.requirement,
       sessionId: sessionContext.sessionId,
       userId: sessionContext.userId,
     });
@@ -875,6 +926,20 @@ export function createSharedBetterAuthOptions(
           });
         }
 
+        // Enforce password complexity on endpoints that accept a new password.
+        const passwordField = PASSWORD_COMPLEXITY_PATHS[ctx.path];
+        if (passwordField) {
+          const candidatePassword = getStringField(ctx.body, passwordField);
+          if (candidatePassword) {
+            const { valid, errors } = validatePasswordComplexity(candidatePassword);
+            if (!valid) {
+              throw new APIError('BAD_REQUEST', {
+                message: `Password does not meet complexity requirements: ${errors.join('; ')}`,
+              });
+            }
+          }
+        }
+
         if (
           callbacks.shouldBlockPasswordAuth &&
           (ctx.path === '/sign-in/email' || ctx.path === '/sign-up/email')
@@ -893,7 +958,7 @@ export function createSharedBetterAuthOptions(
           }
         }
 
-        await assertStepUpClaimForChangeEmail(callbacks, ctx);
+        await assertStepUpClaimForProtectedPath(callbacks, ctx);
         await assertProtectedAdminRouteSession(callbacks, ctx);
 
         if (
@@ -925,6 +990,8 @@ export function createSharedBetterAuthOptions(
       enabled: true,
       requireEmailVerification: true,
       autoSignIn: false,
+      minPasswordLength: PASSWORD_MIN_LENGTH,
+      maxPasswordLength: PASSWORD_MAX_LENGTH,
       revokeSessionsOnPasswordReset: true,
       sendResetPassword: callbacks.sendResetPassword,
     },

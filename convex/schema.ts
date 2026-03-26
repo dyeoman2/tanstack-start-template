@@ -306,6 +306,37 @@ export default defineSchema({
     .index('by_chain_id_and_exported_at', ['chainId', 'exportedAt'])
     .index('by_chain_id_and_end_sequence', ['chainId', 'endSequence']),
 
+  auditLedgerArchiveVerifications: defineTable({
+    chainId: v.string(),
+    checkedAt: v.number(),
+    required: v.boolean(),
+    configured: v.boolean(),
+    exporterEnabled: v.boolean(),
+    latestSealEndSequence: v.union(v.number(), v.null()),
+    latestExportEndSequence: v.union(v.number(), v.null()),
+    lagCount: v.number(),
+    driftDetected: v.boolean(),
+    lastVerificationStatus: v.union(
+      v.literal('verified'),
+      v.literal('missing_object'),
+      v.literal('hash_mismatch'),
+      v.literal('no_seal'),
+      v.literal('disabled'),
+    ),
+    lastVerifiedSealEndSequence: v.union(v.number(), v.null()),
+    latestManifestObjectKey: v.union(v.string(), v.null()),
+    latestPayloadObjectKey: v.union(v.string(), v.null()),
+    payloadSha256: v.union(v.string(), v.null()),
+    manifestSha256: v.union(v.string(), v.null()),
+    failureReason: v.union(v.string(), v.null()),
+  })
+    .index('by_chain_id_and_checked_at', ['chainId', 'checkedAt'])
+    .index('by_chain_id_and_status_and_checked_at', [
+      'chainId',
+      'lastVerificationStatus',
+      'checkedAt',
+    ]),
+
   organizationDomains: defineTable({
     organizationId: v.string(),
     domain: v.string(),
@@ -342,6 +373,8 @@ export default defineSchema({
     enterpriseEnforcedAt: v.union(v.number(), v.null()),
     allowBreakGlassPasswordLogin: v.boolean(),
     temporaryLinkTtlMinutes: v.number(),
+    supportAccessApprovalModel: v.literal('single_owner'),
+    supportAccessEnabled: v.boolean(),
     webSearchAllowed: v.boolean(),
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -369,17 +402,33 @@ export default defineSchema({
     organizationId: v.string(),
     siteAdminUserId: v.string(),
     scope: v.union(v.literal('read_only'), v.literal('read_write')),
+    approvalMethod: v.literal('single_owner'),
+    approvedAt: v.number(),
     ticketId: v.string(),
     reason: v.string(),
+    reasonCategory: v.union(
+      v.literal('incident_response'),
+      v.literal('customer_requested_change'),
+      v.literal('data_repair'),
+      v.literal('account_recovery'),
+      v.literal('other'),
+    ),
+    reasonDetails: v.string(),
     grantedByUserId: v.string(),
     createdAt: v.number(),
     expiresAt: v.number(),
+    firstUsedAt: v.union(v.number(), v.null()),
+    lastUsedAt: v.union(v.number(), v.null()),
+    useCount: v.number(),
+    expiredNotificationSentAt: v.union(v.number(), v.null()),
     revokedAt: v.union(v.number(), v.null()),
     revokedByUserId: v.union(v.string(), v.null()),
+    revocationReason: v.union(v.string(), v.null()),
   })
     .index('by_organization_id', ['organizationId'])
     .index('by_organization_id_and_created_at', ['organizationId', 'createdAt'])
-    .index('by_organization_id_and_site_admin_user_id', ['organizationId', 'siteAdminUserId']),
+    .index('by_organization_id_and_site_admin_user_id', ['organizationId', 'siteAdminUserId'])
+    .index('by_expired_notification_sent_at', ['expiredNotificationSentAt']),
 
   organizationLegalHolds: defineTable({
     organizationId: v.string(),
@@ -745,7 +794,9 @@ export default defineSchema({
       v.literal('document_export'),
       v.literal('document_deletion'),
       v.literal('organization_admin'),
+      v.literal('password_change'),
       v.literal('session_administration'),
+      v.literal('support_access_approval'),
       v.literal('user_administration'),
     ),
     resourceId: v.union(v.string(), v.null()),
@@ -778,7 +829,9 @@ export default defineSchema({
       v.literal('document_export'),
       v.literal('document_deletion'),
       v.literal('organization_admin'),
+      v.literal('password_change'),
       v.literal('session_administration'),
+      v.literal('support_access_approval'),
       v.literal('user_administration'),
     ),
     sessionId: v.string(),
@@ -824,6 +877,7 @@ export default defineSchema({
     findingKey: v.string(),
     findingType: v.union(
       v.literal('audit_integrity_failures'),
+      v.literal('audit_archive_health'),
       v.literal('audit_request_context_gaps'),
       v.literal('document_scan_quarantines'),
       v.literal('document_scan_rejections'),

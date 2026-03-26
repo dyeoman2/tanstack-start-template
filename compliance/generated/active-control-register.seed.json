@@ -1,6 +1,6 @@
 {
   "schemaVersion": "1.0.0",
-  "generatedAt": "2026-03-24T20:44:16.306Z",
+  "generatedAt": "2026-03-26T18:17:17.769Z",
   "generatedFrom": {
     "nist80053ModerateSource": "compliance/generated/nist-800-53-moderate-controls.json",
     "hipaaSource": "compliance/mappings/hipaa-security-rule-citations.json",
@@ -1043,7 +1043,7 @@
           "seed": {
             "status": "done",
             "owner": "Secure Configuration",
-            "notes": "The auth runtime rejects malformed origins and enforces secure session configuration for regulated deployments, and the verification workflow can retain reviewable records of those checks in the control workspace.",
+            "notes": "The auth runtime rejects malformed origins, enforces explicit server-side session lifetime controls for regulated deployments, and can retain reviewable verification records for those checks in the control workspace.",
             "evidence": [
               {
                 "title": "Fail-closed Better Auth env validation",
@@ -1082,7 +1082,7 @@
           "seed": {
             "status": "done",
             "owner": "Secure Configuration",
-            "notes": "Security-sensitive runtime configuration is validated for auth origins and vendor configuration before protected paths proceed.",
+            "notes": "Security-sensitive runtime configuration is validated for auth origins, session posture, and vendor privacy configuration before protected paths proceed.",
             "evidence": [
               {
                 "title": "Auth and site URL validation",
@@ -1260,7 +1260,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Privileged admin routes, evidence-management actions, and regulated step-up checks require a recent authenticated session before they proceed.",
+            "notes": "Privileged admin routes, evidence-management actions, regulated step-up checks, and other sensitive credential changes require a recent authenticated session before they proceed.",
             "evidence": [
               {
                 "title": "Privileged admin step-up enforcement",
@@ -1272,6 +1272,13 @@
               {
                 "title": "Fresh evidence review protection",
                 "description": "Site admin evidence-management workflows requiring a fresh privileged session before evidence review, archival, or renewal actions proceed.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Sensitive credential-change step-up protection",
+                "description": "Sensitive credential-change step-up protection Authentication route protections require a recent step-up session before sign-in email or password changes are accepted.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -1475,6 +1482,13 @@
               {
                 "title": "Auth middleware origin rejection",
                 "description": "Auth middleware origin rejection rejecting authentication requests from untrusted origins before processing credentials.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Redirect target boundary normalization",
+                "description": "Redirect target boundary normalization Authentication redirect handling limits post-authentication destinations to approved in-app routes and rejects agent-auth redirects that are not same-origin relative paths.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2115,7 +2129,7 @@
       "title": "Incident Handling",
       "familyId": "IR",
       "familyTitle": "Incident Response",
-      "implementationSummary": "This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, and retained review artifacts that can assist incident analysis, but provider incident response procedures and customer-side response workflows must be documented and operated outside these workspace artifacts.",
+      "implementationSummary": "This control addresses incident handling for the hosted service and connected customer environment. The platform currently provides investigation-supporting audit trails, evidence exports, retained review artifacts, and a documented provider incident-response policy that can assist incident analysis, but fuller provider procedures and customer-side response workflows must still be documented and operated outside these workspace artifacts.",
       "controlStatement": "Implement an incident handling capability for incidents that is consistent with the incident response plan and includes preparation, detection and analysis, containment, eradication, and recovery; Coordinate incident handling activities with contingency planning activities; Incorporate lessons learned from ongoing incident handling activities into incident response procedures, training, and testing, and implement the resulting changes accordingly; and Ensure the rigor, intensity, scope, and results of incident handling activities are comparable and predictable across the organization.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -2213,10 +2227,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Incident Response",
-            "notes": "No provider-owned incident response procedure is attached in the control workspace yet.",
-            "evidence": []
+            "notes": "The workspace now includes a documented provider incident-response policy, but it does not yet attach fuller procedure detail covering triage, escalation, containment, customer coordination, and post-incident follow-up.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy defining incident-response planning, training, testing, and handling expectations for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual incident response procedure task",
+                "description": "Documentation Annual review task definition requiring the provider incident-response procedure to be reviewed and attested as current during the site admin security review cycle.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -2260,7 +2289,7 @@
       "title": "Vulnerability Monitoring and Scanning",
       "familyId": "RA",
       "familyTitle": "Risk Assessment",
-      "implementationSummary": "This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, and production deployment verification, but hosted-service remediation tracking and formal risk treatment still require provider processes outside this workspace.",
+      "implementationSummary": "This control addresses vulnerability and security finding identification. The platform supports that objective through automated file-inspection and malware-finding hooks, release-time dependency and code scanning, SBOM generation, production deployment verification, and retained findings workflow state for remediation and risk treatment.",
       "controlStatement": "Monitor and scan for vulnerabilities in the system and hosted applications {{ insert: param, ra-5_prm_1 }} and when new vulnerabilities potentially affecting the system are identified and reported; Employ vulnerability monitoring tools and techniques that facilitate interoperability among tools and automate parts of the vulnerability management process by using standards for: Enumerating platforms, software flaws, and improper configurations; Formatting checklists and test procedures; and Measuring vulnerability impact; Analyze vulnerability scan reports and results from vulnerability monitoring; Remediate legitimate vulnerabilities {{ insert: param, ra-05_odp.03 }} in accordance with an organizational assessment of risk; Share information obtained from the vulnerability monitoring process and control assessments with {{ insert: param, ra-05_odp.04 }} to help eliminate similar vulnerabilities in other systems; and Employ vulnerability monitoring tools that include the capability to readily update the vulnerabilities to be scanned.",
       "priority": "p0",
       "platformChecklistItems": [
@@ -2323,10 +2352,32 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Security Engineering",
-            "notes": "No remediation-tracking or risk-acceptance artifact is attached from the codebase.",
-            "evidence": []
+            "notes": "The site admin workspace retains provider finding disposition, accepted-risk state, review notes, and linked follow-up review runs that support remediation and risk-treatment tracking.",
+            "evidence": [
+              {
+                "title": "Security finding disposition record structure",
+                "description": "Schema Stored security findings retain status, provider disposition, review notes, reviewer attribution, and timestamps for remediation and risk-treatment tracking.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Security findings review interface",
+                "description": "Interface Administrative security interface allows providers to record pending-review, investigating, accepted-risk, false-positive, or resolved disposition decisions with review notes.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Triggered follow-up review workflow",
+                "description": "Workflow Security findings can open remediation-focused follow-up review runs, and annual findings attestation blocks completion until critical open findings are resolved or dispositioned.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         },
         {
@@ -2474,8 +2525,15 @@
                 "url": null
               },
               {
-                "title": "Outbound service call guardrails",
-                "description": "Outbound service call guardrails invoke assertVendorBoundary before outbound vendor access.",
+                "title": "OpenRouter privacy and vendor guardrails",
+                "description": "Route OpenRouter runtime validation fails closed unless strict privacy mode is in effect, and outbound request settings apply Zero Data Retention and deny vendor data collection on every request.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Outbound service call boundary checks",
+                "description": "Outbound service call boundary checks OpenRouter and email delivery paths invoke vendor-boundary enforcement before outbound vendor access proceeds.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -2956,7 +3014,7 @@
           "seed": {
             "status": "done",
             "owner": "Authentication",
-            "notes": "Sensitive auth endpoints are rate-limited, sign-in email changes require a fresh session, and authenticator onboarding issues backup codes for controlled recovery.",
+            "notes": "Sensitive auth endpoints are rate-limited, sign-in email and password changes require recent step-up, password reset links are handled to reduce token exposure, and authenticator onboarding issues backup codes for controlled recovery.",
             "evidence": [
               {
                 "title": "Authentication recovery rate-limit rules",
@@ -2968,6 +3026,13 @@
               {
                 "title": "Fresh-session credential-change protection",
                 "description": "Credential-change protection showing sign-in email updates require a recent step-up session before the change is accepted.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Password reset token handling protections",
+                "description": "Password reset token handling protections Password reset flow removes reset tokens from the browser address bar after capture and applies a no-referrer policy while the reset form is displayed.",
                 "evidenceType": "note",
                 "sufficiency": "sufficient",
                 "url": null
@@ -3077,7 +3142,7 @@
       "title": "Literacy Training and Awareness",
       "familyId": "AT",
       "familyTitle": "Awareness and Training",
-      "implementationSummary": "This control addresses provider security awareness and literacy training for use of the hosted service and its privileged security features. The workspace currently provides training-supporting reference material through auth-security notes, control-matrix guidance, and site admin security posture summaries, but it does not evidence a formal provider training program, completion records, or recurring update cadence.",
+      "implementationSummary": "This control addresses provider security awareness and literacy training for use of the hosted service and its privileged security features. The workspace currently provides training-supporting reference material, site admin security posture summaries, and a documented provider awareness policy, but it does not yet evidence attendance records or fuller program-administration detail for personnel supporting the hosted service.",
       "controlStatement": "Provide security and privacy literacy training to system users (including managers, senior executives, and contractors): As part of initial training for new users and {{ insert: param, at-2_prm_1 }} thereafter; and When required by system changes or following {{ insert: param, at-2_prm_2 }}; Employ the following techniques to increase the security and privacy awareness of system users {{ insert: param, at-02_odp.05 }}; Update literacy training and awareness content {{ insert: param, at-02_odp.06 }} and following {{ insert: param, at-02_odp.07 }} ; and Incorporate lessons learned from internal or external security incidents or breaches into literacy training and awareness techniques.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3156,10 +3221,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Awareness and Training",
-            "notes": "The workspace does not yet include a provider-owned security awareness training program, attendance evidence, or recurring update cadence.",
-            "evidence": []
+            "notes": "The workspace now includes a documented provider security awareness policy and annual review expectation, but it does not yet include attendance evidence or fuller program-administration detail.",
+            "evidence": [
+              {
+                "title": "Security awareness and training policy",
+                "description": "Security awareness and training policy Provider policy describing the security awareness program, annual role-based review expectation, and retained review evidence for personnel supporting the hosted service.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual awareness review task",
+                "description": "Annual awareness review task Annual review task definition requiring the provider security-awareness training program to be reviewed and attested as current during the site admin security review cycle.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -3186,7 +3266,7 @@
       "title": "Role-based Training",
       "familyId": "AT",
       "familyTitle": "Awareness and Training",
-      "implementationSummary": "This control ensures privileged and support personnel can be trained on the specific security responsibilities tied to their hosted-service roles. The hosted service supports that objective through documented admin-only boundaries, privileged-authentication expectations, and site admin security posture views that can anchor role-based walkthroughs, but a formal provider role-based training program and completion records are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures privileged and support personnel can be trained on the specific security responsibilities tied to their hosted-service roles. The hosted service supports that objective through documented admin-only boundaries, privileged-authentication expectations, site admin security posture views, and a documented provider training policy, but completion records and fuller role-specific program detail are not yet evidenced in this workspace.",
       "controlStatement": "Provide role-based security and privacy training to personnel with the following roles and responsibilities: {{ insert: param, at-3_prm_1 }}: Before authorizing access to the system, information, or performing assigned duties, and {{ insert: param, at-03_odp.03 }} thereafter; and When required by system changes; Update role-based training content {{ insert: param, at-03_odp.04 }} and following {{ insert: param, at-03_odp.05 }} ; and Incorporate lessons learned from internal or external security incidents or breaches into role-based training.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3265,10 +3345,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Awareness and Training",
-            "notes": "The workspace does not yet include a documented provider role-based security training program, completion records, or refresher cadence for privileged and support personnel.",
-            "evidence": []
+            "notes": "The workspace now includes a documented provider training policy covering role-based expectations and annual review, but it does not yet include completion records or fuller role-specific refresher detail for privileged and support personnel.",
+            "evidence": [
+              {
+                "title": "Security awareness and training policy",
+                "description": "Security awareness and training policy Provider policy describing role-based security training expectations and annual review for personnel supporting privileged hosted-service functions.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -3307,7 +3395,7 @@
       "title": "Audit Record Review, Analysis, and Reporting",
       "familyId": "AU",
       "familyTitle": "Audit and Accountability",
-      "implementationSummary": "This control ensures the hosted service provides reviewable audit history and retains review records that support provider-side audit analysis and follow-up. The platform supplies audit history views and evidence-report review workflows, but a formal provider review cadence and escalation procedure are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service provides reviewable audit history and retains review records that support provider-side audit analysis and follow-up. The platform supplies audit history views, evidence-report review workflows, and a documented audit-review policy, but detailed provider cadence and escalation workflow evidence are not yet fully attached in this workspace.",
       "controlStatement": "Review and analyze system audit records {{ insert: param, au-06_odp.01 }} for indications of {{ insert: param, au-06_odp.02 }} and the potential impact of the inappropriate or unusual activity; Report findings to {{ insert: param, au-06_odp.03 }} ; and Adjust the level of audit record review, analysis, and reporting within the system when there is a change in risk based on law enforcement information, intelligence information, or other credible sources of information.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3380,10 +3468,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Operations",
-            "notes": "No provider-owned documented review cadence or escalation procedure is attached in the control workspace yet.",
-            "evidence": []
+            "notes": "The workspace now includes a documented provider audit-review policy and annual review task, but it does not yet attach fuller cadence and escalation workflow detail.",
+            "evidence": [
+              {
+                "title": "Audit logging and log review policy",
+                "description": "Audit logging and log review policy Provider policy describing audit-log review expectations and documented review procedures for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Annual audit review task",
+                "description": "Annual audit review task Annual review task definition requiring the provider audit review procedure to be reviewed and attested as current during the site admin security review cycle.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -3805,7 +3908,7 @@
       "title": "Baseline Configuration",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, and site admin-visible baseline posture summaries, but a formal provider baseline review and approval procedure is not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service maintains a current baseline configuration foundation for tenant-facing security settings and core auth or session posture. The platform supports that objective through centrally defined regulated defaults, automatic baseline enforcement in organization policy state, site admin-visible baseline posture summaries, and a documented provider baseline policy, but fuller review cadence and approval workflow detail are not yet evidenced in this workspace.",
       "controlStatement": "Develop, document, and maintain under configuration control, a current baseline configuration of the system; and Review and update the baseline configuration of the system: {{ insert: param, cm-02_odp.01 }}; When required due to {{ insert: param, cm-02_odp.02 }} ; and When system components are installed or upgraded.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -3930,10 +4033,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Configuration Management",
-            "notes": "The workspace does not yet include a formal provider procedure for baseline review cadence, approval, or update triggers.",
-            "evidence": []
+            "notes": "The workspace now includes documented baseline-review expectations, but it does not yet attach fuller cadence, approval, or update-trigger detail.",
+            "evidence": [
+              {
+                "title": "Configuration and change management policy",
+                "description": "Configuration and change management policy Provider policy documenting that managed baselines are documented and reviewed for provider-managed hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -3979,7 +4090,7 @@
       "title": "Configuration Change Control",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, and reproducible compliance generation workflows, while formal approval records and provider change-management procedures are not yet fully evidenced in this workspace.",
+      "implementationSummary": "This control ensures security-relevant changes are made through controlled, reviewable, and reproducible mechanisms. The platform supports that objective through gated CI checks, signed release artifacts, deployment verification steps, retained release provenance records, reproducible compliance generation workflows, and a documented provider change policy, while fuller approval, rollback, and emergency-change procedure detail is not yet fully evidenced in this workspace.",
       "controlStatement": "Determine and document the types of changes to the system that are configuration-controlled; Review proposed configuration-controlled changes to the system and approve or disapprove such changes with explicit consideration for security and privacy impact analyses; Document configuration change decisions associated with the system; Implement approved configuration-controlled changes to the system; Retain records of configuration-controlled changes to the system for {{ insert: param, cm-03_odp.01 }}; Monitor and review activities associated with configuration-controlled changes to the system; and Coordinate and provide oversight for configuration change control activities through {{ insert: param, cm-03_odp.02 }} that convenes {{ insert: param, cm-03_odp.03 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4026,10 +4137,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Change Management",
-            "notes": "The workspace does not yet include a provider-owned change approval, rollback, or emergency-change procedure for hosted-service changes.",
-            "evidence": []
+            "notes": "The workspace now includes documented approved-change expectations, but it does not yet attach fuller rollback and emergency-change procedure detail for hosted-service changes.",
+            "evidence": [
+              {
+                "title": "Configuration and change management policy",
+                "description": "Configuration and change management policy Provider policy documenting that production-impacting changes follow an approved change path for provider-managed hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         },
         {
@@ -4151,7 +4270,7 @@
       "title": "System Component Inventory",
       "familyId": "CM",
       "familyTitle": "Configuration Management",
-      "implementationSummary": "This control ensures the hosted service maintains a partial inventory foundation for the components and managed services that make up the deployed system boundary. The platform currently documents architecture scope, approved external services, and selected security-relevant managed components, but a complete component inventory with formal review cadence and accountability records is not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service maintains a partial inventory foundation for the components and managed services that make up the deployed system boundary. The platform currently documents architecture scope, approved external services, selected security-relevant managed components, and documented inventory expectations, but a complete component inventory with formal review cadence and accountability records is not yet evidenced in this workspace.",
       "controlStatement": "Develop and document an inventory of system components that: Accurately reflects the system; Includes all components within the system; Does not include duplicate accounting of components or components assigned to any other system; Is at the level of granularity deemed necessary for tracking and reporting; and Includes the following information to achieve system component accountability: {{ insert: param, cm-08_odp.01 }} ; and Review and update the system component inventory {{ insert: param, cm-08_odp.02 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4302,10 +4421,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Configuration Management",
-            "notes": "No provider-owned review cadence or update procedure for a full system component inventory is attached in the control workspace yet.",
-            "evidence": []
+            "notes": "The workspace now includes documented component-inventory expectations, but it does not yet attach fuller review cadence or update-procedure detail for a complete system inventory.",
+            "evidence": [
+              {
+                "title": "Configuration and change management policy",
+                "description": "Configuration and change management policy Provider policy documenting that the provider-managed component inventory remains current for hosted-service systems.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -4343,7 +4470,7 @@
       "title": "Contingency Plan",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning, but a formal provider contingency-plan approval record and recurring revision workflow are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures contingency-planning artifacts exist for the hosted service and can be updated using current recovery evidence. The hosted service supports that objective through documented architecture context, provider disaster recovery procedures, guided recovery configuration material, backup-verification records, and audit-readiness exports that can inform contingency planning.",
       "controlStatement": "Develop a contingency plan for the system that: Identifies essential mission and business functions and associated contingency requirements; Provides recovery objectives, restoration priorities, and metrics; Addresses contingency roles, responsibilities, assigned individuals with contact information; Addresses maintaining essential mission and business functions despite a system disruption, compromise, or failure; Addresses eventual, full system restoration without deterioration of the controls originally planned and implemented; Addresses the sharing of contingency information; and Is reviewed and approved by {{ insert: param, cp-2_prm_1 }}; Distribute copies of the contingency plan to {{ insert: param, cp-2_prm_2 }}; Coordinate contingency planning activities with incident handling activities; Review the contingency plan for the system {{ insert: param, cp-02_odp.05 }}; Update the contingency plan to address changes to the organization, system, or environment of operation and problems encountered during contingency plan implementation, execution, or testing; Communicate contingency plan changes to {{ insert: param, cp-2_prm_4 }}; Incorporate lessons learned from contingency plan testing, training, or actual contingency activities into contingency testing and training; and Protect the contingency plan from unauthorized disclosure and modification.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4454,29 +4581,36 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace includes provider disaster recovery overview, configuration guidance, and runbook material for hosted-service contingency procedures, but it does not yet evidence formal approval records or a recurring revision workflow tied to recovery evidence.",
+            "notes": "The workspace includes provider contingency-planning documentation through disaster recovery policy, overview, configuration guidance, and runbook material tied to current recovery evidence.",
             "evidence": [
+              {
+                "title": "Backup, contingency, and disaster recovery policy",
+                "description": "Backup, contingency, and disaster recovery policy Provider policy defining backup, contingency-planning, annual restoration-review, and recovery-evidence expectations for the hosted service.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
               {
                 "title": "Disaster recovery overview",
                 "description": "Disaster recovery overview Procedure describing the hosted-service recovery paths, backup strategy, vendor-exit failover design, and recovery limitations that provider contingency planning should address.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Disaster recovery configuration guide",
                 "description": "Disaster recovery configuration guide Configuration guide describing required provider secrets, DR infrastructure inputs, frontend failover prerequisites, and recovery-time environment overrides for the hosted service.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Disaster recovery runbook",
                 "description": "Disaster recovery runbook Runbook describing prerequisites, backup infrastructure, recovery steps, post-recovery checks, and known limitations for provider disaster recovery operations.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4518,7 +4652,7 @@
       "title": "Contingency Plan Testing",
       "familyId": "CP",
       "familyTitle": "Contingency Planning",
-      "implementationSummary": "This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, and site admin review interfaces for recent contingency evidence, but a formal provider corrective-action and revision workflow is not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures the hosted service can record, surface, and retain contingency-test artifacts for provider review. The platform supports that objective through documented weekly backup-and-restore verification, guided recovery procedures, backup verification records, restore-drill audit events, site admin review interfaces for recent contingency evidence, and documented provider contingency-test expectations.",
       "controlStatement": "Test the contingency plan for the system {{ insert: param, cp-04_odp.01 }} using the following tests to determine the effectiveness of the plan and the readiness to execute the plan: {{ insert: param, cp-4_prm_2 }}. Review the contingency plan test results; and Initiate corrective actions, if needed.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4636,29 +4770,36 @@
             "note"
           ],
           "seed": {
-            "status": "in_progress",
+            "status": "done",
             "owner": "Infrastructure Operations",
-            "notes": "The workspace includes a recurring backup-and-restore verification workflow, guided DR setup material, and runbook success criteria for hosted-service recovery exercises, but it does not yet include a formal revision workflow tied to test outcomes.",
+            "notes": "The workspace includes documented provider contingency-test expectations, a recurring backup-and-restore verification workflow, and explicit success criteria for hosted-service recovery exercises.",
             "evidence": [
+              {
+                "title": "Backup, contingency, and disaster recovery policy",
+                "description": "Backup, contingency, and disaster recovery policy Provider policy defining contingency-planning and recovery-testing expectations for the hosted service.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
               {
                 "title": "Weekly DR backup workflow",
                 "description": "Workflow Scheduled workflow defining the provider backup, upload, deploy-test, and restore-test sequence for recurring hosted-service recovery verification.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Guided disaster recovery setup workflow",
                 "description": "Workflow Guided setup flow and configuration guide describing how the provider provisions DR backup, backend failover, frontend failover, and recovery prerequisites before running recovery verification.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               },
               {
                 "title": "Disaster recovery runbook test criteria",
                 "description": "Disaster recovery runbook test criteria Runbook guidance stating that the backup workflow is only successful when export, upload, deploy-test, and restore-test all pass.",
                 "evidenceType": "note",
-                "sufficiency": "partial",
+                "sufficiency": "sufficient",
                 "url": null
               }
             ]
@@ -4705,7 +4846,7 @@
       "title": "Incident Response Training",
       "familyId": "IR",
       "familyTitle": "Incident Response",
-      "implementationSummary": "This control ensures incident responders can be trained using current hosted-service investigation artifacts and response-supporting context. The hosted service supports that objective through generated evidence reports, audit-readiness exports, and retained integrity-linked investigation records, but a formal provider incident response training program and completion records are not yet evidenced in this workspace.",
+      "implementationSummary": "This control ensures incident responders can be trained using current hosted-service investigation artifacts and response-supporting context. The hosted service supports that objective through generated evidence reports, audit-readiness exports, retained integrity-linked investigation records, and a documented incident-response policy, but fuller provider training-program administration evidence is not yet attached in this workspace.",
       "controlStatement": "Provide incident response training to system users consistent with assigned roles and responsibilities: Within {{ insert: param, ir-02_odp.01 }} of assuming an incident response role or responsibility or acquiring system access; When required by system changes; and {{ insert: param, ir-02_odp.02 }} thereafter; and Review and update incident response training content {{ insert: param, ir-02_odp.03 }} and following {{ insert: param, ir-02_odp.04 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -4784,10 +4925,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Incident Response",
-            "notes": "The workspace does not yet include a provider incident response training program, completion records, or documented refresher cadence.",
-            "evidence": []
+            "notes": "The workspace now includes a documented incident-response policy describing training cadence, but it does not yet include completion records or fuller program-administration evidence for provider responders.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy defining incident-response planning, training, testing, and retained evidence expectations for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -4987,7 +5136,7 @@
       "title": "Incident Response Plan",
       "familyId": "IR",
       "familyTitle": "Incident Response",
-      "implementationSummary": "This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, and audit-readiness artifacts that can support provider or customer incident response planning, but a formal provider incident response plan, plan review cadence, and customer coordination procedure are not yet evidenced in this workspace.",
+      "implementationSummary": "This control addresses incident response planning for the hosted service and connected customer environment. The platform currently provides investigation-supporting exports, retained integrity-linked evidence, audit-readiness artifacts, and a documented provider incident-response plan that can support provider or customer incident response planning, but a formal plan review cadence and customer coordination procedure are not yet evidenced in this workspace.",
       "controlStatement": "Develop an incident response plan that: Provides the organization with a roadmap for implementing its incident response capability; Describes the structure and organization of the incident response capability; Provides a high-level approach for how the incident response capability fits into the overall organization; Meets the unique requirements of the organization, which relate to mission, size, structure, and functions; Defines reportable incidents; Provides metrics for measuring the incident response capability within the organization; Defines the resources and management support needed to effectively maintain and mature an incident response capability; Addresses the sharing of incident information; Is reviewed and approved by {{ insert: param, ir-08_odp.01 }} {{ insert: param, ir-08_odp.02 }} ; and Explicitly designates responsibility for incident response to {{ insert: param, ir-08_odp.03 }}. Distribute copies of the incident response plan to {{ insert: param, ir-08_odp.04 }}; Update the incident response plan to address system and organizational changes or problems encountered during plan implementation, execution, or testing; Communicate incident response plan changes to {{ insert: param, ir-8_prm_5 }} ; and Protect the incident response plan from unauthorized disclosure and modification.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5073,10 +5222,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Security Incident Response",
-            "notes": "The workspace does not yet include a provider-owned incident response plan document.",
-            "evidence": []
+            "notes": "The workspace includes a documented provider incident-response plan through the provider incident-response policy.",
+            "evidence": [
+              {
+                "title": "Incident response policy",
+                "description": "Incident response policy Provider policy defining the incident-response plan, planning expectations, training and testing cadence, and retained evidence expectations for the hosted service environment.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         },
         {
@@ -5132,7 +5289,7 @@
       "title": "System Security and Privacy Plans",
       "familyId": "PL",
       "familyTitle": "Planning",
-      "implementationSummary": "This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, and control-matrix documentation, but formal plan approval and recurring review workflow evidence are not yet attached here.",
+      "implementationSummary": "This control ensures the hosted service has a partial set of documented security planning artifacts for architecture, scope, and dependencies. The platform currently provides that foundation through architecture, auth-security, control-matrix documentation, and a documented governance policy, but formal plan approval and fuller recurring review workflow evidence are not yet attached here.",
       "controlStatement": "Develop security and privacy plans for the system that: Are consistent with the organization’s enterprise architecture; Explicitly define the constituent system components; Describe the operational context of the system in terms of mission and business processes; Identify the individuals that fulfill system roles and responsibilities; Identify the information types processed, stored, and transmitted by the system; Provide the security categorization of the system, including supporting rationale; Describe any specific threats to the system that are of concern to the organization; Provide the results of a privacy risk assessment for systems processing personally identifiable information; Describe the operational environment for the system and any dependencies on or connections to other systems or system components; Provide an overview of the security and privacy requirements for the system; Identify any relevant control baselines or overlays, if applicable; Describe the controls in place or planned for meeting the security and privacy requirements, including a rationale for any tailoring decisions; Include risk determinations for security and privacy architecture and design decisions; Include security- and privacy-related activities affecting the system that require planning and coordination with {{ insert: param, pl-02_odp.01 }} ; and Are reviewed and approved by the authorizing official or designated representative prior to plan implementation. Distribute copies of the plans and communicate subsequent changes to the plans to {{ insert: param, pl-02_odp.02 }}; Review the plans {{ insert: param, pl-02_odp.03 }}; Update the plans to address changes to the system and environment of operation or problems identified during plan implementation or control assessments; and Protect the plans from unauthorized disclosure and modification.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5218,10 +5375,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Security Planning",
-            "notes": "The workspace does not yet include a formal provider review cadence, approval record, or update procedure for these planning artifacts.",
-            "evidence": []
+            "notes": "The workspace now includes documented governance review expectations, but it does not yet attach a formal approval record or fuller update procedure for these planning artifacts.",
+            "evidence": [
+              {
+                "title": "Information security governance policy",
+                "description": "Information security governance policy Provider governance policy documenting annual review expectations for the security program and retained review outcomes for planning and control artifacts.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -5287,7 +5452,7 @@
       "title": "Personnel Screening",
       "familyId": "PS",
       "familyTitle": "Personnel Security",
-      "implementationSummary": "This control addresses provider personnel-screening documentation for workforce members who may administer or support the hosted service. The workspace can retain, review, and export provider evidence artifacts related to workforce security controls, but the repo does not itself evidence a formal personnel-screening policy, completed screening records, or provider approval workflow for workforce access.",
+      "implementationSummary": "This control addresses provider personnel-screening documentation for workforce members who may administer or support the hosted service. The workspace can retain, review, and export provider evidence artifacts related to workforce security controls, and it now includes a documented personnel-security policy, but completed screening records and provider approval workflow evidence are still not attached here.",
       "controlStatement": "Screen individuals prior to authorizing access to the system; and Rescreen individuals in accordance with {{ insert: param, ps-3_prm_1 }}.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5366,10 +5531,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Workforce Security",
-            "notes": "The workspace does not yet include a provider-owned personnel-screening policy artifact.",
-            "evidence": []
+            "notes": "The workspace includes a documented provider personnel-security policy covering workforce screening expectations.",
+            "evidence": [
+              {
+                "title": "Personnel security policy",
+                "description": "Personnel security policy Provider policy documenting workforce-screening requirements for relevant provider access to the hosted service.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         },
         {
@@ -5531,10 +5704,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Workforce Access Governance",
-            "notes": "The workspace does not yet include a documented provider or customer termination procedure tied to hosted-service access removal.",
-            "evidence": []
+            "notes": "The workspace now includes documented provider offboarding expectations, but it does not yet attach customer-specific termination procedures or fuller hosted-service coordination detail.",
+            "evidence": [
+              {
+                "title": "Personnel security policy",
+                "description": "Personnel security policy Provider policy documenting termination and offboarding steps for provider personnel with hosted-service access.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -5573,7 +5754,7 @@
       "title": "External Personnel Security",
       "familyId": "PS",
       "familyTitle": "Personnel Security",
-      "implementationSummary": "This control addresses documentation and review of provider requirements for third-party personnel who may support or administer hosted-service components through approved external services. The workspace can document approved vendor boundaries, retain and review provider evidence artifacts, and audit vendor-use paths, but it does not itself evidence a formal third-party personnel security policy, completed screening or training records, or provider approval workflow for third-party personnel access.",
+      "implementationSummary": "This control addresses documentation and review of provider requirements for third-party personnel who may support or administer hosted-service components through approved external services. The workspace can document approved vendor boundaries, retain and review provider evidence artifacts, audit vendor-use paths, and now includes documented third-party risk and external-personnel policy expectations, but completed screening or training records and fuller provider approval workflow evidence are still not attached here.",
       "controlStatement": "Establish personnel security requirements, including security roles and responsibilities for external providers; Require external providers to comply with personnel security policies and procedures established by the organization; Document personnel security requirements; Require external providers to notify {{ insert: param, ps-07_odp.01 }} of any personnel transfers or terminations of external personnel who possess organizational credentials and/or badges, or who have system privileges within {{ insert: param, ps-07_odp.02 }} ; and Monitor provider compliance with personnel security requirements.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5684,10 +5865,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Workforce Security",
-            "notes": "The workspace does not yet include a provider-owned third-party personnel security policy, completed screening or training records, or approval workflow for third-party personnel access.",
-            "evidence": []
+            "notes": "The workspace now includes documented external-personnel and third-party risk expectations, but it does not yet attach completed screening or training records or a fuller approval workflow for third-party personnel access.",
+            "evidence": [
+              {
+                "title": "Third-party risk management policy",
+                "description": "Third-party risk management policy Provider policy documenting approval, review, and monitoring expectations for third-party services and external personnel supporting the hosted service.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              },
+              {
+                "title": "Personnel security policy",
+                "description": "Personnel security policy Provider policy documenting external-personnel security expectations for workforce members with system access.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -5818,10 +6014,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Secure Engineering",
-            "notes": "The workspace does not yet include a formal provider review cadence, exception workflow, or replacement plan process for unsupported components.",
-            "evidence": []
+            "notes": "The workspace now includes documented unsupported-component expectations, but it does not yet attach fuller review cadence, exception workflow, or replacement-plan detail.",
+            "evidence": [
+              {
+                "title": "Configuration and change management policy",
+                "description": "Configuration and change management policy Provider policy documenting that unsupported components must be identified and addressed within the provider-managed hosted-service environment.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -5860,7 +6064,7 @@
       "title": "Cryptographic Key Establishment and Management",
       "familyId": "SC",
       "familyTitle": "System and Communications Protection",
-      "implementationSummary": "This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, and it provisions customer-managed KMS keys for protected file and backup storage, but secret generation, secure custody, rotation procedures, and broader deployment key governance remain only partially evidenced in this workspace.",
+      "implementationSummary": "This control addresses cryptographic key and secret management for signing, verification, and managed storage protection used by the hosted service. The platform requires configured secrets for authentication, authenticated file access ticket signing, and webhook verification, provisions customer-managed KMS keys for protected file and backup storage, and now includes documented production secret custody and rotation guidance for provider-operated deployment paths.",
       "controlStatement": "Cryptographic Key Establishment and Management is tracked as an active control in the platform register.",
       "priority": "p1",
       "platformChecklistItems": [
@@ -5978,10 +6182,25 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "done",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The repo does not currently attach a documented secret-custody or rotation procedure for production cryptographic material.",
-            "evidence": []
+            "notes": "The workspace includes documented production secret-custody rules, quarterly access review expectations, and rotation sequences for deployment and Better Auth secret material.",
+            "evidence": [
+              {
+                "title": "Convex secret-tier access runbook",
+                "description": "Convex secret-tier access runbook Provider runbook describing named-operator custody rules, quarterly access review, and break-glass rotation expectations for production Convex and deployment-secret access.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              },
+              {
+                "title": "Deployment environment rotation guidance",
+                "description": "Documentation Deployment guidance documenting Better Auth signing-key rotation, versioned Better Auth secret rotation, and production deployment-key handling expectations.",
+                "evidenceType": "note",
+                "sufficiency": "sufficient",
+                "url": null
+              }
+            ]
           }
         }
       ],
@@ -6118,10 +6337,18 @@
             "note"
           ],
           "seed": {
-            "status": "not_started",
+            "status": "in_progress",
             "owner": "Infrastructure and Platform Security",
-            "notes": "The repo shows cryptographic mechanisms in use, but it does not attach a provider-owned cryptography standard-selection or approved-module policy to this workspace.",
-            "evidence": []
+            "notes": "The workspace now includes a documented cryptography policy, but it does not yet attach fuller approved-standard or approved-module selection detail.",
+            "evidence": [
+              {
+                "title": "Cryptography and data protection policy",
+                "description": "Cryptography and data protection policy Provider policy documenting required cryptographic uses and key-management expectations for information in transit, at rest, and in protected hosted-service workflows.",
+                "evidenceType": "note",
+                "sufficiency": "partial",
+                "url": null
+              }
+            ]
           }
         }
       ],

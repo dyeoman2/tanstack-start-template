@@ -216,6 +216,19 @@ For S3-backed storage, immutable audit archiving is required and `deploy:doctor`
 
 `AWS_AUDIT_ARCHIVE_PREFIX` is optional and defaults to `audit-ledger/`.
 
+For S3-backed production, immutable audit archiving is now a release gate, not just a setup step.
+`deploy:doctor -- --prod` fails unless all of the following are true:
+
+- audit archive runtime env is complete
+- the exporter is enabled
+- the latest seal has been exported
+- archive lag is zero
+- no seal/export drift is detected
+- the latest sealed segment has been successfully verified in immutable storage
+
+The archive verification result is also retained as buyer-facing evidence through the security
+workspace and audit readiness report payloads.
+
 For AWS storage infrastructure preview/deploy, the operator environment also needs:
 
 - `AWS_FILE_SERVE_SIGNING_SECRET`
@@ -236,6 +249,10 @@ pnpm run audit-archive:setup -- --prod
 ```
 
 That flow persists both deploy-time inputs and the runtime outputs (`AWS_AUDIT_ARCHIVE_BUCKET`, `AWS_AUDIT_ARCHIVE_KMS_KEY_ARN`, `AWS_AUDIT_ARCHIVE_ROLE_ARN`) to `.env.prod`, and can sync the runtime values into Convex production when the stack outputs are available.
+
+When `AWS_STORAGE_ALERT_EMAIL` is configured, the archive stack also provisions SNS-backed
+CloudWatch alarms for exporter disablement, archive lag, seal/export drift, and latest-seal
+verification failure.
 
 For direct operator or CI deploys of the immutable archive stack, use:
 

@@ -1,5 +1,10 @@
 import type { MutationCtx, QueryCtx } from '../../_generated/server';
 import { ACTIVE_CONTROL_REGISTER } from '../../../src/lib/shared/compliance/control-register';
+import {
+  getAuditArchiveRuntimeConfig,
+  getFileStorageBackendMode,
+  isS3BackedFileStorageBackendMode,
+} from '../../../src/lib/server/env.server';
 import { RELEASE_PROVENANCE_CONTROL_ID, RELEASE_PROVENANCE_ITEM_ID } from './securityReviewConfig';
 import {
   addControlToSecurityWorkspaceSummary,
@@ -412,6 +417,7 @@ type SecurityFindingSnapshot = {
   findingKey: string;
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_archive_health'
     | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'
@@ -461,14 +467,51 @@ async function buildCurrentSecurityFindings(
   const metrics = await _getSecurityMetricsSnapshot(ctx);
   const referenceTime = Date.now();
   const auditVerificationLagThresholdMs = 2 * 60 * 60 * 1000;
+  const archiveBackendMode = getFileStorageBackendMode();
+  const archiveRequired = isS3BackedFileStorageBackendMode(archiveBackendMode);
+  const archiveRuntime = (() => {
+    try {
+      const config = getAuditArchiveRuntimeConfig();
+      const configured = Boolean(
+        config.awsRegion && config.bucket && config.kmsKeyArn && config.roleArn,
+      );
+      return {
+        configured,
+        error: configured ? null : archiveRequired ? 'Archive config missing.' : null,
+        exporterEnabled: configured,
+      };
+    } catch (error) {
+      return {
+        configured: false,
+        error: error instanceof Error ? error.message : 'Archive config unavailable.',
+        exporterEnabled: false,
+      };
+    }
+  })();
   const [
+    latestArchiveVerification,
+    latestArchiveVerificationSuccess,
     auditLedgerState,
     integrityFailures,
     latestIntegrityFailure,
     latestSuccessfulCheckpoint,
+    latestSeal,
+    latestImmutableExport,
     recentPrivilegedAuditEvents,
     releaseEvidenceRows,
   ] = await Promise.all([
+    ctx.db
+      .query('auditLedgerArchiveVerifications')
+      .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerArchiveVerifications')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('lastVerificationStatus', 'verified'),
+      )
+      .order('desc')
+      .first(),
     ctx.db
       .query('auditLedgerState')
       .withIndex('by_chain_id', (q) => q.eq('chainId', 'primary'))
@@ -492,6 +535,16 @@ async function buildCurrentSecurityFindings(
       .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
         q.eq('chainId', 'primary').eq('status', 'ok'),
       )
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerSeals')
+      .withIndex('by_chain_id_and_sealed_at', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerImmutableExports')
+      .withIndex('by_chain_id_and_end_sequence', (q) => q.eq('chainId', 'primary'))
       .order('desc')
       .first(),
     ctx.db
@@ -530,6 +583,44 @@ async function buildCurrentSecurityFindings(
     latestSuccessfulCheckpoint?.checkedAt ??
     auditLedgerState?.updatedAt ??
     referenceTime;
+  const archiveLagCount =
+    latestArchiveVerification?.lagCount ??
+    Math.max(
+      0,
+      latestSeal ? latestSeal.endSequence - (latestImmutableExport?.endSequence ?? 0) : 0,
+    );
+  const archiveDriftDetected =
+    latestArchiveVerification?.driftDetected ??
+    (latestSeal !== null
+      ? (latestImmutableExport?.endSequence ?? 0) < latestSeal.endSequence ||
+        latestImmutableExport?.headHash !== latestSeal.headHash
+      : false);
+  const archiveVerificationStatus = latestArchiveVerification?.lastVerificationStatus ?? 'disabled';
+  const archiveOpen =
+    (archiveRequired && !archiveRuntime.exporterEnabled) ||
+    archiveDriftDetected ||
+    archiveLagCount > 0 ||
+    (latestSeal !== null && archiveVerificationStatus !== 'verified');
+  const archiveHealthDescription =
+    !archiveRequired && !archiveRuntime.configured
+      ? 'Immutable archive is optional for the current convex-backed storage mode and is not configured.'
+      : !archiveRuntime.exporterEnabled
+        ? `Immutable archive export is disabled for the current runtime. ${archiveRuntime.error ?? 'Archive config is incomplete.'}`
+        : archiveDriftDetected
+          ? 'Immutable archive seal/export drift is present, so the latest sealed segment is not fully anchored in immutable storage.'
+          : archiveLagCount > 0
+            ? `${archiveLagCount} audit ledger event${archiveLagCount === 1 ? '' : 's'} remain outside the immutable archive export watermark.`
+            : latestSeal !== null && archiveVerificationStatus !== 'verified'
+              ? `Immutable archive verification status is ${archiveVerificationStatus}, so the latest sealed segment has not been proven in immutable storage.`
+              : latestSeal === null
+                ? 'No sealed audit ledger segment exists yet, so immutable archive verification is waiting on the first seal.'
+                : 'Immutable archive export and verification are healthy for the latest sealed segment.';
+  const archiveHealthObservedAt =
+    latestArchiveVerification?.checkedAt ??
+    latestArchiveVerificationSuccess?.checkedAt ??
+    latestImmutableExport?.exportedAt ??
+    latestSeal?.sealedAt ??
+    referenceTime;
 
   const findings: SecurityFindingSnapshot[] = [
     {
@@ -545,6 +636,24 @@ async function buildCurrentSecurityFindings(
       firstObservedAt: auditIntegrityObservedAt,
       lastObservedAt:
         integrityFailures > 0 || hasVerificationLag ? referenceTime : auditIntegrityObservedAt,
+    },
+    {
+      findingKey: 'audit_archive_health',
+      findingType: 'audit_archive_health',
+      title: 'Immutable audit archive monitoring',
+      description: archiveHealthDescription,
+      severity:
+        archiveRequired && !archiveRuntime.exporterEnabled
+          ? 'critical'
+          : archiveOpen
+            ? 'warning'
+            : 'info',
+      status: archiveOpen ? 'open' : 'resolved',
+      sourceType: 'audit_log',
+      sourceLabel: 'Immutable audit archive verification',
+      sourceRecordId: latestArchiveVerification?._id ?? null,
+      firstObservedAt: archiveHealthObservedAt,
+      lastObservedAt: archiveOpen ? referenceTime : archiveHealthObservedAt,
     },
     {
       findingKey: 'document_scan_quarantines',

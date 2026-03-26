@@ -13,6 +13,7 @@ import { Input } from '~/components/ui/input';
 import { useToast } from '~/components/ui/toast';
 import { authClient, useSession } from '~/features/auth/auth-client';
 import { AuthRouteShell } from '~/features/auth/components/AuthRouteShell';
+import { normalizeAppRedirectTarget } from '~/features/auth/lib/account-setup-routing';
 import { getBetterAuthUserFacingMessage } from '~/features/auth/lib/better-auth-client-error';
 
 export const Route = createFileRoute('/two-factor')({
@@ -22,6 +23,10 @@ export const Route = createFileRoute('/two-factor')({
   pendingComponent: AuthSkeleton,
   validateSearch: z.object({
     challengeId: z.string().uuid().optional(),
+    redirectTo: z
+      .string()
+      .regex(/^\/[a-zA-Z]/)
+      .optional(),
     totpURI: z.string().optional(),
   }),
 });
@@ -64,7 +69,7 @@ function getTotpMetadata(totpUri?: string) {
 }
 
 function TwoFactorPage() {
-  const { challengeId, totpURI } = Route.useSearch();
+  const { challengeId, redirectTo, totpURI } = Route.useSearch();
   const router = useRouter();
   const { showToast } = useToast();
   const { data: sessionData } = useSession();
@@ -80,7 +85,7 @@ function TwoFactorPage() {
     api.stepUp.getCurrentChallenge,
     challengeId ? { challengeId } : 'skip',
   );
-  const redirectTarget = challenge?.redirectTo ?? '/app';
+  const redirectTarget = challenge?.redirectTo ?? normalizeAppRedirectTarget(redirectTo);
 
   const setupKey = useMemo(() => getManualEntryCode(totpURI), [totpURI]);
   const formattedSetupKey = useMemo(() => (setupKey ? formatSetupKey(setupKey) : null), [setupKey]);

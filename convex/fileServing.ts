@@ -5,6 +5,7 @@ import { getRetentionPolicyConfig } from '../src/lib/server/security-config.serv
 import { getRequiredBetterAuthUrl, getStorageRuntimeConfig } from '../src/lib/server/env.server';
 import { STEP_UP_REQUIREMENTS } from '../src/lib/shared/auth-policy';
 import { internal } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action } from './_generated/server';
 import {
@@ -221,14 +222,25 @@ async function recordSupportAccessUsage(
     userId: string;
   },
 ) {
+  const supportGrantUsage = await ctx.runMutation(
+    internal.organizationManagement.recordOrganizationSupportAccessUseInternal,
+    {
+      grantId: args.grantId as Id<'organizationSupportAccessGrants'>,
+      usedAt: Date.now(),
+    },
+  );
   await recordUserAuditEvent(ctx, {
     actorUserId: args.userId,
     emitter: 'file.support_access',
     eventType: 'support_access_used',
     metadata: JSON.stringify({
+      firstUse: supportGrantUsage.firstUse,
       grantId: args.grantId,
       permission: args.permission,
+      reasonCategory: supportGrantUsage.grant?.reasonCategory ?? null,
+      reasonDetails: supportGrantUsage.grant?.reasonDetails ?? null,
       scope: args.scope,
+      usedAt: supportGrantUsage.grant?.lastUsedAt ?? null,
     }),
     organizationId: args.organizationId ?? undefined,
     outcome: 'success',

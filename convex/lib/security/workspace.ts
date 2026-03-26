@@ -23,6 +23,7 @@ const securityFindingRelatedControlMetadataById = new Map(
 function getSecurityFindingRelatedControls(
   findingType:
     | 'audit_integrity_failures'
+    | 'audit_archive_health'
     | 'audit_request_context_gaps'
     | 'document_scan_quarantines'
     | 'document_scan_rejections'

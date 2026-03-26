@@ -16,8 +16,8 @@ import {
   getAccountSetupHref,
   normalizeAppRedirectTarget,
 } from '~/features/auth/lib/account-setup-routing';
-import { createOrganizationAdminStepUpChallengeServerFn } from '~/features/auth/server/step-up';
 import { bootstrapSignedUpUserServerFn } from '~/features/auth/server/user-management';
+import { validatePasswordComplexity } from '~/lib/shared/password-validation';
 
 export const Route = createFileRoute('/register')({
   staticData: true,
@@ -90,18 +90,9 @@ function RegisterPage() {
       // Validate password
       if (!password) {
         errors.push('Password is required');
-      } else if (password.length < 8) {
-        errors.push('Password must be at least 8 characters long');
-      } else if (password.length > 128) {
-        errors.push('Password must be less than 128 characters');
-      } else if (!/(?=.*[a-z])/.test(password)) {
-        errors.push('Password must contain at least one lowercase letter');
-      } else if (!/(?=.*[A-Z])/.test(password)) {
-        errors.push('Password must contain at least one uppercase letter');
-      } else if (!/(?=.*\d)/.test(password)) {
-        errors.push('Password must contain at least one number');
-      } else if (!/(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?])/.test(password)) {
-        errors.push('Password must contain at least one symbol');
+      } else {
+        const result = validatePasswordComplexity(password);
+        errors.push(...result.errors);
       }
 
       // Show validation errors if any
@@ -201,18 +192,11 @@ function RegisterPage() {
     }
 
     if (requiresMfaVerification) {
-      void (async () => {
-        const challenge = await createOrganizationAdminStepUpChallengeServerFn({
-          data: {
-            redirectTo: redirectTarget,
-          },
-        });
-        await navigate({
-          to: '/step-up',
-          search: { challengeId: challenge.challengeId },
-          replace: true,
-        });
-      })();
+      void navigate({
+        to: '/two-factor',
+        search: redirectTarget !== '/app' ? { redirectTo: redirectTarget } : {},
+        replace: true,
+      });
       return;
     }
 

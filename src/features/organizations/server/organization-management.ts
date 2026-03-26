@@ -98,20 +98,35 @@ const organizationEnterpriseProviderSchema = z.object({
 });
 
 const organizationSupportAccessScopeSchema = z.enum(['read_only', 'read_write']);
+const organizationSupportAccessReasonCategorySchema = z.enum([
+  'incident_response',
+  'customer_requested_change',
+  'data_repair',
+  'account_recovery',
+  'other',
+]);
 
 const organizationSupportAccessGrantSchema = z.object({
   organizationId: z.string().min(1),
   siteAdminUserId: z.string().min(1),
   scope: organizationSupportAccessScopeSchema,
   ticketId: z.string().trim().min(1).max(200),
-  reason: z.string().trim().min(1).max(500),
+  reasonCategory: organizationSupportAccessReasonCategorySchema,
+  reasonDetails: z.string().trim().min(1).max(500),
   expiresAt: z.number().int().positive(),
 });
 
 const organizationSupportAccessGrantRevocationSchema = z.object({
   organizationId: z.string().min(1),
   grantId: z.string().min(1),
-  reason: z.string().trim().max(500).nullable().optional(),
+  reason: z.string().trim().min(1).max(500),
+});
+
+const organizationSupportAccessPolicySchema = z.object({
+  organizationId: z.string().min(1),
+  supportAccessEnabled: z
+    .boolean()
+    .default(REGULATED_ORGANIZATION_POLICY_DEFAULTS.supportAccessEnabled),
 });
 
 const organizationLegalHoldApplySchema = z.object({
@@ -434,6 +449,25 @@ export const createOrganizationSupportAccessGrantServerFn = createServerFn({ met
       );
     } catch (error) {
       throw handleServerError(error, 'Create support access grant');
+    }
+  });
+
+export const updateOrganizationSupportAccessPolicyServerFn = createServerFn({ method: 'POST' })
+  .inputValidator(organizationSupportAccessPolicySchema)
+  .handler(async ({ data }) => {
+    try {
+      await requireAuth();
+      const requestContext = resolveRequestAuditContext(getBetterAuthRequest());
+
+      return await convexAuthReactStart.fetchAuthMutation(
+        api.organizationManagement.updateOrganizationSupportAccessPolicy,
+        {
+          ...data,
+          requestContext,
+        },
+      );
+    } catch (error) {
+      throw handleServerError(error, 'Update support access policy');
     }
   });
 

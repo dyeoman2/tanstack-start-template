@@ -22,10 +22,11 @@ describe('getOpenRouterConfig', () => {
     );
   });
 
-  it('builds the provider config with OpenRouter headers', () => {
+  it('builds the provider config with OpenRouter headers and strict privacy mode by default', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
     process.env.BETTER_AUTH_URL = 'https://example.com';
     process.env.APP_NAME = 'Example App';
+    delete process.env.OPENROUTER_PRIVACY_MODE;
 
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',
@@ -34,7 +35,7 @@ describe('getOpenRouterConfig', () => {
         'X-Title': 'Example App',
       },
       compatibility: 'strict',
-      privacyMode: 'standard',
+      privacyMode: 'strict',
     });
   });
 
@@ -42,15 +43,16 @@ describe('getOpenRouterConfig', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
     delete process.env.BETTER_AUTH_URL;
     delete process.env.APP_NAME;
+    delete process.env.OPENROUTER_PRIVACY_MODE;
 
     expect(getOpenRouterConfig()).toEqual({
       apiKey: 'test-key',
       compatibility: 'strict',
-      privacyMode: 'standard',
+      privacyMode: 'strict',
     });
   });
 
-  it('uses strict privacy mode when configured', () => {
+  it('accepts explicit strict privacy mode', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
     process.env.OPENROUTER_PRIVACY_MODE = 'strict';
 
@@ -61,13 +63,18 @@ describe('getOpenRouterConfig', () => {
     });
   });
 
+  it('throws when privacy mode is set to standard', () => {
+    process.env.OPENROUTER_API_KEY = 'test-key';
+    process.env.OPENROUTER_PRIVACY_MODE = 'standard';
+
+    expect(() => getOpenRouterConfig()).toThrowError('OPENROUTER_PRIVACY_MODE must be "strict"');
+  });
+
   it('throws when the privacy mode is invalid', () => {
     process.env.OPENROUTER_API_KEY = 'test-key';
     process.env.OPENROUTER_PRIVACY_MODE = 'invalid';
 
-    expect(() => getOpenRouterConfig()).toThrowError(
-      'OPENROUTER_PRIVACY_MODE must be "standard" or "strict"',
-    );
+    expect(() => getOpenRouterConfig()).toThrowError('OPENROUTER_PRIVACY_MODE must be "strict"');
   });
 });
 

@@ -1,4 +1,9 @@
 import type { QueryCtx } from '../../_generated/server';
+import {
+  getAuditArchiveRuntimeConfig,
+  getFileStorageBackendMode,
+  isS3BackedFileStorageBackendMode,
+} from '../../../src/lib/server/env.server';
 import { getRetentionPolicyConfig } from '../../../src/lib/server/security-config.server';
 import { getVendorBoundarySnapshot } from '../../../src/lib/server/vendor-boundary.server';
 import { ALWAYS_ON_REGULATED_BASELINE } from '../../../src/lib/shared/security-baseline';
@@ -6,6 +11,31 @@ import { getVerifiedCurrentSiteAdminUserOrThrow } from '../../auth/access';
 import { fetchAllBetterAuthPasskeys, fetchAllBetterAuthUsers } from '../betterAuth';
 import { normalizeSecurityScope } from './core';
 import { _getSecurityMetricsSnapshot, countQueryResults } from './operations_core';
+
+function getArchiveRuntimeFlags() {
+  const backendMode = getFileStorageBackendMode();
+  const required = isS3BackedFileStorageBackendMode(backendMode);
+
+  try {
+    const config = getAuditArchiveRuntimeConfig();
+    const configured = Boolean(
+      config.awsRegion && config.bucket && config.kmsKeyArn && config.roleArn,
+    );
+    return {
+      configured,
+      exporterEnabled: configured,
+      failureReason: configured ? null : required ? 'Archive config missing.' : null,
+      required,
+    };
+  } catch (error) {
+    return {
+      configured: false,
+      exporterEnabled: false,
+      failureReason: error instanceof Error ? error.message : 'Archive config unavailable.',
+      required,
+    };
+  }
+}
 
 export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
   await getVerifiedCurrentSiteAdminUserOrThrow(ctx);
@@ -100,6 +130,8 @@ export async function getSecurityPostureSummaryHandler(ctx: QueryCtx) {
 export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
   const [
     auditLedgerState,
+    latestArchiveVerification,
+    latestVerifiedArchiveVerification,
     latestBackupDrill,
     latestCheckpoint,
     latestRetentionJob,
@@ -114,6 +146,18 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
     ctx.db
       .query('auditLedgerState')
       .withIndex('by_chain_id', (q) => q.eq('chainId', 'primary'))
+      .first(),
+    ctx.db
+      .query('auditLedgerArchiveVerifications')
+      .withIndex('by_chain_id_and_checked_at', (q) => q.eq('chainId', 'primary'))
+      .order('desc')
+      .first(),
+    ctx.db
+      .query('auditLedgerArchiveVerifications')
+      .withIndex('by_chain_id_and_status_and_checked_at', (q) =>
+        q.eq('chainId', 'primary').eq('lastVerificationStatus', 'verified'),
+      )
+      .order('desc')
       .first(),
     ctx.db.query('backupVerificationReports').withIndex('by_checked_at').order('desc').first(),
     ctx.db
@@ -162,6 +206,37 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       .order('desc')
       .take(25),
   ]);
+  const archiveRuntimeFlags = getArchiveRuntimeFlags();
+  const archiveStatus = {
+    configured: archiveRuntimeFlags.configured,
+    driftDetected:
+      latestArchiveVerification?.driftDetected ??
+      (latestSeal !== null
+        ? (latestImmutableExport?.endSequence ?? 0) < latestSeal.endSequence ||
+          latestImmutableExport?.headHash !== latestSeal.headHash
+        : false),
+    exporterEnabled: archiveRuntimeFlags.exporterEnabled,
+    failureReason: latestArchiveVerification?.failureReason ?? archiveRuntimeFlags.failureReason,
+    lagCount:
+      latestArchiveVerification?.lagCount ??
+      Math.max(
+        0,
+        latestSeal ? latestSeal.endSequence - (latestImmutableExport?.endSequence ?? 0) : 0,
+      ),
+    lastVerificationStatus: latestArchiveVerification?.lastVerificationStatus ?? 'disabled',
+    lastVerifiedAt: latestVerifiedArchiveVerification?.checkedAt ?? null,
+    lastVerifiedSealEndSequence:
+      latestVerifiedArchiveVerification?.lastVerifiedSealEndSequence ?? null,
+    latestExportEndSequence: latestImmutableExport?.endSequence ?? null,
+    latestManifestObjectKey:
+      latestArchiveVerification?.latestManifestObjectKey ??
+      latestImmutableExport?.manifestObjectKey ??
+      null,
+    latestPayloadObjectKey:
+      latestArchiveVerification?.latestPayloadObjectKey ?? latestImmutableExport?.objectKey ?? null,
+    latestSealEndSequence: latestSeal?.endSequence ?? null,
+    required: archiveRuntimeFlags.required,
+  };
 
   const metadataGaps = recentAuditLogs
     .filter((log) => log.eventType === 'organization_policy_updated')
@@ -237,6 +312,7 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
           objectKey: latestImmutableExport.objectKey,
         }
       : null,
+    archiveStatus,
     lastIntegrityFailure: latestFailedCheckpoint?.failure
       ? {
           checkedAt: latestFailedCheckpoint.checkedAt,
@@ -263,13 +339,14 @@ export async function getAuditReadinessSnapshotHandler(ctx: QueryCtx) {
       sourceReportId: artifact.sourceReportId ?? null,
     })),
     immutableExportHealthy:
-      latestSeal === null
+      archiveStatus.latestSealEndSequence === null
         ? true
-        : (latestImmutableExport?.endSequence ?? 0) >= latestSeal.endSequence,
-    immutableExportLagCount: Math.max(
-      0,
-      latestSeal ? latestSeal.endSequence - (latestImmutableExport?.endSequence ?? 0) : 0,
-    ),
+        : archiveStatus.exporterEnabled &&
+          !archiveStatus.driftDetected &&
+          archiveStatus.lagCount === 0 &&
+          archiveStatus.lastVerificationStatus === 'verified' &&
+          archiveStatus.lastVerifiedSealEndSequence === archiveStatus.latestSealEndSequence,
+    immutableExportLagCount: archiveStatus.lagCount,
     sealCount,
     unverifiedTailCount: Math.max(
       0,
